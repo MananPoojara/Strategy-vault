@@ -91,8 +91,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         kd!("jbhsms_stk_ko", "Stock key date · Coca-Cola long Mar 31 to Jun 6 (no stop)", "F|Figure 7.12 (p.122): \"Coca-Cola-KO, Mar. 31 to Jun. 6\" Long, Enter 3/31, Exit 6/6, Stop %: 100", N_STK, c("35", "80%", "$1.8364 per share", "1970-2004", "Coca-Cola")),
         kd!("jbhsms_stk_ge", "Stock key date · General Electric long May 25 to Jun 6, 6% stop", "F|Figure 7.13 (p.123): \"General Electric-GE, May 25 to Jun. 6\" Long, Enter 5/25, Exit 6/6, Stop %: 6", N_STK, c("35", "82.86%", "$0.2331 per share", "1970-2004", "General Electric")),
         kd!("jbhsms_stk_msft", "Stock key date · Microsoft long Aug 31 to Feb 1 (no stop)", "F|Figure 7.14 (p.124): \"Microsoft-MSFT, Aug. 31 to Feb. 1\" Long, Enter 8/31, Exit 2/1, Stop %: 100", N_STK, c("18", "88.89%", "$2.3881 per share", "1986-2003 (entry years)", "Microsoft")),
-        def!("jbhsms_stk_nem", "Stock key date · Newmont Mining Sep 26 to Oct 27 (book contradicts itself)", "Ch.7 · Short-Term Key Date Seasonal Trades", "Long", NotTestable("Figure 7.15 (p.125) is headed \"Long\", but every profit in its table is entry price minus exit price (e.g. 1983: in 21.44, out 19.23, profit +2.21), i.e. a short; the printed 77.27% winners holds only as a short (our NEM data: 5 of 22 long trades win, 17 of 22 as a short). Which side is the rule needs a user decision"),
-            &["F|Figure 7.15 (p.125): \"Newmont Mining-NEM, Sep. 26 to Oct. 27\" Long, Enter 9/26, Exit 10/27, Stop %: 100; 22 trades 1982-2003, 77.27%", R_ENTRY], ""),
+        StrategyDef { claim: c("22", "77.27%", "$5.8788 avg profit / -$2.592 avg loss per share", "1982-2003", "Newmont Mining (printed as shorts)"),
+            ..def!("jbhsms_stk_nem", "Stock key date · Newmont Mining short Sep 26 to Oct 27 (no stop)", "Ch.7 · Short-Term Key Date Seasonal Trades", "Short", Status::Live,
+            &["F|Figure 7.15 (p.125): \"Newmont Mining-NEM, Sep. 26 to Oct. 27\" Enter 9/26, Exit 10/27, Stop %: 100; 22 trades 1982-2003, 17 winners, 77.27%",
+              "E|Sell short at the close of the first trading day on or after Sep 26; cover at the close of the first trading day on or after Oct 27 (side = 1 runs it long)", R_ENTRY],
+            "Figure 7.15 is headed \"Long\", but every printed trade is a short: Profit/Loss = price in - price out on all 22 rows (1982: in 15.53, out 16.63, -1.10; 1983: in 21.44, out 19.23, +2.21; 1990: in 34.55, out 28.84, +5.71), and only the short side gives the printed 17 winners of 22. The printed trades are the evidence (decision #152, D1-33): short is the default, long the option (side = 1). No dollar amount (stop 100% = none), so the split-adjusted US stock prices do not change the rule (#166). Runs on NEM itself (US stock data, split/dividend-adjusted, so early prices differ from the book's) and, as a declared application, on any other stock, index or ETF.") },
         kd!("jbhsms_stk_pg", "Stock key date · Procter & Gamble long Oct 26 to Dec 27 (no stop)", "F|Figure 7.16 (p.126): \"Proctor & Gamble-PG, Oct. 26 to Dec. 27\" Long, Enter 10/26, Exit 12/27, Stop %: 100", N_STK, c("34", "85.29%", "$1.1551 per share", "1970-2003", "Procter & Gamble")),
         kd!("jbhsms_stk_txn", "Stock key date · Texas Instruments long Dec 15 to Apr 19 (no stop)", "F|Figure 7.18 (p.128): \"Texas Instruments-TXN, Dec. 15 to Apr. 19\" Long, Enter 12/15, Exit 4/19, Stop %: 100", N_STK, c("34", "85.29%", "$1.7975 per share", "1970-2003 (entry years)", "Texas Instruments")),
         def!("jbhsms_stk_sunw", "Stock key date · Sun Microsystems long Nov 2 to Jan 18 (no stop)", "Ch.7 · Short-Term Key Date Seasonal Trades", "Long", NeedsData("daily prices of Sun Microsystems (SUNW, delisted 2010 after the Oracle takeover); the vault's US stock data has no SUNW history"),
@@ -123,7 +126,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 /// Admission (bernstein-g3, 2026-10-22): every Live key-date and gap id, reviewed with independent chronological ledgers.
 pub fn reviewed_daily(id: &str) -> bool {
-    KD.iter().any(|k| k.0 == id) || gap_rule(id)
+    KD.iter().any(|k| k.0 == id) || gap_rule(id) || id == NEM
 }
 /// Gap trades: per-share US cent inputs, US stocks only; they read the open (stop entry, first profitable opening).
 pub fn gap_rule(id: &str) -> bool {
@@ -149,7 +152,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "jbhsms_sp_1027" => ("jbhsms_kd_sp", "S&P key-date seasonals (Hot Stock Market Strategies)", "S&P Oct 27-Nov 1 · see jb30d_sp_seasonal"),
         "jbhsms_stk_sunw" => ("jbhsms_kd_stocks", "Stock key-date seasonals (Hot Stock Market Strategies)", "sunw · needs data"),
-        "jbhsms_stk_nem" => ("jbhsms_kd_stocks", "Stock key-date seasonals (Hot Stock Market Strategies)", "nem · book contradicts itself"),
+        "jbhsms_stk_nem" => ("jbhsms_kd_stocks", "Stock key-date seasonals (Hot Stock Market Strategies)", "nem · short (the printed trades)"),
         "jbhsms_gap_ibm" => ("jbhsms_gap", "Gap trade in stocks (Hot Stock Market Strategies)", "IBM inputs (Table 6.1)"),
         "jbhsms_gap_ibm2" => ("jbhsms_gap", "Gap trade in stocks (Hot Stock Market Strategies)", "IBM inputs 2 (Table 6.2)"),
         "jbhsms_gap_ebay" => ("jbhsms_gap", "Gap trade in stocks (Hot Stock Market Strategies)", "EBAY inputs (Table 6.3)"),
@@ -165,6 +168,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("pen_hi", "Sell stop: penetration down into the prior high ($)", g.3, 0., 5., 0.01), p("pen_lo", "Buy stop: penetration up into the prior low ($)", g.4, 0., 5., 0.01),
             p("stop_pct", "Stop loss, % of the entry price", g.5, 0.5, 20., 0.05), p("entry_day", "Entry-day stop: 0 = bar path O-near-far-C, 1 = any touch [Not from the book]", 0., 0., 1., 1.)]);
     }
+    if id == NEM {
+        return Some(vec![p("entry_m", "Entry month", 9., 1., 12., 1.), p("entry_d", "Entry day", 26., 1., 31., 1.), p("exit_m", "Exit month", 10., 1., 12., 1.),
+            p("exit_d", "Exit day", 27., 1., 31., 1.), p("stop_pct", "Close-only stop, % beyond the entry close (100 = none)", 100., 0.5, 100., 0.5),
+            p("side", "Side: 0 = short, as the printed trades (default); 1 = long, as the figure's heading [Not the printed trades]", 0., 0., 1., 1.)]);
+    }
     let k = KD.iter().find(|k| k.0 == id)?;
     Some(vec![p("entry_m", "Entry month", k.1, 1., 12., 1.), p("entry_d", "Entry day", k.2, 1., 31., 1.), p("exit_m", "Exit month", k.3, 1., 12., 1.),
         p("exit_d", "Exit day", k.4, 1., 31., 1.), p("stop_pct", "Close-only stop, % below the entry close (100 = none)", k.5, 0.5, 100., 0.5)])
@@ -173,6 +181,13 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// Key-date trade: buy the close of the first bar on or after the entry date; sell the close of the first bar on or
 /// after the exit date (next year when the exit month/day precedes the entry's); close-only stop below entry x (1 - s%).
 pub fn keydate(x: &Ctx, from: usize, to: usize, em: f64, ed: f64, xm: f64, xd: f64, stop_pct: f64) -> Vec<Trade> {
+    keydate_dir(x, from, to, em, ed, xm, xd, stop_pct, 1.0)
+}
+
+/// `keydate` on either side: `dir` -1 sells short at the entry close and covers at the exit close; the close-only stop is then
+/// a close above entry x (1 + s%) ("if you are short, the market must close above the calculated stop loss", p.107).
+#[allow(clippy::too_many_arguments)]
+pub fn keydate_dir(x: &Ctx, from: usize, to: usize, em: f64, ed: f64, xm: f64, xd: f64, stop_pct: f64, dir: f64) -> Vec<Trade> {
     let (em, ed, xm, xd) = (em.round() as i64, ed.round() as i64, xm.round() as i64, xd.round() as i64);
     let wraps = (xm, xd) < (em, ed);
     let stop = if stop_pct >= 100.0 { f64::NAN } else { stop_pct / 100.0 };
@@ -184,7 +199,7 @@ pub fn keydate(x: &Ctx, from: usize, to: usize, em: f64, ed: f64, xm: f64, xd: f
             let e = t.legs[0].px;
             if di >= exit_k {
                 out.push(finish(cur.take().unwrap(), i, x.c[i], i, "Exit date (close)"));
-            } else if x.c[i] < e * (1.0 - stop) {
+            } else if (dir > 0.0 && x.c[i] < e * (1.0 - stop)) || (dir < 0.0 && x.c[i] > e * (1.0 + stop)) {
                 out.push(finish(cur.take().unwrap(), i, x.c[i], i, "Close-only stop"));
             }
             continue;
@@ -194,7 +209,7 @@ pub fn keydate(x: &Ctx, from: usize, to: usize, em: f64, ed: f64, xm: f64, xd: f
         let ext = days_ymd(if wraps { y + 1 } else { y }, xm, xd);
         if i < to && di >= ent && days(&x.r[i - 1].date) < ent && di < ext {
             exit_k = ext;
-            cur = Some(new_trade(1.0, i, x.c[i], "close", i));
+            cur = Some(new_trade(dir, i, x.c[i], "close", i));
         }
     }
     mark_open(&mut out, cur, x, to);
@@ -244,8 +259,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if GAP.iter().any(|k| k.0 == id) {
         return Some(gap_fpo(x, from, to, g("gap_up"), g("gap_dn"), g("pen_hi"), g("pen_lo"), g("stop_pct") / 100.0, g("entry_day") >= 0.5));
     }
-    Some(keydate(x, from, to, g("entry_m"), g("entry_d"), g("exit_m"), g("exit_d"), g("stop_pct")))
+    let dir = if id == NEM && g("side") < 0.5 { -1.0 } else { 1.0 };
+    Some(keydate_dir(x, from, to, g("entry_m"), g("entry_d"), g("exit_m"), g("exit_d"), g("stop_pct"), dir))
 }
+/// Figure 7.15 (D1-33): printed as shorts under a "Long" heading; short by default.
+const NEM: &str = "jbhsms_stk_nem";
 
 #[cfg(test)]
 mod tests {

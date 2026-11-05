@@ -245,8 +245,19 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|Check signals 10 minutes before the close; if no signals trigger, do nothing", "E|Rank: EOM, VIX, RSI, %b, DMI, TRIN strategies", "A|More signals and more days of signals = more aggressive (up to \"all in\" with 6-7 signals on the third day)", "A|Position size: five equal allocations; half an allocation for one weak (TRIN) signal, two or three for several strong signals"],
           "p.189-231, 268-269: the book says it is \"purposely left loose\". Mechanical approximations: spmt_multi5, spmt_multi9, spmt_mts.", None),
     ]);
+    // SPMT-G1 (decision #238): the cards whose book comparison passes #168 say what that comparison is.
+    static GROSS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<&'static str, &'static str>>> = std::sync::OnceLock::new();
+    for s in v.iter_mut().filter(|s| BOOK_MATCHED.contains(&s.id)) {
+        let mut m = GROSS.get_or_init(Default::default).lock().unwrap();
+        s.notes = *m.entry(s.id).or_insert_with(|| Box::leak(format!("{} {GROSS_NOTE}", s.notes).into_boxed_str()));
+    }
     v
 }
+
+/// The 15 cards whose printed course result passes the #168 check (gate verdict verified, SPY 9/9/97-11/30/06).
+pub const BOOK_MATCHED: [&str; 15] = ["spmt_dmi_1", "spmt_dmi_2", "spmt_dmi_3", "spmt_dmi_5", "spmt_eom_cc", "spmt_eom_co", "spmt_eom_rsi",
+    "spmt_pctb_1", "spmt_price", "spmt_rsi_2", "spmt_rsi_3", "spmt_rsi_div2", "spmt_rsi_div8", "spmt_short_4up", "spmt_short_strong"];
+const GROSS_NOTE: &str = "Book comparison: gross, SPY, no costs. The course's figures are E-mini trades after 1/2 point of slippage and commission per trade (p.3); ours are SPY closes with no costs, over the course's 9/9/97-11/30/06 window.";
 
 // ---------------------------------------------------------------- params
 
@@ -945,6 +956,14 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn book_matched_cards_are_the_verified_rows_and_say_gross_spy_no_costs() {
+        let cat = catalogue();
+        let verified: Vec<&str> = cat.iter().filter(|s| crate::gate::get(s.id).is_some_and(|g| g.verdict == "verified")).map(|s| s.id).collect();
+        assert_eq!(verified, {let mut b = BOOK_MATCHED.to_vec(); b.sort_by_key(|id| cat.iter().position(|s| s.id == *id)); b});
+        for s in &cat { assert_eq!(s.notes.contains("gross, SPY, no costs"), BOOK_MATCHED.contains(&s.id), "{}", s.id); }
+        assert_eq!(catalogue().iter().find(|s| s.id == "spmt_dmi_1").unwrap().notes.as_ptr(), cat.iter().find(|s| s.id == "spmt_dmi_1").unwrap().notes.as_ptr());
+    }
     use super::*;
 
     fn daily_rows(n: usize) -> Vec<crate::Row> {

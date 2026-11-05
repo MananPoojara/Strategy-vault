@@ -1394,7 +1394,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Lane A singles block (26 Oct 2026, lane B): held Live rules
         "elcim_fi2"=>"Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).",
         // "nftm_accutrack": admitted by lane K51 (EP4 second series, decision #223)
-        "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: the exits are a $500 initial stop and a $500 trailing stop on S&P 500 futures (Building High-Performance Trading Systems Fig. 46, p.21), fixed dollar amounts for a contract the vault does not hold; on indices, ETFs and stocks they would not mean what the book meant, and the book's printed result is the two modes traded together. The vault's accuracy gate blocks it; publishing needs your decision on how to scale the stops.",
+        "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: no exact conversion. The exits are a $500 initial stop and a $500 trailing stop per S&P 500 futures contract (Building High-Performance Trading Systems Fig. 46, p.21) over a 1982-2000 test, a window in which the contract changed from $500 to $250 a point (November 1997): $500 is 1 index point before and 2 after, so no single exact point amount exists (decisions #196(2)/#202 allow only the named contract's exact $/point); the book's printed result is also the two modes traded together (lane K58).",
         // jhs35_spike35: admitted by lane K54 (SPX only, decision #229 (6))
         "pstc_20_40_75"=>"Held: the course trades this signal by buying long-dated call contracts (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those contract prices, and a stock or index price cannot stand in for them. The course's own table also reports the move in the underlying stock, and our independent check of that signal on the underlying matched with 0 differences, so it can be published as the underlying-stock signal if you accept that measure.",
         // ---- end Lane A singles held
@@ -1428,13 +1428,14 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
         "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
-        "ch_bta2_bottom_fish_generic"=>"Held: fixed dollar stop on futures. The generic bottom-fishing pattern is tested on 17 futures markets with a $2,000 initial stop per contract (p.137); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
+        // "ch_bta2_bottom_fish_generic": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         "ch_bta2_vol2x"=>"Held: fixed dollar stop on futures. Chande tests the 2x-range volatility system on Swiss franc futures (1989-95) with a $3,000 initial stop per contract (p.236-239); a dollar stop per contract has no equivalent on an index, ETF or stock.",
         "ch_bta2_long_bomb"=>"Held: futures sizing and dollar stop. The Long Bomb buys a number of contracts set by $10,000 of risk per contract point value, with a $1,500 stop per contract, on 10 futures markets (p.173-177); neither the sizing nor the dollar stop has an equivalent on an index, ETF or stock.",
-        "ch_bta2_bottom_fish"=>"Held: fixed amounts set for the S&P futures contract. The pattern needs a day's range above 4 S&P points and a close-open gain above 3 points, with a $2,000 stop (4 points at $500 a point) (p.134); fixed point amounts from the 1982-95 contract have no equivalent on other indices, ETFs or stocks. Running it on SPX with these points kept is a decision for the user.",
-        "ch_bta2_ma1011_trend"|"ch_bta2_ma1011_anti"=>"Held: fixed dollar stop on the S&P futures contract. Chande tests the 10/11-day crossovers on S&P 500 futures (1982-95) with a $2,000 initial stop, 4 S&P points at $500 a point (p.133-134); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 4-point stop is a decision for the user.",
-        "ch_bta2_tat"=>"Held: fixed dollar stop on the S&P futures contract. The Trend-Anti-trend test (Table 4.14) uses a $5,000 initial stop on S&P 500 futures, 10 S&P points at $500 a point (p.116-123); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 10-point stop is a decision for the user.",
-        "ch_bta2_xopp"|"ch_bta2_xopp_trail"=>"Held: fixed dollar stop on the S&P futures contract. The extraordinary-opportunity tests (Tables 4.22-4.23) use a $3,000 initial stop on S&P 500 futures, 6 S&P points at $500 a point (p.140-144); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 6-point stop is a decision for the user.",
+        // "ch_bta2_bottom_fish": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        // "ch_bta2_ma1011_anti": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        "ch_bta2_ma1011_trend"=>"Held: the S&P cash index flatters this rule. Chande's $2,000 stop is 4 points of the S&P-500 contract ($500 a point, p.133-134), so the rule could run only on the S&P 500 index (SPX); decision #179's two-window check finds SPX better than the tradable SPY (points scaled) in both 2010-2020 and 1993-2026, because SPX daily open/high/low come from stale component prints. No result is published (lane K58).",
+        // "ch_bta2_tat": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        // "ch_bta2_xopp"|"ch_bta2_xopp_trail": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         "ch_ntt_to_buy"|"ch_ntt_to_buy_nse"=>"Held: not a trade with an exit. The New Technical Trader gives only the thrust-oscillator buy signal and reports the market's gain 3, 6, 12 and 24 months after each signal (Table 6.2, p.157); these are observation horizons, not a trade exit, and no stop or sell rule is printed.",
         "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
         "ch_pbs_cbpb_trail3"=>"Held: no exit before a new high. This workshop chart (S&P Sep-95 futures) sets a 3-day-low trailing stop only after the trade makes a new 20-day high; until then the only protection is the workshop's $1,500 stop per contract (p.23), which has no equivalent on an index, ETF or stock. Chande's complete CB-PB rule is already live as a separate strategy.",
@@ -1455,7 +1456,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
         // ---- end Perry Kaufman held
         // ---- Michael Harris block (26 Oct 2026, lane B): held Live rules
-        "mhs_sp830825_1"|"mhs_sp830120_1"|"mhs_sp830330_1"=>"Held: fixed amounts set for the S&P futures contract. These S&P 500 patterns use a 10-point profit target and a 10-point stop ($2,500 on the 1983-99 contract) (Short-Term Trading with Price Patterns p.180-206); a fixed point amount has no equivalent on other indices, ETFs or stocks, and on today's index levels 10 points is a tiny move. Running them on SPX with the 10-point levels is a decision for the user.",
+        "mhs_sp830825_1"|"mhs_sp830120_1"|"mhs_sp830330_1"=>"Held: needs the minute path. Harris prints these targets and stops as 10 S&P index points (Short-Term Trading with Price Patterns p.180-206), so under decisions #196(2)/#202 they could run on the S&P 500 index (SPX) only, literal; but 10 points is 0.2-0.5% of SPX since 2014 (real opens) and the entry day already reaches the target or the stop on 86-94% of the signals, so daily bars cannot decide which came first; a 1-minute version is needed (lane K58).",
         // ---- end Michael Harris held
         // ---- Charles LeBeau block (26 Oct 2026, lane B): held Live rules
         "lebsp_prudent"|"lebsp_remarkable"=>"Held: fixed amounts set for the S&P futures contract. The Prudent and Remarkable S&P systems exit with dollar stops per S&P contract ($1,500 and $4,500 loss stops, $1,000 and $500 break-even stops, i.e. fixed S&P index points at $250 a point) (traderclub manuals, TradeStation code); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running them on SPX with those points is a decision for the user.",
@@ -1473,7 +1474,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
         // ---- Art Collins block (26 Oct 2026): held Live rules
-        "acbff_forever_long"=>"Held: the profit target is a fixed $1,250 per S&P futures contract (5 S&P index points); a fixed point amount has no equivalent on other indices, ETFs or stocks, and the book's test window starts at the 1982 contract launch, before the vault's data, so no reviewed result can be published.",
+        "acbff_forever_long"=>"Held: needs the minute path. The book states the target in S&P points (\"a five point profit-$1,250 per contract\", p.19), so under decisions #196(2)/#202 it could run on the S&P 500 index (SPX) only, five points literal; but there the limit entry at the prior low and the five-point target meet on the same day in 45 of 66 trades since 2014 (real opens), and those trades carry 61% of the gain: daily bars cannot show which came first (the gate's same-day rule), so this needs a 1-minute version (lane K58).",
         // ---- end Art Collins block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
@@ -1951,8 +1952,8 @@ mod tests {
         use crate::books::{chbta2, chntt, chpbs};
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
         for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
-                   "ch_bta2_bottom_fish_generic","ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_bottom_fish","ch_bta2_ma1011_trend","ch_bta2_ma1011_anti",
-                   "ch_bta2_tat","ch_bta2_xopp","ch_bta2_xopp_trail","ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo","ch_pbs_cbpb_trail3"] {
+                   /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
+                   "ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo","ch_pbs_cbpb_trail3"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -3064,7 +3065,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(d.id,"jb624")));
         }
         // Held: not a complete rule, needs data we do not have, or a duplicate of another module.
-        for id in ["jbsmsw_add","jbsmsw_3610_parabolic","jbsmsw_dca_mom42","jbsmsw_dca_biq","jbhsms_sp_1027","jbhsms_stk_sunw","jbhsms_stk_nem","jbhsms_fri_mon","jbhsms_mac","jbhsms_ma200",
+        for id in ["jbsmsw_add","jbsmsw_3610_parabolic","jbsmsw_dca_mom42","jbsmsw_dca_biq","jbhsms_sp_1027","jbhsms_stk_sunw",/* jbhsms_stk_nem: admitted by K58 (D1-33, short as printed) */"jbhsms_fri_mon","jbhsms_mac","jbhsms_ma200",
             "jbtywr_wheat_0901","jbtywr_tbond_0418","jbtywr_hogs_1030","jbtywr_lumber","jbtifm_jb_gap","jbtifm_dual_orbit","jbtifm_add","jbeft_dow_fm82","jbeft_gold_kd","jbeft_parabolic","jbeft_mom_ma","jbeft_mom_rise_fall","jbeft_channel_break","jbeft_range_breakout","jbeft_3_3_channel","jbeft_dsi","jbeft_add"] {
             let d=cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
             assert!(!reviewed_cash_rule(d),"{id}");assert!(d.status!=Status::Live,"{id}");
@@ -3414,7 +3415,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(id,"chntt")));
             assert!(policy(&d).source_basis.contains("Chande"));
         }
-        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),("ch_bta2_bottom_fish","chbta2"),("ch_ntt_vidya_cmo","chntt"),("ch_ntt_to_buy","chntt")] {
+        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt"),("ch_ntt_to_buy","chntt")] {
             let d=def(id,book);
             assert!(!reviewed_cash_rule(&d));
             assert!(check(&d,"NIFTY 50",false).is_some());

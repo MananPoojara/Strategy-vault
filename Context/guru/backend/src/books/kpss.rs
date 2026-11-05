@@ -9,7 +9,7 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "kpss";
 // Admitted 2026-10-24 (authors/kaeppel/admission/SOURCE-CONTRACT.md): complete calendar rules with independent US/India ledgers.
-pub const REVIEWED: &[&str] = &["kpss_first5", "kpss_last5", "kpss_janbar", "kpss_jbs", "kpss_jaynewary", "kpss_ujbs", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_xmas_week", "kpss_td2", "kpss_td1_5", "kpss_mid4", "kpss_worst14", "kpss_nonworst", "kpss_six", "kpss_monthly10", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_dec_b", "kpss_dec_c", "kpss_middecade", "kpss_latedecade", "kpss_20yr", "kpss_intradecade", "kpss_c212", "kpss_c40w", "kpss_c53d", "kpss_ctcm1", "kpss_ctcm2", "kpss_utcm", "kpss_yr_post", "kpss_yr_mid", "kpss_yr_pre", "kpss_yr_elec", "kpss_yr_post_mid", "kpss_yr_pre_elec", "kpss_stoken15", "kpss_fav14", "kpss_fav21", "kpss_midterm", "kpss_pre_mar_jul", "kpss_uecs", "kpss_nov_may", "kpss_ndx_nov_jun", "kpss_jja", "kpss_sept", "kpss_ex_sept", "kpss_oct7", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
+pub const REVIEWED: &[&str] = &["kpss_first5", "kpss_last5", "kpss_janbar", "kpss_jbs", "kpss_jaynewary", "kpss_ujbs", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_xmas_week", "kpss_td2", "kpss_td1_5", "kpss_tdays", "kpss_mid4", "kpss_worst14", "kpss_nonworst", "kpss_six", "kpss_monthly10", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_dec_b", "kpss_dec_c", "kpss_middecade", "kpss_latedecade", "kpss_20yr", "kpss_intradecade", "kpss_c212", "kpss_c40w", "kpss_c53d", "kpss_ctcm1", "kpss_ctcm2", "kpss_utcm", "kpss_yr_post", "kpss_yr_mid", "kpss_yr_pre", "kpss_yr_elec", "kpss_yr_post_mid", "kpss_yr_pre_elec", "kpss_stoken15", "kpss_fav14", "kpss_fav21", "kpss_midterm", "kpss_pre_mar_jul", "kpss_uecs", "kpss_nov_may", "kpss_ndx_nov_jun", "kpss_jja", "kpss_sept", "kpss_ex_sept", "kpss_oct7", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 /// Rules whose days are defined by US exchange holidays (closures): US instruments only.
 pub const US_ONLY: &[&str] = &["kpss_xmas_week", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
@@ -413,6 +413,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("kpss_td1_5", "Trading days 1-5 of the month", "Ch 4 · Monthly wave 1 (p.72-73)", "Long", Live,
             &["E|\"$1,000 invested only during the first five trading days of each trading month\" (p.72): buy at the close of the last trading day of the month", "X|Sell at the close of trading day 5"],
             note!(), claim("12 a year", "", "Table 4.1: days 1-5 cumulative +223/+524/+303/+65/+31%", "5 days", "Dow 1900-2007")),
+        d("kpss_tdays", "Chosen trading days of the month (the monthly waves, one day or a run of days)", "Ch 4 · The trading days of the month (p.71-80, Tables 4.1-4.6)", "Long", Live,
+            &["F|\"I considered separately trading day 1, trading day 2, trading day 3, and so on ... designating the last trading day of each month as trading day -1, the next-to-last trading day of each month as trading day -2, and so forth\" (p.71)",
+              "E|\"the cumulative gain on $1,000 invested in the Dow only during that particular trading day every month\" (p.72): long from the close before trading day `a` to the close of trading day `b` (a = b: one day, as in Tables 4.1-4.6)",
+              "X|Out on every other day"],
+            concat!(note!(), " Defaults a = -2, b = -1: monthly wave 5, the last two trading days (Table 4.6, Fig 4.7). Other settings give the book's other waves: 1..5 (wave 1, also card kpss_td1_5), 6..8 (wave 2), 9..12 (wave 3, also kpss_mid4), 13..20 (wave 4), -7..-5 (wave 4a), and a = b for each single day of Tables 4.1-4.6. Days counted from the start are 1, 2, ...; from the end -1, -2, ...; a negative `a` with a positive `b` runs from the month-end into the next month (e.g. -2..4 = kpss_six). A month without that many trading days (e.g. day 22) is skipped. [labelled: one block per month from a to b; the book reports each day on its own]"),
+            claim("12 a year", "", "Table 4.6: day -2 +128%, day -1 +279% (cumulative, $1,000 in the Dow only on that day each month)", "2 days", "Dow 1900-2007")),
         d("kpss_mid4", "Trading days 9-12 of the month", "Ch 4 · Monthly wave 3 / The midmonth pattern (p.73-87)", "Long", Live,
             &["E|\"invested in the Dow only during trading days 9, 10, 11, and 12 each month\" (p.85): buy at the close of trading day 8", "X|Sell at the close of trading day 12"],
             note!(), claim("12 a year", "", "1933-1979: $1,000 -> $874; 1980-2007: strong gains (Fig 4.13)", "4 days", "Dow 1933-2007")),
@@ -612,7 +618,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "kpss_first5" | "kpss_last5" | "kpss_janbar" | "kpss_jbs" | "kpss_jaynewary" | "kpss_ujbs" => ("kpss_jan", "January indicators", "January"),
         "kpss_hol_d1" | "kpss_hol_d2" | "kpss_hol_3x3" | "kpss_hol_top24" | "kpss_uhts" | "kpss_xmas_week" => ("kpss_hol", "Holiday trading days", "Holiday"),
-        "kpss_td2" | "kpss_td1_5" | "kpss_mid4" | "kpss_worst14" | "kpss_nonworst" | "kpss_six" | "kpss_monthly10" | "kpss_santa" | "kpss_m10_santa" | "kpss_umds" | "kpss_uumds" => ("kpss_month", "Days of the month", "Monthly days"),
+        "kpss_td2" | "kpss_td1_5" | "kpss_tdays" | "kpss_mid4" | "kpss_worst14" | "kpss_nonworst" | "kpss_six" | "kpss_monthly10" | "kpss_santa" | "kpss_m10_santa" | "kpss_umds" | "kpss_uumds" => ("kpss_month", "Days of the month", "Monthly days"),
         "kpss_dec_b" | "kpss_dec_c" | "kpss_middecade" | "kpss_latedecade" | "kpss_20yr" | "kpss_intradecade" | "kpss_road_map" => ("kpss_decade", "Decennial cycle", "Decade"),
         "kpss_c212" | "kpss_c40w" | "kpss_c53d" | "kpss_ctcm1" | "kpss_ctcm2" | "kpss_utcm" => ("kpss_cycles", "Time cycles (212-week, 40-week, 53-day)", "Cycles"),
         "kpss_nov_may" | "kpss_ndx_nov_jun" | "kpss_jja" | "kpss_sept" | "kpss_ex_sept" | "kpss_oct7" => ("kpss_may", "Sell in May and dead zones", "Season"),
@@ -635,6 +641,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kpss_hol_3x3" => vec![p("before", "Trading days before each holiday", 3., 1., 5., 1.), p("after", "Trading days after each holiday", 3., 0., 5., 1.)],
         "kpss_uhts" => vec![lev()],
         "kpss_td2" | "kpss_td1_5" | "kpss_mid4" | "kpss_worst14" | "kpss_nonworst" | "kpss_six" | "kpss_santa" => vec![],
+        "kpss_tdays" => vec![p("a", "From trading day (1, 2, ... from the start; -1 = last, -2 = next-to-last ...)", -2., -10., 23., 1.), p("b", "To trading day (same numbering)", -1., -10., 23., 1.)],
         "kpss_monthly10" | "kpss_m10_santa" | "kpss_umds" => vec![mid()],
         "kpss_uumds" => vec![mid(), lev()],
         "kpss_dec_b" | "kpss_dec_c" | "kpss_middecade" | "kpss_latedecade" | "kpss_20yr" | "kpss_intradecade" => vec![],
@@ -721,6 +728,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kpss_td1_5" => ix.tdm(&[1, 2, 3, 4, 5], &[]),
         "kpss_mid4" => ix.tdm(&[9, 10, 11, 12], &[]),
         "kpss_six" => ix.tdm(&[1, 2, 3, 4], &[-2, -1]),
+        "kpss_tdays" => {
+            let (a, b) = (g("a").round() as i64, g("b").round() as i64);
+            let (lo, hi) = (a.min(b), a.max(b));
+            let f: Vec<i64> = (lo.max(1)..=hi).collect();
+            let bk: Vec<i64> = (lo..=hi.min(-1)).collect();
+            ix.tdm(&f, &bk)
+        }
         "kpss_worst14" | "kpss_nonworst" => {
             let worst = ix.tdm(&[6, 7, 8, 13, 14, 15, 16, 17, 18, 19, 20], &[-7, -6, -5]);
             if id == "kpss_worst14" { worst } else { worst.iter().map(|v| 1.0 - v).collect() }
