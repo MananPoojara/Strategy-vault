@@ -991,7 +991,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if crate::books::rotation::is_rotation(def.id) {let mut p=etf(ROTATION_BASIS);p.market_adaptation=def.book=="fbrs";return p;} // lane K28 rotation block
-    if crate::books::rotation::is_basket(def.id) {let mut p=requirement("basket_ranking",&["index","etf"],BASKET_BASIS);p.market_adaptation=true;return p;} // lane K56 EP5 block
+    if crate::books::rotation::is_basket(def.id) {let mut p=requirement("index_or_etf",&["index","etf"],BASKET_BASIS);p.market_adaptation=true;return p;} // lane K56 EP5 block
     if let Some(a)=admission(def) {let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],a.basis);p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;} // per-book ADMISSION table
     if let Some(p)=schaap_policy(def) {return p;} // Schaap block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
@@ -3783,7 +3783,7 @@ mod connors_index_routing_tests {
     fn basket_rules_run_on_their_index_calendars() {
         for id in crate::books::rotation::BASKET_IDS {
             let d=find(id);let p=policy(&d);
-            assert_eq!((p.requirement,p.allowed_types),("basket_ranking",&["index","etf"][..]),"{id}");
+            assert_eq!((p.requirement,p.allowed_types),("index_or_etf",&["index","etf"][..]),"{id}");
             let allowed=crate::gate::get(id).and_then(|g|g.allowed).unwrap();
             assert_eq!(allowed,if *id=="atm04_mtpg" {&["SPY"][..]} else {&["NIFTY 50","SPY"][..]},"{id}");
             for tk in allowed {assert!(check(&d,tk,false).is_none(),"{id} {tk}");}
