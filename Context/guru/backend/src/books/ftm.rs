@@ -9,7 +9,7 @@ use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, S
 
 pub const BOOK: &str = "ftm";
 /// Admitted ids (authors/futuresmag/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback", "ftm_carr_macd", "ftm_carr_mom", "ftm_carr_rsi", "ftm_carr_roc", "ftm_carr_stoch" /* lanes K47/K49, decisions 217/219 */];
+pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback", "ftm_carr_macd", "ftm_carr_mom", "ftm_carr_rsi", "ftm_carr_roc", "ftm_carr_stoch" /* lanes K47/K49, decisions 217/219 */, "ftm_rg_oops" /* lane K54, decision #233 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers
@@ -93,9 +93,9 @@ fn defs() -> Vec<S> {
             rules: &["E|\"the volatility breakout employs a threshold determined as the current bar's closing price plus some multiple B of the M-day average true range\" (p.40)", SES], notes: "", claim: None },
         S { id: "ftm_rg_oops", name: "Ruggiero OOPS (coded version) · S&P", group: G_RG02, dir: "Long/Short", status: Live, vix: false,
             rules: &["F|\"If nextopen20 > High + 0.02 * Average(TrueRange,3) then UpGap=TRUE; If nextopen20 < Low - 0.02 * Average(TrueRange,3) then DnGap=TRUE\" (200205 PDF 60, p.58)",
-                     "E|\"If UpGap=TRUE and Close > Average(Close,10) then sell at Close - 2 points stop; If DnGap=TRUE and Close < Average(Close,10) then buy at Close + 2 points stop\"",
+                     "E|\"If UpGap=TRUE and Close > Average(Close,10) then sell at Close - 2 points stop; If DnGap=TRUE and Close < Average(Close,10) then buy at Close + 2 points stop\" (2 points = 2 ticks, decisions #57/#233)",
                      "X|\"If BarsSinceEntry > 2 then exitlong at open; If BarsSinceEntry > 2 then exitshort at open\""],
-            notes: "TradeStation code wins over the prose ('sell on a stop at yesterday's high minus one tick'). nextopen20 = the next day's open (Ruggiero's look-ahead function for backtesting = the gap known at the open). Reading: the exit fires at the close of the bar where BarsSinceEntry (0 on the entry bar) exceeds 'hold' and executes at the next open; an opposite entry reverses (TradeStation). Held (lane K54): the unit of '2 points' is unresolved (2.00 S&P points, decision #229, or 2 minimum price units, decision #57 and TradeStation's reserved word; p.pts switches). Book: S&P futures 1/1/1987-3/21/2002, $250/point, no costs.",
+            notes: "TradeStation code wins over the prose ('sell on a stop at yesterday's high minus one tick'). nextopen20 = the next day's open (Ruggiero's look-ahead function for backtesting = the gap known at the open). Reading: the exit fires at the close of the bar where BarsSinceEntry (0 on the entry bar) exceeds 'hold' and executes at the next open; an opposite entry reverses (TradeStation). '2 points' = 2 ticks of the instrument (US 0.01, NSE 0.05): in EasyLanguage 'points' is the reserved word for minimum price units (decisions #57, #233); [labelled option] p.mode=1 = 2.00 S&P 500 index points (p.pts), SPX only. The gap test reads the next open, so the cash indices start where their opens are real (SPX 2014, NDX 2001, DJI 2016). Decision #179: the NDX result is withdrawn (index better than QQQ in both windows), QQQ stays. Book: S&P futures 1/1/1987-3/21/2002, $250/point, no costs.",
             claim: crate::connors::claim("279", "57.35%", "$619.18 (= 2.48 pts at $250)", "2 bars", "S&P 500 futures 1/1/1987-3/21/2002; net $172,752, DD -$46,262") },
         S { id: "ftm_rg_dip", name: "Ruggiero buy-the-dip (two down closes) · S&P", group: G_RG02, dir: "Long", status: Live, vix: false,
             rules: &["E|\"If Highest(Close-Close[1],Lookback)<0 then buy at nextopen20 + 0.4*Average(Range,3) stop\"; prose: \"buy the market if we have had two days that closed lower than the day before at the next open plus 0.40 times the average range over the past three days\" (200205 PDF 60, p.58)",
@@ -235,7 +235,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "ftm_km_co_open" | "ftm_km_co_limit" | "ftm_km_hh_open" | "ftm_km_hh_limit" => ses(),
         "ftm_rg_oops" => vec![p("gap", "Gap beyond high/low, x Average(TrueRange,3)", 0.02, 0., 0.5, 0.01), p("ma", "Trend filter MA (closes)", 10., 3., 50., 1.),
-                              p("pts", "Entry stop distance from the close (points)", 2., 0., 20., 0.5), p("hold", "Exit at next open once BarsSinceEntry > N", 2., 0., 10., 1.)],
+                              p("mode", "Stop offset: 0 = 2 ticks of the instrument (the printed '2 points', decisions #57/#233), 1 = S&P 500 index points (SPX only)", 0., 0., 1., 1.),
+                              p("ticks", "Entry stop distance from the close in ticks (mode 0)", 2., 0., 50., 1.),
+                              p("pts", "Entry stop distance from the close in S&P points (mode 1, SPX only)", 2., 0., 20., 0.5), p("hold", "Exit at next open once BarsSinceEntry > N", 2., 0., 10., 1.)],
         "ftm_rg_dip" => vec![p("lb", "Look-back (consecutive down closes)", 2., 1., 5., 1.), p("ent", "Entry stop: open + k x Average(Range,3)", 0.4, 0., 1.5, 0.1),
                              p("ext", "Exit stop: open - k x Average(Range,3)", 0.6, 0., 1.5, 0.1), p("rng", "Range average length", 3., 1., 10., 1.)],
         "ftm_rg_feedback" => vec![p("n", "Channel length (bars)", 20., 5., 60., 1.), p("lb", "Feedback look-back LB (bars)", 20., 10., 100., 5.),
@@ -258,6 +260,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     })
 }
 
+/// Decision #233: the S&P-points option (mode 1) means what the code meant only on SPX; the tick default runs everywhere.
+pub fn home(id: &str, ticker: &str, p: &Params) -> Option<String> {
+    (id == "ftm_rg_oops" && p.get("mode").copied().unwrap_or(0.).round() == 1. && ticker != "SPX").then(|| format!("Not published on {ticker}: option mode 1 uses 2.00 S&P 500 index points, which mean what the reading means only on SPX. The default (2 ticks of the instrument, decision #233) runs here."))
+}
+
 // ------------------------------------------------------------------ run
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -270,7 +277,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "ftm_km_co_limit" => katz(x, from, to, false, true, u("m").max(2), g("stop"), g("target"), u("hold").max(1), u("cool")),
         "ftm_km_hh_open" => katz(x, from, to, true, false, u("m").max(2), g("stop"), g("target"), u("hold").max(1), u("cool")),
         "ftm_km_hh_limit" => katz(x, from, to, true, true, u("m").max(2), g("stop"), g("target"), u("hold").max(1), u("cool")),
-        "ftm_rg_oops" => oops(x, from, to, g("gap"), u("ma").max(1), g("pts"), u("hold")),
+        "ftm_rg_oops" => oops(x, from, to, g("gap"), u("ma").max(1), if g("mode") >= 0.5 { g("pts") } else { g("ticks") * x.market_tick() }, u("hold")),
         "ftm_rg_dip" => dip(x, from, to, u("lb").max(1), g("ent"), g("ext"), u("rng").max(1)),
         "ftm_rg_feedback" => feedback(x, from, to, u("n").max(2), u("lb").max(1), g("tick"), g("vcost")),
         "ftm_cvr9" => cvr9(x, from, to, u("n").max(2), u("rng").max(2), u("hold").max(1))?,
@@ -631,6 +638,19 @@ mod tests {
         let t = &ts[0];
         assert_eq!(t.dir, -1.); assert_eq!(t.legs[0].i, 21); assert!((t.legs[0].px - (r[20].close - 2.)).abs() < 1e-9);
         assert_eq!(t.exit_i, 25); assert_eq!(t.exit_px, r[25].open);
+    }
+    #[test]
+    fn oops_default_offset_is_two_ticks_and_points_are_an_spx_only_option() {
+        // decision #233: 'Close - 2 points stop' = 2 ticks of the instrument (0.01 here)
+        let mut r = rows(40);
+        for (i, row) in r.iter_mut().enumerate() { row.close = 100. + i as f64 * 0.1; row.open = row.close; row.high = row.close + 1.; row.low = row.close - 1.; }
+        r[21].open = r[20].high + 1.; r[21].low = r[20].close - 3.;
+        let x = Ctx::new(&r, &r, &[]);
+        let t = &run("ftm_rg_oops", &x, 0, 39, &Params::new()).unwrap()[0];
+        assert_eq!((t.dir, t.legs[0].i), (-1., 21)); assert!((t.legs[0].px - (r[20].close - 0.02)).abs() < 1e-9);
+        let pts = Params::from([("mode".to_string(), 1.)]);
+        assert!((run("ftm_rg_oops", &x, 0, 39, &pts).unwrap()[0].legs[0].px - (r[20].close - 2.)).abs() < 1e-9);
+        assert!(home("ftm_rg_oops", "SPY", &pts).is_some() && home("ftm_rg_oops", "SPX", &pts).is_none() && home("ftm_rg_oops", "SPY", &Params::new()).is_none());
     }
     #[test]
     fn carr_systems_are_always_in_and_reverse_at_the_next_open() {

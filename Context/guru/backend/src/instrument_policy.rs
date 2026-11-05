@@ -266,7 +266,7 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
     "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
-    "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3"];
+    "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3", "ftm_rg_oops" /* K54, #233 tick default: K54w/M3-oops.tsv */];
 pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "atm01_td_carrie", "atmrc_swing_stop", "atmrc_swing_trail", "bfmm_mm2_es",
     "bfmm_nql", "djcs_pct_reversal", "elcim_ts_fi", "epfpp_fxed_trend", "fot07_kama_range", "ftm_kf_sd", "jbid_inside_day",
     "jcurt_jk31_pattern", "jkbk_starting_point", "kets_seas_mom_limit", "lebtcb_adavol", "lg3k_tr_day", "lkcpt_wdmi", "lkqts_tiar", "lwmdc_open_up_oc",
@@ -1374,7 +1374,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // atm00_fourplay: on the multi-unit account since lane K44 (books::units)
         // ---- end Active Trader 2000-2002 block
         // ---- Futures Magazine block (26 Oct 2026): held Live rules
-        "ftm_rg_oops"=>"Held: the unit of the entry stop is unresolved. The printed code sells at \"Close - 2 points stop\" (Futures Magazine May 2002 p.58). Read as 2.00 S&P 500 points it would run on the S&P 500 index only (decision #229); but in TradeStation's EasyLanguage \"points\" is a reserved word for the minimum price unit, so the code means about 2 ticks (decision #57), which would run on every index, ETF and stock. Lane K54 coded and checked both (SPX 2014-2026: 230 trades at 2.00 points, 250 at 2 ticks); no result is published until the reading is ruled.",
+        // ftm_rg_oops: admitted by lane K54 (decision #233: 2 ticks of the instrument)
         // ---- end Futures Magazine block
         // ---- Active Trader block (26 Oct 2026): held Live rules
         // ---- end Active Trader block
@@ -1813,7 +1813,7 @@ mod tests {
         use crate::books::{ftm, ftm2};
         let all:Vec<StrategyDef>=ftm::catalogue().into_iter().chain(ftm2::catalogue()).collect();
         let mut want:Vec<&str>=ftm::REVIEWED.iter().chain(ftm2::REVIEWED.iter()).copied().collect();
-        assert!(!want.contains(&"ftm_rg_oops") && held_reason("ftm_rg_oops").is_some_and(|r|r.starts_with("Held: "))); // lane K54: unit of '2 points' unresolved (#57 vs #229)
+        assert!(want.contains(&"ftm_rg_oops") && held_reason("ftm_rg_oops").is_none()); // lane K54, decision #233: 2 ticks on every ticker
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -3869,7 +3869,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(80,16,44)); // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(80,17,44)); // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
