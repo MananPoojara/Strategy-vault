@@ -54,10 +54,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
         mk("rgc_tdom17_long", "Trading day of month 17, long 5 days", "Ch. 2 · Trading day of month", "Long", live,
             &["F|Trading day of the month = 1 for the first trading day of each calendar month (Larry Williams' concept, p.51)",
               "E|\"entering a position on the next open after a given trading day of the month\" (p.51): after the close of trading day 17, buy the next open",
-              "X|\"and exiting on the open a given number of days later\" (p.51): hold 5 -> exit at the open 5 bars after entry"],
+              "X|\"and exiting on the open a given number of days later\" (p.51): hold 5 -> exit at the open 5 bars after entry [reading: 'days' counted as trading bars from the entry bar; the book does not say how the days are counted]"],
             "Table 2.5 (p.51): S&P500 4/21/82, Long, TDOM 17, hold 5: net $140,850.00, 68% win, avg $1,354.33 (no costs)."),
         mk("rgc_tdom2_short", "Trading day of month 2, short 2 days", "Ch. 2 · Trading day of month", "Short", live,
-            &["E|After the close of trading day 2 of the month, sell short the next open (p.51)", "X|Cover at the open 2 bars after entry (Table 2.5: hold 2)"],
+            &["E|After the close of trading day 2 of the month, sell short the next open (p.51)", "X|Cover at the open 2 bars after entry (Table 2.5: hold 2) [reading: 'days' counted as trading bars from the entry bar; the book does not say how the days are counted]"],
             "Table 2.5 (p.51): S&P500 4/21/82, Short, TDOM 2, hold 2: net $47,775.00, 55% win, avg $459.38."),
         mk("rgc_mon_tb26", "Buy Monday when T-Bonds are above their 26-day MA", "Ch. 2/8/9 · Intermarket Monday", "Long", Status::NeedsData(FUT),
             &["F|T-Bond futures close > 26-day SMA of T-Bond closes (p.50, 120)", "E|Buy the S&P500 Monday open", "X|Exit on the close (p.120)",
@@ -69,23 +69,23 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Table 2.6 (p.54): 3/24/71-6/28/96, 270.39 points, 69% win."),
         mk("rgc_rb_seasonal", "Ruggiero/Barna Seasonal Index systems", "Ch. 2 · Ruggiero/Barna index", "Long",
             Status::NotTestable("Table 2.2 step 3 \"Multiply this 5-day return by the proper percentage\" and the scaling window are not defined; the index is part of a commercial add-in"),
-            &["E|S&P500: 5-day hold, trigger -.20, S&P below 10-day MA (Table 2.7); T-Bonds: 8-year window, 6-day hold, trigger > -.20, 6-period momentum < 0 (Table 2.8)"],
+            &["E|S&P500: 5-day hold, trigger -.20, S&P below 10-day MA (Table 2.7); T-Bonds: 8-year window, 6-day hold, trigger > -.20, 6-period momentum < 0 (Table 2.8)", "F|T-Bonds: \"We collected 2,000 days' seasonal data before generating our first trade\" (p.55)"],
             "Table 2.7: 761.75 points, 60% win; Table 2.8: $57,593.75, 71% win."),
         mk("rgc_corn_counterseasonal", "Corn seasonal short and counterseasonal long", "Ch. 2 · Counterseasonal", "Long/Short", Status::NeedsData("needs cash/futures corn prices"),
             &["E|Sell corn on the first trading day after June 20; exit November 1 (p.57)", "E|If the short is not profitable after July 21, go long the first trading day after July 21 until the first trading day of the next year (p.57)"],
             "p.57: $28,487.50 (65% win) for the short; $38,537.50 (58%) with the counterseasonal long."),
         // ---------------- Chapter 1 / 8: intermarket ----------------
-        mk("rgc_im_sp_tbond", "S&P500 vs T-Bonds: trend, ratio and divergence models", "Ch. 1, 7, 8, 18 · Intermarket S&P500", "Long/Short", Status::NeedsData(FUT),
+        mk("rgc_im_sp_tbond", "S&P500 vs T-Bonds: trend, ratio and divergence models", "Ch. 1, 7, 8, 18 · Intermarket S&P500", "Long/Short", Status::NeedsData("the T-bond, Eurodollar, T-bill, dollar index, CRB, XAU, XOI, UTY, gold, crude, D-mark, yen and silver futures or index series the models trade or compare (Cybernetic Trading Strategies p.27-29), which are not in the vault; using ETFs would change the instruments (decision #167)"),
             &["E|Long S&P when T-Bonds > 26-day MA, short below (p.27-28); T-Bond/S&P ratio vs 28-day average (p.29); Eurodollar/S&P ratio vs 10-day MA (p.29)",
               "E|Divergence: if S&P < Average(S&P,12) and T-Bonds > Average(T-Bonds,26) buy at open; reverse for sells (p.265; Table 1.4 lists 16/26, 12/30, 14/26, 12/26)",
-              "E|Open-to-close divergence with T-Bills/T-Bonds (Table 1.5); MEM-confirmed version (Table 7.5)"],
-            "Table 1.4 $348,175 (130 trades, 68%); Table 18.4 $321,275 dev set; Table 7.6 $326,775 (54 trades, 80%)."),
-        mk("rgc_im_tbond", "T-Bond intermarket models (Utilities, Eurodollars, XAU, CRB, copper)", "Ch. 1, 8, 20 · Intermarket T-Bonds", "Long/Short", Status::NeedsData(FUT),
+              "E|Open-to-close divergence with T-Bills/T-Bonds (Table 1.5, p.32): best long T-Bills LenTr 18 / LenInt 10; best short T-Bonds LenTr 2 / LenInt 8. The book is not consistent about what the lengths are: p.31 calls them momentum periods and says simple differences worked better, while the text below the table says the best sets 'used the difference between a price and its moving average' and calls them moving-average lengths (p.32); MEM-confirmed version (Table 7.5)"],
+            "Table 1.4 $348,175 (130 trades, 68%); Table 1.5 (p.32, 4/21/82-2/7/96, $50 costs): long T-Bills 18/10 $135,675, 667 trades, 56%; short T-Bonds 2/8 $39,435, 821 trades, 52%; Table 18.4 $321,275 dev set; Table 7.6 $326,775 (54 trades, 80%)."),
+        mk("rgc_im_tbond", "T-Bond intermarket models (Utilities, Eurodollars, XAU, CRB, copper)", "Ch. 1, 8, 20 · Intermarket T-Bonds", "Long/Short", Status::NeedsData("the T-bond, Eurodollar, T-bill, dollar index, CRB, XAU, XOI, UTY, gold, crude, D-mark, yen and silver futures or index series the models trade or compare (Cybernetic Trading Strategies p.27-29), which are not in the vault; using ETFs would change the instruments (decision #167)"),
             &["E|Buy T-Bonds when the Philadelphia Utility average crosses above its 40-day SMA, sell below (p.29)",
               "E|T-Bond/Eurodollar divergence 24/32 (Table 1.6), T-Bond/XAU 6/34 (Table 1.7), CRB 10/16, T-Bond/UTY 8/24 (Table 1.8) with 12-day correlation > .5 filter (Table 8.2)",
               "E|GA-evolved rules using Eurodollars and XAU (generations 1197, 1909, 2329; Table 20.6)"],
             "Tables 1.6-1.8, 8.2, 20.5."),
-        mk("rgc_im_commodities", "Gold, crude, Yen and stock intermarket models", "Ch. 1, 8 · Intermarket commodities and stocks", "Long/Short", Status::NeedsData(FUT),
+        mk("rgc_im_commodities", "Gold, crude, Yen and stock intermarket models", "Ch. 1, 8 · Intermarket commodities and stocks", "Long/Short", Status::NeedsData("the T-bond, Eurodollar, T-bill, dollar index, CRB, XAU, XOI, UTY, gold, crude, D-mark, yen and silver futures or index series the models trade or compare (Cybernetic Trading Strategies p.27-29), which are not in the vault; using ETFs would change the instruments (decision #167)"),
             &["E|Crude vs Dollar index 40-day MA (Table 1.3) and divergence 12/18 (Table 1.10); crude/XOI 2/16; Dollar 40-day correlation < -.5 filter (Table 8.1)",
               "E|Gold: XAU > XAverage(XAU,12), gold < XAverage(gold,10), D-Mark > XAverage(D-Mark,20) buy at open; reverse to sell (Table 1.9)",
               "E|Yen/T-Bond 34-day difference divergence (Table 1.11); Kodak/silver 18/48 momentum divergence (Table 1.12); US Life 22/28; Pegasus 12/30",
@@ -96,7 +96,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|If Prime < 12, prime rate is cut and last Fed discount move was lower, buy at close; if long-bond yield sets a 42-week low, buy at close (Table 3.8)", "X|If the prime rate is raised, go flat (Table 3.8)"],
             "Table 3.8: DJIA weekly 8/11/44-4/12/96, 90% win, 21 trades. Interest-rate forecasting models (Tables 3.1-3.7) are forecasts of yields, not trades on vault instruments."),
         mk("rgc_cot", "COT commercials/small traders index model", "Ch. 5 · Commitment of Traders", "Long/Short", Status::NeedsData(COT),
-            &["F|COT Index = 100 x (Net - Lowest(Net,N))/(Highest(Net,N) - Lowest(Net,N)) (p.89)", "E|(COT commercials)[Lag1] > Ctrigger and (COT small) < Strigger then buy at open; reverse for sells (p.90; book prints 'buy' twice)"],
+            &["F|COT Index = 100 x (Net - Lowest(Net,N))/(Highest(Net,N) - Lowest(Net,N)); \"N is the LookBack and can vary between 1.5 and 4 years\" (p.89)",
+              "F|Classic rules: commercials' index above 90 = buy, below 10 = sell (p.89); the book found them \"unimpressive\" (p.89) and tests the combined model instead",
+              "E|(COT commercials)[Lag1] > Ctrigger and (COT small) < Strigger then buy at open; reverse for sells (p.90; book prints 'buy' twice)",
+              "F|Tested sets (p.90): T-Bonds Ctrigger 30, Strigger 50, Lag1 1 week (1/1/84-5/31/96); coffee Ctrigger 55, Strigger 35, Lag1 3 weeks (9/7/84-5/31/96); $50 costs; the LookBack N used is not printed"],
             "Table 5.1 T-Bonds $110,412.50 (28 trades); Table 5.2 coffee $100,983.75 (24 trades)."),
         // ---------------- Chapter 4: technical analysis ----------------
         mk("rgc_runaway_gap", "Runaway gaps (S&P500)", "Ch. 4 · Gap analysis", "Long/Short", live,
@@ -106,7 +109,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|k: code input Breakout(.3); tested \"a breakout equal to .40\" (p.74) = default"],
             "Table 4.3 (p.75): S&P500 4/21/82-5/31/96, $50 costs: $80,150, long $17,650, short $62,500, 384 trades, avg $208.72, 55% win. Day trade on the cash index."),
         mk("rgc_runaway_gap_f5", "Runaway gaps with close-lower-than-5-days-ago filter", "Ch. 4 · Gap analysis", "Long/Short", live,
-            &["F|\"We will require the S&P500 to close lower than 5 days ago\" (p.74), for both up and down gaps: yesterday's close < close 5 bars before it",
+            &["F|\"We will require the S&P500 to close lower than 5 days ago\" (p.74): yesterday's close < close 5 bars before it. Default: on the long (up-gap) side only, the behaviour that reproduces Table 4.4 (its short profit, $62,500, equals Table 4.3's without the filter while 147 trades disappear); p.f5both = 1 applies it to both sides as the text says (\"for both up and down gaps\") [option] (decision 186, D1-17)",
               "E|Runaway gap entries as in Table 4.2 (k = .40; literal '+' on the short side; p.sign = -1 option)", "X|Exit on the close"],
             "Table 4.4 (p.75): $86,150, long $23,650, short $62,500, 237 trades, avg $363.50, 59% win."),
         mk("rgc_oops_600", "OOPS gap fill with $600 money-management stop", "Ch. 4 · Gap analysis", "Long/Short", Status::NeedsData(DOLLAR_STOP),
@@ -152,8 +155,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|After 10 trades, take shorts only when long-side equity rose over LLen=120 bars and short-side equity fell over SLen=180 bars (Table 10.2); MA-of-equity filter 130/150 (Table 10.4)"],
             "Tables 10.3, 10.5 (D-Mark)."),
         mk("rgc_dark_cloud", "Dark cloud cover + 10-day RSI > 50 (gold)", "Ch. 14 · Candlesticks", "Short",
-            Status::NotTestable("FuzzySmall, CandleColor and the Fuzzy functions' coefficients used by DarkCloud(15,1,1) are not printed (only FuzzyLong is); the CRB-correlation exit also needs CRB/gold data"),
-            &["E|If DC>.5 and RSI(close,10)>50 then sell at open; exitshort at highest(high,5) stop (Table 14.7)"], "Table 14.7: gold 13 trades $150."),
+            Status::NotTestable("the FuzzySmall function used by DarkCloud(15,1,1) is not printed (only FuzzyLong is, Table 14.2 p.199), and the dark cloud's midpoint comparison in Table 14.4 (p.202, 'FuzzyRange<') has lost its value in the print; CandleColor is defined in the text as the sign of close minus open (p.199). The CRB-correlation exit (Table 14.8) also needs CRB/gold data"),
+            &["E|If DC>.5 and RSI(close,10)>50 then sell at open; exitshort at highest(high,5) stop (Table 14.7)",
+              "X|Table 14.8 variant (p.205): 5-day-high stop when the 50-day gold/CRB correlation > .5; otherwise a limit exit. The code prints entryprice-1*average(range,10), the prose says -2 x average(range,10); the book does not settle which"],
+            "Table 14.7: gold 13 trades $150. Table 14.8: 12 trades, 75% win, $5,350 (no costs)."),
         mk("rgc_nn_ml", "Neural network, machine induction and GA-evolution models", "Ch. 11, 17-20 · Advanced technologies", "Long/Short",
             Status::NotTestable("trained network weights / induced rules are not published; only the frameworks"), &["E|S&P500 intermarket neural network (Tables 18.7-18.11); C4.5/rough-set rules (ch. 19)"], ""),
         // ---------------- Chapter 13: Elliott Wave ----------------
@@ -169,6 +174,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         mk("rgc_ga1723", "GA-evolved T-Bond rule, generation 1723", "Ch. 20 · Genetic algorithms", "Long", live,
             &["E|\"If FastD(14)<61.9 and FastD(14)>31.9 and XAverage(C,7)>XAverage(C,15) then buy at open\" (Table 20.6, p.305)",
               "X|\"If BarsSinceEntry>4 then exitlong at Low-.5*Average(TrueRange,3) stop\" (Table 20.6): from the 5th bar after entry, a stop at that bar's low - .5 x 3-bar ATR for the next bar",
+              "F|\"we used 210 for maxbars back, so that the first 10 months of data did not generate any trades\" (p.302): no signal before bar 210 of the data (p.mbb; decision 186, FR-01)",
               "F|FastD(14): TradeStation built-in, not defined in the book. Default p.fastd=0 = 3-bar SMA of FastK(14); 1 = Lane's 3-bar sum ratio; 2 = exponential (alpha .5). XAverage = EMA alpha 2/(n+1) seeded on the first close [platform definitions, documented]"],
             "Table 20.5 (p.304): T-Bonds dev 1/1/86-12/31/94: $32,175, 74 trades, 66% win, avg $434.80, DD -$6,400, PF 1.90; test 1/1/95-10/4/96: $11,900, 17 trades, 65%. Only gen 1723 uses T-Bond data alone; 1197/1909/2329 need Eurodollars/XAU (rgc_im_tbond)."),
     ]
@@ -210,8 +216,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "rgc_dowm_thu_jul_long" | "rgc_dowm_mon_dec_long" | "rgc_dowm_thu_dec_short" | "rgc_cdow_mon_long" | "rgc_cdow_fri_short" => vec![],
         "rgc_tdom17_long" => vec![p("tdom", "Trading day of month (signal)", 17., 1., 23., 1.), p("hold", "Bars held (open to open)", 5., 1., 10., 1.)],
         "rgc_tdom2_short" => vec![p("tdom", "Trading day of month (signal)", 2., 1., 23., 1.), p("hold", "Bars held (open to open)", 2., 1., 10., 1.)],
-        "rgc_runaway_gap" | "rgc_runaway_gap_f5" => vec![p("k", "Breakout x 3-day ATR (tested .40; code input .3)", 0.4, 0.1, 1.0, 0.05),
-            p("sign", "Short stop sign: 1 = printed '+', -1 = open - k x ATR [labelled option]", 1., -1., 1., 2.)],
+        "rgc_runaway_gap" | "rgc_runaway_gap_f5" => {
+            let mut v = vec![p("k", "Breakout x 3-day ATR (tested .40; code input .3)", 0.4, 0.1, 1.0, 0.05),
+                p("sign", "Short stop sign: 1 = printed '+', -1 = open - k x ATR [labelled option]", 1., -1., 1., 2.)];
+            if id == "rgc_runaway_gap_f5" { v.push(p("f5both", "5-day filter: 0 = long side only (Table 4.4), 1 = both sides (text p.74)", 0., 0., 1., 1.)); }
+            v
+        }
         "rgc_cbo20" => vec![p("n", "Channel bars", 20., 5., 60., 1.), p("pt", "One point (price units)", 0.01, 0., 1., 0.01)],
         "rgc_volbo" => vec![p("k", "x 3-day average true range", 0.6, 0.2, 1.5, 0.05), p("atr", "ATR bars", 3., 1., 10., 1.)],
         "rgc_cbo17_10" => vec![p("entry", "Entry breakout bars", 17., 5., 60., 1.), p("exit", "Exit breakout bars", 10., 3., 40., 1.)],
@@ -220,7 +230,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "rgc_elliott" => vec![p("len", "Len (tested 20; code input 80)", 20., 20., 180., 10.), p("trig", "Trigger (tested .66; code input .7)", 0.66, 0.5, 1.0, 0.02)],
         "rgc_ga1723" => vec![p("dlo", "FastD lower bound", 31.9, 0., 100., 0.1), p("dhi", "FastD upper bound", 61.9, 0., 100., 0.1),
             p("ef", "Fast EMA", 7., 2., 30., 1.), p("es", "Slow EMA", 15., 5., 60., 1.), p("hold", "BarsSinceEntry before the stop", 4., 0., 20., 1.),
-            p("m", "Stop = low - m x 3-bar ATR", 0.5, 0., 2., 0.05), p("fastd", "FastD: 0 SMA3 of FastK, 1 Lane sums, 2 EMA(.5) [platform]", 0., 0., 2., 1.)],
+            p("m", "Stop = low - m x 3-bar ATR", 0.5, 0., 2., 0.05), p("fastd", "FastD: 0 SMA3 of FastK, 1 Lane sums, 2 EMA(.5) [platform]", 0., 0., 2., 1.),
+            p("mbb", "MaxBarsBack: first signal bar of the data (book 210, p.302; 15 = as soon as the indicators exist)", 210., 15., 400., 1.)],
         _ => return None,
     })
 }
@@ -411,11 +422,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "rgc_runaway_gap" | "rgc_runaway_gap_f5" => {
             let (k, sign) = (g("k"), if g("sign") < 0. { -1. } else { 1. });
+            let both = id == "rgc_runaway_gap_f5" && g("f5both") >= 0.5;
             let atr3 = sma(&true_range(x.r), 3);
             for i in from.max(7)..=to {
                 let a = atr3[i - 1];
                 if !a.is_finite() { continue; }
-                if id == "rgc_runaway_gap_f5" && !(x.c[i - 1] < x.c[i - 6]) { continue; }
+                if id == "rgc_runaway_gap_f5" && !(x.c[i - 1] < x.c[i - 6]) && (both || x.o[i] > x.h[i - 1]) { continue; }
                 if x.o[i] > x.h[i - 1] {
                     if let Some(px) = buy_fill(x, i, x.o[i] + k * a) {
                         close(new_trade(1., i, px, "stop", i - 1), i, x.c[i], "exit on close", &mut out);
@@ -493,7 +505,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let atr3 = sma(&true_range(x.r), 3);
             let (dlo, dhi, hold, m) = (g("dlo"), g("dhi"), g("hold").round().max(0.) as usize, g("m"));
             let mut cur: Option<Trade> = None;
-            for i in from.max(16)..=to {
+            // TradeStation evaluates the strategy from bar MaxBarsBack (0-based) of the data; earlier bars only warm up (p.302)
+            for i in from.max(u("mbb") + 1).max(16)..=to {
                 let s = i - 1;
                 if let Some(t) = cur.as_ref() {
                     let e = t.legs[0].i;

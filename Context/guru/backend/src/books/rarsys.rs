@@ -10,7 +10,7 @@ use crate::connors::{dmi, hv_ddof, sma, Ctx, Leg, ParamDef, Params, Status, Stra
 
 pub const BOOK: &str = "rarsys";
 /// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["rarsys_cts_std", "rarsys_ste", "rarsys_trend_weaver"];
+pub const REVIEWED: &[&str] = &["rarsys_cts_std", "rarsys_ste"]; // rarsys_trend_weaver: duplicate of sctw_trend_weaver, lead decision 199
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const TW: &str = "rarsys_trend_weaver";
@@ -41,7 +41,7 @@ Published results are index-point tables (S&P 500 / NASDAQ 100, 1/1/95-1/1/08) p
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
-        def(TW, "Trend Weaver (150-day trend, 20-day range stops)", "Trend Weaver (Code.rar + Rules p.3-9)", "Long/Short", Status::Live, false, &[
+        def(TW, "Trend Weaver (150-day trend, 20-day range stops)", "Trend Weaver (Code.rar + Rules p.3-9)", "Long/Short", Status::NotTestable("duplicate of sctw_trend_weaver: the same Trend Weaver Code.rar (TradeStation 2000i.txt / TradeStation - 8.txt, Rules p.3-9), so it is listed once, under sctw_trend_weaver (lead decisions 118, 156, 199)"), false, &[
             "F|\"TradeRange = (Highest(H,20) - Lowest(L,20))/100\"; \"Top_Range = Lowest(Low,150)+(Highest(High,150)-Lowest(Low,150))*.99\"; \"Bottom_Range = ... *.01\"",
             "F|\"If high > Top_Range then TrendDirection = 1; if low < Bottom_Range then TrendDirection = -1\"",
             "E|\"If TrendDirection = 1 then Buy next bar at Long_Entry_Price stop\" (Lowest(L,20)+TradeRange*90)",

@@ -19,6 +19,7 @@ interface Snapshot {
 export const methodKey = (v: Definition) => `${v.book}:${v.family || v.id}`;
 /** Plain-language headline for a hold note. Display wording only; it never changes a status or admission. */
 const reasonLabels: [RegExp, string][] = [
+  [/Multi-ETF rotation: runs only in the SPY context/, 'Runs on SPY only (multi-ETF rotation)'],
   [/decision #17[79]|stale component prints|cash-index minutes are stale|tradable check failed/i, 'Cash-index result withdrawn'],
   [/accuracy check|does not reproduce the results printed/i, 'Held by the accuracy check'],
   [/NSE breadth/i, 'NSE breadth held'],

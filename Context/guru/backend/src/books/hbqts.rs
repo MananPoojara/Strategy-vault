@@ -186,7 +186,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     const G14: &str = "Ch.14-17 Sectors, rotation, portfolios, filters";
     const G20: &str = "Ch.20-22, App. A Walk forward, Monte Carlo, metrics";
     let mut definitions = vec![
-        def!("hbqts_ma3_20", "Example trading system: 3/20 MA crossover (Fig 6.8)", G5, "Long", Live,
+        def!("hbqts_ma3_20", "Example trading system: 3/20 MA crossover (Figure 5.8)", G5, "Long", Live,
             &["E|FMA = MA(C,3); SMA = MA(C,20); Buy = Cross(FMA, SMA) (p.64)", "X|Sell = Cross(SMA, FMA) (p.64)", "F|Settings: Buy/Sell price Close, delay 0, positions Long (p.65-66)"], STK),
         def!("hbqts_ma5_25", "Enter at market: 5/25 MA crossover on the close (Fig 7.1)", G5, "Long", Live,
             &["F|SetTradeDelays(0,0,0,0); BuyPrice = C; SellPrice = C (p.89)", "E|Buy = Cross(MA(C,5), MA(C,25)) (p.89)", "X|Sell = Cross(MA2, MA1) (p.89)"], STK),
@@ -211,7 +211,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         def!("hbqts_scale_out", "Scale out at +10%/+20% with 10% trailing stop (Fig 7.10)", G5, "Long", Live,
             &["E|Buy = Cross(MA(C,5), MA(C,25)) at the close (p.97)", "X|First target: High >= 1.10 x buy price -> sell 50% of the position at that price (p.98)",
               "X|Second target: High >= 1.20 x buy price -> sell the rest at Max(Open, target) (p.98)",
-              "X|Trailing stop: Low <= 0.90 x highest high since buy -> sell all at Min(Open, stop); on a bar where it fires the scale-out is cancelled (p.98)"],
+              "X|Trailing stop: Low <= 0.90 x highest high since buy -> sell all at Min(Open, stop) (p.98)", "X|\"if (Exit >= 2) { Buy[i] = 0; Sell[i] = Exit + 1; ...}\" (Figure_7_10.afl): on any bar that exits (second target or trailing stop) that bar's scale-out is cancelled, so a bar reaching +10% and +20% with no earlier scale-out sells the whole position at Max(Open, 1.20 x buy)"],
             "The book sizes 50% of equity per position (SetPositionSize(50, spsPercentOfEquity)); the vault uses its own allocation."),
         def!("hbqts_parabolic_stop", "AMA crossover entry with parabolic trailing stop (Fig 7.11)", G5, "Long", Live,
             &["E|MAvg = AMA(C, 2/(30+1)); Pass = C >= MA(C,15); Buy = Pass AND Cross(C, MAvg) at the close (p.99-100)",
@@ -539,6 +539,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     let mut sp = f64::NAN;
                     if ex == 1 && h[i] >= t2 * pb { ex = 2; sp = o[i].max(t2 * pb); }
                     if l[i] <= tr * hs { ex = 3; sp = o[i].min(tr * hs); scale = None; }
+                    if ex >= 2 { scale = None; } // Figure_7_10.afl: 'if (Exit >= 2) { Buy[i] = 0; ...' cancels this bar's scale-out (decision 194)
                     if let Some(px) = scale { pieces.push((i, clamp(x, i, px), 0.5)); }
                     if ex >= 2 {
                         let left = 1.0 - pieces.iter().map(|q| q.2).sum::<f64>();

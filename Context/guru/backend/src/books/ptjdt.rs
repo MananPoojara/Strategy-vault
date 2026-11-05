@@ -88,7 +88,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Cannot be reduced to per-day values: the setup, the two-bar entry window and the stop all live on the 20-minute bar series. The exit refers to the 2-for-1 Money Management Method (June 1996 PTJ), not defined in this book. Book examples: June 1998 S&P futures, May 4-18 1998, no stats."),
         d(FRONT, "Front Running the S&P's (momentum index)", "Front Running the S&P's", "Long/Short", Status::NotTestable("discretionary; needs a stock universe"), &[], FRONT_RULES,
           "A market-direction indicator, not a system: the book forbids mechanical use and gives no entry or exit. Index = '+' sum (price-weighted) of the 12-16 highest 14-day-RSI stocks over $40, rebuilt weekly. Example: Bloomberg index 'FAST', April 14-21 1998."),
-        d(TORP, "Torpedoes (Jeff Cooper)", "Torpedoes", "Long", Status::NotTestable("discretionary; needs intraday stock data and a stock universe"), &[], TORP_RULES,
+        d(TORP, "Torpedoes (Jeff Cooper)", "Torpedoes", "Long", Status::NotTestable("rules not fully defined: the buy comes 'if the overall market begins to bounce back', in 'the strongest stock(s)', which the article calls 'a bit subjective', and the exit is to let profits run (Torpedoes, Jeff Cooper, PTJ Jan 1997, book p.41-44); it would also need the prices of a list of market-leading stocks through the day"), &[], TORP_RULES,
           "The entry ('if the overall market begins to bounce back') is subjective by the book's own words. Examples: Vitesse (Jan 10 1997), Paccar (Dec 6 1996), Maxim (Dec 19 1997)."),
     ]
 }

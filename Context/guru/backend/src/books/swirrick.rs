@@ -31,9 +31,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "boxes, triangles, support and resistance are drawn on the chart by the trader; 'sleeping giant' is a narrowing range judged by eye; profits are taken at resistance",
            &["E|\"The trigger is the high of the last three or four trading days - take your pick\" (sleeping giant, p.91)"]),
         nt("swhoi_options", "Options strategies (pirate plays, straddles, puts when stocks crash)", "High Octane Investing · Ch.3, 7-12", "swhoi",
-           "option strategies need option prices; stock selection (Ch.9) is fundamental and judged", &[]),
+           "rules not fully defined: the option plays (pirate plays, straddles, free trades, puts when stocks crash; High Octane Investing Ch.3, 7, 8, 10-12) are chosen by the trader with no entry or exit on the underlying, and the stock selection (Ch.9) is fundamental and judged", &[]),
         nt("swhoi_bollinger", "Bollinger band squeeze breakouts (Barry Collette)", "High Octane Investing · Ch.5", "swhoi",
-           "'when the bands tighten' has no threshold and the exit is not given; written by co-author Barry Collette", &[]),
+           "rules not fully defined: 'when the bands tighten' has no threshold and the exit is not given (High Octane Investing Ch.5, p.42-49; written by co-author Barry Collette)", &[]),
         nt("swhot_charts", "Trend, moving-average and chart reading", "High Octane Trading · Ch.10-17", "swhot",
            "general chart reading (40-50, 18-21 and 8-10 day averages for the long, intermediate and short trend) and trading psychology; no complete rule beyond the swing set-up of Make a Fortune Swing Trading", &[]),
     ]

@@ -7,7 +7,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "nftm";
 
 const HEINE: &str = "weekly Lehman long-term Government bond index, US cash T-Bond yield, 90-day T-Bill yield, Dow Jones Utility Average and CRB futures index; none in the vault";
-const PENTAD: &str = "weekly NYSE advance/decline line is available (NYSE_ADV_DEC to 2020-02-10) but Dow Jones Transportation Average, Dow Jones Utility Average and the Lehman / Dow Jones 20 bond index are not in the vault";
+const PENTAD: &str = "the Dow Jones Transportation and Utility Averages and the Lehman / Dow Jones 20 bond index, which are not in the vault (Timing Models & Classic Indicators, PENTAD model p.E-13 to E-14); the weekly NYSE advance/decline leg is held (NYSE_ADV_DEC to 2020-02-10)";
 const TBOND: &str = "T-Bond and 10-year note futures, LME nickel, Dow Jones Utilities, Fidelity Select Chemicals (FSCHX) and Financial (FIDSX); none in the vault";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -20,7 +20,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|\"A. Calculate Daily Percent Change of Fund I and Fund II. B. Smooth Each Series with 48-Day EMA. C. Subtract Treated Data for Fund II from Fund I Data. D. Smooth with 12-Day EMA\" (Fig. 22, p.E-17)",
             "E|\"E. If Result Positive Fund I Is Favored\": hold the selected ticker (Fund I) while the result is positive",
             "X|\"If Result Negative Fund II is favored\": switch out of Fund I when the result turns negative (Fund II's side is the same strategy run on the partner, whose result is the exact negative)",
-            "F|Partner (Fund II) = column C2 of the ticker's XMKT series (p.xcol picks C2..C5): on IWM C2 = SPX (small-cap vs S&P 500, the book's Vanguard Small-Cap Index vs Index 500 pair, Fig. 20); on NIFTYMIDCAP100 C2 = NIFTY 50"],
+            "F|Partner (Fund II) = column C2 of the ticker's XMKT series (aligned by the engine, EP4 decision #223). [Labelled stand-in, decision #225] Only the book's small-cap vs S&P 500 pair runs (Vanguard Small-Cap Index vs Index 500, Fig. 20): IWM <-> SPX and NIFTYMIDCAP100 <-> NIFTY 50, each with the other as the default partner C2; every other instrument, and any other p.xcol column, reports needs-data"],
           "Book results (Fig. 20, p.E-16): Vanguard Small-Cap Index CAR 11.21%, Index 500 12.99%, switch strategy 15.55%; Small-Cap Value 8.40% / Growth 4.12% / switch 12.87% (test period not printed). Same formula as 'AccuTrack Relative Strength Index' (Building High-Performance Trading Systems Fig. 30). EMA = TradeStation XAverage (alpha 2/(n+1), seeded with the first value); percent change = close/close[1]-1; signals start after 60 valid days. Fill: book silent; default = the signal day's close (Freeburg's own 'Action on Day of Signal' fund convention, Pankin workbook Fig. 33), p.fill=1 = next open. Zero result = no change. Long/cash on this ticker; prices are the vault's index/ETF closes (no dividends on indices).",
           None),
         d("nftm_heine_bond", "Heine Bond Market Timing Model", "Heine Bond Market Timing Model", "Long", NeedsData(HEINE), &[],
@@ -113,6 +113,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)
 }
+
+/// Lane K51 (decision #223): admitted once the engine feeds XMKT.C2 (EP4).
+pub const REVIEWED: &[&str] = &["nftm_accutrack"];
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && REVIEWED.contains(&def.id),
+    label: "Freeburg showed AccuTrack switching between two mutual funds (Vanguard Small-Cap Index vs Index 500, Fig. 20); here only its labelled small-cap vs S&P 500 stand-ins run, IWM <-> SPX and NIFTYMIDCAP100 <-> NIFTY 50 (decision #225), each side with the other as partner. A declared application, not the author's funds; every other instrument reports needs-data.",
+    basis: "Nelson Freeburg, Timing Models and Classic Indicators (Formula Research seminar, 2002): AccuTrack formula Fig. 22 p.E-17, results Fig. 20 p.E-16. Partner series aligned by the engine (EP4, lane K51, decision #223); independent check authors/titles-1030/K51w/k51_ref.py.",
+};
 
 #[cfg(test)]
 mod tests {

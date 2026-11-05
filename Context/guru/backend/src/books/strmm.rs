@@ -7,13 +7,14 @@
 use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "strmm";
-/// Admitted ids (authors/stridsman/admission/SOURCE-CONTRACT.md). RS System No. 1, Relative Strength Bands and Rotation are held:
-/// they need comparison-market close series (STR_DATA2 / XMKT) that are not in the vault data set.
+/// Admitted ids (authors/stridsman/admission/SOURCE-CONTRACT.md). RS System No. 1, Relative Strength Bands and Rotation: REVIEWED_RS,
+/// admitted by lane K51 once the engine feeds STR_DATA2 / XMKT from its own price file (EP4, decision #223).
 pub const REVIEWED: &[&str] = &["strmm_hybrid", "strmm_hybrid_sl", "strmm_hybrid_ts", "strmm_meander", "strmm_meander_sl", "strmm_meander_ts", "strmm_vwa", "strmm_vwa_sl", "strmm_vwa_ts", "strmm_harris", "strmm_harris_orig", "strmm_harris_sl", "strmm_harris_ts", "strmm_expert", "strmm_expert_sl", "strmm_expert_ts", "strmm_counterpunch"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+pub const REVIEWED_RS: &[&str] = &["strmm_rs1", "strmm_rsbands", "strmm_rotation"];
 
-const MULTI: &str = "Needs the closes of the 4 comparison markets aligned to the traded market: per-ticker series XMKT.C2..XMKT.C5 (file <TICKER>__XMKT.csv, columns Date,C2,C3,C4,C5; real index closes; a comparison market without a bar that day keeps its previous close, as TradeStation's DataN does). Book: index version = S&P 500, NASDAQ 100, DJIA, S&P 400 MidCap, Russell 2000. Vault: US SPX/NDX/DJI/MDY/IWM (MDY, IWM = ETF stand-ins for the two mid/small-cap indexes); India NIFTY 50/NIFTYBANK/NIFTYIT/NIFTYMIDCAP100/NIFTYMIDCAPSELECT (instrument swap; MIDCAPSELECT starts 2022, so p.markets=4 drops C5 as a labelled non-default).";
-const DATA2: &str = "Needs Data2 = the market index the stock is compared to (series STR_DATA2, per ticker). Book compared each stock with its index. Vault files: NIFTYBANK/NIFTYIT/NIFTYMIDCAP100 vs NIFTY 50, NDX/DJI/MDY/IWM vs SPX (instrument swap). NIFTY 50 and SPX have no parent index -> data gap.";
+const MULTI: &str = "Needs the closes of the 4 comparison markets aligned to the traded market: per-ticker series XMKT.C2..XMKT.C5 (built by the engine from its own price file, EP4, decision #223: real closes; a comparison market without a bar that day keeps its previous close, as TradeStation's DataN does, for at most 5 bars; more than 5% carried bars withholds the period). Book: index version = S&P 500, NASDAQ 100, DJIA, S&P 400 MidCap, Russell 2000. Vault: US SPX/NDX/DJI/MDY/IWM ([Labelled stand-in, decision #223 (2)] MDY and IWM are ETFs that track the S&P 400 MidCap and Russell 2000 indexes, used only as comparison series; on MDY/IWM themselves the traded market is the ETF); India NIFTY 50/NIFTYBANK/NIFTYIT/NIFTYMIDCAP100/NIFTYMIDCAPSELECT (instrument swap; MIDCAPSELECT starts 2022, so p.markets=4 drops C5 as a labelled non-default; on SPX C2 is IWM and C5 is MDY, decision #225, so there it drops MDY).";
+const DATA2: &str = "Needs Data2 = the market index the stock is compared to (series STR_DATA2, per ticker). Book compared each stock with its index. The engine aligns it from its own price file (EP4, decision #223; at most 5 bars carried): NIFTYBANK/NIFTYIT/NIFTYMIDCAP100/NIFTYMIDCAPSELECT vs NIFTY 50; NDX/DJI/MDY/IWM/QQQ/DIA/SMH and the XL sector ETFs vs SPX; US stocks vs SPX, NSE stocks vs NIFTY 50 [labelled benchmark swap, #27]. NIFTY 50, SPX and the other ETFs have no parent index -> data gap; SPY tracks SPX, so it would be compared with itself (decision #225) -> data gap.";
 
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $vol:expr, $series:expr, $rules:expr, $notes:expr) => {
@@ -760,3 +761,10 @@ mod tests {
         assert_eq!(week_of("2024-01-08"), week_of("2024-01-07") + 1);
     }
 }
+
+// Lane K51 (decision #223): RS System No. 1, Relative Strength Bands and Rotation, fed by the engine's second series (EP4).
+pub const ADMISSION_RS: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "strmm" && REVIEWED_RS.contains(&def.id),
+    label: "Thomas Stridsman tested RS System No. 1 on 65 US stocks and indexes against their index, and the Bands / Rotation index versions on the S&P 500, NASDAQ 100, DJIA, S&P 400 MidCap and Russell 2000; here one market at a time, US with MDY / IWM as labelled signal stand-ins for the two mid/small-cap indexes (decision #223 (2)) and India on the five NSE indices (instrument swap). A declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Thomas Stridsman, Trading Systems and Money Management (2003): RS System No. 1 printed code p.111-112 (original rules p.105-106), Relative Strength Bands p.134-135, Rotation p.146-152. Second series aligned by the engine (EP4, lane K51, decision #223); independent check authors/titles-1030/K51w/k51_ref.py.",
+};

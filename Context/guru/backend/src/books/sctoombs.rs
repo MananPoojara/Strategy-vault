@@ -8,7 +8,7 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["sctoombs_stoch20"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Raw value over the last 20 trading days' highs and lows (50 when the range is zero); %K and %D start at the first raw value (bar 20). Step 1 arms the signal when %D reaches 84 while flat; the buy is taken at that day's close (the article gives no time; it counts the trade in DJIA closing points); after a sell, %D must reach 84 again. The '60 DJIA points, on a closing basis' stop runs only on the DJIA (DJI), the article's own index (decision 71); on every other instrument the point stop is held, not converted (decision 19). Article (DJIA, September 1984 to 20 January 1990): 20 signals, 19 winners, +785 points in 165 trading days. Our DJI run over the same span: 20 trades, 18 winners, +740.8 points in 166 days. Runs on other indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "[Declared readings] Raw value over the last 20 trading days' highs and lows (50 when the range is zero); %K and %D start at the first raw value (bar 20). Step 1 arms the signal when %D reaches 84 while flat; the buy is taken at that day's close (the article gives no time; it counts the trade in DJIA closing points); after a sell, %D must reach 84 again. The '60 DJIA points, on a closing basis' stop runs only on the DJIA (DJI), the article's own index (decision 71); on every other instrument the point stop is held, not converted (decision 19). Article (DJIA, September 1984 to 20 January 1990): 20 signals, 19 winners, +785 points in 165 trading days. Our DJI run over the same span: 20 trades, 18 winners, +740.8 points in 166 days. Lead decision 195: the 60-point stop is part of the rule, so the card is published on DJI only; results without the stop on other instruments are withdrawn.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "sctoombs_stoch20", name: "Toombs slow 20-day stochastic: after %D reaches 84, buy the first dip (%D under 70, %K 4 under %D); sell when %K is 4 over %D", group: "S&C: A Short-Term Buy Signal For The DJIA (Toombs, V.8:7)", session: 0, dir: "Long", status: Status::Live,
@@ -71,6 +71,6 @@ mod tests {
 // Instrument admission: S&C Toombs 2026-11-02 (titles lane K13).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "sctoombs" && reviewed(def.id),
-    label: "John Toombs tested the signal on the DJIA (1984-1990). Runs on other indices, ETFs and stocks, US and India, are a declared application, without the 60-point stop.",
+    label: "John Toombs tested the signal on the DJIA (1984-1990). Published on DJI only, where the 60-point stop means what the article meant (lead decision 195).",
     basis: "Technical Analysis of Stocks & Commodities V.8:7 pp.245-247 (A Short-Term Buy Signal For The DJIA); independent check authors/titles-1030/K13w/k13_ref.py",
 };

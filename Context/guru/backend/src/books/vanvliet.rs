@@ -15,7 +15,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "a two-legged futures spread traded on bid/ask quote changes; we hold no futures or quote data",
           &["E|Spread = -1 x ES bid + 2 x NQ ask; z = (spread - MA30) / sd30; z > 2 short the spread, z < -2 long (p.290-291)", "X|Target z = 0; stop 4 ticks"]),
         d("vvmfm_optquote", "Option quoting around theoretical value (programming example)", "Modeling Financial Markets · order-entry example", "vvmfm",
-          "a programming example on option bid/ask quotes (options engine pending; no quote history)",
+          "not a trading rule, no entry or exit: a programming example that quotes bids and asks around a model value (Modeling Financial Markets, order-entry chapter), with no quote history to test it on",
           &["E|Buy when the ask is 10 cents below the model value; sell when the bid is 10 cents above"]),
         d("vvqmm_pairs", "Pairs statistical arbitrage (z-score of a two-stock spread)", "Quality Money Management · Ch.5 §5.4", "vvqmm",
           "the pair is chosen on 'similar fundamentals' and not named; the holding period is printed as 20 and as 5 trading days; a two-legged long/short trade",

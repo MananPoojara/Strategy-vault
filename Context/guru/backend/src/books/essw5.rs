@@ -9,7 +9,7 @@ use crate::connors::{rsi, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 pub const REVIEWED: &[&str] = &["essw5_rsi5"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Signals on the daily close, filled at the next day's open (TradeStation strategy orders; the page does not state the order). RSI = Wilder's 5-day RSI; the 200-day exponential average starts from the first close (TradeStation XAverage). Condition 2's long black candle uses 0.70 x the day's range as the rule text says twice; the page's input table lists PercentofBar = 0.75 (option). 'Crosses above 40' = RSI above 40 today and at or below 40 yesterday. One position at a time, equal weight (the page traded 100 shares); a position still open is marked at the last close.";
+const NOTE: &str = "[Declared readings] Signals on the daily close, filled at the next day's open (TradeStation strategy orders; the page does not state the order). RSI = Wilder's 5-day RSI; the 200-day exponential average starts from the first close (TradeStation XAverage). Condition 2's long black candle uses PercentofBar = 0.75 x the day's range, the input default the page's input table lists and the setting that reproduces the printed 75.21% (decision 186, D1-09); the rule text's 0.70 is an option. 'Crosses above 40' = RSI above 40 today and at or below 40 yesterday. One position at a time, equal weight (the page traded 100 shares); a position still open is marked at the last close.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "essw5_rsi5", name: "Swing 5 RSI: buy RSI(5) under 30 above the 200-day EMA, or under 25 below it on a long black candle; sell when RSI(5) crosses 40",
@@ -28,7 +28,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     (id == "essw5_rsi5").then(|| vec![
-        p("pct", "Black-candle body share of the range (rule text 0.70; input table 0.75)", 0.70, 0.1, 1., 0.05),
+        p("pct", "Black-candle body share of the range (input default 0.75; rule text 0.70)", 0.75, 0.1, 1., 0.05),
         p("os_above", "RSI buy level above the EMA (30)", 30., 5., 50., 1.), p("os_below", "RSI buy level below the EMA (25)", 25., 5., 50., 1.),
         p("exit", "RSI exit level (40)", 40., 20., 80., 1.)])
 }
@@ -66,6 +66,6 @@ mod tests {
     #[test]
     fn ids_and_params() {
         assert!(reviewed("essw5_rsi5") && !reviewed("essw5_x"));
-        assert_eq!(params("essw5_rsi5").unwrap()[0].def, 0.70);
+        assert_eq!(params("essw5_rsi5").unwrap()[0].def, 0.75);
     }
 }

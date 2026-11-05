@@ -8,7 +8,7 @@ use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, Str
 
 pub const BOOK: &str = "dgmf";
 /// Admitted ids (authors/guppyf/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
+pub const REVIEWED: &[&str] = &["dgmf_21d_rev_di", "dgmf_katz_cyclical", "dgmf_roc_ma", "dgmf_stoch_ma", "dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
@@ -138,7 +138,7 @@ fn roc_pct(v: &[f64], n: usize) -> Vec<f64> { let b = back(v, n); zip(v, &b, |a,
 // ------------------------------------------------------------------ catalogue
 struct S { id: &'static str, name: &'static str, group: &'static str, dir: &'static str, status: Status, vol: bool, rules: &'static [&'static str], notes: &'static str }
 
-const MS: &str = " MetaStock System Tester defaults (trade price = close, trade delay = 0) unless the formula states otherwise; one position at a time; an exit and an opposite entry on the same bar reverse; after an exit no same-direction re-entry on that bar; final position left open and marked to the last close. Indices replace the stocks/futures of the source.";
+const MS: &str = " MetaStock System Tester defaults (trade price = close, trade delay = 0) unless the formula states otherwise; one position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the close rule (p.reverse = 0 = the earlier reading: the opposite Enter is ignored while a position is open); after an exit no same-direction re-entry on that bar; final position left open and marked to the last close. Indices replace the stocks/futures of the source.";
 
 fn defs() -> Vec<S> {
     use Status::*;
@@ -163,7 +163,7 @@ fn defs() -> Vec<S> {
         S { id: "dgmf_bb7", name: "Bollinger Bands Formula 7 Day", group: "Formula 14", dir: "Long", status: Live, vol: false,
             rules: &["E|enter long: high>(mov(Close,20,S)-std(Close,20,2)) and ref(low,-7)<ref((mov(Close,20,S)-std(Close,20,2)),-7)",
                      "X|exit long: close<(mov(Close,20,S)+std(Close,20,2)) and ref(close,-7)>ref((mov(Close,20,S)+std(Close,20,2)),-7) and Mov((RSI(14)-LLV(RSI(14),14))/(HHV(RSI(14),14)-(LLV(RSI(14),14))),14,E)*100<70 and ref(that,-3)>70 and (mov(Close,20,S)+std(Close,20,2))>(mov(c,89,s)+(.062*(mov(c,89,s))))"],
-            notes: "guppymsformulas.pdf p. 30. std(Close,20,2) has an extra argument in the source; read as 2 standard deviations (the Bollinger band the title names), i.e. 2*Std(C,20), population SD." },
+            notes: "guppymsformulas.pdf p. 30. std(Close,20,2) has an extra argument in the source; read as 2 standard deviations (the Bollinger band the title names), i.e. 2*Std(C,20), population SD. In the rule text 'that' stands for the stochastic-RSI term the print repeats in full (Mov((RSI(14)-LLV(RSI(14),14))/(HHV(RSI(14),14)-LLV(RSI(14),14)),14,E)*100); the code computes the printed term." },
         S { id: "dgmf_ema_5_21", name: "EMA Cross System", group: "Formula 14", dir: "Long", status: Live, vol: false,
             rules: &["E|enter long: mov(c,5,e)>mov(c,21,e) and ref(mov(c,5,e),-1)<=ref(mov(c,21,e),-1)", "X|exit long: mov(c,5,e)<mov(c,21,e) and ref(mov(c,5,e),-1)>=ref(mov(c,21,e),-1)"],
             notes: "guppymsformulas.pdf p. 30. 'avoid using when the market has no clear direction' is advice, not coded." },
@@ -179,12 +179,12 @@ fn defs() -> Vec<S> {
                      "E|BuySignal1 := Sum(CLOSE > UpperBand,3) = 3; BuySignal2 := CLOSE > UpperBand AND Ref(LOW,-1) > Ref(upperband,-1); BuySignal3 := LOW > UpperBand AND Ref(CLOSE,-1) > Ref(upperband,-1); BuySignal4 := CLOSE > UpperBand AND CLOSE > 1.4 * LLV(LOW,12) AND Mov(VOLUME,3,S) > 2000 {volume in 100's, otherwise use 200000} AND Mov(HIGH,3,S) > UpperBand AND Mov(HIGH - LOW,3,S) > Mov(HIGH - LOW,11,S)",
                      "X|SellSignal1 := Sum(CLOSE < LowerBand,3) = 3; SellSignal2 := CLOSE < (1-.18) * HHV(HIGH,12) AND Sum(CLOSE < LowerBand,2) = 2; SellSignal3 := CLOSE < (1-.18) * HHV(HIGH,12) AND HIGH < LowerBand",
                      "X|STOPS Maximum Loss: LONG ONLY 10.00 Percent", "F|'change the trade delay to 1, then change the Trade Price to Open'"],
-            notes: "guppymsformulas.pdf p. 72-73. Fills at the next open. Our volume is in shares, so the book's own alternative 200000 is used. Max-loss stop: intraday at entry*0.90 (gap through = open), checked from the entry bar; a pending signal exit at the open is taken before the stop." },
+            notes: "guppymsformulas.pdf p. 72-73. Fills at the next open. Our volume is in shares, so the book's own alternative 200000 is used. Max-loss stop: intraday at entry*0.90 (gap through = open), checked from the entry bar; a pending signal exit at the open is taken before the stop. The print defines Periods := 11; the rule text shows it folded into its values (11, and Periods + 1 = 12)." },
         S { id: "dgmf_tezel_reg", name: "Regression Asymmetric Volatility Price Bands (Tezel, TASC Oct 1997)", group: "Formula 4 · TASC Trader's Tips", dir: "Long", status: Live, vol: false,
             rules: &["E|Enter Long: UpperBand := STEBandTop(CLOSE,21,1); Sum(CLOSE > UpperBand,3) = 3 AND LinRegSlope(CLOSE,21) > 0 AND ROC(Correl(CLOSE,Cum(1),21,0),2,$) >= .2",
                      "X|Close Long: LowerBand := STEBandBot(CLOSE,21,1.5); SellSignal1 := Sum(CLOSE < LowerBand,3) = 3; SellSignal2 := CLOSE < (1-.18) * HHV(HIGH,22) AND HIGH < LowerBand",
                      "X|STOPS Maximum Loss: LONG ONLY 10.00 Percent", "F|trade delay 1, trade price Open"],
-            notes: "guppymsformulas.pdf p. 73. Standard-error band = linear-regression value +/- k * standard error of estimate (SSE/(n-2)), smoothing 1 (the text: '1 for the smoothing periods'). Correl with Cum(1) = correlation with the bar index." },
+            notes: "guppymsformulas.pdf p. 73. Standard-error band = linear-regression value +/- k * standard error of estimate (SSE/(n-2)), smoothing 1 (the text: '1 for the smoothing periods'). Correl with Cum(1) = correlation with the bar index. The print defines Periods := 21; the rule text shows it folded into its values (21, and Periods + 1 = 22)." },
         S { id: "dgmf_gapup_5d", name: "Gap Up System with Delayed Exit", group: "Formula 8", dir: "Long", status: Live, vol: false,
             rules: &["E|Enter long: GapUp()", "X|Close long: Ref(GapUp(),-5)", "F|Trade price Open, Trade delay 1, Positions Long and short"],
             notes: "guppymsformulas.pdf p. 130. GapUp() = today's low above yesterday's high (same definition as the collection's 'Gap 1 System'). Signals fill at the next open." },
@@ -192,7 +192,7 @@ fn defs() -> Vec<S> {
             rules: &["E|ENTER LONG: ROC(Mov(C,12,E),1,%)>0 AND ROC(Mov(C,60,E),1,%)>0",
                      "X|EXIT LONG: (ROC(Mov(C,12,E),1,%)<0 AND ROC(Mov(C,60,E),1,%)>0) OR (ROC(Mov(C,12,E),1,%)>0 AND ROC(Mov(C,60,E),1,%)<0)",
                      "E|SHORT: ROC(Mov(C,12,E),1,%)<0 AND ROC(Mov(C,60,E),1,%)<0", "X|EXIT SHORT: same as EXIT LONG"],
-            notes: "guppymsformulas.pdf p. 131. Onno Goedknegt. Literal: a long is not closed when both slopes turn negative at once (neither mixed case) - it waits for a mixed-slope bar." },
+            notes: "guppymsformulas.pdf p. 131. Onno Goedknegt. Default (p.reverse = 1): when both slopes turn negative at once, the Enter Short reverses the long on that bar (and the mirror). Only with p.reverse = 0 is the opposite Enter ignored, so a long then waits for a mixed-slope bar (neither mixed case closes it)." },
         S { id: "dgmf_brow_dmi", name: "Working with DMI (Dick Brow)", group: "Formula 7", dir: "Long", status: Live, vol: false,
             rules: &["E|OPEN LONG: close>hhv(low,21)", "X|CLOSE LONG: close<llv(high,21)"],
             notes: "guppymsformulas.pdf p. 112. Printed below the 'Smoothed DMI Index' formula, which the system does not use." },
@@ -227,7 +227,7 @@ fn defs() -> Vec<S> {
             rules: &["F|thresh:=4; k:=3; m:=63; hld:=10; Value1:=Stdev(Mov(C,m,S)-Mov(C,m+k,S),20); Value2:=Mov(C,m,S)-Mov(C,m+k,S); tv1:=thresh*Value1",
                      "E|{Enter Long} Value2>tv1", "X|{Close Long} Ref(Cross(Value2,tv1),-hld)", "E|{Enter Short} Value2<tv1", "X|{Close Short} Ref(Cross(tv1,Value2),-hld)",
                      "F|Trade Delay zero, Positions both"],
-            notes: "guppymsformulas.pdf p. 160-161. Coded literally, including 'Enter Short Value2<tv1' (not < -tv1), so the system is short most of the time. A position is closed only by its own close rule." },
+            notes: "guppymsformulas.pdf p. 160-161. Coded literally, including 'Enter Short Value2<tv1' (not < -tv1), so the system is short most of the time." },
         S { id: "dgmf_maas_rsi5", name: "Example of a trading system (RSI 5, Ton Maas)", group: "Formula 17", dir: "Long", status: Live, vol: false,
             rules: &["E|Enter Long if 1) today's five-day RSI is greater than yesterday's five-day RSI; and 2) today's close is below the close of five days ago; and 3) today's close is less then or equal to the average of the last five day's closes.",
                      "X|Exit tomorrow at the market if: 1) today's close is higher than the average of the last five days' closes; or 2) you have been in the trade 10 days."],
@@ -242,7 +242,7 @@ fn defs() -> Vec<S> {
                      "E|LongSignal := Cross(Sma, Mma) AND Lma > Mma; ShortSignal := Cross(Mma, Sma) AND Lma < Mma",
                      "E|Positions: If(BarsSince(Ref(BuyLong,-1)) <= BarsSince(Ref(SellShort,-1)), +1, If(BarsSince(Ref(SellShort,-1)) <= BarsSince(Ref(BuyLong,-1)), -1, 0))",
                      "X|the position switches when the opposite signal of the Positions formula fires (no other exit)", "F|_Triple MA Equity counts OPEN-to-OPEN changes"],
-            notes: "guppymsformulas.pdf p. 321-322. Always-in after the first signal; the position changes the bar after a signal, priced at that bar's open (the book's equity uses opens). Its author notes the equity indicator looks wrong; the position rule is used." },
+            notes: "guppymsformulas.pdf p. 321-322. Always-in after the first signal; the position changes the bar after a signal, priced at that bar's open (the book's equity uses opens). Its author notes the equity indicator looks wrong; the position rule is used. The print defines ShortTime := 25, MediumTime := 75, LongTime := 200; the rule text shows them folded into their values." },
         S { id: "dgmf_williams_exp", name: "Experimental Williams Trading System", group: "Formula 10", dir: "Long", status: Live, vol: false,
             rules: &["F|Chaos Green BL = Ref(Wilders(MP(),5),-3); Chaos Blue BL = Ref(Wilders(MP(),13),-8) (Alligator Indicators, same collection)",
                      "E|Enter Long: Cross(C,Fml(\"chaos green bl\")) AND Fml(\"chaos green bl\") > Fml(\"chaos blue bl\")", "X|Close Long: Cross(Fml(\"chaos green bl\"),C) AND Fml(\"chaos blue bl\") > Fml(\"chaos green bl\")"],
@@ -250,13 +250,13 @@ fn defs() -> Vec<S> {
         S { id: "dgmf_vbo_taylor", name: "Volatility Breakout System (Sean Taylor)", group: "Formula 17", dir: "Long", status: Live, vol: false,
             rules: &["E|Buy:=O+((Ref(H,-1)-Ref(C,-1))*.7); Trade:= O<Ref(C,-1) AND H>Buy AND Ref(C,-1)<Ref(C,-2) AND Ref(C,-2)<Ref(C,-3) AND Ref(C,-3)<Ref(C,-4)",
                      "X|Sell:=C; Stop:=O; HitStop:= If(Trade AND Stop>=Sell,TRUE,FALSE); exit at Stop if HitStop else at Sell"],
-            notes: "guppymsformulas.pdf p. 255-256. Same-day trade: buy stop at Buy, out at the close, or at the open price when the close is at/below the open. Commission:=21 / TradeAmt:=10000 not applied (the engine's cost settings apply)." },
+            notes: "guppymsformulas.pdf p. 255-256. Same-day trade: buy stop at Buy, out at the close, or at the open price when the close is at/below the open. Commission:=21 / TradeAmt:=10000 not applied (the engine's cost settings apply). The print defines Sell:=C; Stop:=O; with the entry formula; the rule text shows them with the exit." },
         // ---- data gaps
         S { id: "dgmf_ipi", name: "Investor Preference Index system (Cyril Smith, TASC Dec 1997)", group: "Formula 4", dir: "Long", status: NeedsData("needs the NYSE Composite index (P) alongside the S&P 500"), vol: false,
             rules: &["F|(Sum(Mov(ROC(Log(C),24,%)-ROC(Log(P),24,%),15,S)-Mov(ROC(Log(C),24,%)-ROC(Log(P),24,%),38,S),54)+1)*100, C=S&P 500, P=NYSE index", "E|Enter Long C=HHV(C,26)", "X|Close Long Fml(\"Investor Preference Index\")<97.6 AND ROC(Fml(\"Investor Preference Index\"),2,$)<=(-.04)"],
             notes: "guppymsformulas.pdf p. 70. Not coded: no NYSE Composite series in the vault." },
         S { id: "dgmf_25x25_bond", name: "\"25 x 25\" Bond Trading System", group: "Formula 8", dir: "Long", status: NeedsData("US T-bond futures (continuous, back-adjusted, day session) - rules are in bond points (2.5 pt stop, 18/32 entry offset)"), vol: false,
-            rules: &["E|setup: PDI(14) > MDI(14) AND ADX(14) > 20 AND RSI(4) < 50; buy stop C + .5625 next day", "X|stops: LLV(L,25) until day 24 then LLV(L,2); entry - 2.5; LLV(L,2) once profit > 5*Mov(ATR(1),45)"],
+            rules: &["E|setup: PDI(14) > MDI(14) AND ADX(14) > 20 AND RSI(4) < 50; buy stop C + .5625 next day", "X|stops: LLV(L,25); \"After 25 days (count entry day as day 1), change stop #2 from the lowest low of 25 days to the lowest low of 2 days\" (p.138); entry - 2.5; LLV(L,2) once profit > 5*Mov(ATR(1),45)"],
             notes: "guppymsformulas.pdf p. 138-146. Printed with a 1988-1998 bond trade list. Not coded." },
         // ---- not testable (seen, with reason)
         S { id: "dgmf_widner_sr", name: "Automatic Support and Resistance system (Mel Widner, TASC May 1998)", group: "Formula 4", dir: "Long", status: NotTestable("Exits are MetaStock stop settings only ('Breakeven stop: Floor level at 2%', 'Trailing stop: Profit risk of 10 Percent, ignoring 10 periods', 'Maximum loss 7%'); the source does not define how the breakeven floor and profit-risk trail are measured or filled."), vol: false,
@@ -308,7 +308,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    Some(match id {
+    let mut v = match id {
         "dgmf_200dma_1pt" => vec![p("ma", "MA length", 200., 100., 300., 20.), p("pts", "Points beyond MA", 1., 0., 10., 1.), p("llv", "Exit LLV length", 15., 5., 30., 5.), p("off", "Exit offset (points)", 0.5, 0., 5., 0.5), p("hhv", "Exit HHV length", 10., 5., 30., 5.), p("frac", "Give-back fraction of HHV", 0.75, 0.5, 0.95, 0.05)],
         "dgmf_200dma_3pt" => vec![p("ma", "MA length", 200., 100., 300., 20.), p("pts", "Points beyond MA", 3., 0., 10., 1.), p("llv", "Exit LLV/HHV length", 15., 5., 30., 5.), p("off", "Exit offset (points)", 0.5, 0., 5., 0.5)],
         "dgmf_21d_rev_di" => vec![p("n", "Breakout length", 21., 10., 40., 1.)],
@@ -336,7 +336,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "dgmf_vbo_taylor" => vec![p("mult", "Range fraction", 0.7, 0.3, 1., 0.1)],
         "dgmf_gap1" => vec![],
         _ => return None,
-    })
+    };
+    if defs().iter().any(|s| s.id == id && s.dir == "Long/Short") { v.push(crate::books::msws::REVERSE_PARAM); }
+    Some(v)
 }
 
 // ------------------------------------------------------------------ simulator
@@ -348,16 +350,20 @@ fn new_trade(dir: f64, i: usize, px: f64, sig: usize, kind: &'static str) -> Tra
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] }
 }
 
-fn simulate(x: &Ctx, from: usize, to: usize, s: &Sig, e: Exec) -> Vec<Trade> {
+/// MetaStock System Tester, 7.2 manual "Order of Evaluation": while in a position an opposite Enter (when `reverse`)
+/// closes it and the entry step below opens the other side on the same bar; then the Close rule. The max-loss stop is an
+/// intraday price and is checked first (the systems that use it are long only).
+fn simulate(x: &Ctx, from: usize, to: usize, s: &Sig, e: Exec, reverse: bool) -> Vec<Trade> {
     let mut out = vec![];
     let mut cur: Option<Trade> = None;
     let mut entry_sig = 0usize; // bar of the entry signal
     let mut pend_exit = false;
+    let mut pend_why = "Close rule";
     let mut pend_entry: Option<(f64, usize)> = None;
     for i in from..=to {
         // 1. orders at the open
         if pend_exit {
-            if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = x.o[i]; t.signal_i = i - 1; t.reason = "Close rule · next open".into(); out.push(t); }
+            if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = x.o[i]; t.signal_i = i - 1; t.reason = format!("{pend_why} · next open"); out.push(t); }
             pend_exit = false;
         }
         if let Some((d, sg)) = pend_entry.take() { cur = Some(new_trade(d, i, x.o[i], sg, "open")); entry_sig = sg; }
@@ -375,11 +381,12 @@ fn simulate(x: &Ctx, from: usize, to: usize, s: &Sig, e: Exec) -> Vec<Trade> {
         if let Some(t) = cur.as_ref() {
             let live = if t.entry_kind == "close" { i > t.legs[0].i } else { i >= t.legs[0].i };
             let rule = if t.dir > 0. { s.xl[i] } else { s.xs[i] };
+            let opp = reverse && if t.dir > 0. { s.es[i] } else { s.el[i] };
             let timed = e.hold.is_some_and(|h| i >= entry_sig + h);
-            if live && (rule || timed) {
-                let why = if rule { "Close rule" } else { "Bars in trade" };
+            if live && (rule || opp || timed) {
+                let why = if rule { "Close rule" } else if opp { "reversed by the opposite Enter" } else { "Bars in trade" };
                 if e.exit_open {
-                    if i < to { pend_exit = true; exited_dir = t.dir; }
+                    if i < to { pend_exit = true; pend_why = why; exited_dir = t.dir; }
                 } else {
                     let mut t = cur.take().unwrap();
                     t.exit_i = i; t.exit_px = x.c[i]; t.signal_i = i; t.reason = format!("{why} · close"); exited_dir = t.dir; out.push(t);
@@ -594,7 +601,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         _ => return None,
     };
-    Some(simulate(x, from, to, &sig, ex))
+    Some(simulate(x, from, to, &sig, ex, crate::books::msws::reverse_on(p)))
 }
 
 #[cfg(test)]
@@ -622,11 +629,11 @@ mod tests {
     fn next_open_reversal_and_stop() {
         let r = rows(&[100., 100., 100., 100.]); let x = Ctx::new(&r, &r, &[]);
         let s = Sig { el: vec![true, false, false, false], xl: vec![false, true, false, false], es: vec![false, true, false, false], xs: vec![false; 4] };
-        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, ..Default::default() });
+        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, ..Default::default() }, true);
         assert_eq!(t.len(), 2); assert_eq!((t[0].legs[0].i, t[0].exit_i), (1, 2)); assert_eq!((t[1].dir, t[1].legs[0].i), (-1., 2)); assert!(t[1].open);
         let mut r = rows(&[100., 100., 100., 100.]); r[2].low = 80.; r[2].open = 95.; let x = Ctx::new(&r, &r, &[]);
         let s = Sig { el: vec![true, false, false, false], xl: vec![false; 4], es: vec![false; 4], xs: vec![false; 4] };
-        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, max_loss: Some(0.1), hold: None });
+        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, max_loss: Some(0.1), hold: None }, true);
         assert_eq!((t[0].exit_i, t[0].exit_px), (2, 90.));
     }
     #[test]

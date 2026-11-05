@@ -30,7 +30,7 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const GROUP: &str = "NIKSAN MetaStock pack · Equis PS system tests (MS72PRFT.DTA, part 2)";
 const FAMILY: (&str, &str) = ("nkms2_ps", "Equis PS System Tester samples (NIKSAN pack, part 2)");
 const FML: &[(&str, &str)] = &[("MO_100", "100")];
-const CONV: &str = "One position at a time; a position closes only by its own Close formula (checked from the bar after entry); an exit plus an opposite entry on one bar reverse; no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. The record has no stops (all-zero stop block) and no fill field: MetaStock defaults, trade at the close, no delay. Indicators: MetaStock definitions as in module msws. Runs on indices, ETFs and single stocks (US and India) are a declared application: the record names no market and prints no results.";
+const CONV: &str = "One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. The record has no stops (all-zero stop block) and no fill field: MetaStock defaults, trade at the close, no delay. Indicators: MetaStock definitions as in module msws. Runs on indices, ETFs and single stocks (US and India) are a declared application: the record names no market and prints no results.";
 static NK: Book = Book { id: BOOK, sys: SYS, fml: FML, conv: CONV, cat: OnceLock::new(), par: OnceLock::new() };
 /// Records run by hand-written code (ValueWhen / PREV); only the `side` parameter.
 const HAND: &[&str] = &["nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_percentage_crossover_3pct", "nkms2_volatility_stop"];
@@ -40,7 +40,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     if HAND.contains(&id) {
         SYS.iter().find(|s| s.id == id && s.status == Status::Live)?;
-        return Some(vec![ParamDef { key: "side", label: "Sides traded: 0 = both as stored, 1 = long side only, -1 = short side only", def: 0., min: -1., max: 1., step: 1. }]);
+        return Some(vec![ParamDef { key: "side", label: "Sides traded: 0 = both as stored, 1 = long side only, -1 = short side only", def: 0., min: -1., max: 1., step: 1. }, msws::REVERSE_PARAM]);
     }
     NK.params(id)
 }
@@ -58,7 +58,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let e: [Option<String>; 4] = s.f.map(|f| f.map(crate::books::mslib::expand));
         msws::signals(&mut eng, [0, 1, 2, 3].map(|k| e[k].as_deref()), &map, side).ok()?
     };
-    Some(msws::simulate(x, from, to, &sig, s.exec))
+    Some(msws::simulate_conv(x, from, to, &sig, s.exec, msws::reverse_on(p)))
 }
 
 // ------------------------------------------------------------------ hand-written ValueWhen / PREV records

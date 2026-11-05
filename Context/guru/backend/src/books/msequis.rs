@@ -14,7 +14,7 @@ pub const BOOK: &str = "msequis";
 pub const REVIEWED: &[&str] = &["msequis_bb", "msequis_cci", "msequis_stoch"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const CONV: &str = "MetaStock System Tester defaults (the records store no fill or stop settings): signals at the close, filled at that close; a Close formula is checked from the bar after entry; an opposite Enter reverses the position (MetaStock 7.2 manual, The System Editor Dialog: 'A short position can only be entered when the system is long or out'; p.reverse = 0 turns that off); after an exit no same-direction entry on that bar. Indicators: MetaStock definitions (module msws; Bollinger bands with the population standard deviation, Stoch(5,3) = 100 x Sum(C - LLV(L,5), 3) / Sum(HHV(H,5) - LLV(L,5), 3), CCI = Lambert's on (H+L+C)/3). Equis sample records name no market; daily indices, ETFs and US/India stocks are a declared application; the vault's standard costs.";
+const CONV: &str = "MetaStock System Tester defaults (the records store no fill or stop settings): signals at the close, filled at that close; a Close formula is checked from the bar after entry; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the position and opens the other side at the close (Portfolio Bias Single; MS11PRFT.DTA is a MetaStock 11 file and versions 9-11 are not documented in the share; p.reverse = 0 turns that off); after an exit no same-direction entry on that bar. Indicators: MetaStock definitions (module msws; Bollinger bands with the population standard deviation, Stoch(5,3) = 100 x Sum(C - LLV(L,5), 3) / Sum(HHV(H,5) - LLV(L,5), 3), CCI = Lambert's on (H+L+C)/3). Equis sample records name no market; daily indices, ETFs and US/India stocks are a declared application; the vault's standard costs.";
 const GROUP: &str = "Equis MetaStock 11 sample systems (MS11PRFT.DTA)";
 const SYS: &[Sys] = &[
     Sys { id: "msequis_bb", name: "Equis - Bollinger Bands: long when the close crosses back above the lower band, out at the 1-SD upper band; short mirrored", group: GROUP, family: ("msequis_bb", "Equis Bollinger Bands sample"), page: "MS11PRFT.DTA, record 'Equis - Bollinger Bands'", status: Live,
@@ -36,11 +36,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     }).collect()
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { EQ.family_of(id) }
-pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    let mut v = EQ.params(id)?;
-    v.push(ParamDef { key: "reverse", label: "Opposite Enter: 1 = reverses (MetaStock 7.2 manual), 0 = ignored, only the Close formula closes", def: 1., min: 0., max: 1., step: 1. });
-    Some(v)
-}
+pub fn params(id: &str) -> Option<Vec<ParamDef>> { EQ.params(id) }
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let s = SYS.iter().find(|s| s.id == id)?;
     if from >= to || to >= x.r.len() { return None; }
@@ -50,13 +46,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let ex: Vec<Option<String>> = s.f.iter().map(|f| f.map(crate::books::mslib::expand)).collect();
     let f: [Option<&str>; 4] = [ex[0].as_deref(), ex[1].as_deref(), ex[2].as_deref(), ex[3].as_deref()];
     let fl: &dyn Fn(&str) -> Option<String> = &|_| None;
-    let mut sig = msws::signals(&mut Eng::new(x, fl), f, &map, side).ok()?;
-    if p.get("reverse").copied().unwrap_or(1.) == 0. { return Some(msws::simulate(x, from, to, &sig, s.exec)); }
-    let (xl, xs) = (sig.xl.clone(), sig.xs.clone());
-    for i in 0..sig.xl.len() { sig.xl[i] |= sig.es[i]; sig.xs[i] |= sig.el[i]; }
-    let mut t = msws::simulate(x, from, to, &sig, s.exec);
-    for q in t.iter_mut().filter(|q| !q.open && !(if q.dir > 0. { xl[q.exit_i] } else { xs[q.exit_i] })) { q.reason = "reversed by the opposite Enter · close".into(); }
-    Some(t)
+    let sig = msws::signals(&mut Eng::new(x, fl), f, &map, side).ok()?;
+    Some(msws::simulate_conv(x, from, to, &sig, s.exec, msws::reverse_on(p)))
 }
 
 #[cfg(test)]

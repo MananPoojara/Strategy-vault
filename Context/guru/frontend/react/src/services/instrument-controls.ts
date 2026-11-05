@@ -9,6 +9,12 @@ export function instrumentTickers<T extends {ticker: string}>(policy: Instrument
   return [...(controls.index ? indices : []), ...(controls.etf ? etfs : [])];
 }
 
+/** Ticker to open when the current one is not offered: the first offered ticker the gate's `allowed` list publishes on
+ *  (SPY for a multi-ETF rotation rule), else the first offered ticker. Display choice only; readiness still decides. */
+export function defaultTicker<T extends {ticker: string}>(tickers: T[], allowed?: string[] | null): string | undefined {
+  return (tickers.find(t => allowed?.includes(t.ticker)) || tickers[0])?.ticker;
+}
+
 /** Navigation follows reviewed types; an unresolved policy still uses the API's admission gate. */
 export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?: string) {
   const types = policy?.allowed_types || [];

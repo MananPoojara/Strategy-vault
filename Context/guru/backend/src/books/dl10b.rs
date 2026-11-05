@@ -74,7 +74,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "not testable: the 'sharp sell-off' is 'obvious'; quantified only for stocks as 2-3 / 3-4 points, 'larger in higher priced/more volatile stocks' (p.121), and the retrace is '61.8% to 78.6%' with 78.6% 'ideal' (p.114)",
            &["F|Two-month calendar high (a), sharp sell-off (b), retrace of 61.8-78.6% within 10-11 days (c) (p.112-114)", "E|\"go short (d) below the bar that hit the retracement level\" (p.114)", "X|\".25 to 1.00 above the 78.6% retracement level\" (p.115)"]),
         nt("dl10b_variations", "Ch 12 variations (Double Top Knockout, First Gap / two-step Gatekeepers, intraday entries)", "Ch 12 · Variations and scenarios",
-           "not testable: examples without rules; the Double Top Knockout is in the vault as dlost_dtko; intraday entries need intraday bars",
+           "rules not fully defined: examples without rules (Ch 12, p.127-159); the Double Top Knockout runs in the vault as dlost_dtko",
            &["E|Examples only (p.127-159)"]),
     ]
 }

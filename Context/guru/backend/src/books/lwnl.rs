@@ -21,10 +21,13 @@ pub const BOOK: &str = "lwnl";
 /// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
 /// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS: S&P-futures dollar stops / point gaps, actual SPX only;
 /// NDX_POINTS: the Nasdaq-100 futures dollar stop, actual NDX only; US_ONLY: US-holiday trades, US instruments only.
-pub const REVIEWED: &[&str] = &["lwnl_jan_rally", "lwnl_mar_short", "lwnl_oct_td9_buy", "lwnl_oct_td17_sell", "lwnl_nov_td17_db7", "lwnl_jan97_td16_buy", "lwnl_jan97_td2_sell", "lwnl_jul97_td4_buy", "lwnl_jul97_td17_buy", "lwnl_jul97_td16_buy_30d", "lwnl_jul97_td14_sell", "lwnl_aug97_td12_buy_bail", "lwnl_aug97_td18_buy_bail", "lwnl_aug97_td7_sell_bail", "lwnl_aug97_td18_buy_7d", "lwnl_aug97_td2_sell_7d", "lwnl_nov97_td17_buy_7d", "lwnl_nov97_td18_buy_7d", "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_dec97_td2_buy_1d", "lwnl_dec97_td14_buy_1d", "lwnl_dec97_td9_sell_1d", "lwnl_pullback", "lwnl_krut_buy", "lwnl_krut_sell", "lwnl_proj_contra", "lwnl_truth1_closehigh", "lwnl_gap_fail_300", "lwnl_gap_fail_525", "lwnl_ndx_vb_oops", "lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail", "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy", "lwnl_yearend_sell", "lwnl_od_buy", "lwnl_od_buy3", "lwnl_od_sell", "lwnl_od_fade_buy", "lwnl_od_fade_sell", "lwnl_engulf_bull_1", "lwnl_engulf_bull_5", "lwnl_engulf_bull_10", "lwnl_engulf_bear_1", "lwnl_engulf_bear_5", "lwnl_engulf_bear_10", "lwnl_keyrev_buy", "lwnl_proj_limit", "lwnl_tdw_oc_tue", "lwnl_tdw_oc_wed", "lwnl_tdw_oc_thu", "lwnl_tdw_oc_fri"];
+pub const REVIEWED: &[&str] = &["lwnl_jan_rally", "lwnl_mar_short", "lwnl_oct_td9_buy", "lwnl_oct_td17_sell", "lwnl_nov_td17_db7", "lwnl_jan97_td16_buy", "lwnl_jan97_td2_sell", "lwnl_jul97_td4_buy", "lwnl_jul97_td17_buy", "lwnl_jul97_td16_buy_30d", "lwnl_jul97_td14_sell", "lwnl_aug97_td12_buy_bail", "lwnl_aug97_td18_buy_bail", "lwnl_aug97_td7_sell_bail", "lwnl_aug97_td18_buy_7d", "lwnl_aug97_td2_sell_7d", "lwnl_nov97_td17_buy_7d", "lwnl_nov97_td18_buy_7d", "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_dec97_td2_buy_1d", "lwnl_dec97_td14_buy_1d", "lwnl_dec97_td9_sell_1d", "lwnl_pullback", "lwnl_krut_buy", "lwnl_krut_sell", "lwnl_proj_contra", "lwnl_truth1_closehigh", "lwnl_gap_fail_300", "lwnl_gap_fail_525", "lwnl_ndx_vb_oops", "lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail", "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy", "lwnl_yearend_sell", "lwnl_engulf_bull_1", "lwnl_engulf_bull_5", "lwnl_engulf_bull_10", "lwnl_engulf_bear_1", "lwnl_engulf_bear_5", "lwnl_engulf_bear_10", "lwnl_keyrev_buy", "lwnl_proj_limit", "lwnl_tdw_oc_tue", "lwnl_tdw_oc_wed", "lwnl_tdw_oc_thu", "lwnl_tdw_oc_fri"];
 pub const SPX_POINTS: &[&str] = &["lwnl_jan_rally", "lwnl_mar_short", "lwnl_oct_td9_buy", "lwnl_oct_td17_sell", "lwnl_nov_td17_db7", "lwnl_jan97_td16_buy", "lwnl_jan97_td2_sell", "lwnl_jul97_td4_buy", "lwnl_jul97_td17_buy", "lwnl_jul97_td16_buy_30d", "lwnl_jul97_td14_sell", "lwnl_aug97_td12_buy_bail", "lwnl_aug97_td18_buy_bail", "lwnl_aug97_td7_sell_bail", "lwnl_aug97_td18_buy_7d", "lwnl_aug97_td2_sell_7d", "lwnl_nov97_td17_buy_7d", "lwnl_nov97_td18_buy_7d", "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_dec97_td2_buy_1d", "lwnl_dec97_td14_buy_1d", "lwnl_dec97_td9_sell_1d", "lwnl_pullback", "lwnl_krut_buy", "lwnl_krut_sell", "lwnl_proj_contra", "lwnl_truth1_closehigh", "lwnl_gap_fail_300", "lwnl_gap_fail_525"];
 pub const NDX_POINTS: &[&str] = &["lwnl_ndx_vb_oops"];
 pub const US_ONLY: &[&str] = &["lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail", "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy"];
+
+/// Lead decision 197 (K37, 4 Nov 2026): the outside-day cards cite the April 1991 letter, which is not in the research share.
+const OD_HELD: &str = "the cited source issue is not in the research share: these rules cite the April 1991 Commodity Timing letter (p.1-3), and the share's only copy of the letters (Trading Knowledge II/@NewsLetters-Mags/Larry Williams Newsletters (1994-1997)/Larry Williams Newsletters 1994-1997.zip) has no April 1991 issue (no volume 25 issue 4); the share scan and the title census list no other copy (lead decision 197, share-only rule)";
 
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $rules:expr, $notes:expr, $claim:expr) => {
@@ -66,9 +69,10 @@ const SEA: &[Sea] = &[
     ("lwnl_nov97_td18_buy_7d", 11, 18, 1.0, 0.07, 2000.0, Some(7), None, false),
     ("lwnl_nov97_td6_buy_30d", 11, 6, 1.0, 0.07, 2000.0, Some(30), None, false),
     ("lwnl_nov97_td15_buy_30d", 11, 15, 1.0, 0.07, 2000.0, Some(30), None, false),
-    ("lwnl_dec97_td2_buy_1d", 12, 2, 1.0, 0.07, 3500.0, Some(1), None, false),
-    ("lwnl_dec97_td14_buy_1d", 12, 14, 1.0, 0.07, 3500.0, Some(1), None, false),
-    ("lwnl_dec97_td9_sell_1d", 12, 9, -1.0, 0.07, 3500.0, Some(1), None, false),
+    // Dec 1997 p.2 "we bought on the opening" (decision 186, D1-40); entry_pct = 0.07 (Nov 1997's rule, "as before") is an option
+    ("lwnl_dec97_td2_buy_1d", 12, 2, 1.0, 0.0, 3500.0, Some(1), None, false),
+    ("lwnl_dec97_td14_buy_1d", 12, 14, 1.0, 0.0, 3500.0, Some(1), None, false),
+    ("lwnl_dec97_td9_sell_1d", 12, 9, -1.0, 0.0, 3500.0, Some(1), None, false),
 ];
 
 // ------------------------------------------------------------------ holiday table
@@ -170,14 +174,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|November TD15, open + 7% of the previous range (Nov 1997 p.3)", "X|close 30 trading days after entry or the $2,000 stop (Nov 1997 p.2-3)"],
             SP, claim("13", "46%", "$1,680 ($21,825)", "30 days", "S&P (letter Nov 1997)")),
         sd!("lwnl_dec97_td2_buy_1d", "S&P December TD2 buy, 1-day hold, $3,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
-            &["E|\"same entry and exit rules as before, which means we bought on the opening of the trading day of the month shown\" (Dec 1997 p.2): open + 7% of the previous range (the rule 'as before', Nov 1997 p.2)",
+            &["E|\"same entry and exit rules as before, which means we bought on the opening of the trading day of the month shown\" (Dec 1997 p.2): buy on the opening (decision 186); p.entry_pct = 0.07 = open + 7% of the previous range, Nov 1997's rule that the letter calls 'as before' [option]",
               "X|\"exit on the close the number of days shown later\" (Dec 1997 p.2): 1 day; \"For the S&P 500 the best buys are day 2 and 14, the sells on day 9 with a $3,500 stop\" (Dec 1997 p.4)"],
             "The letter prints two different result tables for the same trades (p.3 and p.4).", claim("15", "80% / 93%", "$568 ($8,525) / $11,175", "1 day", "S&P (letter Dec 1997, p.3 / p.4)")),
         sd!("lwnl_dec97_td14_buy_1d", "S&P December TD14 buy, 1-day hold, $3,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
-            &["E|December TD14, open + 7% of the previous range (Dec 1997 p.2-4)", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.2, p.4)"],
+            &["E|December TD14, on the opening (Dec 1997 p.2); p.entry_pct = 0.07 = Nov 1997's open + 7% [option]", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.2, p.4)"],
             "Two tables: p.3 $11,300 11/14; p.4 $14,250 13/14.", claim("14", "78% / 92%", "$807 ($11,300) / $14,250", "1 day", "S&P (letter Dec 1997, p.3 / p.4)")),
         sd!("lwnl_dec97_td9_sell_1d", "S&P December TD9 sell, 1-day hold, $3,500 stop", "Seasonals · 1997 monthly lists", "Short", Live,
-            &["E|December TD9, sell stop at open - 7% of the previous range (Dec 1997 p.2-4)", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.4)"],
+            &["E|December TD9, sell on the opening (Dec 1997 p.2); p.entry_pct = 0.07 = Nov 1997's open - 7% sell stop [option]", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.4)"],
             SP, claim("14", "64%", "$444 ($6,225)", "1 day", "S&P (letter Dec 1997)")),
         sd!("lwnl_yearend_sell", "S&P year-end short: open after December TD20, first profitable close or 3 days", "Seasonals · trading day of month", "Short", Live,
             &["E|\"sold the S&P 500 on the opening following the 20th trading day\" [of December] (Dec 1995 p.3)",
@@ -231,21 +235,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"If today's low is greater than yesterday's high, then sell tomorrow on the open\" (Jul 1991 p.2)",
               "X|\"exit sells on the close of the third day following entry. ie. If you sell on a Monday opening you would exit on the close Thursday. The best stop to use, in the past, has been a $2,000 stop\" (Jul 1991 p.2): $2,000 = 4 S&P points at $500"],
             "Default since 23 Oct 2026 = the S&P stop of p.2 ($2,000); the NIFE paragraph's $2,500 (p.3) is the option p.stop_usd = 2500.", claim("68", "61%", "$732 ($49,825)", "3 days", "S&P (letter Jul 1991)")),
-        sd!("lwnl_od_buy", "Down-close outside day: buy at the high of the day before, exit next day", "Patterns", "Long", Live,
+        sd!("lwnl_od_buy", "Down-close outside day: buy at the high of the day before, exit next day", "Patterns", "Long", NotTestable(OD_HELD),
             &["F|Outside day = higher high and lower low than the previous day; '- close' = close below the previous close (Apr 1991 p.1-2)",
               "E|\"buying only on the day after the OD - close, at the high of the day prior to the OD\"; \"IF OPEN LESS THAN HIGH OF THAT DAY\" (Apr 1991 p.2-3): buy stop",
               "X|\"results exiting the next day\" (Apr 1991 p.2): Read: the close of the day after entry (the letters' 'X days later' exits are on the close); no stop"],
             "Table 'DAY 1' S&P: $25,275, 28 trades (the '#+' column: $25,275 / $902 = 28), 85%, avg $902.", claim("28", "85%", "$902 ($25,275)", "1 day", "S&P (letter Apr 1991)")),
-        sd!("lwnl_od_buy3", "Down-close outside day buy, exit 3 days later", "Patterns", "Long", Live,
+        sd!("lwnl_od_buy3", "Down-close outside day buy, exit 3 days later", "Patterns", "Long", NotTestable(OD_HELD),
             &["E|same entry as lwnl_od_buy (Apr 1991 p.2-3)", "X|\"BEST DAY 3\" for the S&P: the close of the 3rd day after entry"],
             "Table: S&P best day 3 $34,550, 28 trades, 78%, avg $1,233.", claim("28", "78%", "$1,233 ($34,550)", "3 days", "S&P (letter Apr 1991)")),
-        sd!("lwnl_od_sell", "Up-close outside day: sell at the low of the day before, exit next day", "Patterns", "Short", Live,
+        sd!("lwnl_od_sell", "Up-close outside day: sell at the low of the day before, exit next day", "Patterns", "Short", NotTestable(OD_HELD),
             &["E|\"A + close OD sets up a sell at the low of the day just prior\" (Apr 1991 p.2), open above that low", "X|exit the next day (Read: the close), as the buy table"],
             "\"The sell side in the S&P generated 26 trades and 21 winners, for a net profit of $8,750\" (Apr 1991 p.3).", claim("26", "81%", "$337 ($8,750)", "1 day", "S&P (letter Apr 1991)")),
-        sd!("lwnl_od_fade_buy", "Open below a down-close outside day: buy at its low, exit on the close", "Patterns", "Long", Live,
+        sd!("lwnl_od_fade_buy", "Open below a down-close outside day: buy at its low, exit on the close", "Patterns", "Long", NotTestable(OD_HELD),
             &["E|\"when the market opens below the low of a down close OD and you then buy at the OD low\" (Apr 1991 p.3): buy stop at the OD low", "X|\"Exit was on close of entry day\" (Apr 1991 p.3)"],
             SP, claim("14", "71%", "$479 ($6,700)", "same day", "S&P (letter Apr 1991)")),
-        sd!("lwnl_od_fade_sell", "Open above an up-close outside day: sell at its high, exit on the close", "Patterns", "Short", Live,
+        sd!("lwnl_od_fade_sell", "Open above an up-close outside day: sell at its high, exit on the close", "Patterns", "Short", NotTestable(OD_HELD),
             &["E|\"A sell is given with an open above the high of an outside day up close, and you then sell at the high of the OD\" (Apr 1991 p.3)", "X|close of the entry day (Apr 1991 p.3)"],
             "Only buys are tabulated in the letter.", None),
         sd!("lwnl_gap_fail_300", "S&P gap failure: 2.00-pt gap, enter 3.00 pts back through the open, exit on the close", "Patterns", "Long/Short", Live,

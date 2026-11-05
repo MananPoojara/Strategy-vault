@@ -3,20 +3,20 @@
 //! Indicators/Safelock 20-40 System for TS/", copied to Books/Safelock/. Refs are the printed page numbers.
 //! An intraday S&P e-mini (ES) day-trading grid: entries and exits are touches of price lines 4 points apart around the
 //! prior close, with 2/4-point targets, a 2-point stop, a once-only re-entry and a 1.5-point "violation" flip. Which
-//! line, target or stop is touched first inside the day decides every trade, so daily OHLC cannot run it: NeedsData.
-//! `run` returns None.
+//! line, target or stop is touched first inside the day decides every trade. Lane K44 re-read it with SPX 1-minute bars and
+//! the multi-unit account at hand: the rule itself is incomplete and self-contradictory (see WHY): NotTestable. `run` returns None.
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "sl2040";
 
-const WHY: &str = "needs intraday S&P e-mini (ES) futures bars fine enough to order touches of levels 2 points apart (1-minute or tick): every entry, target, stop, re-entry and the 1.5-point violation rule depends on the intraday price path, which daily OHLC cannot give; the vault has no intraday SPX/ES (or NIFTY) bars";
+const WHY: &str = "re-read in lane K44 (4 Nov 2026): the vault now has SPX 1-minute bars and a multi-unit account, but the rule is not complete as printed: (1) the two-contract management contradicts itself - after the first 2-point target the second contract's stop is breakeven, yet on the retrace to the entry the p.10 example keeps that contract and also re-enters (\"Total profit 2 + 2 + 4 = 8 Points\"), while the p.9 example exits it at breakeven (\"2 + 2 + 0 = 4\"), and the 11-2-06 list shows the re-entry with two targets (+2 +4) although the rule says \"enter one contract again\" (p.3); (2) no end-of-day rule (all exits are price levels and the grid is redrawn from each prior close); (3) the reset that allows a third trade at a level (\"If the 4 point range was closed, you can buy and sell twice at that level again\", p.14) is defined only by example; (4) the published trade list uses discretionary exits (\"exit if we can\", p.16; \"took too long\", p.19). Held as incomplete; no reading is invented";
 
 const NOTE: &str = "Points are ES index points (86 points = $4,300, i.e. $50 per point, p.12). The rules give no end-of-day exit; all exits are price levels (targets, stop, breakeven). The example days also use unstated discretionary exits (\"if it goes that far against us, exit if we can\", p.16; \"took too long and would have exited with Breakeven\", p.19; \"we will call it a breakeven trade\", p.23) and a 'closed circuit' reset (\"If the 4 point range was closed, you can buy and sell twice at that level again\", p.14) that the rules page does not define; these would have to be resolved from the text before coding. The ELD is encrypted.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
         id: "sl2040_grid", name: "20/40 system: 4-point grid countertrend with 2/4-point targets",
-        group: "p.3 · The Rules of 20/40 system", session: 0, dir: "Long/Short", status: Status::NeedsData(WHY),
+        group: "p.3 · The Rules of 20/40 system", session: 0, dir: "Long/Short", status: Status::NotTestable(WHY),
         needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
         rules: &[
             "F|\"Draw a horizontal line on the close of the prior day. Draw horizontal lines in 4 point increments above and below the close of yesterday.\" (p.3)",
@@ -43,10 +43,10 @@ pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option
 #[cfg(test)]
 mod tests {
     #[test]
-    fn catalogue_is_needsdata_and_owned() {
+    fn catalogue_is_held_and_owned() {
         for s in &super::catalogue() {
             assert!(s.id.starts_with("sl2040_") && s.book == super::BOOK);
-            assert!(matches!(s.status, crate::connors::Status::NeedsData(_)));
+            assert!(matches!(s.status, crate::connors::Status::NotTestable(_)));
             assert!(super::family_of(s.id).is_some());
         }
     }

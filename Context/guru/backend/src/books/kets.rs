@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "kets";
 /// Admitted ids (authors/katz/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop"];
+pub const REVIEWED: &[&str] = &["kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// No orders before this bar: the book's price files began ~6 months (about 120 bars) before its first trade
@@ -39,6 +39,8 @@ enum M {
     Cycle,                  // ch10
     RandSes,                // ch13 T1-T3: random entries + SES
     RandMses(u8),           // ch13 T4 / ch14: random entries at open + intraday exits (0 fixed, 1 2-bar HHLL, 2 ATR, 3 MEMA, 4 MEMA + shrinking target)
+    Neural,                 // ch11: the authors' trained nets (CD X15NETS), 18 tests of Table 11-4
+    NeuralExit,             // ch15: random entries + MSES + nn8 reverse Slow %K signal exit (x21mod01.c)
 }
 
 type PDef = (&'static str, &'static str, f64, f64, f64, f64);
@@ -78,7 +80,7 @@ const MKT: PDef = ("mkt", "Market index in the seed, iseed = -(ranseed + 10 x ma
 static TESTS: &[T] = &[
     // ---------------------------------------------------------------- Chapter 5
     t!("kets_cb_open", "Close-only channel breakout · entry next open (Tests 1-2)", G5, M::Chan { hl: false }, Open, "Long/Short", "pp.86-90 (PDF 102-106)",
-        [("n", "Channel look-back (closes)", 80., 5., 100., 5.)], Some(("", "43% (T1, no costs)", "T2 with costs: IS $-80 / OOS $-871 per trade", "~7 bars", "36-futures portfolio IS 8/1985-12/1994; T1 (no costs) ~76% annual return vs max DD; T2 (costs) ROA IS -1.1% / OOS -13.5% (Table 5-3)"))),
+        [("n", "Channel look-back (closes)", 80., 5., 100., 5.)], Some(("", "43% (T1, no costs)", "T2 with costs: IS $-80 / OOS $-871 per trade", "~7 bars", "36-futures portfolio IS 8/1985-12/1994; T1 (no costs) ~76% annual return vs max DD; T2 (costs) ROA IS -1.1% / OOS -13.5% (Table 5-3). Default n = 80 is the Test 1 optimum (p.89); the book does not print the optimum n of Test 2, whose with-costs figures are quoted here"))),
     t!("kets_cb_limit", "Close-only channel breakout · limit at signal-bar midpoint (Test 3)", G5, M::Chan { hl: false }, Limit, "Long/Short", "pp.90-92 (PDF 106-108)",
         [("n", "Channel look-back (closes)", 80., 5., 100., 5.)], Some(("", "42%", "IS $1,066 / OOS $-299", "~7 bars", "36-futures portfolio; ROA IS 32.6% / OOS -10.0% (Table 5-3)"))),
     t!("kets_hhll_open", "HHLL breakout (close beyond highest high / lowest low) · next open (Test 4)", G5, M::Chan { hl: true }, Open, "Long/Short", "pp.92-94 (PDF 108-110)",
@@ -190,7 +192,7 @@ static TESTS: &[T] = &[
         [("width", "Filter bandwidth", 0.1, 0.05, 0.2, 0.05), ("pdisp", "Phase displacement, degrees", 20., -20., 20., 10.)], Some(("IS 957 / OOS 403", "IS 40% / OOS 41%", "IS $-1,245 / OOS $-944", "7 bars", "36-futures portfolio; ROA IS -8.3% / OOS -15.0% (Table 10-1)"))),
     // ---------------------------------------------------------------- Chapters 13-14 (exits, random entries)
     t!("kets_rand_ses_open", "Random entries (2.5% each side) + standard exit · open (Ch.13 Test 1)", G13, M::RandSes, Open, "Long/Short", "pp.295-300 (PDF 305-310)",
-        [SEED, MKT], Some(("", "", "IS avg of 10 sequences $-2,243 (sd $304)", "", "36-futures portfolio, 10 random sequences (Table 13-1, p.332)"))),
+        [SEED, MKT], Some(("", "", "IS avg of 10 sequences $-2,243 (sd $304)", "", "36-futures portfolio, 10 random sequences (Table 13-1, p.298)"))),
     t!("kets_rand_ses_limit", "Random entries + standard exit · limit (Ch.13 Test 2)", G13, M::RandSes, Limit, "Long/Short", "pp.295-300 (PDF 305-310)", [SEED, MKT], None),
     t!("kets_rand_ses_stop", "Random entries + standard exit · stop (Ch.13 Test 3)", G13, M::RandSes, Stop, "Long/Short", "pp.295-300 (PDF 305-310)", [SEED, MKT], None),
     tr!("kets_rand_mses", "Random entries at open + modified standard exit (intraday stop/target) (Ch.13 Test 4)", G13, M::RandMses(0), Open, "pp.301-305 (PDF 311-315)",
@@ -207,7 +209,7 @@ static TESTS: &[T] = &[
     tr!("kets_rand_mema_stop", "Random entries + MEMA dynamic stop (Ch.14, Table 14-4)", G13, M::RandMses(3), Open, "pp.316-326 (PDF 326-336)",
         [("pt", "Profit-target limit, ATR(50) units", 4.5, 0.5, 8., 0.5), ("sl", "Initial stop, ATR(50) units", 2.5, 0.5, 3.5, 0.5), ("later", "ATR offset (ATRO)", 1., 0., 3., 0.5),
          ("coeff", "Adaptation rate coefficient (COEFF)", 0.3, 0.1, 0.5, 0.1), ("hold", "Exit at the close after this many bars", 10., 2., 30., 1.), SEED, MKT],
-        Some(("", "37%", "$-1,407", "", "36-futures portfolio IS; ARRR -1.36 (p.325)"))),
+        Some(("", "37%", "$-1,407", "", "36-futures portfolio IS; ARRR -1.36 (p.324)"))),
     tr!("kets_rand_mema_shrink", "Random entries + MEMA stop + shrinking profit target (Ch.14, Table 14-5)", G13, M::RandMses(4), Open, "pp.326-329 (PDF 336-341)",
         [("pt", "Initial profit target, ATR(50) units (INIT)", 5.5, 2., 7., 0.5), ("ptga", "Target shrinkage coefficient (COEFF)", 0.1, 0.05, 0.5, 0.05), ("sl", "Initial stop, ATR(50) units", 2.5, 0.5, 3.5, 0.5),
          ("later", "ATR offset", 1., 0., 3., 0.5), ("coeff", "Stop adaptation rate", 0.3, 0.1, 0.5, 0.1), ("hold", "Exit at the close after this many bars", 10., 2., 30., 1.), SEED, MKT],
@@ -216,6 +218,22 @@ static TESTS: &[T] = &[
         [("pt", "Initial profit target, ATR(50) units", 5.5, 2., 7., 0.5), ("ptga", "Target shrinkage coefficient", 0.1, 0.05, 0.5, 0.05), ("sl", "Initial stop, ATR(50) units", 2.5, 0.5, 3.5, 0.5),
          ("later", "ATR offset", 1., 0., 3., 0.5), ("coeff", "Stop adaptation rate", 0.3, 0.1, 0.5, 0.1), ("hold", "Exit at the close after this many bars", 30., 2., 40., 1.), SEED, MKT],
         Some(("", "37%", "$-1,236", "6-10 bars", "36-futures portfolio IS; ARRR -1.22 (p.330)"))),
+    tr!("kets_neural", "Neural-network entries: reverse Slow %K and turning-point nets (Ch.11, Table 11-4 tests 1-18)", "Ch.11 Neural networks", M::Neural, Open, "pp.227-258 (PDF 239-270); Table 11-4 pp.245-246",
+        [("test", "Book test (Table 11-4): 1-3 reverse Slow %K nn2 open/limit/stop, 4-6 nn8, 7-12 bottoms (long) nn4/nn9, 13-18 tops (short) nn4/nn9", 1., 1., 18., 1.),
+         ("thresh", "Threshold (0 = the test's best in-sample P1 printed in Table 11-4)", 0., 0., 100., 1.), SES[0], SES[1], SES[2]],
+        Some(("IS 653 / OOS 279", "IS 52% / OOS 38%", "IS $6,917 / OOS $-233", "7 bars", "36-futures portfolio, Test 1 (nn2, entry at open, threshold 60; Table 11-4 p.245)"))),
+    tr!("kets_neural_exit", "Random entries + MSES + neural signal exit (nn8 reverse Slow %K, Ch.15)", "Ch.15 AI exits", M::NeuralExit, Open, "pp.335-341 (PDF 345-351)",
+        [("thresh", "Neural exit threshold (book's best in-sample: 54)", 54., 50., 80., 2.), ("pt", "Profit-target limit, ATR(50) units", 4.5, 0.5, 8., 0.5),
+         ("sl", "Money-management stop, ATR(50) units", 1.5, 0.5, 4., 0.5), ("hold", "Exit at the close after this many bars", 10., 2., 30., 1.), SEED, MKT],
+        Some(("", "IS 41%", "IS $-832", "", "36-futures portfolio IS, threshold 54, ARRR -0.87 (p.340)"))),
+];
+
+/// Ch.11 Table 11-4: (model 0 reverse Slow %K / 1 bottoms / 2 tops, net number, entry order, best in-sample threshold P1).
+/// Test 3 prints P1 60 in-sample and 59 out-of-sample; the in-sample value is the book's choice ("Identical parameters are used").
+const NEURAL_TESTS: [(u8, u8, Od, f64); 18] = [
+    (0, 2, Od::Open, 60.), (0, 2, Od::Limit, 60.), (0, 2, Od::Stop, 60.), (0, 8, Od::Open, 60.), (0, 8, Od::Limit, 60.), (0, 8, Od::Stop, 59.),
+    (1, 4, Od::Open, 32.), (1, 4, Od::Limit, 32.), (1, 4, Od::Stop, 32.), (1, 9, Od::Open, 54.), (1, 9, Od::Limit, 54.), (1, 9, Od::Stop, 50.),
+    (2, 4, Od::Open, 34.), (2, 4, Od::Limit, 34.), (2, 4, Od::Stop, 36.), (2, 9, Od::Open, 48.), (2, 9, Od::Limit, 48.), (2, 9, Od::Stop, 30.),
 ];
 
 /// Rules text per model (quoted / paraphrased tightly from the book and the CD code, page refs in the test table).
@@ -259,6 +277,15 @@ fn model_rules(m: M) -> &'static [&'static str] {
         M::Cycle => &["E|Bank of 20 wavelet (quadrature) filters, centre periods 3..30 bars geometrically spaced, bandwidth width (pp.207-216, WAVFILT.C); power = (in-phase^2 + quadrature^2) / period",
             "F|Trade only a 'good, pure cycle': the strongest filter is not among the 3 shortest or 2 longest, and its power > 1.5 x the strongest filter more than 2 filters away (x14mod01.c)",
             "E|Phase of the dominant filter; sell when phase crosses above -(disp + 180/period) degrees, buy when phase (0-360) crosses above that +180 (predicted cycle bottom / top) (pp.215-216)"],
+        M::Neural => &["F|Inputs (PrepareNeuralInputs, x15mod01.c): 18 close differences C[t-a] - C[t-b] between the lags 0,1,2,3,4,5,6,8,10,12,16,20,24,32,34,40,48,64,96, each times 1/sqrt(b-a), the vector scaled to unit length",
+            "F|Forward pass of the authors' trained net from the CD (X15NETS.ZIP; NT1LIB nt1set_inputv / nt1fire / nt1get_output): input i -> 2(x - min_i)/(max_i - min_i) - 1 clipped to +/-5, then each layer's transfer function (the nets use linear x0.25 on the inputs, logistic sigmoid after), a bias neuron of 1 per layer, output rescaled to the net's target range",
+            "E|Tests 1-6 (x15mod01.c): output = forecast time-reversed Slow %K; output > thresh -> sell, output < 100 - thresh -> buy",
+            "E|Tests 7-12 (x15mod02.c): only when the next open is below the lowest of the last 3 opens (it could be a bottom), 100 x output > thresh -> buy; tests 13-18 (x15mod03.c): next open above the highest of the last 3 opens, 100 x output > thresh -> sell",
+            "E|Entry order by test: at the next open, on a limit at the signal bar's midpoint (high+low)/2, or on a stop at the signal close +/- 0.5 x ATR(50) (x15mod01.c)"],
+        M::NeuralExit => &["E|Random entry at the next open exactly as the Ch.13 harness (ran2, < 0.025 short / > 0.975 long, seed -(ranseed + 10 x market)) (x21mod01.c)",
+            "X|Modified standard exit: profit-target limit at entry + pt x ATR(50), money-management stop at entry - sl x ATR(50) (shorts mirrored), both resting from the entry bar; 4.5 / 1.5 = the best fixed values of Table 14-1 (p.339)",
+            "X|Neural signal exit: \"If the predicted reverse Slow %K is greater than some threshold ... any long position is exited. ... below 100 minus the previous threshold, any short position is exited. Exits triggered by the neural net forecasts are taken at the close of the bar\" (p.338): forecast of the 18-14-4-1 net nn8.net on the signal bar; also on the entry day",
+            "X|Exit at the close once the trade has been held more than hold bars"],
         M::RandSes => &["E|Random entry: each bar a uniform random number (Numerical Recipes ran2, seed -(ranseed + 10 x market)); < 0.025 = sell, > 0.975 = buy (p.296, x19mod01.c)"],
         M::RandMses(k) => match k {
             0 => &["E|Random entry at the next open (2.5% buy / 2.5% sell per bar, ran2 as in Ch.13)",
@@ -291,8 +318,10 @@ const SES_RULES: [&str; 2] = [
 fn notes_for(t: &T) -> &'static str {
     match t.m {
         M::Seas(_) => "Defaults = the book's printed best in-sample parameters. Seasonal averages use only earlier years (the book's out-of-sample method, p.158); the book's in-sample jackknife also used LATER years and is not reproduced. Like the book, the signal reads the seasonal value of a future bar (today+disp), which is built from prior-year prices only; no orders in the last 30 bars of the loaded data (x12mod01.c). Book: 36-futures portfolio with dollar-volatility sizing; here the selected index (instrument swap only).",
-        M::Lunar(_) => "Defaults = the book's printed best parameters. Lunar averages use up to 60 earlier cycles only; the CD code fills from LATER cycles when fewer than 60 earlier ones exist, which contradicts the book text ('determined only by events about 27 or more days ago', p.184) and is not reproduced. Moon phases: Numerical Recipes flmoon, US Eastern time as in the code. No orders in the last 30 bars of the loaded data. Momentum smoothing: the CD script uses type 5 (centered simple); the prose calls it centered triangular (type 7, labelled option).",
+        M::Lunar(_) => "Defaults = the book's printed best parameters. Lunar averages use up to 60 earlier cycles only; the CD code fills from LATER cycles when fewer than 60 earlier ones exist, which contradicts the book text ('determined only by events about 27 or more days ago', p.180-181) and is not reproduced. Moon phases: Numerical Recipes flmoon, US Eastern time as in the code. No orders in the last 30 bars of the loaded data. Momentum smoothing: the CD script uses type 5 (centered simple); the prose calls it centered triangular (type 7, labelled option).",
         M::Cycle => "Defaults = Table 10-1 best in-sample parameters. Causal wavelet filters on closing prices (WAVFILT.C). No orders in the last 30 bars of the loaded data (x14mod01.c). Book: futures portfolio; here the selected index.",
+        M::Neural => "The trained networks are the authors' own (C-Trader Toolkit CD, TRMODS/CHAP15.ZIP -> X15NETS.ZIP, embedded byte for byte: books/kets_nets/SOURCE.txt), trained on the in-sample facts of their 36-futures portfolio (8/1985-12/1994); applying them to an index, ETF or stock is a labelled adaptation. Default = Test 1 with its printed best in-sample threshold (p.test picks Tables 11-4 tests 1-18; p.thresh overrides). Inputs and net computed in double precision (the CD code uses single-precision floats). No orders before bar 120 (the inputs need 96 bars).",
+        M::NeuralExit => "Exit study: entries are random by design (ran2 exactly as on the CD; the sequence depends on the seed and the bars, so it cannot match the book's sequence on its futures). The forecaster is the authors' trained 18-14-4-1 net (nn8.net, CD X15NETS.ZIP, embedded: books/kets_nets/SOURCE.txt) applied to this instrument's closes (labelled adaptation). Threshold 54 = the book's best in-sample value (Table 15-2, p.340).",
         M::RandSes | M::RandMses(_) => "Exit study: entries are random by design (Numerical Recipes ran2 exactly as on the CD; the sequence depends on the seed and the bars, so it cannot match the book's sequence on its futures). Market index 1 = the book's S&P 500 seed slot. Portfolio results in the book are averages over futures markets; here one index.",
         _ => "Defaults = the book's printed best in-sample parameters (optimised on the 36-futures portfolio, 8/1985-12/1994). Book: dollar-volatility sizing of futures, 3 ticks slippage + $15 commission; here one unit of the selected index (instrument swap only); costs come from the vault's cost settings.",
     }
@@ -304,11 +333,12 @@ fn rules_of() -> &'static Vec<(&'static [&'static str], &'static str)> {
     CAT.get_or_init(|| TESTS.iter().map(|t| {
         let mut v: Vec<&'static str> = model_rules(t.m).to_vec();
         match t.m {
-            M::RandMses(_) => {}
+            M::RandMses(_) | M::NeuralExit => {}
+            M::Neural => v.extend(SES_RULES),
             M::HhllStop => v.extend(SES_RULES),
             _ => { v.push(order_rule(t.ord)); v.extend(SES_RULES); }
         }
-        if !matches!(t.m, M::RandSes | M::RandMses(_)) {
+        if !matches!(t.m, M::RandSes | M::RandMses(_) | M::NeuralExit) {
             v.push("F|No orders when the NEXT bar has high == low (book's limit-locked filter, p.88); no orders before the book's ~120-bar warm-up / look-backs are complete");
         }
         let pages: &'static str = Box::leak(format!("F|Source: {}", t.pages).into_boxed_str());
@@ -348,11 +378,11 @@ fn off_list() -> Vec<StrategyDef> {
             &["E|Sell when the fast MA crosses above the slow MA; buy when it crosses below (x10mod01.c model 3)", "E|Fast 1-7, slow 5-50 optimised (p.126)", "X|Standard exit"], "Table 6-6 prints ROA%/$TRD only."),
         off!("kets_ma_sr", "MA support/resistance bounce, 4 MA types x 3 orders (Ch.6 Tests 37-48)", "Ch.6 Moving-average models", "Long/Short", NotTestable(NT_MA),
             &["E|Buy when the slow MA is rising and the fast MA crosses below it; sell when the slow MA is falling and the fast MA crosses above it (x10mod01.c model 4)", "E|Fast 1-5, slow 5-50 optimised (p.126)", "X|Standard exit"],
-            "Text: SMA support/resistance with stop entry made $227/trade IS (ROA 4.2%) and $482 OOS (ROA 14.8%) (p.127); lengths not printed."),
+            "Text: SMA support/resistance with stop entry made $227/trade IS (ROA 4.2%) and $482 OOS (ROA 14.8%) (p.126); lengths not printed."),
         off!("kets_macd_sig", "MACD / 9-bar signal-line cross · open/limit/stop (Ch.7 Tests 10-12)", G7, "Long/Short", NotTestable(NT_OSC),
             &["E|Classic MACD (EMA fast - EMA slow) crosses its 9-bar EMA signal line (x11mod01.c model 2, osctype 4)", "E|Fast 3-15 step 2, slow 10-40 step 5 optimised (p.148)", "X|Standard exit"], "Table 7-3: IS $-1,808/$-1,210/$-1,476 per trade."),
         off!("kets_rsi_div", "RSI / price divergence · open/limit/stop (Ch.7 Tests 16-18)", G7, "Long/Short", NotTestable(NT_OSC),
-            &["E|Divergence rule as in the Stochastic divergence tests, on the classic RSI (x11mod01.c model 3, osctype 3)", "E|RSI 5-25 and look-back 15-25 optimised (p.150)", "X|Standard exit"], "Table 7-3: IS $-2,278/$-1,529/$-1,309."),
+            &["E|Divergence rule as in the Stochastic divergence tests, on the classic RSI (x11mod01.c model 3, osctype 3)", "E|RSI 5-25 and look-back 15-25 optimised (p.149)", "X|Standard exit"], "Table 7-3: IS $-2,278/$-1,529/$-1,309."),
         off!("kets_macd_div", "MACD / price divergence · open/limit/stop (Ch.7 Tests 19-21)", G7, "Long/Short", NotTestable(NT_OSC),
             &["E|Divergence rule on the classic MACD (x11mod01.c model 3, osctype 4)", "E|Fast 3-15, slow 10-40, look-back 15-25 optimised (p.150)", "X|Standard exit"],
             "The chapter's only profitable model: IS $1,393/$1,250/$2,062, OOS $140/$985/$-589 per trade, ROA IS 26.3/12.5/27.2% (Table 7-3); its parameters are not printed."),
@@ -360,18 +390,13 @@ fn off_list() -> Vec<StrategyDef> {
             NeedsData("daily sunspot numbers (Royal Observatory of Belgium / SILSO), which the vault does not have; the model's code is only on the CD and its adaptive response vector reads prices up to 10 bars after each event"),
             &["E|Sunspot count above the highest of the previous lb1 counts (or below the lowest) with no such breakout in the previous lb2 counts; direction chosen adaptively from earlier market responses; acted on disp bars later (pp.197-199)", "E|Best: open 35/15/2, limit 40/15/0, stop 35/15/2 (p.199)", "X|Standard exit"],
             "Book: with the stop order the S&P 500 made $4,991/trade IS (37 trades, 40% wins, ROA 20.4%) and $5,640 OOS (11 trades, 45%, ROA 39.5%) (pp.199-200)."),
-        off!("kets_neural", "Neural-network entries: reverse Slow %K and turning-point nets (Ch.11)", "Ch.11 Neural networks", "Long/Short",
-            NotTestable("trained network weights are not in the book (it prints the training code, not the nets); results depend on the authors' trained networks and training data"),
-            &["E|Feed-forward nets forecasting a time-reversed Slow %K or turning points; enter when the forecast crosses a threshold (pp.227-255)"], "Not reproducible from the book text."),
         off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · open/limit/stop (Ch.12 Tests 1-3)", "Ch.12 Genetic algorithms", "Long",
-            NeedsData("futures open interest: two of the three evolved rules test the open interest (decline >= 4.2% over 34 bars, rise >= 5.6% over 44 bars); index data has no open interest"),
-            &["E|Buy when all three hold: open interest 34 bars ago - open interest 1 bar ago > 4.2% of the former; close 3 bars ago > close 14 bars ago + 3.46 x ATR; open interest risen >= 5.6% over 44 bars (p.278)", "X|Standard exit"],
-            "Book: IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades (p.274)."),
+            NeedsData("futures open interest, which is not in the vault for any index, ETF or stock: two of the three evolved rules read it (a decline of at least 4.2% over 36 bars, a rise of at least 5.6% over 44 bars; Encyclopedia of Trading Strategies p.263-264, p.276-277)"),
+            &["E|Buy when all three hold: open interest 36 bars ago - open interest 1 bar ago > 4.2% of the former; close 3 bars ago > close 14 bars ago + 3.47 x ATR; open interest risen >= 5.6% over 44 bars (p.276-277)", "F|Values decoded from the printed chromosome (4,850,65,653), (1,256,530,709), (5,940,47,610) with the printed macros BiasedPosScale/LinearScale (code p.263-264): the tested system (decision 186, FR-13). The prose (p.276) says 34 bars and 3.46 x ATR [option]", "X|Standard exit"],
+            "Book: IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades (p.273)."),
         off!("kets_ga_short", "Genetically evolved short entry (open-interest + MACD rules) · open/limit/stop (Ch.12 Tests 4-6)", "Ch.12 Genetic algorithms", "Short",
-            NeedsData("futures open interest: two of the three evolved rules test the open interest; index data has no open interest"),
-            &["E|Sell when open interest 1 bar ago >= 1.38 x that 38 bars ago, >= 1.75 x that 25 bars ago, and the MACD(2,50) slope is down (p.278)", "X|Standard exit"], "Book: profitable IS, lost OOS (p.274)."),
-        off!("kets_neural_exit", "Neural-network exit component (Ch.15)", "Ch.15 AI exits", "Long/Short",
-            NotTestable("depends on trained neural networks whose weights the book does not print"), &["X|MEMA stop/shrinking target exit plus a neural-net exit signal (pp.335-345)"], "Not reproducible from the book text."),
+            NeedsData("futures open interest, which is not in the vault for any index, ETF or stock: two of the three evolved rules read it (Encyclopedia of Trading Strategies p.263-264, p.278)"),
+            &["E|Sell when open interest 1 bar ago > 1.393 x that 40 bars ago, > 1.755 x that 25 bars ago, and the MACD(2,50) slope is down (p.278)", "F|Values decoded from the printed chromosome (5,890,391,532), (5,705,760,956), (10,163,999,196) with the printed macros (code p.263-264): the tested system (decision 186, FR-13). The prose (p.278) says 38% over 38 bars for gene 1 [option]", "X|Standard exit"], "Book: profitable IS, lost OOS (p.274)."),
         off!("kets_ga_exit", "Genetically evolved rule-based exits (Ch.15)", "Ch.15 AI exits", "Long/Short",
             NotTestable("the evolved exit rules are printed in prose (long: close above its 12-bar EMA and below its 49-bar EMA with a 6-bar new high; short: close above its 16-bar EMA and 22-bar SMA with the MACD(6,10) slope down, pp.345-346), but the new-high recency window and the random-entry sequence they were evolved and tested on are not printed, so the test cannot be reproduced"),
             &["X|Rule-template exits evolved by a genetic algorithm (pp.345-351)"], "Not reproducible from the book text."),
@@ -418,7 +443,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
             M::Cycle => ("kets_cycle", "Wavelet cycle turns"),
             M::RandSes => ("kets_rand_ses", "Random entries + standard exit"),
             M::RandMses(_) => ("kets_rand_exits", "Random entries + improved exits"),
+            M::Neural | M::NeuralExit => ("kets_ai", "Neural / genetic models"),
         };
+        if matches!(t.m, M::Neural | M::NeuralExit) { return Some((f, n, if t.m == M::Neural { "Neural entries (Ch.11)" } else { "Neural signal exit (Ch.15)" })); }
         let v: &'static str = match t.id {
             "kets_vb_limit_long" => "Limit · longs only",
             "kets_vb_limit_adx" => "Limit · ADX trend filter",
@@ -441,7 +468,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kets_macd_sig" | "kets_rsi_div" | "kets_macd_div" => f("kets_osc_nt", "Oscillator entries, unprinted parameters", "Not testable"),
         "kets_solar" => f("kets_solar", "Sunspot breakout", "Data missing"),
         "kets_ga_long" | "kets_ga_short" => f("kets_ga", "Genetically evolved entries", "Data missing"),
-        "kets_neural" | "kets_neural_exit" | "kets_ga_exit" => f("kets_ai", "Neural / genetic models", "Not testable"),
+        "kets_ga_exit" => f("kets_ai", "Neural / genetic models", "Not testable"),
         _ => None,
     }
 }
@@ -784,7 +811,11 @@ fn drive(x: &Ctx, from: usize, to: usize, warm: usize, last30: bool, ord: Od, lo
 
 /// Random entries at the open with intraday exits (x19mod02.c, x20mod01-03.c).
 #[allow(clippy::too_many_arguments)]
-fn drive_mses(x: &Ctx, from: usize, to: usize, model: u8, atr50: &[f64], seed: i64, pt: f64, sl: f64, later: f64, coeff: f64, ptga: f64, hold: usize) -> Vec<Trade> {
+fn drive_mses(x: &Ctx, from: usize, to: usize, model: u8, atr50: &[f64], seed: i64, pt: f64, sl: f64, later: f64, coeff: f64, ptga: f64, hold: usize,
+              nexit: Option<(&[f64], f64)>) -> Vec<Trade> {
+    // nexit (x21mod01.c, Ch.15): exit at the close when the neural forecast on the signal bar is > thresh (longs) / < 100 - thresh (shorts)
+    let nx_long = |cb: usize| nexit.is_some_and(|(f, th)| f[cb] > th);
+    let nx_short = |cb: usize| nexit.is_some_and(|(f, th)| f[cb] < 100.0 - th);
     let mut s = Sim::new(x);
     let mut rng = Ran2::new(seed); rng.next();
     let (mut lim, mut stp, mut entrybar) = (0., 0., 0usize);
@@ -804,7 +835,7 @@ fn drive_mses(x: &Ctx, from: usize, to: usize, model: u8, atr50: &[f64], seed: i
             lim = ep + d * pt * atr;
             stp = ep - d * sl * atr;
             if model == 1 { stp = if posted > 0 { lowest(&x.l, 2, cb).min(stp) } else { highest(&x.h, 2, cb).max(stp) }; }
-            if posted > 0 { s.ord.xll = Some(lim); s.ord.xls = Some(stp); } else { s.ord.xsl = Some(lim); s.ord.xss = Some(stp); }
+            if posted > 0 { s.ord.xll = Some(lim); s.ord.xls = Some(stp); s.ord.xlc = nx_long(cb); } else { s.ord.xsl = Some(lim); s.ord.xss = Some(stp); s.ord.xsc = nx_short(cb); }
         } else if s.pos > 0 {
             match model {
                 1 => stp = stp.max(lowest(&x.l, 2, cb)),
@@ -813,7 +844,7 @@ fn drive_mses(x: &Ctx, from: usize, to: usize, model: u8, atr50: &[f64], seed: i
                 _ => {}
             }
             s.ord.xll = Some(lim); s.ord.xls = Some(stp);
-            if cb - entrybar >= hold { s.ord.xlc = true; }
+            if cb - entrybar >= hold || nx_long(cb) { s.ord.xlc = true; }
         } else if s.pos < 0 {
             match model {
                 1 => stp = stp.min(highest(&x.h, 2, cb)),
@@ -822,10 +853,90 @@ fn drive_mses(x: &Ctx, from: usize, to: usize, model: u8, atr50: &[f64], seed: i
                 _ => {}
             }
             s.ord.xsl = Some(lim); s.ord.xss = Some(stp);
-            if cb - entrybar >= hold { s.ord.xsc = true; }
+            if cb - entrybar >= hold || nx_short(cb) { s.ord.xsc = true; }
         }
     }
     s.finish(to)
+}
+
+// ---------------------------------------------------------------- NT1LIB neural nets (CD NT1LOAD.C / NT1FIRE.C), Ch.11 and Ch.15
+
+/// PrepareNeuralInputs (x15mod01.c): 18 lag-gap-scaled close differences, normalised to unit length.
+fn neural_inputs(c: &[f64], cb: usize) -> [f64; 18] {
+    const PB: [usize; 19] = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 34, 40, 48, 64, 96];
+    let mut v = [0.; 18];
+    for k in 0..18 { v[k] = (c[cb - PB[k]] - c[cb - PB[k + 1]]) / ((PB[k + 1] - PB[k]) as f64).sqrt(); }
+    let amp = 1. / v.iter().map(|z| z * z).sum::<f64>().sqrt();
+    for z in v.iter_mut() { *z *= amp; }
+    v
+}
+
+/// A trained NT1LIB feed-forward net: layer sizes, weights (per target neuron: n[l] weights + the bias weight), transfer
+/// selectors, input scaling (ivmin, ivmax) and the output's scaling (ovmin, ovmax).
+struct Net { n: Vec<usize>, w: Vec<Vec<f64>>, tfs: Vec<i64>, imin: Vec<f64>, imax: Vec<f64>, omin: f64, omax: f64 }
+
+impl Net {
+    /// nt1load: the LAYERS, NEURONS, WEIGHTS, TRANSFERS and SCALING sections of a .NET file (9999 terminators skipped).
+    fn parse(txt: &str) -> Net {
+        let tk: Vec<&str> = txt.split_whitespace().collect();
+        let at = |k: &str| tk.iter().position(|t| *t == k).unwrap_or_else(|| panic!("net file: no {k}")) + 1;
+        let num = |i: usize| -> f64 { tk[i].parse().unwrap_or_else(|_| panic!("net file: bad number {}", tk[i])) };
+        let nl = num(at("LAYERS")) as usize;
+        let n: Vec<usize> = (0..nl).map(|l| num(at("NEURONS") + l) as usize).collect();
+        let mut p = at("WEIGHTS");
+        let w: Vec<Vec<f64>> = (0..nl - 1).map(|l| { let m = (n[l] + 1) * n[l + 1]; let v = (p..p + m).map(num).collect(); p += m; v }).collect();
+        assert_eq!(tk[p], "9999", "net file: weight count");
+        let tfs = (0..nl).map(|l| num(at("TRANSFERS") + l) as i64).collect();
+        let s = at("SCALING");
+        let (ni, no) = (num(s) as usize, num(s + 1) as usize);
+        assert!(ni == n[0] && no == 1, "net file: scaling");
+        let imin = (0..ni).map(|i| num(s + 2 + 3 * i + 1)).collect();
+        let imax = (0..ni).map(|i| num(s + 2 + 3 * i + 2)).collect();
+        let o = s + 2 + 3 * ni;
+        Net { n, w, tfs, imin, imax, omin: num(o + 1), omax: num(o + 2) }
+    }
+    /// The six nets of Table 11-4 (model 0 = reverse Slow %K nnN.net, 1 = bottoms nnN_02.net, 2 = tops nnN_03.net).
+    fn get(model: u8, net: u8) -> &'static Net {
+        static NETS: OnceLock<HashMap<(u8, u8), Net>> = OnceLock::new();
+        NETS.get_or_init(|| [((0, 2), include_str!("kets_nets/NN2.NET")), ((0, 8), include_str!("kets_nets/NN8.NET")),
+            ((1, 4), include_str!("kets_nets/NN4_02.NET")), ((1, 9), include_str!("kets_nets/NN9_02.NET")),
+            ((2, 4), include_str!("kets_nets/NN4_03.NET")), ((2, 9), include_str!("kets_nets/NN9_03.NET"))]
+            .into_iter().map(|(k, t)| (k, Net::parse(t))).collect()).get(&(model, net)).expect("net")
+    }
+    /// NT1FIRE transfer(): bias neuron from the hundreds digit, then the function on the first values.
+    fn transfer(v: &mut Vec<f64>, sel: i64) {
+        v.push(match (sel / 100) % 10 { 0 => 1., 1 => 0., _ => -1. });
+        let k = v.len() - 1;
+        for z in v[..k].iter_mut() {
+            let x = *z;
+            *z = match sel % 100 {
+                1 => 1. / ((-x).exp() + 1.),
+                2 => if x > 0. { (0.5 + x) / (1. + x) } else { 0.5 / (1. - x) },
+                3 => { let a = x.abs(); let t = 1. / (2. + a * (1. + a * (0.5 + a / 6.))); if x < 0. { t } else { 1. - t } }
+                4 => 1. / (1. + x * x * (0.5 + 0.125 * x * x)),
+                5 => 0.25 * x,
+                6 => 0.25 * (1. + x),
+                7 => 2. * (1. / ((-x).exp() + 1.) - 0.5),
+                8 => 1. / ((1. - x).exp() + 1.),
+                _ => panic!("net file: transfer {sel}"),
+            };
+        }
+    }
+    /// nt1set_inputv + nt1fire + nt1get_output(0).
+    fn fire(&self, inp: &[f64]) -> f64 {
+        let mut v: Vec<f64> = inp.iter().enumerate().map(|(i, &x)| {
+            let r = self.imax[i] - self.imin[i];
+            (if r <= 0. { 0. } else { 2. * (x - self.imin[i]) / r - 1. }).clamp(-5., 5.)
+        }).collect();
+        Net::transfer(&mut v, self.tfs[0]);
+        for l in 0..self.n.len() - 1 {
+            let m = self.n[l] + 1;
+            let mut nx: Vec<f64> = (0..self.n[l + 1]).map(|j| v.iter().zip(&self.w[l][m * j..m * (j + 1)]).map(|(a, b)| a * b).sum()).collect();
+            Net::transfer(&mut nx, self.tfs[l + 1]);
+            v = nx;
+        }
+        (self.omax - self.omin) * v[0] + self.omin
+    }
 }
 
 fn cross_up(a: &[f64], b: &[f64], c: usize) -> bool { a[c] >= b[c] && a[c - 1] < b[c - 1] }
@@ -955,7 +1066,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         M::RandMses(k) => drive_mses(x, from, to, k, &atr50, -(g("seed").round() as i64 + 10 * g("mkt").round() as i64),
-            g("pt"), g("sl"), g("later"), g("coeff"), g("ptga"), u("hold")),
+            g("pt"), g("sl"), g("later"), g("coeff"), g("ptga"), u("hold"), None),
+        M::Neural => {
+            let (model, net, ord, p1) = NEURAL_TESTS[(g("test").round().clamp(1., 18.) as usize) - 1];
+            let th = if g("thresh") > 0. { g("thresh") } else { p1 };
+            let nn = Net::get(model, net);
+            drive(x, from, to, WARM, false, ord, false, ses, &atr50, |cb, _| {
+                let s = match model {
+                    0 => { let f = nn.fire(&neural_inputs(&x.c, cb)); if f < 100. - th { 1 } else if f > th { -1 } else { 0 } }
+                    1 => if x.o[cb + 1] < lowest(&x.o, 3, cb) && 100. * nn.fire(&neural_inputs(&x.c, cb)) > th { 1 } else { 0 },
+                    _ => if x.o[cb + 1] > highest(&x.o, 3, cb) && 100. * nn.fire(&neural_inputs(&x.c, cb)) > th { -1 } else { 0 },
+                };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::NeuralExit => {
+            let nn = Net::get(0, 8);
+            let prd: Vec<f64> = (0..n).map(|cb| if cb < 100 { 0. } else { nn.fire(&neural_inputs(&x.c, cb)) }).collect(); // x21mod01.c NeuralForecast
+            drive_mses(x, from, to, 0, &atr50, -(g("seed").round() as i64 + 10 * g("mkt").round() as i64),
+                g("pt"), g("sl"), 0., 0., 0., u("hold"), Some((&prd, g("thresh"))))
+        }
     };
     Some(out)
 }
@@ -963,6 +1093,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cd_nets_load_and_fire_as_the_independent_reference() {
+        // expected outputs: K47w/k47_ref.py (Python port of NT1LOAD/NT1FIRE written from the CD's C), input x_k = (-1)^k (k+1)/30
+        let x: Vec<f64> = (0..18).map(|k| if k % 2 == 0 { 1. } else { -1. } * (k + 1) as f64 / 30.).collect();
+        for (m, n, sizes, want) in [(0u8, 2u8, vec![18, 6, 1], 49.156646965091376), (0, 8, vec![18, 14, 4, 1], 48.188771607258936), (1, 4, vec![18, 10, 1], 0.2042419071796713),
+                                    (1, 9, vec![18, 20, 6, 1], 0.4492965287226288), (2, 4, vec![18, 10, 1], 0.11658591988761116), (2, 9, vec![18, 20, 6, 1], 0.1292270614183467)] {
+            let nn = Net::get(m, n);
+            assert_eq!(nn.n, sizes);
+            assert!((nn.fire(&x) - want).abs() < 1e-9, "net {m}/{n}: {}", nn.fire(&x));
+        }
+        let c: Vec<f64> = (0..200).map(|i| 100. + (i as f64 * 0.3).sin() * 5. + i as f64 * 0.05).collect();
+        let v = neural_inputs(&c, 150);
+        assert!((v.iter().map(|z| z * z).sum::<f64>() - 1.).abs() < 1e-12); // unit amplitude
+        assert!((v[17] * (32f64).sqrt() / v[0] - (c[150 - 64] - c[150 - 96]) / (c[150] - c[149])).abs() < 1e-9); // lag gaps 1 and 32
+    }
     use crate::Row;
     fn rows(c: &[f64]) -> Vec<Row> {
         c.iter().enumerate().map(|(i, &v)| Row { ticker: "T".into(), date: format!("{:04}-{:02}-{:02}", 2000 + i / 300, 1 + (i / 25) % 12, 1 + i % 25),

@@ -10,7 +10,6 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BO_NOTE: &str = "Run on the daily index (the book says \"periods\" and gives no time frame for this system). Long only: the book states the short side in prose (\"or to short the lowest low\") but gives no short exit. \"Last three bars\" = the three bars before the current one (the current bar cannot close below its own low). Entry at the next bar's open as stated; the exit is also taken at the next bar's open [Book silent on the exit's timing; p.exit_close = 1 exits on the signal bar's close]. One position at a time.";
 const SAMPLE_NOTE: &str = "TradeStation code p.263-264, run on daily index bars. Entries \"On Close\" fill at the signal bar's close and reverse an opposite position (TradeStation Buy/Sell); a same-direction signal is ignored. StdDev = TradeStation population standard deviation; the entry buffer uses StdDev(Close,10)[1], the stop uses Close - 2*StdDev(Close,10) of the entry bar (at$ = the entry bar) and is active from the next bar (open through it = open fill). ADX(10) = Wilder ADX (engine dmi). SlowD(14) = legacy TradeStation SlowD (FastK 14, SlowK and SlowD smoothed (2*prev + new)/3). The printed exit block has no begin/end; it is coded as the prose says: ADX > 30 -> exit on the 10/35 SMA cross, ADX < 20 -> exit when BarsSinceEntry = 10, otherwise exit when SlowD > 85 (long) / < 15 (short). Exit orders are market orders for the next bar's open and, as in TradeStation, an exit condition true on the entry bar exits that new position at the next open. Exit at the open is processed before the stop and before that bar's close entry.";
-const MA3_GAP: &str = "Needs 5-minute bars: \"looking at three moving averages on a 5-minute chart, say, 10, 35, and 50\" (p.108). The vault has daily bars only. The author adds: \"This is just an idea for a simple system and not one that I would recommend using on its own.\" (p.108)";
 const TL_GAP: &str = "Discretionary: needs a hand-drawn downward-sloping trendline (\"Buy if the current bar's close is higher than the trendline plus 10 ticks\", p.173).";
 const FRAG_GAP: &str = "Entry fragments only (p.252-257: close above the 10-bar high +5 points or +StdDev; two closes above the 35-bar MA; 10/35 MA crossover; SlowK/SlowD and RSI(10) crossing 30; ADX(10) > 30 and SlowD(14) > 85). The book pairs no exit with them; the exits on p.259-260 are a menu (\"These are just a few examples. You have to test different ideas\"). Combining them would invent a system.";
 const MTF_GAP: &str = "Multiple time-frame MA crossover (p.90): a 60-minute crossover allows longs only, taken and exited on 5-minute crossovers. The book gives no moving-average lengths (\"a simple moving average crossover system as in Charts 5-5 and 5-6\") and needs intraday bars.";
@@ -33,10 +32,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"If ADX(LengthADX) < 20 Then If BarsSinceEntry=BSE Then ExitLong / ExitShort\" BSE 10 p.263",
             "X|\"Else If SlowD(14) > 85 Then ExitLong; If SlowD(14) < 15 Then ExitShort\" p.264",
         ], SAMPLE_NOTE),
-        d("mlhpt_ma3", "Three moving averages 10/35/50 on 5-minute bars", "Ch 6 · Trading with the Trend", "Long/Short", NeedsData(MA3_GAP), &[
+        d("mlhpt_ma3", "Three moving averages 10/35/50 on 5-minute bars", "Ch 6 · Trading with the Trend", "Long/Short", Live, &[ // lane K53: run in books/k53intra.rs
+            "F|\"A simple moving average crossover system a day trader can use involves looking at three moving averages on a 5-minute chart, say, 10, 35, and 50\" p.108",
             "E|\"Buy when the close is above the 50-period average and the 10-period average is above both the 35- and the 50-period averages.\" p.109",
-            "X|\"If the close is above the 50-period average but the 10-period average is below the 35-period average exit longs but do not go short.\" p.109 (short mirrored)",
-        ], MA3_GAP),
+            "X|\"If the close is above the 50-period average but the 10-period average is below the 35-period average exit longs but do not go short.\" p.109 (short mirrored: \"Sell when the close is below the 50-period average and the 10-period average is below both the 35- and the 50-period averages\")",
+            "A|Read [lane K53, decision 229 (7)]: the book does not say which average or when the order fills: simple averages of the 5-minute closes and orders at the 5-minute bar's close [declared readings, where the source is silent]; session-aligned 5-minute bars from the 1-minute file, one series across days (the book gives no end-of-day exit, so none is added); an opposite entry reverses.",
+        ], "The author: \"This is just an idea for a simple system and not one that I would recommend using on its own.\" (p.108). Chart 6-7 is 5-minute KLAC; no results. Runs on SPY and SPX minutes (declared application); the NIFTY 50 and NIFTYBANK minute results are withdrawn (decisions #231/#234: NSE cash-index minutes are dominated by stale component prices). No costs in the vault's run. Cash-index shorts are hypothetical."),
         d("mlhpt_trendline", "Trendline break + 10 ticks", "Ch 9 · Breakouts and Reversals", "Long", NotTestable(TL_GAP), &[
             "E|\"Buy if the current bar's close is higher than the trendline plus 10 ticks.\" p.173", "X|\"Exit if both the current bar and the previous bar close below the trendline.\" p.173",
         ], TL_GAP),
@@ -51,7 +52,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "mlhpt_sample" => ("mlhpt_bo", "Link breakout systems", "Sample system (ADX exits)"),
         "mlhpt_trendline" => ("mlhpt_bo", "Link breakout systems", "Trendline · not testable"),
         "mlhpt_fragments" => ("mlhpt_bo", "Link breakout systems", "Fragments · not testable"),
-        "mlhpt_ma3" => ("mlhpt_ma", "Link moving-average systems", "10/35/50 on 5-min · data missing"),
+        "mlhpt_ma3" => ("mlhpt_ma", "Link moving-average systems", "10/35/50 on 5-minute bars"),
         "mlhpt_mtf" => ("mlhpt_ma", "Link moving-average systems", "Multi time frame · not testable"),
         _ => return None,
     })

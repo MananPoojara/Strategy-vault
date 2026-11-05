@@ -28,6 +28,8 @@ mod pristine_api;
 mod intraday; // intraday phase 1: real 1-minute bars (one day at a time)
 mod intraday_w2b; // ---- intraday wave 2b block: more same-day rules on 1-minute bars ---- end intraday wave 2b block ----
 mod intraday_w3; // intraday wave 3 (K24): TD Demand Line break on 1-minute bars
+mod intraday_ep; // intraday EP1/EP2 (K39): N-minute bars from the 1-minute file
+mod second; // EP4 (K51, decision #223): a second instrument aligned to the traded one
 mod options; // options phase 2: real EOD option chains (one day at a time) + held-contract mark-to-market account
 
 // Source-prefix loading and exact account work are serialized for this owner.
@@ -297,6 +299,10 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
     if books::hbqts::reviewed::is_dema_index(id) {return Err("QTS DEMA canonical unit reporting requires separate fee/slippage components through backtest_costs".into());}
     // options phase 2: option rules run on their own account (overlapping positions valued at the held contracts' prices)
     if let Some(pos)=options::positions(id,ctx,from,to,p) {return option_run(ctx,pos?,from,to,cost);}
+    // lane K28: rotation rules hold several ETFs on one account (books::rotation), valued at each ETF's own close
+    if let Some(a)=books::rotation::account(id,ctx,from,to,cost,p,books::rotation::PRELOADED.get().copied()) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
+    // lane K43: pyramids, unequal lots and overlapping positions of one rule on one account (books::units)
+    if let Some(a)=books::units::run(id,ctx,from,to,cost,p) {let a=a?;let to=a.ruin.unwrap_or(to);let equity=a.equity[..=to-from].to_vec();return Ok(Run{trades:a.trades.clone(),from,to,equity,bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
 
     if books::hbiab_reviewed::reviewed(id) {
         let account=books::hbiab_reviewed::run(id,ctx,from,to,cost,p)?;
@@ -710,6 +716,8 @@ impl SelectedContext<'_>{
                     if is_vix_series(key)&&self.volatility_source(st).is_none(){continue;}
                     if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),rows.iter().map(|r|values.get(&r.date).copied().unwrap_or(f64::NAN)).collect());}
                 }
+                // EP4 (K51, #223): second series from the engine's own price file (NDX-SPX for hfm Ch.6 on US stocks, D1 CUD-06, unchanged)
+                if let Some(data)=books::rotation::PRELOADED.get() {second::inject(&mut ctx,data);}
                 ContextRef::Native(ctx)
             }
         }
@@ -1496,7 +1504,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         if let Some(a)=&run.option_account {allocation=a.alloc[i];}
         let mut ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         // options phase 2: the underlying's daily range says nothing about the option's excursion
-        if run.option_account.is_some() {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;}
+        if run.option_account.as_ref().is_some_and(|a|a.model!=books::units::MODEL) {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;} // a multi-unit trade is on the underlying itself (lane K43)
         allocation*=1.+ledger.net_ret;
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
@@ -1576,8 +1584,8 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let gross_equity=if let Some(a)=&run.option_account {a.gross[..run.equity.len()].to_vec()} else {run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
     let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
-    if run.option_account.is_some() {
-        let _=write!(o,",\"option_account\":{{\"model\":\"options_phase2_held_contract_marks_v1\",\"basis\":\"{}\"}},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",esc(options::BASIS),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(options::BASIS));
+    if let Some(a)=&run.option_account {
+        let _=write!(o,",\"option_account\":{{\"model\":\"{}\",\"basis\":\"{}\"}},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",a.model,esc(a.basis),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(a.basis));
         return Ok(o);
     }
     if let Some(account)=&run.source_account {
@@ -2145,8 +2153,12 @@ fn main() {
     let data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
+    let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
-    let extra = load_extra(&extra_dir);
+    let mut extra = load_extra(&extra_dir);
+    let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
+    // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
+    if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}
     println!("extra data: {} series from {extra_dir}", extra.len());
     // intraday phase 1: optional arg 5 = folder of <TICKER>.m1.csv / .m1idx.csv; missing = no minute data (results unchanged)
     let intraday_dir = args.get(5).cloned();
@@ -2178,20 +2190,12 @@ fn main() {
                     c.extra.insert(key.clone(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
                 }
             }
-            // NDX-SPX (hfm Ch.6): NASDAQ 100 and S&P 500 cash closes from the loaded US index rows, aligned by date
-            // (a missing date stays NaN). An extra_data file of the same name takes precedence.
-            if market==Some(baskets::Market::UnitedStates) {
-                for (key,src) in [("LEADER_CLOSE","NDX"),("FOLLOWER_CLOSE","SPX")] {
-                    if c.extra.contains_key(key) {continue;}
-                    let Some(src)=data.get(src) else {continue};
-                    let m:BTreeMap<&str,f64>=src.iter().map(|r|(r.date.as_str(),r.close)).collect();
-                    c.extra.insert(key.into(), rows.iter().map(|r| m.get(r.date.as_str()).copied().unwrap_or(f64::NAN)).collect());
-                }
-            }
+            // EP4 (K51, #223): second series aligned by date from this file (hfm NDX-SPX unchanged: exact, NaN holes).
+            // An extra_data file of the same name takes precedence.
+            second::inject(&mut c, data);
             (t.clone(), c)
         })
         .collect();
-    let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     let st = Arc::new(State { ctxs,baskets,vix,market_extra:extra });
     let _=DATA_FILES.set(collect_data_files(Some(&csv),&[Some(&vix_dir),Some(&extra_dir),intraday_dir.as_deref(),options_dir.as_deref()],std::env::var("VAULT_BASKET_DATA_DIR").ok().map(|d|std::path::Path::new(&d).join("index.csv"))));
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("bind");
@@ -2713,9 +2717,31 @@ mod tests {
                 other_path += 1;
                 continue;
             }
+            if d.id=="prap1_raptor10" {
+                // lane K51: reads BENCH_HV100 (EP4); NIFTY 50 is its own benchmark, so there is no series and no run (books::prap1 tests)
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                other_path += 1;
+                continue;
+            }
             if options::is_option_rule(d.id) {
                 // options phase 2: own account (overlapping positions, held-contract marks; options::tests); no chain here
                 assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with("needs_data"));
+                other_path += 1;
+                continue;
+            }
+            if books::units::is_units(d.id) {
+                // lane K43: several units on one account (books::units tests, K43w/k43_ref.py); the trades are the units
+                for cost in [0.0, 0.0005] {
+                    let run=backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_or_else(|e|panic!("{}: {e}",d.id));
+                    let a=run.option_account.as_ref().unwrap();
+                    assert!(a.model==books::units::MODEL && run.trades.len()==a.alloc.len() && run.equity.iter().all(|v|v.is_finite()),"{}",d.id);
+                }
+                other_path += 1;
+                continue;
+            }
+            if books::rotation::is_rotation(d.id) {
+                // lane K28: several ETFs on one account (books::rotation tests, k28_ref.py); refused off the SPY calendar
+                assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with("not_testable"),"{}",d.id);
                 other_path += 1;
                 continue;
             }

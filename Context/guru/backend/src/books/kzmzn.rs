@@ -7,11 +7,11 @@
 use crate::connors::{rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::mkits::{ema, hhv, llv};
 use super::rbtie::{mk, target_trades};
-use super::msws::{simulate, sma, stoch, Exec, Sig};
+use super::msws::{sma, stoch, Exec, Sig};
 
 /// Admitted ids (authors/titles-1030/K8w/k8_ref.py (header)).
 pub const REVIEWED: &[&str] = &["kzmzn_key_rev", "kzmzn_stochrsi", "kzmzn_storsi", "kzmzn_binary_wave"];
-pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) || K9.contains(&id) }
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) || K9.contains(&id) || K52.contains(&id) }
 
 macro_rules! common { () => { " Fills at the signal day's close (the MetaStock System Tester default, no delay). MetaStock built-ins as documented: RSI = Wilder's, Mo(n) = 100 x C / C n bars ago, Mov(..,E) = exponential average. A forum/vendor sample with no printed results; ETFs, US/India indices and stocks are a declared application." } }
 
@@ -37,6 +37,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"ENTER LONG: RSI(14)<30 OR Mo(12)<90\"", "X|\"ENTER SHORT: RSI(14)>70 OR Mo(12)>110\"; \"ValueWhen(1,signal<>0,signal)\""], BIN),
     ];
     v.extend(k9_catalogue());
+    v.push(k52_card());
     v
 }
 
@@ -46,6 +47,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kzmzn_stochrsi" => Some(("kzmzn_stochrsi", "Metastock Zone StochRSI", "14/70/252")),
         "kzmzn_storsi" => Some(("kzmzn_storsi", "Metastock Zone StoRSI", "17/83")),
         "kzmzn_binary_wave" => Some(("kzmzn_binary_wave", "Metastock Zone binary wave", "RSI 14, Mo 12")),
+        "kzmzn_rs_system1" => Some(("kzmzn_rs_system1", "Metastock Zone RS System No.1", "RS x OBV vs the market")),
         _ => k9_family_of(id),
     }
 }
@@ -55,7 +57,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "kzmzn_key_rev" => Some(vec![p("stop", "Maximum loss, % (2)", 2., 0.5, 10., 0.5)]),
         "kzmzn_storsi" => Some(vec![p("lo", "Buy below (17)", 17., 1., 50., 1.), p("hi", "Sell above (83)", 83., 50., 99., 1.)]),
-        "kzmzn_stochrsi" | "kzmzn_binary_wave" => Some(vec![]),
+        "kzmzn_stochrsi" | "kzmzn_binary_wave" | "kzmzn_rs_system1" => Some(vec![]),
         _ => k9_params(id),
     }
 }
@@ -76,6 +78,7 @@ fn stoch_rsi(c: &[f64], n: usize, s: usize) -> Vec<f64> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     if K9.contains(&id) { return k9_run(id, x, from, to, p); }
+    if K52.contains(&id) { return k52_run(x, from, to); }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (o, h, l, c, n_) = (&x.o, &x.h, &x.l, &x.c, x.c.len());
@@ -128,7 +131,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 // authors/titles-1030/K9w/k9_ref.py (header). They run through the MetaStock System Tester simulator of module msws.
 pub const K9: &[&str] = &["kzmzn_psych", "kzmzn_coppock", "kzmzn_wig20", "kzmzn_simianer", "kzmzn_seq_setup", "kzmzn_momentum_time", "kzmzn_123_reversal"];
 
-macro_rules! common9 { () => { " Fills at the signal day's close (the MetaStock System Tester default, trade delay 0). One position at a time; a position closes only by its close rule, checked from the day after a close-filled entry; a close and an opposite entry on the same day reverse the position. MetaStock built-ins as documented: Mov(..,E) = exponential average (alpha 2/(n+1), started from the simple average of its first n values), Mov(..,S) = simple average, Stoch(k,s) = 100 x Sum(C - LLV(L,k), s) / Sum(HHV(H,k) - LLV(L,k), s), Cross(a,b) = a above b today and at or below it yesterday. A mailing-list sample with no printed test unless noted; indices, ETFs and US/India stocks are a declared application." } }
+macro_rules! common9 { () => { " Fills at the signal day's close (the MetaStock System Tester default, trade delay 0). One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite entry closes the open position and opens the other side at that close, checked before the close rule (from the day after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite entry is ignored while a position is open). MetaStock built-ins as documented: Mov(..,E) = exponential average (alpha 2/(n+1), started from the simple average of its first n values), Mov(..,S) = simple average, Stoch(k,s) = 100 x Sum(C - LLV(L,k), s) / Sum(HHV(H,k) - LLV(L,k), s), Cross(a,b) = a above b today and at or below it yesterday. A mailing-list sample with no printed test unless noted; indices, ETFs and US/India stocks are a declared application." } }
 
 const K9_PSY: &str = concat!("[Declared readings] Glen Wallace's code for the Futures (June 2000, p.48) Psychological Index: PsychIndex = 100 x (number of up closes in the last LookBack days) / LookBack. Enter long (and close a short) when it is at or below the lower threshold, enter short (and close a long) when it is at or above the upper one: always in after the first signal. LookBack 12, upper 75, lower 25 are 'the standard' settings the article describes (his Input() defaults); the System Tester version uses opt1-opt3, whose printed ranges (1-15) cannot hold 75/25, so the indicator defaults are used. The poster warns it 'will give poor results in a strongly trending market'.", common9!());
 const K9_COP: &str = concat!("[Declared readings] SectorBets' Coppock curve CCT = (10 x (ROC14 + ROC11) of today + 9 x (ROC14 + ROC11) of yesterday + ... + 1 x those 9 days back) / 2, ROC in percent. Enter long (close short) when CCT rises and either today's close is above yesterday's open after a black candle yesterday (close below open) or today's close is above yesterday's close after a white candle (close above open); enter short (close long) on the printed mirror with a falling CCT. The printed Enter Short / Close Long and Enter Long / Close Short pairs are the same conditions, so the system is stop and reverse. Black() = close below open, White() = close above open (MetaStock built-ins). Daily bars (the author: 'monthly, weekly, daily, hourly').", common9!());
@@ -187,6 +190,7 @@ fn k9_params(id: &str) -> Option<Vec<ParamDef>> {
             p("lo", "Lower threshold % (standard 25)", 25., 0., 50., 1.)],
         "kzmzn_simianer" => vec![p("alert", "Alert window days (printed 10)", 10., 1., 30., 1.)],
         "kzmzn_seq_setup" => vec![p("vday", "Validation day: 1 = on (printed), 0 = off", 1., 0., 1., 1.)],
+        "kzmzn_wig20" => vec![super::msws::REVERSE_PARAM],
         _ => vec![],
     })
 }
@@ -262,7 +266,46 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str, f64) -> f64) -> Option<Sig> {
 fn k9_run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let sig = signals(id, x, &g)?;
-    Some(simulate(x, from, to, &sig, Exec::default()))
+    Some(super::msws::simulate_conv(x, from, to, &sig, Exec::default(), super::msws::reverse_on(p)))
+}
+
+// ===================================================================== lane K52 system (5 Nov 2026)
+// To-code row 156, decisions #27, #223, #226 (EP4 second.rs). Page e-st-RS_System_No1 (Metastock Zone.pdf PDF p.952-953; text
+// authors/batch-c/C3w/mszone/e-st-RS_System_No1.txt); independent check authors/titles-1030/K52w/k52_ref.py.
+pub const K52: &[&str] = &["kzmzn_rs_system1"];
+
+const K52_RS: &str = concat!("[Declared readings] The page's formula, with the market swapped: RelStr = Typical() / Security(market, Typical()) (0 when Typical() = 0), CalcRelStr = RelStr / Mov(RelStr,5,S) (0 when RelStr = 0), CalcOBV = OBV() / Mov(OBV(),5,S) (0 when OBV() = 0), CalcStr = CalcRelStr x CalcOBV; enter long on Cross(CalcStr, 1), close long on Cross(1, CalcStr). Typical() = (H + L + C) / 3; a division by a zero 5-day average gives no value on that bar. The page compares a Warsaw stock with the WIG 20 index, which the vault does not hold: US instruments use the S&P 500 and Indian ones NIFTY 50 as the market, a labelled benchmark swap (decision #27). Security() pads a date the market lacks with its last valid bar (MetaStock), and runs with more than 5% such bars are withheld (decision #223). OBV() = the vault's MetaStock engine built-in (Cum of +volume on an up close, -volume on a down close, from the second bar of the loaded history). Needs volume on every day. The S&P 500 and SPY (NIFTY 50) are not run against themselves (decision #225). Cash-index check (decisions #177/#178): the rule run with the S&P 500 and with SPY as the market (2010-2020 and 1993-2026, 10 symbols) is not flagged in both windows, so the cash-index typical price is used, with this note. Long only.",
+    " Fills at the signal day's close (the MetaStock System Tester default, trade delay 0). A forum/vendor sample with no printed results; indices, ETFs and stocks are a declared application.");
+
+fn k52_card() -> StrategyDef {
+    StrategyDef { id: "kzmzn_rs_system1", name: "RS System No.1: relative strength against the market times OBV, each over its 5-day average; long while above 1", group: "Metastock Zone systems",
+        session: 0, dir: "Long", status: Status::Live, needs_volume: true, needs_vix: false, needs_series: &["BENCH.H", "BENCH.L", "BENCH.C"], book: "kzmzn", rules: &[
+            "F|\"RelStr:=If( Typical()=0, 0, ( Typical() / Security(\"WIG20\",Typical()) ) ); AvgRelStr:=( Mov(RelStr,5,S)); CalcRelStr:=If( (RelStr=0),0, (RelStr/AvgRelStr) ); AvgOBV:=( Mov(OBV(),5,S) ); CalcOBV:=If( (OBV()=0),0, (OBV() / AvgOBV) ); CalcStr:=(CalcRelStr * CalcOBV);\" (page e-st-RS_System_No1); market = S&P 500 / NIFTY 50 for WIG20 (decision #27)",
+            "E|\"enter long: Cross( Fml( \"RS System No.1\") , 1)\"", "X|\"close long: Cross( 1 , Fml( \"RS System No.1\") )\""],
+        notes: K52_RS, claim: None }
+}
+
+/// CalcStr of RS System No.1 (market typical price `mt`, NaN where the market has no bar).
+pub fn rs1_calcstr(x: &Ctx, mt: &[f64]) -> Vec<f64> {
+    let n = x.c.len();
+    let tp: Vec<f64> = (0..n).map(|i| (x.h[i] + x.l[i] + x.c[i]) / 3.).collect();
+    let rel: Vec<f64> = (0..n).map(|i| if tp[i] == 0. { 0. } else { tp[i] / mt[i] }).collect();
+    let avg = sma(&rel, 5);
+    let none = |_: &str| None;
+    let obv = super::msws::Eng::new(x, &none).eval_src("OBV()").map(|v| v.to_vec()).unwrap_or_else(|_| vec![f64::NAN; n]);
+    let aobv = sma(&obv, 5);
+    let div = |a: f64, b: f64| if a == 0. { 0. } else if b == 0. { f64::NAN } else { a / b }; // If(x=0,0,x/avg); x/0 gives no value
+    (0..n).map(|i| div(rel[i], avg[i]) * div(obv[i], aobv[i])).collect()
+}
+
+fn k52_run(x: &Ctx, from: usize, to: usize) -> Option<Vec<Trade>> {
+    let (Some(h), Some(l), Some(c)) = (x.series("BENCH.H"), x.series("BENCH.L"), x.series("BENCH.C")) else { return Some(vec![]) };
+    let mt: Vec<f64> = (0..x.c.len()).map(|i| (h[i] + l[i] + c[i]) / 3.).collect();
+    let cs = rs1_calcstr(x, &mt);
+    let n = cs.len();
+    let one = vec![1.; n];
+    let sig = Sig { el: (0..n).map(|i| cross(&cs, &one, i)).collect(), xl: (0..n).map(|i| cross(&one, &cs, i)).collect(), es: vec![false; n], xs: vec![false; n] };
+    Some(super::msws::simulate(x, from, to, &sig, Exec::default()))
 }
 
 #[cfg(test)]
@@ -294,6 +337,19 @@ mod tests {
         let v: Vec<f64> = (0..100).map(|i| i as f64).collect();
         assert!((tma(&v, 55)[54] - 27.).abs() < 1e-9 && tma(&v, 55)[53].is_nan());
         assert!(run("kzmzn_x", &x, 0, 5, &Params::new()).is_none());
+    }
+    #[test]
+    fn rs_system1_crosses_one_with_rising_relative_strength_and_obv() {
+        // the stock rises against a flat market on rising closes (OBV up), then falls back
+        let cl = [10., 10., 10., 10., 10., 10., 10., 10., 11., 12., 13., 13., 12., 11., 10., 9., 9., 9.];
+        let r: Vec<Row> = cl.iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("2001-01-{:02}", i + 1), open: c, high: c, low: c, close: c, volume: Some(100.) }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        for k in ["BENCH.H", "BENCH.L", "BENCH.C"] { x.extra.insert(k.into(), vec![100.; r.len()]); }
+        let cs = rs1_calcstr(&x, &vec![100.; r.len()]);
+        assert!(cs[..8].iter().all(|v| !(*v > 1.)) && cs[8] > 1.); // flat closes: OBV 0 -> CalcStr 0; the first up close crosses 1
+        let t = run("kzmzn_rs_system1", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert_eq!(t[0].legs[0].i, 8);
+        assert!(t[0].exit_i > 8 && cs[t[0].exit_i] < 1. && cs[t[0].exit_i - 1] >= 1. && t[0].exit_px == x.c[t[0].exit_i]);
     }
 }
 

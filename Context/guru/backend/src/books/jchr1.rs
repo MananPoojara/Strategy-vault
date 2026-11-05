@@ -12,17 +12,20 @@ const LIZ_LONG: &[&str] = &[
     "E|\"Today's low must be a 10-trading-day low.\" (p.114): low <= the lowest low of the 10 trading days ending today (ties count)",
     "E|\"Tomorrow buy 1/8 above the day-one high.\" (p.114): buy stop, a gap above it fills at the open (Example 14.2 short fills on the open gap)",
     "X|\"Maximum risk is 1 point and if you are not stopped out, sell the position on the close.\" (p.114): stop = fill - 1 point; stopped if the day's low reaches it [daily bars cannot order fill and stop: conservative], else exit on the close",
+    "A|[lane K53, decision 229 (1)] Day two runs on real SPY 1-minute bars (p.path=1, default): the entry stop fills on the first minute that reaches it (at the level, or the minute's open when it opened through it), then the 1-point stop works in minute order; not stopped -> out on the day's close. p.path=0 = the old daily reading [Not from the book].",
+    crate::books::n1intra2::MIN,
 ];
 const LIZ_SHORT: &[&str] = &[
     "E|\"Today's (day one) open and close must be in the bottom 25 percent of its daily range.\" (p.114)",
     "E|\"Today's high must be a 10-trading-day high.\" (p.114)",
     "E|\"Tomorrow sell short 1/8 below the day-one low.\" (p.114): sell stop; a gap below fills at the open (Example 14.2 Amgen)",
     "X|\"Maximum risk is 1 point and if you are not stopped out, cover the short position on the close.\" (p.114)",
+    "A|[lane K53, decision 229 (1)] Day two runs on real SPY 1-minute bars (p.path=1, default): the entry stop fills on the first minute that reaches it (at the level, or the minute's open when it opened through it), then the 1-point stop works in minute order; not stopped -> out on the day's close. p.path=0 = the old daily reading [Not from the book].",
+    crate::books::n1intra2::MIN,
 ];
 const LIZ_NOTES: &str = "\"I use this strategy strictly for day trading\" (p.113). No statistics in the book (examples: Computer Associates, Amgen, Atmel, United Airlines 1995-96). \
-Book traded US stocks priced about $30-$170 (1995-96); that universe is not in the vault. India = instrument swap: run on NSE stocks (basket tickers) or the indices. \
-The 1-point risk and the 1/8 tick are kept literal in the ticker's own price units; on an index (NIFTY ~ thousands of points) a 1-point stop is hit on almost every trade - the honest literal result. \
-p.risk_pct is a labelled non-default alternative [Not from the book]. The 2004 postscript (p.17) says to use 10 cents instead of 1/8 for decimal-priced stocks: set p.tick = 0.10. Short-sale uptick rule not modelled.";
+Book traded US stocks priced about $30-$170 (1995-96). The 1-point risk and the 1/8 offset are literal dollars, so the rule runs on SPY only, an ETF that has never split (decision 229 (1)): a labelled application, not the author's test; the vault's US stock files are split-adjusted, where a fixed dollar amount is not the book's (decision 166). \
+p.risk_pct is a labelled non-default alternative [Not from the book]. The 2004 postscript (p.17) says to use 10 cents instead of 1/8 for decimal-priced stocks: set p.tick = 0.10. Short-sale uptick rule not modelled. No costs in the vault's run.";
 
 const EXIT: &str = "exit is discretionary: the book gives only an initial stop and trailing stops (\"my exits are pretty much discretionary\", p.158)";
 
@@ -99,6 +102,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("tick", "Entry offset in price units (book 1/8; 2004 postscript 0.10)", 0.125, 0.01, 0.25, 0.005),
         p("risk_pts", "Maximum risk in price points (book 1)", 1., 0.25, 5., 0.25),
         p("risk_pct", "[Not from the book] risk as % of entry instead (0 = off, use points)", 0., 0., 3., 0.25),
+        p("path", "1 = real 1-minute bars of day two (lane K53; days without minutes make no trade), 0 = [Not from the book] daily bars", 1., 0., 1., 1.), // lane K53
     ])
 }
 
@@ -121,6 +125,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         };
         if !setup { continue; }
         let level = if dir > 0. { x.h[s] + tick } else { x.l[s] - tick };
+        if g("path") >= 0.5 { if let Some(z) = lizard_minutes(x, t, dir, level, risk_pts, risk_pct) { out.push(z); } continue; } // lane K53
         if (dir > 0. && x.h[t] < level) || (dir < 0. && x.l[t] > level) { continue; }
         let px = if dir > 0. { x.o[t].max(level) } else { x.o[t].min(level) };
         let risk = if risk_pct > 0. { px * risk_pct / 100. } else { risk_pts };
@@ -133,6 +138,25 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(out)
 }
 
+// ---- lane K53 block (5 Nov 2026, decision #229 (1); authors/titles-1030/K53.tsv)
+/// Day two on real 1-minute bars: the entry stop fills on the first minute that reaches it (at the level, or the minute's
+/// open when it opened through it); the 1-point stop works from the fill on, in minute order (books::n1intra::minute,
+/// the K46 walker: open, nearer extreme, farther extreme, close); not stopped -> out on the day's close.
+fn lizard_minutes(x: &Ctx, t: usize, dir: f64, level: f64, risk_pts: f64, risk_pct: f64) -> Option<Trade> {
+    use crate::books::n1intra::{minute, Ord};
+    #[derive(Clone)]
+    struct S { pos: Option<(f64, f64)>, out: Option<f64> } // (fill, stop), stop exit
+    let m = crate::intraday_w2b::day(x, t)?;
+    let orders = |s: &S| -> Vec<Ord> { match s.pos { None => vec![Ord { up: dir > 0., lv: level, tag: 1 }], Some(_) if s.out.is_some() => vec![], Some((_, st)) => vec![Ord { up: dir < 0., lv: st, tag: 2 }] } };
+    let fill = |s: &mut S, tag: u8, px: f64| if tag == 1 { s.pos = Some((px, px - dir * if risk_pct > 0. { px * risk_pct / 100. } else { risk_pts })) } else { s.out = Some(px) };
+    let mut s = S { pos: None, out: None };
+    for q in &m { let adv = s.pos.is_some() && dir < 0.; minute(q, &mut s, &orders, &fill, adv); if s.out.is_some() { break; } }
+    let (px, _) = s.pos?;
+    let (xp, why) = match s.out { Some(v) => (v, "Maximum risk stop"), None => (x.c[t], "Exit on the close") };
+    Some(Trade { dir, legs: vec![Leg { i: t, px, w: 1. }], exit_i: t, exit_px: xp, reason: why.into(), entry_kind: "stop", signal_i: t - 1, open: false, exits: vec![] })
+}
+// ---- end lane K53 block
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,19 +168,19 @@ mod tests {
         r[15] = Row { open: 50.8, high: 51., low: 47., close: 50.9, ..r[15].clone() }; // tail: 10-day low, O and C in top 25%
         r[16] = Row { open: 50.5, high: 52.5, low: 50.4, close: 52., ..r[16].clone() }; // buy 51.125, stop 50.125 not hit
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("jchr1_lizard_long", &x, 0, 19, &Params::new()).unwrap();
+        let t = run("jchr1_lizard_long", &x, 0, 19, &Params::from([("path".to_string(), 0.0)])).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_px), (16, 51.125, 52.));
         assert!(run("jchr1_180", &x, 0, 19, &Params::new()).is_none());
         r[16].low = 50.; // now the 1-point stop at 50.125 is hit
-        let t = run("jchr1_lizard_long", &Ctx::new(&r, &r, &[]), 0, 19, &Params::new()).unwrap();
+        let t = run("jchr1_lizard_long", &Ctx::new(&r, &r, &[]), 0, 19, &Params::from([("path".to_string(), 0.0)])).unwrap();
         assert_eq!(t[0].exit_px, 50.125);
         // short: 10-day high with open and close in the bottom 25%, gap below the entry fills at the open
         let mut r: Vec<Row> = (0..20).map(|i| Row { ticker: "T".into(), date: format!("2000-{:03}", i),
             open: 50., high: 51., low: 49., close: 50., volume: None }).collect();
         r[15] = Row { open: 49.2, high: 53., low: 49., close: 49.1, ..r[15].clone() };
         r[16] = Row { open: 48.5, high: 49., low: 47., close: 47.5, ..r[16].clone() };
-        let t = run("jchr1_lizard_short", &Ctx::new(&r, &r, &[]), 0, 19, &Params::new()).unwrap();
+        let t = run("jchr1_lizard_short", &Ctx::new(&r, &r, &[]), 0, 19, &Params::from([("path".to_string(), 0.0)])).unwrap();
         assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_px), (1, 48.5, 47.5));
     }
 }

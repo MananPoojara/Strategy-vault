@@ -63,9 +63,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"Yet another way to take advantage of the Monday pattern is to buy on the close Friday and exit on the close Monday\" (p.72)",
               "X|Exit on Monday's close"],
             "Friday = last trading day of the week, Monday = the first trading day of the next week (p.73: \"Mondays (or the first trading day of the week)\"). The other Monday variant (\"buying on the opening on Mondays and exiting on the close\") is the vault's lwlts_mon_oc / pbwts_dow_oc; the buy-signals-only filter (p.71) has no system attached."),
-        def!("jbcdt2_or30", "30-minute breakout (30MBO)", "Ch.4 · The 30-Minute Breakout", "Long/Short", NeedsData("30-minute bars (first-half-hour range and half-hour closes)"),
-            &["E|\"After the first 30 minutes, buy if the ending price of the 30 minutes is greater than the high of the first 30-minute price bar by a predetermined number of ticks\" (p.46)",
-              "X|\"Exit your trade at the end of the day\"; S&P: 12 ticks each side, $2,050 initial stop, $1,000 floor, 50% trail (p.48-49)"], "Daily-data relatives: jb30d_or30 / jb624_or30 (also intraday)."),
+        def!("jbcdt2_or30", "30-minute breakout (30MBO)", "Ch.4 · The 30-Minute Breakout", "Long/Short", NotTestable("Coded on real SPX 1-minute bars (lane K42), but 1,403 of 4,782 SPX trades (29.3%, 2008-2025) reach the trailing stop in a minute that also sets the new open-profit peak, so their exit depends on the order inside one minute; above the 5% limit set before results (decision 175), so no result is published. The #177b scaled-SPY check passed."),
+            &["E|\"After the first 30 minutes, buy if the ending price of the 30 minutes is greater than the high of the first 30-minute price bar by a predetermined number of ticks\"; sell short if it is less than the low by the ticks (p.46); \"a given number ticks or more\"; S&P: 12 ticks on each side (p.48)",
+              "X|S&P initial stop $2,050 below the entry; once open profit reaches the $1,000 floor, a trailing stop at 50 percent of the open-profit intraday equity peak replaces it (p.48-49)",
+              "X|\"In the event of a stop loss on a reversing signal, liquidate your current position and establish an opposite position\" (p.46); up to five trades a day on reversing signals; after a stop-out of a long the next trade must be short or none, and vice versa (p.49)",
+              "X|\"Exit your trade at the end of the day\" (MOC) (p.46, p.49)"],
+            concat!("[Declared reading] S&P contract dollars and ticks at the book's 1997 contract ($500 a point, 0.05 tick): 12 ticks = 0.60, $2,050 = 4.10, $1,000 = 2.00 S&P points, run on SPX only (decision 196(2)); NOT the futures contract. ",
+              "[intraday EP, K42] Session-aligned 30-minute bars built from real 1-minute bars (09:30-16:00 ET): the first bar's high/low; a close of the 2nd to the next-to-last bar 0.60 point or more beyond it enters at that close [reading: the bar's ending price]; stops walked minute by minute from the next minute (fill at the stop, or the minute's open when it opened through it); open profit = the minute highs (lows) since the entry. ",
+              "A minute that raises the trail and also reaches it, without opening through the stop: the extreme nearer the minute's open came first [convention, counted as ambiguous]. Out at the day's last close. The book's statistics (Jan-Nov 1997 S&P futures, 274 trades) are before the SPX minute history (2008-). Cash-index shorts are hypothetical. No costs. Daily-data relatives: jb30d_or30 / jb624_or30.")),
         def!("jbcdt2_inside_day", "Inside day (ID) breakout, exit first profitable opening", "Ch.7 · Power of the Inside Day", "Long/Short", NotTestable("the x ticks and the stop loss behind the S&P record (Figure 7-5) are not given: \"The optimum number of ticks ... is a function of the market\""),
             &["E|\"After an ID, buy on a stop above the high of the ID plus x ticks\"; \"go short on a stop below the low of the ID minus x ticks\" (p.83)",
               "X|\"Use a risk management stop loss\"; \"Exit on the first profitable opening or at the stop loss, whichever comes first\" (p.83-86)"], "Book: 430 trades, 69%, $219.78 per trade, S&P 1982-1998 (p.85)."),
@@ -106,6 +111,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "jbcdt2_dbo_thu" => dbo(0.3, 1.05, 7.0),
         "jbcdt2_preholiday_oc" => vec![p("set", "Holidays: 0 = Merrill's seven (Fig. 5-4, the book rule), 1 = [Not from the book] Christmas/New Year's/July 4 only (Fig. 5-5 shows S&P closes below the open 75% / 68% of the time before New Year's / July 4)", 0., 0., 1., 1.)],
         "jbcdt2_dates_oc" | "jbcdt2_mon_cc" => vec![],
+        "jbcdt2_or30" => vec![p("pen", "Closing penetration beyond the first 30-minute bar (S&P points; 12 ticks)", 0.6, 0.05, 5., 0.05), p("stop", "Initial stop (S&P points; $2,050)", 4.1, 0.5, 20., 0.1),
+            p("floor", "Floor open profit before the trail (S&P points; $1,000)", 2.0, 0.1, 20., 0.1), p("trail", "Trail: percent of the open-profit peak kept", 50., 10., 90., 5.), p("maxn", "Trades a day", 5., 1., 10., 1.)], // intraday EP block (K42)
         _ => return None,
     })
 }
@@ -244,6 +251,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| getp(id, p, k);
     let mut out = Vec::new();
     match id {
+        "jbcdt2_or30" => return Some(or30(x, from, to, g("pen"), g("stop"), g("floor"), g("trail") / 100.0, g("maxn").round() as usize)), // intraday EP block (K42)
         "jbcdt2_dbo_mon" | "jbcdt2_dbo_thu" => {
             return Some(dbo(x, from, to, id == "jbcdt2_dbo_thu", g("buy_off"), g("sell_off"), g("stop"), g("entry_day") >= 0.5));
         }
@@ -291,6 +299,52 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     Some(out)
 }
+
+// ---- intraday EP block (lane K42, 4 Nov 2026, decision #211): the 30-Minute Breakout (p.45-49) on session-aligned 30-minute bars
+// built from the 1-minute file (intraday_ep::day_bars), one day at a time (EP1). Amounts in S&P points (SPX only).
+fn or30(x: &Ctx, from: usize, to: usize, pen: f64, stop: f64, floor: f64, keep: f64, maxn: usize) -> Vec<Trade> {
+    use crate::intraday::day_trade;
+    let mut out = vec![];
+    for i in from..=to {
+        let Some((_, _, m, b)) = crate::intraday_ep::day_bars(x, i, 30) else { continue };
+        let (h1, l1) = (b[0].h, b[0].l);
+        // (dir, entry px, open-profit peak, stop level)
+        let mut pos: Option<(f64, f64, f64, f64)> = None;
+        let (mut n, mut barred) = (0usize, 0.0);
+        for (j, z) in b.iter().enumerate().skip(1) {
+            if let Some((d, ep, mut pk, mut st)) = pos {
+                let mut hit = None;
+                for q in &m[z.a..z.b] {
+                    let (fav, adv) = if d > 0.0 { (q.h - ep, q.l) } else { (ep - q.l, q.h) };
+                    let through = |lv: f64, v: f64| if d > 0.0 { v <= lv } else { v >= lv };
+                    let pk2 = pk.max(fav);
+                    let st2 = if pk2 >= floor { ep + d * keep * pk2 } else { st };
+                    let fav_first = if d > 0.0 { q.h - q.o < q.o - q.l } else { q.o - q.l < q.h - q.o }; // the extreme nearer the open
+                    if through(st, q.o) { hit = Some(q.o); break; }
+                    if through(st, adv) { hit = Some(if st2 != st && fav_first { st2 } else { st }); break; }
+                    if through(st2, adv) && (fav_first || through(st2, q.c)) { hit = Some(st2); break; } // O-L-H-C also stops when the close is through the raised trail (Codex)
+                    pk = pk2; st = st2;
+                }
+                match hit {
+                    Some(px) => { out.push(day_trade(d, i, ep, i, px, "stop", "close", false)); pos = None; barred = d; }
+                    None => pos = Some((d, ep, pk, st)),
+                }
+            }
+            if j + 1 == b.len() {
+                if let Some((d, ep, ..)) = pos.take() { out.push(day_trade(d, i, ep, i, z.c, "end of day", "close", false)); }
+                break;
+            }
+            let want = if z.c >= h1 + pen { 1.0 } else if z.c <= l1 - pen { -1.0 } else { 0.0 };
+            if want == 0.0 || want == barred || n >= maxn || pos.map_or(false, |p| p.0 == want) { continue; }
+            if let Some((d, ep, ..)) = pos.take() { out.push(day_trade(d, i, ep, i, z.c, "reverse", "close", false)); }
+            pos = Some((want, z.c, 0.0, z.c - want * stop));
+            n += 1;
+            barred = 0.0;
+        }
+    }
+    out
+}
+// ---- end intraday EP block
 
 #[cfg(test)]
 mod tests {

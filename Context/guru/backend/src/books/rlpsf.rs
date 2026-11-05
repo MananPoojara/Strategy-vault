@@ -9,14 +9,15 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 pub const REVIEWED: &[&str] = &["rlpsf_fractal"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] The author calls these formulas samples (User Guide: 'PS Fractal Entry {sample entry price formula}'). Code read literally: F1 = the high two bars back once that bar is higher than the two bars before and the two bars after it (MetaStock ValueWhen, so F1 is updated on the bar that confirms it); the entry signal is the first bar (Alert(A=0,2)) with high >= F1 and open < F1, bought at Max(O,F1) = F1; F2 = the mirror low; the exit signal is the first bar with low <= F2, sold at Min(O,F2). Trade Equity LE logic: one long position; signals while in (entry) or out (exit) of a position are ignored; an entry and an exit signal on the same bar are a same-bar round trip, F1 in and Min(O,F2) out, as Trade Equity books it. [Reading, open question] Trade Equity's own defaults fill at the close (Input 2); the stop option (5) with these price formulas is used here because the formulas return stop prices. No commissions. Daily bars; built for any MetaStock security: indices, ETFs and US/India stocks are all a declared application.";
+const NOTE: &str = "[Declared readings] The author calls these formulas samples (User Guide: 'PS Fractal Entry {sample entry price formula}'). Code read literally: F1 = the high two bars back once that bar is higher than the two bars before and the two bars after it (MetaStock ValueWhen, so F1 is updated on the bar that confirms it); the entry signal is the first bar (Alert(A=0,2)) with high >= F1 and open < F1, bought at Max(O,F1) = F1; F2 = the mirror low; the exit signal is the first bar with low <= F2. The exit price is that bar's close: the printed Trade Equity LE code uses the exit formula only as a signal (\"X:=Fml(\"PS Fractal Exit\")>0;\") and sets \"Xs:=0;\", so \"Xp:=If(Xs>0,Min(H,Max(L,Xs)),If(Xo=1,O,If(Xo=3,H,If(Xo=4,L,C))))\" is the close at the default Xo=2 (and also with Xo=5); the formula's Min(O,F2) is never a fill (lead decision 199). Trade Equity LE logic: one long position; signals while in (entry) or out (exit) of a position are ignored; an entry and an exit signal on the same bar are a same-bar round trip, F1 in and the close out. [Reading, open question] Trade Equity's own defaults fill at the close (Input 2); the stop option (5) with these price formulas is used here because the formulas return stop prices. No commissions. Daily bars; built for any MetaStock security: indices, ETFs and US/India stocks are all a declared application.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "rlpsf_fractal", name: "PS Fractal breakout: buy the break of the last fractal high, sell the break of the last fractal low", group: "Roy Larsen Trade Equity samples",
         session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: "rlpsf", rules: &[
             "E|\"{PS Fractal Entry} F1:=ValueWhen(1,H<Ref(H,-2) AND Ref(H,-1)<Ref(H,-2) AND Ref(H,-3)<Ref(H,-2) AND Ref(H,-4)<Ref(H,-2),Ref(H,-2)); A:=H>=F1 AND O<F1; If(A>0 AND Alert(A=0,2),Max(O,F1),0);\"",
             "X|\"{PS Fractal Exit} F2:=ValueWhen(1,L>Ref(L,-2) AND Ref(L,-1)>Ref(L,-2) AND Ref(L,-3)>Ref(L,-2) AND Ref(L,-4)>Ref(L,-2),Ref(L,-2)); B:=L<=F2; If(B>0 AND Alert(B=0,2),Min(O,F2),0);\"",
-            "F|Trade Equity GV LE V2.7: one long position, entry and exit at the formula prices (stop option 5)"],
+            "X|Trade Equity GV LE: \"X:=Fml(\"PS Fractal Exit\")>0; Xs:=0;\" and \"Xp:=If(Xs>0,Min(H,Max(L,Xs)),If(Xo=1,O,If(Xo=3,H,If(Xo=4,L,C))))\" (Xo default 2): sell at the close of the exit-signal bar (lead decision 199)",
+            "F|Trade Equity GV LE V2.7: one long position; entry at the entry formula price (stop option No=5), exit at the close"],
         notes: NOTE, claim: None }]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -49,8 +50,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (mut out, mut cur) = (vec![], None::<(usize, f64)>);
     for i in from..=to {
         match (cur, en[i], ex[i]) {
-            (Some((e, ep)), _, Some(xp)) => { out.push(mk(e, ep, i, xp, "PS Fractal Exit stop", false)); cur = None; }
-            (None, Some(ep), Some(xp)) => out.push(mk(i, ep, i, xp, "PS Fractal Exit stop (same bar)", false)),
+            // lead decision 199: Xs:=0 in the printed LE code, so the exit fills at the close (Xo=2), not at Min(O,F2)
+            (Some((e, ep)), _, Some(_)) => { out.push(mk(e, ep, i, x.c[i], "PS Fractal Exit, out at the close", false)); cur = None; }
+            (None, Some(ep), Some(_)) => out.push(mk(i, ep, i, x.c[i], "PS Fractal Exit, out at the close (same bar)", false)),
             (None, Some(ep), None) => cur = Some((i, ep)),
             _ => {}
         }
@@ -72,8 +74,8 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let t = run("rlpsf_fractal", &x, 0, r.len() - 1, &Params::new()).unwrap();
         // F1 = 15 (bar 2's high, confirmed at bar 4); bar 6 opens 10 < 15 with high 16 -> buy at 15.
-        // F2 = 8 (bar 3's low, confirmed at bar 5); bar 8's low 7 <= 8 -> sell at min(open 16, 8) = 8.
-        assert_eq!(t.iter().map(|z| (z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px, z.open)).collect::<Vec<_>>(), vec![(6, 15., 8, 8., false)]);
+        // F2 = 8 (bar 3's low, confirmed at bar 5); bar 8's low 7 <= 8 -> sell at its close 7.5 (Xs:=0, Xo=2), not Min(O,F2).
+        assert_eq!(t.iter().map(|z| (z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px, z.open)).collect::<Vec<_>>(), vec![(6, 15., 8, 7.5, false)]);
         assert!(run("rlpsf_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }

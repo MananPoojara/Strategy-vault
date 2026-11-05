@@ -28,7 +28,7 @@ import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
 import {authorStatus,facetAuthors,passes,CLEAR_ALL} from '../services/author-filters';
 import {chooseBacktestContext,referenceBacktestContexts} from '../services/library-backtest-context';
-import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
+import {defaultTicker,instrumentControls,instrumentTickers} from '../services/instrument-controls';
 import {catalogueMethodLabel,kestnerSourceAssessment} from '../services/kestner-presentation';
 import {makeRuleVisualModel} from '../services/rule-evidence';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
@@ -999,7 +999,7 @@ const gateBadge = () => ''; // verification badges hidden (user request 22 Oct 2
 const OPEN_FROM = { SPX: '2014-01-01', NDX: '2001-01-01', DJI: '2016-01-01' };
 function gateNotice(v, tk) {
   const g = v.gate;
-  const clamp = g?.open_from && OPEN_FROM[tk] ? `<p data-open-price-coverage><b>${esc(LABEL[tk] || tk)}: opening prices before ${OPEN_FROM[tk]} are excluded by policy.</b> The actual calculated dates are shown with the results. An earlier requested start does not add earlier price observations.</p>` : '';
+  const clamp = g?.open_from && OPEN_FROM[tk] ? `<p data-open-price-coverage><b>${esc(LABEL[tk] || tk)}: opening prices before ${OPEN_FROM[tk]} are excluded by policy.</b> The actual calculated dates are shown with the results. An earlier requested start does not add earlier price observations.</p>` : g?.open_from && tk === 'NIFTY 50' ? `<p data-open-price-coverage data-nifty-open><b>NIFTY 50: NSE's published opens before 2011 sit very close to the previous close.</b> The median gap between the open and the previous close is 0.02-0.08% a year in 1998-2010, against 0.17-0.49% from 2011 (the vault's NSE file); the cause is not confirmed. The whole history is kept, so results of this open-based rule before 2011 rest on those opens.</p>` : '';
   const declared=v.instrument_policy?.declared_application&&!String(tk||'').startsWith('basket:')&&S.run_scope!=='basket'?`<div class="rnote" data-declared-application><b>Declared application · not the author's test.</b> ${esc(v.instrument_policy.declared_application)}</div>`:'';
   if(declared)return declared+gateNotice({...v,instrument_policy:{...v.instrument_policy,declared_application:''}},tk);
   if(v.instrument_policy?.source_rule_reviewed)return `<div class="rnote" data-rule-review><b>Source rules reviewed · computed market application.</b> Selected trade ledgers matched an independent reference calculation. ${esc(v.instrument_policy.source_basis)} ${clamp} ${v.gate?.book?`<details><summary>Earlier source-study comparison</summary><p>${esc(v.gate.book)}</p><p>${esc(v.gate.note)}</p><p>Original book-study reproduction remains unverified; these figures are separate from this computed backtest.</p></details>`:''}</div>`;
@@ -1452,7 +1452,7 @@ function readRoute() {
   const explicitUnitSelection=isDetail&&unitExposureMethod(chosen?.id,chosen?.book)&&explicit.get('tk')?pool.find(t=>t.ticker===S.tk):null;
   if(explicitUnitSelection&&!TICKERS.some(t=>t.ticker===S.tk))TICKERS.push(explicitUnitSelection); // Preserve actual incompatible URLs for an honest admission hold.
   const explicitPristine=isDetail&&pristineMethod(chosen?.id,chosen?.book)&&explicit.has('tk');
-  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk)&&!explicitPristine)S.tk=TICKERS[0]?.ticker||S.tk;
+  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk)&&!explicitPristine)S.tk=defaultTicker(TICKERS,chosen?.gate?.allowed)||S.tk; // a gate-limited rule opens where it publishes (SPY for a rotation rule)
   // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
   // Silent substitution back to an index made basket clicks appear stuck.
   CAT = marketCat();

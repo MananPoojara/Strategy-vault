@@ -170,9 +170,27 @@ pub(crate) fn countdowns(b: &Bars, own: &[u32], opp: &[u32], cfg: &Cfg) -> Vec<S
             }
         }
     };
+    // intersection (Sequential only): day 8 or 9 of the setup, or any later day
+    let intersects = |a: &Act, i: usize| -> bool {
+        let (s1, d8, d9) = (a.s1, a.s1 + 7, a.s1 + 8);
+        if i == d9 {
+            let lo9 = if cfg.ver == Ver::Nsta { s1 + 1 } else { s1 };
+            (s1..=s1 + 4).any(|k| b.h[d8] >= b.l[k]) || (lo9..=s1 + 5).any(|k| b.h[d9] >= b.l[k])
+        } else { i >= s1 + 3 && (s1..=i - 3).any(|k| b.h[i] >= b.l[k]) }
+    };
+    // 1997 recycle (NMTT p.98, p.128-129): "the Setup extends until a contradictory close ... is recorded. Then the price
+    // comparison is made" - the new setup's extended range against the active one's
+    let recycles = |new: &Act, old: &Act| -> bool {
+        let within = new.hh <= old.hh && new.ll >= old.ll;
+        let r = (new.hth - new.ltl) / (old.hth - old.ltl);
+        !within && r >= 1.0 && r < cfg.mult
+    };
     let mut out = vec![];
     let mut act: Option<Act> = None;
+    // a new same-direction setup formed while another is active (1997 rules): it waits here until it has ended
+    let mut cand: Option<Act> = None;
     for i in 0..b.n() {
+        let mut retro = None;
         // the active setup series keeps extending while it continues
         if let Some(a) = act.as_mut() {
             if own[i] > 0 && i + 1 - own[i] as usize == a.s1 && i > a.end { a.end = i; a.add(b, i); }
@@ -180,41 +198,33 @@ pub(crate) fn countdowns(b: &Bars, own: &[u32], opp: &[u32], cfg: &Cfg) -> Vec<S
         // an opposite setup cancels
         if opp[i] == sn { act = None; }
         // a close beyond the setup's extreme cancels (1994: highest high; 1997: highest true high)
-        if let Some(a) = act.as_ref() {
-            let lvl = if cfg.ver == Ver::Nsta { a.hh } else { a.hth };
-            if i > a.s9 && b.c[i] > lvl { act = None; }
+        let cancels = |a: &Act| { let lvl = if cfg.ver == Ver::Nsta { a.hh } else { a.hth }; i > a.s9 && b.c[i] > lvl };
+        if act.as_ref().is_some_and(|a| cancels(a)) { act = None; }
+        // a waiting setup extends; on its contradictory close it is compared with the setup still active after the checks
+        // above (none: it starts), and once adopted the same close may cancel it. During its own run no opposite setup can
+        // complete and no close can exceed its true high, so the bars replayed below need no cancellation check.
+        if let Some(mut c) = cand.take() {
+            if own[i] > 0 && i + 1 - own[i] as usize == c.s1 { c.end = i; c.add(b, i); cand = Some(c); }
+            else if act.as_ref().map_or(true, |old| recycles(&c, old)) {
+                if !cancels(&c) { retro = Some(if combo { c.s1 } else { c.s9 }); act = Some(c); } else { act = None; }
+            }
         }
-        // a new same-direction setup: start, or recycle
-        let mut retro = None;
+        // a new same-direction setup: start; 1994 rules: it always replaces (recycles); 1997: compared once it has ended
         if own[i] == sn {
             let s1 = i + 1 - cfg.setup_n;
             let new = Act::new(b, s1, i);
-            let replace = match act.as_ref() {
-                None => true,
-                Some(old) => match cfg.ver {
-                    Ver::Nsta => true,
-                    _ => {
-                        let within = new.hh <= old.hh && new.ll >= old.ll;
-                        let r = (new.hth - new.ltl) / (old.hth - old.ltl);
-                        !within && r >= 1.0 && r < cfg.mult
-                    }
-                },
-            };
-            if replace { act = Some(new); if combo { retro = Some(s1); } }
+            if act.is_none() || cfg.ver == Ver::Nsta { act = Some(new); if combo { retro = Some(s1); } } else { cand = Some(new); }
         }
         let Some(a) = act.as_mut() else { continue };
+        // a setup adopted after the fact counts its bars since setup day 1 (Combo) / day 9 (Sequential); the 13th is never
+        // a past bar [read: the book is silent on a countdown that would have completed before the comparison]
         if let Some(r) = retro {
-            for j in r..i { if qualifies(a, j) { a.counted.push(j); } }
+            for j in r..i {
+                if !combo && a.start.is_none() && j >= a.s9 && intersects(a, j) { a.start = Some(j); }
+                if (combo || a.start.is_some()) && a.counted.len() + 1 < cfg.cd_n && qualifies(a, j) { a.counted.push(j); }
+            }
         }
-        // intersection (Sequential only)
-        if !combo && a.start.is_none() && i >= a.s9 {
-            let (s1, d8, d9) = (a.s1, a.s1 + 7, a.s1 + 8);
-            let hit = if i == d9 {
-                let lo9 = if cfg.ver == Ver::Nsta { s1 + 1 } else { s1 };
-                (s1..=s1 + 4).any(|k| b.h[d8] >= b.l[k]) || (lo9..=s1 + 5).any(|k| b.h[d9] >= b.l[k])
-            } else { i >= s1 + 3 && (s1..=i - 3).any(|k| b.h[i] >= b.l[k]) };
-            if hit { a.start = Some(i); }
-        }
+        if !combo && a.start.is_none() && i >= a.s9 && intersects(a, i) { a.start = Some(i); }
         if (combo || a.start.is_some()) && qualifies(a, i) {
             a.counted.push(i);
             if a.counted.len() == cfg.cd_n { out.push(Sig { i, s1: a.s1 }); act = None; }

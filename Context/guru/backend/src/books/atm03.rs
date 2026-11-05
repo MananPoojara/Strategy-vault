@@ -7,7 +7,7 @@ use Status::*;
 
 pub const BOOK: &str = "atm03";
 /// Admitted ids (authors/activetrader/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["atm03_bb60", "atm03_pullback6", "atm03_pullback_fut", "atm03_tpe", "atm03_tpe_ls", "atm03_ch100_20", "atm03_triple2", "atm03_triple5", "atm03_blood", "atm03_mfi", "atm03_twobar", "atm03_cmo_srsi", "atm03_ob_cont", "atm03_memorial", "atm03_july4"];
+pub const REVIEWED: &[&str] = &["atm03_gap_closer", "atm03_bb60", "atm03_pullback6", "atm03_pullback_fut", "atm03_tpe", "atm03_tpe_ls", "atm03_ch100_20", "atm03_triple2", "atm03_triple5", "atm03_blood", "atm03_mfi", "atm03_twobar", "atm03_cmo_srsi", "atm03_ob_cont", "atm03_memorial", "atm03_july4"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers (shared with atm04)
@@ -105,7 +105,9 @@ pub fn by_open(x: &Ctx, from: usize, to: usize, decide: impl Fn(usize, i8, Optio
 
 /// Independent positions (each with its own exit) folded into non-overlapping trades: positions that overlap in time
 /// form one trade whose legs are the entries (weight w each) and whose scale-out pieces are the individual exits; exit_px
-/// is set so that Trade::ret() equals the exact sum of the positions' returns.
+/// is set so that Trade::ret() equals the exact sum of the positions' returns. Each scale-out piece is one position's
+/// share of the trade's units (w / entry price, D1-03 / decision 186), so the fraction-weighted exit price equals exit_px
+/// and the platform's scale-out ledger check holds (earlier fractions w / total w disagreed whenever entry prices differed).
 pub struct Pos { pub dir: f64, pub i: usize, pub px: f64, pub w: f64, pub xi: usize, pub xpx: f64, pub why: String, pub open: bool }
 pub fn fold(mut ps: Vec<Pos>) -> Vec<Trade> {
     ps.sort_by_key(|p| (p.i, p.xi));
@@ -116,10 +118,9 @@ pub fn fold(mut ps: Vec<Pos>) -> Vec<Trade> {
         let mut e = k + 1;
         while e < ps.len() && ps[e].i <= end { end = end.max(ps[e].xi); e += 1; }
         let g = &ps[k..e];
-        let tw: f64 = g.iter().map(|p| p.w).sum();
         let num: f64 = g.iter().map(|p| p.w * p.xpx / p.px).sum();
         let den: f64 = g.iter().map(|p| p.w / p.px).sum();
-        let mut ex: Vec<(usize, f64, f64)> = g.iter().map(|p| (p.xi, p.xpx, p.w / tw)).collect();
+        let mut ex: Vec<(usize, f64, f64)> = g.iter().map(|p| (p.xi, p.xpx, p.w / p.px / den)).collect();
         ex.sort_by_key(|e| e.0);
         let last = g.iter().max_by_key(|p| p.xi).unwrap();
         out.push(Trade { dir: g[0].dir, legs: g.iter().map(|p| Leg { i: p.i, px: p.px, w: p.w }).collect(), exit_i: end, exit_px: num / den,
@@ -193,7 +194,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           NotTestable("the column says the lookback 'can range from 20 to 60 days and will change daily depending on the level of volatility (30-day standard deviation of the close)' but never gives the formula mapping volatility to the lookback"), false,
           &["E|\"1. Go long on the open if yesterday's close is higher than the highest high of the lookback period. 2. Exit by reversing the position.\" (TSL Feb 2003)"],
           "Volatility-to-lookback rule missing in both the stock and the futures columns; not completed (Chande's DBS formula is in the vault as strtw DBS from another book).", None),
-        d("atm03_pullback6", "Basic pullback buyer · limit 6% below the close, exit next open", "TSL Mar 2003 (p.50)", "Long", Live, false,
+        d("atm03_pullback6", "Basic pullback buyer · limit 6% below the close, exit next open", "TSL Mar 2003 (pp.66-67)", "Long", Live, false,
           &["E|\"1. Go long on the next bar at a limit price 6 percent below the current bar's close.\" (TSL Mar 2003)",
             "X|\"2. Exit the next bar on the open (at the market).\"",
             "F|\"3. The system can open a new long position on a bar for which a previous trade was closed.\""],
@@ -627,6 +628,10 @@ mod tests {
         let t = fold(ps);
         assert_eq!(t.len(), 1);
         assert!((t[0].ret(0.) - (0.1 * 0.1 + 0.1 * 0.1)).abs() < 1e-12);
+        // D1-03: pieces are unit shares, so their weighted price is exit_px (the platform's scale-out ledger check)
+        let avg: f64 = t[0].exits.iter().map(|e| e.1 * e.2).sum();
+        assert!((avg - t[0].exit_px).abs() < 1e-12 && (t[0].exits.iter().map(|e| e.2).sum::<f64>() - 1.).abs() < 1e-12);
+        assert!(crate::trade_validation::check(&t, 0, 8, 0.).is_ok());
     }
     #[test]
     fn pullback_limit_hand_checked() {

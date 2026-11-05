@@ -13,7 +13,7 @@ pub const BOOK: &str = "mpmm";
 
 /// Admitted after the 2026-10-23 full reading and independent ledgers (authors/pring/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["mpmm_cm_rsi50_21w", "mpmm_cm_wma69w", "mpmm_cm_ema42w", "mpmm_cm_sma45w", "mpmm_gartley_25a3", "mpmm_cm_15_36w",
-    "mpmm_cm_stoch39w", "mpmm_kst_lt", "mpmm_kst_wk", "mpmm_roc12_dir", "mpmm_dev26_40w", "mpmm_dev26_40w_adv10", "mpmm_summation35", "mpmm_summation35_nse"];
+    "mpmm_cm_stoch39w", "mpmm_roc12_dir", "mpmm_dev26_40w", "mpmm_dev26_40w_adv10", "mpmm_summation35", "mpmm_summation35_nse"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! nt {
@@ -25,6 +25,10 @@ macro_rules! nt {
 }
 
 const LONG: &str = "Long when the rule says buy, flat when it says sell ('buy ... sell' with no mention of short selling); p.short=1 (not the default) reverses into shorts. Fill at the signal bar's close; no costs. Weekly bar = last trading day of each Monday-based week, monthly = last trading day of the month. Index swap: the book's S&P Composite / NYSE / stock tests run on NIFTY 50, SPX, DJI, ...";
+
+/// Lead decision 186 (D1-41): the KST crossover cards are held. The rules come from the book's description (p.153, p.161-162),
+/// not a printed test, and p.157 makes an unquantified price confirmation mandatory.
+const KST_HELD: &str = "p.157 makes it mandatory that KST signals are \"confirmed by some kind of trend reversal in the price series. This could take the form of a moving average crossover, trendline violation, or similar confirming signal\"; the book does not put the confirmation into numbers and prints no KST test, so the crossover alone would be a reading of our own (lead decisions 108, 186)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -67,13 +71,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|%K = 100 x (close - lowest low of n weeks) / (highest high - lowest low) (Lane's %K, p.128); weekly high/low = the week's daily extremes. \"%D was not used\" (p.138). Signals only on the week of the 50 crossing."],
           "Always in after the first signal (sell and sell short / buy and cover). Book test: NYSE weekly 1977-86; 'fairly consistent profits were achieved for periods (n value) ranging from 38 to 66 weeks ... the 39-week span proved to be the most profitable' (p.138). Fill at the signal week's close; index swap.",
           cl("-", "-", "most profitable span; profits for n = 38-66", "-", "NYSE weekly 1977-1986 (p.138)")),
-        d("mpmm_kst_lt", "Long-term (monthly) KST vs its 9-month MA", "Ch.7 · The KST System (p.152-159)", "Long", &[],
+        StrategyDef { status: NotTestable(KST_HELD), ..d("mpmm_kst_lt", "Long-term (monthly) KST vs its 9-month MA", "Ch.7 · The KST System (p.152-159)", "Long", &[],
           &["F|Long-term KST: ROC 9 smoothed 6, weight 1; ROC 12 / 6, weight 2; ROC 18 / 6, weight 3; ROC 24 / 9, weight 4, monthly data (Table 7.1, p.159; p.153 'the first 3 periods are smoothed with a 6-month moving average and the 24-month time span with a 9-month moving average')",
             "E|\"Periods of accumulation and distribution occur between the time that the summed ROC and its moving average change direction. The first level is triggered when the indicator changes direction, the second when it crosses its moving average, and the third when the average also reverses direction. In most cases the moving-average crossover offers the best combination of timely signals with a minimum of whipsaws.\" (p.153); Chart 7.4B: long-term KST and its 9-month MA",
             "X|Sell when the KST crosses below its 9-month MA",
             "F|[Read, B] ROC = close / close n months ago - 1; smoothing and signal line = simple averages: the monthly row of Table 7.1 has no EMA mark, and the weekly KSTs 'differ from those presented earlier because they are smoothed by exponential rather than simple moving averages' (p.161)",
             "F|[Open] 'It is also mandatory to ensure that KST signals are confirmed by some kind of trend reversal in the price series' (p.157, in the short-term KST section); the confirmation is not put into numbers, so it is not applied"],
-          LONG, None),
+          LONG, None) },
         d("mpmm_summation35", "McClellan Summation Index vs its 35-day SMA · NYSE breadth", "Ch.12 · McClellan Summation Index (p.299-305)", "Long",
           &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"],
           &["F|\"McClellan Oscillator = [19 EMA of (A - D)] - [39 EMA of (A - D)]\", the two averages \"represent a 10% and 5% trend value respectively\" (p.299): smoothing constants 0.10 and 0.05 as printed (Pring's 2/n rule would give 0.105 and 0.051)",
@@ -99,12 +103,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy when the oscillator crosses above its 10-week moving average (p.119)",
             "X|Sell when the oscillator crosses below its 10-week moving average (p.119)"],
           LONG, None),
-        d("mpmm_kst_wk", "Weekly KST market-cycle model: KST crossing its EMA (long-term 26 weeks by default)", "Ch.7 · The KST Market Cycle Model (p.157-164)", "Long", &[],
+        StrategyDef { status: NotTestable(KST_HELD), ..d("mpmm_kst_wk", "Weekly KST market-cycle model: KST crossing its EMA (long-term 26 weeks by default)", "Ch.7 · The KST Market Cycle Model (p.157-164)", "Long", &[],
           &["F|Table 7.1 (p.159) weekly KSTs, weights 1-4: short-term ROC 3/4/6/10 smoothed by 3/4/6/8-week EMAs; intermediate ROC 10/13/15/20 smoothed by 10/13/15/20-week EMAs; long-term ROC 39/52/78/104 smoothed by 26/26/26/39-week EMAs; \"These indicators differ from those presented earlier because they are smoothed by exponential rather than simple moving averages\" (p.161)",
             "E|\"The best signals are given when the KST crosses above or below its exponential moving average (EMA)\" (p.161); \"The short-term KST uses an 8-week exponential moving average for the crossover, the intermediate-term uses a 10-week moving average and the long-term a 26-week moving average\" (Chart 7.10, p.162): buy when the weekly KST crosses above its EMA",
             "X|Sell when the KST crosses below its EMA. p.kst = 1 short-term (8-week EMA), 2 intermediate (10-week EMA), 3 long-term (26-week EMA, default)",
             "F|EMA as the book computes it (Tables 5.4-5.5): exponent 2 / span, started from the simple average"],
-          "Weekly bar = last trading day of each Monday-based week. Combining the three KSTs into market-cycle stages is judgement (p.163) and is not run; each KST runs on its own. The p.157 sentence that KST signals must be 'confirmed by some kind of trend reversal in the price series' is not put into numbers and is not applied [open]. Long/flat by default (p.short = 1 adds shorts). Fill at the signal week's close.", None),
+          "Weekly bar = last trading day of each Monday-based week. Combining the three KSTs into market-cycle stages is judgement (p.163) and is not run; each KST runs on its own. The p.157 sentence that KST signals must be 'confirmed by some kind of trend reversal in the price series' is not put into numbers and is not applied [open]. Long/flat by default (p.short = 1 adds shorts). Fill at the signal week's close.", None) },
         d("mpmm_roc12_dir", "12-month MA of the 12-month ROC: trade its changes of direction", "Ch.3 · Rate of Change (p.74)", "Long", &[],
           &["E|\"In chart 3.17, changes in direction of the 12-month moving average of a 12-month ROC are used as the signaling points. These are indicated by the arrows.\" (p.74): buy when the average turns up",
             "X|Sell when the average turns down (an unchanged month keeps the position)",

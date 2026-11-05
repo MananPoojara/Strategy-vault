@@ -26,9 +26,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_series: &[], book: BOOK, rules, notes, claim: None,
     };
     vec![
-        d("lrd_large_range_day_combo", "Large-Range Days · sell the naked combination", Status::NotTestable("needs option chains; the article gives no exit"), COMBO,
+        d("lrd_large_range_day_combo", "Large-Range Days · sell the naked combination", Status::NotTestable("rules not fully defined: after a two-standard-deviation day the article sells a naked combination (calls one SD above the day's high, puts one SD below its low) but gives no expiry, size or exit (TradingMarkets article 'A Strategy For Playing Large-Range Days', 2001, no page numbers; its trades were T-bond futures options)"), COMBO,
           "Article's only trade. Tested on T-bond futures over two years (no dates). Table 1 prints √265 but its own numbers only work with √256. The same idea, with 44 dated 2-SD bond days, is Advanced Trading Strategies ch. 27."),
-        d("lrd_large_range_day_base_rate", "Large-Range Days · follow-through study", Status::NotTestable("event study: the article states claims, not entry and exit rules"), STUDY,
+        d("lrd_large_range_day_base_rate", "Large-Range Days · follow-through study", Status::NotTestable("event study, not a trading system: the article states follow-through claims (the next day's direction is a coin flip; three to four days later the market often closes near the large day's close) with no entry or exit (TradingMarkets article, 2001, no page numbers)"), STUDY,
           "Recorded so the vault shows the article's claims; it is not a trading system. Measurable on daily OHLC (NIFTY included) as a study, not as a backtest."),
     ]
 }

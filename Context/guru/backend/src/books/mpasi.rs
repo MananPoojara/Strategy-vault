@@ -8,7 +8,9 @@ use crate::books::mpts::sma;
 
 pub const BOOK: &str = "mpasi";
 
-pub const REVIEWED: &[&str] = &["mpasi_sp_ma12"];
+/// Lead decision 197 (K37, 4 Nov 2026): mpasi_sp_ma12 is held (MPASI_HELD).
+pub const REVIEWED: &[&str] = &[];
+const MPASI_HELD: &str = "the printed rule needs both legs: \"Favorable periods for equity ownership under this approach require the yield on three-month commercial paper to be below its 12-month average and for the S&P Composite to be above its 12-month moving average. All other conditions are regarded as unfavorable\" (p.101); the S&P leg alone is not a printed rule, and the vault holds no commercial-paper yield series (lead decision 197)";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! d {
@@ -23,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
     vec![
         StrategyDef { id: "mpasi_sp_ma12", name: "S&P 12-month moving-average crossover (stock leg of the stage model), long or cash", group: "Ch.5, 9 (p.101-105, 185-190)",
-            session: 0, dir: "Long", status: Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
+            session: 0, dir: "Long", status: NotTestable(MPASI_HELD), needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
             rules: &["E|\"History tells us that 12-month moving average crossovers by the S&P Composite have been the most consistently reliable of any time span in identifying bull and bear trends in the stock market\" (p.101); bullish \"when the S&P Composite is at or above its moving average (MA)\" (Fig 5.16, p.105)",
                      "X|Bearish when the S&P \"crossed below its 12-month moving average\" (p.190): sell to cash",
                      "F|Monthly closes; simple 12-month average (Table 9.1, p.185)"],

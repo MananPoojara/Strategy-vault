@@ -12,7 +12,7 @@
 //!     so the bar's adverse extreme is BEFORE the fill (exactly the book's "outside window" picture).
 //!   * Gaps through a stop fill at the open; gaps through a profit limit fill at the open.
 //!   * "Points": the book's dollar amounts (1-point limit, 1-point profit steps, 2/1-point trails, 3-point
-//!     market-timing stop) are scaled by `pt_mode`: 0 = book dollars, 1 = % of price (`pt_pct`),
+//!     market-timing stop) are scaled by `pt_mode`: 0 = book dollars (default, lead decision 196), 1 = % of price (`pt_pct`),
 //!     2 = multiple of the 90-day average true range (`pt_atr`; the book's own filter #7 says a tradable
 //!     stock has ATR(90) >= 1 point, so 1 point = 1 ATR(90) for the threshold stock).
 //!   * Partial exits: a Trade keeps one entry leg; exit_px is the fraction-weighted average of all partial
@@ -55,7 +55,7 @@ const D2: &str = "X|Day 2: trail the stop 2 points from the intraday high (low) 
 const D2MA: &str = "X|Day 2: a close below (short: above) the 4-period SMA takes 1/3 of the remaining off; closes on the wrong side on Day 1 and Day 2 exit the trade";
 const D3: &str = "X|Day 3: stop starts 1 point from Day 2's close and trails 1 point from the day's high (low); 1/3 off each further point; exit the rest on the Day 3 close";
 
-const WNOTE: &str = "Book: US stocks from a nightly TC2000 scan, 2002-2003; run here on the index/ETF itself (vault convention). Point amounts scale with pt_mode (default 2: 1 point = 1 × ATR(90); 0 = the book's dollars). Daily bars cannot show the intraday order: the bar path is adverse extreme first (long O→L→H→C), entry stops fill on the way to the favourable extreme, gaps through stops/limits fill at the open. Not modelled: tightening the Day-3 trail to 0.50 'later in the day' and the discretionary market-timing aggressiveness at the end of Day 2 (switch day2_extra adds the examples' discretionary 'take 1/3 at the Day-2 close': 1 = when at most one piece is taken by then, as in GPRO, CAKE and WBSN; 2 = only when none is taken, as in CAKE alone; off by default). VIX filter uses the shared 10-day SMA of the VIX close (CBOE VIX for US; India VIX for India). ADX/DMI = Wilder, stochastic = slow %K (21 raw, 3 SMA) vs 80/20 (stoch_line 1 = the 9-period %D).";
+const WNOTE: &str = "Book: US stocks from a nightly TC2000 scan, 2002-2003; run here on the index/ETF itself (vault convention). Point amounts are the book's dollars, literal (pt_mode 0, lead decision 196: stops, trails and targets keep the book's amounts; no user decision approved the ATR scaling): 1 point = $1 = 1 price unit, published on US index and ETF prices only (fixed USD amounts; US single stocks are withheld while only split-adjusted prices exist, decision 166; Indian instruments have no USD amount). pt_mode 2 (1 point = 1 × ATR(90)) and pt_mode 1 (% of price) are options. Daily bars cannot show the intraday order: the bar path is adverse extreme first (long O→L→H→C), entry stops fill on the way to the favourable extreme, gaps through stops/limits fill at the open. Not modelled: tightening the Day-3 trail to 0.50 'later in the day' and the discretionary market-timing aggressiveness at the end of Day 2 (switch day2_extra adds the examples' discretionary 'take 1/3 at the Day-2 close': 1 = when at most one piece is taken by then, as in GPRO, CAKE and WBSN; 2 = only when none is taken, as in CAKE alone; off by default). VIX filter uses the shared 10-day SMA of the VIX close (CBOE VIX for US; India VIX for India). ADX/DMI = Wilder, stochastic = slow %K (21 raw, 3 SMA) vs 80/20 (stoch_line 1 = the 9-period %D).";
 
 fn wdef(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef {
@@ -120,7 +120,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Trail the stop 2 points from the high (low) once the trade is 2 points in the money",
             "X|Take another 1/4 off at twice the initial risk; then trail 2 points from the high (low) until the stop is hit",
         ],
-        notes: "Examples CMA, HIG, ZION (Jan-Feb 2003, shorts) are each checked as unit tests of the money management on the printed prices. The book scans index charts first (ADX/DI/200-period) then their components; here the index is both the scanned chart and the traded instrument. The second 1/4: rule 3 says 'of the remaining', rule 4 says half is then left; default = 1/4 of the original (second_of_orig = 1). Position managed on daily bars after entry, no time limit. Points scale with pt_mode (default 1 point = 1 × daily ATR(90)).",
+        notes: "Examples CMA, HIG, ZION (Jan-Feb 2003, shorts) are each checked as unit tests of the money management on the printed prices. The book scans index charts first (ADX/DI/200-period) then their components; here the index is both the scanned chart and the traded instrument. The second 1/4: rule 3 says 'of the remaining', rule 4 says half is then left; default = 1/4 of the original (second_of_orig = 1). Position managed on daily bars after entry, no time limit. Points are the book's dollars, literal (pt_mode 0, lead decision 196; published on US index and ETF prices only); pt_mode 2 (1 point = 1 × daily ATR(90)) is an option.",
         claim: None,
     });
     v.push(StrategyDef {
@@ -134,7 +134,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|[Not from the book] literal_exit = 0: previous reading, sells exit instead when the price trades BELOW yesterday's MA (the reversion reading for a price stretched above its MA)",
             "X|Or exit within two to four days (default: on the close of day 4)",
         ],
-        notes: "Book trades SPY/S&P (2003). Threshold `pct` 2.0 = SPX; book values NDX 6, XBD 8, SOX 8 (use 6 for QQQ / NIFTY IT, 8 for SMH). 3-point stop = SPY points: pt_mode 1 with pt_pct 1.18 (1 point = 1/85 of price, SPY ≈ $85 in the 2003 sizing slide); pt_mode 0 = raw points. Stop checked before the reversion exit on the same bar. The exit slide says 'trades above yesterday's 10-day MA' (literal_exit = 1, default; sells: the price was above its MA on the signal day, so the ½ exit usually comes on day 1); [Not from the book] literal_exit = 0 exits sells when the price trades below it.",
+        notes: "Book trades SPY/S&P (2003). Threshold `pct` 2.0 = SPX; book values NDX 6, XBD 8, SOX 8 (use 6 for QQQ / NIFTY IT, 8 for SMH). 3-point stop = $3 per SPY share ('We use a 3 point stop on all positions' ... 'dividing 1% of portfolio N.A.V. by a $3 per share initial stop loss', PDF pp.35-38): literal, pt_mode 0 (lead decision 196), so the result is published on SPY only; pt_mode 1 (pt_pct 1.18 = 1/85 of price, SPY ≈ $85 in the 2003 sizing slide) and pt_mode 2 (ATR) are options. Stop checked before the reversion exit on the same bar. The exit slide says 'trades above yesterday's 10-day MA' (literal_exit = 1, default; sells: the price was above its MA on the signal day, so the ½ exit usually comes on day 1); [Not from the book] literal_exit = 0 exits sells when the price trades below it.",
         claim: claim("-", "\"just over 70%\" (market-timing signals in general)", "-", "2-4 days", "general claim, no test published"),
     });
     v.push(StrategyDef {
@@ -148,7 +148,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|[Not from the book] literal_exit = 0: buys exit instead when the VIX trades BELOW yesterday's MA (presumed copy of the Non-VIX slide; the reversion reading for a VIX stretched above its MA)",
             "X|Or exit within two to four days (default: on the close of day 4)",
         ],
-        notes: "Uses the VIX's daily high/low/close, which the server builds in as series VIX.High, VIX.Low, VIX.Close (CBOE VIX for US, India VIX daily OHLC for India); no extra_data file is needed. The slide's exit says 'trades above yesterday's 10-day MA' for both sides; default literal_exit = 1 codes the slide as written (buys: the VIX was above its MA on the signal day, so the ½ exit usually comes on day 1). [Not from the book] literal_exit = 0 reads it as a copy error and exits buys when the VIX trades BELOW yesterday's MA (the reversion reading). 3-point stop as in the Non-VIX method (pt_pct 1.18 = SPY at $85).",
+        notes: "Uses the VIX's daily high/low/close, which the server builds in as series VIX.High, VIX.Low, VIX.Close (CBOE VIX for US, India VIX daily OHLC for India); no extra_data file is needed. The slide's exit says 'trades above yesterday's 10-day MA' for both sides; default literal_exit = 1 codes the slide as written (buys: the VIX was above its MA on the signal day, so the ½ exit usually comes on day 1). [Not from the book] literal_exit = 0 reads it as a copy error and exits buys when the VIX trades BELOW yesterday's MA (the reversion reading). 3-point stop as in the Non-VIX method: $3 per SPY share, literal (pt_mode 0, lead decision 196), published on SPY only; pt_mode 1 (pt_pct 1.18 = SPY at $85) is an option.",
         claim: claim("-", "\"just over 70%\" (market-timing signals in general)", "-", "2-4 days", "general claim, no test published"),
     });
     v.push(StrategyDef {
@@ -248,7 +248,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("ma_rule", "Day 2 4-SMA close rules (1 on)", 1.0, 0.0, 1.0, 1.0),
             p("day2_extra", "Extra 1/3 at the Day-2 close (discretionary): 0 off, 1 if at most one piece taken (GPRO, CAKE, WBSN), 2 only if none taken", 0.0, 0.0, 2.0, 1.0),
         ]);
-        v.extend(units(3.0, 2.0));
+        v.extend(units(3.0, 0.0)); // decision 196: the book's points (dollars), literal; ATR and % scalings are options
         v.extend(extra);
         v
     };
@@ -267,7 +267,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                 p("trail_start", "Trail once N points in the money", 2.0, 0.5, 4.0, 0.5),
                 p("trail", "Trail N points from the high", 2.0, 0.5, 4.0, 0.5),
             ]);
-            v.extend(units(3.0, 2.0));
+            v.extend(units(3.0, 0.0)); // decision 196
             v
         }
         "ws5_non_vix_market_timing" | "ws5_vix_iii_reversal" => {
@@ -284,7 +284,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             } else {
                 v.push(p("literal_exit", "Sells exit when the price trades ABOVE yesterday's MA (slide p.131 as printed, 1) / below (0, [Not from the book] previous reading)", 1.0, 0.0, 1.0, 1.0));
             }
-            v.extend(units(100.0 / 85.0, 1.0));
+            v.extend(units(100.0 / 85.0, 0.0)); // decision 196: the 3-point stop = $3 per SPY share, literal
             v
         }
         "ws5_emini_spy_daytrade" => {

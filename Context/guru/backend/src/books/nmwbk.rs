@@ -7,15 +7,17 @@ pub const BOOK: &str = "nmwbk";
 
 /// Rules admitted after the 2026-10-23 full reading (authors/schwager/admission/SOURCE-CONTRACT.md) and independent
 /// chronological Python ledgers (0 mismatches, US and India). Indices, ETFs and stocks are a declared application.
-pub const REVIEWED: &[&str] = &["nmwbk_penny"];
+/// Lead decision 197 (K37, 4 Nov 2026): held (PENNY_HELD).
+pub const REVIEWED: &[&str] = &[];
+const PENNY_HELD: &str = "the edge Blake describes is municipal-bond-fund NAV smoothing (\"there seemed to be some sort of smoothing process operating in the NAV numbers of the municipal bond fund\", p.92); running it on equity indices, ETFs or stocks is an asset-class swap (the reason mahrs is refused), so it is held (lead decision 197)";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "Gil Blake traded a Fidelity municipal bond fund's daily NAV, switching to the cash fund on down days (1980-84); he credits the result to \"some sort of smoothing process operating in the NAV numbers\" and agrees that in the bond market itself switching on every daily change \"is a disastrous strategy\" (p.92). Indices, ETFs and stocks are a declared application of the printed rule, not his test; no fund NAVs, interest on cash or the reported 20% a year are claimed. One penny = any change in the close; an unchanged close keeps the position [declared reading]. Long or flat (\"during those periods we were in cash\"). Switches happen at the close of the signal day, as fund switches price at that day's NAV; p.fill = 1 fills at the next open [Not from the book]. Each run starts flat at the selected start date.";
+const NOTE: &str = "WARNING, from the interview itself (p.92): Schwager says that in the bond market, switching on every daily change \"is a disastrous strategy\"; Blake answers \"That may well be true\" and credits his result to two features of that fund: \"there were no transaction costs involved in switching in and out of the fund\" and \"some sort of smoothing process operating in the NAV numbers\". Gil Blake traded a Fidelity municipal bond fund's daily NAV, switching to the cash fund on down days (1980-84). Indices, ETFs and stocks are a declared application of the printed rule, not his test; no fund NAVs, interest on cash or the reported 20% a year are claimed. One penny = any change in the close; an unchanged close keeps the position [declared reading]. Long or flat (\"during those periods we were in cash\"). Switches happen at the close of the signal day, as fund switches price at that day's NAV; p.fill = 1 fills at the next open [Not from the book]. Each run starts flat at the selected start date.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
         id: "nmwbk_penny", name: "Gil Blake \"one penny\" fund-switching rule (long or cash)", group: "Gil Blake · The Master of Consistency",
-        session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
+        session: 0, dir: "Long", status: Status::NotTestable(PENNY_HELD), needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
         rules: &[
             "E|\"Why couldn't I just switch out of the fund into cash when it started to go down and then switch back into the fund when it started to go back up?\" p.91",
             "E|\"it was the simplest approach that proved the best. We called it the 'one penny' rule ... approximately an 83 percent probability that any uptick or downtick day would be followed by a day with a price move in the same direction\" p.92",

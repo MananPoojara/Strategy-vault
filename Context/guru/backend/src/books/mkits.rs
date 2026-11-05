@@ -8,6 +8,8 @@ pub const BOOK: &str = "mkits";
 /// Admitted ids (authors/katsanos/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["mkits_dax_ma", "mkits_euro_ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Ch.16 relative-strength systems, admitted once the engine feeds SPX_CLOSE (lane K51, EP4, decision #223).
+pub const REVIEWED_RS: &[&str] = &["mkits_rs_fut", "mkits_rs_etf"];
 const SPX: &[&str] = &["SPX_CLOSE"];
 
 // ---------------------------------------------------------------- MetaStock functions (NaN = not yet defined)
@@ -203,10 +205,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Book: EUR/USD 22-Jan-2003..21-Jan-2008 (Table 17.6 p.284, column 'MA'). The book prints code only for the intermarket-enhanced version (p.355); the classic system is that code without eq. 17.3 (CRB>MA(CRB,35) and TNX<MA(TNX,5)), which the book states is the only intermarket addition (pp.280-281). Code wins over prose: prose eq. 17.2 prints 'ABS(CI) < 40' but the code (both sides) uses ABS(CI)>40 (a trend filter, as the prose explains). FILT is a log-return std-dev compared with price units (literal code; on EUR/USD ~1.3 it is a small threshold, on an index it is negligible). Single-market -> run on the vault's indices. [B] SAR: Wilder parabolic, start long on the first bar, AF 0.04 step/0.10 max; [B] exit then opposite entry may happen on the same close; an entry is not exited on its own bar.",
           &[], false, Some(Claim { trades: "62", win: "45%", avg: "EUR 28,910 net / 62 trades", hold: "18 days", period: "1/22/03-1/21/08, EUR/USD" })),
         d("mkits_rs_fut", "Relative Strength asset-allocation system - Test I (futures/indices, no volume)", "Ch.16 Relative strength", "Long", Status::Live, RS_FUT_RULES,
-          "Book: per-security signals on 42 futures/international indices (incl. BSE SENSEX), benchmark S&P 500, $30,000 per trade, 16-Jul-1999..27-Nov-2007 (Table 16.4 p.256, Test I). The vault runs one security at a time against the real S&P 500 close (series SPX_CLOSE, from us_data.csv; a day without an SPX bar keeps the previous close, as MetaStock Security() does). On SPX itself RS is constant and the system cannot trade. Code wins over prose: prose says RS 'crossed above its 120-day MA' and 'made a new 250-day high' and the sell needs both the cross AND ROC<-0.5; the code uses RS>Mov(RS,120,E), RS>Ref(HHV(RS,250),-20) and an OR exit. India: SPX close of the same calendar date (known before the next NSE open, so the next-open fill has no look-ahead).",
+          "Book: per-security signals on 42 futures/international indices (incl. BSE SENSEX), benchmark S&P 500, $30,000 per trade, 16-Jul-1999..27-Nov-2007 (Table 16.4 p.256, Test I). The vault runs one security at a time against the real S&P 500 close (series SPX_CLOSE, aligned by the engine from its own us_data.csv rows: engine piece EP4, decision #223; a day without an SPX bar keeps the previous close, as MetaStock Security() does, for at most 5 bars, and a period with more than 5% carried bars is withheld). Not run on SPX itself or on SPY, which tracks it (the comparison would be with itself: decisions #223 (7), #225). Code wins over prose: prose says RS 'crossed above its 120-day MA' and 'made a new 250-day high' and the sell needs both the cross AND ROC<-0.5; the code uses RS>Mov(RS,120,E), RS>Ref(HHV(RS,250),-20) and an OR exit. India: not run yet. The India engine holds no S&P 500 rows, and a cross-market pair needs the later cross-market piece (decision #223 (6)), so Indian instruments report the missing SPX_CLOSE series.",
           SPX, false, Some(Claim { trades: "50", win: "74.0%", avg: "$9,613 / trade ($30k per trade, portfolio)", hold: "495 days", period: "8/28/00-11/27/07, 42-futures portfolio" })),
         d("mkits_rs_etf", "Relative Strength asset-allocation system - Test II (ETFs, with VFI)", "Ch.16 Relative strength", "Long", Status::Live, RS_ETF_RULES,
-          "Book: 118 ETFs vs the S&P 500 (Table 16.4 p.256, Test II). Needs volume for VFI (NIFTY 50 has volume from 2000; NIFTYIT/MIDCAPSELECT have none -> no trades). Same SPX_CLOSE alignment as Test I. Tradesim volume filter (max 20% of traded volume) is a sizing rule and is not modelled.",
+          "Book: 118 ETFs vs the S&P 500 (Table 16.4 p.256, Test II). Needs volume for VFI (the NDX cash-index rows have none -> needs_data there). Same SPX_CLOSE alignment as Test I. Tradesim volume filter (max 20% of traded volume) is a sizing rule and is not modelled.",
           SPX, true, Some(Claim { trades: "139", win: "59.7%", avg: "$4,322 / trade ($30k per trade, portfolio)", hold: "218 days", period: "8/28/00-11/27/07, 118-ETF portfolio" })),
     ];
     let gold: &[(&str, &str, &'static str, &str)] = &[
@@ -514,4 +516,11 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| (def.book=="mkits" && crate::books::mkits::reviewed(def.id)) || (def.book=="mkfve" && crate::books::mkfve::reviewed(def.id)),
     label: "Katsanos tested these rules on DAX futures, EUR/USD and one US stock (XM Satellite Radio); runs on indices, ETFs and other stocks are a declared application.",
     basis: "Intermarket Trading Strategies (Wiley 2008): DAX MA Crossover System (App. A.4, Table 13.2 p.210) and the Euro classic MA system (eq. 17.1-17.8 p.281-282, code p.355 without its CRB/TNX line); Detecting Breakouts (S&C April 2003) FVE divergence with linear-regression slopes (p.29, 36). Book markets: DAX futures, EUR/USD, XMSR stock. Index/ETF/stock runs are a declared application.",
+};
+
+// Lane K51 (decision #223): the Ch.16 relative-strength systems, fed with the engine's own S&P 500 close (EP4).
+pub const ADMISSION_RS: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "mkits" && REVIEWED_RS.contains(&def.id),
+    label: "Katsanos tested the relative-strength systems as portfolios of 42 futures/international indices (Test I) and 118 ETFs (Test II) against the S&P 500; single US indices, ETFs and stocks against the real S&P 500 close are a declared application, not the author's test. Indian instruments wait for a cross-market S&P 500 series (decision #223 (6)).",
+    basis: "Intermarket Trading Strategies (Wiley 2008) Ch.16, MetaStock code App. A.7 p.342 (Test I) and p.345-346 (Test II, with the VFI of App. A.6 p.336); results Table 16.4 p.256. Second series = SPX close aligned by the engine (EP4, lane K51, decision #223); independent check authors/titles-1030/K51w/k51_ref.py.",
 };

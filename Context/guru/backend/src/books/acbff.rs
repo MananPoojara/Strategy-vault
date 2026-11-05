@@ -13,12 +13,13 @@
 //! * an entry while flat opens, an opposite entry reverses, an entry in the held direction is ignored;
 //! * "setexitonclose" exits at that bar's close; "this bar on close" orders fill at the signal bar's close;
 //! * EasyLanguage variables keep their last value when no "if" assigns them (code literal).
-//! 1 tick (minmove/pricescale) = 0.10 index points (full S&P futures) on US data, 0.05 (NSE) on Indian data.
+//! 1 tick (minmove/pricescale) = one tick of the traded instrument (Ctx::market_tick: NSE 0.05, US 0.01; decision 186, D1-01);
+//! p.tick = 0.10 gives the book market's tick (full S&P futures) as an option.
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "acbff";
 /// Admitted ids (authors/collins/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */];
+pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */, "acbff_5c1_day" /* D1-16: sides fixed, book table reproduced */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
@@ -342,7 +343,7 @@ fn cl(t: &'static str, w: &'static str, a: &'static str, h: &'static str, p: &'s
 }
 const SP: &str = "S&P full futures 01-02-01 to 11-19-05";
 const MAP: &str = "Book tested full-size S&P/NASDAQ/Russell futures (and bonds/currencies); run on the index instead (instrument swap). Day trade: in at the next open, out at that day's close (setexitonclose). Claim = book's S&P row; book P&L is in dollars per contract ($250 per S&P point).";
-const SNOTE: &str = "Instrument swap only (index for the S&P futures contract). Order fills per the module's TradeStation bar model; 1 tick = 0.10 pt US / 0.05 pt NSE.";
+const SNOTE: &str = "Instrument swap only (index for the S&P futures contract). Order fills per the module's TradeStation bar model; 1 tick = the traded instrument's tick (NSE 0.05, US 0.01; the printed minmove/pricescale); p.tick = 0.10 = the S&P futures tick of the book's market [option].";
 const IDN: &str = "Needs intraday bars (5/10/30/60-minute or 1-minute day-session bars) that the vault does not have; the rules read intraday time stamps and intraday highs/lows.";
 const DS: &str = "Needs intraday (5-minute) day-session bars of the index AND of the Dow futures as data2 (the 'Dow-Spoo' net-change comparison runs bar by bar intraday). Not in the vault.";
 
@@ -495,10 +496,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|as 36.3 perpetual + \"setexitonclose\" (App. p.230: type it at the end for the day version)", "X|setexitonclose: out at the close of the entry day"], MAP, cl("59", "64.41%", "$760.59 (net $44,875)", "day", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_3rd_fade", "Third day fade (Table 37.1)", g33, "Long/Short", Live,
             &["E|\"if marketposition < 1 and c < l[1] and c[1] < l[2] then buy next bar at o of tomorrow-.33*average(range,3) limit\"; mirror (App. p.230)", "X|\"if marketposition=1 then sell next bar at h limit; ... sell next bar at l-(minmove/pricescale) stop; ... setexitonclose\": the day after entry, target = entry-day high, stop 1 tick under entry-day low, else out on that close (text p.163)"],
-            "Text says open minus 50% of the 3-day range; code says .33; code used. Exit timing = text (hold overnight, out on the next day's close).", cl("219", "51.14%", "$487.87 (net $106,188)", "2 days", "S&P full futures 1-2-96 to 11-19-05")),
+            "Text says open minus 50% of the 3-day range; code says .33; code used. Exit timing = text (hold overnight, out on the next day's close) [reading: the book does not settle when the coded setexitonclose takes effect; the text's overnight hold decides it].", cl("219", "51.14%", "$487.87 (net $106,188)", "2 days", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_5d_avg_fade", "Closes beyond 5-day low/high averages (Table 37.2)", g33, "Long/Short", Live,
             &["E|\"x=1 if c < average(l,5); if marketposition < 1 and lowest(x,3)=1 and c < c[1] and c[1] < c[2] then buy next bar at market\"; mirror with c > average(h,5) (App. p.230)", "X|\"if marketposition=1 and barssinceentry > 0 then sell next bar at h limit / at l-(minmove/pricescale) stop\"; exit on the close of the third day (text p.164: \"Stay in the position over two nights. On the third day ... Failure to hit either means exit on the close\")"],
-            "Code's 'barssinceentry > 1 then setexitonclose' would exit a day later under next-bar timing; default follows the text (out on the 3rd day's close). p.exit_late=1 = one day later (labelled option).", cl("187", "55.98%", "$969.69 (net $181,313)", "3 days", "S&P full futures 1-2-96 to 11-19-05")),
+            "Code's 'barssinceentry > 1 then setexitonclose' would exit a day later under next-bar timing; default follows the text (out on the 3rd day's close). p.exit_late=1 = one day later (labelled option). [reading: the book does not settle when setexitonclose takes effect]", cl("187", "55.98%", "$969.69 (net $181,313)", "3 days", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_nday_10stop", "N day with 10-day stops (Table 38.3)", g33, "Long/Short", Live,
             &["E|\"if marketposition < 1 then buy next bar at highest(h,20) stop; if marketposition > -1 then sell short next bar at lowest(l,20) stop\" (App. p.231)", "X|\"if barssinceentry >= 10 and (c[10] > highest(c,10) or h[10] > highest(h,10)) then sell next bar at market\"; mirror (text p.169: no new high and high close vs 11 days back)"],
             "The separate .doc prints c[10] twice; the book appendix has h[10]; book used. The plain 20-day N day (Table 38.1) is a vault duplicate of rwmts_cb20 and is not catalogued again.", cl("52", "40.38%", "$1,438.46 (net $74,800)", "multi-week", SP)),
@@ -506,7 +507,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"if marketposition < 1 and h > h[1] and c < c[1] then buy next bar at market\"; \"if marketposition > -1 and l < l[1] and c > c[1] then sell short\" (App. p.231)", "X|\"if (h <= h[1] or c >= c[1]) then sell next bar at hh limit\" (hh = entry-day high); stop 1 tick under the entry-day low from the day after entry (text p.175); exit orders not placed on a same-direction signal day"],
             "Code uses ll (the SHORT side's entry-day low) for the long stop and hh for the short stop — a swapped variable. Default follows the text (entry-day low / high); p.stop_ref=1 = the code's swapped variables (labelled option).", cl("325", "58.15%", "$192.46 (net $62,550)", "multi-day", "S&P full futures 01-01-01 to 11-19-05")),
         sd!("acbff_rx4day", "200% range expansion · four days in trade (Table 41.1)", g41, "Long/Short", Live,
-            &["E|\"buy next bar at o of tomorrow+2*average(range,3) stop; sell short next bar at o of tomorrow-(2*average(range,3)) stop\" (App. p.232)", "X|\"if barssinceentry=2 then sell next bar at h limit / at l stop / setexitonclose\"; mirror (text p.176: fourth day in the trade: previous day's high target, low stop, else close)"], SNOTE, cl("153", "49.02%", "$35.21 (net $5,388)", "4 days", "S&P full futures 1-2-86 to 11-19-05")),
+            &["E|\"buy next bar at o of tomorrow+2*average(range,3) stop; sell short next bar at o of tomorrow-(2*average(range,3)) stop\" (App. p.232)", "X|\"if barssinceentry=2 then sell next bar at h limit / at l stop / setexitonclose\"; mirror (text p.176: fourth day in the trade: previous day's high target, low stop, else close) [reading: the book does not settle when setexitonclose takes effect; barssinceentry=2 orders act on the next bar, which matches the text's fourth day]"], SNOTE, cl("153", "49.02%", "$35.21 (net $5,388)", "4 days", "S&P full futures 1-2-86 to 11-19-05")),
         sd!("acbff_mom66", "Nine-day 66% momentum (Table 41.3)", g41, "Long/Short", Live,
             &["F|hc = highest(h,9)-c; lc = c-lowest(l,9); xx = the bigger (App. p.232)", "E|\"if mp < 1 and hc > lc then buy next bar at o of tomorrow+(.66*lc) stop; if mp > -1 and lc > hc then sell short next bar at o of tomorrow-(.66*hc) stop\"", "X|\"if mp=1 and barssinceentry > 0 then sell next bar at entryprice-(1.32*xx) stop\"; mirror"], SNOTE, cl("188", "62.77%", "$952.79 (net $179,125)", "7.3 bars", SP)),
         sd!("acbff_contract", "Contracting range · fade close on momentum (Table 41.6)", g41, "Long/Short", Live,
@@ -525,7 +526,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_six_stop66", "Six indicator · 66% stop loss (Table 42.3)", g42, "Long/Short", Live,
             &["E|six indicator entries at market (App. p.235)", "X|\"sell next bar at o of tomorrow-.66*average(range,3) stop; buy to cover next bar at o of tomorrow+.66*average(range,3) stop\"; setexitonclose"], SNOTE, cl("666", "57.81%", "$363.76 (net $242,263)", "day", SP)),
         sd!("acbff_nee5", "Five combined non-either-or indicators (Table 43.1)", g42, "Long/Short", Live,
-            &["F|aa (5 closes pattern c[1..6]), bb (c[1..7]), cc cups/caps, dd 3-day 20% S/R, ee fade 2 open-closes; each +1/-1/0 (App. p.235)", "E|\"if aa+bb+cc+dd+ee > 0 then buy next bar at market; < 0 sell short\"; setexitonclose", "X|setexitonclose: out at the close of the entry day"], MAP, cl("767", "54.37%", "$248.73 (net $190,775)", "day", SP)),
+            &["F|aa (5 closes pattern c[1..6]), bb (c[1..7]), cc cups/caps, dd 3-day 20% S/R, ee fade 2 open-closes; each +1/-1/0 (App. p.235)", "F|Book conflict: the text's item 1 (p.193) is \"Five down closes in a row are followed by an up close\", which the printed code does not contain (its aa is five up closes then a down close, one day back); the printed code is used", "E|\"if aa+bb+cc+dd+ee > 0 then buy next bar at market; < 0 sell short\"; setexitonclose", "X|setexitonclose: out at the close of the entry day"], MAP, cl("767", "54.37%", "$248.73 (net $190,775)", "day", SP)),
         sd!("acbff_six_q", "Six indicator with five non-either-or qualifier (Table 44.1)", g42, "Long/Short", Live,
             &["E|\"if aa+...+ff > 0 and aaa+bbb+ccc+ddd+eee >= 0 then buy next bar at market; if aa+...+ff < 0 and aaa+...+eee <= 0 then sell short\"; setexitonclose (App. p.236; e reset to 0 on doji days as coded)", "X|setexitonclose: out at the close of the entry day"], MAP, cl("522", "60.73%", "$549.21 (net $286,688)", "day", SP)),
         sd!("acbff_six_q66", "Filtered six indicator · 66% stop (Table 44.2)", g42, "Long/Short", Live,
@@ -533,7 +534,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_six_q66_v2", "Filter indicator · 66% stop · version 2 (Table 44.3)", g42, "Long/Short", Live,
             &["E|\"(six > 0 and five >= 0) or (six = 0 and five > 0) then buy next bar at market\"; mirror (App. p.237)", "X|66% stop; setexitonclose"], SNOTE, cl("897", "54.07%", "$338.39 (net $303,538)", "day", SP)),
         // ---- needs data
-        sd!("acbff_mega_1min", "One-minute 'Mega System' (Table 24.1)", g30, "Long/Short", NeedsData(IDN), &["E|1-minute e-mini S&P bars 8:45-14:55: buy at open-average(o-l,5) limit, sell short at open+average(h-o,5) limit; exit 15:00 (App. p.219)"], "", None),
+        sd!("acbff_mega_1min", "One-minute 'Mega System' (Table 24.1)", g30, "Long/Short", NotTestable(MEGA_HELD),
+            &["F|\"e=(h-o); f=(o-l); g=average(e,5); j=average(f,5);\" on 1-minute bars (Table 24.1, App. p.219)",
+              "E|\"if time >=845 and time < 1455 then buy next bar at o of tomorrow-j limit; ... sell short next bar at o of tomorrow+g limit\": every minute, limits at the next minute's open -/+ the 5-minute averages; an opposite fill reverses (\"Do it all day long\", p.98)",
+              "X|\"if time=1500 then sell next bar at market; ... buy to cover next bar at market\": out at 15:00 CT = the SPX close (the 15:59 ET minute's close; a day's last minute on early-close days) [declared reading: SPX has no later minute]",
+              "F|[Declared application, lane K38, decision #202] Real 1-minute bars of SPY (2000-2025) and SPX (2008-2026) for the book's 1-minute e-mini S&P; no fixed amount. TradeStation bar times are end times: 8:45-14:55 CT = minutes starting 9:44-15:53 ET place the orders. A limit fills when the minute's low (buy) or high (sell) reaches it, at the level. Flat with both limits reached in one minute (only at the day's first fill): both fill in the order of the module's bar path (high first when h-o <= o-l), marked ambiguous minute (decision #175 limit 5%)"],
+            "Book result (Table 24.1, Jan 2002 - 19 Nov 2005, e-mini S&P 1-minute, $5 commission): 222,926 trades, 69.42% profitable, avg $8.26 a trade. The author calls it a 'blueprint for theoretical perfection': 'The problem lies with our recurring touched-but-not-filled issue' (p.100). The vault fills a limit when the minute touches it, as TradeStation does, so the same caveat applies. About 155 trades a day.",
+            cl("222,926", "69.42%", "$8.26 (net of $5)", "2.60 bars", "e-mini S&P 1-minute, Jan 2002 - 19 Nov 2005")),
         sd!("acbff_dowspoo_perp", "Dow-Spoo perpetual (Table 30.1)", g30, "Long/Short", NeedsData(DS), &["E|5-min bars: long if the S&P's net change % since yesterday's close beats the Dow's, else short (App. p.224)"], "", None),
         sd!("acbff_dowspoo_day", "Dow-Spoo basic day trade (Table 30.2)", g30, "Long/Short", NeedsData(DS), &["E|5-min bars 8:45-14:45 in the Dow-Spoo direction; exit 15:00 (App. p.224)"], "", None),
         sd!("acbff_dowspoo_3bar", "Dow-Spoo with 3-bar requirement (Table 30.5)", g30, "Long/Short", NeedsData(DS), &["E|9:30-14:45, last 3 five-minute bars agree; exit 15:00 (App. p.224)"], "", None),
@@ -541,14 +548,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_dowspoo_6stop", "Dow-Spoo 6-bar high/low stop (Table 30.10)", g30, "Long/Short", NeedsData(DS), &["E|6 bars agree: buy at the 6-bar high stop; exit 15:00 (App. p.225)"], "", None),
         sd!("acbff_dowspoo_6lim", "Dow-Spoo 6-bar high/low limit (Table 30.11)", g30, "Long/Short", NeedsData(DS), &["E|c > average(h,6) and Dow-Spoo up: buy at c-.5*range limit; exit 15:00 (App. p.225)"], "", None),
         sd!("acbff_dowspoo_dyn", "Dynamic Dow-Spoo (Table 30.12)", g30, "Long/Short", NeedsData(DS), &["E|12-48 bar Dow-Spoo averages by half hour 9:30-13:00; exit 15:00 (App. p.225)"], "", None),
-        sd!("acbff_open_rel", "Entering re daily opening (Table 31.2)", g30, "Long/Short", NeedsData(IDN), &["E|30-min bars: at 9:30 index time, long if above the day's open, short if below; out 15:15 (App. p.226)"], "", None),
-        sd!("acbff_2bar_open", "Two bars in a row vs open · 60-min (Table 31.3)", g30, "Long/Short", NeedsData(IDN), &["E|60-min bars 10:30-14:30 (App. p.226)"], "", None),
-        sd!("acbff_final_third", "Final third of day (Table 31.4)", g30, "Long/Short", NeedsData(IDN), &["E|135-min bars: at 13:00 both bars above the open buy, below sell short; out 15:15 (App. p.226)"], "", None),
-        sd!("acbff_1230", "12:30 entry system (Table 34.1)", g30, "Long/Short", NeedsData(IDN), &["E|5-min bars: at 12:30 open in lowest 25% of range and highs rising since 9:30/11:30; exit 15:05 (App. p.227)"], "", None),
-        sd!("acbff_9oc", "Majority of 9 open-closes · 5-min (Table 35.1)", g30, "Long/Short", NeedsData(IDN), &["E|5-min bars 9:15-14:45 (App. p.228)"], "", None),
-        sd!("acbff_midpoint", "Daily midpoint demarcation · 5-min (Table 35.2)", g30, "Long/Short", NeedsData(IDN), &["E|5-min bars 9:15-14:45 vs (day high+day low)/2 (App. p.228)"], "", None),
+        sd!("acbff_open_rel", "Entering re daily opening (Table 31.2)", g30, "Long/Short", Live, &["E|30-min bars: at 9:30 index time (Index version x = 9.3), long at the next bar's open if the close is above the day's open, short if below (App. p.226)", "X|y = 15.15: out on the close (cash close here)"], "Book Table 31.1/31.2 use a 30-minute entry time each; the code's Index default x = 9.30 is run. opend(0) = the first minute's open. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
+        sd!("acbff_2bar_open", "Two bars in a row vs open · 60-min (Table 31.3)", g30, "Long/Short", Live, &["E|60-min bars, bars stamped 10:30 to before 14:30 (b = 10.3, x = 14.3): both the last two closes above the day's open and rising -> buy next bar at market; mirror short (App. p.226)", "X|time = 14:30: exit next bar at market (the 14:30 CT open); else the day's close"], "c[1] = the previous 60-minute bar. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
+        sd!("acbff_final_third", "Final third of day (Table 31.4)", g30, "Long/Short", Live, &["E|135-min bars (405-minute session in three): at 13:00 (the bar stamped 1300) both bars closed above the day's open -> buy at the market; both below -> sell short (App. p.226)", "X|y = 15.15: out on the close (cash close here)"], "On the 390-minute cash session the bars are 9:30-11:45, 11:45-14:00 and 14:00-16:00 ET (the last one shorter); on NSE 135/135/105 minutes from 9:15. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
+        sd!("acbff_1230", "12:30 entry system (Table 34.1)", g30, "Long/Short", Live, &["E|\"if time=930 then hh=highd(0); if time=930 then ll=lowd(0); if time=1130 then hhh=highd(0); if time=1130 then lll=lowd(0); if time=1230 and opend(0)-lowd(0)<=.25*(highd(0)-lowd(0)) and highd(0)>hhh and hhh>hh then buy next bar at market\" (Table 34.1, App. p.227): 5-min bars; hh/ll = the day's high/low so far at the 9:30 bar, hhh/lll = at the 11:30 bar; at 12:30: open in the lowest 25% of the day's range so far, day high > hhh > hh -> buy next bar at market; mirror short. Prose p.152: \"The high must be higher than it was at 11:30. The 11:30 high must be higher than the 9:30 high.\"", "X|x = 15.05 (\"10 minutes before the close\", p.152): after the cash close, so out on the day's close"], "Decision 222: hh/ll and hhh/lll are the session's running high/low at 9:30 and 11:30 (highd(0)/lowd(0) in the printed Table 34.1, p.227, and the prose p.152). The separate TradeStation code file on the share prints hh=h / hhh=h (the 9:30/11:30 bar's own high); the book's printed code and prose are followed. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
+        sd!("acbff_9oc", "Majority of 9 open-closes · 5-min (Table 35.1)", g30, "Long/Short", Live, &["E|5-min bars: e = +1 up bar (c > o), -1 down bar, 0 unchanged; 9:15-14:45 average(e,9) > 0 -> buy next bar at market, < 0 -> sell short (reverses) (App. p.228)", "X|time = 15:00: next bar at market = the cash close"], "average(e,9) on one continuous 5-minute series (at 9:15 it holds only the day's own nine bars, as the book says). [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
+        sd!("acbff_midpoint", "Daily midpoint demarcation · 5-min (Table 35.2)", g30, "Long/Short", Live, &["E|5-min bars 9:15-14:45: close above (day high + day low)/2 so far -> buy next bar at market, below -> sell short (reverses) (App. p.228)", "X|time = 15:00: next bar at market = the cash close"], "[intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_4ind", "Four indicator intraday system (Tables 35.3-35.6)", g30, "Long/Short", NeedsData(DS), &["E|Dow-Spoo, vs open, 9 open-closes, midpoint all agree; 35.6 adds the two-bar exit (App. pp.228-229)"], "", None),
-        sd!("acbff_rsi_5min", "Five-minute RSI go-with (Table 39.1)", g30, "Long/Short", NeedsData(IDN), &["E|RSI(9) on 5-min bars > 85 buy, < 15 sell short 9:15-14:45; exit 15:10 (App. p.231)"], "", None),
+        sd!("acbff_rsi_5min", "Five-minute RSI go-with (Table 39.1)", g30, "Long/Short", Live, &["E|RSI(Close, 9) on 5-min bars > 85 -> buy next bar at market, < 15 -> sell short, 9:15-14:45 (b = 9.15, x = 14.45) (App. p.231)", "X|z = 15.10: after the cash close, so out on the day's close"], "TradeStation RSI (Wilder smoothing) on one continuous 5-minute series across days (EP2). [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_bond_index", "Bonds lead the indexes (Table 41.14)", g30, "Long/Short", NeedsData("Needs 10-minute e-mini S&P bars AND 10-minute 30-year T-bond futures bars (data2) for the 10:00 entry / 15:10 exit."), &["E|10:00: S&P above its open and bonds in the top/bottom 25% of their range (App. p.234)"], "", None),
         sd!("acbff_bond_basis", "Basis-point bond system (Ch 4)", g4, "Long/Short", NeedsData("Needs 30-year T-bond futures daily prices in 32nds (and the pre-1990s 8:00 CBOT open); the rule keys off whole-point bond prices."), &["E|open in a different point than the previous close: stop entry on crossing 00 back into the original point (p.11)", "X|day 2: day-1 low target (short), high+1 tick stop, else out on the close"], "", None),
         sd!("acbff_bean_dual", "Fading closes · dual entry soybeans (Ch 4)", g4, "Long/Short", NeedsData("Needs soybean futures daily data."), &["E|after a down close: open below the low -> buy stop at the close; open between low and close -> buy at the high; exits as the bond system (p.12)"], "", None),
@@ -583,7 +590,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let tick = || p("tick", "Tick (0 = auto: 0.10 US / 0.05 NSE)", 0.0, 0.0, 5.0, 0.05);
+    let tick = || p("tick", "Tick (0 = the traded instrument's tick: NSE 0.05, US 0.01; 0.10 = S&P futures tick, the book's market)", 0.0, 0.0, 5.0, 0.01);
     let prec = || p("prec", "dd and/or: 0 AND-first (text), 1 left-to-right", 0.0, 0.0, 1.0, 1.0);
     if !id.starts_with("acbff_") { return None; }
     let v = match id {
@@ -616,6 +623,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "acbff_mom66" => vec![p("n", "Lookback", 9., 3., 30., 1.), p("k", "Entry fraction", 0.66, 0.1, 1.5, 0.01), p("s", "Stop multiple", 1.32, 0.5, 3., 0.01)],
         "acbff_15_30" => vec![p("a", "Near close back", 15., 2., 60., 1.), p("b", "Far close back", 30., 4., 120., 1.)],
         "acbff_5c_day" => vec![p("swap", "Sides: 0 = book (Table 36.1: buy the up close after five down closes), 1 = [Not from the book] old swapped sides", 0., 0., 1., 1.)], // intraday wave 2b
+        "acbff_5c_perp" => vec![p("swap", "Sides: 0 = book (Table 36.2: buy the down close after five up closes), 1 = [Not from the book] old swapped sides", 0., 0., 1., 1.)], // D1-16
+        "acbff_5c1_perp" | "acbff_5c1_day" => vec![p("swap", "Sides: 0 = book (Table 36.3: buy when c[1] < c[2] after five up closes c[2]..c[7]), 1 = [Not from the book] old swapped sides", 0., 0., 1., 1.)], // D1-16
         _ => vec![],
     };
     Some(v)
@@ -623,16 +632,62 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 // ---------------------------------------------------------------- run
 
+// ---- lane K38 block (4 Nov 2026, decision #202): Table 24.1 "Mega System" on real 1-minute bars
+/// Each minute k-1 with TradeStation time 8:45 <= t < 14:55 CT (start 9:44..15:53 ET) puts a buy limit at minute k's open - j and
+/// a short limit at its open + g (5-minute averages of o-l and h-o ending at k-1). Long: only the short order acts (reverses);
+/// short: only the buy. Flat and both reached in one minute: the module's bar path (high first when h-o <= o-l) fills both,
+/// marked ambiguous. Out at the close of the 15:59 ET minute (time = 1500 CT) or the day's last minute.
+/// Lead decision #208 (4 Nov 2026): the coded and checked rule is held; nothing is published until the API can serve it.
+pub const MEGA_HELD: &str = "Withheld (lead decision #208): about 155 trades a day (1.06M on SPY), so the card's trade list would be 100-200 MB and would hang the page; it comes back with a summary-only or capped trade list. It is also 26% off the book's trade count (165,144 vs 222,926 on SPY over the book's window; unverified). The minute code and its independent check stay (K38).";
+pub(crate) fn mega_minutes(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    use crate::intraday::day_trade;
+    let mut out = vec![];
+    let tag = |why: &str, amb: bool| if amb { format!("{why} · ambiguous minute") } else { why.to_string() };
+    for i in from..=to {
+        let Some(b) = crate::intraday_w2b::day(x, i) else { continue };
+        let mut pos: Option<(f64, f64, bool)> = None; // (dir, entry, ambiguous)
+        for k in 0..b.len() {
+            let z = b[k];
+            if k >= 5 && (584..954).contains(&b[k - 1].m) {
+                let w = &b[k - 5..k];
+                let g = w.iter().map(|y| y.h - y.o).sum::<f64>() / 5.;
+                let j = w.iter().map(|y| y.o - y.l).sum::<f64>() / 5.;
+                let (bl, sl) = (z.o - j, z.o + g);
+                let (hb, hs) = (z.l <= bl, z.h >= sl);
+                let (fills, amb): (&[f64], bool) = match pos {
+                    None if hb && hs => (if z.h - z.o <= z.o - z.l { &[-1., 1.] } else { &[1., -1.] }, true),
+                    None if hb => (&[1.], false),
+                    None if hs => (&[-1.], false),
+                    Some((d, ..)) if d > 0. && hs => (&[-1.], false),
+                    Some((d, ..)) if d < 0. && hb => (&[1.], false),
+                    _ => (&[], false),
+                };
+                for &d in fills {
+                    let px = if d > 0. { bl } else { sl };
+                    if let Some((pd, pp, pa)) = pos { out.push(day_trade(pd, i, pp, i, px, &tag("reversed at the limit", pa), "limit", false)); }
+                    pos = Some((d, px, amb));
+                }
+            }
+            if z.m == 959 || k + 1 == b.len() {
+                if let Some((pd, pp, pa)) = pos.take() { out.push(day_trade(pd, i, pp, i, z.c, &tag("15:00 CT exit · close", pa), "limit", false)); }
+                break;
+            }
+        }
+    }
+    out
+}
+// ---- end lane K38 block
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !id.starts_with("acbff_") { return None; }
     let defs = catalogue();
     let d = defs.iter().find(|d| d.id == id)?;
     if d.status != Status::Live || from > to || to >= x.r.len() { return None; }
+    if id == "acbff_mega_1min" { return Some(mega_minutes(x, from, to)); } // lane K38: real 1-minute bars
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(0.0));
     let u = |k: &str| g(k).round().max(1.0) as usize;
-    let india = x.r.first().is_some_and(|r| { let t = r.ticker.to_uppercase(); t.starts_with("NIFTY") || t.starts_with("BASKET") || t.contains("INDIA") || t.contains("SENSEX") });
-    let tick = if g("tick") > 0.0 { g("tick") } else if india { 0.05 } else { 0.10 };
+    let tick = if g("tick") > 0.0 { g("tick") } else { x.market_tick() };
     let lr = g("prec") >= 0.5;
     let (c, op, h, l) = (&x.c, &x.o, &x.h, &x.l);
     let n = c.len();
@@ -656,6 +711,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         })
     };
     let c1 = |i: usize| at(c, i, 1);
+    if crate::intraday_ep::id(id) { return Some(intraday_ep(id, x, from, to)); } // intraday EP block (K39)
     let tr = match id {
         "acbff_c40" => { let a = mean(c, u("n")); day(&|i| (c[i] > a[i], c[i] < a[i])) }
         "acbff_forever_long" => {
@@ -874,9 +930,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         // intraday wave 2b: code-vs-book fix (Table 36.1 printed code: BUY = up close after five down closes); swap = 1 keeps the old sides
         "acbff_5c_day" => { let sw = g("swap") >= 0.5; day(&|i| (run_rev(c, i, 0, 5, !sw), run_rev(c, i, 0, 5, sw))) }
-        "acbff_5c_perp" => perp(&|i| (run_rev(c, i, 0, 5, true), run_rev(c, i, 0, 5, false))),
-        "acbff_5c1_perp" => perp(&|i| (run_rev(c, i, 1, 5, true), run_rev(c, i, 1, 5, false))),
-        "acbff_5c1_day" => day(&|i| (run_rev(c, i, 1, 5, true), run_rev(c, i, 1, 5, false))),
+        // D1-16 (decision 186): code-vs-book fix as for 5c_day. Tables 36.2/36.3 (App. p.229-230) BUY the down close after five up
+        // closes (36.3: c[1] < c[2] after five up closes c[2..7]); swap = 1 keeps the old swapped sides [Not from the book]
+        "acbff_5c_perp" => { let sw = g("swap") >= 0.5; perp(&|i| (run_rev(c, i, 0, 5, sw), run_rev(c, i, 0, 5, !sw))) }
+        "acbff_5c1_perp" => { let sw = g("swap") >= 0.5; perp(&|i| (run_rev(c, i, 1, 5, sw), run_rev(c, i, 1, 5, !sw))) }
+        "acbff_5c1_day" => { let sw = g("swap") >= 0.5; day(&|i| (run_rev(c, i, 1, 5, sw), run_rev(c, i, 1, 5, !sw))) }
         "acbff_3rd_fade" => engine(x, from, to, |i, ps, nx, _| {
             let o1 = op[i + 1];
             if ps.mp < 1 && i >= 2 && c[i] < l[i - 1] && c[i - 1] < l[i - 2] { put(nx, Buy, T::Lim(o1 - 0.33 * ar3[i]), "buy limit"); }
@@ -1018,6 +1076,76 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     };
     Some(tr)
 }
+
+// ---- intraday EP block (lane K39, 4 Nov 2026, decision #202): Ch 31/34/35/39 index systems on N-minute bars
+/// Tables 31.2-31.4, 34.1, 35.1, 35.2, 39.1 (Index versions, printed code pp.226-231) on bars built from the 1-minute file
+/// (intraday_ep::nbars, session-aligned). The book's clock is CST/CDT on the 8:30-15:15 index futures session; a printed time
+/// is read as minutes after the 8:30 open (the cash open, 9:30 ET; on NSE the 9:15 open), the way the book's own
+/// "Bonds, Currencies" versions move the index times to a 7:20 open (Tables 31.2-31.4). TradeStation stamps = bar end.
+/// "next bar at market" fills at the next bar's open (that minute's open); a signal on the day's last bar has no next bar
+/// and makes no trade. Exits the code puts at or after the cash close (15:15, 15:05, 15:10, "15:00 next bar") are at the
+/// close of the day's last minute [reading: the cash session ends at 15:00 CT; the book: every trade exits on the close].
+/// opend/highd/lowd = the day's open (first minute's open) and high/low so far. average(e,9) and RSI(9) run on one
+/// continuous 5-minute series across days (EP2), EasyLanguage variables keep their values across days.
+fn intraday_ep(id: &str, x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    use crate::intraday_ep::{day_bars, Book, Rsi};
+    let ct = |hhmm: u16| (hhmm / 100 * 60 + hhmm % 100) - 510; // CT clock -> minutes after the 8:30 CT open
+    let n = match id { "acbff_open_rel" => 30, "acbff_2bar_open" => 60, "acbff_final_third" => 135, _ => 5 };
+    let mut bk = Book::default();
+    let (mut c1, mut hh, mut ll, mut hhh, mut lll) = (NAN, 0.0, 0.0, 0.0, 0.0);
+    let mut e9: std::collections::VecDeque<f64> = Default::default();
+    let mut rsi = Rsi::new(9);
+    for i in from..=to {
+        let Some((open, _, _, b)) = day_bars(x, i, n) else { continue };
+        let od = b[0].o;
+        let (mut hd, mut ld) = (f64::NEG_INFINITY, f64::INFINITY);
+        let mut pend = 0.0; // order for the next bar: +1 buy, -1 sell short, 2 exit
+        for (j, z) in b.iter().enumerate() {
+            match pend { 2.0 => bk.exit(i, z.o, "time exit"), 0.0 => {} d => bk.enter(d, i, z.o, "open", "reverse") }
+            pend = 0.0;
+            hd = hd.max(z.h); ld = ld.min(z.l);
+            let tm = z.e - open;
+            let nx = j + 1 < b.len();
+            let (mut buy, mut sell) = (false, false);
+            match id {
+                "acbff_open_rel" => if tm == ct(930) { buy = z.c > od; sell = z.c < od; },
+                "acbff_2bar_open" => {
+                    if tm >= ct(1030) && tm < ct(1430) { buy = z.c > od && c1 > od && z.c > c1; sell = z.c < od && c1 < od && z.c < c1; }
+                    if tm == ct(1430) && nx { pend = 2.0; }
+                }
+                "acbff_final_third" => if tm == ct(1300) { buy = z.c > od && c1 > od; sell = z.c < od && c1 < od; },
+                "acbff_1230" => {
+                    // Table 34.1 (p.227): hh = highd(0) at 9:30, hhh = highd(0) at 11:30 = the day's high/low so far (decision 222)
+                    if tm == ct(930) { hh = hd; ll = ld; }
+                    if tm == ct(1130) { hhh = hd; lll = ld; }
+                    if tm == ct(1230) {
+                        buy = od - ld <= 0.25 * (hd - ld) && hd > hhh && hhh > hh;
+                        sell = hd - od <= 0.25 * (hd - ld) && ld < lll && lll < ll;
+                    }
+                }
+                _ => {
+                    let w = tm >= ct(915) && tm <= ct(1445);
+                    match id {
+                        "acbff_9oc" => {
+                            e9.push_back(if z.c > z.o { 1.0 } else if z.c < z.o { -1.0 } else { 0.0 });
+                            if e9.len() > 9 { e9.pop_front(); }
+                            let a: f64 = e9.iter().sum();
+                            if w && e9.len() == 9 { buy = a > 0.0; sell = a < 0.0; }
+                        }
+                        "acbff_midpoint" => if w { let m = (hd + ld) / 2.0; buy = z.c > m; sell = z.c < m; },
+                        _ => if let Some(r) = rsi.push(z.c) { if w { buy = r > 85.0; sell = r < 15.0; } }, // acbff_rsi_5min: Length 9, n 15
+                    }
+                }
+            }
+            if nx && buy { pend = 1.0; }
+            if nx && sell { pend = -1.0; }
+            c1 = z.c;
+            if !nx { bk.exit(i, z.c, "end of day"); }
+        }
+    }
+    bk.out
+}
+// ---- end intraday EP block
 
 #[cfg(test)]
 mod tests {

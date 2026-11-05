@@ -48,7 +48,7 @@ that open when it is beyond the entry price (no other use of future data). Daily
         ], "Source: T:/Joe Krutsinger - Traders Dream for TS (joekrut.com)/Open Code.rar -> Open Code.txt (A0600). Daily bars (@SP daily 5/9/2001-5/10/2002, slide 20). \
 The only conversion: $300 / $250 per @SP point = 1.2 index points (param stop_pts; the big S&P contract was $500/point before Nov 1997, which would be 0.6). \
 The stop works from the actual fill (a gap through H or L fills at the open, stop = fill -/+ 1.2), on the entry bar too, path O -> nearer extreme -> other extreme -> C. \
-India: 1.2 NIFTY points is kept as the literal instrument swap (it is tiny for NIFTY)."),
+SPX only (lead decision 196): $300 per contract / $250 per S&P point = 1.2 points is an exact unit conversion on the same index, not a substitution; no other instrument is published."),
         sdef(BOOK, "upg18_parrot", "Parrot (code, ParabolicSAR stop and reverse)", "Krutsinger Parrot", "Long/Short", Live, &[
             "F|\"inputs: AfStep( 0.01); Value1 = ParabolicSAR( AfStep, .1, oParCl, oParOp, oPosition, oTransition ) ;\" (Parrot.txt)",
             "E|\"if oPosition = -1 then Buy ( \\\"ParLE1\\\" ) next bar at oParOp stop ;\"",
@@ -89,7 +89,7 @@ Condition3 = TradesToday(Date) <= 1 is read as always true on daily bars (labell
         "E|\"If C > c[2] and date>date[1] then Sell Short(\\\"SellS1\\\") next bar at c- JKSeller stop;\" - checklist: today's close minus today's RANGE times 61.8% on a sell short stop",
         "X|\"If MarketPosition = 1 then sell(\\\"LXBail21\\\") this bar at close;\" (mirror for shorts): 'Exit all trades on close of entry day'",
     ], "Source: research Trading Knowledge/.../Joe Krutsinger - Safer 2005 Trading System (joekrut.com)/From other source/Safer2005.pdf (one-page vendor sheet: code + checklists; scan, OCR 25 Oct 2026, authors/krutsinger). \
-JKBuyer / JKSeller = today's range x 38.2% / 61.8% (the checklist). Equal closes: no order. Entry and exit on the same daily bar: one stop then the close, so the daily bar decides it without intraday data. Daily bars; sold for stock indexes (JK_Systems Intro). India: instrument swap."));
+JKBuyer / JKSeller = today's range x 38.2% / 61.8% (the checklist). Equal closes: no order. The printed code has no position condition ('date>date[1]' is always true on daily bars), so the next day's stop goes out after every close, also after a day that traded (lead decision 196); the checklist's 'no trades yet today' is the same-day exit. Entry and exit on the same daily bar: one stop then the close, so the daily bar decides it without intraday data. Daily bars; sold for stock indexes (JK_Systems Intro). India: instrument swap."));
     v.push(sdef(BOOK, "upg18_trend_walker", "Trend Walker (vendor sheet code)", "Krutsinger Trend Walker", "Long/Short", Status::Live, &[
         "F|\"Input: BuyBo(2),SellBo(7), Walk(6),Trn(10);\" (TrendWalker.pdf)",
         "E|\"IF C <= C[2] and C > Average(c,trn)[1] Then Buy (\\\"LE1\\\") Next Bar at C + (Range * 0.10*BuyBo) Stop;\"",
@@ -227,7 +227,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (bp, sp) = (g(p, "buy_pct", 38.2) / 100., g(p, "sell_pct", 61.8) / 100.);
             Some(run_ts(x, from, to, |i, st, now, next| {
                 now.push(o(A::Xl, P::Mkt, "LXBail21")); now.push(o(A::Xs, P::Mkt, "SXBail21"));
-                if i < 2 || st.pos != 0 { return; } // "no trades yet today": a position held into the close is closed there
+                if i < 2 { return; } // printed code: no position condition, the stops go out after every close (decision 196); a position held into the close is closed there
                 let r = h[i] - l[i];
                 if c[i] < c[i - 2] { next.push(o(A::Buy, P::Stop(c[i] + r * bp), "BuyL1")); }
                 if c[i] > c[i - 2] { next.push(o(A::Sell, P::Stop(c[i] - r * sp), "SellS1")); }

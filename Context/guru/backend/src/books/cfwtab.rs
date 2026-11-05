@@ -4,8 +4,9 @@
 //! cross (p.49), gap-open volatility breakout (p.53), channel breakout on close (p.57-59), "S&E 4 modified" average direction +
 //! %R + 50-bar failsafe (p.78-89), the up-key-reversal breakout (p.113-118) and the weekly HHLL breakout of Ch.7 (p.135-143;
 //! lane K9, 1 Nov 2026, to-code row 159; independent check authors/titles-1030/K9w/k9_ref.py).
-//! Held: RangeLeader breakout (p.60-62; $500 money stop and $1,500 target are S&P futures contract dollars), its 30-minute
-//! versions (intraday), the UKR $5,000 stop/target versions (contract dollars).
+//! RangeLeader breakout, daily SPF 6 (p.60-62): coded by lane K54 (decision #229) for SPX (the $500 stop and $1,500 target are
+//! 1.00 / 3.00 points of the named 1993 S&P contract), entry day on SPX 1-minute bars; HELD: 30% of its trades depend on the
+//! order inside one minute (decision #175). Held too: its 30-minute versions, the UKR $5,000 stop/target versions (contract dollars).
 //! Book: Disney, Caterpillar, IBM, Coca-Cola stocks and S&P 500 futures; other instruments are a declared application.
 use crate::books::lc3::{bars, high_first, hi, lo, sma, Pos};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -28,7 +29,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("cfwtab_stoch", "Stochastic crossover: SlowK crosses SlowD below 35 (buy) / above 65 (sell)", "Ch.3 Markets, Strategies & Time Frames (p.49-50)", "Long/Short",
           &["E|\"IF CurrentBar > 1 and SlowD(Length) < 35 and SlowK(Length) crosses above SlowD(Length) then Buy on Close;\" Input: Length(10) (Chart 7, p.49)",
             "X|\"IF CurrentBar > 1 and Slowd(Length) > 65 and SlowK(Length) crosses below SlowD(Length) then Sell on Close;\" (p.49) - reversal only"],
-          "Book: Caterpillar daily 1/2/91-4/11/97, 68% profitable (PS 2, p.50). [Declared reading, not printed] SlowK = 3-bar simple average of the raw 10-bar %K ((close - lowest low) / (highest high - lowest low) x 100, 0 when the range is 0, as the book's own PercentR function p.81); SlowD = 3-bar simple average of SlowK."),
+          "Book: Caterpillar daily 1/2/91-4/11/97, 68% profitable (PS 2, p.50). [Declared reading, not printed] The code calls TradeStation's built-in SlowK/SlowD without printing them; for TradeStation-era code the vault uses the legacy TradeStation smoothing (lead decision 191): raw 10-bar %K = (close - lowest low) / (highest high - lowest low) x 100 (0 when the range is 0), SlowK = (2 x previous SlowK + %K) / 3, SlowD = (2 x previous SlowD + SlowK) / 3, each seeded with its first value. Option p.smooth = 1: 3-bar simple averages (SlowK = average of %K, SlowD = average of SlowK)."),
         d("cfwtab_gap", "Gap open volatility breakout: stop at yesterday's close +/- yesterday's range, out next open", "Ch.3 Markets, Strategies & Time Frames (p.52-53)", "Long/Short",
           &["E|\"IF Open of next bar > High of this bar or Open of next bar < Low of this bar then Buy next bar at Close of this bar + Range of this bar Stop;\" (Chart 9, p.53)",
             "E|\"IF Open of next bar < Low of this bar or Open of next bar > High of this bar then Sell next bar at Close of this bar - Range of this bar Stop;\" (p.53)",
@@ -55,10 +56,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"Sell(\"ll\") at Lowest(Low,LL) - 1 point Stop;\" (p.137) - stop and reverse",
             "F|\"So, now let's put together the whole picture for the 20/50\"; \"Would you rather trade the 20/50 than the 50/50. I would.\" (p.140-143)"],
           "Book: DJIA weekly 1/9/70-8/8/97: the 50/50 captured 4,642 Dow points (PS 1, p.138); 20/50 = 17 trades, 53% profitable, net 6,146.20 points, profit factor 7.20 (Opt Tables 1 and 5, p.139-141). [Declared readings] Default HH = 20 and LL = 50 weeks, the author's chosen lengths (SPF 1's 50/50 and other lengths are options). The channel is the highest high (lowest low) of the HH (LL) completed weekly bars before the current week, i.e. up to and including the signal week; both stops work every day of the current week, filled at the stop or at the open on a gap; when one day touches both, the buy stop is taken first (as the S&E 4 card). Weekly bars = Monday-based calendar weeks. 'IncludeStrategy: Exit on 8/8/97' only ends the book's test and is not applied. Options from the text (p.142): long only ('Get long on the 20-week upside breakout and get out of the market on the 50-week downside breakout') and close-confirmed entries ('insist that the week's close be above the 20-week high or below the 50-week low', filled at that weekly close). The author also ran the 30 Dow stocks and other weeklies; other indices, ETFs and stocks are a declared application."),
-        StrategyDef { status: Status::NotTestable("The $500 money stop and $1,500 profit target (SPF 6) are S&P 500 futures contract dollars (1993); the book gives no amount for other instruments. The 30-minute versions need intraday data."),
-            ..d("cfwtab_rangeleader", "RangeLeader breakout (held: fixed futures-dollar stop and target)", "Ch.3 Markets, Strategies & Time Frames (p.60-62)", "Long/Short",
-          &["E|\"Value1 = (High + Low) / 2 ; Cond1 = Value1 > High[1] OR Value1 < Low[1] ; Cond2 = Range[0] > Range[1] ;\" (Chart 14, p.61); \"If RangeLeader = 1 then begin Buy at High + 1 point stop; Sell at Low - 1 point stop; end;\" (SPF 6, p.61)",
-            "X|\"Exitlong next bar on Open; Exitshort next bar on Open;\" (p.61); SPF 6: '$500 MMS', '$1,500 PT' (S&P futures 1993)"], "Held.") },
+        StrategyDef { status: Status::NotTestable("coded on real SPX 1-minute bars (lane K54, decision #229), but 235 of 781 SPX trades (30.1%, 2014-01-02..2026-11-03; 221 of 736, 30.0%, on 2014-2025; 307 of 1,159, 26.5%, from 2008) are touched by a minute whose fills differ between the two bar paths (open-high-low-close vs open-low-high-close), the count used for depending on the order inside one minute: the 1.00-point money stop and the 3.00-point target (SPF 6's $500 and $1,500 at the 1993 S&P contract's $500 a point, p.61-62) are often reached in the same minute as the entry stop. Decision #175 holds a rule above 5%; the #177b check on SPY minutes with the points scaled passed (2014-2025 average trade 0.040% SPX vs 0.007% SPY), so only the ambiguity holds it"),
+          ..d("cfwtab_rangeleader", "RangeLeader breakout (daily, SPF 6): stop entries 1 tick beyond a range-leader bar, $500 stop / $1,500 target = 1.00 / 3.00 S&P points, out next open", "Ch.3 Markets, Strategies & Time Frames (p.60-62)", "Long/Short",
+          &["F|\"Value1 = (High + Low) / 2 ; Cond1 = Value1 > High[1] OR Value1 < Low[1] ; Cond2 = Range[0] > Range[1] ; If Cond1 and Cond2 then RangeLeader = 1\" (Chart 14, p.61)",
+            "E|\"If RangeLeader = 1 then begin Buy at High + 1 point stop; Sell at Low - 1 point stop; end;\" (SPF 6 'Daily RL Breakouts', p.61); 1 point = one tick of the traded instrument (decision #57)",
+            "X|SPF 6: 'Stops $500 MMS', 'Exits Next day on open, $1,500 PT'; \"when it gets filled, it immediately puts a stop loss $500 away from the entry price ... if the price moved $1,500 in my favor, I would take the profit\" (p.62); \"Exitlong next bar on Open; Exitshort next bar on Open;\" (p.61)",
+            "F|$500 and $1,500 at the named contract's $500 per S&P point (S&P futures daily, Omega CD, 1/1/93-12/31/93: SPF 6) = 1.00 and 3.00 S&P 500 index points (decision #196(2)); SPX only"],
+          "Book: S&P 500 futures daily 1993, $35 slippage and $25 commission per trade (SPF 6; PS 6 is a report image). [Declared readings] Coded for the S&P 500 index (SPX) only, because the stop and target are the named S&P contract's points (decision #196(2), #229); results would start in 2014, where the index's daily opens are real. The stop and target act on the entry day, so the entry day is run on SPX's real 1-minute bars (2008-2026): both entry stops live all day, each fills at most once; after a fill the 1.00-point stop, the 3.00-point target and the other side's entry stop (a reversal) are live; a level the minute opens through fills at that open. Inside one minute the TradeStation bar path is used (open, the nearer extreme, the farther extreme, close); a minute whose fills would differ with the other extreme first is counted as ambiguous and the trades it touches say so (a proxy count: the other path's later consequences are not followed). A position still open at the entry day's close exits at the next day's open (daily bar). A day without minute bars makes no trade. Simple ranges (high - low). No costs (the book's $60 is not deducted). Lane K54.") },
     ]
 }
 
@@ -78,9 +82,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "cfwtab_chan" => Some(vec![p("len", "Channel bars (SPF 4: 50; weekly test: 10)", 50., 2., 200., 1.), p("weekly", "Weekly bars (1) - the book's second test", 0., 0., 1., 1.)]),
         "cfwtab_se4" => Some(vec![p("weekly", "Weekly bars (1 = book) / daily (0)", 1., 0., 1., 1.)]),
         "cfwtab_ukr" => Some(vec![p("bsi", "Bars held after entry (book optimum 8)", 8., 1., 30., 1.), p("ll", "Low look-back (book 10)", 10., 1., 50., 1.)]),
+        "cfwtab_stoch" => Some(vec![p("smooth", "0 = legacy TradeStation SlowK/SlowD (default, decision 191), 1 = 3-bar simple averages", 0., 0., 1., 1.)]),
         "cfwtab_hhll" => Some(vec![p("hh", "Buy-stop channel weeks HH (author's choice 20; SPF 1: 50)", 20., 2., 100., 1.), p("ll", "Sell-stop channel weeks LL (book 50)", 50., 2., 100., 1.),
             p("long", "Long only (1): the 50-week low only exits (p.142)", 0., 0., 1., 1.), p("close", "Close-confirmed entries (1): the week's close beyond the channel, filled at that close (p.142)", 0., 0., 1., 1.)]),
-        _ if reviewed(id) || id == "cfwtab_rangeleader" => Some(vec![]),
+        "cfwtab_rangeleader" => Some(vec![p("stop", "Money stop in S&P points ($500 at $500 per point, SPF 6)", 1., 0.25, 10., 0.25), p("target", "Profit target in S&P points ($1,500 at $500 per point)", 3., 0.5, 30., 0.5)]),
+        _ if reviewed(id) => Some(vec![]),
         _ => None,
     }
 }
@@ -203,7 +209,91 @@ fn ukr(x: &Ctx, from: usize, to: usize, bsi: usize, ll: usize) -> Vec<Trade> {
     p.done(to, c[to])
 }
 
+// ---- RangeLeader daily SPF 6 on the entry day's 1-minute bars (lane K54, decision #229) ----
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Lk { Long, Short, Stop, Target }
+/// One minute: `state` = (position (dir, entry), long stop used, short stop used); returns the fills (kind, price) in order.
+/// `ohlc` = the path open-high-low-close (else open-low-high-close).
+fn rl_minute(z: &crate::intraday::Bar1, st: &mut (Option<(f64, f64)>, bool, bool), lv: (f64, f64, f64, f64), ohlc: bool) -> Vec<(Lk, f64)> {
+    let (bs, ss, stop, tgt) = lv;
+    let mut fills = vec![];
+    // live levels: (kind, up, price); exits before the reversal entry when both are satisfied at once
+    let live = |st: &(Option<(f64, f64)>, bool, bool)| -> Vec<(Lk, bool, f64)> {
+        let mut v = vec![];
+        if let Some((d, e)) = st.0 { v.push((Lk::Stop, d < 0., e - d * stop)); v.push((Lk::Target, d > 0., e + d * tgt)); }
+        if !st.1 && st.0.map_or(true, |p| p.0 < 0.) { v.push((Lk::Long, true, bs)); }
+        if !st.2 && st.0.map_or(true, |p| p.0 > 0.) { v.push((Lk::Short, false, ss)); }
+        v
+    };
+    let fire = |st: &mut (Option<(f64, f64)>, bool, bool), k: Lk, px: f64, fills: &mut Vec<(Lk, f64)>| {
+        fills.push((k, px));
+        match k { Lk::Stop | Lk::Target => st.0 = None, Lk::Long => { st.1 = true; st.0 = Some((1., px)); } Lk::Short => { st.2 = true; st.0 = Some((-1., px)); } }
+    };
+    // levels the open already satisfies fill at the open
+    loop {
+        let k = live(st).into_iter().find(|&(_, up, px)| if up { z.o >= px } else { z.o <= px }).map(|v| v.0);
+        match k { Some(k) => fire(st, k, z.o, &mut fills), None => break }
+    }
+    let mut cur = z.o;
+    for t in if ohlc { [z.h, z.l, z.c] } else { [z.l, z.h, z.c] } {
+        loop {
+            let up = t > cur;
+            // inclusive at `cur`: an order that became live at the price just reached fills there too (each fill removes its level)
+            let hit = live(st).into_iter().filter(|&(_, u, px)| u == up && if up { px >= cur && px <= t } else { px <= cur && px >= t })
+                .min_by(|a, b| (a.2 - cur).abs().total_cmp(&(b.2 - cur).abs()));
+            match hit { Some((k, _, px)) => { fire(st, k, px, &mut fills); cur = px; } None => { cur = t; break; } }
+        }
+    }
+    fills
+}
+
+fn rangeleader(x: &Ctx, from: usize, to: usize, stop: f64, tgt: f64) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let t = x.market_tick();
+    let rl = |i: usize| i >= 1 && { let m = (h[i] + l[i]) / 2.; (m > h[i - 1] || m < l[i - 1]) && h[i] - l[i] > h[i - 1] - l[i - 1] };
+    let mk = |d: f64, i: usize, px: f64, xi: usize, xp: f64, why: String, open: bool| Trade { dir: d, legs: vec![crate::connors::Leg { i, px, w: 1. }], exit_i: xi, exit_px: xp, reason: why, entry_kind: "stop", signal_i: i - 1, open, exits: vec![] };
+    let mut out = vec![];
+    let mut carry: Option<(f64, usize, f64, bool)> = None; // (dir, entry bar, entry px, ambiguous)
+    for j in from.max(2)..=to {
+        if let Some((d, ei, ep, amb)) = carry.take() { out.push(mk(d, ei, ep, j, o[j], format!("next bar on open{}", if amb { AMB } else { "" }), false)); }
+        if !rl(j - 1) { continue; }
+        let Some(bars) = crate::intraday_w2b::day(x, j) else { continue };
+        let lv = (h[j - 1] + t, l[j - 1] - t, stop, tgt);
+        let mut st: (Option<(f64, f64)>, bool, bool) = (None, false, false);
+        let mut pos: Option<(f64, f64, bool)> = None; // (dir, entry px, ambiguous)
+        for z in &bars {
+            let mut alt = st;
+            let (f, g) = (rl_minute(z, &mut st, lv, z.h - z.o < z.o - z.l), rl_minute(z, &mut alt, lv, !(z.h - z.o < z.o - z.l)));
+            let a = f != g;
+            for (k, px) in f {
+                match k {
+                    Lk::Stop | Lk::Target => if let Some((d, e, aa)) = pos.take() {
+                        let why = if k == Lk::Stop { format!("money stop {stop:.2} pt") } else { format!("profit target {tgt:.2} pts") };
+                        out.push(mk(d, j, e, j, px, format!("{why}{}", if aa || a { AMB } else { "" }), false));
+                    },
+                    Lk::Long | Lk::Short => {
+                        let d = if k == Lk::Long { 1. } else { -1. };
+                        if let Some((pd, e, aa)) = pos.take() { out.push(mk(pd, j, e, j, px, format!("reversed by the other RangeLeader stop{}", if aa || a { AMB } else { "" }), false)); }
+                        pos = Some((d, px, a));
+                    }
+                }
+            }
+            if let Some(p) = pos.as_mut() { p.2 |= a; }
+        }
+        if let Some((d, e, aa)) = pos {
+            if j == to { out.push(mk(d, j, e, to, c[to], "open".into(), true)); } else { carry = Some((d, j, e, aa)); }
+        }
+    }
+    out
+}
+const AMB: &str = " [ambiguous minute: TradeStation bar path]";
+// ---- end RangeLeader ----
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "cfwtab_rangeleader" && from < to && to < x.r.len() {
+        let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+        return Some(rangeleader(x, from, to, g("stop", 1.), g("target", 3.)));
+    }
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
@@ -211,7 +301,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(match id {
         "cfwtab_ma918" => { let (f, s) = (sma(c, 9), sma(c, 18)); close_sar(x, from, to, &|i| if cross_up(&f, &s, i) { 1. } else if cross_dn(&f, &s, i) { -1. } else { 0. }) }
         "cfwtab_stoch" => {
-            let k = sma(&pct_r(&x.h, &x.l, c, 10), 3); let dd = sma(&k, 3);
+            let (k, dd) = if g("smooth") > 0.5 { let k = sma(&pct_r(&x.h, &x.l, c, 10), 3); let dd = sma(&k, 3); (k, dd) } else { super::kfbpm::slow_kd(x, 10, false) };
             close_sar(x, from, to, &|i| if dd[i] < 35. && cross_up(&k, &dd, i) { 1. } else if dd[i] > 65. && cross_dn(&k, &dd, i) { -1. } else { 0. })
         }
         "cfwtab_gap" => gap(x, from, to),
@@ -226,6 +316,37 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rangeleader_minute_path_fills_stops_targets_and_flags_order_dependent_minutes() {
+        use crate::intraday::Bar1;
+        // RangeLeader bar: midpoint outside the prior bar and a wider range
+        let r: Vec<crate::Row> = [(100., 101., 99., 100.), (101., 104., 100.5, 103.), (103., 106., 102., 105.)].iter().enumerate().map(|(i, &(o, h, l, c))| crate::Row { ticker: "T".into(), date: format!("2000-01-0{}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        assert!(rangeleader(&x, 0, 2, 1.0, 3.0).is_empty()); // bar 1 is a RangeLeader, but bar 2 has no minute bars: no trade
+        let lv = (101.0, 98.0, 1.0, 3.0); // buy stop 101, sell stop 98, 1-point stop, 3-point target
+        let m = |o, h, l, c| Bar1 { m: 570, o, h, l, c };
+        // fill at 101 on the way up, target 104 later in the same minute (open nearer the low: O-L-H-C)
+        let mut st = (None, false, false);
+        assert_eq!(rl_minute(&m(100.0, 104.5, 99.8, 104.0), &mut st, lv, false), vec![(Lk::Long, 101.0), (Lk::Target, 104.0)]);
+        assert_eq!(st, (None, true, false));
+        // the same minute through the other path (high first): identical, so not order-dependent
+        let mut st2 = (None, false, false);
+        assert_eq!(rl_minute(&m(100.0, 104.5, 99.8, 104.0), &mut st2, lv, true), vec![(Lk::Long, 101.0), (Lk::Target, 104.0)]);
+        // long at 101; a minute reaching both 102 and 99.9: stopped (low first) or not (high first): order-dependent
+        let (mut a, mut b) = ((Some((1.0, 101.0)), true, false), (Some((1.0, 101.0)), true, false));
+        let (fa, fb) = (rl_minute(&m(101.0, 102.0, 99.9, 101.0), &mut a, lv, false), rl_minute(&m(101.0, 102.0, 99.9, 101.0), &mut b, lv, true));
+        assert_eq!(fa, vec![(Lk::Stop, 100.0)]);
+        assert_eq!(fb, vec![(Lk::Stop, 100.0)]); // both paths reach 100 (the 1-point stop) before anything else: not order-dependent
+        // a minute reaching both the 1-point stop and the 3-point target: the path decides (counted as ambiguous by rangeleader)
+        let (mut a, mut b) = ((Some((1.0, 101.0)), true, false), (Some((1.0, 101.0)), true, false));
+        assert_eq!(rl_minute(&m(101.0, 104.2, 99.9, 101.0), &mut a, lv, false), vec![(Lk::Stop, 100.0)]);
+        assert_eq!(rl_minute(&m(101.0, 104.2, 99.9, 101.0), &mut b, lv, true), vec![(Lk::Target, 104.0)]);
+        // a gap through the sell stop while long: the stop fills at the open, then the reversal short at the same open
+        let mut g = (Some((1.0, 101.0)), true, false);
+        assert_eq!(rl_minute(&m(97.0, 97.5, 96.0, 97.2), &mut g, lv, false), vec![(Lk::Stop, 97.0), (Lk::Short, 97.0)]);
+        assert_eq!(g, (Some((-1.0, 97.0)), true, true));
+    }
     use crate::Row;
     #[test]
     fn hhll_reverses_on_the_weekly_channel_stops() {
@@ -240,3 +361,4 @@ mod tests {
         assert!(lo_.iter().all(|z| z.dir > 0.));
     }
 }
+

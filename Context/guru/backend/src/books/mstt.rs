@@ -13,9 +13,24 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "mstt";
 /// Admitted ids (authors/lanea/elmtrader/decisions.json).
-pub const REVIEWED_LANEA: &[&str] = &["mstt_four_bar_fear", "mstt_rainbow_chart_system"];
+pub const REVIEWED_LANEA: &[&str] = &["mstt_four_bar_fear", "mstt_rainbow_chart_system",
+    // lane K38 (4 Nov 2026, decision #202): the 52 Window on WallStreet systems whose Enter/Close formulas were found under their
+    // printed labels in the source (PDF pp.3-15, 118-120; authors/titles-1030/K38w/mstt_source_check.py), with MetaStock reversal
+    // (#184); independent check authors/titles-1030/K38w/mstt_ref.py. The fixed-$ mstt ids stay withheld (#166).
+    "mstt_andy_gabor", "mstt_another_bb_formula", "mstt_bb_crossover_trading", "mstt_binary_waves_ts", "mstt_chande_trendscore_sys",
+    "mstt_dahl_50dma", "mstt_dahl_crossing_its_21dma", "mstt_the_derivative_ma", "mstt_dns", "mstt_dns_7_4",
+    "mstt_last_shadow_s_new_chaik_osc_willa_stoch", "mstt_james_irwin", "mstt_kst_vol", "mstt_landis_60_40_15day_sma",
+    "mstt_landis_60_40_with_time_redun_short", "mstt_lastshadow_s_new_chaosc_willa_sto_bb", "mstt_macd_5_35_4", "mstt_macd13_34_89",
+    "mstt_macd8_17_9", "mstt_moving_average_crossover_system_simple", "mstt_nat_s_volt_sys", "mstt_pvt_dahl_sys", "mstt_rsi_80_20",
+    "mstt_rsi_90_10", "mstt_rsi_at_bottoms_and_pctd_at_tops", "mstt_rsi_sto_14_75_85", "mstt_rsi_sto_9_75_85", "mstt_rsi_stoch_9_70_80",
+    "mstt_sandii_w_cci_macd", "mstt_sandii_w_cci_proc", "mstt_sandii_w_cci_rsi", "mstt_sandii_w_cci_sto", "mstt_sandii_w_cci_trix",
+    "mstt_sandii_w_cci_ultosc", "mstt_sandii_w_cci_will_spctr", "mstt_sandii_w_dmi_macd", "mstt_sandii_w_dmi_proc", "mstt_sandii_w_dmi_rsi",
+    "mstt_sandii_w_dmi_sto", "mstt_sandii_w_dmi_trix", "mstt_sandii_w_dmi_ultosc", "mstt_sandii_w_dmi_will_spctr",
+    "mstt_sandusky_ii_cciw_macdconfirm", "mstt_short_tsf", "mstt_slope_o_the_slope", "mstt_sto_cci_adx_christopher_smith",
+    "mstt_sto_cci_di_chris_smith", "mstt_sto_90_10", "mstt_sto_of_rsi_14", "mstt_sto_of_rsi_8_5", "mstt_td_range_expansion_index",
+    "mstt_variable_macd"];
 pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
-const CONV: &str = "One position at a time; a position closes only by its own exit formula; an exit plus an opposite entry on one bar reverse; no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. Indicators: MetaStock definitions (library/msws/README.md). India: runs on NIFTY 50 / indices instead of the stocks and futures it was written for (instrument swap only); price-point, price-level and volume-unit constants are applied literally.";
+const CONV: &str = "One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. Indicators: MetaStock definitions (library/msws/README.md). India: runs on NIFTY 50 / indices instead of the stocks and futures it was written for (instrument swap only); price-point, price-level and volume-unit constants are applied literally. Window on WallStreet syntax, read as the formulas intend: prev(x,k) = x k bars ago (Ref(x,-k)), not MetaStock's own argument-less recursive PREV; Std(x,n,k) = k x the n-bar standard deviation (MetaStock's Stdev takes 2 arguments); Sqr = square root.";
 pub static MSTT: Book = Book { id: BOOK, sys: SYS, fml: FML, conv: CONV, cat: OnceLock::new(), par: OnceLock::new() };
 pub fn catalogue() -> Vec<StrategyDef> { MSTT.catalogue() }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> { MSTT.params(id) }

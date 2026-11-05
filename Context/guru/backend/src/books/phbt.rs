@@ -4,7 +4,7 @@
 //! put/call, Rydex or survey data are NeedsData; judgement material is NotTestable. Sources: library/phbt/.
 use crate::connors::{sma, claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/headley/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly"];
+pub const REVIEWED: &[&str] = &["phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly", "phbt_rs_lines"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "phbt";
@@ -56,11 +56,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Book: Fig 4.5 QQQ 03/10/1999-09/24/2001 24 trades 67% net 32.38 points; Fig 4.6b SPY 02/03/1993-09/24/2001 84 trades 71% net 67.95 points (p.52-53). Fig 4.8 (QQQ traded on combined QQQ+SPY volume) is not coded. India: NIFTY 50 index volume (where the vault has volume).",
             claim("84", "71%", "0.81 SPY points (net 67.95)", "9 bars winners / 9 bars losers", "SPY daily 02/03/1993-09/24/2001, Fig 4.6b p.53")) },
         mk("phbt_pc_bb_long", "CBOE equity put/call Bollinger buy (15-day hold)", "Ch. 1 · The CBOE Equity Put/Call Ratio", "Long",
-            Status::NeedsData("CBOE equity put/call ratio, daily (not in the vault; CBOE publishes it from Nov 2003). No NSE equity-option put/call history either."),
+            Status::NeedsData("the CBOE equity put/call ratio, daily (Big Trends in Trading p.10, p.14), which is not in the vault (CBOE publishes it from Nov 2003) and cannot be built from the SPY/QQQ/IWM chains we hold; there is no NSE equity put/call history either"),
             &["E|Long Entry: Close < BollingerBand(Close,21,2) and Close[1] > BollingerBand(Close,21,2)[1] or Close[2] > BollingerBand(Close,21,2)[2] or Close[3] > BollingerBand(Close,21,2)[3] (p.14; Close = the put/call ratio)", "E|\"you implement your buy order on the following morning's opening price\" (p.10)", "X|Long Exit: BarsSinceEntry=15 (p.14)"],
             "Book Fig 1.7 p.13 (with a 50-day MA filter whose exact rule is not printed): Nasdaq Composite 01/02/1990-09/21/2001, 114 trades, 70%, net 3532.37 points. The printed short side (p.14) contradicts the text (exit after 2 bars vs 'eight trading days' on p.8, +2 band instead of -2) and is not listed as testable.", None),
         mk("phbt_pc_weekly80", "Weekly equity put/call > 80% buy, 10-week minimum, 10-week MA exit", "Ch. 1 · The CBOE Equity Put/Call Ratio", "Long",
-            Status::NeedsData("CBOE weekly equity put/call ratio from 1990 (not in the vault)"),
+            Status::NeedsData("the CBOE weekly equity put/call ratio from 1990 (Big Trends in Trading p.15-17), which is not in the vault and cannot be built from the SPY/QQQ/IWM chains we hold"),
             &["F|\"when the weekly equity put/call ratio finished over 80 percent on a given week\" (p.15)", "E|\"Once the market confirms this with a technical breakout as defined by a weekly close above the high of five weeks ago, you should buy\" (p.15; the confirmation window is not stated)", "X|\"You hold this trade for 10 weeks at a minimum ... then trail with a 10-week moving average so that any weekly close in the Nasdaq Composite under the 10-week average after the first 10 weeks have passed will take you out\" (p.15)"],
             "Book trade list Fig 1.8/1.10 p.15-17 (Nasdaq weekly 1990-2001): 8 trades, 7 winners; e.g. buy 11/16/90 350.85 -> 5/17/91 481.37.", claim("8", "88% (7/8)", "", "", "Nasdaq Composite weekly 07/30/1982-09/21/2001, Fig 1.10 p.17"))
         ,
@@ -84,15 +84,19 @@ pub fn catalogue() -> Vec<StrategyDef> {
             Status::NotTestable("results only (Figs 5.8, 5.10, 5.12); band widths and holding periods are given only as \"26 to 52 weeks\" / \"two weeks\" / \"seven weeks\" ranges (p.70)"),
             &["E|Bollinger band signals on AAII / Market Vane / averaged % bulls (p.67-70)", "X|\"Bullish trades produce better trades with longer holding periods of 26 to 52 weeks, while bearish trades generally have a short rope of two weeks except for the AAII survey, where they were allowed to be held just seven weeks\" (p.69-70)"],
             "Seen; not a complete rule.", None),
-        mk("phbt_rs_lines", "Relative strength 5/10/20/50-week line alignment", "Ch. 9 · Relative strength", "Long",
-            Status::NeedsData("stock / Nasdaq Composite relative strength per stock: the engine gives a module no benchmark close for basket stocks, and the vault has no Nasdaq Composite series for NSE stocks"),
-            &["F|RS = stock close / Nasdaq Composite (or S&P 500) close; smoothed with 5, 10, 20 and 50-week simple averages (p.129)", "E|Ideal: 5-week RS line above the 10-week, above the 20-week, and the 20-week above the 50-week; buy signal when the last one moves into line (QCOM week ending 4/2/1999 at 17.125, p.130-131)", "X|\"The breakdown point ... is signaled by the first cross of a fast RS line under a slower RS line\" (QCOM 5-week under 10-week, week ending 2/11/2000 at 132.00, p.132)"],
-            "Stock-selection tool; no performance table.", None),
+        StrategyDef { needs_series: &["BENCH.C"], ..mk("phbt_rs_lines", "Relative strength 5/10/20/50-week line alignment", "Ch. 9 · Relative strength", "Long",
+            Status::Live,
+            &["F|RS = stock close / Nasdaq Composite (or S&P 500) close: \"I track the Relative Strength of a stock versus a broad market index (usually the Nasdaq Composite or the S&P 500 Index)\" (p.129); smoothed with 5, 10, 20 and 50-week simple averages (p.129-130)",
+              "E|\"we want to see the 5-week RS line above the 10-week RS line, which is above the 20-week RS line, and the 20-week RS line should also be above the 50-week RS line. In this example the 20-week RS line is last to move in line, and when it does by crossing above the 50-week RS line, QCOM receives a new RS buy signal ... on the week ending April 2, 1999, when the stock closed at 17.125\" (p.130-131)",
+              "X|\"The breakdown point in this case is signaled by the first cross of a fast RS line under a slower RS line ... on the week ending February 11, 2000, at a price of 132.000\" (p.132)"],
+            RS_NOTE, None) },
         mk("phbt_judgement", "Other indicators in the book (seen, not testable)", "Ch. 1-12", "Long/Short",
             Status::NotTestable("no complete exit or the rule is judgement: put/call 80/40 levels (no exit, p.5), total put/call > 1.00 held 'X days' (p.19), rally-day put/call (no exit, p.21), 10/21-day put/call MA cross 'after reaching a past historical extreme' (p.24), 10-day put/call > 60% (forward returns only, p.25-26), Nasdaq/NYSE and Nasdaq/Dow volume ratios (no exit, p.55-57), historical-volatility V-reversals at chart-chosen levels (p.46-48), ADX exits 'if it goes flat' (p.80-82), Elephant Trunk 'extension in price' (p.85), Moving Average Envelopes (no exit, p.102-108), Momentum Divergence indicator (indicator code only, strategy rules not printed, p.109-127), options and money management chapters 10-12"),
             &["F|See the README for page references."], "Seen and classified; see library/phbt/README.md.", None),
     ]
 }
+
+const RS_NOTE: &str = "[Declared readings] Weekly bars (Monday-Friday weeks built from the daily rows; the week's last close). RS = the week's close / the S&P 500's close that week, the book's own alternative to the Nasdaq Composite (p.129; the vault has no Nasdaq Composite); Indian instruments use NIFTY 50, a labelled benchmark swap. RS lines = 5, 10, 20 and 50-week simple averages of RS: the worked example and Figures 9.1-9.3 are weekly ('5-week RS line', 'week ending'), while the p.129 overview says '5, 10, 20, and 50-day'; the example is followed. Buy at the week's close when the four lines first stand in order (5 > 10 > 20 > 50) after a week in which they did not; sell at the week's close on the first week a faster line is below a slower one. Long only, one position, no stop (the book gives none). The S&P 500 is the second series on the traded symbol's dates (decision #223); runs with more than 5% carried bars are withheld. The book applies it to stocks (QCOM 1996-2000) and says any two investment vehicles can be compared (p.129), so US/India indices, ETFs and stocks run as a declared application; the S&P 500 and SPY (NIFTY 50) are not run against themselves (decision #225). A week ends when the next daily bar starts a new week (as in this book's other weekly cards), so on the last bar of the data the week still counts as open. No performance table is printed.";
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
@@ -116,6 +120,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
+        "phbt_rs_lines" => Some(vec![]),
         "phbt_vix_bb" => Some(vec![
             p("bb_n", "VIX Bollinger length", 21., 10., 40., 1.), p("bb_k", "VIX Bollinger standard deviations", 2., 1., 3., 0.25),
             p("ma_n", "Index confirmation SMA", 10., 5., 30., 1.), p("lag_long", "Buy lag after the VIX close back inside (bars)", 5., 0., 15., 1.),
@@ -191,9 +196,32 @@ fn finish(out: &mut Vec<Trade>, cur: Option<Trade>, x: &Ctx, to: usize) {
     }
 }
 
+/// Headley RS lines (p.129-132) on weekly closes against `m` (the market close on the traded dates).
+pub fn rs_lines(x: &Ctx, m: &[f64], from: usize, to: usize) -> Vec<Trade> {
+    let s0 = crate::second::run_start(&[m], from);
+    let ends: Vec<usize> = period_ends(x, 1).into_iter().filter(|&e| e >= s0 && e <= to).collect();
+    let rs: Vec<f64> = ends.iter().map(|&e| x.c[e] / m[e]).collect();
+    let l: Vec<Vec<f64>> = [5, 10, 20, 50].iter().map(|&n| sma(&rs, n)).collect();
+    let fin = |k: usize| l.iter().all(|v| v[k].is_finite());
+    let aligned = |k: usize| fin(k) && l[0][k] > l[1][k] && l[1][k] > l[2][k] && l[2][k] > l[3][k];
+    let broken = |k: usize| fin(k) && (0..4).any(|a| (a + 1..4).any(|b| l[a][k] < l[b][k]));
+    let (mut out, mut cur) = (vec![], None::<Trade>);
+    for (k, &e) in ends.iter().enumerate().filter(|(_, &e)| e >= from) {
+        match cur.take() {
+            Some(t) if broken(k) => out.push(close_t(t, e, x.c[e], e, "a faster RS line crossed under a slower one")),
+            Some(t) => cur = Some(t),
+            None if k >= 1 && aligned(k) && fin(k - 1) && !aligned(k - 1) => cur = Some(open_t(1., e, x.c[e], "close")),
+            None => {}
+        }
+    }
+    finish(&mut out, cur, x, to);
+    out
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    if id == "phbt_rs_lines" { return Some(x.series("BENCH.C").map_or(vec![], |m| rs_lines(x, m, from, to))); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let u = |k: &str| g(k).round().max(0.) as usize;
     let vol_name = |field: &str| if g("src") >= 0.5 { format!("VXO_OHLC.{field}") } else { format!("VIX.{field}") };
@@ -347,6 +375,19 @@ mod tests {
         assert_eq!(ts.len(), 1);
         assert_eq!(ts[0].legs[0].i, 42); // 2nd close above on bar 41 -> next open
         assert_eq!(ts[0].exit_i, 44); // close back below on bar 43 -> next open
+    }
+    #[test]
+    fn rs_lines_buy_when_aligned_sell_on_the_first_cross_under() {
+        // weekly closes: 60 flat weeks, 15 rising weeks, then falling; market flat
+        let mut r = rows(7 * 92);
+        let k0 = (days(&r[0].date) + 3).div_euclid(7);
+        for b in r.iter_mut() { let k = ((days(&b.date) + 3).div_euclid(7) - k0 - 1) as f64; b.close = if k < 60. { 100. } else if k < 75. { 100. + 3. * (k - 59.) } else { 145. - 4. * (k - 74.) }; }
+        let x = Ctx::new(&r, &r, &[]);
+        let ends = period_ends(&x, 1);
+        let t = rs_lines(&x, &vec![50.; r.len()], 0, r.len() - 1);
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].legs[0].i, ends[61]); // ends[0] is the partial first week (k = -1); week 60 is the first rising one: 5 > 10 > 20 > 50 after equal lines
+        assert!(t[0].exit_i > ends[75] && !t[0].open && t[0].exit_px == x.c[t[0].exit_i]);
     }
     #[test]
     fn bands_population_sd() {

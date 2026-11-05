@@ -30,7 +30,10 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "msadd";
 /// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["msadd_n_can_9p", "msadd_n_can_bh", "msadd_n_can_ca", "msadd_n_can_ds", "msadd_n_can_el", "msadd_n_can_ha", "msadd_n_can_hi", "msadd_n_can_pl", "msadd_n_can_ss", "msadd_n_can_st", "msadd_n_mv2_c", "msadd_n_mac_m", "msadd_n_mac_r", "msadd_pop_cci_xover_w_stops_dta", "msadd_n_rsi_c", "msadd_n_rsi_cs", "msadd_n_rsi_fps", "msadd_n_rsi_ps", "msadd_n_rwh_c", "msadd_n_rwl_c", "msadd_n_trx_m", "msadd_n_txm_fp", "msadd_n_txm_p", "msadd_n_wil_c", "msadd_n_wil_cs", "msadd_n_wil_ps"];
+pub const REVIEWED: &[&str] = &["msadd_n_can_9p", "msadd_n_can_bh", "msadd_n_can_ca", "msadd_n_can_ds", "msadd_n_can_el", "msadd_n_can_ha", "msadd_n_can_hi", "msadd_n_can_pl", "msadd_n_can_ss", "msadd_n_can_st", "msadd_n_mv2_c", "msadd_n_mac_m", "msadd_n_mac_r", "msadd_pop_cci_xover_w_stops_dta", "msadd_n_rsi_c", "msadd_n_rsi_cs", "msadd_n_rsi_fps", "msadd_n_rsi_ps", "msadd_n_rwh_c", "msadd_n_rwl_c", "msadd_n_trx_m", "msadd_n_txm_fp", "msadd_n_txm_p", "msadd_n_wil_c", "msadd_n_wil_cs", "msadd_n_wil_ps",
+    // R2 (4 Nov 2026, FR-19 / decision #184): Live records held only because an opposite Enter changes their trades; MetaStock's
+    // System Tester reverses (7.2 manual, Order of Evaluation), so they are complete. .DTA formula strings re-read: identical.
+    "msadd_n_bnd_cs", "msadd_n_cci_c", "msadd_n_cci_cs", "msadd_n_cci_fps", "msadd_n_cci_ps", "msadd_n_cha_ps", "msadd_n_dmi_c", "msadd_n_roc_c", "msadd_n_roc_cs", "msadd_n_sto_c", "msadd_n_sto_cs", "msadd_n_sto_fps", "msadd_n_sto_ps"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 #[allow(dead_code)]
 fn _exec_type_check(e: Exec) -> Exec { e }
@@ -113,7 +116,7 @@ fn consts_of(s: &Sys) -> Vec<f64> {
     let srcs: Vec<&str> = e.iter().flatten().map(|x| x.as_str()).collect();
     msws::constants(&srcs)
 }
-const CONV: &str = "Fills: MetaStock defaults (trade price close, trade delay 0; the record has no fill field). Stops: none (the record's stop block is the all-zero block shared by systems whose text printouts show no stops). One position at a time; a position closes only by its own Close formula (checked from the bar after entry); an exit plus an opposite entry on one bar reverse; the last position stays open, marked to the last close. India: run on the index in place of the stocks/futures the pack was written for (instrument swap only); constants applied literally.";
+const CONV: &str = "Fills: MetaStock defaults (trade price close, trade delay 0; the record has no fill field). Stops: none (the record's stop block is the all-zero block shared by systems whose text printouts show no stops). One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); the last position stays open, marked to the last close. India: run on the index in place of the stocks/futures the pack was written for (instrument swap only); constants applied literally.";
 
 static CAT: OnceLock<Vec<(&'static [&'static str], &'static str, bool)>> = OnceLock::new();
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -152,6 +155,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         let (min, max, step) = if int && c >= 5.0 { ((c * 0.5).round().max(1.0), (c * 2.0).round(), 1.0) } else { (c * 0.5, c * 2.0, (c / 10.0 * 1000.0).round() / 1000.0) };
         v.push(ParamDef { key: leak(msws::const_key(c)), label: leak(format!("Stored constant {c} (every use of {c} in this system's own formulas; Ref offsets and Fml bodies excluded)")), def: c, min, max, step: if step > 0.0 { step } else { 0.001 } });
     }
+    if s.f[0].is_some() && s.f[2].is_some() { v.push(msws::REVERSE_PARAM); }
     Some(v)
 }
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -164,7 +168,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let fl: &dyn Fn(&str) -> Option<String> = &fml;
     let mut eng = Eng::new(x, fl);
     let sig = msws::signals(&mut eng, srcs, &map, side).ok()?;
-    Some(msws::simulate(x, from, to, &sig, s.exec))
+    Some(msws::simulate_conv(x, from, to, &sig, s.exec, msws::reverse_on(p)))
 }
 
 #[cfg(test)]

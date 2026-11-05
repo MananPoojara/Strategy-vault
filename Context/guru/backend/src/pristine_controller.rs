@@ -38,7 +38,7 @@ pub(crate) struct ResearchRun<'a> {
     pub report: Report,
 }
 
-fn source_error(series: &Series, failure: &Failure) -> RunError {
+fn source_error(series: &Series, failure: &Failure, method: Method) -> RunError {
     let mut failure = failure.clone();
     let volume_failure = if matches!(
         failure.code,
@@ -47,7 +47,7 @@ fn source_error(series: &Series, failure: &Failure) -> RunError {
         // The core requests volume only after a completed price candidate. Its
         // Option adapter cannot retain lexical source errors, so recover the
         // exact original state and offending row from that dependency window.
-        series.required_volume_window(failure.at).err()
+        series.volume_window(failure.at, if method == Method::CbsCog { 1 } else { 20 }).err()
     } else {
         None
     };
@@ -88,11 +88,11 @@ pub(crate) fn run<'a>(
     let source = pristine_daily::run(&bars, from, to, method, false);
     source
         .as_ref()
-        .map_err(|failure| source_error(series, &failure.failure))?;
+        .map_err(|failure| source_error(series, &failure.failure, method))?;
     let spans = pristine_spans::extract(&source, from, to).map_err(RunError::Spans)?;
     let report =
         pristine_report::build(&bars, from, to, &spans, costs).map_err(RunError::Accounting)?;
-    let ledger = source.map_err(|failure| source_error(series, &failure.failure))?;
+    let ledger = source.map_err(|failure| source_error(series, &failure.failure, method))?;
     Ok(ResearchRun {
         series,
         context: ResearchContext::BroadUsSuppliedSeries,

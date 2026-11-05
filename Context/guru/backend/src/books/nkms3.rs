@@ -17,7 +17,7 @@ const ID: &str = "nkms3_rsi_trailing_exit";
 pub const REVIEWED: &[&str] = &[ID];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const CONV: &str = "One position at a time; an opposite Enter reverses the position at the close (MetaStock 7.2 manual, The System Editor Dialog: a short can only be entered when the system is long or out), p.reverse = 0 turns that off; a Close formula is checked from the bar after entry; no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. The record has no stops (all-zero stop block) and no fill field: MetaStock defaults, trade at the close, no delay. Indicators: MetaStock definitions as in module msws. Runs on indices, ETFs and single stocks (US and India) are a declared application: the record names no market and prints no results.";
+const CONV: &str = "One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the position and opens the other side at the close, p.reverse = 0 turns that off; a Close formula is checked from the bar after entry; no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. The record has no stops (all-zero stop block) and no fill field: MetaStock defaults, trade at the close, no delay. Indicators: MetaStock definitions as in module msws. Runs on indices, ETFs and single stocks (US and India) are a declared application: the record names no market and prints no results.";
 const SYS: &[Sys] = &[Sys { id: ID, name: "PS RSI Trailing Exit", group: "NIKSAN MetaStock pack · Equis PS system tests (MS72PRFT.DTA)", family: ("nkms3_ps", "Equis PS RSI Trailing Exit (NIKSAN pack)"), page: "MS72PRFT.DTA record index 81 (0-based)", status: Live,
     f: [Some("RSI(14)>Mov(RSI(14),3,S) AND Cross(RSI(14),30)"), Some("Cross(30,RSI(14)) OR (RSI(14)<Mov(RSI(14),3,S) AND RSI(14)>70)"), Some("RSI(14)<Mov(RSI(14),3,S) AND Cross(70,RSI(14))"), Some("Cross(RSI(14),70) OR (RSI(14)>Mov(RSI(14),3,S) AND RSI(14)<30)")],
     exec: EXEC_DEFAULT, notes: "" }];
@@ -25,11 +25,7 @@ static NK: Book = Book { id: BOOK, sys: SYS, fml: &[], conv: CONV, cat: OnceLock
 
 pub fn catalogue() -> Vec<StrategyDef> { NK.catalogue() }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { NK.family_of(id) }
-pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    let mut v = NK.params(id)?;
-    v.push(ParamDef { key: "reverse", label: "Opposite Enter: 1 = reverses (MetaStock 7.2 manual), 0 = ignored, only the Close formula closes", def: 1., min: 0., max: 1., step: 1. });
-    Some(v)
-}
+pub fn params(id: &str) -> Option<Vec<ParamDef>> { NK.params(id) }
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let s = SYS.iter().find(|s| s.id == id)?;
     if from >= to || to >= x.r.len() { return None; }
@@ -37,13 +33,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let raw: Vec<&str> = s.f.iter().flatten().copied().collect();
     let map: Vec<(f64, f64)> = msws::constants(&raw).into_iter().map(|c| (c, p.get(&msws::const_key(c)).copied().unwrap_or(c))).collect();
     let fl: &dyn Fn(&str) -> Option<String> = &|_| None;
-    let mut sig = msws::signals(&mut Eng::new(x, fl), s.f, &map, side).ok()?;
-    if p.get("reverse").copied().unwrap_or(1.) == 0. { return Some(msws::simulate(x, from, to, &sig, s.exec)); }
-    let (xl, xs) = (sig.xl.clone(), sig.xs.clone());
-    for i in 0..sig.xl.len() { sig.xl[i] |= sig.es[i]; sig.xs[i] |= sig.el[i]; }
-    let mut t = msws::simulate(x, from, to, &sig, s.exec);
-    for q in t.iter_mut().filter(|q| !q.open && !(if q.dir > 0. { xl[q.exit_i] } else { xs[q.exit_i] })) { q.reason = "reversed by the opposite Enter · close".into(); }
-    Some(t)
+    let sig = msws::signals(&mut Eng::new(x, fl), s.f, &map, side).ok()?;
+    Some(msws::simulate_conv(x, from, to, &sig, s.exec, msws::reverse_on(p)))
 }
 
 // Instrument admission: NIKSAN MetaStock pack (PS RSI Trailing Exit) 2026-10-30 (titles lane K4) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).

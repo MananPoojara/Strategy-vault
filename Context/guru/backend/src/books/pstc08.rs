@@ -26,7 +26,7 @@ const R5: &[&str] = &[
     "E|\"2. 2-period RSI falls 5 days in a row.\" = RSI(2) lower than the prior day's RSI(2) on each of the last 5 closes",
     "E|\"3. The first falling day (day #1) of the 2-period RSI must be below the 60 benchmark.\"",
     "E|\"Entry: 1. Buy on the next day's open (especially for indices and ETF's) or 2. Limit order X% below previous days close\" (slide 17). Default = 1; 2 = p.entry_mode=1 with p.limit_pct [X not given]",
-    "A|\"Scale-In: 1. Day after buy RSI2 falls again.\" (slide 18) = default: RSI(2) lower again on the entry-day close (same as the R4 wording \"the next day only\"); p.add_lag=2 reads 'day after the fill day'. [book silent on the fill] bought at that close",
+    "A|\"Scale-In: 1. Day after buy RSI2 falls again.\" (slide 18) = default (lead decision 199, read plainly): RSI(2) lower again on the close of the day after the fill day (the buy fills at the open after the setup); p.add_lag=1 = the entry-day close, as the R4 wording \"the next day only\" [labelled option]. [book silent on the fill] bought at that close",
     "X|\"Exit: 1. RSI2 > 75\" (slide 18); exit at the close on which RSI(2) > 75 (course wording for R3, Session 1 slide 37)",
 ];
 const MET10: &[&str] = &[
@@ -124,7 +124,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.insert(1, p("lf", "Liquidity Factor above", 40., 0., 100., 5.));
             v.insert(2, p("hv", "HV(100) above (%)", 40., 0., 80., 5.));
         } else {
-            v.push(p("add_lag", "Scale-in day: 1 = the entry day's close (default); 2 = the day after the fill day [labelled option]", 1., 1., 2., 1.));
+            v.push(p("add_lag", "Scale-in day: 2 = the day after the fill day (default, slide 18 'Day after buy'); 1 = the entry day's close [labelled option]", 2., 1., 2., 1.));
         }
         v
     };
@@ -226,7 +226,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let lv = c[s] * (1. - lp);
                 (l[e] <= lv).then(|| o[e].min(lv))
             } else { Some(o[e]) };
-            let lag = if r4 { 1 } else { g("add_lag") as usize };
+            let lag = if r4 { 1 } else { g("add_lag") as usize }; // R5 default 2 (lead decision 199)
             // "falls again": RSI(2) lower than the previous close's RSI(2), on the bar `lag` days after the setup / fill
             let add = |i: usize, s: usize, e: usize| { let day = if lag == 1 { s + 1 } else { e + 1 }; i == day && r[i] < r[i - 1] };
             let exit = |i: usize, _e: usize| r[i] > ex;
@@ -262,7 +262,8 @@ mod tests {
     #[test]
     fn r5_five_falls_next_open_add_exit() {
         // rising 230 bars, 1 small dip (day #1 < 60), 4 more drops (5 falls) -> setup on bar 234, buy open 235;
-        // bar 235 falls again -> add at its close; then a rally -> exit at the close RSI(2) > 75.
+        // add_lag=1 (option): bar 235 falls again -> add at its close; then a rally -> exit at the close RSI(2) > 75.
+        // default add_lag=2 (decision 199): the add is judged on bar 236, which rises -> no add.
         let mut cl: Vec<f64> = (0..230).map(|i| 100. + i as f64 * 0.5).collect();
         let mut v = *cl.last().unwrap() - 1.5;
         cl.push(v);
@@ -272,7 +273,10 @@ mod tests {
         let r = rows(&cl);
         let x = Ctx::new(&r, &r, &[]);
         assert!(x.rsi2[230] < 60.);
-        let t = run("pstc08_r5", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        let d = run("pstc08_r5", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert_eq!(d.iter().find(|t| t.legs[0].i == 235).expect("entry at the open after 5 falls").legs.len(), 1);
+        let mut p1 = Params::new(); p1.insert("add_lag".into(), 1.);
+        let t = run("pstc08_r5", &x, 0, r.len() - 1, &p1).unwrap();
         let t = t.iter().find(|t| t.legs[0].i == 235).expect("entry at the open after 5 falls");
         assert_eq!(t.entry_kind, "open");
         assert_eq!(t.legs.len(), 2);

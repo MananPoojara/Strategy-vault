@@ -128,7 +128,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ststw_exit_study", "Exit comparison: 10-day low + 5% limit (stocks)", "Ch 13 · Exit Strategies", "Long", Live,
           &["F|(p114) \"all stocks above the 200 day MA ... which had closed at a 10-day low", "E|and entered the next day on a 5% limit.\" (a buy limit 5% below the signal close, good for that day)",
             "X|\"We then tested various exits\" (param exit): 1 = 1-day hold, 2 = 3-day hold, 3 = 5-day hold, 4 = 7-day high, 5 = C > MA5, 6 = C > MA10, 7 = RSI2 > 65, 8 = RSI2 > 70, 9 = RSI2 > 75"],
-          "p.114 table, 63,101 trades each: 1 day 0.61% / 56%, 3 day 1.76% / 60%, 5 day 1.97% / 59%, 7-day high 2.05% / 58%, C>MA5 2.65% / 70%, C>MA10 2.80% / 69%, RSI2>65 2.76% / 70%, RSI2>70 2.83% / 70%, RSI2>75 2.93% / 69%. The table has no default row: the default is its first row (1-day hold) [declared]. N-day hold = exit at the close N trading days after the entry day; 7-day high = the first close that is the highest close of the last 7 days; MA and RSI2 exits at the close (checked from the entry day's close, as an exit 'on the close'). The same count for every exit means the book counted every signal even while a trade was open; the vault holds one position at a time per stock, so its counts differ by exit. No filter named for this test (param universe 1 = the p.43 standard universe, US data only).", None),
+          "p.114 table, 63,101 trades each: 1 day 0.61% / 56%, 3 day 1.76% / 60%, 5 day 1.97% / 59%, 7-day high 2.05% / 58%, C>MA5 2.65% / 70%, C>MA10 2.80% / 69%, RSI2>65 2.76% / 70%, RSI2>70 2.83% / 70%, RSI2>75 2.93% / 69%. Default exit = C > MA5: 'Two moving average exits that we like are 5-day moving average exits and 10-day moving average exits. Our highest preference is for the 5-day moving average exit because it often gets us out of a trade quicker' (p.113; decision 186, CUD-15); the other rows are options. N-day hold = exit at the close N trading days after the entry day; 7-day high = the first close that is the highest close of the last 7 days; MA and RSI2 exits at the close (checked from the entry day's close, as an exit 'on the close'). The same count for every exit means the book counted every signal even while a trade was open; the vault holds one position at a time per stock, so its counts differ by exit. No filter named for this test (param universe 1 = the p.43 standard universe, US data only).", None),
     ]
 }
 
@@ -182,7 +182,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("exit_ma", "Cover: close below SMA", 5.0, 3.0, 10.0, 1.0)],
         "ststw_intraday_drops_highs" | "ststw_intraday_drops_lows" => vec![p("pct", "Next-day order % beyond the signal close (0 = buy on the close)", 0.0, 0.0, 10.0, 1.0)],
         "ststw_stops_hurt" => vec![p("stop", "Stop % below the entry (0 = none)", 0.0, 0.0, 50.0, 1.0), p("universe", "1 = p.43 universe filters (US data only)", 0.0, 0.0, 1.0, 1.0)],
-        "ststw_exit_study" => vec![p("exit", "Exit: 1 1-day, 2 3-day, 3 5-day hold, 4 7-day high, 5 C>MA5, 6 C>MA10, 7 RSI2>65, 8 >70, 9 >75", 1.0, 1.0, 9.0, 1.0),
+        "ststw_exit_study" => vec![p("exit", "Exit: 1 1-day, 2 3-day, 3 5-day hold, 4 7-day high, 5 C>MA5 (default: the author's highest preference, p.113), 6 C>MA10, 7 RSI2>65, 8 >70, 9 >75", 5.0, 1.0, 9.0, 1.0),
             p("universe", "1 = p.43 universe filters (US data only)", 0.0, 0.0, 1.0, 1.0)],
         _ => return None,
     })

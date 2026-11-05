@@ -166,7 +166,7 @@ fn tsm_signal(x: &Ctx, kind: usize, pn: usize) -> Vec<i8> {
 
 // ---------------------------------------------------------------- stochastic (legacy TradeStation SlowK / SlowD)
 
-fn slow_kd(x: &Ctx, n: usize, avg3: bool) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn slow_kd(x: &Ctx, n: usize, avg3: bool) -> (Vec<f64>, Vec<f64>) {
     let len = x.c.len();
     let mut fk = vec![f64::NAN; len];
     for i in 0..len {

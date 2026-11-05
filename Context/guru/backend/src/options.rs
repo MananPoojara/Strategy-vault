@@ -231,7 +231,8 @@ impl Marks {
 }
 
 #[derive(Clone, Debug)]
-pub struct Account { pub trades: Vec<Trade>, pub alloc: Vec<f64>, pub equity: Vec<f64>, pub gross: Vec<f64>, pub ruin: Option<usize> }
+/// Also the rotation account (books::rotation), which names its own model and basis.
+pub struct Account { pub trades: Vec<Trade>, pub alloc: Vec<f64>, pub equity: Vec<f64>, pub gross: Vec<f64>, pub ruin: Option<usize>, pub model: &'static str, pub basis: &'static str }
 
 pub const BASIS: &str = "Options phase 2 account. Real end-of-day prices of the exact option contracts the rule picks (NSE F&O bhavcopy for India; SPY/QQQ/IWM 16:00 ET option snapshot for the US). A fill needs a contract that traded that day: India at its close (or open), US at the 16:00 mid (bid+ask)/2 with volume > 0 (labelled; no bid/ask edge added). Open positions are valued every day at the held contract's own price: traded close, else the exchange settlement price (India) or the two-sided mid (US), else the last value; counts are in each trade's reason. A contract held to its last trading day settles at intrinsic value on the underlying's official close. Each position is one option per unit of the underlying, sized at the account equity on its entry close; overlapping positions are carried together and the equity curve, drawdown and risk statistics use these daily option values. Trade return = option points / underlying close at entry. Costs: the books give none; the vault fee and slippage settings are charged per side on each position's notional (0 by default). No option price is modelled, filled in or repaired; book performance is not reproduced (different market and period).";
 
@@ -243,11 +244,16 @@ pub fn positions(id: &str, x: &Ctx, from: usize, to: usize, p: &crate::connors::
         .or_else(|| ccl08::option_positions(id, x, from, to, p))
         .or_else(|| mahrs::option_positions(id, x, from, to, p))
         .or_else(|| spmt::option_positions(id, x, from, to, p))
+        .or_else(|| fotol::option_positions(id, x, from, to, p))
+        .or_else(|| hfm::option_positions(id, x, from, to, p))
 }
 pub fn is_option_rule(id: &str) -> bool { RULES.contains(&id) }
 /// Every rule that runs on real option prices (instrument_policy admits each on its own instruments).
 pub const RULES: &[&str] = &["oiss_short_put", "oiss_short_call", "oiss_plus_three_put", "oiss_plus_three_call", "otvt_cvr1_sell_puts",
-    "ccl08_weekly_rsi_options", "mahrs_covered_calls", "spmt_eom_puts"];
+    "ccl08_weekly_rsi_options", "mahrs_covered_calls", "spmt_eom_puts",
+    "ccl08_quick_scalp", "fotol_adjusted_cc", "fotol_bb_breakout", "fotol_covered_call", "fotol_monthend_call", "fotol_pullback_calls", // + lane K29
+    "hfm_und", "hfm_und_long", "hfm_und_short", // + lane K34 (decision 186)
+    "otvt_diz_short_strangle"]; // + lane K54 (decision #229 (4))
 
 /// Overlapping positions on one account. Each position is sized at the account equity on its entry close (one option
 /// per unit of the underlying, notional = that equity); its value moves with its own daily P&L / s0. Costs: `cost`
@@ -301,7 +307,7 @@ pub fn account(mut pos: Vec<Pos>, from: usize, to: usize, cost: f64) -> Account 
         });
         allocs.push(alloc[j]);
     }
-    Account { trades, alloc: allocs, equity, gross, ruin }
+    Account { trades, alloc: allocs, equity, gross, ruin, model: "options_phase2_held_contract_marks_v1", basis: BASIS }
 }
 
 #[cfg(test)]

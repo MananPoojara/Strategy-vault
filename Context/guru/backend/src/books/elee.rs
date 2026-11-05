@@ -26,7 +26,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|\"If there are fewer than 10 positions in a currency, that signal becomes suspect.\" (p.231)"],
           "\"We are up 12% for the first quarter of 2005\" (p.228). Book trade: short euro on close, covered when FCSI fell below 60 (p.229-230)."),
         d("elee_discretionary", "The other 13 trading rooms (Haskell, Perolo, Rabbani, McMahon, Appel, Brenke, Lovvorn, Buffalin, Weis, Doane, Makhmudov, Willain, Knapp)", "Ch.1-16", "Long/Short",
-          Status::NotTestable("discretionary chart reading (divergences, trendlines, 'value zone', squeeze plays, Wyckoff, fundamentals) or intraday tick data (Willain's Effective Volume); no complete mechanical rule"),
+          Status::NotTestable("rules not fully defined: discretionary chart reading (divergences, trendlines, 'value zone', squeeze plays, Wyckoff, fundamentals) and Willain's tick-by-tick Effective Volume, with no complete mechanical rule (Entries & Exits p.54, p.162)"),
           &["E|e.g. Lovvorn's squeeze play: \"a pullback to the fast EMA accompanied by shrinkage ... I look for an entry when the ranges are the smallest since the pullback began\" (p.162)",
             "X|e.g. Perolo: \"take profits on half of my position at a point between half and two-thirds of the distance to the stop loss\" (p.54)"], ""),
     ]
