@@ -82,11 +82,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|28-period momentum and the one-line MACD 9/18 (ch.9, ch.11)", "E|\"A buy signal is generated when ... a new closing Momentum high is created that is higher than the highest Momentum during the period of bullish convergence\" (ch.10); three-month window, at least six bars (ch.10)",
               "X|\"The first target, P1, was one half the range of the highest price high and lowest price low during the time frame from A to D inclusive\" (ch.11)"],
             "The 6-2-4 report gives a cookbook version of the same setup (jb624_pmf), also not testable."),
-        def!("jbudt_pop", "Stochastic POP day trading method (9, 3-bar smoothing, 70/30)", "Ch.12 · Stochastic POP", "Long/Short", NeedsData("intraday bars (a day-trading method with exit by the end of the day)"),
+        def!("jbudt_pop", "Stochastic POP day trading method (9, 3-bar smoothing, 70/30, 5-minute bars)", "Ch.12 · Stochastic POP", "Long/Short", Live,
             &["F|\"Use a 9-period slow stochastic %K only with 3-bar smoothing. Use upper and lower boundaries of 30 percent and 70 percent\" (ch.12)",
               "E|\"When %K crosses above 70 percent on the close of any bar, then buy on close of that bar. When %K crosses below 30 percent on the close of any bar then sell short on the close of that bar\" (ch.12)",
-              "X|\"Exit long when %K crosses back below 70 percent. Exit short when %K crosses back above 30 percent\"; \"Exit trades by the end of the day\" (ch.12)"],
-            "The daily-bar POP of the 6-2-4 report (14 / 5, 75/25) is live as jb624_pop."),
+              "X|\"Exit long when %K crosses back below 70 percent. Exit short when %K crosses back above 30 percent\"; \"Exit trades by the end of the day\" (ch.12)",
+              "A|Read (lane K55, decision #230 (2)): the chapter fixes no bar size (Figures 12.5-12.8 use five-, ten-, fifteen- and thirty-minute bars), so the default is 5-minute bars, the first figure's and the author's stated preference for the same method in The Compleat Day Trader (\"I prefer either 5- or 10-minute data\", p.49); p.bar = 10, 15, 30 are the figures' other sizes. Session-aligned bars built from the vault's 1-minute file (intraday_ep::day_bars), one continuous series across days. Slow %K = 100 x the 3-bar sum of (close - 9-bar lowest low) / the 3-bar sum of (9-bar highest high - lowest low) (Lane's slowing, TradeStation's default, as jb624_pop); entries and exits at the close of the bar that crosses (a cross = beyond the level now and not beyond it on the bar before); one position at a time, no entry on the exit bar or on the day's last bar; out at the day's last close [Declared reading]. The trailing stop ('Or use a trailing stop loss once you have a profitable position') and the small-profit exits have no amount and are not modelled.",
+              "A|Minute path: every order fills at a bar's close; the bars are built from the vault's 1-minute file [convention]. SPY, SPX, NIFTY 50 and NIFTYBANK: the book's figures are T-bond, mini-Dow and stock charts, so these runs are a declared application; cash-index shorts are hypothetical."],
+            "The author: 'this is not a trading system but rather a trading method ... It requires some degree of judgment for exiting trades' (ch.12); the printed rules give a complete entry and exit, so it is coded with the readings labelled (decision #230). The daily-bar POP of the 6-2-4 report (14 / 5, 75/25) is live as jb624_pop. No costs in the vault's run."),
         def!("jbudt_news", "Trading the news (15-minute triggers)", "Ch.14 · News-Driven Market", "Long/Short", NotTestable("the setup is a news event judged by the trader, and the triggers use 15-minute bars"),
             &["E|\"After a sharply lower opening based on news, buy the stock if it ends any [fifteen-minute bar] above ...\" (ch.14)"], ""),
         def!("jbudt_stf_example", "STF example: momentum zero line + 30-minute trigger", "Ch.4 · STF Framework", "Long/Short", NotTestable("the author presents it as \"merely an example and not specifically recommended as a trading strategy\"; it also needs 30-minute bars"),
@@ -107,7 +109,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "jbudt_dow_stocks" => ("jbudt_dow", "Day of week pattern", "GOOG / POT (needs data)"),
         "jbudt_volspike" => ("jbudt_volspike", "Volume spikes", "Needs intraday"),
         "jbudt_divergence" => ("jbudt_divergence", "Momentum divergence", "Not testable"),
-        "jbudt_pop" => ("jbudt_pop", "Stochastic POP (day trading)", "Needs intraday"),
+        "jbudt_pop" => ("jbudt_pop", "Stochastic POP (day trading)", "9/3, 70/30 on 5-minute bars"),
         "jbudt_news" => ("jbudt_news", "News trading", "Not testable"),
         "jbudt_stf_example" => ("jbudt_stf", "STF example", "Not testable"),
         _ => return None,
@@ -118,6 +120,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "jbudt_gap_fpo" | "jbudt_gap_split" => vec![],
+        "jbudt_pop" => vec![p("bar", "Bar size (minutes; 5 default; 10, 15, 30 the chapter's other figures)", 5., 5., 30., 5.), p("k", "Stochastic length (bars)", 9., 2., 50., 1.),
+            p("smooth", "%K smoothing (bars)", 3., 1., 10., 1.), p("upper", "Buy above (%K)", 70., 50., 95., 5.), p("lower", "Sell below (%K)", 30., 5., 50., 5.)], // intraday EP block (K55)
         "jbudt_mac_ad57" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars", 2., 1., 4., 1.), p("ad_ma", "MA of Williams A/D (bars)", 57., 20., 80., 1.)],
         "jbudt_tb16" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01)],
         "jbudt_tb16_mom" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01), p("mom", "Momentum length", 14., 5., 40., 1.), p("ma", "MA of momentum (bars)", 14., 5., 40., 1.),
@@ -132,6 +136,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     let g = |k: &str| getp(id, p, k);
     let u = |k: &str| g(k).round().max(1.0) as usize;
+    if id == "jbudt_pop" { return Some(pop(x, from, to, u("bar") as u16, u("k"), u("smooth"), g("upper"), g("lower"))); } // intraday EP block (K55)
     let mut out = Vec::new();
     let mut cur: Option<Trade> = None;
     match id {
@@ -264,3 +269,34 @@ mod tests {
         assert_eq!((ts[0].legs[0].i, ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (1, 99., 3, 99.2));
     }
 }
+
+// ---- intraday EP block (lane K55, 5 Nov 2026, decision #230 (2); authors/titles-1030/K55.tsv, check K55w/k55_ref.py)
+/// Stochastic POP (ch.12) on n-minute bars (n1intra::series, one continuous series): Lane-slowed %K crossing above `up`
+/// buys on that bar's close, below `lo` sells short; %K back across the level exits on the close; out at the day's last close.
+fn pop(x: &Ctx, from: usize, to: usize, n: u16, len: usize, smooth: usize, up: f64, lo: f64) -> Vec<Trade> {
+    let b = super::n1intra::series(x, from, to, n);
+    let (mut num, mut den) = (vec![f64::NAN; b.len()], vec![f64::NAN; b.len()]);
+    for k in len.max(1) - 1..b.len() {
+        let w = &b[k + 1 - len..=k];
+        let ll = w.iter().map(|z| z.l).fold(f64::INFINITY, f64::min);
+        num[k] = b[k].c - ll;
+        den[k] = w.iter().map(|z| z.h).fold(f64::NEG_INFINITY, f64::max) - ll;
+    }
+    let (sn, sd) = (sma(&num, smooth), sma(&den, smooth));
+    // jb624::slow_k method 1 (same author, same definition): 50 on a zero range; a reading within float noise of a level is on it
+    let kk: Vec<f64> = sn.iter().zip(&sd).map(|(a, d)| if d.is_nan() { f64::NAN } else if *d > 0.0 { 100.0 * a / d } else { 50.0 }).collect();
+    let gt = |a: f64, b: f64| a - b > 1e-9 * b.abs();
+    let (mut out, mut cur) = (vec![], None::<(f64, usize, f64)>);
+    for k in 1..b.len() {
+        let z = &b[k];
+        if let Some((d, ei, ep)) = cur {
+            let why = if z.last { "end of day" } else if d > 0.0 && gt(up, kk[k]) { "%K back below the upper level" } else if d < 0.0 && gt(kk[k], lo) { "%K back above the lower level" } else { "" };
+            if !why.is_empty() { out.push(crate::intraday::day_trade(d, ei, ep, z.i, z.c, why, "close", false)); cur = None; }
+            continue;
+        }
+        if z.last || !kk[k - 1].is_finite() { continue; }
+        if gt(kk[k], up) && !gt(kk[k - 1], up) { cur = Some((1.0, z.i, z.c)); } else if gt(lo, kk[k]) && !gt(lo, kk[k - 1]) { cur = Some((-1.0, z.i, z.c)); }
+    }
+    out
+}
+// ---- end intraday EP block
