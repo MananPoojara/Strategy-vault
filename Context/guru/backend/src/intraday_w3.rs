@@ -34,6 +34,10 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "stad2_bullbeater" /* lane K55 (5-minute, 2014-2025): SPY -0.0247% vs SPX +0.0537% (test a) */,
     "stad2_opengap" /* lane K55 (10-minute, 2014-2025): compounded SPX +33.1% vs SPY +2.6% (test c) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
+/// Decision #232 (1): the SPY-only rules whose #177a flag has the tradable SPY as the BETTER series (gate `ours` numbers);
+/// their withdrawal note says the cash index understates the rule. Every other SPY id was flagged with SPX better.
+pub const SPY_BETTER: &[&str] = &["gfstsb_ema_cross", "jbcdt_mac"];
+pub fn spy_better(id: &str) -> bool { SPY_BETTER.contains(&id) }
 /// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
 /// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
 pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m160_h0", "tcdt_2bnr_m80_h0", "tcdt_3bnr_m160_h0",
@@ -139,13 +143,18 @@ mod tests {
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
         assert_eq!((SPY.len(), SPX_HELD.len()), (16, 38)); // + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
+        assert!(SPY_BETTER.iter().all(|id| SPY.contains(id))); // #232 (1)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
             assert!(ip::intraday_p1(d) && !ip::intraday_w1_spx_id(id), "{id}");
             assert_eq!(ip::intraday_tickers(id), &["SPY"][..]);
             assert!(ip::check(d, "SPY", false).is_none(), "{id}");
+            if spy_better(id) { // decision #232 (1): both wordings, the true one per direction
+                for t in ["SPX", "NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("cash-index minutes are stale and distort this rule (here the index understates it); only the tradable SPY result is published"), "{id} {t}"); }
+            } else {
             assert!(ip::check(d, "SPX", false).unwrap().note.contains("cash-index minutes are stale; on the tradable SPY this rule loses"), "{id}");
             for t in ["NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
+            }
             let g = crate::gate::get(id).unwrap();
             assert!(g.verdict == "unverified" && g.reason.contains("#177a") && g.ours.contains("SPX (withdrawn)"), "{id}");
         }

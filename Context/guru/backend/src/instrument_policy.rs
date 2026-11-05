@@ -282,6 +282,9 @@ pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
         if crate::intraday_w3::spx_held(def.id) && ticker=="SPX" {
             return Some(Issue{status:"not_testable",note:"The SPX minute result is withheld (decision #177b, 3 Nov 2026): on tradable SPY with the points scaled, the result fails. The book's fixed S&P points have no SPY version, so no result is published.".into()});
         }
+        if crate::intraday_w3::spy_better(def.id) { // decision #232 (1): flagged with the tradable SPY the BETTER series
+            return Some(Issue{status:"not_testable",note:format!("The {ticker} minute result is withdrawn (decisions #177a, #232): cash-index minutes are stale and distort this rule (here the index understates it); only the tradable SPY result is published.")});
+        }
         if crate::intraday_w3::spy_id(def.id) {
             return Some(Issue{status:"not_testable",note:if ticker=="SPX" {"The SPX minute result is withdrawn (decision #177a, 3 Nov 2026): cash-index minutes are stale; on the tradable SPY this rule loses. The minute result is published on SPY only.".into()} else {format!("The {ticker} minute result is withdrawn (decision #177a, 3 Nov 2026): no tradable India minute series, and the US tradable check failed. The minute result is published on SPY only.")}});
         }
