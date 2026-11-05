@@ -12,7 +12,7 @@ import type { Chip } from "./Workbench";
 import "./explore.css";
 
 /** AmiBroker Analysis window: Scan (signal list) and Explore (per-bar columns) over the strategy's rules. */
-export const ANALYSIS_NOTE = "Raw rule signals on daily bars, not filled trades: no position state, edge-only entry, delay, order or stop applies, and a bars-held exit never fires. Range is the Strategy From–To dates (blank = all quotes).";
+export const ANALYSIS_NOTE = "Raw rule signals on the selected timeframe's bars (one row per day, week or month), not filled trades: no position state, edge-only entry, delay, order or stop applies, and a bars-held exit never fires. Range is the Strategy From–To dates (blank = all quotes).";
 const PAGE = 100;
 type Cell = string | number | null;
 type Fmt = (v: Cell) => string;
@@ -63,11 +63,14 @@ const value: Fmt = (v) => num(v, 2);
 /** Dates show DD-MM-YYYY; the cell keeps the ISO date, so sorting stays in time order. */
 const date: Fmt = (v) => (typeof v === "string" ? dayFirst(v) : DASH);
 const whole: Fmt = (v) => int(v);
+const TF_WORD: Record<string, string> = { W: "week", M: "month", Q: "quarter", Y: "year" };
 
 export interface ExplorePanelProps {
   spec: Spec; catalogue: Catalogue; chips: Chip[]; portfolio: boolean; market: SavedMarket;
   /** The instrument explored: the Symbol column and the download's name. */
   ticker?: string;
+  /** Selected timeframe (AmiBroker Periodicity): Explore rows and daily-rule indicator columns are on these bars. */
+  tf?: string;
   onScan(apply: "current" | "all"): Promise<ScanResult>;
   onExplore(): Promise<ExploreResult>;
   loadSeries(q: { id: string; tf: string; p?: Record<string, number>; vs?: string; formula?: string; name?: string }): Promise<SeriesResponse>;
@@ -106,7 +109,7 @@ export function exploreTable(r: ExploreResult, columns: { name: string; at: Map<
   return { header, rows, fmt };
 }
 
-export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan, onExplore, loadSeries, ticker }: ExplorePanelProps) {
+export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan, onExplore, loadSeries, ticker, tf = "D" }: ExplorePanelProps) {
   // Explore only: the Scan list is not offered on the Results tab (onScan stays in the props for other callers)
   const [view] = useState<"scan" | "explore">("explore");
   const [apply, setApply] = useState<"current" | "all">("current");
@@ -117,7 +120,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
   const [scanned, setScanned] = useState<Loaded<ScanResult> | null>(null);
   const [explored, setExplored] = useState<Loaded<ExploreResult> | null>(null);
   const specKey = JSON.stringify(spec);
-  useEffect(() => { setScanned(null); setExplored(null); setError(null); }, [specKey]); // a list belongs to the rules that made it
+  useEffect(() => { setScanned(null); setExplored(null); setError(null); }, [specKey, tf]); // a list belongs to the rules and bars that made it
   useEffect(() => { if (!portfolio) setApply("current"); }, [portfolio]);
   const n = Number(recent), badRecent = range === "recent" && !(Number.isInteger(n) && n >= 1);
 
@@ -127,7 +130,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
       if (view === "scan") { const result = await onScan(apply); setScanned({ result, table: scanTable(result), failed: [] }); return; }
       const raw = await onExplore();
       // Explore drops volume when any bar lacks it (NIFTY has none before 2000): fill it from the Volume series the chart uses
-      const vol = raw.volume ? null : await loadSeries({ id: "volume", tf: "D" }).catch(() => null);
+      const vol = raw.volume ? null : await loadSeries({ id: "volume", tf }).catch(() => null);
       const at = vol ? new Map(vol.dates.map((d, i) => [d, vol.series[vol.outputs[0]]?.[i] ?? null])) : null;
       const result = at ? { ...raw, volume: raw.dates.map((d) => at.get(d) ?? null) } : raw;
       // the indicators the rules read, with the rule's own settings, line and timeframe (RSI for an RSI rule)
@@ -139,7 +142,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
         seen.add(key);
         return [{ s, ind, label: operandLabel(s as Operand, catalogue).replace(ind.name, shortName(ind)) }];
       });
-      const parts = await Promise.allSettled(shown.map(({ s, ind }) => loadSeries({ id: s.s, tf: s.tf ?? "D", p: s.p, ...formulaQuery(ind) })));
+      const parts = await Promise.allSettled(shown.map(({ s, ind }) => loadSeries({ id: s.s, tf: !s.tf || s.tf === "D" ? tf : s.tf, p: s.p, ...formulaQuery(ind) })));
       const failed: string[] = [], columns: { name: string; at: Map<string, number | null> }[] = [];
       parts.forEach((p, k) => {
         const { label } = shown[k];
@@ -178,6 +181,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
               <ResultTable name="scan" {...scanned.table} file="Scan.xlsx" />
             </>}
             {view === "explore" && explored && shownExplore && <>
+              {explored.result.tf && explored.result.tf !== "D" && <p className="cap" data-lab-explore-tf>One row per {TF_WORD[explored.result.tf] ?? `${explored.result.tf} bar`}, dated its last trading day (AmiBroker Periodicity {explored.result.tf}).</p>}
               {!!explored.failed.length && <p className="cap" data-lab-explore-failed>Columns not shown: {explored.failed.join("; ")}</p>}
               <ResultTable name="explore" {...shownExplore} file={`${ticker ? `${ticker} ` : ""}Explore${explored.result.from ? ` ${dayFirst(explored.result.from)} to ${dayFirst(explored.result.to ?? explored.result.from)}` : ""}.xlsx`} />
             </>}

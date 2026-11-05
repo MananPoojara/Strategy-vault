@@ -67,7 +67,7 @@ function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
 }
 export const clearLabCache = () => cache.clear();
 
-export interface RunQuery { ticker: string; from?: string; to?: string; cost?: number; slippage?: number }
+export interface RunQuery { ticker: string; from?: string; to?: string; cost?: number; slippage?: number; /** AmiBroker Periodicity: W/M/… backtests on period bars (one instrument); unset = daily */ tf?: string }
 
 export const catalogue = (m: SavedMarket) => cached(`cat:${engineBase(m)}`, () => engine<Catalogue>(m, "lab/catalogue"));
 /** A formula chip sends `formula` and `name` instead of `id`, and its Params as `<Param>=<value>` (custom indicators contract §2). */
@@ -100,12 +100,13 @@ export const optimizeIndividual = (m: SavedMarket, spec: Spec, q: PortfolioRunQu
 /** AmiBroker Analysis Scan / Explore (/lab/scan): raw rule signals, not filled trades. Rows are [symbol, date, trade, close]. */
 export interface ScanBase extends Provisional { label: string; apply: "current" | "all"; from: string | null; to: string | null; notes: string[]; foreign?: ForeignDisclosure[] }
 export interface ScanResult extends ScanBase { kind: "lab_scan"; symbols: number; rows: [string, string, "Buy" | "Sell" | "Short" | "Cover", number | null][]; refused: { ticker: string; reason: string }[]; membership?: { kind: string; note: string } }
-export interface ExploreResult extends ScanBase { kind: "lab_explore"; dates: string[]; open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; close: (number | null)[]; volume: (number | null)[] | null; signals: Record<"buy" | "sell" | "short" | "cover", (0 | 1)[]> }
+export interface ExploreResult extends ScanBase { kind: "lab_explore"; /** bar timeframe the rows are on (D, W, M …) */ tf?: string; dates: string[]; open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; close: (number | null)[]; volume: (number | null)[] | null; signals: Record<"buy" | "sell" | "short" | "cover", (0 | 1)[]> }
 export interface ScanQuery { ticker?: string; from?: string; to?: string; apply?: "current" | "all" }
 export const scan = (m: SavedMarket, spec: Spec, q: ScanQuery) =>
   engine<ScanResult>(m, "lab/scan", { spec: JSON.stringify(spec), mode: "scan", apply: q.apply ?? "current", ticker: q.apply === "all" ? undefined : q.ticker, from: q.from, to: q.to });
-export const explore = (m: SavedMarket, spec: Spec, q: Omit<ScanQuery, "apply">) =>
-  engine<ExploreResult>(m, "lab/scan", { spec: JSON.stringify(spec), mode: "explore", ticker: q.ticker, from: q.from, to: q.to });
+/** `tf`: AmiBroker Periodicity — W/M/… explore one row per period (dated its last session); D or none is daily. */
+export const explore = (m: SavedMarket, spec: Spec, q: Omit<ScanQuery, "apply"> & { tf?: string }) =>
+  engine<ExploreResult>(m, "lab/scan", { spec: JSON.stringify(spec), mode: "explore", ticker: q.ticker, from: q.from, to: q.to, tf: q.tf && q.tf !== "D" ? q.tf : undefined });
 export const tickers = (m: "in" | "us") => cached(`tickers:${m}`, () => engine<TickerRow[]>(m, "tickers"));
 export const labInstruments = () => cached("gl:instruments", () => engine<InstrumentsResponse>("gl", "lab/instruments"));
 export const templates = (m: SavedMarket) => cached(`templates:${engineBase(m)}`, () => engine<TemplatesResponse>(m, "lab/templates"));

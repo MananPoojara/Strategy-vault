@@ -1,6 +1,7 @@
 import { portfolioIdentity } from "./portfolio-model";
 import { MAX_PANES, MAX_PRICE_OVERLAYS } from "./catalogue";
 import { canonicalJson, newStrategySpec } from "./spec-model";
+import { withSideExits } from "./execution-model";
 import type { EditorState } from "./SavedStrategies";
 import type { LabQuery } from "./url-state";
 import type { Chip } from "./Workbench";
@@ -33,8 +34,9 @@ export function labReducer(state: LabState, action: LabAction): LabState {
     case "ticker": return { ...state, ticker: action.ticker, lastRun: null };
     case "tf": return { ...state, tf: action.tf };
     case "range": return { ...state, range: action.range };
-    case "spec": return { ...state, spec: action.spec };
-    case "open": return { ...state, row: action.row, spec: action.spec, lastRun: null };
+    // every spec entering the editor has its Supertrend exits on its own side (execution-model withSideExits)
+    case "spec": return { ...state, spec: withSideExits(action.spec) };
+    case "open": return { ...state, row: action.row, spec: withSideExits(action.spec), lastRun: null };
     case "row": return { ...state, row: action.row };
     case "chip-add": {
       const { indicator } = action;
@@ -60,7 +62,8 @@ export function labReducer(state: LabState, action: LabAction): LabState {
 
 export function editorState(state: LabState, market: SavedMarket): EditorState {
   const ticker=state.spec.portfolio?portfolioIdentity(state.spec):state.ticker;
-  const unchanged = !!state.row && state.row.instrument === ticker && canonicalJson(state.row.spec) === canonicalJson(state.spec);
+  // a saved row is compared as the editor shows it (its Supertrend exits set by side), so opening an old one is not an edit
+  const unchanged = !!state.row && state.row.instrument === ticker && canonicalJson(withSideExits(state.row.spec)) === canonicalJson(state.spec);
   return { spec: state.spec, market, ticker, row: state.row, unchanged,
     ranFresh: state.lastRun === runKey(state.spec, market, state.ticker) };
 }

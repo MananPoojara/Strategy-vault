@@ -38,7 +38,8 @@ pub fn unavailable(d: &StrategyDef) -> Option<String> {
     if status != "live" { return Some(format!("the book method is not admitted for backtesting ({status}): {why}")); } // checked first: a demoted method never keeps its template
     if template(d.id).is_some() { return None; }
     let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r).or(NEW_ADMISSIONS_OCT25.contains(&d.id).then_some(NEW_ADMISSION_OCT25))
-        .or(NEW_ADMISSIONS_OCT29.contains(&d.id).then_some(NEW_ADMISSION_OCT29)).or(NEW_ADMISSIONS_NOV03.contains(&d.id).then_some(NEW_ADMISSION_NOV03));
+        .or(NEW_ADMISSIONS_OCT29.contains(&d.id).then_some(NEW_ADMISSION_OCT29)).or(NEW_ADMISSIONS_NOV03.contains(&d.id).then_some(NEW_ADMISSION_NOV03))
+        .or(NEW_ADMISSIONS_NOV05.contains(&d.id).then_some(NEW_ADMISSION_NOV05));
     let two_sided = (d.dir != "Long" && d.dir != "Short").then_some(TWO_SIDED);
     Some(named.or(two_sided).unwrap_or(NOT_YET).to_string())
 }
@@ -84,6 +85,28 @@ pub const NEW_ADMISSIONS_NOV03: &[&str] = &[
     "scpenmfi_55", "scstam_hyst", "sctilsm_smars", "sctoombs_stoch20", "sctraub_trend", "sctrcrs_fxi", "sctrtma_qqq", "scvkmacd_wk",
     "scvks_ex_sep", "scvks_nov_apr", "scvkvs_volstop", "scwhite_weekly", "thcop_guide", "tsbond_adx", "wbctp_rsi3m3", "wtaaii_rsi9",
     "wtaaii_stoch",
+];
+/// The methods Manan's branch admitted after the 3 Nov merge, as of the 5 Nov merge (every_live_method_has_a_template_or_a_named_reason).
+pub const NEW_ADMISSION_NOV05: &str = "admitted to the book engine on Manan's branch up to 2026-11-05 (merged into Nandini); no lab template has been written or compared with the book engine yet";
+pub const NEW_ADMISSIONS_NOV05: &[&str] = &[
+    "hfm_und_long", "hfm_und_short", "alpha_rising_assets", "alpha_dyn_treasuries", "hpetf_3dhl_short_aggr", "tcdt_ut1",
+    "tcdt_ut2", "tcdt_ut3", "tcdt_ut4", "tcdt_ut5", "jchr1_lizard_long", "jchr1_lizard_short",
+    "strmm_rs1", "stad2_obv", "stad4_spread_up", "stad4_spread_dn", "rgs_bigstock", "mkits_rs_fut",
+    "mkits_rs_etf", "prap1_raptor10", "nftm_accutrack", "kfgei_alloc_vol", "kfgei_alloc_rar", "kfgei_alloc_corr",
+    "kfgei_alloc_combined", "mpts_rs_10_26", "mpts_rs_3_10", "phbt_rs_lines", "atm00_fourplay", "atm03_gap_closer",
+    "atm04_blues", "ataa_coppock", "mstt_andy_gabor", "mstt_another_bb_formula", "mstt_bb_crossover_trading", "mstt_chande_trendscore_sys",
+    "mstt_dahl_50dma", "mstt_dahl_crossing_its_21dma", "mstt_the_derivative_ma", "mstt_dns", "mstt_dns_7_4", "mstt_last_shadow_s_new_chaik_osc_willa_stoch",
+    "mstt_kst_vol", "mstt_lastshadow_s_new_chaosc_willa_sto_bb", "mstt_macd_5_35_4", "mstt_macd13_34_89", "mstt_macd8_17_9", "mstt_nat_s_volt_sys",
+    "mstt_pvt_dahl_sys", "mstt_rsi_80_20", "mstt_sandii_w_cci_macd", "mstt_sandii_w_cci_proc", "mstt_sandii_w_cci_rsi", "mstt_sandii_w_cci_sto",
+    "mstt_sandii_w_cci_trix", "mstt_sandii_w_cci_ultosc", "mstt_sandii_w_cci_will_spctr", "mstt_sandii_w_dmi_macd", "mstt_sandii_w_dmi_proc", "mstt_sandii_w_dmi_rsi",
+    "mstt_sandii_w_dmi_sto", "mstt_sandii_w_dmi_trix", "mstt_sandii_w_dmi_ultosc", "mstt_sandii_w_dmi_will_spctr", "mstt_sandusky_ii_cciw_macdconfirm", "mstt_short_tsf",
+    "mstt_slope_o_the_slope", "mstt_sto_90_10", "mstt_sto_of_rsi_14", "mstt_sto_of_rsi_8_5", "mstt_td_range_expansion_index", "ccl08_quick_scalp",
+    "phbttk_pct_above_ma", "phbttk_pct_above_ma400", "mslib_fierrando", "mslib_presario", "mslib_demark_seq", "fgitc_rotation",
+    "fgtofd_sector_tilt", "fbrs_combo_top3", "fotol_adjusted_cc", "fotol_covered_call", "fotol_monthend_call", "fotol_pullback_calls",
+    "kzmzn_rs_system1", "bbgf_gforce", "psntd_pf_dtb", "scarms_265", "scbds_cross", "scblack_gold",
+    "scfavq_quarterly", "scggetf_rsi2h", "schwc_aggressive", "schwc_moderate", "schwc_conservative", "scmkpsb_breakout",
+    "scpalms_mas", "scrkb_band6", "sctrrst_qqq", "stv7_sell_in_may", "stv7_bull_someplace", "svlock_zlcl_zlha",
+    "tslrvs_spread", "wcdtf_ath_atr",
 ];
 pub const NEW_ADMISSIONS_OCT29: &[&str] = &[
     "ats_cbp", "hfm_news_long", "hfm_news_short", "btp_cbp_short", "alpha_dyn_treasuries_sleeve", "ststw_intraday", "ststw_intraday_drops_highs",

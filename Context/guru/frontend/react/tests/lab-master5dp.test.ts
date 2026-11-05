@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { fiveDpRanges, master5dp, regimeSets, tradeLossMonths, type Bar } from "../src/features/lab/master5dp";
+import { MASTER_5DP_NIFTY, QTR_MIDCAP } from "../src/features/lab/hardpunch";
 
 /** Flat weekday bars from..to (o = h = l = c = px(date)). */
 const bars = (from: string, to: string, px: (d: string) => number = () => 100): Bar[] => {
@@ -51,10 +52,18 @@ it("a QTR date inside the range moves the entry, unless it is also a Base-1 star
   expect(master5dp(input(nifty, midcap)).find((x) => x.to === "2021-07-02")?.from).toBe("2021-06-24");
 });
 
-it("QTR (quarterly 2MR) is a no-trade window from the month-end of a 2-red-month quarter month to the next month's last trading day, per index", () => {
-  const midcap = bars("2020-12-01", "2022-01-31", falling(["2021-05", "2021-06"])), flat = bars("2020-12-01", "2022-01-31");
-  const sets = regimeSets(input(flat, midcap));
-  const bull = (name: string) => sets.find((s) => s.name === name)?.windows;
-  expect(sets.map((s) => s.name)).toEqual(["Master 5DP", "QTR Midcap"]); // QTR is the AFLs' default index, Midcap
-  expect(bull("QTR Midcap")).toEqual([["2021-06-30", "2021-07-30"]]);
+it("the page's sets are the AFLs' hard-punched dates: Master 5DP as typed (Mahek's updated 125 windows), QTR Midcap held to the next month's last session", () => {
+  const sets = regimeSets({ midcap: bars("2008-01-01", "2026-01-31") });
+  expect(sets.map((s) => s.name)).toEqual(["Master 5DP", "QTR Midcap"]);
+  const m5 = sets[0].windows, qtr = sets[1].windows;
+  expect(m5).toHaveLength(125);
+  expect([m5[0], m5.at(-1)]).toEqual([["2008-03-31", "2008-04-02"], ["2026-09-24", "2026-10-05"]]);
+  expect(m5).toContainEqual(["2012-10-23", "2012-11-02"]); // a 0.11 ADR window the April list did not have
+  expect(m5).not.toContainEqual(["2024-02-28", "2024-03-02"]); // dropped in the 05-11-2026 update
+  expect(m5).toEqual(MASTER_5DP_NIFTY.map(([a, b]) => [a, b]));
+  expect(QTR_MIDCAP).toHaveLength(24);
+  expect(qtr[0]).toEqual(["2008-03-31", "2008-04-30"]); // 1-month hold: to April's last session
+  expect(qtr.find((w) => w[0] === "2023-02-28")).toEqual(["2023-02-28", "2023-04-28"]); // 28-02 and 31-03-2023 holds overlap: joined
+  expect(qtr.at(-1)).toEqual(["2025-02-28", "2025-03-31"]); // the list ends here: nothing generated after it
+  expect(qtr.every(([from]) => QTR_MIDCAP.includes(from))).toBe(true);
 });

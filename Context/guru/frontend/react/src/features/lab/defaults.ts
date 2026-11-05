@@ -128,7 +128,7 @@ export function changedSettings(spec: Spec): string[] {
     ["trade after a losing streak", ex.shadow], ["trade prices", ex.prices], ["delays", ex.delays ?? ex.delay_bars], ["re-entry delays", ex.reentry], ["position limits", ex.limits],
     ["stop exit modes", ex.exit_at_stop], ["stops from the next bar", ex.activate_stops_immediately === false || undefined], ["N-bar has priority", ex.nbar_has_priority],
     ["opposite signal", ex.opposite], ["no same-bar exit and entry", ex.allow_same_bar_exit === false || undefined],
-    ["re-enter on the exit bar", ex.reenter_on_exit_bar], ["no circuit exit hold", ex.defer_exit_on_circuit === false || undefined], ["entry on an upper-circuit close", ex.skip_entry_on_circuit === false || undefined], ["tick size", ex.tick_size || undefined],
+    ["re-enter on the exit bar", ex.reenter_on_exit_bar], ["circuit exit hold", ex.defer_exit_on_circuit === true || undefined], ["no entry on a circuit close", ex.skip_entry_on_circuit === true || undefined], ["tick size", ex.tick_size || undefined],
     ["pad and align", ex.pad_align], ["report rates", ex.report], ["entry on", ex.entry_on], ["same-bar order", ex.intrabar], ["costs (cash)", ex.costs],
     ["portfolio", spec.portfolio], ["date filter", spec.date_filter && !spec.date_filter.off ? spec.date_filter : undefined], ["short no-trade windows", spec.blackouts?.length ? spec.blackouts : undefined]];
   for (const [name, v] of named) if (v !== undefined && v !== false) out.push(name);

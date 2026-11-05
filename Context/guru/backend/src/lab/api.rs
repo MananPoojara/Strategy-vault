@@ -399,6 +399,32 @@ pub(super) fn padded(st: &State, spec: &Spec, selected: &crate::SelectedContext,
     if rows.is_empty() { return Err(LabError::NeedsData(format!("execution.pad_align: no {reference} date falls inside this instrument's data"))); }
     Ok(Some((rows, src, format!("Pad and align to {reference}: {n_pad} bars padded with the previous close, {n_drop} dropped"))))
 }
+/// AmiBroker Periodicity (`tf`): D (default) keeps the daily bars; W/M/Q/Y/nD backtests and explores on period bars.
+pub(super) fn period_tf(q: &Query) -> Result<Tf, LabError> {
+    match q.get("tf").filter(|t| !t.is_empty()) {
+        None => Ok(Tf::D),
+        Some(t) => Tf::parse(t).ok_or_else(|| LabError::Invalid(format!("tf must be {}", super::resample::TF_HELP))),
+    }
+}
+/// Daily rows → one row per period (AmiBroker Periodicity): open of the first session, high/low over the period, close of the last,
+/// volume summed, dated the last session. `src` is each period's last daily row, so extra series take their period-end value.
+pub(super) fn period_rows(r: &[crate::Row], tf: Tf) -> (Vec<crate::Row>, Vec<Option<usize>>) {
+    let (mut rows, mut src): (Vec<crate::Row>, Vec<Option<usize>>) = (Vec::new(), Vec::new());
+    let mut last: Option<i64> = None;
+    for (i, x) in r.iter().enumerate() {
+        let k = if let Tf::Days(n) = tf { (i / usize::from(n)) as i64 } else { super::resample::key(&x.date, tf) };
+        if last != Some(k) { rows.push(x.clone()); src.push(Some(i)); last = Some(k); continue; }
+        let p = rows.last_mut().expect("a period was opened");
+        p.date = x.date.clone(); p.high = p.high.max(x.high); p.low = p.low.min(x.low); p.close = x.close;
+        p.volume = match (p.volume, x.volume) { (Some(a), Some(b)) => Some(a + b), (a, b) => a.or(b) };
+        *src.last_mut().expect("a period was opened") = Some(i);
+    }
+    (rows, src)
+}
+/// Bars a year on a period timeframe, for the sqrt(bars/year) ratios (vol, Sharpe, Sortino); None on daily bars.
+fn period_bars_per_year(tf: Tf, daily: f64) -> Option<f64> {
+    match tf { Tf::D => None, Tf::W => Some(52.), Tf::M => Some(12.), Tf::Q => Some(4.), Tf::Y => Some(1.), Tf::Days(n) => Some(daily / f64::from(n)) }
+}
 /// The padded bars as a context; extra series follow their source rows (NaN on a padded bar).
 pub(super) fn padded_ctx<'r>(held: &Ctx, rows: &'r [crate::Row], src: &[Option<usize>]) -> Ctx<'r> {
     let mut c = Ctx::new(rows, &[], &[]);
@@ -471,7 +497,12 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
 }
 /// One run of an already parsed (or optimizer-applied) spec; walk-forward runs each out-of-sample window through it.
 pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabError> {
-    if spec.portfolio.is_some() { return portfolio_run_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl")); }
+    let tf = period_tf(q)?;
+    if spec.portfolio.is_some() {
+        if tf != Tf::D { return Err(LabError::Unsupported("a weekly or monthly backtest runs on one instrument; a portfolio runs on daily bars (tf=D)".into())); }
+        return portfolio_run_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl"));
+    }
+    if tf != Tf::D && !spec.foreign_locations().is_empty() { return Err(LabError::Unsupported("a weekly or monthly backtest reads the traded symbol only; rules that read another symbol run on daily bars (tf=D)".into())); }
     futures_refusal(&spec,q)?;
     let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
@@ -480,6 +511,10 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
     let pad = padded(st, &spec, &selected, &held)?;
     let pad_ctx = pad.as_ref().map(|(rows, src, _)| padded_ctx(&held, rows, src));
     let ctx: &Ctx = pad_ctx.as_ref().unwrap_or(&*held);
+    // AmiBroker Periodicity: the whole run (signals, fills, # bars, MAE/MFE, equity) on weekly/monthly bars
+    let period = (tf != Tf::D).then(|| period_rows(ctx.r, tf));
+    let period_ctx = period.as_ref().map(|(rows, src)| padded_ctx(ctx, rows, src));
+    let ctx: &Ctx = period_ctx.as_ref().unwrap_or(ctx);
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
     let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), close_fills(&spec), false)?;
@@ -515,12 +550,18 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
         (Some(b), Some(m)) => format!(",\"money\":{},\"ledger\":{}", money_json(b, m, market_of(&selected, &ctx.r[0].ticker).map(|c| if c == "in" { "INR" } else { "USD" })), ledger_json(b, ctx)),
         _ => String::new(),
     };
-    let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
+    let mut stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
+    let daily_bpy = markets::bars_per_year(&ctx.r[0].ticker);
+    if let Some(bpy) = period_bars_per_year(tf, daily_bpy) {
+        let f = (bpy / daily_bpy).sqrt(); // the ratios above are annualised for daily bars
+        for k in ["vol", "sharpe", "sortino", "gross_sharpe"] { if let Some(v) = stats.get_mut(k) { *v *= f; } }
+    }
+    let tf_json = if tf == Tf::D { String::new() } else { format!(",\"tf\":\"{}\"", tf.name()) };
     let report = report::report_json(&ctx.r, &run.equity, &report_trades, report::car(&run.equity, years), exposure,
         run.equity.len() as f64 / years, &run.bh, report::car(&run.bh, years), spec.report.unwrap_or(report::DEFAULT_RATES));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"report\":{report},\"costs\":{},\"provenance\":{}{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\"{tf_json},\"origin\":{origin},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"report\":{report},\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), model.json(Some(&events)), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&stats), crate::stats_json(&gross_stats(ctx, &gross)), cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))

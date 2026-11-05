@@ -3,7 +3,7 @@
  *  the Dual ATR stop (ATR-Based / Dual Fresh ATR Exit: initial band, wider favour band once in profit, checked on the close), the
  *  AmiBroker Supertrend (simple-average ATR, Avg Val band), a hard stop-loss % below the buy price checked on the close or
  *  intraday, a profit target, or your own indicator conditions. No motion on the toggles: used often. */
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { NumField } from "./OperandEditor";
 import { DUAL_PRICES } from "./OrdersPanel";
 import { withExitAtStop } from "./AmiSettings";
@@ -142,7 +142,7 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
       onChange(withExitAtStop(setAt(spec, `${pre}exit`, next), "stop_loss", on.hsl ? 1 : 0)); }, // the AFLs check the HSL on the close by default
     target: () => setExit("target", on.target ? undefined : { pct: 10 }),
     indicator: () => onChange(setAt(spec, path, on.indicator ? rows.filter((r) => !isIndicatorExit(r))
-      : [...rows, { lhs: { s: "close" }, op: "crosses_below", rhs: { s: "ema", p: { length: 20 } } } as RuleNode])),
+      : [...rows, { lhs: { s: "close" }, op: shortSide ? "crosses_above" : "crosses_below", rhs: { s: "ema", p: { length: 20 } } } as RuleNode])),
   };
   const CHOICES: [keyof typeof on, string][] = [["ncandle", "N candle"], ["atr", "ATR"], ["supertrend", "Supertrend"], ["hsl", "HSL"], ["target", "Profit booking"], ["indicator", "Indicator"]];
   const row = (name: string, el: ReactNode) => <div className="lab-param-row" key={name}><span className="lab-param-k">{name}</span><span className="lab-param-v">{el}</span></div>;
@@ -194,14 +194,16 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
           {row("Timeframe", sel("Supertrend: timeframe", stDual.initial.tf ?? "D", TFS, (v) => putDual(a, b, v)))}
         </>; })()}
       {!stDual && sts.map((x, i) => { const p = { ...SUPERTREND.p, ...x.lhs.p }, name = sts.length > 1 ? `Supertrend ${i + 1}: ` : "Supertrend: ";
-        return <div className={sts.length > 1 ? "lab-param-line" : undefined} key={i}>
+        // one Supertrend: its settings sit straight in the card's grid, one row like the ATR card; several: a line each
+        const Wrap = sts.length > 1 ? "div" : Fragment;
+        return <Wrap {...(sts.length > 1 ? { className: "lab-param-line" } : {})} key={i}>
           {sts.length > 1 && row(`Supertrend ${i + 1}`, <button type="button" className="dbtn sm ghost" aria-label={`Remove Supertrend ${i + 1}`} onClick={() => dropSt(i)}>Remove</button>)}
           {row("Period", num(`${name}period`, p.atr_length, 1, 500, 1, (n) => putSt(i, { ...p, atr_length: n })))}
           {row("Multiplier", num(`${name}multiplier`, p.factor, 0.1, 50, 0.5, (n) => putSt(i, { ...p, factor: n })))}
           {row("Calculation", <Segmented label={`${name}calculation`} value={String(x.lhs.p?.mode ?? 0)} options={[{ value: "1", label: "AmiBroker" }, { value: "0", label: "TradingView" }]}
             onChange={(v) => putSt(i, { ...p, mode: Number(v) })} />)}
           {row("Avg Val", sel(`${name}avg val`, String(p.price ?? 0), ST_PRICES.map(([v, t]) => [String(v), t]), (v) => putSt(i, { ...p, price: Number(v) })))}
-          {row("Timeframe", sel(`${name}timeframe`, (x.lhs as { tf?: string }).tf ?? "D", TFS, (v) => putStTf(i, v)))}</div>; })}
+          {row("Timeframe", sel(`${name}timeframe`, (x.lhs as { tf?: string }).tf ?? "D", TFS, (v) => putStTf(i, v)))}</Wrap>; })}
       {!stDual && sts.length < 4 && <button type="button" className="dbtn sm ghost lab-param-addline" data-lab-add-supertrend onClick={() => addSt({ ...SUPERTREND.p, ...st?.lhs.p })}>+ Another Supertrend</button>}</>,
       stDual ? "Sells when the close falls below the Initial Supertrend. Once a close is above the wider Favour Supertrend, it sells when the close falls below the Favour line instead (the AFLs' ST Factor Initial / Favour)." : undefined)}
     {on.hsl && part("hsl", "Hard stop-loss (HSL)", <>

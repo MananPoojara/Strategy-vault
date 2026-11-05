@@ -27,7 +27,7 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
     <div className="lab-row">
       {showDirection && <><span className="dfield">Positions</span>
       <Segmented label="Positions" value={direction} options={[{ value: "long", label: "Long" }, { value: "short", label: "Short" }, { value: "both", label: "Long and short", disabled: !catalogue.execution?.direction.includes("both") }]}
-        onChange={(d) => { if (spec.short_side) kept.current = spec.short_side; onChange(withDirection(spec, d, kept.current)); }} />
+        onChange={(d) => { if (spec.short_side) kept.current = spec.short_side; onChange(withDirection(spec, d, kept.current, catalogue)); }} />
       {direction === "both" && <Segmented label="When the other side signals" value={opposite}
         options={[{ value: "reverse", label: "Reverse" }, { value: "exit", label: "Exit only" }, { value: "ignore", label: "Ignore" }]}
         onChange={(o) => onChange(setExecution(spec, { opposite: o === "reverse" ? undefined : o }))} />}</>}
@@ -36,14 +36,14 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
       <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : "As an AFL bar loop that runs its sell block before its buy block: a trade that closes on a bar may be followed by a new buy on that same bar (e.g. sell and buy again at the same Close). Off: no new entry on a bar a position closed."}>
         <input type="checkbox" disabled={!!spec.portfolio} checked={ex.reenter_on_exit_bar === true}
         onChange={(e) => onChange(setExecution(spec, { reenter_on_exit_bar: e.target.checked ? true : undefined }))} />Re-enter on the exit bar</label></>}
-      {/* the AFLs' circuit rules, in Settings › Trade, together and named as in the AFLs; on for a new strategy, unticking is kept as false so the heading can say so */}
+      {/* the AFLs' circuit rules, in Settings › Trade, together and named as in the AFLs; off for a new strategy (most AFLs leave them out) */}
       {showCircuits && <div className="lab-row lab-circuits" role="group" aria-label="Circuits" data-lab-circuits><b className="lab-circuits-h">Circuits</b>
-      <label className="lab-check" title={"No entry on a bar that closes at its high above the previous close (an upper circuit; short: at its low below it), as the AFLs' UC."}>
+      <label className="lab-check" title={"No entry on a circuit close, as the AFLs: a buy skips a bar that closes at its high above the previous close (UC), a short skips one that closes at its low below it (LC)."}>
         <input type="checkbox" checked={ex.skip_entry_on_circuit === true}
-        onChange={(e) => onChange(setExecution(spec, { skip_entry_on_circuit: e.target.checked ? true : false }))} />UC: skip entry on an upper-circuit close</label>
-      <label className="lab-check" title={"An exit at the close on a bar that closes at its low below the previous close (a lower circuit; short: at its high above it) waits for the next close that is not locked, as the AFLs' LC."}>
-        <input type="checkbox" checked={ex.defer_exit_on_circuit === true}
-        onChange={(e) => onChange(setExecution(spec, { defer_exit_on_circuit: e.target.checked ? true : false }))} />LC: hold the exit on a lower-circuit close</label></div>}
+        onChange={(e) => onChange(setExecution(spec, { skip_entry_on_circuit: e.target.checked ? true : false }))} />{spec.direction === "short" ? "LC: skip the short entry on a lower-circuit close" : spec.direction === "both" ? "Skip entry on a circuit close (buy: UC, short: LC)" : "UC: skip entry on an upper-circuit close"}</label>
+      <label className="lab-check" title={spec.direction === "short" ? "Longs only: a short's cover is never held (the AFLs hold only a long's sell on a lower circuit)." : "A long's exit at the close on a bar that closes at its low below the previous close (a lower circuit) waits for the next close that is not locked, as the AFLs' LC. A short's cover is never held."}>
+        <input type="checkbox" disabled={spec.direction === "short"} checked={ex.defer_exit_on_circuit === true}
+        onChange={(e) => onChange(setExecution(spec, { defer_exit_on_circuit: e.target.checked ? true : false }))} />LC: hold a long's exit on a lower-circuit close</label></div>}
       {showFills && <>{!ordered && !ami && <label className="dfield">Entry fill<select aria-label="Entry fill" value={fill} onChange={(e) => {
         const f = e.target.value as Fill;
         onChange(setExecution(spec, { fill: f === "next_open" ? undefined : f, ...(f === "close" ? { delay_bars: undefined } : {}) }));

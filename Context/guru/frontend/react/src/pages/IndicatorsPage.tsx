@@ -48,6 +48,7 @@ import type {
 } from "../features/lab/types";
 import "../features/lab/typography.css";
 
+const TF_BARS: Record<string, string> = { W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 export function IndicatorsPage() {
   return <LabErrorBoundary><IndicatorsLab /></LabErrorBoundary>;
 }
@@ -203,7 +204,9 @@ function IndicatorsLab() {
 
   // A result belongs to one market and instrument: its numbers never stay on screen for another one.
   const clearRun = () => { runSeq.current++; setResult(null); setRunError(null); setRunning(false); };
-  useEffect(clearRun, [market, ticker]);
+  // AmiBroker Periodicity: a single-instrument backtest runs on the selected timeframe's bars (a portfolio stays daily)
+  const runTf = state.spec.portfolio ? "D" : state.tf;
+  useEffect(clearRun, [market, ticker, runTf]);
   useEffect(()=>{if(issuedContext.current!==portfolioContext)clearRun();},[portfolioContext]);
 
   useEffect(() => {
@@ -276,7 +279,7 @@ function IndicatorsLab() {
     try {
       assertRunnable(spec);
       const r = await lab.run(market, spec, {
-        ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
+        ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), tf: runTf === "D" ? undefined : runTf,
       });
       if (n !== runSeq.current || sentContext!==currentContext.current) return;
       setResult(r); setRanSpec(spec); setRanOwn(current);
@@ -416,20 +419,20 @@ function IndicatorsLab() {
           {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
             : !result ? <Loading text="Running backtest…" />
             : <section className="box lab-results-tabs" data-lab-results-tabs>{/* Simple and Advanced show the same Results tabs */}
-              <h2 className="box-h">Results</h2>
+              <h2 className="box-h">Results{result.kind === "lab_simulation" && result.tf ? <span className="cap" data-lab-run-tf> · {TF_BARS[result.tf] ?? `${result.tf}`} bars</span> : null}</h2>
               {(() => {
                 const tabs: [string, ReactNode][] = result.kind === "lab_portfolio_simulation"
                   ? [["Portfolio results", <PortfolioResults result={result} />]]
                   : [
-                    // charts first (the default tab): tiles, equity and underwater, then the AmiBroker statistics
+                    // trades first (the default tab), then tiles, equity and underwater, and the AmiBroker statistics
+                    ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
                     ["Stats & equity drawdown", <><RunResults result={result} market={savedMarketValue} chartsOnly={!!result.report} />
                       {result.report && <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} tradeRows={tradeTable(result).csv} />}</>],
-                    ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
                     ["YOY-Monthly", <RunTables result={result} part="monthly" />],
                   ];
-                if (ticker) tabs.push(["Explore", <ExplorePanel ticker={ticker} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+                if (ticker) tabs.push(["Explore", <ExplorePanel ticker={ticker} tf={state.tf} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
-          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} />])
+          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, tf: state.tf, from: settings.from || undefined, to: settings.to || undefined }); }} />])
                 return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
               })()}
             </section>}
@@ -439,9 +442,9 @@ function IndicatorsLab() {
           ? <NoTradesHelp spec={ranSpec} catalogue={cat} market={savedMarketValue} ticker={ticker} period={runSettings} scan={scanSignals} onFix={fixAndRun} /> : null}
         {result?.kind === "lab_simulation" && !runError && result.trades.length > 0 && <button type="button" className="dbtn sm" data-lab-see-chart onClick={() => setTab("chart")}>See the trades on the chart ›</button>}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
-        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel ticker={ticker} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel ticker={ticker} tf={state.tf} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
-          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
+          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, tf: state.tf, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
         </div>
         <div className="lab-step-nav">
           {stepIndex > 0 && <button type="button" className="dbtn" onClick={() => setStep(STEPS[stepIndex - 1].id)}>‹ Back: {STEPS[stepIndex - 1].label}</button>}

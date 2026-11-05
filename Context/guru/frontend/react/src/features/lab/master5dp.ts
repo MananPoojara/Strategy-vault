@@ -1,4 +1,6 @@
-/** Master 5DP generated from index bars, not from typed date lists. The system set of the short-strategy AFLs
+/** The page uses the AFLs' hard-punched dates (hardpunch.ts, regimeSets below). The computed Master 5DP here is kept to
+ *  compare with them (05-11-2026: it matches 107 of the 108 hard-punched windows and adds about 20 the AFL leaves out).
+ *  Master 5DP generated from index bars, not from typed date lists. The system set of the short-strategy AFLs
  *  (Mahek's hard-punch lists, "Master 5DP (3 systems - QDP+Nov., 2 Tradeloss, 0.11 ADR)") on the date arithmetic of the
  *  PairAlgo dynamic desk (Dharmil, server/src/jobs/blackout5dp.js, backend_date_query.js):
  *  - every month has a 5DP range: the 6th-from-last full trading day (5th when the calendar month has 30 days or fewer)
@@ -17,6 +19,7 @@
  *  Shortcut: a month's range appears once the month has traded out (no forward NSE calendar), so a backtest ending inside
  *  the current 5DP range does not see that range yet; upgrade with the exchange calendar for live use. */
 import { series } from "./client";
+import { MASTER_5DP_NIFTY, QTR_MIDCAP } from "./hardpunch";
 /** A generated no-trade window set: [from, to) pairs, the short is covered on `from` and may re-enter on `to`. */
 export interface RegimeSet { name: string; windows: [string, string][] }
 
@@ -159,19 +162,14 @@ function qtrWindows(dates: readonly string[], bars: readonly Bar[], systems: str
   return out;
 }
 
-/** Every date set built from the India bars: Master 5DP and the QTR (quarterly 2MR) sets per index, plus Common (dates
- *  of all three) and Uncommon (dates of one or two), the AFLs' QTR toggles. */
-export function regimeSets(input: M5dpInput): RegimeSet[] {
-  const { nifty, bank, midcap } = input;
-  if (!nifty.length || !bank.length || !midcap.length) return [];
-  const first = shiftMonth([nifty, bank, midcap].map((b) => b[0].d.slice(0, 7)).sort().pop()!, 1);
-  const from = (w: M5dpWindow[]) => w.filter((x) => x.from.slice(0, 7) >= first);
-  const nm = monthly(nifty), nBy = new Map(nm.map((m) => [m.mo, m])), mBy = new Map(monthly(midcap).map((m) => [m.mo, m]));
-  const set = (name: string, w: M5dpWindow[]) => ({ name, windows: from(w).map((x): [string, string] => [x.from, x.to]) });
+/** The short-strategy AFLs' no-trade sets from their hard-punched dates: Master 5DP (Nifty) as typed, and QTR Midcap held from
+ *  each date to the last session of the next month. `midcap` gives that last session (the NSE calendar of the bars). */
+export function regimeSets({ midcap }: { midcap: readonly Bar[] }): RegimeSet[] {
+  if (!midcap.length) return [];
   return [
-    set("Master 5DP", master5dp(input)),
-    set("QTR Midcap", qtrWindows(qtrDates(monthly(midcap), nBy, mBy), midcap, "QTR NIFTYMIDCAP100")), // the AFLs' default QTR index
-  ].filter((s) => s.windows.length);
+    { name: "Master 5DP", windows: MASTER_5DP_NIFTY.map(([a, b]): [string, string] => [a, b]) },
+    { name: "QTR Midcap", windows: qtrWindows(QTR_MIDCAP, midcap, "QTR NIFTYMIDCAP100").map((x): [string, string] => [x.from, x.to]) },
+  ];
 }
 
 const ohlc = async (ticker: string): Promise<Bar[]> => {
@@ -185,10 +183,7 @@ let loading: Promise<RegimeSet[]> | null = null;
  *  bars and NIFTY 50 member breadth; loaded once per page. */
 export function loadRegimeSets() {
   loading ??= (async () => {
-    const [nifty, bank, midcap, adr] = await Promise.all([ohlc("NIFTY 50"), ohlc("NIFTYBANK"), ohlc("NIFTYMIDCAP100"), series("in", { id: "ad_ratio", ticker: "NIFTY 50" })]);
-    const ratio = adr.series[adr.outputs[0]], ad = new Map<string, number>();
-    adr.dates.forEach((d, i) => { if (ratio[i] != null) ad.set(d, ratio[i]!); });
-    return regimeSets({ nifty, bank, midcap, ad });
+    return regimeSets({ midcap: await ohlc("NIFTYMIDCAP100") });
   })().catch((e: unknown) => { loading = null; throw e; });
   return loading;
 }

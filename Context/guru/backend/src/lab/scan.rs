@@ -7,6 +7,7 @@
 use super::api;
 use super::bars::Bars;
 use super::json::esc;
+use super::resample::{resample, Tf, TF_HELP};
 use super::rules::{self, LabError, Spec, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
 use crate::State;
@@ -94,11 +95,21 @@ fn current(st: &State, q: &Query, spec: &Spec, explore: bool) -> Result<String, 
     let (from, to, _) = api::window(ctx, q)?;
     api::bars_clean(ctx, from, to)?;
     let (others, foreign_json) = api::others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), api::close_fills(spec), false)?;
-    let fr = Frames::new(Bars::from_ctx(ctx));
+    // AmiBroker Periodicity: Explore can run on W/M/... bars (one row per period, dated its last session); Scan stays daily
+    let tf = match q.get("tf").filter(|_| explore) { None => Tf::D, Some(t) => Tf::parse(t).ok_or_else(|| inv(format!("tf must be {TF_HELP}")))? };
+    if tf != Tf::D && !spec.foreign_locations().is_empty() { return Err(inv("explore on weekly/monthly bars reads the traded symbol only; rules that read another symbol explore on daily bars (tf=D)")); }
+    let daily = Bars::from_ctx(ctx);
+    let (fr, from, to) = if tf == Tf::D { (Frames::new(daily), from, to) } else {
+        let b = resample(&daily, tf);
+        // the periods that overlap the daily window: last session on/after `from`, first session on/before `to`
+        let first = (0..b.len()).find(|&j| b.end[j] >= from).ok_or_else(|| inv("no bar in the date range"))?;
+        let last = (0..b.len()).rev().find(|&j| j == 0 || b.end[j - 1] < to).unwrap_or(0);
+        (Frames::new(b), first, last)
+    };
     let c = series::compile_with(spec, &fr, &others, &mut Cache::new())?;
     let sig = signals(&c, fr.d.len());
     let b = &fr.d;
-    let head = format!("\"label\":\"{LABEL}\",\"apply\":\"current\",\"instrument\":{instrument}{foreign_json},\"from\":\"{}\",\"to\":\"{}\",\"notes\":{}", b.date[from], b.date[to], notes());
+    let head = format!("\"label\":\"{LABEL}\",\"apply\":\"current\",\"instrument\":{instrument}{foreign_json},\"tf\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"notes\":{}", tf.name(), b.date[from], b.date[to], notes());
     if explore {
         let col = |v: &[f64]| format!("[{}]", v[from..=to].iter().map(|x| crate::num(*x)).collect::<Vec<_>>().join(","));
         let flags = |s: &[bool]| format!("[{}]", s[from..=to].iter().map(|x| if *x { "1" } else { "0" }).collect::<Vec<_>>().join(","));
@@ -195,6 +206,37 @@ mod tests {
         let buys = flags(&v, "buy").iter().filter(|b| **b).count();
         assert_eq!(buys, arr(&s, "rows").iter().filter(|r| matches!(r, Json::Arr(x) if x[2].as_str() == Some("Buy"))).count());
         assert!(flags(&v, "short").iter().all(|b| !b));
+    }
+    #[test] fn explore_on_monthly_bars_gives_one_row_per_month_and_evaluates_the_rules_there() {
+        let st = state(1200);
+        let r = &st.ctxs["SPX"].r;
+        // independent oracle: group the daily rows by "YYYY-MM"; a month is dated on its last session
+        let mut months: Vec<(String, f64, f64, f64)> = vec![]; // (date, high, close, volume)
+        for x in r.iter() {
+            match months.last_mut() {
+                Some(m) if m.0[..7] == x.date[..7] => { m.0 = x.date.clone(); m.1 = m.1.max(x.high); m.2 = x.close; m.3 += 1000.; }
+                _ => months.push((x.date.clone(), x.high, x.close, 1000.)),
+            }
+        }
+        let v = json::parse(&scan_json(&st, &q(&[("mode", "explore"), ("tf", "M")])).unwrap()).unwrap();
+        assert_eq!(v.get("tf").and_then(Json::as_str), Some("M"));
+        let dates: Vec<String> = arr(&v, "dates").iter().map(|d| d.as_str().unwrap().to_string()).collect();
+        assert_eq!(dates, months.iter().map(|m| m.0.clone()).collect::<Vec<_>>());
+        let r6 = |x: f64| (x * 1e6).round() / 1e6;
+        assert_eq!(arr(&v, "close").iter().map(|x| x.as_f64().unwrap()).collect::<Vec<_>>(), months.iter().map(|m| r6(m.2)).collect::<Vec<_>>());
+        assert_eq!(arr(&v, "high")[2].as_f64(), Some(r6(months[2].1)));
+        assert_eq!(arr(&v, "volume")[2].as_f64(), Some(months[2].3));
+        // the rule runs on monthly closes: close crosses above its 5-month SMA
+        let c: Vec<f64> = months.iter().map(|m| m.2).collect();
+        let sma = |i: usize| if i < 4 { f64::NAN } else { c[i - 4..=i].iter().sum::<f64>() / 5. };
+        let want: Vec<bool> = (0..c.len()).map(|i| i > 0 && c[i] > sma(i) && c[i - 1] <= sma(i - 1)).collect();
+        assert!(want.iter().any(|b| *b));
+        assert_eq!(flags(&v, "buy"), want);
+        // a From–To window keeps the months it touches; Scan ignores tf and stays daily
+        let w = json::parse(&scan_json(&st, &q(&[("mode", "explore"), ("tf", "M"), ("from", &r[100].date), ("to", &r[200].date)])).unwrap()).unwrap();
+        assert_eq!((arr(&w, "dates").first().and_then(Json::as_str), arr(&w, "dates").last().and_then(Json::as_str)), (Some(months[3].0.as_str()), Some(months[7].0.as_str())));
+        assert_eq!(scan_json(&st, &q(&[("tf", "M")])).unwrap(), scan_json(&st, &q(&[])).unwrap());
+        assert!(scan_json(&st, &q(&[("mode", "explore"), ("tf", "H")])).unwrap_err().message().contains("tf must be"));
     }
     #[test] fn short_side_signals_are_short_and_cover() {
         let st = state(200);

@@ -9,6 +9,7 @@ import { useForeignScope } from "./ForeignFields";
 import { ParamRule, plainRule, useParamList } from "./ParamRule";
 import { BandRule, bandOf, defaultBand, parseBand, simpleOf } from "./BandRule";
 import { defaultRhs, round2, seriesRange } from "./scale-check";
+import { pickedComparison } from "./side-mirror";
 import "./tree.css";
 
 export interface TreeCaps { leaves: boolean; nodes: boolean; top: boolean }
@@ -19,6 +20,8 @@ const GROUP_TITLES: Record<string, string> = { all: "All of", any: "Any of", not
 /** A list's "Expand all / Collapse all": every group under it opens or shuts when `n` changes (UI only, never in the spec). */
 const FoldAll = createContext<{ open: boolean; n: number } | null>(null);
 
+/** Whether the rules being edited belong to a short position (RuleList provides it; picking an indicator reads it). */
+export const ShortSideContext = createContext(false);
 export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps, short = listPath.startsWith("short_side."), filters = false, notice, footer }: {
   list: RuleNode[]; onChange(list: RuleNode[]): void; listPath: ListPath; title: string; tag: string; catalogue: Catalogue; caps: TreeCaps;
   /** The list belongs to a short position (ready-made exits are mirrored). */
@@ -34,7 +37,7 @@ export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps
   const put = (i: number, n: RuleNode) => onChange(list.map((v, j) => j === i ? n : v));
   const simple = useSimple(), params = useParamList(), [fresh, setFresh] = useState(-1); // Simple: a row added by hand opens in its editor
   const [fold, setFold] = useState({ open: true, n: 0 }), grouped = !simple && list.some((n) => GROUP_TITLES[nodeKind(n)]);
-  return <div className="lab-list" data-lab-list={filters ? `${listPath}.filters` : listPath}>
+  return <ShortSideContext.Provider value={short}><div className="lab-list" data-lab-list={filters ? `${listPath}.filters` : listPath}>
     <h3>{title}</h3>
     {grouped && <button type="button" className="dbtn sm ghost lab-fold-all" data-lab-fold-all aria-expanded={fold.open}
       onClick={() => setFold({ open: !fold.open, n: fold.n + 1 })}>{fold.open ? "Collapse all groups" : "Expand all groups"}</button>}
@@ -67,7 +70,7 @@ export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps
     </select>}
     </div>
     {footer}
-  </div>;
+  </div></ShortSideContext.Provider>;
 }
 
 /** Simple view: a rule as one sentence with its numbers editable in place; Edit opens the full row, × removes it. */
@@ -123,7 +126,7 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
 }) {
   const [open, setOpen] = useState(true), fold = useContext(FoldAll), folded = useRef(fold?.n);
   useEffect(() => { if (fold && fold.n !== folded.current) { folded.current = fold.n; setOpen(fold.open); } }, [fold]); // a group added later starts open
-  const compact = useCompact(), simple = useSimple(), params = useParamList();
+  const compact = useCompact(), simple = useSimple(), params = useParamList(), shortSide = useContext(ShortSideContext);
   const [more, setMore] = useState(!compact); // the page keeps a row's timing, source and group/move behind "More"
   const [parts, setParts] = useState(false); // an "Nth up close after entry" exit opened as its full condition
   const kind = nodeKind(node), x = node as Obj;
@@ -137,8 +140,9 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
     if (kind === "cmp" && isSeries(o) && catalogue.price_sources.includes(o.s) && isValue(x.rhs) && !(isSeries(before) && catalogue.price_sources.includes(before.s)))
       return set({ lhs: o, rhs: { s: "ema", p: { length: 20 }, ...(o.tf ? { tf: o.tf } : {}) } });
     if (kind !== "cmp" || !isSeries(o) || (isSeries(before) && before.s === o.s) || !catalogue.indicators.some((i) => i.id === o.s)) return set({ lhs: o });
-    const rhs = defaultRhs(o, catalogue);
-    set({ lhs: o, rhs: rhs ?? { value: 0 } });
+    // the usual comparison, with the condition and level set from the side (long entry / short exit = bullish)
+    const rhs = defaultRhs(o, catalogue), sided = pickedComparison(o, rhs, x.op as string | undefined, (side === "entry") !== shortSide);
+    set({ lhs: o, rhs: (sided.rhs as Operand | undefined) ?? rhs ?? { value: 0 }, ...(sided.op ? { op: sided.op } : {}) });
     if (rhs || !scope?.ticker) return;
     void seriesRange(scope.market, scope.ticker, o).then((r) => {
       const now = latest.current.node as Obj;
@@ -183,7 +187,7 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   const listed = params && top && plainRule(node, catalogue);
   const band = kind === "cmp" ? bandOf(x.lhs as Operand, catalogue) ?? bandOf(x.rhs as Operand, catalogue) : undefined;
   if (listed) return <ParamRule node={node} catalogue={catalogue} label={label} onChange={onChange} onLhs={setLhs} onOff={onOff} remove={remove}
-    onBand={band && (() => onChange({ ...defaultBand(band, side === "exit"), ...(off ? { off: true } : {}) } as RuleNode))} />;
+    onBand={band && (() => onChange({ ...defaultBand(band, (side === "exit") !== shortSide), ...(off ? { off: true } : {}) } as RuleNode))} />;
   if (isLeaf(kind)) return <div className={`lab-cond lab-node${offClass}`} data-lab-node data-lab-kind={kind} data-lab-off={off || undefined}>
     {onOff}
     <DetailContext.Provider value={more}>

@@ -202,7 +202,7 @@ export interface LedgerRow {
 }
 export interface RunResult extends Provisional {
   execution_model?: ExecutionModel; money?: MoneySummary; ledger?: LedgerRow[]; adaptations?: string[]; foreign?: ForeignDisclosure[];
-  label: string; kind: "lab_simulation"; origin: ResponseOrigin | null; instrument: Instrument;
+  label: string; kind: "lab_simulation"; /** set when the run was on period bars (W, M …) instead of daily */ tf?: string; origin: ResponseOrigin | null; instrument: Instrument;
   from: string; to: string; start: Start; dates: string[]; close: number[]; equity: number[];
   gross_equity: number[]; bh: number[]; trades: Trade[]; stats: Stats; gross_stats: Stats; costs: Costs; provenance: unknown;
   report?: LabReport;

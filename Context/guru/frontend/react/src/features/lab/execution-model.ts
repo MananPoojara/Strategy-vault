@@ -1,7 +1,10 @@
 import { COPY, FUTURES_NOTE, MODEL_NOTE, MONEY_BLOCKED } from "./labels";
 import { getAt, putAt, removeAt, setAt, setExecution } from "./spec-model";
 import type { InstrumentOption } from "./instruments";
-import type { Catalogue, EntryLevel, EntrySpec, Execution, ExitSpec, Market, ShortSide, Sizing, Spec, TakeProfit, TradePrice, TradeSide } from "./types";
+import { isSupertrendExit } from "./ExitChoice";
+import { mirrorBand, mirrorRule } from "./side-mirror";
+import { buildBand, parseBand } from "./BandRule";
+import type { Catalogue, EntryLevel, EntrySpec, Execution, ExitSpec, Market, RuleNode, ShortSide, Sizing, Spec, TakeProfit, TradePrice, TradeSide } from "./types";
 
 export type Direction = "long" | "short" | "both";
 export type SidePre = "" | "short_side.";
@@ -12,11 +15,37 @@ export const DEFAULT_SHORT_SIDE: ShortSide = {
   exit: { any: [{ lhs: { s: "bars_held" }, op: ">=", rhs: { value: 5 } }] },
 };
 const omit = <T extends object>(o: T, ...keys: string[]): T => { const c = { ...o } as Record<string, unknown>; for (const k of keys) delete c[k]; return c as T; };
-export function withDirection(spec: Spec, dir: Direction, kept?: ShortSide): Spec {
-  let s = omit(spec, "direction", "short_side");
+/** The Exit card's Supertrend rows follow the side they exit: a long sells when the trend turns down (direction crosses above 0),
+ *  a short covers when it turns up (crosses below 0). A card added on Long kept the long rule after a switch to Short, so
+ *  every short was covered only at the next short signal (Ritik, "TS_NF_En_ST 1,5_EX_ST 5,1": 209 trades for AmiBroker's 418). */
+const supertrendExits = <T extends { exit: ExitSpec }>(side: T, short: boolean): T => {
+  const any = side.exit?.any;
+  if (!any?.some(isSupertrendExit)) return side;
+  const op = short ? "crosses_below" : "crosses_above";
+  return { ...side, exit: { ...side.exit, any: any.map((n) => (isSupertrendExit(n) ? ({ ...n, op } as RuleNode) : n)) } };
+};
+/** Every Supertrend exit row set from its own side (the main side by direction, short_side always short). The editor runs a
+ *  spec through this when it is opened (saved strategies, drafts, links) and on every edit, so a strategy saved before the
+ *  Positions fix (05-11-2026) with a long exit on a short side is corrected without a click. */
+export function withSideExits(spec: Spec): Spec {
+  const s = supertrendExits(spec, directionOf(spec) === "short");
+  return s.short_side ? { ...s, short_side: supertrendExits(s.short_side, true) } : s;
+}
+/** The main side's preset rules mirrored to the other side (side-mirror.ts), entry with its filters and the exit list. */
+const mirrored = (spec: Spec, cat?: Catalogue): Spec => {
+  // a band setup (setup / trigger rule) needs the catalogue to be read back; with it, it mirrors as a whole
+  const one = (n: RuleNode): RuleNode => { const b = cat && parseBand(n, cat); return b ? ({ ...buildBand(mirrorBand(b)), ...((n as { off?: boolean }).off ? { off: true } : {}) } as RuleNode) : mirrorRule(n); };
+  return { ...spec, entry: { ...spec.entry, all: spec.entry.all.map(one) }, exit: { ...spec.exit, any: spec.exit.any.map(one) } };
+};
+export function withDirection(spec: Spec, dir: Direction, kept?: ShortSide, cat?: Catalogue): Spec {
+  // Short: the main side is the short one; Long and Long and short: the main side is long and short_side covers its shorts.
+  // The main side's presets are mirrored when it changes side; the Supertrend exit rows are then set from the side, which
+  // also repairs a card added on Long before this mirroring existed.
+  const flip = (directionOf(spec) === "short") !== (dir === "short");
+  let s = supertrendExits(omit(flip ? mirrored(spec, cat) : spec, "direction", "short_side"), dir === "short");
   if (dir !== "both") s = setExecution(s, { opposite: undefined });
   if (dir === "short") return withTradeKeys({ ...s, direction: "short" });
-  if (dir === "both") return withTradeKeys({ ...s, direction: "both", short_side: structuredClone(spec.short_side ?? kept ?? DEFAULT_SHORT_SIDE) });
+  if (dir === "both") return withTradeKeys({ ...s, direction: "both", short_side: supertrendExits(structuredClone(spec.short_side ?? kept ?? DEFAULT_SHORT_SIDE), true) });
   return withTradeKeys(s);
 }
 export const sideOf = (s: Spec, pre: SidePre): { entry: EntrySpec; exit: ExitSpec } | undefined => (pre ? s.short_side : s);

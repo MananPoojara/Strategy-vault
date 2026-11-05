@@ -34,7 +34,7 @@ it("each indicator picked on the left gets the right side it is read against", a
     await pickIndicator(host.querySelector('[aria-label="Entry 1 left"]')!, id);
     return calls().at(-1)!;
   };
-  expect(await pick("rsi")).toMatchObject({ lhs: { s: "rsi" }, rhs: { value: 70 } }); // its usual level
+  expect(await pick("rsi")).toMatchObject({ lhs: { s: "rsi" }, rhs: { value: 30 } }); // its usual level for the side: a long entry reads the low one
   expect(await pick("macd")).toMatchObject({ lhs: { s: "macd" }, rhs: { s: "macd", out: "signal" } }); // its own signal line
   const { host, calls } = await setup(false);
   const left = () => host.querySelector('[aria-label="Entry 1 left"]')!;

@@ -1,4 +1,4 @@
-/** A short strategy's no-trade windows (Mahek's AFLs' Master 5DP and QTR Midcap), generated from the India index bars: each Off,
+/** A short strategy's no-trade windows (the AFLs' hard-punched Master 5DP and QTR Midcap dates, hardpunch.ts): each Off,
  *  Fresh or Running. Shown for direction "short" only; they stack with the Dates and Indicator filters. */
 import { REENTRY } from "./DateFilterPanel";
 import type { RegimeSet } from "./master5dp";
@@ -28,6 +28,6 @@ export function ShortWindowsPanel({ spec, onChange, sets }: { spec: Spec; onChan
     {row("QTR", isQtr, qtrs.find((s) => s.name === "QTR Midcap") ?? qtrs[0])}
     <p className="cap" data-lab-date-generated style={{ whiteSpace: "normal", overflowWrap: "anywhere", maxWidth: "100%" }}>
       No short inside a window: an open short is covered on its first day. Fresh waits for a new short signal; Running shorts again on the
-      window's exit day if the trade would still be open. QTR uses NIFTY MIDCAP 100. Worked out from the index bars each time the page opens.</p>
+      window's exit day if the trade would still be open. Hard-punched dates from the AFLs: Master 5DP to 05-10-2026, QTR (NIFTY MIDCAP 100) to 28-02-2025; later windows appear when their dates are added.</p>
   </div>;
 }

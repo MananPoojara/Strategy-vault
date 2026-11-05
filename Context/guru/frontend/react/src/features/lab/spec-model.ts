@@ -398,7 +398,8 @@ export function specSummary(spec: Spec, cat: Catalogue): string {
 export const newStrategySpec = (): Spec => {
   const s = starterSpec();
   return { ...s,
-    exit: { ...s.exit, dual_atr: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } } as Spec["exit"],
-    // the team's AFLs: no entry on an upper-circuit close (UC), and an exit on a lower-circuit close waits (LC)
-    execution: { ...s.execution, defer_exit_on_circuit: true, skip_entry_on_circuit: true } };
+    // UC / LC circuits start off: most team AFLs leave them out (the Supertrend AFLs comment them out), so they are ticked per
+    // strategy when its AFL uses them, as RSI_Setup_Entry does (05-11-2026: on by default broke NIFTY 50 trades on closes at
+    // the day's low / high, Ritik "TS_NF_En_ST 1,5_EX_ST 5,1 (4)")
+    exit: { ...s.exit, dual_atr: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } } as Spec["exit"] };
 };

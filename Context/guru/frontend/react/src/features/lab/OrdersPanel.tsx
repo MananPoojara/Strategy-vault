@@ -5,7 +5,8 @@ import { getAt, putAt } from "./spec-model";
 import "./orders.css";
 import { useEffect, useState } from "react";
 import { NumField, OperandEditor } from "./OperandEditor";
-import { orderOf, PRICE_ORDERS, setDirection, setExecution, setOrder, type PriceOrder } from "./spec-model";
+import { orderOf, PRICE_ORDERS, setExecution, setOrder, type PriceOrder } from "./spec-model";
+import { withDirection } from "./execution-model";
 import type { Catalogue, Dist, EntryLevel, Fill, Spec } from "./types";
 import { Segmented } from "./ui";
 import { ExitAtStopSelect, NBarStop, ReentryDelay } from "./AmiSettings";
@@ -24,7 +25,7 @@ function LegacyOrdersPanel({ spec, onChange }: { spec: Spec; onChange(spec: Spec
     <div className="lab-orders">
       <div className="lab-row">
         <span className="dfield">Direction</span>
-        <Segmented label="Direction" value={spec.direction ?? "long"} onChange={(d) => onChange(setDirection(spec, d))}
+        <Segmented label="Direction" value={spec.direction ?? "long"} onChange={(d) => onChange(withDirection(spec, d))}
           options={[{ value: "long", label: "Long" }, { value: "short", label: "Short" }]} />
         {!spec.entry.limit && (
           <label className="dfield">Entry fill

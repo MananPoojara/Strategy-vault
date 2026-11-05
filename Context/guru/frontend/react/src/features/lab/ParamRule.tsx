@@ -58,7 +58,8 @@ const thresholdOnly = (lhs: Operand, rhs: Operand, cat: Catalogue) => {
 };
 
 /** One condition as AmiBroker's Parameters window shows it: one setting per line (Indicator, Period, Timeframe, Condition,
- *  Threshold). More adds Bars ago, Symbol and the calculation variant; it starts open when the rule already uses one. */
+ *  Threshold). More adds Bars ago, Symbol and the calculation variant; it starts open when the rule uses Bars ago, a Symbol or
+ *  several lines. A chosen calculation variant (AmiBroker, Avg Val) shows without opening More. */
 export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff, remove, onBand }: {
   node: RuleNode; catalogue: Catalogue; label: string; onChange(n: RuleNode): void;
   /** A band indicator is in the rule: offer the band setup (close outside the band, then back inside on a later bar). */
@@ -78,10 +79,11 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
   const putRhs = (i: number) => (o: Operand) => onChange(many ? build(lhs, op, rhss.map((r, j) => (j === i ? o : r)), must) : { ...x, rhs: o } as RuleNode);
   const addLine = () => onChange(build(lhs, op, [...rhss, rhss[rhss.length - 1]], [...must, true]));
   const removeLine = (i: number) => onChange(build(lhs, op, rhss.filter((_, j) => j !== i), must.filter((_, j) => j !== i)));
-  const used = !!many || [lhs, ...rhss].some((o) => {
-    const s = isSeries(o as Operand) ? o as SeriesOperand : undefined, ind = s && cat.indicators.find((i) => i.id === s.s);
-    return !!s && (!!s.offset || !!s.symbol || (ind?.params ?? []).some((p) => isChoice(p) && (s.p?.[p.key] ?? p.default) !== p.default));
-  });
+  // More holds Bars ago and Foreign ticker; it opens by itself only when the rule uses one (or several lines). A calculation
+  // variant (AmiBroker, Avg Val) stays on screen once chosen: picking Supertrend sets AmiBroker, which must not open More.
+  const series = [lhs, ...rhss].flatMap((o) => (isSeries(o as Operand) ? [o as SeriesOperand] : []));
+  const used = !!many || series.some((s) => !!s.offset || !!s.symbol);
+  const choiceUsed = series.some((s) => (cat.indicators.find((i) => i.id === s.s)?.params ?? []).some((p) => isChoice(p) && (s.p?.[p.key] ?? p.default) !== p.default));
   const [more, setMore] = useState(used);
   const extra = more || used;
   const symbols = scope && foreignEnabled(scope) && scope.allowSymbol !== false && !scope.portfolio ? foreignOptions(scope) : [];
@@ -116,7 +118,7 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
           const p = { ...ab, ...PICK_DEFAULTS[id] };
           put({ ...rest, s: id, ...(Object.keys(p).length ? { p } : {}) });
         }} />, `${who}-ind`),
-        ...ind.params.filter((p) => !isChoice(p) || extra).map((p) => isChoice(p) ? row(PARAM_NAMES[ind.id]?.[p.key] ?? "Calculation",
+        ...ind.params.filter((p) => !isChoice(p) || extra || choiceUsed).map((p) => isChoice(p) ? row(PARAM_NAMES[ind.id]?.[p.key] ?? "Calculation",
           <select aria-label={named("calculation")} value={s.p?.[p.key] ?? p.default} onChange={(e) => put({ ...s, p: { ...s.p, [p.key]: Number(e.target.value) } })}>
             {variantChoices(p, s.p?.[p.key] ?? p.default).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
           </select>, `${who}-${p.key}`) : row(PARAM_NAMES[ind.id]?.[p.key] ?? paramLabel(p.label),
@@ -147,7 +149,7 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
     <div className="lab-param-h">
       {onOff}<b>{label}</b>
       <span className="lab-param-tools">
-        {!used && <button type="button" className="dbtn sm ghost" data-lab-param-more aria-expanded={more} title="Bars ago, a foreign ticker, calculation variant, more lines to compare with"
+        {!used && <button type="button" className="dbtn sm ghost" data-lab-param-more aria-expanded={more} title="Bars ago (AFL Ref(x, -n)), a foreign ticker, calculation variant, more lines to compare with"
           onClick={() => setMore(!more)}>{more ? "Less ▴" : "More ▾"}</button>}
         {remove}
       </span>

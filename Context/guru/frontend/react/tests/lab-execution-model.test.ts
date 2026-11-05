@@ -247,3 +247,17 @@ it("trailing % of profit: default, form swap, and the engine's bounds", () => {
   expect(problems("exit.trailing", 100)).toContain("Trailing stop: % of profit must be above 0 and below 100.");
   expect(problems("exit.stop_loss", 40)).toContain("Stop-loss: % of profit works only for the trailing stop.");
 });
+
+it("switching Positions flips the Supertrend exit card's rows: a short covers when the trend turns up, a long sells when it turns down", () => {
+  const st = { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1, price: 0 }, out: "direction" };
+  const other = { lhs: { s: "bars_held" }, op: ">=", rhs: { value: 5 } };
+  const long = { ...defaultSpec(), exit: { any: [{ lhs: st, op: "crosses_above", rhs: { value: 0 } }, other] } } as Spec; // the card added on Long
+  const short = x.withDirection(long, "short");
+  expect(short.exit.any).toEqual([{ lhs: st, op: "crosses_below", rhs: { value: 0 } }, other]); // Ritik's 209-trade sheet had crosses_above here
+  expect(x.withDirection(short, "long").exit.any).toEqual(long.exit.any);
+  // Long and short: the long side sells when the trend turns down, the short side covers when it turns up
+  const kept = { entry: { all: [] }, exit: { any: [{ lhs: st, op: "crosses_above", rhs: { value: 0 } }] } } as unknown as NonNullable<Spec["short_side"]>;
+  const both = x.withDirection(short, "both", kept);
+  expect([both.exit.any[0], both.short_side!.exit.any[0]]).toMatchObject([{ op: "crosses_above" }, { op: "crosses_below" }]);
+  expect(kept.exit.any[0]).toMatchObject({ op: "crosses_above" }); // the kept copy itself is not changed
+});

@@ -73,8 +73,8 @@ pub struct SinceEntry { pub kind: SinceKind, pub of: Option<Operand>, pub when: 
 pub struct AtrBand { pub period: usize, pub mult: f64, pub price: String }
 /// The AmiBroker "Dual ATR" exit (exit.dual_atr): from the entry bar an initial stop (price − initial ATR band) and a favour
 /// stop (price − favour ATR band) ratchet in the trade's favour, and a switch band (price + favour ATR band) ratchets
-/// against it. Once a close is above both the previous switch band and the previous initial stop, the favour stop is used
-/// for the rest of the trade. Exit on a close below the previous bar's stop (mirrored for shorts). On W/M the bands use
+/// against it. Once a close is above the previous switch band, the favour stop is used for the rest of the trade (the
+/// 05-11-2026 AFLs' Flag = 1; there is no initial-stop condition). Exit on a close below the previous bar's stop (mirrored for shorts). On W/M the bands use
 /// completed periods only; `period_end_only` tests the exit on a period's last bar.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DualAtr { pub initial: AtrBand, pub favour: AtrBand, pub tf: Tf, pub period_end_only: bool }
@@ -254,9 +254,9 @@ pub struct Exec {
     /// `execution.reenter_on_exit_bar`: a new entry may fill on the bar a position closed (an AFL bar loop that runs its exit
     /// block before its entry block, e.g. sell and buy again at the same Close). Off: the book rule, no entry after an exit.
     pub reenter_on_exit_bar: bool,
-    /// `execution.defer_exit_on_circuit`: a close-priced exit on a bar locked at the exit-side extreme (long: low = close below
-    /// the previous close, a lower circuit; short: high = close above it) waits for the next close that is not locked
-    /// (rust_test main.rs MultiTF Supertrend `lc_exit`).
+    /// `execution.defer_exit_on_circuit`: a long's close-priced exit on a lower-circuit bar (low = close below the previous close)
+    /// waits for the next close that is not locked (rust_test main.rs MultiTF Supertrend `lc_exit`; RSI_Setup_Entry.afl
+    /// `LowerCircuitExit`). Longs only: no team AFL holds a short's cover on an upper circuit.
     pub defer_exit_on_circuit: bool,
     /// `execution.skip_entry_on_circuit`: no entry signal on a bar locked at the entry-side extreme (long: high = close above the
     /// previous close, an upper circuit; short: low = close below it), the team's AFLs' `UC` (Hero Candle Follow-up).

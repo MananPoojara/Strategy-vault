@@ -140,8 +140,8 @@ it("a failed run clears the previous result", async () => {
   expect(tables).not.toBeNull();
   expect(tables.closest("[data-lab-results-tabs]")).not.toBeNull(); // every result view is a tab of the Results box under Run backtest
   const tabs = [...host.querySelectorAll<HTMLElement>('[data-lab-results-tabs] [role=tab]')].map((t) => t.textContent);
-  expect(tabs).toEqual(["Stats & equity drawdown", "Trades", "YOY-Monthly", "Explore"]); // charts first, then tables; no Monte Carlo; stats and charts are one tab
-  expect(host.querySelector('[data-lab-results-tabs] [role=tab][aria-selected=true]')?.textContent).toBe("Stats & equity drawdown"); // the default view
+  expect(tabs).toEqual(["Trades", "Stats & equity drawdown", "YOY-Monthly", "Explore"]); // trades first, then charts; no Monte Carlo; stats and charts are one tab
+  expect(host.querySelector('[data-lab-results-tabs] [role=tab][aria-selected=true]')?.textContent).toBe("Trades"); // the default view
   expect(host.querySelector("[data-lab-step-results] [data-lab-result]")).not.toBeNull();
   runAnswer = () => jsonResponse({ status: "needs_data", error: "NIFTY 50: invalid OHLC bar on 2001-03-02", label: catalogueFixture.label }, 400);
   await run(host);

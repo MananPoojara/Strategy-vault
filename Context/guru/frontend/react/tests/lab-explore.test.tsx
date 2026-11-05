@@ -138,3 +138,27 @@ it("Explore shows every line of an indicator the rules read, loaded once (Ichimo
   expect(lines.map((h) => h!.split(".").pop())).toEqual(["macd", "signal", "hist"]);
   expect(table(host, "explore")[2].slice(7, 10)).toEqual(["3.00", "1.50", "1.50"]);
 });
+
+it("weekly timeframe: Explore sends tf=W, reads daily-rule indicators on weekly bars (a rule's own timeframe kept) and says one row per week", async () => {
+  const { explore } = await import("../src/features/lab/client");
+  const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(scanFixture(0)), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    await explore("in", defaultSpec(), { ticker: "NIFTY 50", tf: "W" });
+    await explore("in", defaultSpec(), { ticker: "NIFTY 50", tf: "D" });
+    const [w, d] = fetchMock.mock.calls.map((c) => new URL(String(c[0]), "http://x").searchParams.get("tf"));
+    expect([w, d]).toEqual(["W", null]); // daily sends nothing: the request stays as before
+  } finally { vi.unstubAllGlobals(); }
+  // weekly rows dated each week's last session; the RSI column is the weekly RSI, a monthly EMA stays monthly
+  const weekly: ExploreResult = { ...exploreFixture, tf: "W", dates: ["2024-01-05", "2024-01-12", "2024-01-19"] };
+  const loadSeries = vi.fn(({ id }: { id: string }) => Promise.resolve({ ...seriesFixture(id, [id], { [id]: [1, 2, 3, 4] }), dates: ["2024-01-05", "2024-01-08", "2024-01-12", "2024-01-19"] }));
+  const spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "rsi", p: { length: 14 } }, op: ">", rhs: { s: "ema", p: { length: 3 }, tf: "M" } }] } } as ExplorePanelProps["spec"];
+  const host = await mount(<ExplorePanel {...props({ tf: "W", spec, loadSeries, onExplore: vi.fn().mockResolvedValue(weekly) })} />);
+  await click(host.querySelector('[data-lab-action="explore"]'));
+  await flush();
+  expect(loadSeries).toHaveBeenCalledWith(expect.objectContaining({ id: "rsi", tf: "W" }));
+  expect(loadSeries).toHaveBeenCalledWith(expect.objectContaining({ id: "ema", tf: "M" }));
+  expect(table(host, "explore").map((r) => r[1])).toEqual(["05-01-2024", "12-01-2024", "19-01-2024"]);
+  expect(table(host, "explore").map((r) => r[7])).toEqual(["1.00", "3.00", "4.00"]); // values on the weekly dates, the mid-week 08-01 skipped
+  expect(host.querySelector("[data-lab-explore-tf]")?.textContent).toContain("One row per week");
+});

@@ -108,13 +108,13 @@ it("an oscillator is read against a threshold only; a price-chart line keeps Com
   expect(compare()).not.toBeNull();
 });
 
-it("Simple shows the same Results tabs as Advanced, the charts first", async () => {
+it("Simple shows the same Results tabs as Advanced, the trades first", async () => {
   const host = await open();
   await pickExit(host);
   await click(host.querySelector('[data-lab-action="run"]'));
   expect(host.querySelector("[data-lab-results-tabs]")).not.toBeNull();
   expect(host.querySelector("[data-lab-more]")).toBeNull();
-  expect([...host.querySelectorAll("[data-lab-results-tabs] [role=tab]")].map((t) => t.textContent)[0]).toBe("Stats & equity drawdown");
+  expect([...host.querySelectorAll("[data-lab-results-tabs] [role=tab]")].map((t) => t.textContent)[0]).toBe("Trades");
 });
 
 it("Advanced restores every control and is remembered", async () => {

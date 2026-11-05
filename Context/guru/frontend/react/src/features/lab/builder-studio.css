@@ -126,6 +126,7 @@
 .lab-page[data-lab-page] .lab-design-studio .lab-datefilter > details[open] { grid-column:1/-1; }
 .lab-page[data-lab-page] .lab-design-studio .lab-exit-part > .lab-param-row:has(.join) { grid-column:span 2; }
 .lab-page[data-lab-page] .lab-design-studio .lab-exit-part .join { flex-wrap:wrap; }
+.lab-page[data-lab-page] .lab-design-studio .lab-exit-part > .lab-param-addline { grid-column:1/-1; justify-self:start; }
 .lab-page[data-lab-page] .lab-toolbar .dfield { font-size:14px; text-transform:none; letter-spacing:0; }
 @media(min-width:1100px) {
  .lab-page[data-lab-page] .lab-design-studio .lab-words:has(.lab-words-blockers) { grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); column-gap:24px; align-items:start; }

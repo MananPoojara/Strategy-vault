@@ -4,7 +4,7 @@ import { multiCompare } from "./ParamRule";
 import { isSupertrendExit, nCandleOf } from "./ExitChoice";
 import { describeNode } from "./rule-tree";
 import { bandWords } from "./BandRule";
-import { ordinal, ruleWords } from "./spec-model";
+import { isChoice, ordinal, ruleWords } from "./spec-model";
 import { alwaysIn, defaultExitParts, MAX_DEFAULT_COUNT, stopsOn, tradeBlockers, usesDefaultExit, validDefaultExit, type DefaultExit } from "./defaults";
 import { SHORT } from "./simple";
 import type { Catalogue, Indicator, RuleNode, Spec } from "./types";
@@ -77,10 +77,11 @@ export function StrategyInWords({ spec, catalogue, period, onChange }: {
 }
 /** An indicator drawn on the chart, offered as a first rule with the same settings. */
 export interface ChartPick { indicator: Indicator; params: Record<string, number> }
-/** "RSI 14", "EMA 50", "MACD 12": the short name and the first parameter. */
+/** "RSI 14", "Supertrend 5, 1", "MACD 12, 26, 9": the short name and every number setting, so two settings never read alike
+ *  (the calculation choices, e.g. AmiBroker, are compared but not named). */
 export const pickName = (ind: Indicator, p: Record<string, number>) => {
-  const first = ind.params[0], n = first ? p[first.key] ?? first.default : undefined;
-  return `${SHORT[ind.id] ?? ind.name}${n !== undefined ? ` ${n}` : ""}`;
+  const n = ind.params.filter((q) => !isChoice(q)).map((q) => p[q.key] ?? q.default);
+  return `${SHORT[ind.id] ?? ind.name}${n.length ? ` ${n.join(", ")}` : ""}`;
 };
 /** An indicator the rules use, with every parameter (defaults filled in) so it compares with a chart chip. */
 interface RuleIndicator { ind: Indicator; p: Record<string, number> }
@@ -96,7 +97,8 @@ export function ruleIndicators(spec: Spec, cat: Catalogue): RuleIndicator[] {
     }
     Object.values(o).forEach(visit);
   };
-  visit([spec.entry.all, spec.exit.any, spec.short_side?.entry.all ?? [], spec.short_side?.exit.any ?? []]);
+  // whole entry / exit blocks: the rule rows and the exit lines outside them (the two-multiplier Supertrend exit, dual_line)
+  visit([spec.entry, spec.exit, spec.short_side?.entry ?? [], spec.short_side?.exit ?? []]);
   return [...out.values()];
 }
 /** Whether the chart and the rules use an indicator with the same settings, with one click to make them match. */
@@ -128,7 +130,8 @@ export function ChartMatch({ spec, catalogue, chips, onSpec, onChartSet, onChart
         const c = onChart[0], chartP = { ...r.p, ...c.params };
         return <span key={key} className="lab-match-diff" data-lab-match={r.ind.id}>Chart {pickName(r.ind, chartP)}, rule {name(r)}:
           <button type="button" className="dbtn sm" onClick={() => onSpec(useChart(r, chartP))}>Use the chart's in the rule</button>
-          <button type="button" className="dbtn sm" onClick={() => onChartSet(c.key, { ...c.params, ...r.p })}>Set the chart to {name(r)}</button></span>;
+          <button type="button" className="dbtn sm" onClick={() => onChartSet(c.key, { ...c.params, ...r.p })}>Set the chart to {name(r)}</button>
+          <button type="button" className="dbtn sm" onClick={() => onChartAdd(r.ind, r.p)}>Add {name(r)} to the chart</button></span>;
       }
       return <span key={key} className="lab-match-diff" data-lab-match={r.ind.id}>{name(r)} is not on the chart
         <button type="button" className="dbtn sm" onClick={() => onChartAdd(r.ind, r.p)}>Show on chart</button></span>;
