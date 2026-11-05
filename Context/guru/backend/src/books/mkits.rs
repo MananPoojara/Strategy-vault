@@ -6,7 +6,7 @@ use crate::connors::{sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef
 
 pub const BOOK: &str = "mkits";
 /// Admitted ids (authors/katsanos/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["mkits_dax_ma", "mkits_euro_ma"];
+pub const REVIEWED: &[&str] = &["mkits_dax_ma", "mkits_euro_ma", "mkits_rect"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 /// Ch.16 relative-strength systems, admitted once the engine feeds SPX_CLOSE (lane K51, EP4, decision #223).
 pub const REVIEWED_RS: &[&str] = &["mkits_rs_fut", "mkits_rs_etf"];
@@ -259,6 +259,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nd("mkits_euro_ma_im", "Euro (EUR/USD) Daily MA-intermarket System (CRB, TNX)", "Ch.17 Forex", "Long/Short", NEED_EURO,
            &["E|Classic MA system + CRB>MOV(CRB,35,S) AND TNX<MOV(TNX,5,S) for longs (reverse for shorts) (App. A.8 p.355; Table 17.6: 38 trades, 58% win)"]),
     ]);
+    v.push(d("mkits_rect", "Rectangle breakout exploration (Appendix C)", "App. C Rectangles", "Long", Status::Live, RECT_RULES, RECT_NOTE, &[], true, None));
     v.push(d("mkits_ftse_nn", "FTSE neural network systems (5 NeuroShell nets)", "Ch.14 FTSE", "Long/Short", Status::NotTestable(NN),
         &["E|NeuroShell Day Trader prediction of FTSE from CAC/XOI/BIX inputs (Ch.14.5, Appendix B pp.357-366)"], NN, &[], false, None));
     v
@@ -270,6 +271,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "mkits_dax_ma" => ("mkits_dax", "Katsanos DAX systems", "MA crossover (single market)"),
         "mkits_dax_disparity" | "mkits_dax_ma_im" | "mkits_dax_stocks" => ("mkits_dax", "Katsanos DAX systems", "Intermarket - data missing"),
         "mkits_euro_ma" => ("mkits_fx", "Katsanos forex systems", "Euro classic MA (single market)"),
+        "mkits_rect" => ("mkits_rect", "Katsanos rectangle breakout (App. C)", "Long · causal 5% ZigZag pivots"),
         "mkits_rs_fut" => ("mkits_rs", "Katsanos relative strength vs S&P 500", "Test I (no volume)"),
         "mkits_rs_etf" => ("mkits_rs", "Katsanos relative strength vs S&P 500", "Test II (VFI)"),
         x if x.starts_with("mkits_gold_") => ("mkits_gold", "Katsanos gold intermarket systems", "Data missing"),
@@ -309,6 +311,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("sar_step", "SAR acceleration step", 0.04, 0.02, 0.06, 0.01),
             p("sar_max", "SAR maximum", 0.10, 0.10, 0.30, 0.05),
         ]),
+        "mkits_rect" => Some(vec![p("zz", "Peak/Trough minimum change (%), the code's A1", 5., 2., 10., 0.5), p("hold", "Inactivity stop (trading days after the entry bar)", 65., 20., 120., 5.)]),
         "mkits_rs_fut" | "mkits_rs_etf" => {
             let mut v = vec![
                 p("rs_n", "RS smoothing EMA", 150., 50., 250., 10.),
@@ -463,8 +466,99 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             Some(next_open(x, from, to, 0, entry, exit))
         }
+        "mkits_rect" => Some(rect(x, from, to, g("zz") / 100.0, u("hold"))),
         _ => None,
     }
+}
+
+const RECT_RULES: &[&str] = &[
+    "F|A1:=5; PK1:=Peak(1,H,A1); PK2:=Peak(2,H,A1); TR1:=Trough(1,L,A1); TR2:=Trough(2,L,A1); H1:=Max(PK1,PK2); L1:=Min(TR1,TR2) (App. C p.368)",
+    "F|CI:=((HHV(C,140)-LLV(C,140))/LLV(C,140))*100; P12:=PK1>.97*PK2 AND PK1<1.03*PK2 AND PeakBars(2,H,A1)<180; T12: the same for the troughs (p.368)",
+    "F|FVE(22, coef .1) as printed (p.369): Sum(If(MF>CUTOFF,+V,If(MF<-CUTOFF,-V,0)),22)/(Mov(V,22,S)+1)/22*100",
+    "E|Fml(\"FVE\")>8 AND LinRegSlope(Fml(\"FVE\"),22)>.5 AND -.09 < Ref(LinRegSlope(C,100)/Ref(C,-99),-2)*100 < .12 AND Cross(C,H1) AND V>Ref(Mov(V,100,S),-2) AND Ref(CI,-1)/Ref(CI,-181)<1 AND P12 AND T12 (p.368): buy at the next open",
+    "X|Profit target: Column B, H1+2.3*Power(H1-L1,.8), or 55% (Column D, 1.55*H1), whichever comes first (p.368, p.370)",
+    "X|Stop loss: the price crosses below Column C, H1*.98 (p.368, p.370)",
+    "X|Inactivity stop: the target is not reached in 95 calendar days (65 trading days) (p.370)",
+];
+const RECT_NOTE: &str = "Katsanos's own MetaStock exploration for single stocks; he prints no trade statistics for it (only the target example on p.370: RDS.A h = 8.59, target +12.85). Peak()/Trough()/PeakBars() are MetaStock Zig Zag functions with A1 = 5 as the % minimum change (Equis Formula Primer p.52 and p.102: 'Using the Zig Zag function ... %MINIMUM CHANGE is used by the Zig Zag'; 'the last value is always uncertain'). [Declared adaptation] MetaStock's Zig Zag revises its last leg with later prices (look-ahead in a test), so the vault uses the causal confirmed-reversal version: a high counts as a Peak only once the High series has fallen 5% below it, a low as a Trough once the Low series has risen 5% above it; PeakBars(2) = bars since the second-last confirmed peak. [Readings] Signal at the close, entry and exits at the next open (App. C states no fill; the book's other tests use a next-open delay); H1, L1 and the three exit levels are fixed on the signal bar; stop and target are judged on closes; the 65-day stop is the close 65 bars after the entry bar; one position at a time. The exploration is very selective (a few trades per stock in 30-40 years): small samples. Needs volume.";
+
+/// MetaStock Mov(x,n,S) with every value of the window defined.
+fn msma(v: &[f64], n: usize) -> Vec<f64> { (0..v.len()).map(|i| win(v, i, n).map_or(f64::NAN, |w| w.iter().sum::<f64>() / n as f64)).collect() }
+fn back(v: &[f64], i: usize, k: usize) -> f64 { if i >= k { v[i - k] } else { f64::NAN } }
+
+/// Causal confirmed-reversal Zig Zag on `x` at `pct`: per bar (last pivot, the pivot before it, bars since that one), using data
+/// through the bar only; `peaks` keeps the highs confirmed by a `pct` fall, otherwise the lows confirmed by a `pct` rise.
+fn zigzag(x: &[f64], pct: f64, peaks: bool) -> Vec<(f64, f64, f64)> {
+    let n = x.len();
+    let mut out = vec![(f64::NAN, f64::NAN, f64::NAN); n];
+    if n == 0 { return out; }
+    let (mut dir, mut ev, mut ei) = (0i8, x[0], 0usize); // ei: the bar of the leg extreme `ev`
+    let (mut maxv, mut maxi, mut minv, mut mini) = (x[0], 0usize, x[0], 0usize);
+    let mut piv: Vec<(f64, usize)> = vec![];
+    for t in 1..n {
+        let v = x[t];
+        if dir == 0 {
+            if v > maxv { maxv = v; maxi = t; }
+            if v < minv { minv = v; mini = t; }
+            if v <= maxv * (1.0 - pct) { if peaks { piv.push((maxv, maxi)); } dir = -1; ev = v; ei = t; }
+            else if v >= minv * (1.0 + pct) { if !peaks { piv.push((minv, mini)); } dir = 1; ev = v; ei = t; }
+        } else if dir == 1 {
+            if v > ev { ev = v; ei = t; } else if v <= ev * (1.0 - pct) { if peaks { piv.push((ev, ei)); } dir = -1; ev = v; ei = t; }
+        } else if v < ev { ev = v; ei = t; } else if v >= ev * (1.0 + pct) { if !peaks { piv.push((ev, ei)); } dir = 1; ev = v; ei = t; }
+        let k = piv.len();
+        if k >= 2 { out[t] = (piv[k - 1].0, piv[k - 2].0, (t - piv[k - 2].1) as f64); }
+    }
+    out
+}
+
+/// Appendix C rectangle breakout (see RECT_RULES / RECT_NOTE).
+fn rect(x: &Ctx, from: usize, to: usize, zz: f64, hold: usize) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let n = c.len();
+    let v: Vec<f64> = x.r.iter().map(|r| r.volume.unwrap_or(f64::NAN)).collect();
+    let typ: Vec<f64> = (0..n).map(|i| (h[i] + l[i] + c[i]) / 3.0).collect();
+    let inter: Vec<f64> = (0..n).map(|i| if i > 0 { typ[i].ln() - typ[i - 1].ln() } else { f64::NAN }).collect();
+    let intra: Vec<f64> = (0..n).map(|i| h[i].ln() - l[i].ln()).collect();
+    let (vinter, vintra) = (stdev(&inter, 22), stdev(&intra, 22));
+    let sv: Vec<f64> = (0..n).map(|i| {
+        let cut = 0.1 * (vinter[i] + vintra[i]) * c[i];
+        let mf = if i > 0 { c[i] - (h[i] + l[i]) / 2.0 + typ[i] - typ[i - 1] } else { f64::NAN };
+        if !(cut.is_finite() && mf.is_finite()) { f64::NAN } else if mf > cut { v[i] } else if mf < -cut { -v[i] } else { 0.0 }
+    }).collect();
+    let ssum: Vec<f64> = (0..n).map(|i| win(&sv, i, 22).map_or(f64::NAN, |w| w.iter().sum::<f64>())).collect();
+    let v22 = msma(&v, 22);
+    let fve: Vec<f64> = (0..n).map(|i| ssum[i] / (v22[i] + 1.0) / 22.0 * 100.0).collect();
+    let fve_s = lrs(&fve, 22);
+    let c_s = lrs(c, 100);
+    let slope_c: Vec<f64> = (0..n).map(|i| c_s[i] / back(c, i, 99) * 100.0).collect();
+    let v100 = msma(&v, 100);
+    let ci: Vec<f64> = { let (hh, ll) = (hhv(c, 140), llv(c, 140)); (0..n).map(|i| (hh[i] - ll[i]) / ll[i] * 100.0).collect() };
+    let (pk, tr) = (zigzag(h, zz, true), zigzag(l, zz, false));
+    let h1: Vec<f64> = (0..n).map(|i| pk[i].0.max(pk[i].1)).collect();
+    let l1: Vec<f64> = (0..n).map(|i| tr[i].0.min(tr[i].1)).collect();
+    let sig = |t: usize| -> bool {
+        if t < 1 { return false; }
+        let p12 = pk[t].0 > 0.97 * pk[t].1 && pk[t].0 < 1.03 * pk[t].1 && pk[t].2 < 180.0;
+        let t12 = tr[t].0 > 0.97 * tr[t].1 && tr[t].0 < 1.03 * tr[t].1 && tr[t].2 < 180.0;
+        let cd = back(&ci, t, 181);
+        let s2 = back(&slope_c, t, 2);
+        fve[t] > 8.0 && fve_s[t] > 0.5 && s2 < 0.12 && s2 > -0.09 && c[t] > h1[t] && c[t - 1] <= h1[t - 1] && v[t] > back(&v100, t, 2)
+            && cd != 0.0 && back(&ci, t, 1) / cd < 1.0 && p12 && t12
+    };
+    let (mut out, mut cur): (Vec<Trade>, Option<(Trade, f64, f64)>) = (vec![], None);
+    for t in from..to {
+        if let Some((tr0, stop, tgt)) = cur.as_ref() {
+            let e = tr0.legs[0].i;
+            let why = if c[t] < *stop { Some("stop: close below 0.98 x H1 (Column C)") } else if c[t] >= *tgt { Some("profit target (Column B or +55%)") }
+                else if t - e >= hold { Some("inactivity stop (65 trading days)") } else { None };
+            if let Some(w) = why { out.push(close_out(cur.take().unwrap().0, t + 1, o[t + 1], t, w)); }
+        } else if sig(t) {
+            let tgt = (h1[t] + 2.3 * (h1[t] - l1[t]).powf(0.8)).min(1.55 * h1[t]);
+            cur = Some((new_trade(1.0, t + 1, o[t + 1], t, "open"), 0.98 * h1[t], tgt));
+        }
+    }
+    finish(cur.map(|c| c.0), x, to, &mut out);
+    out
 }
 
 #[cfg(test)]
@@ -504,7 +598,7 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), cat.len());
-        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), 4);
+        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), 5);
         for d in &cat { assert!(family_of(d.id).is_some()); }
     }
 }

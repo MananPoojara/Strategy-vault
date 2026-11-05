@@ -1259,7 +1259,7 @@ fn base_policy(def:&StrategyDef)->Policy {
 pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
     if native_stock {return "individual_stock";}
     match ticker {
-        "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"|"SPX"|"NDX"|"DJI" => "index",
+        "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"|"NIFTYMIDCAPSELECT"|"NIFTY MIDCAP SELECT"|"SPX"|"NDX"|"DJI" => "index",
         t if US_ETFS.contains(&t) => "etf",
         _ => "unknown",
     }
@@ -1397,7 +1397,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Lane A singles block (26 Oct 2026, lane B): held Live rules
         "elcim_fi2"=>"Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).",
         // "nftm_accutrack": admitted by lane K51 (EP4 second series, decision #223)
-        "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: the exits are a $500 initial stop and a $500 trailing stop on S&P 500 futures (Building High-Performance Trading Systems Fig. 46, p.21), fixed dollar amounts for a contract the vault does not hold; on indices, ETFs and stocks they would not mean what the book meant, and the book's printed result is the two modes traded together. The vault's accuracy gate blocks it; publishing needs your decision on how to scale the stops.",
+        "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: no exact conversion. The exits are a $500 initial stop and a $500 trailing stop per S&P 500 futures contract (Building High-Performance Trading Systems Fig. 46, p.21) over a 1982-2000 test, a window in which the contract changed from $500 to $250 a point (November 1997): $500 is 1 index point before and 2 after, so no single exact point amount exists (decisions #196(2)/#202 allow only the named contract's exact $/point); the book's printed result is also the two modes traded together (lane K58).",
         // jhs35_spike35: admitted by lane K54 (SPX only, decision #229 (6))
         "pstc_20_40_75"=>"Held: the course trades this signal by buying long-dated call contracts (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those contract prices, and a stock or index price cannot stand in for them. The course's own table also reports the move in the underlying stock, and our independent check of that signal on the underlying matched with 0 differences, so it can be published as the underlying-stock signal if you accept that measure.",
         // ---- end Lane A singles held
@@ -1425,25 +1425,26 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held
         // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
-        "stad1_volex"=>"Held: fixed dollar amount set for the S&P futures contract. The VolEx code closes any trade older than four bars that shows less than $500 profit on one S&P contract (Vol 1 p.76-82); a fixed point amount has no equivalent on other indices, ETFs or stocks.",
-        "stad13_volex"=>"Held: fixed dollar amounts set for the S&P futures contract. The revisited VolEx uses a $1,000 stop loss and a $200 first-good-open exit per S&P contract at $250 a point (Vol 13 p.153-162); fixed point amounts have no equivalent on other indices, ETFs or stocks.",
+        // "stad1_volex": admitted SPX only by lane K58 (decision #202, books::stad::ADMISSION_SPX)
+        // "stad13_volex": admitted SPX only by lane K58 (decision #202, books::stad2::ADMISSION_SPX)
         "stad13_tripleplay"=>"Held: rules not fully defined. The printed Triple Play code reads its WeakLow from Value1, a variable that is not defined anywhere in the code, so it does not do what the text explains (Vol 13 p.138-140; Vol 11 p.118-120 has the same line); choosing the intended value would be a new rule.",
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
         "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
-        "ch_bta2_bottom_fish_generic"=>"Held: fixed dollar stop on futures. The generic bottom-fishing pattern is tested on 17 futures markets with a $2,000 initial stop per contract (p.137); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
+        // "ch_bta2_bottom_fish_generic": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         "ch_bta2_vol2x"=>"Held: fixed dollar stop on futures. Chande tests the 2x-range volatility system on Swiss franc futures (1989-95) with a $3,000 initial stop per contract (p.236-239); a dollar stop per contract has no equivalent on an index, ETF or stock.",
         "ch_bta2_long_bomb"=>"Held: futures sizing and dollar stop. The Long Bomb buys a number of contracts set by $10,000 of risk per contract point value, with a $1,500 stop per contract, on 10 futures markets (p.173-177); neither the sizing nor the dollar stop has an equivalent on an index, ETF or stock.",
-        "ch_bta2_bottom_fish"=>"Held: fixed amounts set for the S&P futures contract. The pattern needs a day's range above 4 S&P points and a close-open gain above 3 points, with a $2,000 stop (4 points at $500 a point) (p.134); fixed point amounts from the 1982-95 contract have no equivalent on other indices, ETFs or stocks. Running it on SPX with these points kept is a decision for the user.",
-        "ch_bta2_ma1011_trend"|"ch_bta2_ma1011_anti"=>"Held: fixed dollar stop on the S&P futures contract. Chande tests the 10/11-day crossovers on S&P 500 futures (1982-95) with a $2,000 initial stop, 4 S&P points at $500 a point (p.133-134); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 4-point stop is a decision for the user.",
-        "ch_bta2_tat"=>"Held: fixed dollar stop on the S&P futures contract. The Trend-Anti-trend test (Table 4.14) uses a $5,000 initial stop on S&P 500 futures, 10 S&P points at $500 a point (p.116-123); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 10-point stop is a decision for the user.",
-        "ch_bta2_xopp"|"ch_bta2_xopp_trail"=>"Held: fixed dollar stop on the S&P futures contract. The extraordinary-opportunity tests (Tables 4.22-4.23) use a $3,000 initial stop on S&P 500 futures, 6 S&P points at $500 a point (p.140-144); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 6-point stop is a decision for the user.",
+        // "ch_bta2_bottom_fish": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        // "ch_bta2_ma1011_anti": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        "ch_bta2_ma1011_trend"=>"Held: the S&P cash index flatters this rule. Chande's $2,000 stop is 4 points of the S&P-500 contract ($500 a point, p.133-134), so the rule could run only on the S&P 500 index (SPX); decision #179's two-window check finds SPX better than the tradable SPY (points scaled) in both 2010-2020 and 1993-2026, because SPX daily open/high/low come from stale component prints. No result is published (lane K58).",
+        // "ch_bta2_tat": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        // "ch_bta2_xopp"|"ch_bta2_xopp_trail": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         "ch_ntt_to_buy"|"ch_ntt_to_buy_nse"=>"Held: not a trade with an exit. The New Technical Trader gives only the thrust-oscillator buy signal and reports the market's gain 3, 6, 12 and 24 months after each signal (Table 6.2, p.157); these are observation horizons, not a trade exit, and no stop or sell rule is printed.",
         "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
         "ch_pbs_cbpb_trail3"=>"Held: no exit before a new high. This workshop chart (S&P Sep-95 futures) sets a 3-day-low trailing stop only after the trade makes a new 20-day high; until then the only protection is the workshop's $1,500 stop per contract (p.23), which has no equivalent on an index, ETF or stock. Chande's complete CB-PB rule is already live as a separate strategy.",
         // ---- end Chande block
         // ---- Joe Krutsinger block (26 Oct 2026, lane B): held Live rules
-        "jkbwts_gettess30"=>"Held: fixed dollar stop on the S&P futures contract. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop, 8 S&P points at $500 a point (p.12-13); a fixed point amount has no equivalent on other indices, ETFs or stocks, and leaving the stop out would not be the tested system. Running it on SPX with the 8-point stop is a decision for the user.",
+        "jkbwts_gettess30"=>"Held: no exact conversion. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop (p.12-13) over 01/05/87-12/26/97, a test that spans the contract's change from $500 to $250 a point (Nov 1997): $4,000 is 8 points before and 16 after, so no single exact point amount exists (decisions #196(2), #240 (2)).",
         // ---- end Joe Krutsinger held
         // ---- Murray Ruggiero block (26 Oct 2026, lane B): held Live rules
         "rgt_taylor"=>"Held: incomplete system. Ruggiero prints the Taylor trading code as a shell that is 'missing two patterns ... plus several filters' for the reader to complete (Traders' Secrets p.181-182), and its declared buy and sell filters are unused in the printed code; testing the shell would not be the author's system.",
@@ -1458,7 +1459,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
         // ---- end Perry Kaufman held
         // ---- Michael Harris block (26 Oct 2026, lane B): held Live rules
-        "mhs_sp830825_1"|"mhs_sp830120_1"|"mhs_sp830330_1"=>"Held: fixed amounts set for the S&P futures contract. These S&P 500 patterns use a 10-point profit target and a 10-point stop ($2,500 on the 1983-99 contract) (Short-Term Trading with Price Patterns p.180-206); a fixed point amount has no equivalent on other indices, ETFs or stocks, and on today's index levels 10 points is a tiny move. Running them on SPX with the 10-point levels is a decision for the user.",
+        "mhs_sp830825_1"|"mhs_sp830120_1"|"mhs_sp830330_1"=>"Held: needs the minute path. Harris prints these targets and stops as 10 S&P index points (Short-Term Trading with Price Patterns p.180-206), so under decisions #196(2)/#202 they could run on the S&P 500 index (SPX) only, literal; but 10 points is 0.2-0.5% of SPX since 2014 (real opens) and the entry day already reaches the target or the stop on 86-94% of the signals, so daily bars cannot decide which came first; a 1-minute version is needed (lane K58).",
         // ---- end Michael Harris held
         // ---- Charles LeBeau block (26 Oct 2026, lane B): held Live rules
         "lebsp_prudent"|"lebsp_remarkable"=>"Held: fixed amounts set for the S&P futures contract. The Prudent and Remarkable S&P systems exit with dollar stops per S&P contract ($1,500 and $4,500 loss stops, $1,000 and $500 break-even stops, i.e. fixed S&P index points at $250 a point) (traderclub manuals, TradeStation code); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running them on SPX with those points is a decision for the user.",
@@ -1476,7 +1477,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
         // ---- Art Collins block (26 Oct 2026): held Live rules
-        "acbff_forever_long"=>"Held: the profit target is a fixed $1,250 per S&P futures contract (5 S&P index points); a fixed point amount has no equivalent on other indices, ETFs or stocks, and the book's test window starts at the 1982 contract launch, before the vault's data, so no reviewed result can be published.",
+        "acbff_forever_long"=>"Held: needs the minute path. The book states the target in S&P points (\"a five point profit-$1,250 per contract\", p.19), so under decisions #196(2)/#202 it could run on the S&P 500 index (SPX) only, five points literal; but there the limit entry at the prior low and the five-point target meet on the same day in 45 of 66 trades since 2014 (real opens), and those trades carry 61% of the gain: daily bars cannot show which came first (the gate's same-day rule), so this needs a 1-minute version (lane K58).",
         // ---- end Art Collins block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
@@ -1649,7 +1650,8 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts"]; // mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
+            const SHARED:&[&str]=&["acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts"]; // mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1893,6 +1895,7 @@ mod tests {
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
         // + the multi-unit ids admitted by books::units::ADMISSION (lane K43)
         let mut want:Vec<&str>=stad::REVIEWED.iter().chain(stad2::REVIEWED.iter()).chain(["stad2_obv","stad2_stoch","stad8_stampede","stad9_luxor","stad13_luxor"].iter()).copied().collect();
+        want.extend(stad::SPX_PTS.iter().chain(stad2::SPX_PTS)); // lane K58 (#202): ADMISSION_SPX entries, SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // stad3_idbf: the intraday block (K42)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -1942,7 +1945,7 @@ mod tests {
     fn stadb_held_rules_have_plain_card_reasons() {
         use crate::books::{stad, stad2};
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
-        for id in ["stad1_volex", "stad13_volex", "stad13_tripleplay"] {
+        for id in [/* stad1_volex, stad13_volex: admitted SPX only, K58 #202 */ "stad13_tripleplay"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -1954,8 +1957,8 @@ mod tests {
         use crate::books::{chbta2, chntt, chpbs};
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
         for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
-                   "ch_bta2_bottom_fish_generic","ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_bottom_fish","ch_bta2_ma1011_trend","ch_bta2_ma1011_anti",
-                   "ch_bta2_tat","ch_bta2_xopp","ch_bta2_xopp_trail","ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo","ch_pbs_cbpb_trail3"] {
+                   /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
+                   "ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo","ch_pbs_cbpb_trail3"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -1966,7 +1969,7 @@ mod tests {
     fn krutsinger_held_rules_have_plain_card_reasons() {
         use crate::books::{jkbwts};
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().collect();
-        for id in ["jkbwts_gettess30"] {
+        for id in ["jkbwts_gettess30"] { // K58 admitted it SPX only; held again by decision #240 (2)
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -3054,7 +3057,7 @@ mod tests {
         use crate::books::{jbeft,jbhsms,jbsmsw,jbtifm,jbtywr};
         let cat:Vec<StrategyDef>=jbsmsw::catalogue().into_iter().chain(jbhsms::catalogue()).chain(jbeft::catalogue()).chain(jbtywr::catalogue()).chain(jbtifm::catalogue()).chain(crate::books::jbhpp::catalogue()).collect();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
-        assert_eq!(admitted.len(),2+21+3+2+3+2+1+1,"{admitted:?}"); // + jbeft_oc_osc, admitted by the intraday EP block (lane K45)
+        assert_eq!(admitted.len(),2+21+3+2+3+2+1+1+1,"{admitted:?}"); // + jbeft_oc_osc, admitted by the intraday EP block (lane K45); + jbhsms_stk_nem (lane K58, D1-33)
         assert!(cat.iter().filter(|d|reviewed_cash_rule(d)).all(|d|d.status==Status::Live));
         let us=NativeEvidence::us_test_fixture();let ind=NativeEvidence::india_test_fixture();
         for d in cat.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)) { // the EP minute rule: intraday_ep::ep_admission_and_tickers
@@ -3067,7 +3070,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(d.id,"jb624")));
         }
         // Held: not a complete rule, needs data we do not have, or a duplicate of another module.
-        for id in ["jbsmsw_add","jbsmsw_3610_parabolic","jbsmsw_dca_mom42","jbsmsw_dca_biq","jbhsms_sp_1027","jbhsms_stk_sunw","jbhsms_stk_nem","jbhsms_fri_mon","jbhsms_mac","jbhsms_ma200",
+        for id in ["jbsmsw_add","jbsmsw_3610_parabolic","jbsmsw_dca_mom42","jbsmsw_dca_biq","jbhsms_sp_1027","jbhsms_stk_sunw",/* jbhsms_stk_nem: admitted by K58 (D1-33, short as printed) */"jbhsms_fri_mon","jbhsms_mac","jbhsms_ma200",
             "jbtywr_wheat_0901","jbtywr_tbond_0418","jbtywr_hogs_1030","jbtywr_lumber","jbtifm_jb_gap","jbtifm_dual_orbit","jbtifm_add","jbeft_dow_fm82","jbeft_gold_kd","jbeft_parabolic","jbeft_mom_ma","jbeft_mom_rise_fall","jbeft_channel_break","jbeft_range_breakout","jbeft_3_3_channel","jbeft_dsi","jbeft_add"] {
             let d=cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
             assert!(!reviewed_cash_rule(d),"{id}");assert!(d.status!=Status::Live,"{id}");
@@ -3417,7 +3420,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(id,"chntt")));
             assert!(policy(&d).source_basis.contains("Chande"));
         }
-        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),("ch_bta2_bottom_fish","chbta2"),("ch_ntt_vidya_cmo","chntt"),("ch_ntt_to_buy","chntt")] {
+        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt"),("ch_ntt_to_buy","chntt")] {
             let d=def(id,book);
             assert!(!reviewed_cash_rule(&d));
             assert!(check(&d,"NIFTY 50",false).is_some());
@@ -3450,7 +3453,7 @@ mod tests {
             assert!(json.contains("selected-baseline-ledger-check"));
             assert_eq!(policy(&def(id,"another_book")).requirement,"source_review_required");
             // These price-return adaptations never admit contract or premium P&L.
-            for ticker in ["NIFTY FUTURE", "SPY OPTION", "NIFTYMIDCAPSELECT"] {
+            for ticker in ["NIFTY FUTURE", "SPY OPTION", "NIFTY SMALLCAP 250"] { // K58: NIFTYMIDCAPSELECT is now a known NSE index (#227)
                 assert_eq!(check(&d,ticker,false).unwrap().status,"needs_data");
             }
         }
@@ -3621,7 +3624,7 @@ mod tests {
             assert!(check(&def(id,"stc9"),"RELIANCE",true).is_none());
         }
         assert!(check(&def("r3r4_base","r3r4"),"RELIANCE",true).is_none());
-        for ticker in ["NIFTYBANK","NIFTYIT","NIFTYMIDCAP100"] {assert_eq!(selected_type(ticker,false),"index");}
+        for ticker in ["NIFTYBANK","NIFTYIT","NIFTYMIDCAP100","NIFTYMIDCAPSELECT"] /* K58 #227 */ {assert_eq!(selected_type(ticker,false),"index");}
         for ticker in ["MDY","SMH"] {assert_eq!(selected_type(ticker,false),"etf");}
         assert!(metadata_json(&def("f1a","stc9")).contains("\"native_india_currency_admitted\":true"));
     }

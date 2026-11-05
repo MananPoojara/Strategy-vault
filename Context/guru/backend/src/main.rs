@@ -733,7 +733,7 @@ impl SelectedContext<'_>{
 fn native_benchmark(market:baskets::Market)->&'static str {match market {baskets::Market::India=>BENCHMARK,baskets::Market::UnitedStates=>"SPX"}}
 fn preloaded_market(ticker:&str)->Option<baskets::Market>{
     match ticker {
-        "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"=>Some(baskets::Market::India),
+        "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"|"NIFTYMIDCAPSELECT"|"NIFTY MIDCAP SELECT"=>Some(baskets::Market::India),
         "SPX"|"NDX"|"DJI"=>Some(baskets::Market::UnitedStates),
         t if instrument_policy::US_ETFS.contains(&t)=>Some(baskets::Market::UnitedStates),
         _=>None,
@@ -2498,6 +2498,11 @@ mod tests {
         let mut missing=state.ctxs["NIFTY 50"].r.to_vec();for row in &mut missing{row.ticker="SPX".into();row.volume=None;}
         let rows=Box::leak(missing.into_boxed_slice());state.ctxs.insert("SPX".into(),Ctx::new(rows,rows,&[]));
         assert!(detail(&state,&q).unwrap_err().contains("Benchmark volume/coverage"));
+    }
+    #[test]
+    fn every_nse_index_in_idx_data_has_the_india_market(){
+        // #227 / K58: NIFTYMIDCAPSELECT had no market, so its second series (second.rs parent = NIFTY 50), India VIX and benchmark were missing
+        for t in ["NIFTY 50","NIFTYBANK","NIFTYIT","NIFTYMIDCAP100","NIFTYMIDCAPSELECT"] {assert!(matches!(preloaded_market(t),Some(baskets::Market::India)),"{t}");}
     }
     #[test]
     fn volatility_loader_preserves_actual_identity_and_market_mismatch_is_withheld(){

@@ -204,8 +204,10 @@ fn oq(a: A, p: P, qty: f64, tag: &'static str) -> O { O { qty, ..o(a, p, tag) } 
 #[derive(Clone, Copy, Default)]
 struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool }
 #[derive(Clone, Copy)]
-struct Cfg { max_ent: usize, ss: SetStops }
-fn cfg() -> Cfg { Cfg { max_ent: 1, ss: SetStops::default() } }
+struct Cfg { max_ent: usize, ss: SetStops, minute: bool }
+/// `minute` (lane K58, decision #240): each bar's stop/limit orders are walked on the day's real 1-minute bars instead of the
+/// daily bar path; false for every rule except stad13_volex's default.
+fn cfg() -> Cfg { Cfg { max_ent: 1, ss: SetStops::default(), minute: false } }
 
 /// What the code can read at the start of its evaluation of a bar.
 #[derive(Clone, Copy, Default)]
@@ -303,6 +305,41 @@ impl<'a> Eng<'a> {
             }
         }
         let rising = |a: A| matches!(a, A::Buy | A::Xs);
+        if self.cfg.minute {
+            match crate::intraday_w2b::day(x, i) {
+                // K58 / #240: the real minute path. In each minute: orders its open is already through fill at that open; then
+                // open -> nearer extreme -> farther extreme -> close (the daily bar rule applied to the minute; no bounce)
+                Some(bars) => {
+                    for z in &bars {
+                        loop {
+                            let hit = ords.iter().enumerate().find(|(k, od)| !done[*k] && self.valid(od) && match od.p {
+                                P::Stop(s) => if rising(od.a) { z.o >= s } else { z.o <= s },
+                                P::Lim(s) => if rising(od.a) { z.o <= s } else { z.o >= s },
+                                P::Mkt => false,
+                            }).map(|(k, _)| k);
+                            match hit { Some(k) => { fire!(k, z.o); } None => break }
+                        }
+                        let mut path: std::collections::VecDeque<f64> = if z.h - z.o < z.o - z.l { [z.h, z.l, z.c].into() } else { [z.l, z.h, z.c].into() };
+                        let mut cur = z.o;
+                        while let Some(&t) = path.front() {
+                            let up = t > cur;
+                            let mut best: Option<(usize, f64)> = None;
+                            for (k, od) in ords.iter().enumerate() {
+                                if done[k] || !self.valid(od) { continue; }
+                                let lv = match od.p { P::Stop(s) if rising(od.a) == up => s, P::Lim(s) if rising(od.a) != up => s, _ => continue };
+                                let inside = if up { lv > cur && lv <= t } else { lv < cur && lv >= t };
+                                if inside && best.map_or(true, |(_, b)| (lv - cur).abs() < (b - cur).abs()) { best = Some((k, lv)); }
+                            }
+                            match best { Some((k, lv)) => { fire!(k, lv); cur = lv; } None => { cur = t; path.pop_front(); } }
+                        }
+                    }
+                    return;
+                }
+                // no minutes for the day: the order of a new entry and its stop cannot be known, so no entry today; exits keep
+                // the daily path (one direction each, so their order does not matter)
+                None => for k in 0..ords.len() { if matches!(ords[k].a, A::Buy | A::Sell) { done[k] = true; } },
+            }
+        }
         loop {
             let hit = ords.iter().enumerate().find(|(k, od)| !done[*k] && self.valid(od) && match od.p {
                 P::Stop(s) => if rising(od.a) { op >= s } else { op <= s },
@@ -1106,7 +1143,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("dev", "Bollinger deviations", 2., 1., 3., 0.25), p("epd", "Entry price divisor", 4., 1., 10., 1.), p("t1d", "Target 1 divisor", 2., 1., 4., 1.), p("tsd", "Trailing stop divisor", 4., 1., 10., 1.),
             p("weak_src", "WeakLow source: 0 = printed (Value1 never set -> current bar), 1 = RecentLow (explanation)", 0., 0., 1., 1.)],
         "stad13_volex" => [vec![p("lf", "Long factor", 1.2, 0.25, 3., 0.05), p("sf", "Short factor", 1.8, 0.25, 3., 0.05), usd("sl_usd", "Stop loss ($)", 1000.), p("stale_t", "Stale position bars", 0., 0., 20., 1.),
-            usd("stale_usd", "Stale minimum profit ($)", 0.), p("trail", "Trailing exit bars", 4., 1., 10., 1.), usd("go_usd", "First good open base profit ($)", 200.), p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(250., 1.)].into_iter().flatten().collect::<Vec<_>>(),
+            usd("stale_usd", "Stale minimum profit ($)", 0.), p("trail", "Trailing exit bars", 4., 1., 10., 1.), usd("go_usd", "First good open base profit ($)", 200.), p("delay", "Good open delay bars", 0., 0., 10., 1.),
+            p("path", "Intrabar order: 1 = real SPX 1-minute bars (#240; a day without minutes makes no entry), 0 = daily bar path with 10% bounce [Vol 5 ch.1 assumption]", 1., 0., 1., 1.)], bpv(250., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad13_volclus" => [vec![p("dev", "Deviations", 2., 0.5, 4., 0.25), p("len", "Length (strategy input)", 15., 5., 40., 1.), usd("sl_usd", "Stop loss ($)", 300.), usd("go_usd", "First good open base profit ($)", 0.),
             p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         _ => return None,
@@ -2282,7 +2320,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "stad13_volex" => {
             let (lf, sf, trl, delay) = (g("lf"), g("sf"), u("trail"), g("delay") as usize);
             let (stale_t, stale_pts, go) = (g("stale_t") as usize, usd("stale_usd"), g("go_usd") / g("bpv"));
-            let mut cf = cfg(); cf.ss.sl = usd("sl_usd");
+            let mut cf = cfg(); cf.ss.sl = usd("sl_usd"); cf.minute = g("path") >= 0.5;
             run_ts(x, from, to, 4usize.max(trl), cf, |i, st, _now, nx| {
                 let on = nxo(i); let ar = avg_at(&rg, 4, i);
                 nx.push(o(A::Buy, P::Stop(on + ar * lf), "VolEx Buy")); nx.push(o(A::Sell, P::Stop(on - ar * sf), "VolEx Sell"));
@@ -2385,3 +2423,12 @@ mod tests {
         assert_eq!(live, 65); // + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
+
+// Lane K58 (5 Nov 2026, decision #202 extending #196(2)): VolEx revisited's $1,000 SetStopLoss and $200 First Good Open on the
+// 1999-2000 S&P contract at $250 a point (the module's bpv default; Vol 13 p.156 inputs) = 4 and 0.8 points, SPX only (gate `allowed`).
+pub const SPX_PTS: &[&str] = &["stad13_volex"];
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Omega Research tested VolEx revisited on S&P 500 futures (1/99-4/00) with a $1,000 stop and a $200 first-good-open exit per contract; at that contract's $250 per index point they are 4 and 0.8 points. It runs on the S&P 500 index (SPX) only, the points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
+    basis: "Omega Research STAD Vol 13 ch.12 (printed p.153-162, code p.156); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_s13_ref.py (K43's stad2 oracle), #179 two-window check K58w/m3_s13.txt.",
+};

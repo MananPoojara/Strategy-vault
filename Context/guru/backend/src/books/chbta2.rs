@@ -7,6 +7,14 @@
 use crate::connors::{dmi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "chbta2";
+/// Lane K58 (decision #202, #196(2)): the S&P-500 futures rules whose dollar stops convert exactly at the named contract's $500 per
+/// full index point (p.134: "each point is not one tick, but one full S&P index point = $500"): $2,000 = 4, $3,000 = 6, $5,000 = 10
+/// points. Published on SPX only (gate `allowed`), the points literal; reference authors/titles-1030/K58w/k58_ch_ref.py.
+/// ch_bta2_ma1011_trend is not here: decision #179 withdraws its SPX result (instrument_policy::held_reason, gate row).
+/// Decision #240 (lane K58): stop entries whose own initial stop is reached on the entry day in more than 5% of trades;
+/// their entry day is walked on real SPX 1-minute bars (run_sys_path), p.path = 0 the daily conservative reading.
+pub const MINUTE_PATH: &[&str] = &["ch_bta2_bottom_fish_generic", "ch_bta2_xopp", "ch_bta2_xopp_trail"];
+pub const SPX_PTS: &[&str] = &["ch_bta2_ma1011_anti", "ch_bta2_tat", "ch_bta2_bottom_fish", "ch_bta2_bottom_fish_generic", "ch_bta2_xopp", "ch_bta2_xopp_trail"];
 
 // ------------------------------------------------------------------ small shared engine (also used by chntt)
 
@@ -55,7 +63,14 @@ fn done(p: Pos, i: usize, px: f64, why: &str, sig: usize) -> Trade {
 
 /// One position at a time, bar by bar. Order inside a bar: next-open exit, next-open entry, protective stop,
 /// stop entries, next-close entry, close exit, close signal. Gaps through a stop fill at the open.
-pub(crate) fn run_sys(x: &Ctx, from: usize, to: usize, s: &Sys) -> Vec<Trade> {
+pub(crate) fn run_sys(x: &Ctx, from: usize, to: usize, s: &Sys) -> Vec<Trade> { run_sys_path(x, from, to, s, false) }
+
+/// `run_sys`; with `minute` (lane K58, decision #240) a stop entry whose bar also reaches its initial stop is decided on the
+/// day's real 1-minute bars (intraday::stop_entry_day: the entry level's first touch fills, then the stop counts from that
+/// minute on; in the fill minute itself it counts unless the minute opened beyond it and closed back). A day without minutes
+/// (none loaded, or excluded by the minute cleaner) makes no trade, because the order cannot be known. `minute = false` is
+/// exactly the daily rule above (the stop assumed hit after the entry).
+pub(crate) fn run_sys_path(x: &Ctx, from: usize, to: usize, s: &Sys, minute: bool) -> Vec<Trade> {
     let mut out = vec![];
     let (mut pos, mut last): (Option<Pos>, f64) = (None, 0.);
     let mut pend: [Option<(f64, Kind)>; 2] = [None, None];
@@ -87,26 +102,37 @@ pub(crate) fn run_sys(x: &Ctx, from: usize, to: usize, s: &Sys) -> Vec<Trade> {
                 }
             }
             // stop entries; if both sides trigger on one bar, the level nearer the open is taken first
-            let mut hits: Vec<(f64, f64, f64)> = vec![];
+            let mut hits: Vec<(f64, f64, f64, f64)> = vec![];
             for k in 0..2 {
                 if let Some((d, Kind::Stop(lv))) = pend[k] {
                     pend[k] = None;
                     if (d > 0. && x.h[i] >= lv) || (d < 0. && x.l[i] <= lv) {
                         let px = if d > 0. { x.o[i].max(lv) } else { x.o[i].min(lv) };
-                        hits.push(((px - x.o[i]).abs(), d, px));
+                        hits.push(((px - x.o[i]).abs(), d, px, lv));
                     }
                 }
             }
             hits.sort_by(|a, b| a.0.total_cmp(&b.0));
             let free = |d: f64, pos: &Option<Pos>| !(pos.as_ref().is_some_and(|p| p.dir == d) || (s.oneway && last == d && pos.is_none()));
-            if let Some(&(_, d, px)) = hits.iter().find(|h| free(h.1, &pos)) {
+            if let Some(&(_, d, px, lv)) = hits.iter().find(|h| free(h.1, &pos)) {
                 {
                     if let Some(p) = pos.take() { out.push(done(p, i, px, "Opposite stop entry · reversal", i)); }
                     let p = Pos { dir: d, i, px, kind: "stop" };
                     let st = init(&p);
                     last = d;
                     if st.is_finite() && ((d > 0. && x.l[i] <= st) || (d < 0. && x.h[i] >= st)) {
-                        out.push(done(p, i, st, "Initial stop · same bar as entry (conservative)", i));
+                        if !minute {
+                            out.push(done(p, i, st, "Initial stop · same bar as entry (conservative)", i));
+                        } else if let Some(bars) = crate::intraday_w2b::day(x, i) {
+                            use crate::intraday::{stop_entry_day, Level};
+                            let entry = [Level { up: d > 0., px: lv }];
+                            let pts = s.stop_pts;
+                            match stop_entry_day(&bars, 0, &entry, &|_, f| Some(Level { up: d < 0., px: f - d * pts })) {
+                                Some((_, f, Some(xp))) => out.push(done(Pos { px: f, ..p }, i, xp, "Initial stop · same day as entry (1-minute path)", i)),
+                                Some((_, f, None)) => pos = Some(Pos { px: f, ..p }),
+                                None => {} // the minutes never reach the entry level: no trade
+                            }
+                        }
                     } else { pos = Some(p); }
                 }
             }
@@ -216,7 +242,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"If MARKETPOSITION = 1 and low < lowest(L,25)[1] and ADX(18) > average(ADX(18),18) then sell tomorrow on the open\" (p.120)",
             "E|\"If MARKETPOSITION = -1 and high > highest(H,25)[1] and ADX(18) > average(ADX(18),18) then buy tomorrow on the open\" (p.120)",
             "X|\"we will test this system without specific exits, so that the entries also serve as the exit for the opposite position\" (p.116)",
-            "X|Table 4.14 uses a $5,000 initial stop [stop_pts; S&P = 10 points]"],
+            "X|Table 4.14 uses a $5,000 initial stop = 10 S&P points at $500 a point (p.134) [stop_pts default 10]"],
             "Printed pp.116-123. TradeStation semantics: a buy order while long is ignored, a sell order while long reverses. From flat only the anti-trend orders can fire (the trend orders require a position). If a bar makes both a new 25-day high and low from flat, no order (ambiguous). ADX = Wilder (engine dmi). Table 4.14 S&P-500: 141 trades, PF 1.34, $5,000 stop."),
         d("ch_bta2_ma1011_trend", "S&P 10/11-day SMA crossover (trend)", "Ch 4 · S&P bottom-fishing", "Long/Short", Live, &[
             "E|\"the standard simple moving average crossover system with 10-day and 11-day simple moving averages\" (p.133): buy when the 10-day SMA crosses above the 11-day SMA, sell when it crosses below, on the close",
@@ -239,18 +265,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Same pattern with \"X= 0.1 and Y = 0\" (p.137)",
             "E|\"The entry is switched to above the high of the signal day, instead of buying at the next day's close\" (p.137) = buy stop next day",
             "X|\"A trend-following exit, at the lowest low of the last 20 days\" (p.137) = sell stop",
-            "X|$2,000 initial stop (17 futures markets) [stop_pts, off by default; S&P = 4]"],
+            "X|$2,000 initial stop per contract (17 futures markets) = 4 S&P points on the S&P-500 row ($500 a point, p.134) [stop_pts default 4]"],
             "Printed pp.137-139, Table 4.21. S&P-500 row: profit $127,925, 111 trades, 30% won, PF 1.64. Buy stop = signal high + tick (0.01 index point); the 20-day low includes the current bar."),
         d("ch_bta2_xopp", "Extraordinary opportunity (3% band)", "Ch 4 · Extraordinary opportunities", "Long/Short", Live, &[
             "F|\"Use a 50-day SMA and plot a 3-percent trading band around it. Then a 7-day SMA must cross outside the upper or lower band\" (p.141)",
             "E|\"The long entry rule requires that the 7-day SMA be beyond 1.03 times the 50-day SMA in order to purchase just above the highest high of the last 20 days. The opposite conditions are needed for the short trades.\" (p.142)",
             "X|\"The exit was on the close of the twentieth day\" (p.142)",
-            "X|$3,000 stop [stop_pts, off by default]"],
+            "X|$3,000 initial stop (Table 4.22) = 6 S&P points at $500 a point (p.134) [stop_pts default 6]"],
             "Printed pp.140-144, Table 4.22. S&P-500: $28,040, 22 winners of 58 trades (38%), PF 1.27. Buy stop = 20-day high (incl. signal day) + tick; short: 7-SMA < 0.97 x 50-SMA, sell stop 20-day low - tick. Opposite stop entry reverses."),
         d("ch_bta2_xopp_trail", "Extraordinary opportunity (1% band, 20-day trailing stop)", "Ch 4 · Extraordinary opportunities", "Long/Short", Live, &[
             "E|Same entries with a 1 percent band (Table 4.23 title, p.144)",
             "X|\"trailing 20-day stop\" (Table 4.23, p.144) = exit at the 20-day low (long) / high (short) on a stop",
-            "X|$3,000 stop [stop_pts, off by default]"],
+            "X|$3,000 initial stop (Table 4.23) = 6 S&P points at $500 a point (p.134) [stop_pts default 6]"],
             "Printed p.143-144, Table 4.23. S&P-500: -$25,955, 25 winners of 105 trades (23%), PF 0.73. No time exit in this variant (the trailing stop replaces it)."),
         d("ch_bta2_cbo_trail5", "20-bar breakout on close, 5-day trailing exit", "Ch 5 · Channel breakout variations", "Long/Short", Live, &[
             "E|\"1. If today's close is higher than the highest high of the last 20 days, then buy on the close. 2. If today's close is lower than the lowest low of the last 20 days, then sell on the close.\" (p.149)",
@@ -374,7 +400,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let stop = |def| p("stop_pts", "Initial stop, index points (0 = off)", def, 0., 50., 1.);
+    let path = || p("path", "Entry day with a stop entry that reaches its stop: 1 = real SPX 1-minute bars (#240), 0 = daily bar, stop assumed after the entry [Not from the book]", 1., 0., 1., 1.);
+    let stop = |def| p("stop_pts", "Initial stop, S&P index points (the book's dollars / $500 a point, p.134; 0 = off)", def, 0., 50., 1.);
     let tick = || p("tick", "Stop-entry offset (1 point/tick)", 0.01, 0., 5., 0.01);
     let sma_n = || p("sma", "Trend SMA closes", 65., 45., 85., 10.);
     let cc = || p("confirm", "Consecutive closes", 3., 2., 5., 1.);
@@ -386,16 +413,16 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ch_bta2_65sma_ravi_x14" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(0.5),
             p("exit_n", "Exit: close beyond N-day extreme", 14., 5., 30., 1.), stop(0.)],
         "ch_bta2_tat" => vec![p("n", "Breakout days", 25., 10., 40., 5.), p("adx", "ADX length", 18., 10., 30., 2.),
-            p("adx_avg", "ADX average length", 18., 10., 30., 2.), stop(0.)],
+            p("adx_avg", "ADX average length", 18., 10., 30., 2.), stop(10.)],
         "ch_bta2_ma1011_trend" | "ch_bta2_ma1011_anti" => vec![p("fast", "Short SMA", 10., 5., 20., 1.), p("slow", "Long SMA", 11., 6., 30., 1.), stop(4.)],
         "ch_bta2_bottom_fish" => vec![p("x", "Range > X points", 4., 0., 10., 0.5), p("y", "Close - open > Y points", 3., 0., 10., 0.5),
             p("low_n", "N-day low", 20., 10., 40., 5.), p("within", "Low formed within days", 5., 1., 10., 1.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), stop(4.)],
         "ch_bta2_bottom_fish_generic" => vec![p("x", "Range > X points", 0.1, 0., 10., 0.1), p("y", "Close - open > Y points", 0., 0., 10., 0.5),
-            p("low_n", "N-day low", 20., 10., 40., 5.), p("within", "Low formed within days", 5., 1., 10., 1.), p("exit_n", "Exit at N-day low", 20., 5., 40., 5.), tick(), stop(0.)],
+            p("low_n", "N-day low", 20., 10., 40., 5.), p("within", "Low formed within days", 5., 1., 10., 1.), p("exit_n", "Exit at N-day low", 20., 5., 40., 5.), tick(), stop(4.), path()],
         "ch_bta2_xopp" => vec![p("band", "Band around 50-day SMA (%)", 3., 0.5, 5., 0.5), p("slow", "Slow SMA", 50., 20., 100., 10.), p("fast", "Fast SMA", 7., 3., 15., 1.),
-            p("chan", "Entry channel days", 20., 10., 40., 5.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), tick(), stop(0.)],
+            p("chan", "Entry channel days", 20., 10., 40., 5.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), tick(), stop(6.), path()],
         "ch_bta2_xopp_trail" => vec![p("band", "Band around 50-day SMA (%)", 1., 0.5, 5., 0.5), p("slow", "Slow SMA", 50., 20., 100., 10.), p("fast", "Fast SMA", 7., 3., 15., 1.),
-            p("chan", "Entry channel days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.), tick(), stop(0.)],
+            p("chan", "Entry channel days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.), tick(), stop(6.), path()],
         "ch_bta2_cbo_trail5" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 5., 2., 20., 1.), stop(0.)],
         "ch_bta2_cbo_volexit" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Range multiple", 3., 1., 5., 0.5), stop(0.)],
         "ch_bta2_cbo_inside" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Exit range multiple", 3., 1., 5., 0.5), stop(0.)],
@@ -439,12 +466,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| (g(k).round().max(1.)) as usize;
     let nan = f64::NAN;
     let stop_pts = g("stop_pts").max(0.);
+    let minute = MINUTE_PATH.contains(&id) && g("path") >= 0.5; // K58 / #240
     let tick = if schema.iter().any(|d| d.key == "tick") { g("tick").max(0.) } else { 0. };
     let one = |o: Option<(f64, Kind)>| [o, None];
     let n = x.r.len();
     macro_rules! sys {
         ($e:expr, $c:expr, $o:expr, $t:expr, $w:expr) => {
-            run_sys(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, oneway: $w })
+            run_sys_path(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, oneway: $w }, minute)
         };
     }
     let hold_exit = |h: usize| move |i: usize, q: &Pos| (i >= q.i + h).then(|| format!("Close of day {h} in the trade"));
@@ -622,6 +650,25 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn k58_spx_point_stops_are_the_books_dollars_at_500_a_point() {
+        // p.134: one full S&P index point = $500; $2,000 / $5,000 / $3,000 stops (pp.133-144)
+        for (id, pts) in [("ch_bta2_ma1011_trend", 4.), ("ch_bta2_ma1011_anti", 4.), ("ch_bta2_bottom_fish", 4.), ("ch_bta2_bottom_fish_generic", 4.),
+                          ("ch_bta2_tat", 10.), ("ch_bta2_xopp", 6.), ("ch_bta2_xopp_trail", 6.)] {
+            assert_eq!(params(id).unwrap().iter().find(|d| d.key == "stop_pts").unwrap().def, pts, "{id}");
+        }
+        for id in SPX_PTS { assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..])), "{id}"); }
+        assert!(!SPX_PTS.contains(&"ch_bta2_ma1011_trend")); // #179: SPX withdrawn
+        // the other K58 #202 rules: SPX only, the book's dollars at the named contract's $/point
+        for id in crate::books::stad::SPX_PTS.iter().chain(crate::books::stad2::SPX_PTS) { // jkbwts_gettess30: held (#240 (2))
+            assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
+        }
+        let def = |id: &str, k: &str| crate::books::params(id).unwrap().iter().find(|d| d.key == k).unwrap().def;
+        assert_eq!(def("stad1_volex", "stale_pts"), 1.0);
+        assert_eq!((def("stad13_volex", "sl_usd") / def("stad13_volex", "bpv"), def("stad13_volex", "go_usd") / def("stad13_volex", "bpv")), (4.0, 0.8));
+        // instrument_policy::metadata_json writes the label into JSON unescaped (a quote broke the K58 refresh's strategies list)
+        for a in crate::books::ADMISSIONS { assert!(!a.label.contains('"') && !a.label.contains('\\'), "{}", a.label); }
+    }
     use super::*;
     use crate::Row;
     fn rows(c: &[f64]) -> Vec<Row> {
@@ -705,3 +752,10 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (21, 80., "Initial stop")); // gap through 86
     }
 }
+
+// Instrument admission: lane K58 (5 Nov 2026, decision #202 extending #196(2)). The gate's `allowed` list limits these to SPX.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Chande tested these rules on S&P-500 futures (continuous contract, 1982-95) with dollar stops per contract; the stops are converted exactly at the named contract's $500 per full S&P index point (p.134) and run on the S&P 500 index (SPX) only, the points literal, as a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
+    basis: "Tushar Chande, Beyond Technical Analysis (Wiley 1997) Ch 4, printed pp.116-144 (T-AT p.116-123, 10/11 crossovers p.133, bottom-fishing p.134-139, extraordinary opportunities p.140-144; $500 a point p.134); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_ch_ref.py, #179 two-window check K58w/m3_ch.txt.",
+};

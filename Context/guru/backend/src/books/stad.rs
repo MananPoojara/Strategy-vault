@@ -22,7 +22,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "stad";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw", "stad2_stats2" /* intraday wave 2b: daily bars decide every trade */, "stad4_spread_up", "stad4_spread_dn" /* lane K54: EP4 second series, decision #229 */]; // stad10_mwt: held, lead decision 199 (MWT_HELD)
-const MWT_HELD: &str = "the system's StopLoss_Amount 1500 (Vol 10 p.13) is an S&P-futures dollar stop; turned into points on a cash index it is not the book's rule, and a cash index cannot substitute for futures prices (lead decisions 167, 199). Held until continuous futures data exist";
+const MWT_HELD: &str = "the system's StopLoss_Amount 1500 (Vol 10 p.13) is an S&P-futures dollar stop over a 9/95-8/99 test (and an NDX test), a window in which the S&P contract changed from $500 to $250 a point (Nov 1997): $1,500 is 3 points before and 6 after, so no single exact point amount exists (decisions #196(2)/#202, lane K58), and a cash index cannot substitute for futures prices (lead decisions 167, 199). Held until continuous futures data exist";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -1734,4 +1734,13 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| (def.book=="stad" && crate::books::stad::reviewed(def.id)) || (def.book=="stad2" && crate::books::stad2::reviewed(def.id)),
     label: "Omega Research printed these TradeStation systems with examples on stocks, indices and futures (1997-2000); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
     basis: "Omega Research System Trading and Development Club Vol. 1-13 (1997-2000): the printed EasyLanguage of each system, run with the book's bar assumptions and 10% bouncing ticks (Vol 5 ch.1). Index/ETF/stock runs are a declared application.",
+};
+
+// Lane K58 (5 Nov 2026, decision #202 extending #196(2)): VolEx's stale exit "PositionProfit < 500" on one S&P contract at the 1997
+// contract's $500 per index point = 1.0 point (param stale_pts), SPX only (gate `allowed`). Not in REVIEWED (that block admits everywhere).
+pub const SPX_PTS: &[&str] = &["stad1_volex"];
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Omega Research designed VolEx to trade the S&P contract using daily bars (Vol 1 p.76); its stale-trade exit is $500 of profit on that contract, 1.0 index point at the 1997 contract's $500 a point (one contract, TradeStation's default, a labelled reading). It runs on the S&P 500 index (SPX) only, the point literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
+    basis: "Omega Research STAD Vol 1 ch.4 (printed p.76-82, EasyLanguage p.78); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_stad_ref.py (stad_ref engine), #179 two-window check K58w/m3_stad.txt.",
 };
