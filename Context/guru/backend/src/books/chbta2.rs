@@ -636,6 +636,14 @@ mod tests {
         }
         for id in SPX_PTS { assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..])), "{id}"); }
         assert!(!SPX_PTS.contains(&"ch_bta2_ma1011_trend")); // #179: SPX withdrawn
+        // the other K58 #202 rules: SPX only, the book's dollars at the named contract's $/point
+        for id in crate::books::jkbwts::SPX_PTS.iter().chain(crate::books::stad::SPX_PTS).chain(crate::books::stad2::SPX_PTS) {
+            assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
+        }
+        let def = |id: &str, k: &str| crate::books::params(id).unwrap().iter().find(|d| d.key == k).unwrap().def;
+        assert_eq!(def("jkbwts_gettess30", "stop_usd") / def("jkbwts_gettess30", "pt_usd"), 8.0);
+        assert_eq!(def("stad1_volex", "stale_pts"), 1.0);
+        assert_eq!((def("stad13_volex", "sl_usd") / def("stad13_volex", "bpv"), def("stad13_volex", "go_usd") / def("stad13_volex", "bpv")), (4.0, 0.8));
     }
     use super::*;
     use crate::Row;

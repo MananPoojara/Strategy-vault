@@ -1735,3 +1735,12 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Omega Research printed these TradeStation systems with examples on stocks, indices and futures (1997-2000); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
     basis: "Omega Research System Trading and Development Club Vol. 1-13 (1997-2000): the printed EasyLanguage of each system, run with the book's bar assumptions and 10% bouncing ticks (Vol 5 ch.1). Index/ETF/stock runs are a declared application.",
 };
+
+// Lane K58 (5 Nov 2026, decision #202 extending #196(2)): VolEx's stale exit "PositionProfit < 500" on one S&P contract at the 1997
+// contract's $500 per index point = 1.0 point (param stale_pts), SPX only (gate `allowed`). Not in REVIEWED (that block admits everywhere).
+pub const SPX_PTS: &[&str] = &["stad1_volex"];
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Omega Research designed VolEx \"to trade the S&P contract using daily bars\" (Vol 1 p.76); its stale-trade exit is $500 of profit on that contract, 1.0 index point at the 1997 contract's $500 a point (one contract, TradeStation's default, a labelled reading). It runs on the S&P 500 index (SPX) only, the point literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
+    basis: "Omega Research STAD Vol 1 ch.4 (printed p.76-82, EasyLanguage p.78); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_stad_ref.py (stad_ref engine), #179 two-window check K58w/m3_stad.txt.",
+};

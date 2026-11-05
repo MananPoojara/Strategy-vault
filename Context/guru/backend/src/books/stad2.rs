@@ -2385,3 +2385,12 @@ mod tests {
         assert_eq!(live, 65); // + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
+
+// Lane K58 (5 Nov 2026, decision #202 extending #196(2)): VolEx revisited's $1,000 SetStopLoss and $200 First Good Open on the
+// 1999-2000 S&P contract at $250 a point (the module's bpv default; Vol 13 p.156 inputs) = 4 and 0.8 points, SPX only (gate `allowed`).
+pub const SPX_PTS: &[&str] = &["stad13_volex"];
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Omega Research tested VolEx revisited on S&P 500 futures (1/99-4/00) with a $1,000 stop and a $200 first-good-open exit per contract; at that contract's $250 per index point they are 4 and 0.8 points. It runs on the S&P 500 index (SPX) only, the points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
+    basis: "Omega Research STAD Vol 13 ch.12 (printed p.153-162, code p.156); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_s13_ref.py (K43's stad2 oracle), #179 two-window check K58w/m3_s13.txt.",
+};

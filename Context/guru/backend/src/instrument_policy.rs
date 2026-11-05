@@ -1422,8 +1422,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held
         // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
-        "stad1_volex"=>"Held: fixed dollar amount set for the S&P futures contract. The VolEx code closes any trade older than four bars that shows less than $500 profit on one S&P contract (Vol 1 p.76-82); a fixed point amount has no equivalent on other indices, ETFs or stocks.",
-        "stad13_volex"=>"Held: fixed dollar amounts set for the S&P futures contract. The revisited VolEx uses a $1,000 stop loss and a $200 first-good-open exit per S&P contract at $250 a point (Vol 13 p.153-162); fixed point amounts have no equivalent on other indices, ETFs or stocks.",
+        // "stad1_volex": admitted SPX only by lane K58 (decision #202, books::stad::ADMISSION_SPX)
+        // "stad13_volex": admitted SPX only by lane K58 (decision #202, books::stad2::ADMISSION_SPX)
         "stad13_tripleplay"=>"Held: rules not fully defined. The printed Triple Play code reads its WeakLow from Value1, a variable that is not defined anywhere in the code, so it does not do what the text explains (Vol 13 p.138-140; Vol 11 p.118-120 has the same line); choosing the intended value would be a new rule.",
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
@@ -1441,7 +1441,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "ch_pbs_cbpb_trail3"=>"Held: no exit before a new high. This workshop chart (S&P Sep-95 futures) sets a 3-day-low trailing stop only after the trade makes a new 20-day high; until then the only protection is the workshop's $1,500 stop per contract (p.23), which has no equivalent on an index, ETF or stock. Chande's complete CB-PB rule is already live as a separate strategy.",
         // ---- end Chande block
         // ---- Joe Krutsinger block (26 Oct 2026, lane B): held Live rules
-        "jkbwts_gettess30"=>"Held: fixed dollar stop on the S&P futures contract. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop, 8 S&P points at $500 a point (p.12-13); a fixed point amount has no equivalent on other indices, ETFs or stocks, and leaving the stop out would not be the tested system. Running it on SPX with the 8-point stop is a decision for the user.",
+        // "jkbwts_gettess30": admitted SPX only by lane K58 (decision #202, books::jkbwts::ADMISSION_SPX)
         // ---- end Joe Krutsinger held
         // ---- Murray Ruggiero block (26 Oct 2026, lane B): held Live rules
         "rgt_taylor"=>"Held: incomplete system. Ruggiero prints the Taylor trading code as a shell that is 'missing two patterns ... plus several filters' for the reader to complete (Traders' Secrets p.181-182), and its declared buy and sell filters are unused in the printed code; testing the shell would not be the author's system.",
@@ -1647,7 +1647,8 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts"]; // mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
+            const SHARED:&[&str]=&["acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts"]; // mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1891,6 +1892,7 @@ mod tests {
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
         // + the multi-unit ids admitted by books::units::ADMISSION (lane K43)
         let mut want:Vec<&str>=stad::REVIEWED.iter().chain(stad2::REVIEWED.iter()).chain(["stad2_obv","stad2_stoch","stad8_stampede","stad9_luxor","stad13_luxor"].iter()).copied().collect();
+        want.extend(stad::SPX_PTS.iter().chain(stad2::SPX_PTS)); // lane K58 (#202): ADMISSION_SPX entries, SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // stad3_idbf: the intraday block (K42)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -1940,7 +1942,7 @@ mod tests {
     fn stadb_held_rules_have_plain_card_reasons() {
         use crate::books::{stad, stad2};
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
-        for id in ["stad1_volex", "stad13_volex", "stad13_tripleplay"] {
+        for id in [/* stad1_volex, stad13_volex: admitted SPX only, K58 #202 */ "stad13_tripleplay"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -1964,9 +1966,9 @@ mod tests {
     fn krutsinger_held_rules_have_plain_card_reasons() {
         use crate::books::{jkbwts};
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().collect();
-        for id in ["jkbwts_gettess30"] {
+        for id in ["jkbwts_gettess30"] { // admitted SPX only by lane K58 (decision #202)
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end Joe Krutsinger held ----
@@ -2444,6 +2446,7 @@ mod tests {
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().chain(jkbk::catalogue()).chain(upg18::catalogue()).collect();
         let mut want:Vec<&str>=jkbwts::REVIEWED.iter().chain(jkbk::REVIEWED.iter()).chain(upg18::REVIEWED.iter()).copied().collect();
         want.push("upg18_gearshift"); // re-opened 2 Nov 2026 (lane K20): its own entry upg18::ADMISSION_GEARSHIFT, same checks
+        want.extend(jkbwts::SPX_PTS); // lane K58 (#202): jkbwts::ADMISSION_SPX, SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday wave 2b: minute-path ids have their own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -3052,7 +3055,7 @@ mod tests {
         use crate::books::{jbeft,jbhsms,jbsmsw,jbtifm,jbtywr};
         let cat:Vec<StrategyDef>=jbsmsw::catalogue().into_iter().chain(jbhsms::catalogue()).chain(jbeft::catalogue()).chain(jbtywr::catalogue()).chain(jbtifm::catalogue()).chain(crate::books::jbhpp::catalogue()).collect();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
-        assert_eq!(admitted.len(),2+21+3+2+3+2+1+1,"{admitted:?}"); // + jbeft_oc_osc, admitted by the intraday EP block (lane K45)
+        assert_eq!(admitted.len(),2+21+3+2+3+2+1+1+1,"{admitted:?}"); // + jbeft_oc_osc, admitted by the intraday EP block (lane K45); + jbhsms_stk_nem (lane K58, D1-33)
         assert!(cat.iter().filter(|d|reviewed_cash_rule(d)).all(|d|d.status==Status::Live));
         let us=NativeEvidence::us_test_fixture();let ind=NativeEvidence::india_test_fixture();
         for d in cat.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)) { // the EP minute rule: intraday_ep::ep_admission_and_tickers

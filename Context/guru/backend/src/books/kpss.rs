@@ -417,7 +417,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"I considered separately trading day 1, trading day 2, trading day 3, and so on ... designating the last trading day of each month as trading day -1, the next-to-last trading day of each month as trading day -2, and so forth\" (p.71)",
               "E|\"the cumulative gain on $1,000 invested in the Dow only during that particular trading day every month\" (p.72): long from the close before trading day `a` to the close of trading day `b` (a = b: one day, as in Tables 4.1-4.6)",
               "X|Out on every other day"],
-            concat!(note!(), " Defaults a = -2, b = -1: monthly wave 5, the last two trading days (Table 4.6, Fig 4.7). Other settings give the book's other waves: 1..5 (wave 1, also card kpss_td1_5), 6..8 (wave 2), 9..12 (wave 3, also kpss_mid4), 13..20 (wave 4), -7..-5 (wave 4a), and a = b for each single day of Tables 4.1-4.6. Days counted from the start are 1, 2, ...; from the end -1, -2, ...; a negative `a` with a positive `b` runs from the month-end into the next month (e.g. -2..4 = kpss_six). A month without that many trading days (e.g. day 22) is skipped. [labelled: one block per month from a to b; the book reports each day on its own]"),
+            concat!(note!(), " Defaults a = -2, b = -1: monthly wave 5, the last two trading days (Table 4.6, Fig 4.7). Other settings give the book's other waves: 1..5 (wave 1, also card kpss_td1_5), 6..8 (wave 2), 9..12 (wave 3, also kpss_mid4), 13..20 (wave 4), -7..-5 (wave 4a), and a = b for each single day of Tables 4.1-4.6. Days counted from the start are 1, 2, ...; from the end -1, -2, ...; a negative `a` with a positive `b` runs from the month-end into the next month (e.g. -2..4 = kpss_six); a positive `a` with a negative `b` runs inside one month (e.g. 13..-8). A day the month does not have (e.g. day 22 of a 21-day month) is simply not held; the month's other days in the range still are. [labelled: one block per month from a to b; the book reports each day on its own]"),
             claim("12 a year", "", "Table 4.6: day -2 +128%, day -1 +279% (cumulative, $1,000 in the Dow only on that day each month)", "2 days", "Dow 1900-2007")),
         d("kpss_mid4", "Trading days 9-12 of the month", "Ch 4 · Monthly wave 3 / The midmonth pattern (p.73-87)", "Long", Live,
             &["E|\"invested in the Dow only during trading days 9, 10, 11, and 12 each month\" (p.85): buy at the close of trading day 8", "X|Sell at the close of trading day 12"],
@@ -729,11 +729,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kpss_mid4" => ix.tdm(&[9, 10, 11, 12], &[]),
         "kpss_six" => ix.tdm(&[1, 2, 3, 4], &[-2, -1]),
         "kpss_tdays" => {
+            // a > 0, b < 0: day a of the month through day b from its end (same month); a < 0, b > 0: from day a before the
+            // month end into the next month's day b; same signs: days a..b (either order). 0 selects nothing.
             let (a, b) = (g("a").round() as i64, g("b").round() as i64);
-            let (lo, hi) = (a.min(b), a.max(b));
-            let f: Vec<i64> = (lo.max(1)..=hi).collect();
-            let bk: Vec<i64> = (lo..=hi.min(-1)).collect();
-            ix.tdm(&f, &bk)
+            (0..n).map(|i| {
+                let (f, k) = (cal.tdf[i], cal.tdb[i]);
+                let hold = if a > 0 && b < 0 { f >= a && k != 0 && k <= b }
+                    else if a < 0 && b > 0 { (k != 0 && k >= a) || f <= b }
+                    else { let (lo, hi) = (a.min(b), a.max(b)); if lo > 0 { f >= lo && f <= hi } else if hi < 0 { k != 0 && k >= lo && k <= hi } else { false } };
+                hold as i64 as f64
+            }).collect()
         }
         "kpss_worst14" | "kpss_nonworst" => {
             let worst = ix.tdm(&[6, 7, 8, 13, 14, 15, 16, 17, 18, 19, 20], &[-7, -6, -5]);
