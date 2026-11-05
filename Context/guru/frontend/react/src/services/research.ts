@@ -76,6 +76,33 @@ export interface Work {
   items: { author: string; author_id: string; books: { book: string; book_id: string; strategies: { key: string; name: string; verdict: Verdict | null; notes: number; errors: number; at: string }[] }[] }[];
 }
 
+export interface ShareSource {
+  id: string; kind: string; name: string; aliases: string[]; files: number; bytes: number; titles: number; types: Record<string, number>;
+  opened: number; decided: number; strategies: number; backtested: number; held: number; unreviewed: number;
+}
+export interface ShareBatch {
+  id: string; label: string; date: string | null; records: number; files: number; opened: number; title: number; stated: number;
+  folder_files: number; folder_rows: number; paths_not_found: number; record_files: string[];
+}
+export interface ShareInventory {
+  schema: number; generated_at: string;
+  listing: { file: string; date: string; root: string; files: number; bytes: number; folders: number; folders_method: string;
+    top_folders: { name: string; files: number; bytes: number }[]; duplicate_copies: number; unique_files: number };
+  compare: null | { base: string; base_date: string; base_files: number; base_bytes: number; added: number; removed: number; size_changed: number;
+    added_bytes: number; removed_bytes: number; added_sample: string[]; removed_sample: string[]; changed_sample: string[] };
+  types: { id: string; label: string; group: string; rule: string; files: number; bytes: number }[];
+  kinds: { kind: string; label: string; sources: number; files: number; bytes: number; titles: number }[];
+  sources: ShareSource[];
+  claude: {
+    files: { total: number; opened: number; title: number; stated: number; folder: number; none: number };
+    batches: ShareBatch[]; ocr: { file: string; methods: number; date: string }[];
+    unmatched: { authors: string[]; strategies: number; backtested: number; held: number; unreviewed: number };
+    as_of?: string; generated_at?: string; run?: string; strategies?: number; backtested?: number; held?: number; unreviewed?: number;
+    reasons?: { reason: string; count: number }[];
+  };
+  rules: { types: string; sources: string[]; claude: string[] };
+}
+
 const BASE = "/api/app/research";
 export function query(params: Record<string, string | number | undefined>) {
   const q = new URLSearchParams();
@@ -107,12 +134,25 @@ export const research = {
   work: (person: string) => apiJson<Work>(`${BASE}/work${query({ person })}`),
   employees: () => apiJson<Employee[]>(`${BASE}/employees`),
   removeEmployee: (id: number) => send<{ removed: number }>(`/employees/${id}`, "DELETE"),
+  share: () => apiJson<ShareInventory>(`${BASE}/share`),
 };
 
 const IST: Intl.DateTimeFormatOptions = { timeZone: "Asia/Kolkata" };
 export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { ...IST, day: "numeric", month: "short", year: "numeric" });
 export const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { ...IST, hour: "2-digit", minute: "2-digit", hour12: false });
 export const fmtStamp = (iso: string) => `${fmtDate(iso)}, ${fmtTime(iso)}`;
+/** Sizes as Windows Explorer shows them: 1 GB = 1024³ bytes. */
+export function fmtBytes(n: number) {
+  const u = ["bytes", "KB", "MB", "GB", "TB"];
+  let i = 0, x = n;
+  while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
+  return i ? `${x.toLocaleString("en-IN", { maximumFractionDigits: x < 10 ? 2 : 1 })} ${u[i]}` : `${n.toLocaleString("en-IN")} bytes`;
+}
+/** One CSV cell: quoted when it holds a comma, quote or line break; text that Excel would run as a formula gets a leading '. */
+export function csvCell(v: string | number) {
+  const t = typeof v === "string" && /^[=+\-@\t\r]/.test(v) ? `'${v}` : String(v);
+  return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
 export const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", IST);
 export function ago(iso: string, now = Date.now()) {
   const s = Math.round((now - Date.parse(iso)) / 1000);

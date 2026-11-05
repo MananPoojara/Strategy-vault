@@ -534,7 +534,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_six_q66_v2", "Filter indicator · 66% stop · version 2 (Table 44.3)", g42, "Long/Short", Live,
             &["E|\"(six > 0 and five >= 0) or (six = 0 and five > 0) then buy next bar at market\"; mirror (App. p.237)", "X|66% stop; setexitonclose"], SNOTE, cl("897", "54.07%", "$338.39 (net $303,538)", "day", SP)),
         // ---- needs data
-        sd!("acbff_mega_1min", "One-minute 'Mega System' (Table 24.1)", g30, "Long/Short", NotTestable(MEGA_HELD),
+        sd!("acbff_mega_1min", "One-minute 'Mega System' (Table 24.1)", g30, "Long/Short", Live, // E6: back after #208 (paged trade list)
             &["F|\"e=(h-o); f=(o-l); g=average(e,5); j=average(f,5);\" on 1-minute bars (Table 24.1, App. p.219)",
               "E|\"if time >=845 and time < 1455 then buy next bar at o of tomorrow-j limit; ... sell short next bar at o of tomorrow+g limit\": every minute, limits at the next minute's open -/+ the 5-minute averages; an opposite fill reverses (\"Do it all day long\", p.98)",
               "X|\"if time=1500 then sell next bar at market; ... buy to cover next bar at market\": out at 15:00 CT = the SPX close (the 15:59 ET minute's close; a day's last minute on early-close days) [declared reading: SPX has no later minute]",
@@ -637,8 +637,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// a short limit at its open + g (5-minute averages of o-l and h-o ending at k-1). Long: only the short order acts (reverses);
 /// short: only the buy. Flat and both reached in one minute: the module's bar path (high first when h-o <= o-l) fills both,
 /// marked ambiguous. Out at the close of the 15:59 ET minute (time = 1500 CT) or the day's last minute.
-/// Lead decision #208 (4 Nov 2026): the coded and checked rule is held; nothing is published until the API can serve it.
-pub const MEGA_HELD: &str = "Withheld (lead decision #208): about 155 trades a day (1.06M on SPY), so the card's trade list would be 100-200 MB and would hang the page; it comes back with a summary-only or capped trade list. It is also 26% off the book's trade count (165,144 vs 222,926 on SPY over the book's window; unverified). The minute code and its independent check stay (K38).";
+/// Lead decision #208 held it until the run API could page its ~1M-trade list; lane E6 (5 Nov 2026) re-admits it.
 pub(crate) fn mega_minutes(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
     use crate::intraday::day_trade;
     let mut out = vec![];

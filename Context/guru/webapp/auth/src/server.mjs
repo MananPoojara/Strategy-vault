@@ -38,7 +38,9 @@ app.use('/api/app/*', async (c, next) => {
   await next();
 });
 registerBookLibrary(app, await createBookLibrary());
-registerResearch(app, { pool, store: createResearchStore({ pool, progressPath: process.env.VAULT_RESEARCH_PROGRESS }) });
+registerResearch(app, { pool, store: createResearchStore({ pool, progressPath: process.env.VAULT_RESEARCH_PROGRESS,
+  // admin-only data: kept inside the auth container, never in frontend-data (the gateway serves that folder to every signed-in user)
+  sharePath: process.env.VAULT_SHARE_INVENTORY || '/app/auth/private/share-inventory.json' }) });
 app.get('/api/app/me', async c => {
   const user = c.get('user');
   const settings = await pool.query('SELECT theme,last_view FROM vault_settings WHERE user_id = $1', [user.id]);

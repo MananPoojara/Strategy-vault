@@ -1452,6 +1452,22 @@ fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run
     format!("{{\"id\":\"{}\",\"book\":\"hbiab\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{},\"ohlc\":{},\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",id,dates,numbers(&ctx.c[from..=to]),numbers(&run.equity),numbers(&gross.equity),numbers(&run.bh),list(trades),ohlc,account.json(ctx),stats_json(&financial_stats(ctx,run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,run)),bandy_costs_json(costs),esc(books::hbiab_reviewed::basis(id)))
 }
 
+/// Lane E6: the most trades one run response carries. A run with more trades (gh52w ~80k, acbff_mega_1min ~1M) answers
+/// summary-only unless the caller asks for a page (trades_offset / trades_limit, limit at most the cap).
+const TRADE_CAP:usize=20_000;
+/// None = the full trade list, byte-identical to the response before E6 (no page asked for, and at or under the cap).
+/// Some((offset,limit)) = only trades[offset..offset+limit] (chronological) plus a trades_page block; limit 0 = summary-only.
+/// Source-account runs and the kfsc high-volatility orders carry per-trade arrays that must stay aligned with the full list, so they are never paged.
+fn trade_page(q:&BTreeMap<String,String>,total:usize,pageable:bool)->Result<Option<(usize,usize)>,String>{
+    let get=|k:&str|q.get(k).map(|v|v.parse::<usize>().map_err(|_|format!("{k} must be a whole number")));
+    let (offset,limit)=(get("trades_offset").transpose()?,get("trades_limit").transpose()?);
+    if !pageable {return if offset.is_some()||limit.is_some() {Err("This source-account run serves its full trade list only".into())} else {Ok(None)};}
+    if offset.is_none()&&limit.is_none() {return Ok((total>TRADE_CAP).then_some((0,0)));}
+    let limit=limit.unwrap_or(TRADE_CAP);
+    if limit>TRADE_CAP {return Err(format!("trades_limit is at most {TRADE_CAP}"));}
+    Ok(Some((offset.unwrap_or(0).min(total),limit)))
+}
+
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let selected=select_context(st,q)?;let held=selected.context(st);
@@ -1500,10 +1516,15 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     o.push_str(",\"bh\":");
     arr(&mut o, &mut run.bh.iter().map(|v| num(*v)));
     o.push_str(",\"trades\":");
+    // Lane E6 (decisions #208/#239): a large trade list is served summary-only or by page; a run at or under the cap is unchanged.
+    let page=trade_page(q,run.trades.len(),run.source_account.is_none()&&!(def.book=="kfsc"&&books::kfsc::reviewed_hv_rule(id)))?; // both carry per-trade arrays
     let mut allocation=1.;
-    arr(&mut o, &mut run.trades.iter().enumerate().map(|(i,t)| {
+    arr(&mut o, &mut run.trades.iter().enumerate().filter_map(|(i,t)| {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}
         if let Some(a)=&run.option_account {allocation=a.alloc[i];}
+        // Outside the page: only the allocation moves on. TradeLedger::new's net_ret is t.ret(side rate) (source accounts are
+        // never paged); skipping its excursion pass (a minute-file read per partial bar) keeps a summary-only answer fast.
+        if page.is_some_and(|(offset,limit)|i<offset||i>=offset+limit) {allocation*=1.+t.ret(costs.side_rate());return None;}
         let mut ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         // options phase 2: the underlying's daily range says nothing about the option's excursion
         if run.option_account.as_ref().is_some_and(|a|a.model!=books::units::MODEL) {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;} // a multi-unit trade is on the underlying itself (lane K43)
@@ -1517,8 +1538,9 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         );
         if books::lkqts::stock_research_profile(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
-        row
+        Some(row)
     }));
+    if let Some((offset,limit))=page {let _=write!(o,",\"trades_page\":{{\"offset\":{offset},\"limit\":{limit},\"total\":{},\"cap\":{TRADE_CAP}}}",run.trades.len());}
     if let Some(d)=&diagnostics.kestner_next {
         let qualified=q.get("ticker").filter(|key|st.baskets.native_evidence(key).is_some()).ok_or("needs_data: Kestner report requires the actual server-qualified stock identity")?;
         let _=write!(o,",\"kestner_research\":{{\"id\":\"{}\",\"book\":\"lkqts\",\"qualified_ticker\":\"{}\",\"ticker\":\"{}\",\"provenance\":{},\"profile\":\"{}\",\"source_convention\":\"{}\",\"states\":[",esc(id),esc(qualified),esc(&ctx.r[from].ticker),source_provenance(st,q),d.profile,esc(books::lkqts::next_source_convention(id).unwrap_or("")));
@@ -2523,6 +2545,48 @@ mod tests {
     }
     fn accounting_query()->BTreeMap<String,String>{
         BTreeMap::from([("ticker".into(),"SPX".into()),("id".into(),"ch_65sma3cc".into()),("_guru".into(),"chande".into()),("cost".into(),"3".into()),("slippage".into(),"2".into())])
+    }
+    /// Lane E6: split a run body into (text before the trade array, its rows, text after it). Skips brackets inside strings.
+    fn split_trades(body:&str)->(String,Vec<String>,String){
+        let start=body.find(",\"trades\":[").unwrap()+10;
+        let (mut depth,mut in_str,mut esc_next,mut rows,mut row_start)=(0i32,false,false,vec![],start+1);
+        for (k,ch) in body[start..].char_indices().map(|(k,c)|(k+start,c)) {
+            if in_str {if esc_next {esc_next=false} else if ch=='\\' {esc_next=true} else if ch=='"' {in_str=false} continue;}
+            match ch {
+                '"'=>in_str=true,
+                '['|'{'=>depth+=1,
+                ']'|'}'=>{depth-=1;if depth==1&&ch=='}'{rows.push(body[row_start..=k].to_string());}if depth==0{return (body[..start].into(),rows,body[k+1..].into());}},
+                ','=>if depth==1 {row_start=k+1;},
+                _=>{}
+            }
+        }
+        panic!("unterminated trade array")
+    }
+    #[test]
+    fn e6_trade_pages_slice_the_full_list_and_keep_every_other_field(){
+        // a 400-session sine around 100 (period 50) so the 65-day rule trades many times
+        let bars:&'static [Row]=Box::leak((0..400).map(|i|{let close=100.+10.*(i as f64*std::f64::consts::TAU/50.).sin();Row{ticker:"SPX".into(),date:format!("{}-{:02}-{:02}",2014+i/336,(i%336)/28+1,i%28+1),open:close+0.3,high:close+1.,low:close-1.,close,volume:Some(100.)}}).collect::<Vec<_>>().into_boxed_slice());
+        let state=State{ctxs:BTreeMap::from([("SPX".into(),Ctx::new(bars,bars,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()};let q=accounting_query();
+        let full=detail(&state,&q).unwrap();
+        let (head,rows,tail)=split_trades(&full);
+        assert!(rows.len()>=2,"fixture needs two trades, got {}",rows.len());assert!(!full.contains("trades_page"));
+        let with=|extra:&[(&str,&str)]|{let mut q=q.clone();for (k,v) in extra {q.insert((*k).into(),(*v).into());}detail(&state,&q)};
+        let page_block=|o:usize,l:usize|format!(",\"trades_page\":{{\"offset\":{o},\"limit\":{l},\"total\":{},\"cap\":{TRADE_CAP}}}",rows.len());
+        // summary-only: same stats, equity and every other field; no rows
+        let summary=with(&[("trades_limit","0")]).unwrap();let (h,r,t)=split_trades(&summary);
+        assert_eq!((h.as_str(),r.len()),(head.as_str(),0));assert_eq!(t.replacen(&page_block(0,0),"",1),tail);
+        // a page is exactly the matching rows of the full list (the allocation still compounds every earlier trade)
+        for (o,l) in [(0,1),(1,1),(1,rows.len()),(rows.len(),5)] {
+            let page=with(&[("trades_offset",&o.to_string()),("trades_limit",&l.to_string())]).unwrap();let (h,r,t)=split_trades(&page);
+            assert_eq!(h,head);assert_eq!(r,rows[o.min(rows.len())..(o+l).min(rows.len())].to_vec(),"offset {o} limit {l}");
+            assert_eq!(t.replacen(&page_block(o.min(rows.len()),l),"",1),tail);
+        }
+        assert!(with(&[("trades_limit",&(TRADE_CAP+1).to_string())]).unwrap_err().contains("at most"));
+        assert!(with(&[("trades_offset","-1")]).unwrap_err().contains("whole number"));
+        // over the cap with no page asked for: summary-only
+        assert_eq!(trade_page(&BTreeMap::new(),TRADE_CAP,true).unwrap(),None);assert_eq!(trade_page(&BTreeMap::new(),TRADE_CAP+1,true).unwrap(),Some((0,0)));
+        assert_eq!(trade_page(&BTreeMap::new(),TRADE_CAP+1,false).unwrap(),None);
+        assert!(trade_page(&BTreeMap::from([("trades_limit".into(),"0".into())]),5,false).is_err());
     }
     #[test]
     fn chart_ohlc_keeps_full_admitted_warmup_and_rejects_unknown_symbols(){

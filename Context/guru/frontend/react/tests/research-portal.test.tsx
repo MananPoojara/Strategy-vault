@@ -140,3 +140,58 @@ it("Claude's work lists platform deploys with the backtested count", async () =>
   expect(el.querySelector(".rp-claude")!.textContent).toContain("587");
   expect(el.querySelector(".rp-claude")!.textContent).toContain("Deploy: MAE/MFE shared formula");
 });
+
+const inventory = {
+  schema: 1, generated_at: "2026-11-05T15:00:00+05:30",
+  listing: { file: "inventory-1105.tsv", date: "2026-11-05T13:59:18+05:30", root: "\\\\192.168.4.50\\research", files: 5, bytes: 1500, folders: 4,
+    folders_method: "folders listed by the same find run", top_folders: [], duplicate_copies: 1, unique_files: 4 },
+  compare: { base: "inventory.tsv", base_date: "2026-11-02T10:00:00+05:30", base_files: 4, base_bytes: 1000, added: 2, removed: 1, size_changed: 0, added_bytes: 600, removed_bytes: 100, added_sample: [], removed_sample: [], changed_sample: [] },
+  types: [
+    { id: "book", label: "Books and other documents", group: "Reading", rule: "pdf epub", files: 3, bytes: 1000 },
+    { id: "code_ts", label: "TradeStation EasyLanguage", group: "Platform code", rule: ".eld .ela", files: 2, bytes: 500 },
+  ],
+  kinds: [{ kind: "author", label: "Author (person)", sources: 1, files: 3, bytes: 1000, titles: 2 }, { kind: "company", label: "Company or vendor", sources: 1, files: 2, bytes: 500, titles: 1 }],
+  sources: [
+    { id: "author:a|cohen", kind: "author", name: "A. W. Cohen", aliases: ["A.W.Cohen"], files: 3, bytes: 1000, titles: 2, types: { book: 3 }, opened: 2, decided: 3, strategies: 4, backtested: 3, held: 1, unreviewed: 0 },
+    { id: "company:omegaresearch", kind: "company", name: "=Omega Research", aliases: [], files: 2, bytes: 500, titles: 1, types: { code_ts: 2 }, opened: 0, decided: 2, strategies: 0, backtested: 0, held: 0, unreviewed: 0 },
+  ],
+  claude: {
+    files: { total: 5, opened: 2, title: 1, stated: 0, folder: 1, none: 1 },
+    batches: [{ id: "batch-h", label: "Batch H: S&C", date: "2026-11-02", records: 10, files: 3, opened: 2, title: 1, stated: 0, folder_files: 0, folder_rows: 0, paths_not_found: 0, record_files: ["authors/batch-h/H1.tsv"] }],
+    ocr: [{ file: "authors/batch-h3/OCR.tsv", methods: 7, date: "2026-11-05" }],
+    unmatched: { authors: ["Nobody"], strategies: 1, backtested: 1, held: 0, unreviewed: 0 },
+    as_of: "2026-11-05T07:01:46+00:00", run: "int-9759952f", strategies: 5, backtested: 4, held: 1, unreviewed: 0, reasons: [{ reason: "Needs intraday data", count: 1 }],
+  },
+  rules: { types: "First matching rule wins.", sources: ["Author - Title names a person."], claude: ["Opened = the record says it was read."] },
+};
+
+it("admin sees the research share with reconciled counts and downloads the source table", async () => {
+  const blobs: Blob[] = [];
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: (b: Blob) => { blobs.push(b); return "blob:x"; }, revokeObjectURL: () => {} }));
+  const calls = api({ "GET /api/app/research/me": { employee: null, admin: true, ready: true }, "GET /api/app/research/share": inventory });
+  const el = await mount("#/research?v=share");
+  expect(calls.some(c => c.url.endsWith("/share"))).toBe(true);
+  expect([...el.querySelectorAll(".rp-bar nav a")].map(a => a.textContent)).toContain("Research share");
+  expect(el.querySelector(".rp-stats")!.textContent).toContain("Files");
+  expect(el.querySelectorAll(".rp-check.ok").length).toBe(5);
+  expect(el.querySelector(".rp-check.bad")).toBeNull();
+  expect(el.querySelector(".rp-sources tbody tr")!.textContent).toContain("A. W. Cohen");
+  expect(el.textContent).toContain("2 of 5 files opened");
+  const search = el.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => type(search, "cohen"));
+  expect(el.querySelectorAll(".rp-sources tbody tr").length).toBe(1);
+  await act(async () => [...el.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent?.startsWith("Download CSV"))!.click());
+  const csv = await blobs[0].text();
+  expect(csv.split("\r\n")[1]).toBe('A. W. Cohen,Author (person),3,1000,2,2,3,4,3,1,0,Books and other documents 3,A.W.Cohen');
+  await act(async () => type(search, "omega"));
+  await act(async () => [...el.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent?.startsWith("Download CSV"))!.click());
+  expect((await blobs[1].text()).split("\r\n")[1].startsWith("'=Omega Research,")).toBe(true);   // no formula injection
+});
+
+it("an employee does not see the research share tab or its data", async () => {
+  const calls = api({ "GET /api/app/research/me": asha, "GET /api/app/research/summary": { totals: {}, team: { verdicts: {} } }, "GET /api/app/research/browse": { items: [] } });
+  const el = await mount("#/research?v=share");
+  expect([...el.querySelectorAll(".rp-bar nav a")].map(a => a.textContent)).not.toContain("Research share");
+  expect(calls.some(c => c.url.includes("/share"))).toBe(false);
+  expect(el.querySelector(".rp-share")).toBeNull();
+});

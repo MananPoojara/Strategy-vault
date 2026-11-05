@@ -127,3 +127,42 @@ a.rp-card:hover, .rp-emp:hover { border-color: var(--blue); box-shadow: 0 6px 18
 .rp-claude .w-platform .rp-pill { --c: var(--rp-ok); }
 .rp-claude .w-claude .rp-pill { --c: var(--blue); }
 .rp-claude .w-codex .rp-pill { --c: var(--rp-held); }
+
+/* admin: research share */
+.rp-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rp-share code { font-size: 13px; }
+.rp-checks { display: grid; gap: 4px; margin: 4px 0 8px; }
+.rp-check { font-size: 14px; color: var(--ink2); }
+.rp-check b { color: var(--rp-ok); margin-right: 2px; }
+.rp-check.bad, .rp-check.bad b { color: var(--rp-bad); }
+.rp-hgroup + .rp-hgroup { margin-top: 6px; }
+.rp-hgroup h3 { margin-top: 10px; }
+.rp-hbars { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.rp-hbars li { display: grid; grid-template-columns: minmax(150px, 230px) 1fr 90px 80px; gap: 12px; align-items: center; font-size: 14px; }
+.rp-hbars b { font: 600 14px "Inter Numbers", system-ui, sans-serif; text-align: right; }
+.rp-htrack { height: 10px; border-radius: 99px; background: color-mix(in srgb, var(--ink3) 14%, transparent); overflow: hidden; }
+.rp-htrack i { display: block; height: 100%; min-width: 2px; background: var(--blue); border-radius: 99px; }
+@media (max-width: 640px) { .rp-hbars li { grid-template-columns: 1fr 70px; } .rp-htrack { grid-column: 1 / -1; order: 3; } .rp-hbars li > .rp-small { display: none; } }
+.rp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rp-table th, .rp-table td { padding: 7px 10px; border-bottom: 1px solid var(--rp-line); text-align: left; vertical-align: top; }
+.rp-table th { font-size: 12.5px; font-weight: 600; color: var(--ink2); white-space: nowrap; }
+.rp-table th button { border: 0; background: none; padding: 0; font: inherit; color: inherit; }
+.rp-table th[aria-sort] button { color: var(--ink); }
+.rp-table .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-table tfoot td { font-weight: 600; border-bottom: 0; }
+.rp-table tbody tr:hover { background: color-mix(in srgb, var(--blue) 4%, transparent); }
+.rp-scroll { overflow-x: auto; }
+.rp-sources td:first-child { min-width: 220px; }
+.rp-rules-table td:first-child { white-space: nowrap; font-weight: 600; }
+.rp-rules-table { margin: 6px 0 14px; font-size: 13px; }
+.rp-how p, .rp-how li { max-width: 80ch; }
+.rp-how ul { margin: 0 0 12px; padding-left: 20px; }
+.rp-big { font-size: 18px; }
+.rp-big b { font: 600 22px "Inter Numbers", system-ui, sans-serif; }
+.rp .fold { --c: color-mix(in srgb, var(--blue) 35%, var(--rp-surface)); } .rp .team { --c: var(--rp-team); }
+.rp-bar5 { height: 12px; }
+.rp-bar5 i, .rp-legend5 i { background: var(--c); }
+.rp-legend5 { list-style: none; padding: 0; }
+.rp-reasons { list-style: none; padding: 0; margin: 6px 0 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 20px; font-size: 13.5px; }
+.rp-reasons li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--rp-line); padding: 3px 0; }
+.rp-share .rp-panel + .rp-panel, .rp-share .rp-panel + .rp-tools { margin-top: 12px; }
