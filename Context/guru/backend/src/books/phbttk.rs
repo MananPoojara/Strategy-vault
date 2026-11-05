@@ -35,9 +35,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"the next reading of 21% or higher will set my next closing stop, where an exit will then occur on any close over the high of the bar when Percent R crossed back over 20% to 21% or [higher]\" (p.37-38; printed 'or lower', a misprint: 'exit this position (1) when the close is greater than the high on the bar Percent R last crossed back over 20 to give a reading of 21.00 or higher', p.38)",
             "F|[Book silent] As the long side: fills at the close; cross under 20 = below 20 today, at or above 20 yesterday; cross back over 20 to 21 or higher = %R >= 21 today and < 21 yesterday.",
         ], "Book: US stocks, no statistics printed. Run on the indexes (instrument swap)."),
-        mk("phbttk_options", "Option trades and the expiration-day exit (all BTTK systems)", "Long/Short", NotTestable("needs option chains; the expiry month is only given as a range (\"out 3-4 months\", \"2nd expiration month\", \"two months before expiration\")"),
+        mk("phbttk_options", "Option trades and the expiration-day exit (all BTTK systems)", "Long/Short", NotTestable("rules not fully defined: the expiry month is only given as a range (\"out 3-4 months\", \"2nd expiration month\", \"two months before expiration\"; Big Trends Toolkit 2.0 p.11); real option prices are held for SPY/QQQ/IWM, but there is no single rule to run"),
             &["X|\"(2) on the close 2 weeks before the expiration day (usually close by the first Friday of the expiration month)\" (p.11, 13, 19, 21, 25, 26, 29-31, 35, 37-38, 46, 48-49)"], opt),
-        mk("phbttk_nasdaq_rs", "NASDAQ vs S&P relative strength market timing", "Long/Short", NotTestable("no confirmation window (\"closes in a future day above the NASDAQ Composite high on the day of the bullish RS crossover\") and no exit rule; needs the NASDAQ Composite (the vault has NDX, not COMP)"),
+        mk("phbttk_nasdaq_rs", "NASDAQ vs S&P relative strength market timing", "Long/Short", NotTestable("rules not fully defined: no confirmation window (\"closes in a future day above the NASDAQ Composite high on the day of the bullish RS crossover\") and no exit rule (Big Trends Toolkit 2.0 p.6); it would also need the NASDAQ Composite (the vault has NDX, not COMP)"),
             &["E|\"When the 10-day simple moving average crosses above the 21-day simple moving average of the relative strength (RS) line, this creates the bullish Setup ... It is ONLY confirmed when the NASDAQ Composite CLOSES in a future day above the NASDAQ Composite high on the day of the bullish RS crossover.\" (p.6)"], "Seen (p.5-8)."),
         // ---- K30 (3 Nov 2026): the add-on's System Tester records (MS10PRFT.DTA in Bigtrendv2setup.exe, read by batch X;
         // authors/batch-x/keep/2617/PRFT_slots.txt) supply the formulas the manual leaves out; they run as shipped.
@@ -121,7 +121,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             r##"X|Buy to Cover (slot 8): "x:=Cross(20,p1); bc:=...; sc:=Cross(C,ValueWhen(1,Cross(p1,21),H)); trade:=If(bc,1,If(sc,0,PREV)); Cross(trade=0,0.5)""##,
             r##"F|Manual p.38 (words) contradicts itself; the shipped record is used. Each order formula is evaluated as stored (the Buy uses 79.5, the Sell 79)"##,
         ], RETEST),
-        mk("phbttk_other", "NAZRS template, 2x 200-day line", "Long/Short", NotTestable("listed as add-on tools/templates (p.1-2) with no rules in the manual"),
+        mk("phbttk_other", "NAZRS template, 2x 200-day line", "Long/Short", NotTestable("rules not fully defined: listed as add-on tools and templates with no rules in the manual (Big Trends Toolkit 2.0 p.1-2, p.5-8)"),
             &["F|BTTK NAZRS System template, BTTK Line at Cross of 2 Times 200 Day MA (p.1-2); the Options Shark system test is phbttk_options_shark"], "Seen; no rules printed."),
     ]
 }

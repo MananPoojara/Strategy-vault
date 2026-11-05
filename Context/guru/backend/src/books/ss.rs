@@ -754,7 +754,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "The book gives no swing definition (\"Point 2 must be a significant swing low or high\"); any zigzag threshold would be invented.", claim("3-6 setups / week", "-", "-", "-", "S&P 5-minute, 1995")),
         d("ss_morning_news_reversal", "Morning News Reversals", "Ch 17 · Morning News Reversals", "Long/Short", Live, &["NEWS_DAY"], NEWS,
           "Needs series NEWS_DAY (market-wide, 1 = a major scheduled release before the open: US 8:30 ET employment, CPI, PPI, GDP, retail sales; India: RBI policy, CPI). Book traded bonds/currencies; daily-bar approximation on index ETFs.", None),
-        d("ss_big_picture_news_reversal", "Big Picture News Reversals", "Ch 18 · Big Picture News Reversals", "Long", disc, &[],
+        d("ss_big_picture_news_reversal", "Big Picture News Reversals", "Ch 18 · Big Picture News Reversals", "Long", NotTestable("rules not fully defined: the trade needs 'an extraordinary event ... which causes a market to move dramatically', chosen by the trader (Ch 18, Big Picture News Reversals, p.141-147)"), &[],
           &["F|\"We are looking for an extraordinary event to occur which causes a market to move dramatically.\"", "E|\"Place a resting stop order to enter the market at this previous closing price level.\"", "X|\"Risk with a stop up to the lowest level the stock reached after the sell off.\""],
           "Choosing an \"extraordinary event\" is judgement.", None),
         d("ss_id_nr4", "ID/NR4", "Ch 19 · Range Contraction", "Long/Short", Live, &[], NR4, INDEX, None),

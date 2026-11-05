@@ -320,7 +320,7 @@ pub fn options_tickers(id:&str)->&'static [&'static str] {
     match id {
         "otvt_cvr1_sell_puts"=>&["SPY"],
         "ccl08_weekly_rsi_options"|"mahrs_covered_calls"|"ccl08_quick_scalp"|"fotol_covered_call"|"fotol_monthend_call"
-            |"hfm_und"|"hfm_und_long"|"hfm_und_short"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only
+            |"hfm_und"|"hfm_und_long"|"hfm_und_short"|"otvt_diz_short_strangle"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only; otvt_diz: lane K54
         "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
         "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
         _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
@@ -1360,7 +1360,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
     // intraday phase 1: minute data now exists for these, so the hold says what still blocks them
     match id {
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>return Some("Held: needs NYSE TICK data. Real 15-minute bars are now built from 1-minute data (SPY 2000-2025, SPX 2008-2026, NIFTY 50 2008-2026), but these day trades are taken only on days the course's 30-signal Market Timing count gives a buy bias, and one of the 30 signals is the NYSE TICK, which the vault does not have; counting only the other signals changes the strategy."),
-        "ss_smart_money_index"=>return Some("Held: rules not fully defined. The first-hour and last-hour prices are now built from real 1-minute bars, but the book uses the Smart Money Index as an indicator reading and gives no entry price, exit or stop for it."),
+        "ss_smart_money_index"=>return Some("Held: rules not fully defined. The first-hour and last-hour prices are now built from real 1-minute bars, but the book uses the Smart Money Index as an indicator reading and gives no entry price, exit or stop for it (Ch 21, p.173-175)."),
         "cwin_vix_gap_window"=>return Some("Held: waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
         _=>{}
     }
@@ -1374,7 +1374,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // atm00_fourplay: on the multi-unit account since lane K44 (books::units)
         // ---- end Active Trader 2000-2002 block
         // ---- Futures Magazine block (26 Oct 2026): held Live rules
-        "ftm_rg_oops"=>"Held: the coded entry stop is the close minus / plus a fixed 2 S&P 500 points; a fixed point amount has no equivalent on other indices, ETFs or stocks, and the gap rule needs real opens that the S&P cash index only has from SPY (1993), so no reviewed result can be published.",
+        "ftm_rg_oops"=>"Held: the unit of the entry stop is unresolved. The printed code sells at \"Close - 2 points stop\" (Futures Magazine May 2002 p.58). Read as 2.00 S&P 500 points it would run on the S&P 500 index only (decision #229); but in TradeStation's EasyLanguage \"points\" is a reserved word for the minimum price unit, so the code means about 2 ticks (decision #57), which would run on every index, ETF and stock. Lane K54 coded and checked both (SPX 2014-2026: 230 trades at 2.00 points, 250 at 2 ticks); no result is published until the reading is ruled.",
         // ---- end Futures Magazine block
         // ---- Active Trader block (26 Oct 2026): held Live rules
         // ---- end Active Trader block
@@ -1386,7 +1386,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "elcim_fi2"=>"Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).",
         // "nftm_accutrack": admitted by lane K51 (EP4 second series, decision #223)
         "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: the exits are a $500 initial stop and a $500 trailing stop on S&P 500 futures (Building High-Performance Trading Systems Fig. 46, p.21), fixed dollar amounts for a contract the vault does not hold; on indices, ETFs and stocks they would not mean what the book meant, and the book's printed result is the two modes traded together. The vault's accuracy gate blocks it; publishing needs your decision on how to scale the stops.",
-        "jhs35_spike35"=>"Held: the trend-change rule needs a fixed 'variance' in price points set per market (Spike 35 manual p.1 and p.3: S&P 500 40 points); the manual gives no value for the NIFTY 50, ETFs or stocks, so the rule can only run on the S&P 500 index and cannot be checked on Indian markets.",
+        // jhs35_spike35: admitted by lane K54 (SPX only, decision #229 (6))
         "pstc_20_40_75"=>"Held: the course trades this signal by buying long-dated call contracts (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those contract prices, and a stock or index price cannot stand in for them. The course's own table also reports the move in the underlying stock, and our independent check of that signal on the underlying matched with 0 differences, so it can be published as the underlying-stock signal if you accept that measure.",
         // ---- end Lane A singles held
         // ---- Lane A newsletters block (26 Oct 2026, lane B): held Live rules
@@ -1488,13 +1488,13 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // connors-leftovers (22 Oct 2026): plain card reasons for the remaining held Connors rules
         "ss_momentum_pinball"=>"Held: needs intraday data. Momentum Pinball buys or sells a break of the first trading hour's high or low; the vault holds daily bars only, so the first-hour range of each day is unknown.",
         "ss_smart_money_index"=>"Held: needs intraday data. The Smart Money Index is built from the first and the last hour of each trading day, and the book does not give an entry price or exit for it; the vault holds daily bars only.",
-        "ss_arms_index_5ma"|"ss_arms_index_5ma_nse"=>"Held: rules not fully defined. The book shows the 5-day average of the Arms Index (TRIN) as an indicator reading and leaves the trade to the reader (\"determine for yourself\", pp.181-182); there is no entry or exit to test.",
+        "ss_arms_index_5ma"|"ss_arms_index_5ma_nse"=>"Held: rules not fully defined. The book shows the 5-day average of the Arms Index (TRIN) as an indicator reading and leaves the trade to the reader (\"determine for yourself\", pp.181-182); there is no entry or exit to test. The advance/decline series it reads are held: the block is the missing rule, not data.",
         "oiss_plus_three_put"|"oiss_plus_three_call"=>"Held: needs option prices. OISS Plus Three sells index options; the vault has no US option prices, and for India the engine cannot yet value open option positions, so the result would not be the option trade the book describes.",
         "spmt_tick"=>"Held: needs NYSE TICK data. This rule reads the NYSE TICK at the close each day; the vault has no TICK history for the US or India.",
         "spmt_multi5"|"spmt_multi9"|"spmt_mts"=>"Held: needs NYSE TICK data. The Market Timing System counts how many of the course's 30 daily signals fire, and one of those signals is the NYSE TICK, which the vault does not have; counting only the other signals would be a different system.",
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>"Held: needs intraday data. These day trades are built on 15-minute bars of the trading day; the vault holds daily bars only.",
         // connors-final 26 Oct 2026: cwin_vix_gap_window is admitted on NIFTY 50 (India VIX 1-minute series); this text is no longer reached.
-        "ss_morning_news_reversal"=>"Held: needs data. Morning News Reversals trades the first move after an 8:30 ET economic report (the book trades bond and currency futures, which react before the stock market opens): the vault has no dated list of report days and no futures prices, and on stock indices the report comes an hour before the open, so the book's \"lifts the market four ticks above yesterday's high\" cannot be seen as it happened. Reviewed 26 Oct 2026; options for you in authors/connors-final/USER-DECISIONS.md.",
+        "ss_morning_news_reversal"=>"Held: needs data. Morning News Reversals (Ch 17, p.135-139) trades the first move after an 8:30 ET economic report (the book trades bond and currency futures, which react before the stock market opens): the vault has no dated list of report days and no futures prices, and on stock indices the report comes an hour before the open, so the book's \"lifts the market four ticks above yesterday's high\" cannot be seen as it happened. Reviewed 26 Oct 2026; options for you in authors/connors-final/USER-DECISIONS.md.",
         "alpha_weekly_mr_single"=>"Held: ranking method. The book (Ch. 6) buys the 10 lowest-volatility candidates from the 500 most liquid US stocks each week and reads the market regime from SPY; a single index, ETF or stock cannot reproduce that selection. The full method needs a stock universe (see the portfolio entry).",
         _=>return None,
     })
@@ -1813,7 +1813,7 @@ mod tests {
         use crate::books::{ftm, ftm2};
         let all:Vec<StrategyDef>=ftm::catalogue().into_iter().chain(ftm2::catalogue()).collect();
         let mut want:Vec<&str>=ftm::REVIEWED.iter().chain(ftm2::REVIEWED.iter()).copied().collect();
-        assert!(!want.contains(&"ftm_rg_oops") && held_reason("ftm_rg_oops").is_some_and(|r|r.starts_with("Held: ")));
+        assert!(!want.contains(&"ftm_rg_oops") && held_reason("ftm_rg_oops").is_some_and(|r|r.starts_with("Held: "))); // lane K54: unit of '2 points' unresolved (#57 vs #229)
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -1896,7 +1896,7 @@ mod tests {
     fn la_singles_held_rules_have_plain_card_reasons() {
         use crate::books::{elcim, jhs35, nfhp, nftm, pstc};
         let all:Vec<StrategyDef>=elcim::catalogue().into_iter().chain(jhs35::catalogue()).chain(nfhp::catalogue()).chain(nftm::catalogue()).chain(pstc::catalogue()).collect();
-        for id in ["elcim_fi2", /* nftm_accutrack: admitted (K51, #223) */ "nfhp_quadram_ct", "nfhp_quadram_ct_nse", "nfhp_quadram_tf", "nfhp_quadram_tf_nse", "jhs35_spike35", "pstc_20_40_75"] {
+        for id in ["elcim_fi2", /* nftm_accutrack: admitted (K51, #223) */ "nfhp_quadram_ct", "nfhp_quadram_ct_nse", "nfhp_quadram_tf", "nfhp_quadram_tf_nse", /* jhs35_spike35: admitted (K54, #229) */ "pstc_20_40_75"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }

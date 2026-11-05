@@ -5,8 +5,8 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "fbs50";
 
-const MID: &str = "incomplete/ambiguous: the text calls it only \"one part of a simple trading strategy\"; 'price' (close or intraday), the order type/fill and whether 'sell' means exit or reverse to short are not stated";
-const DAY: &str = "no exit and/or not mechanical: entry ideas for intraday bars only (methods 1-2 need tick counts, 3-4 are chart judgement - ABC correction, 'level of significance' - and 5-6 are commentary); none states an exit";
+const MID: &str = "rules not fully defined: the text calls the 50-bar midpoint only \"one part of a simple trading strategy\"; 'price' (close or intraday), the order type and fill and whether 'sell' means exit or reverse to short are not stated (50 Bar Trading Strategy p.1)";
+const DAY: &str = "rules not fully defined: entry ideas with no exit (methods 1-2 need tick counts, 3-4 are chart judgement - ABC correction, 'level of significance' - and 5-6 are commentary; 50 Bar Trading Strategy p.1); none states an exit";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, status, rules: &'static [&'static str]| StrategyDef { id, name, group: "50 Bar.pdf", session: 0, dir: "Long/Short", status,

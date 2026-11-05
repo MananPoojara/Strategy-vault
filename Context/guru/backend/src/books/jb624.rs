@@ -102,7 +102,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"The FBO is characterized by a lengthy period of sideways movement ... On a daily price chart I like to see at least 40 days in the sideways pattern\" (p.26-27)",
               "E|\"The breakout or buy signal would occur if there were two consecutive closing prices above the highest high or the lowest low during the FlatBase development period\" (p.27)"],
             "Author: \"given the somewhat loose definition that I have provided above\" (p.27). What counts as sideways is chart judgement."),
-        def!("jb624_or30", "30-Minute Breakout Method (S&P)", "Method #4 · 30-Minute Breakout", "Long/Short", NeedsData("intraday 30-minute bars (first 30-minute high/low and every later 30-minute close)"),
+        def!("jb624_or30", "30-Minute Breakout Method (S&P)", "Method #4 · 30-Minute Breakout", "Long/Short", NotTestable("same method as jb30d_or30, Bernstein's opening-range breakout from the first half hour (6-2-4 Winning Strategies & Systems p.51-55; 30 Days to Market Mastery p.151-153), coded once on that card; this copy has no separate result"),
             &["F|\"Use the 30 minute S&P futures chart day session only\"; note \"the high and the low of the first 30 minutes\" (p.51)",
               "E|\"The high of the first 30 minutes, if exceeded at the end of any 30-Minute bar, thereafter triggers a buy signal\"; low mirrored (p.51-52)",
               "X|\"The stop loss is the opposite signal ... the trade must be reversed\"; \"The initial profit target is the range of the first half-hour bar\"; break-even and trailing stops; \"Exit all positions by the end of the day\" (p.52)",

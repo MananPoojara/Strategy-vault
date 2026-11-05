@@ -14,7 +14,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("csadx_adxpress", "ADXpress", "Section Three/Four", "Long/Short", Status::NotTestable("\"two to five bar pause near the 5 or 10 SMA\" is judgement and no exit or stop is given (p.188)"),
           &[],
           ""),
-        d("csadx_adxtender", "ADXtender", "Section Three/Four", "Long/Short", Status::NotTestable("\"retraces near the 20 EMA\" judgement; exit only a stop and an optional discretionary target (p.198)"),
+        d("csadx_adxtender", "ADXtender", "Section Three/Four", "Long/Short", Status::NotTestable("rules not fully defined: the entry needs a judgement (\"retraces near the 20 EMA\") and the exit is only a stop and an optional discretionary target (ADXcellence p.198)"),
           &[],
           ""),
         d("csadx_adxplosive", "ADXplosive", "Section Three/Four", "Long/Short", Status::NotTestable("dual-timeframe trendline/triangle patterns; \"trail your stop\" unspecified (p.239)"),

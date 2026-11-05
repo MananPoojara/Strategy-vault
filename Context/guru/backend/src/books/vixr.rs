@@ -182,9 +182,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Sizing: \"one S&P ... for each signal\" and \"A $100,000 account would have grown more than 18 times using no further leverage or increased account size\" (p.82): every signal is the same fixed quantity, never resized; the first signal's unit is the starting account (multi-unit account, books::units, lane K43). The book's $250/point contract and its dollar result (over $1.8 million, 1/1/93-8/6/01) are futures amounts and are not reproduced (lead decision 167)"],
           note!("Each CVR is also coded on its own above (one position, stop and reverse). ", open),
           claim("~1300 signals", "~65%", "-", "2-3 days", "1/1/93 - 8/6/01")),
-        d("vixr_stocks", "Trading CVR signals with stocks", NotTestable("covered by the CVR rules on SPY; the stock half has no relative-strength formula or universe"),
+        d("vixr_stocks", "Trading CVR signals with stocks", NotTestable("rules not fully defined: the stock half (on a CVR buy, buy the heavy-weight stocks with the highest relative strength, e.g. GE; on a sell, short the weakest; Section Four, 'Stocks', p.83-84) gives no relative-strength formula and no list of stocks. The SPY half is the CVR 1-11 cards, which run on SPY (D1 CUD-11, decision 186)"),
           &[], "On a CVR buy, buy SPY or the strongest heavy-weight stocks by relative strength (sell the weakest on sells). The SPY half is covered by the CVR 1-11 cards above, which run on SPY. The stock half stays held: no relative-strength formula or stock universe is given (D1 CUD-11, decision 186).", None),
-        d("vixr_options", "Trading CVR signals with options", NotTestable("needs option chains"),
+        d("vixr_options", "Trading CVR signals with options", NotTestable("rules not fully defined: on CVR signals the book suggests selling OEX puts or put spreads (Section Four, 'Options', p.84-85) but gives no strike, expiry or exit, so there is no mechanical rule to run; OEX option prices are not held either"),
           &[], "Buy signals: sell OEX puts / put spreads; no mechanical rules.", None),
     ]
 }

@@ -125,8 +125,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
     // user-approved visible note (2026-10-21): the sides stay admitted, the combined rule failed the gate's book comparison
     const CVR_SIDE_NOTE: &str = concat!("Accuracy-gate note: the combined CVR I (buys and sells together, otvt_cvr1) FAILED the gate's comparison with the book: 48.6% winners (34 of 70, SPY 1993-03..1997-01) vs the book's >60%, because the vault reads today's CBOE VIX, not the book's OEX VXO. The book's >60% is for buys and sells together; this side is shown on its own. The short side alone wins only about 36% (16 of 45) in that window. ", cvr_note!());
     vec![
-        d("otvt_diz_short_strangle", "Diz HV10/HV100 peak · short strangle", "Trading Volatility with Options", "Long/Short", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), IV, DIZ,
-          "Prof. Fernando Diz (PTJ July 1996). Signal from daily closes; the strangle is priced with Black-Scholes from the per-ticker IV30 series (no skew), strikes otm% either side (book examples are 2-13% OTM, no rule), dte calendar days to expiry (examples about 2 months). Down-ticks counted on the 10-day HV (p.tick_src=1: the 10/100 ratio, as in the soybean text). Down-ticks count from the peak (the bar that first reaches 1.65); p.rearm_reset=1 is the old fitted reading that restarts the count on every bar still >= 1.65 [Not from the book]. Reversion = HV10 <= HV100. No IV30 series is shipped, so this is a data gap until real per-ticker IV or option data exists; a single ATM IV for both legs would ignore skew, which matters for a 5% OTM strangle. Book traded COMEX gold/silver and soybeans; run here on indices/ETFs. Return = option P&L / underlying price.",
+        d("otvt_diz_short_strangle", "Diz HV10/HV100 peak · short strangle", "Trading Volatility with Options", "Long/Short", Live, &[], DIZ,
+          "Prof. Fernando Diz (PTJ July 1996, p.3-12). Options phase 2 (lane K54, decision #229 (4)): real end-of-day option prices of the exact contracts (SPY/QQQ/IWM 16:00 ET snapshots 2008-2025 at the mid; NIFTY 50 / NIFTYBANK NSE F&O at the traded close), monthly expiries only, no pricing model. Signal from daily closes: HV = annualised standard deviation of daily log returns; armed when HV10 >= 1.65 x HV100; two down-ticks in the 10-day HV counted from the peak (p.tick_src=1: in the 10/100 ratio, as the soybean text says; an up-tick resets the count, silver example; p.rearm_reset=1 is the old fitted reading [Not from the book]); 'on the day after these readings we place the trade' = sell both legs at the next day's close (p.entry_next=0: the confirmation close). Exit: buy both legs back on the first close with HV10 <= HV100 ('reversion to a normal volatility level is complete') or on the 15th trading day ('ten to fifteen days'); a leg without a traded price that day leaves on its next traded close; a leg still held on its last trading day with no traded exit that day settles at intrinsic value on the underlying's close. [Labelled readings, decision #229 (4)] Expiry: the text gives none and the examples sold options about six to eight weeks out; the data hold monthly expiries only, so the nearest monthly expiry whose last trading day is more than 21 calendar days away (it outlives the 15-day time stop) is used (p.min_dte). Strikes: the text says only out-of-the-money call and put; its examples (gold 380 put / 410 call, silver 425 / 525, soybeans 650 / 700) were roughly 2-12% out of the money, so the default sells the first listed strike at least 5% out of the money on each side (p.otm). One strangle per unit of the underlying, sized at the account equity; return = option P&L / underlying close at entry. Book traded COMEX gold/silver and soybean options; here SPY, QQQ, IWM, NIFTY 50 and NIFTYBANK options (declared application). ats_hv_ratio_short_strangle (Advanced Trading Strategies) is the same article and is not a separate card.",
           claim("3 examples", "3/3", "130 pts gold, 360 pts silver, 15c beans", "8-14 days", "1994-95 futures options")),
         v(d("otvt_cvr1", "CVR I · buys and sells (reversing)", "Connors VIX Reversal I", "Long/Short", Live, VIX_IV, CVR_BOTH, CVR_NOTE,
           claim("-", ">60%", "-", "1-3 days", "four years to March 1997, S&P, book's VIX = OEX VXO (reproduces with p.src=1: 68.3%; default SPX VIX: 48.6%)"))),
@@ -137,7 +137,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           claim("2 examples", "2/2", "+5 1/2 and +6 1/4 points", "3 days", "Feb 1997, OEX"))),
         v(d("otvt_cvr1_buy_puts", "CVR I sell signal · buy puts", "Trading Options with the CVR", "Short", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), VIX_IV, CVR_PUTS_BUY,
           "At-the-money put (otm% = 0), priced like the put-selling version. Stop: the index rises 10 S&P points (1.28% of the OEX 781.98 example level) above the entry close, priced at that level or the open if it gaps through. Return = put P&L / underlying price. Runs only on SPY and NIFTY 50, the two tickers whose own option IV the volatility index measures; other tickers return a data gap (their numbers would be priced off another index's IV) [Not from the book]. Model biases [Not from the book]: p.r = risk-free rate (default 0; about 5 for 1990s US, 6.5 for India; r = 0 overprices puts about 8-10%); p.vxo_adj=1 scales VXO by sqrt(22/30) to undo its trading-day upward bias (Carr & Wu 2006); no skew (optimistic for sold puts in sell-offs); no bid/ask. Equity inside a trade moves with the underlying (delta 1), so max DD and Sharpe are approximate; closed-trade returns are exact.", None)),
-        d("otvt_split_call_selling", "Sell calls after stock-split announcements", "Options on Stock Splits", "Short", NotTestable("needs option chains and split-announcement data; no threshold, strike or exit given"), &[], SPLIT,
+        d("otvt_split_call_selling", "Sell calls after stock-split announcements", "Options on Stock Splits", "Short", NotTestable("rules not fully defined: after a split announcement the article sells the calls while their implied volatility stays inflated (Barnes & Noble, 21 Aug 1997) but gives no volatility threshold, strike, exit or stop (Options on Stock Splits, PTJ Dec 1997, book p.21-23); it would also need single-stock option prices and split-announcement dates"), &[], SPLIT,
           "Barnes & Noble example (Aug 21, 1997): 100-day HV 27%, call IV 39.3%. No trade rule. Not applicable to index data.", None),
         d("otvt_sector_options_overpriced", "Overpriced sector options · sell IV >= 3x HV50", "Exploiting Overpriced Stock Sector Options", "Long/Short", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), IV, SECTOR,
           "Per-ticker IV30 stands in for both legs' IV (no IV30 series is shipped, so this is a data gap until real per-ticker IV or option data exists; one ATM IV for both legs reduces the test to index IV vs HV50). \"Combined\" read as the SUM of put and call IV (2 x IV30 >= 3 x HV50); p.comb=0 reads it as each leg's IV >= 3 x HV50 (the ptjopt transcription's reading). HV50 annualised with 260 days (the book's own factor). Strikes otm% either side of the close (book: 195/200 around 197.02), dte 19 (REIT example). Stop checked at the close: combined price >= credit x (1 + stop%). Otherwise held to expiry (intrinsic value). p.side=1 calls only, 2 puts only. Book recommends indices; run on indices/ETFs. Return = option P&L / underlying price.", None),
@@ -170,8 +170,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("entry_next", "Enter: 0 = confirmation close, 1 = next day's close", 1.0, 0.0, 1.0, 1.0),
             p("exit_ratio", "Exit: HV ratio at or below", 1.0, 0.7, 1.3, 0.05),
             p("tstop", "Time stop (days)", 15.0, 5.0, 20.0, 1.0),
-            p("otm", "Strikes: % out of the money", 5.0, 1.0, 15.0, 1.0),
-            p("dte", "Calendar days to expiry", 60.0, 20.0, 120.0, 5.0),
+            p("otm", "Strikes: first listed strike at least this % out of the money (book examples about 2-12%) [labelled reading]", 5.0, 1.0, 15.0, 1.0),
+            p("min_dte", "Expiry: nearest monthly expiry whose last trading day is more than N calendar days away (21 = outlives the 15-day time stop) [labelled reading]", 21.0, 0.0, 60.0, 1.0),
             p("nm1", "HV over N-1 returns (0/1)", 0.0, 0.0, 1.0, 1.0),
             p("rearm_reset", "Restart the down-tick count on every bar still at/above the arm ratio (0 = book, 1 = old fitted reading)", 0.0, 0.0, 1.0, 1.0),
         ],
@@ -339,8 +339,36 @@ pub fn gap(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Stri
 }
 
 /// Options phase 2: CVR I buy signal -> sell the N-th listed SPY put strike below the close, real prices (see the card note).
+/// Diz (PTJ July 1996): (confirmation bars, HV10/HV100 ratio). Armed when the ratio reaches `hi`, then `need` consecutive
+/// down-ticks counted from the peak (an up-tick resets the count); rearm=1: the old fitted reading, where every bar still >= hi
+/// restarts the count.
+fn diz_conf(c: &[f64], short_n: usize, long_n: usize, nm1: bool, tick_ratio: bool, hi: f64, need: usize, rearm: bool) -> (Vec<bool>, Vec<f64>) {
+    let (hs, hl) = (hvx(c, short_n, nm1), hvx(c, long_n, nm1));
+    let ratio: Vec<f64> = hs.iter().zip(&hl).map(|(a, b)| a / b).collect();
+    let tick: &[f64] = if tick_ratio { &ratio } else { &hs };
+    let mut conf = vec![false; c.len()];
+    let (mut armed, mut cnt) = (false, 0);
+    for i in 1..c.len() {
+        if armed {
+            cnt = if tick[i] < tick[i - 1] { cnt + 1 } else { 0 };
+            if cnt >= need {
+                conf[i] = true;
+                armed = false;
+                cnt = 0;
+                continue;
+            }
+        }
+        if ratio[i] >= hi && (rearm || !armed) {
+            armed = true;
+            cnt = 0;
+        }
+    }
+    (conf, ratio)
+}
+
 pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
     use crate::options::{self as opt, Contract, Exit};
+    if id == "otvt_diz_short_strangle" { return Some(diz_strangles(x, from, to, p)); }
     if id != "otvt_cvr1_sell_puts" { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
@@ -372,6 +400,47 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
         i = j + 1;
     }
     Some(Ok(out))
+}
+
+/// Diz short strangle on real option chains (lane K54, decision #229 (4)): sell the put and the call of the nearest monthly
+/// expiry that outlives the time stop, each the first listed strike at least `otm` out of the money; both legs at the entry
+/// close's traded price; both bought back on the close where HV10 <= HV100 x exit_ratio or the time stop is reached (a leg
+/// that did not trade that day leaves on its next traded close; a leg reaching its last trading day settles at intrinsic value).
+fn diz_strangles(x: &Ctx, from: usize, to: usize, p: &Params) -> Result<Vec<crate::options::Pos>, String> {
+    use crate::options::{self as opt, Contract, Exit};
+    let schema = params("otvt_diz_short_strangle").unwrap_or_default();
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
+    let u = |k: &str| g(k).round().max(1.0) as usize;
+    let b = |k: &str| g(k).round() >= 1.0;
+    let Some(chain) = x.options else { return Err(crate::books::oiss::NO_CHAIN.into()) };
+    let c = &x.c;
+    let (conf, ratio) = diz_conf(c, u("short_n"), u("long_n"), b("nm1"), b("tick_src"), g("ratio_hi"), u("ticks"), b("rearm_reset"));
+    let (next, ex, ts, otm, min_dte) = (b("entry_next"), g("exit_ratio"), u("tstop"), g("otm") / 100.0, g("min_dte"));
+    let mut w = opt::Window::new(chain, x, 24);
+    let mut out = Vec::new();
+    let mut e = from;
+    while e <= to {
+        if !(if next { e > 0 && conf[e - 1] } else { conf[e] }) { e += 1; continue; }
+        let (s0, today) = (c[e], opt::ymd(&x.r[e].date));
+        let day = w.at(e).to_vec();
+        let pick = opt::expiries(&day).into_iter().find(|&k| (opt::day_no(opt::ltd(x, k)) - opt::day_no(today)) as f64 > min_dte).and_then(|k| {
+            let put = opt::strikes(&day, k, true).into_iter().rev().find(|&v| v <= s0 * (1.0 - otm))?;
+            let call = opt::strikes(&day, k, false).into_iter().find(|&v| v >= s0 * (1.0 + otm))?;
+            Some((Contract { expiry: k, put: true, strike: put }, Contract { expiry: k, put: false, strike: call }))
+        });
+        let Some((pc, cc)) = pick else { e += 1; continue };
+        let (Some(p0), Some(c0)) = (opt::find(&day, pc).and_then(|q| q.fill_close()), opt::find(&day, cc).and_then(|q| q.fill_close())) else { e += 1; continue };
+        let mut rule = |k: usize| if ratio[k] <= ex { Some((Exit::Close, "reversion complete (HV10 back to HV100)".to_string())) } else if k >= e + ts { Some((Exit::Close, format!("time stop ({ts} days)"))) } else { None };
+        let (jp, pp, wp, op, mp) = opt::follow(&mut w, x, pc, -1.0, e, p0, to, &mut rule);
+        let (jc, pcl, wc, oc, mc) = opt::follow(&mut w, x, cc, -1.0, e, c0, to, &mut rule);
+        let j = jp.max(jc);
+        let pnl: Vec<f64> = (e..=j).map(|k| pp[(k - e).min(pp.len() - 1)] + pcl[(k - e).min(pcl.len() - 1)]).collect();
+        out.push(opt::Pos { dir: 1.0, s0, entry_i: e, exit_i: j, pnl, open: op || oc,
+            reason: format!("sold the {} put at {p0:.2} and the {} call at {c0:.2} exp {} on {} (credit {:.2}) · put: {wp} · call: {wc} · put {} · call {}",
+                pc.strike, cc.strike, pc.expiry, x.r[e].date, p0 + c0, mp.text(), mc.text()) });
+        e = j + 1;
+    }
+    Ok(out)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -439,65 +508,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let lab = if long_puts { "bought" } else { "sold" };
                 out.push(opt_trade(-q, i, s0, j, v1 - v0, format!("{why} · {lab} {} put {} -> {}", f2(k), f2(v0.abs()), f2(v1.abs())), open));
                 i = j + 1;
-            }
-            out
-        }
-        "otvt_diz_short_strangle" => {
-            let Some(iv) = x.series("IV30") else { return Some(vec![]) };
-            let nm1 = b("nm1");
-            let (hs, hl) = (hvx(c, u("short_n"), nm1), hvx(c, u("long_n"), nm1));
-            let ratio: Vec<f64> = hs.iter().zip(&hl).map(|(a, b)| a / b).collect();
-            let tick: &[f64] = if b("tick_src") { &ratio } else { &hs };
-            let (hi, need, next, ex, ts, otm, dte, rearm) = (g("ratio_hi"), u("ticks"), b("entry_next"), g("exit_ratio"), u("tstop"), g("otm") / 100.0, g("dte").round() as i64, b("rearm_reset"));
-            // confirmation bars: armed when the ratio reaches hi, then `need` consecutive down-ticks counted from the peak
-            // (an up-tick resets the count). rearm_reset=1: the old fitted reading, where every bar still >= hi restarts the count.
-            let mut conf = vec![false; c.len()];
-            let (mut armed, mut cnt) = (false, 0);
-            for i in 1..c.len() {
-                if armed {
-                    cnt = if tick[i] < tick[i - 1] { cnt + 1 } else { 0 };
-                    if cnt >= need {
-                        conf[i] = true;
-                        armed = false;
-                        cnt = 0;
-                        continue;
-                    }
-                }
-                if ratio[i] >= hi && (rearm || !armed) {
-                    armed = true;
-                    cnt = 0;
-                }
-            }
-            let mut out = Vec::new();
-            let mut e = from;
-            while e < to {
-                if !(if next { e > 0 && conf[e - 1] } else { conf[e] }) || !iv[e].is_finite() {
-                    e += 1;
-                    continue;
-                }
-                let s0 = c[e];
-                let (pk, ck) = (s0 * (1.0 - otm), s0 * (1.0 + otm));
-                let bk = Book { legs: vec![(true, pk, -1.0), (false, ck, -1.0)], exp: days[e] + dte, r: 0.0 };
-                let credit = -bk.value(s0, days[e], iv[e]);
-                let mut done = None;
-                for j in e + 1..=to {
-                    let why = if ratio[j] <= ex {
-                        "reversion complete"
-                    } else if j >= e + ts {
-                        "time stop"
-                    } else if days[j] >= bk.exp {
-                        "expiry"
-                    } else if j == to {
-                        "open"
-                    } else {
-                        continue;
-                    };
-                    done = Some((j, -bk.value(c[j], days[j], last(iv, j)), why));
-                    break;
-                }
-                let Some((j, debit, why)) = done else { break };
-                out.push(opt_trade(1.0, e, s0, j, credit - debit, format!("{why} · sold {}P/{}C for {} -> {}", f2(pk), f2(ck), f2(credit), f2(debit)), why == "open"));
-                e = j + 1;
             }
             out
         }
@@ -672,6 +682,19 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diz_confirms_after_two_down_ticks_from_the_peak() {
+        // lane K54: a quiet market, a burst of large moves (HV10 >= 1.65 x HV100), then calm: confirmation on the second
+        // consecutive down-tick of HV10 after the ratio reaches 1.65
+        let mut c = vec![100.0f64];
+        for i in 1..200 { let r = if (150..160).contains(&i) { if i % 2 == 0 { 0.05 } else { -0.05 } } else if i % 2 == 0 { 0.002 } else { -0.002 }; c.push(c[i - 1] * (1.0 + r)); }
+        let (conf, ratio) = diz_conf(&c, 10, 100, false, false, 1.65, 2, false);
+        let first = conf.iter().position(|&b| b).expect("a confirmation");
+        let hv = crate::connors::hv(&c, 10);
+        assert!(ratio[..first].iter().any(|r| *r >= 1.65));
+        assert!(hv[first] < hv[first - 1] && hv[first - 1] < hv[first - 2]);
+    }
     use crate::Row;
 
     #[test]

@@ -58,8 +58,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"enter a long position in XLF (financials ETF) the day after the 20-day EMA crosses up over the 50-day EMA\" (p.100)",
               "X|\"One exit signal includes a cross of the 20-day EMA down below the 50-day EMA\" (p.100); example exit \"at the next open\" (p.101)"],
             note!("Exponential averages 2/(n+1) started at the first close of the file. The book's loss exit is a support line drawn by eye ($36.58) and is not run. A signal on the window's last bar is not filled.")),
-        held("fgitc_rotation", "Pure Momentum sector / country fund rotation (top five by 240-day gain)", "Ch.11 (p.249-252)", "fgitc",
-            NeedsData("ranks Fidelity sector funds or country ETFs each month; the vault holds neither universe"), &["E|Hold the five funds that advanced most over 240 days"]),
+        live("fgitc_rotation", "Pure Momentum country ETF rotation: each month hold the five Table 11.8 country ETFs with the largest 240-day gain", "Ch.11 · Sector trading, Go international (p.249-252)", "fgitc", "Long", false,
+            &["F|Universe: the 20 iShares country ETFs of Table 11.8 (EWA EWC EWD EWG EWH EWI EWJ EWK EWL EWM EWN EWO EWP EWQ EWS EWT EWU EWW EWY EWZ) (p.251)",
+              "E|\"After the last trading day of each month, take the five country ETFs that have advanced the most over the last 240 trading days. Buy and hold an equal dollar amount of shares of those five funds until the end of the next month. Then repeat this process.\" (p.251-252)",
+              "F|\"If fewer than five funds posted an advance over the past 240 trading days, then hold that portion of the portfolio in cash.\" (p.252)",
+              "X|\"... until the end of the next month. Then repeat this process.\" (p.252): at the next month end every position is closed and the new five are bought"],
+            "Jay Kaeppel's Pure Momentum system (S&C, July 1999) applied to country ETFs, as presented in The Index Trading Course. Book: Table 11.9 'Top 5 Monthly' yearly returns 4/1/97-5/12/04. [Declared readings, book silent] 240-day gain = month-end close / close 240 trading days earlier - 1; the ranking and the equal-fifth rebalance both use the month's last close (p.fill=1: buy at the next session's open), each fifth reset to equal dollars every month; ties by ticker; price-only closes (no dividends). The rotation runs once all 20 ETFs have 240 trading days of history (EWZ from July 2000, so from mid-2001): Kaeppel's 1997-2000 test necessarily had fewer funds, and a rotation with members missing would be a different rule (decision #229 (10)). Runs on the SPY calendar (rotation account, books::rotation). Lane K54."),
         held("fgitc_seasonal", "Presidential cycle, Kaeppel seasonal windows, Santa Claus rally", "Ch.10 (p.213-216)", "fgitc",
             NotTestable("the same rules as Kaeppel's Seasonal Stock Market Trends (kpss) and the Stock Trader's Almanac (hsta) already on the site; the book's turn-of-month window is the last 1 + first 4 days (kpss: last 2 + first 4)"), &["E|Buy the year before the election"]),
         held("fgitcwb_dia_expiry", "DIA option-expiration Friday short", "Workbook (p.118-119)", "fgitc",
@@ -75,7 +79,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Readings [book silent]: three-month return = close / close 63 trading days earlier - 1; the weekly ranking is taken at each week's last close and a switch fills there; the two weeks are counted from the purchase (two weekly rankings in a row at rank 4-9 while held); SMAs are simple averages of SPY's daily closes, checked every day: a close with the 50-day below the 200-day sells at that close, and a close with the 50-day above the 200-day while flat buys the top-ranked ETF at that close (the book's tilt starts on its first data day, 3 Jan 2000, already bullish); ties by ticker. Price-only ETF closes; the book's $5,000 tilt sits next to a protected SPY core that is not part of this card. Runs on the SPY calendar (SPY is also the bullish/bearish filter); the holdings are the ETFs named in each trade. US only (no NIFTY sector index series, decision #11).") },
         held("fgitsm_elliott", "ProfitSource Elliott-wave trades", "Seminar manual", "fgitsm", NotTestable("depends on proprietary Elliott-wave counts"), &["E|Proprietary"]),
         held("fg_options", "Option strategies (straddles, spreads, covered calls ...)", "Options Course, Trading Options For Dummies, seminar manuals", "fgtofd",
-            NeedsData("needs option prices (none in the vault)"), &["E|Option positions"]),
+            NotTestable("rules not fully defined: the option positions (calls, puts, spreads, straddles, covered calls) are chosen to a market view with no entry or exit rule (The Index Trading Course Ch.4-7 and 13, p.47-132 and 287-308; Trading Options For Dummies; The Stock Market Course Ch.5 p.117-157); real option prices are now held for SPY/QQQ/IWM and NIFTY, but there is no rule to run"), &["E|Option positions"]),
     ]
 }
 
@@ -90,6 +94,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "fgsmc_ma50_200" => ("fgsmc_ma50_200", "Fontanills 50/200", "50/200"),
         "fgtofd_ema20_50" => ("fgtofd_ema20_50", "Fontanills 20/50 EMA", "20/50"),
         "fgtofd_sector_tilt" => ("fgtofd_sector_tilt", "Fontanills sector SPDR tilt", "3-month rank, SPY 50/200"),
+        "fgitc_rotation" => ("fgitc_rotation", "Fontanills Pure Momentum country rotation", "top 5 of 20, 240 days"),
         _ if id.starts_with("fgitc_") || id.starts_with("fgitcwb_") || id.starts_with("fgitsm_") || id.starts_with("fgsmc_") || id.starts_with("fgtofd_") || id.starts_with("fg_") => ("fg_nt", "Fontanills (held)", "-"),
         _ => return None,
     })
@@ -106,6 +111,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "fgsmc_ma50_200" => vec![p("s", "Short average (book: 50)", 50., 2., 200., 1.), p("l", "Long average (book: 200)", 200., 3., 400., 1.)],
         "fgtofd_ema20_50" => vec![p("s", "Short EMA (book: 20)", 20., 2., 100., 1.), p("l", "Long EMA (book: 50)", 50., 3., 250., 1.)],
         "fgtofd_sector_tilt" => vec![], // lane K28: runs in books::rotation
+        "fgitc_rotation" => vec![p("fill", "Rebalance fill: 0 = the month's last close (default), 1 = the next session's open", 0., 0., 1., 1.)], // lane K54: books::rotation
         _ => return None,
     })
 }

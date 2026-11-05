@@ -15,7 +15,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "EUR/USD only: entries at round-number 'key levels' +/- 5 pips after a fractal breakout, a 15-pip stop and 20-30 pip targets on 5- and 1-minute charts",
            &["E|\"Always open a position at a key level. +/- 5 pips\"", "X|\"Always set your stop at 15 pips. Always set your limits at one of the key levels\""]),
         nt("ebfps_ema_sar", "Forex Profit System (EMA 10 crossing EMA 25 and 50, Parabolic SAR)", "The Forex Profit System · Steps 1-2", "ebfps",
-           "hourly bars confirmed by the 15-minute Parabolic SAR ('Never trade against the 15 min Parabolic SAR'), a stop 'just below the EMA 50' moved 'accordingly'; the SAR settings and the stop rule are not fixed (user option: run on 60-minute SPY/NIFTY bars from the 1-minute data)",
+           "rules not fully defined: the Parabolic SAR settings and the stop rule are not fixed - hourly bars confirmed by the 15-minute Parabolic SAR ('Never trade against the 15 min Parabolic SAR'), a stop 'just below the EMA 50' moved 'accordingly' (The Forex Profit System, Steps 1-2) (user option: run on 60-minute SPY/NIFTY bars from the 1-minute data)",
            &["E|\"If the ten crosses the 25 and 50 up from the bottom, you enter your trade long ... Make sure ... the Parabolic SAR is on the bottom\"", "X|\"The best time to exit a trade is when the price crosses back down through all 3 EMA's\""]),
     ]
 }

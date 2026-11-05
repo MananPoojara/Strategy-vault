@@ -24,13 +24,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"for large cap stock, buy when this indicator crosses below .45\" (p.3); \"buys when comparative strength is below .45\" (STT_BigStockNormal, p.5)", "X|\"and exit the long position when it crosses above .55\" (p.3); fills at the next open (p.6)"],
             BIG) },
         mk("rgs_efficiency", "Efficiency system (STT_EfficencySystem)",
-            Status::NotTestable("BuyLev, ExitLev and Period have no stated values and the crossing/order logic is not described"),
+            Status::NotTestable("rules not fully defined: BuyLev, ExitLev and Period have no stated values and the crossing/order logic is not described (Stock Traders Toolbox manual p.3)"),
             &["F|Efficiency = Net change / sum(abs(all changes)) over Period (manual)", "E|Type 0: buy weakness (BuyLev<ExitLev); Type 1: buy strength", "X|Exit at ExitLev"], ""),
         mk("rgs_market_timer", "STT_MarketTimer (S&P500 + advancing/declining issues)",
-            Status::NotTestable("the formula combining S&P500 with advance/decline issues is not given (only Btrig 1.05, Strig .995)"),
+            Status::NotTestable("rules not fully defined: the formula combining the S&P 500 with advancing and declining issues is not given, only the triggers Btrig 1.05 and Strig .995 (Stock Traders Toolbox manual p.3)"),
             &["F|Data2 S&P500, Data3 advancing issues, Data4 declining issues; outputs 1 bullish / -1 bearish (Btrig 1.05, Strig .995)"], ""),
         mk("rgs_indicators", "Indicators: PercentUpDays, RSMI, UpDownCount, Confused, volume spikes",
-            Status::NotTestable("indicators with suggested reading levels, no entry/exit system"),
+            Status::NotTestable("rules not fully defined: indicators with suggested reading levels and no entry or exit system (Stock Traders Toolbox manual p.3)"),
             &["F|PercentUpDays above 60% bullish, below 45% bearish; RSMI above .30 bullish, below -.30 bearish; UpDownCount below -5 (3-month window) bear market"], ""),
     ]
 }

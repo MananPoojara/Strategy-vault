@@ -7,7 +7,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "nftm";
 
 const HEINE: &str = "weekly Lehman long-term Government bond index, US cash T-Bond yield, 90-day T-Bill yield, Dow Jones Utility Average and CRB futures index; none in the vault";
-const PENTAD: &str = "weekly NYSE advance/decline line is available (NYSE_ADV_DEC to 2020-02-10) but Dow Jones Transportation Average, Dow Jones Utility Average and the Lehman / Dow Jones 20 bond index are not in the vault";
+const PENTAD: &str = "the Dow Jones Transportation and Utility Averages and the Lehman / Dow Jones 20 bond index, which are not in the vault (Timing Models & Classic Indicators, PENTAD model p.E-13 to E-14); the weekly NYSE advance/decline leg is held (NYSE_ADV_DEC to 2020-02-10)";
 const TBOND: &str = "T-Bond and 10-year note futures, LME nickel, Dow Jones Utilities, Fidelity Select Chemicals (FSCHX) and Financial (FIDSX); none in the vault";
 
 pub fn catalogue() -> Vec<StrategyDef> {

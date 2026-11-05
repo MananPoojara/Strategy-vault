@@ -447,7 +447,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // These runners still price options with Black-Scholes. Loading IV or changing
     // a catalogue badge must never enable their modeled performance in the app.
-    if matches!(def.id,"otvt_diz_short_strangle" | "otvt_cvr1_buy_puts" | "otvt_sector_options_overpriced") { // otvt_cvr1_sell_puts: options phase 2 (real prices)
+    if matches!(def.id,"otvt_cvr1_buy_puts" | "otvt_sector_options_overpriced") { // otvt_cvr1_sell_puts, otvt_diz_short_strangle (lane K54): options phase 2 (real prices)
         return issue("needs_data","This options runner uses a pricing model, not traded contract prices, and is disabled. Real prices of the exact contracts (strike, expiry and each leg) and a validated option-price implementation are required. Loading an IV or VIX series cannot enable this backtest.");
     }
     match def.status {

@@ -21,7 +21,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw", "stad2_stats2" /* intraday wave 2b: daily bars decide every trade */]; // stad10_mwt: held, lead decision 199 (MWT_HELD)
+pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw", "stad2_stats2" /* intraday wave 2b: daily bars decide every trade */, "stad4_spread_up", "stad4_spread_dn" /* lane K54: EP4 second series, decision #229 */]; // stad10_mwt: held, lead decision 199 (MWT_HELD)
 const MWT_HELD: &str = "the system's StopLoss_Amount 1500 (Vol 10 p.13) is an S&P-futures dollar stop; turned into points on a cash index it is not the book's rule, and a cash index cannot substitute for futures prices (lead decisions 167, 199). Held until continuous futures data exist";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
@@ -368,13 +368,13 @@ fn run_ts_n(x: &Ctx, from: usize, to: usize, mbb: usize, max_ent: usize, mut f: 
 // ------------------------------------------------------------------ catalogue
 
 struct Def { id: &'static str, name: &'static str, group: &'static str, dir: &'static str, status: Status,
-    needs_volume: bool, needs_vix: bool, rules: &'static [&'static str], notes: &'static str, family: (&'static str, &'static str, &'static str) }
+    needs_volume: bool, needs_vix: bool, series: &'static [&'static str], rules: &'static [&'static str], notes: &'static str, family: (&'static str, &'static str, &'static str) }
 
 const NO_MM: &str = "Book's money-management stop (\"an appropriate dollar amount\", amount never given) is not modelled.";
 
 fn defs() -> Vec<Def> {
     use Status::*;
-    let d = |id, name, group, dir, status, rules, notes, family| Def { id, name, group, dir, status, needs_volume: false, needs_vix: false, rules, notes, family };
+    let d = |id, name, group, dir, status, rules, notes, family| Def { id, name, group, dir, status, needs_volume: false, needs_vix: false, series: &[], rules, notes, family };
     vec![
     // ================= Volume 1 (1997)
     d("stad1_maco", "Moving Average Crossover (MACO)", "Vol 1 · Trending", "Long/Short", Live,
@@ -619,12 +619,19 @@ fn defs() -> Vec<Def> {
         "X|Avg1 < Avg2: ExitLong next bar at open; Avg1 > Avg2: ExitShort next bar at open",
         "X|Long StopPrice: first bar Low - Average(Range,4), then += (Low - StopPrice)/4; short: High + Average(Range,4), then -= (StopPrice - High)/3 (as printed, incl. the bold short block)"],
       "Vol 4 ch.2 p.57-62.", ("stad_3xa", "Three XAverages", "Vol 4")),
-    d("stad4_spread_up", "Spread System Beta Up", "Vol 4 · Support/Resistance", "Long",
-      NeedsData("Needs a second aligned data stream (Data2) for each traded symbol; the engine runs one symbol per strategy."),
-      &["E|Close/Close[10] of Data1 < same of Data2 and XAverage(C,8) > XAverage(C,15): buy next open", "X|StopPrice trail (1/3)"], "Vol 4 ch.3 p.63-68.", ("stad_spread4", "Spread Beta", "Vol 4 up")),
-    d("stad4_spread_dn", "Spread System Beta Down", "Vol 4 · Support/Resistance", "Short",
-      NeedsData("Needs a second aligned data stream (Data2) for each traded symbol."),
-      &["E|Mirror of Beta Up for the short side", "X|StopPrice trail"], "Vol 4 ch.3 p.68-72.", ("stad_spread4", "Spread Beta", "Vol 4 down")),
+    Def { series: &["BENCH.C"], ..d("stad4_spread_up", "Spread System Beta Up (stock vs the S&P 500)", "Vol 4 · Support/Resistance", "Long", Live,
+      &["F|Data2 = the S&P 500 index (p.64: 'the percent change of the traded stock and of the S&P 500 Index of the last 10 days'); Inputs Price1(Close), Price2(Close of Data2), Len(10) (p.65 code)",
+        "F|\"If Price1[Len] <> 0 then PcntChange1 = Price1 / Price1[Len]; If Price2[Len] <> 0 then PcntChange2 = Price2 / Price2[Len];\" (p.65)",
+        "E|\"If MarketPosition <> 1 and PcntChange1 < PcntChange2 And XAverage(Close,8) > XAverage(C,15) then Buy ... next bar at Open\" (p.65 code; the overview's 'buy on the next bar at the high of the current day', p.64, differs - code wins)",
+        "X|\"if MP = 1 and MP[1] <> 1 then StopPrice = Low - Average(Range,4); If MP = 1 then Begin ExitLong next bar at StopPrice Stop; StopPrice = StopPrice + (Low - StopPrice)/3; End;\" (p.65)"],
+      "Vol 4 ch.3 p.64-66 (EasyLanguage 'STAD 4: Spread B+'). Book test: IBM daily, Figure 2 report (p.71, figure only, no numbers in the text). [Declared readings] Data2 = BENCH.C: the S&P 500 close on the traded instrument's dates (EP4 second series, decision #223; a missing date carries the last S&P bar); India runs against NIFTY 50 (labelled benchmark swap); the S&P 500 itself, SPY and other funds tracking it are refused (compared with itself, decision #225). Indicators start on the first bar where both series exist. NumUnits($15,000 / 100-share lots) sizing = one unit per trade. The money-management stop's 'appropriate dollar amount' (p.66) is not given and is not modelled. Lane K54 (decision #229).",
+      ("stad_spread4", "Spread Beta", "Vol 4 up")) },
+    Def { series: &["BENCH.C"], ..d("stad4_spread_dn", "Spread System Beta Down (stock vs the S&P 500)", "Vol 4 · Support/Resistance", "Short", Live,
+      &["F|Data2 = the S&P 500 index (p.67 overview; p.69 inputs table: 'we used the S&P 500 Index'); PcntChange1 = Price1 / Price1[Len], PcntChange2 = Price2 / Price2[Len], Len(10) (p.69 code)",
+        "E|\"If MarketPosition <> -1 and PcntChange2 < PcntChange2[1] and PcntChange1 >= PcntChange1[1] then Sell ... next bar at Low Stop;\" (p.69 code, the bold line the book says is correct)",
+        "X|\"if MP = -1 and MP[1] <> -1 then StopPrice = High + Average(Range,4); If MP = -1 then Begin ExitShort next bar at StopPrice Stop; StopPrice = StopPrice - (StopPrice - High)/3; End;\" (p.69)"],
+      "Vol 4 ch.3 p.67-71 (EasyLanguage 'STAD 4: Spread B-'). Book test: Arcadia Financial daily, Figure 3 report (p.71, figure only). Note the printed entry compares each percent change with its own value one bar earlier (not stock vs index as in Beta Up): code wins. [Declared readings] as Beta Up: Data2 = BENCH.C (S&P 500 close carried on the traded dates, decision #223), NIFTY 50 for India (labelled), S&P 500 / SPY refused (decision #225); one unit per trade; the money-management stop amount is not given (p.70) and is not modelled. Lane K54 (decision #229).",
+      ("stad_spread4", "Spread Beta", "Vol 4 down")) },
     Def { needs_volume: true, ..d("stad4_dmacv", "Displaced Moving Average & Volume", "Vol 4 · Volatility", "Long/Short", Live,
       &["F|DMA = Average(Close,7)[5]; DMAV = Average(Volume,7)[5] (code p.77)",
         "E|Close crosses above DMA and Volume > DMAV: buy next bar at Open(next) + .2*AvgTrueRange(10) stop; crosses below and Volume < DMAV: sell at Open(next) - .2*ATR stop",
@@ -656,7 +663,7 @@ fn defs() -> Vec<Def> {
 
 pub fn catalogue() -> Vec<StrategyDef> {
     defs().into_iter().map(|d| StrategyDef { id: d.id, name: d.name, group: d.group, session: 0, dir: d.dir, status: d.status,
-        needs_volume: d.needs_volume, needs_vix: d.needs_vix, needs_series: &[], book: BOOK, rules: d.rules,
+        needs_volume: d.needs_volume, needs_vix: d.needs_vix, needs_series: d.series, book: BOOK, rules: d.rules,
         notes: if d.notes.is_empty() { NO_MM } else { d.notes }, claim: None }).collect()
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -707,6 +714,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad4_dmacv" => vec![p("plen", "Price MA", 7., 3., 20., 1.), p("pdisp", "Price displacement", 5., 0., 10., 1.), p("vlen", "Volume MA", 7., 3., 20., 1.), p("vdisp", "Volume displacement", 5., 0., 10., 1.), p("atrpct", "ATR fraction", 0.2, 0.05, 1., 0.05)],
         "stad7_vix" => vec![p("lowl", "Bull key reversal lookback (VIX lows)", 12., 1., 30., 1.), p("highh", "Bear key reversal lookback (VIX highs)", 1., 1., 30., 1.)],
         "stad10_mwt" => vec![p("len", "Average length", 2., 1., 10., 1.), p("stop_usd", "Stop loss $ per position (0 = none)", 1500., 0., 5000., 250.), p("pt_usd", "$ per index point (S&P 500 futures, 1995-99)", 500., 1., 1000., 50.)],
+        "stad4_spread_up" | "stad4_spread_dn" => vec![p("len", "Percent-change bars (Len)", 10., 2., 30., 1.)],
         "stad4_pricedist" => vec![p("klen", "Kurtosis length", 40., 10., 80., 5.), p("slen", "Skew length", 15., 5., 40., 1.)],
         "stad3_idbf" => vec![p("rng", "RngAvg: days in the true-range average (code default 3)", 3., 1., 10., 1.)], // intraday EP block (K42)
         _ => return None,
@@ -1350,6 +1358,30 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if st.pos == 1 { nx.push(o(A::Xl, P::Stop(exitp), "Swing/XMA stop")); }
             })
         }
+        "stad4_spread_up" | "stad4_spread_dn" => {
+            // EP4 (lane K54): BENCH.C = the S&P 500 / NIFTY 50 close on this instrument's dates; indicators from the first bar both exist
+            let Some(m) = x.series("BENCH.C") else { return Some(vec![]) };
+            let s0 = crate::second::run_start(&[m], from);
+            let len = u("len");
+            let pct = |v: &[f64]| { let mut out = vec![f64::NAN; n]; let mut cur = 0.0; // a variable keeps its value when Price[Len] = 0
+                for i in s0 + len..n { if v[i - len] != 0.0 { cur = v[i] / v[i - len]; } out[i] = cur; } out };
+            let (p1, p2) = (pct(c), pct(m));
+            let ar4 = sma(&(0..n).map(|i| h[i] - l[i]).collect::<Vec<_>>(), 4);
+            let mut pa = Para::default();
+            if id == "stad4_spread_up" {
+                let pad = |v: Vec<f64>| { let mut out = vec![f64::NAN; s0]; out.extend(v); out };
+                let (x8, x15) = (pad(xavg(&c[s0..], 8)), pad(xavg(&c[s0..], 15)));
+                run_ts(x, from, to, s0 + len.max(15), |i, st, _now, nx| {
+                    if st.pos != 1 && p1[i] < p2[i] && x8[i] > x15[i] { nx.push(o(A::Buy, P::Mkt, "Spread B+")); }
+                    pa.step(x, i, st.pos, ar4[i], 1.0, 1.0 / 3.0, 1.0 / 3.0, nx, "ExitLTrade");
+                })
+            } else {
+                run_ts(x, from, to, s0 + len + 1, |i, st, _now, nx| {
+                    if st.pos != -1 && p2[i] < p2[i - 1] && p1[i] >= p1[i - 1] { nx.push(o(A::Sell, P::Stop(l[i]), "Spread B-")); }
+                    pa.step(x, i, st.pos, ar4[i], 1.0, 1.0 / 3.0, 1.0 / 3.0, nx, "ExitSTrade");
+                })
+            }
+        }
         "stad4_3xa" => {
             let (a1, a2, a3) = (xavg(c, u("a1")), xavg(c, u("a2")), xavg(c, u("a3")));
             let ar4 = sma(&(0..n).map(|i| h[i] - l[i]).collect::<Vec<_>>(), 4);
@@ -1448,6 +1480,37 @@ mod tests {
             nx.push(o(A::Buy, P::Stop(101.0), "B")); nx.push(o(A::Xl, P::Stop(99.0), "X")); });
         assert_eq!(ts.len(), 1);
         assert_eq!((ts[0].legs[0].px, ts[0].exit_px, ts[0].exit_i), (102.0, 99.0, 1));
+    }
+    #[test]
+    fn spread_beta_up_buys_the_next_open_and_trails_a_third_of_the_gap() {
+        // lane K54: the stock gains 0.1 a bar, the S&P 1% a bar, so PcntChange1 < PcntChange2 and XAverage(8) > XAverage(15)
+        // from the first bar evaluated (MaxBarsBack 15): buy at bar 16's open. Ranges are 2, so the first stop = low - 2.
+        let mut r: Vec<Row> = (0..30).map(|i| { let c = 100.0 + 0.1 * i as f64;
+            Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1), open: c, high: c + 1.0, low: c - 1.0, close: c, volume: None } }).collect();
+        r[21].low = r[21].close - 4.0; r[21].high = r[21].close; // range 4: the stop is hit on bar 21
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("BENCH.C".into(), (0..30).map(|i| 1000.0 * 1.01f64.powi(i)).collect());
+        let ts = run("stad4_spread_up", &x, 0, 29, &Params::new()).unwrap();
+        assert_eq!((ts[0].dir, ts[0].legs[0].i, ts[0].legs[0].px), (1.0, 16, r[16].open));
+        let mut sp = r[16].low - 2.0; // MP = 1 first on bar 16; each bar the exit is at sp, then sp += (low - sp) / 3
+        for k in 16..20 { sp += (r[k].low - sp) / 3.0; }
+        assert_eq!((ts[0].exit_i, ts[0].open), (21, false));
+        assert!((ts[0].exit_px - sp).abs() < 1e-9, "{} vs {sp}", ts[0].exit_px);
+        // no S&P series (the benchmark itself): no trade
+        assert!(run("stad4_spread_up", &Ctx::new(&r, &r, &[]), 0, 29, &Params::new()).unwrap().is_empty());
+    }
+    #[test]
+    fn spread_beta_down_sells_a_stop_at_the_low_after_the_index_change_falls() {
+        // S&P accelerates to bar 14 then falls: PcntChange2 < PcntChange2[1] first on bar 15; the stock's 10-bar change keeps rising
+        let mut r: Vec<Row> = (0..30).map(|i| { let c = 100.0 * (0.0001 * (i * i) as f64).exp();
+            Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1), open: c, high: c + 1.0, low: c - 1.0, close: c, volume: None } }).collect();
+        r[16].low = r[15].low - 0.5; // bar 16 trades down to bar 15's low
+        let mut x = Ctx::new(&r, &r, &[]);
+        let m14 = 1000.0 * (0.0001f64 * 196.0).exp();
+        x.extra.insert("BENCH.C".into(), (0..30).map(|i| if i <= 14 { 1000.0 * (0.0001 * (i * i) as f64).exp() } else { m14 * 0.98f64.powi(i - 14) }).collect());
+        let ts = run("stad4_spread_dn", &x, 0, 29, &Params::new()).unwrap();
+        // first evaluated bar 11 (MaxBarsBack Len + 1): the S&P change still rises; bar 15 signals; the stop at bar 15's low fills on bar 16
+        assert_eq!((ts[0].dir, ts[0].legs[0].i, ts[0].legs[0].px), (-1.0, 16, r[15].low));
     }
     #[test]
     fn ids_unique_prefixed_and_every_live_strategy_runs() {

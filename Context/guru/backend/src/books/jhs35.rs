@@ -5,10 +5,13 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jhs35";
+/// Admitted by lane K54 (5 Nov 2026, decision #229 (6)): SPX only (gate list), from 2014 (real S&P 500 opens).
+pub const REVIEWED: &[&str] = &["jhs35_spike35"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "Book market: commodity futures (daily bars; p.18-19 'trade markets that are moving'); the publisher's note (p.1) gives stock-index variances: 'S&P 500 40 pts, NYSE Composite 40 pts, Value Line 60 pts'. \
 'pts' read with the book's own Table I convention (p.3: 1 pt = the quote's hundredth, e.g. Soybean Oil/Silver/Gold 1 pt = $.01): 40 pts = 0.40 index points (param variance; an absolute price amount, so on today's index levels it is a very small filter). \
-Runs on the indices (instrument swap; NIFTY 50 uses the same 0.40-point variance). Fills: change-of-trend entries and opposite-signal reversals at the close of the signal day (p.13 'enter the market at the close'); \
+Published on the S&P 500 index (SPX) only, because the variance is a fixed S&P point amount the manual gives for that index alone (decision #229 (6), a labelled reading of 'pts'); results start in 2014, where the S&P 500 index's daily opens are real (the MIT exit fills at the open on a gap). Fills: change-of-trend entries and opposite-signal reversals at the close of the signal day (p.13 'enter the market at the close'); \
 MIT exit / stop re-entry fill at the level, or at the open if the bar gaps through it. Book silent, neutral choices: the exit stop is first active the bar after an entry, and a re-entry is first allowed the bar after an exit \
 (daily bars cannot order the two touches inside one day); the first signal of either rule sets the initial trend; on the (rare) day both an up and a down change of trend would fire, nothing changes. \
 HIPs closer than 'more than one day' apart (p.7, figs 11-13): the higher high survives (the earlier one on a tie). No published trade results; p.1 says the system 'usually only keeps one in the market about four days per trade'.";
@@ -236,3 +239,10 @@ mod tests {
         assert_eq!((t.dir, t.legs[0].px, t.exit_i, t.exit_px), (1.0, 101.0, 22, 101.0));
     }
 }
+
+// Instrument admission: Spike 35 (lane K54, 5 Nov 2026, decision #229 (6)). The gate list limits it to SPX.
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && reviewed(def.id),
+    label: "Hamon traded commodity futures; the publisher's note (p.1) gives the S&P 500 variance '40 pts', read as 0.40 index points by the manual's Table I convention (p.3), a labelled reading. Published on the S&P 500 index (SPX) only, from 2014 (real opens); other instruments would need a variance the manual does not give.",
+    basis: "J. D. Hamon, Spike 35 Trader's Manual (2nd ed.) p.1-17 (rules), p.3 Table I (point convention); decision #229 (6); independent check authors/titles-1030/K54w/k54_ref.py.",
+};

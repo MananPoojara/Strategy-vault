@@ -13,12 +13,17 @@ use std::sync::OnceLock;
 /// Every row of the engine's own price file (us_data.csv / idx_data.csv), set once at start-up.
 pub static PRELOADED: OnceLock<&'static BTreeMap<String, Vec<Row>>> = OnceLock::new();
 
-pub const IDS: &[&str] = &["alpha_dyn_treasuries", "alpha_rising_assets", "fbrs_combo_top3", "fgtofd_sector_tilt", "stv7_bull_someplace", "stv7_sell_in_may"];
+pub const IDS: &[&str] = &["alpha_dyn_treasuries", "alpha_rising_assets", "fbrs_combo_top3", "fgitc_rotation", "fgtofd_sector_tilt", "kfgei_alloc_combined",
+    "kfgei_alloc_corr", "kfgei_alloc_rar", "kfgei_alloc_vol", "stv7_bull_someplace", "stv7_sell_in_may"]; // + lane K54 (decision #229 (5), (10))
 pub fn is_rotation(id: &str) -> bool { IDS.contains(&id) }
 pub const ANCHOR: &str = "SPY";
 pub const SECTORS: &[&str] = &["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"];
 pub const RISING: &[&str] = &["SPY", "IWM", "QQQ", "EFA", "EEM", "VNQ", "LQD", "GLD", "SHY", "IEF", "TLT", "AGG"];
 pub const TREASURY: &[&str] = &["IEI", "IEF", "TLH", "TLT"];
+/// Fontanills, The Index Trading Course p.251 Table 11.8 "ETFs by Country": all 20, every one in the US price file (lane K54).
+pub const COUNTRIES: &[&str] = &["EWA", "EWC", "EWD", "EWG", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWN", "EWO", "EWP", "EWQ", "EWS", "EWT", "EWU", "EWW", "EWY", "EWZ"];
+/// Vivanti & Kaufman ch.7: the United States, Japan and Germany in US dollars; their US-listed funds SPY, EWJ, EWG (labelled, #229 (5)).
+pub const GEI: &[&str] = &["SPY", "EWJ", "EWG"];
 
 pub const MODEL: &str = "rotation_multi_etf_v1";
 pub const BASIS: &str = "Rotation account (lane K28). The rule ranks or weights several actual ETFs from the vault's US price file (price-only daily closes and opens, no dividends). SPY supplies only the trading calendar and the buy-and-hold benchmark; the chart's price line is SPY's, while each trade's prices are those of the ETF named in its reason. Positions are valued every day at their own ETF's close; no price is filled in or carried. Rules that keep a holding until it leaves the selection pass a sold holding's proceeds to its replacement; rules that set weights at every rebalance close each position and reopen it at the new weight, so a continuing holding is one trade per rebalance period. Costs: the vault fee and slippage setting is charged per side on each position (0 by default). No rotation is run before every ETF of the universe has the history the ranking needs.";
@@ -50,6 +55,17 @@ impl U {
 struct Ev { k: usize, open: bool, hold: Vec<(usize, f64)>, why: String }
 
 fn month_end(x: &Ctx, k: usize) -> bool { k + 1 < x.r.len() && x.r[k].date[..7] != x.r[k + 1].date[..7] }
+fn year_end(x: &Ctx, k: usize) -> bool { k + 1 < x.r.len() && x.r[k].date[..4] != x.r[k + 1].date[..4] }
+fn sd(v: &[f64]) -> f64 { let m = v.iter().sum::<f64>() / v.len() as f64; (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (v.len() - 1) as f64).sqrt() }
+fn corr(a: &[f64], b: &[f64]) -> f64 {
+    let (ma, mb) = (a.iter().sum::<f64>() / a.len() as f64, b.iter().sum::<f64>() / b.len() as f64);
+    let cov: f64 = a.iter().zip(b).map(|(x, y)| (x - ma) * (y - mb)).sum();
+    cov / (a.iter().map(|x| (x - ma).powi(2)).sum::<f64>() * b.iter().map(|y| (y - mb).powi(2)).sum::<f64>()).sqrt()
+}
+/// First index of the smallest (largest when `max`) finite value; NaN never wins; ties keep the earlier market (US, Japan, Germany).
+fn pick(v: &[f64], max: bool) -> Option<usize> {
+    (0..v.len()).filter(|&a| v[a].is_finite()).fold(None, |b: Option<usize>, a| match b { Some(b) if (if max { v[a] <= v[b] } else { v[a] >= v[b] }) => Some(b), _ => Some(a) })
+}
 fn week(x: &Ctx, k: usize) -> i64 { (crate::day_number(&x.r[k].date) + 3).div_euclid(7) } // Monday-based weeks
 fn week_end(x: &Ctx, k: usize) -> bool { k + 1 < x.r.len() && week(x, k) != week(x, k + 1) }
 fn ret(c: &[f64], k: usize, n: usize) -> f64 { c[k] / c[k - n] - 1. }
@@ -153,6 +169,56 @@ fn events(id: &str, x: &Ctx, u: &U, from: usize, to: usize, p: &Params) -> (Vec<
             }
             (ev, false)
         }
+        "fgitc_rotation" => {
+            // Table 11.8 country ETFs (lane K54): after the month's last close rank the 20 by their 240-trading-day gain; equal
+            // fifths in the five with the largest gain, a fifth in cash for each of those five without a positive gain (p.251-252)
+            let next = p.get("fill").copied().unwrap_or(0.) >= 0.5;
+            for &k in &me {
+                if k < 240 || !u.all(&[k, k - 240]) || (next && !u.o.iter().all(|o| ok(o[k + 1]))) { continue; }
+                let s: Vec<f64> = u.c.iter().map(|c| ret(c, k, 240)).collect();
+                let top: Vec<usize> = u.rank(&s).into_iter().take(5).collect();
+                let hold: Vec<(usize, f64)> = top.iter().filter(|&&a| s[a] > 0.).map(|&a| (a, 0.2)).collect();
+                let cash = 5 - hold.len();
+                ev.push(Ev { k: if next { k + 1 } else { k }, open: next, hold, why: format!("top 5 by 240-day gain to {}: {}{}", x.r[k].date,
+                    top.iter().map(|&a| format!("{} {}", name(a), pct(s[a]))).collect::<Vec<_>>().join(", "), if cash > 0 { format!("; {cash} fifth(s) in cash (no positive gain)") } else { String::new() }) });
+            }
+            (ev, false)
+        }
+        s if s.starts_with("kfgei_alloc_") => {
+            // Vivanti & Kaufman ch.7 (lane K54): at each year's last close, from the last three calendar-year returns (price only, USD
+            // funds), set next year's weights; u = [SPY, EWJ, EWG]
+            let monthly = p.get("corr").copied().unwrap_or(0.) >= 0.5;
+            let ye: Vec<usize> = (0..n).filter(|&k| year_end(x, k)).collect();
+            for j in 3..ye.len() {
+                let (k, ks) = (ye[j], &ye[j - 3..=j]);
+                if !u.all(ks) { continue; }
+                let r: Vec<Vec<f64>> = u.c.iter().map(|c| (1..4).map(|q| c[ks[q]] / c[ks[q - 1]] - 1.).collect()).collect();
+                let w_one = |best: Option<usize>| -> Option<Vec<f64>> { let b = best?; Some((0..3).map(|a| if a == b { 2. / 3. } else { 1. / 6. }).collect()) };
+                let vol = w_one(pick(&r.iter().map(|v| sd(v)).collect::<Vec<_>>(), false));
+                let rar = w_one(pick(&r.iter().map(|v| (v.iter().map(|x| 1. + x).product::<f64>().powf(1. / 3.) - 1.) / sd(v)).collect::<Vec<_>>(), true));
+                let cr = if monthly {
+                    let me36: Vec<usize> = me.iter().copied().filter(|&m| m <= k).collect();
+                    (me36.len() >= 37 && u.all(&me36[me36.len() - 37..])).then(|| {
+                        let m = &me36[me36.len() - 37..];
+                        let mr: Vec<Vec<f64>> = u.c.iter().map(|c| (1..37).map(|q| c[m[q]] / c[m[q - 1]] - 1.).collect()).collect();
+                        [f64::NAN, corr(&mr[0], &mr[1]), corr(&mr[0], &mr[2])]
+                    })
+                } else { Some([f64::NAN, corr(&r[0], &r[1]), corr(&r[0], &r[2])]) };
+                let corr_w = cr.and_then(|cv| pick(&cv, false)).map(|b| (0..3).map(|a| if a == 0 { 0.7 } else if a == b { 0.3 } else { 0. }).collect::<Vec<f64>>());
+                let w = match id {
+                    "kfgei_alloc_vol" => vol,
+                    "kfgei_alloc_rar" => rar,
+                    "kfgei_alloc_corr" => corr_w,
+                    _ => match (vol, rar, corr_w) { (Some(a), Some(b), Some(c)) => Some((0..3).map(|q| (a[q] + b[q] + c[q]) / 3.).collect()), _ => None },
+                };
+                let Some(w) = w else { continue };
+                let yr = |q: usize| &x.r[ks[q]].date[..4];
+                ev.push(Ev { k, open: false, hold: (0..3).filter(|&a| w[a] > 0.).map(|a| (a, w[a])).collect(),
+                    why: format!("weights for {} from {}-{} yearly returns: {}", yr(3).parse::<i32>().map_or(String::new(), |y| (y + 1).to_string()), yr(1), yr(3),
+                        (0..3).map(|a| format!("{} {:.1}%", name(a), 100. * w[a])).collect::<Vec<_>>().join(", ")) });
+            }
+            (ev, false)
+        }
         _ => (ev, true),
     }
 }
@@ -218,6 +284,8 @@ pub fn account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params,
             "stv7_sell_in_may" => vec!["SPY", if p.get("sector").copied().unwrap_or(0.) >= 0.5 { "XLV" } else { "XLP" }],
             "alpha_rising_assets" => RISING.to_vec(),
             "alpha_dyn_treasuries" => TREASURY.to_vec(),
+            "fgitc_rotation" => COUNTRIES.to_vec(),
+            s if s.starts_with("kfgei_alloc_") => GEI.to_vec(),
             _ => SECTORS.to_vec(),
         };
         let u = universe(x, data, &names)?;
@@ -249,6 +317,41 @@ mod tests {
         assert!((a.equity[279] - 329. / 161.).abs() < 1e-12 && (a.equity[200] - 250. / 161.).abs() < 1e-12 && a.equity[50] == 1.);
         assert!(account("stv7_sell_in_may", &Ctx::new(&data["XLP"], &spy, &[]), 0, 335, 0., &Params::new(), Some(&data)).unwrap().is_err());
         assert!(account("f1a", &x, 0, 335, 0., &Params::new(), Some(&data)).is_none());
+    }
+    #[test]
+    fn country_rotation_holds_fifths_of_the_top_five_and_cash_for_those_without_a_gain() {
+        // lane K54: 12 months of 28 bars; country i grows (i - 16)/1000 a bar, so only EWW, EWY, EWZ (i = 17..19) gained over 240 days
+        let n = 12 * 28;
+        let spy = rows("SPY", &vec![100.; n]);
+        let mut data = BTreeMap::from([("SPY".to_string(), spy.clone())]);
+        for (i, s) in COUNTRIES.iter().enumerate() { data.insert(s.to_string(), rows(s, &(0..n).map(|k| 10. * (1. + (i as f64 - 16.) / 1000.).powi(k as i32)).collect::<Vec<_>>())); }
+        let x = Ctx::new(&spy, &spy, &[]);
+        let a = account("fgitc_rotation", &x, 0, n - 1, 0., &Params::new(), Some(&data)).unwrap().unwrap();
+        // first month end with 240 days behind it: bar 9 x 28 - 1 = 251; three fifths invested at that close, two fifths cash
+        let first: Vec<_> = a.trades.iter().filter(|t| t.legs[0].i == 251).map(|t| t.reason.split(':').next().unwrap().to_string()).collect();
+        assert_eq!(first, vec!["EWW", "EWY", "EWZ"]);
+        assert!(a.alloc[..3].iter().all(|v| (v - 0.2).abs() < 1e-12));
+        let g = |i: f64| (1. + (i - 16.) / 1000.).powi(28);
+        assert!((a.equity[251 + 28] - (0.4 + 0.2 * (g(17.) + g(18.) + g(19.)))).abs() < 1e-9);
+    }
+    #[test]
+    fn gei_allocations_follow_the_three_yearly_returns() {
+        // lane K54: prices constant inside each year; yearly returns SPY 10/10/5%, EWJ +30/-20/+30%, EWG -20/+30/-20%
+        let year = 12 * 28; let n = 5 * year;
+        let px = |p: [f64; 5]| (0..n).map(|k| p[k / year]).collect::<Vec<f64>>();
+        let spy = rows("SPY", &px([100., 110., 121., 127.05, 127.05]));
+        let data = BTreeMap::from([("SPY".to_string(), spy.clone()), ("EWJ".to_string(), rows("EWJ", &px([100., 130., 104., 135.2, 135.2]))),
+            ("EWG".to_string(), rows("EWG", &px([100., 80., 104., 83.2, 83.2])))]);
+        let x = Ctx::new(&spy, &spy, &[]);
+        let w = |id: &str| { let a = account(id, &x, 0, n - 1, 0., &Params::new(), Some(&data)).unwrap().unwrap();
+            let k = 4 * year - 1; // the 4th year-end: the first with three yearly returns behind it
+            let mut v: Vec<(String, f64)> = a.trades.iter().zip(&a.alloc).filter(|(t, _)| t.legs[0].i == k).map(|(t, &al)| (t.reason.split(':').next().unwrap().to_string(), al)).collect();
+            v.sort_by(|p, q| p.0.cmp(&q.0)); v };
+        let near = |v: Vec<(String, f64)>, want: &[(&str, f64)]| v.len() == want.len() && v.iter().zip(want).all(|(a, b)| a.0 == b.0 && (a.1 - b.1).abs() < 1e-9);
+        assert!(near(w("kfgei_alloc_vol"), &[("EWG", 1. / 6.), ("EWJ", 1. / 6.), ("SPY", 2. / 3.)])); // SPY: the lowest SD
+        assert!(near(w("kfgei_alloc_rar"), &[("EWG", 1. / 6.), ("EWJ", 1. / 6.), ("SPY", 2. / 3.)])); // SPY: the best return / SD
+        assert!(near(w("kfgei_alloc_corr"), &[("EWJ", 0.3), ("SPY", 0.7)])); // EWJ moves against SPY, EWG with it
+        assert!(near(w("kfgei_alloc_combined"), &[("EWG", 1. / 9.), ("EWJ", 0.6333333333333333 / 3.), ("SPY", (4. / 3. + 0.7) / 3.)]));
     }
     #[test]
     fn faber_reweights_every_month_end_and_bull_someplace_keeps_its_three_holders() {
