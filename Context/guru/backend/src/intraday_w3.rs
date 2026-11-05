@@ -48,9 +48,22 @@ pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m16
     "rsrl_rlevels" /* lane K48 (5-minute bars, S&P points, 2014-2025): scaled SPY avg -0.0026% vs SPX +0.0332% (test a) */];
 pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) || K38_SPX_HELD.contains(&id) } // + lane K38
 /// Decision #231 (lane M4, 5 Nov 2026; authors/titles-1030/M4.tsv): India minute results that are India-better than SPY over the
-/// dates both minute files cover on BOTH tests (average trade > 3x SPY's and > 0.10 pp above it; compounded > 10x SPY's, or
+/// dates both minute files cover on BOTH tests (average trade > 3x SPY's and > 0.003 pp above it, #234; compounded > 10x SPY's, or
 /// > +100% when SPY's <= 0). Those (rule, India ticker) results are withdrawn; the SPY/SPX results stay.
-pub const INDIA_HELD: &[(&str, &str)] = &[("lgvp_volpat", "NIFTYBANK") /* avg +0.1243% vs SPY +0.0189%, compounded +532.7% vs +30.6% */];
+pub const INDIA_HELD: &[(&str, &str)] = &[
+    ("jb30d_or30", "NIFTY 50") /* avg +0.0622% vs SPY +0.0041%, compounded +1184.1% vs +8.6% */,
+    ("jmls_ma_cross_30m", "NIFTY 50") /* avg +0.1091% vs SPY +0.0302%, compounded +2526.7% vs +128.4% */,
+    ("stad7_idbo", "NIFTY 50") /* avg +0.0772% vs SPY +0.0095%, compounded +2501.5% vs +36.1% */,
+    ("mlhpt_ma3", "NIFTY 50") /* avg +0.0634% vs SPY +0.0135%, compounded +19698.9% vs +184.9% */,
+    ("atm04_60min", "NIFTY 50") /* avg +0.0603% vs SPY +0.0135%, compounded +803.9% vs +54.0% */,
+    ("sgbic_breakout", "NIFTY 50") /* avg +0.0194% vs SPY +0.0023%, compounded +82.8% vs +7.1% */,
+    ("jb30d_or30", "NIFTYBANK") /* avg +0.0715% vs SPY +0.0022%, compounded +1185.9% vs +1.8% */,
+    ("stad7_idbo", "NIFTYBANK") /* avg +0.0875% vs SPY +0.0077%, compounded +2239.9% vs +26.2% */,
+    ("lgvp_volpat", "NIFTYBANK") /* avg +0.1243% vs SPY +0.0189%, compounded +532.7% vs +30.6% */,
+    ("acbff_open_rel", "NIFTYBANK") /* avg +0.0312% vs SPY +0.0030%, compounded +165.3% vs +1.8% */,
+    ("acbff_9oc", "NIFTYBANK") /* avg +0.0056% vs SPY +0.0008%, compounded +689.5% vs +21.7% */,
+    ("mlhpt_ma3", "NIFTYBANK") /* avg +0.0753% vs SPY +0.0116%, compounded +28227.8% vs +124.0% */,
+    ("atm04_60min", "NIFTYBANK") /* avg +0.0686% vs SPY +0.0066%, compounded +768.4% vs +18.2% */];
 pub fn india_held(id: &str, ticker: &str) -> bool { INDIA_HELD.iter().any(|&(i, t)| i == id && (t == ticker || (t == "NIFTYBANK" && ticker == "NIFTY BANK"))) }
 pub const INDIA_HELD_NOTE: &str = "NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates (decision #231, 5 Nov 2026).";
 
@@ -65,7 +78,8 @@ mod tests {
             assert!(ip::intraday_p1(d), "{id}");
             assert_eq!(ip::check(d, t, false).unwrap().note, INDIA_HELD_NOTE, "{id} {t}");
             assert!(!ip::intraday_tickers(id).contains(&t), "{id} {t}");
-            assert!(ip::check(d, "SPY", false).is_none() && ip::check(d, "SPX", false).is_none() && ip::check(d, "NIFTY 50", false).is_none(), "{id}");
+            assert!(ip::check(d, "SPY", false).is_none() && !crate::intraday_w3::spy_id(id), "{id}");
+            for o in ["NIFTY 50", "NIFTYBANK"] { assert_eq!(ip::check(d, o, false).is_none(), !india_held(id, o), "{id} {o}"); }
             assert!(crate::gate::get(id).unwrap().reason.contains("#231"), "{id}");
         }
     }

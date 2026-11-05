@@ -262,7 +262,7 @@ mod tests {
             assert!(d.status == crate::connors::Status::Live && ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
             let want: &[&str] = if crate::intraday_w3::spx_held(id) { &[] } else if crate::intraday_w3::spy_id(id) || spy_only(id) { &["SPY"] } else if spx_id(id) { &["SPX"] } else if us_id(id) { &["SPY", "SPX"] } else { ip::INTRADAY_P1_TICKERS };
-            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t), "{id} {t}"); }
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t) && !crate::intraday_w3::india_held(id, t), "{id} {t}"); } // #231/#234: India pairs withdrawn
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             let g = crate::gate::get(id).unwrap_or_else(|| panic!("gate {id}"));
             assert!((matches!(g.verdict, "unverified" | "verified") || (crate::intraday_w3::spx_held(id) && g.verdict == "withheld")) && (g.reason.contains("K39") || g.reason.contains("K42") || g.reason.contains("K44") || g.reason.contains("K45") || g.reason.contains("K46") || g.reason.contains("K48") || g.reason.contains("K53")) && (g.reason.contains("p.") || g.reason.contains(".txt")), "{id}");
