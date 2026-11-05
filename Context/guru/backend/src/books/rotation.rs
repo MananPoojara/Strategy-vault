@@ -332,17 +332,21 @@ pub struct Members { u: U, dv: Vec<Vec<f64>>, last: Vec<usize> }
 impl Members {
     /// Members from (name, own rows); rows off the anchor calendar are not used.
     pub fn new(x: &Ctx, rows: Vec<(String, Vec<Row>)>) -> Self {
-        let pos: BTreeMap<&str, usize> = x.r.iter().enumerate().map(|(k, r)| (r.date.as_str(), k)).collect();
-        let n = x.r.len();
-        let (mut names, mut o, mut c, mut dv, mut last) = (vec![], vec![], vec![], vec![], vec![]);
-        for (name, rs) in rows {
-            let (mut oo, mut cc, mut vv) = (vec![f64::NAN; n], vec![f64::NAN; n], vec![f64::NAN; n]);
-            for r in &rs { if let Some(&k) = pos.get(r.date.as_str()) { oo[k] = r.open; cc[k] = r.close; vv[k] = r.volume.map_or(f64::NAN, |v| v * r.close); } }
-            let Some(l) = cc.iter().rposition(|v| ok(*v)) else { continue };
-            last.push(l);
-            names.push(&*Box::leak(name.into_boxed_str())); o.push(oo); c.push(cc); dv.push(vv);
-        }
-        Members { u: U { names, o, c }, dv, last }
+        let mut m = Members::empty();
+        let pos = Members::dates(x);
+        for (name, rs) in rows { m.add(&pos, name, &rs); }
+        m
+    }
+    fn empty() -> Self { Members { u: U { names: vec![], o: vec![], c: vec![] }, dv: vec![], last: vec![] } }
+    fn dates<'a>(x: &'a Ctx) -> BTreeMap<&'a str, usize> { x.r.iter().enumerate().map(|(k, r)| (r.date.as_str(), k)).collect() }
+    /// one stock's own rows, aligned to the anchor's dates (rows off the calendar are not used); a stock with no bar there is left out
+    fn add(&mut self, pos: &BTreeMap<&str, usize>, name: String, rs: &[Row]) {
+        let n = pos.len();
+        let (mut oo, mut cc, mut vv) = (vec![f64::NAN; n], vec![f64::NAN; n], vec![f64::NAN; n]);
+        for r in rs { if let Some(&k) = pos.get(r.date.as_str()) { oo[k] = r.open; cc[k] = r.close; vv[k] = r.volume.map_or(f64::NAN, |v| v * r.close); } }
+        let Some(l) = cc.iter().rposition(|v| ok(*v)) else { return };
+        self.last.push(l);
+        self.u.names.push(&*Box::leak(name.into_boxed_str())); self.u.o.push(oo); self.u.c.push(cc); self.dv.push(vv);
     }
     fn len(&self) -> usize { self.u.names.len() }
     fn has(&self, a: usize, k: usize) -> bool { ok(self.u.c[a][k]) }
@@ -371,29 +375,32 @@ impl Members {
 
 /// The run's members, loaded once per basket from VAULT_BASKET_DATA_DIR (the engine's own basket files, checksums verified).
 fn members(id: &str, x: &Ctx) -> Result<std::sync::Arc<Members>, String> {
-    static CACHE: std::sync::Mutex<Option<(String, std::sync::Arc<Members>)>> = std::sync::Mutex::new(None);
+    // one entry per basket of this engine (at most three: us_sp500, us_dow30 and the named list; India nse500 and nifty50)
+    static CACHE: std::sync::Mutex<BTreeMap<String, std::sync::Arc<Members>>> = std::sync::Mutex::new(BTreeMap::new());
     let anchor = x.r[0].ticker.as_str();
     let basket = basket_for(id, anchor).ok_or_else(|| format!("not_testable: this basket rule has no stock basket in the {anchor} context"))?;
     let named = id == "atm04_mtpg";
     let key = format!("{basket}|{named}|{anchor}|{}|{}", x.r.len(), x.r[x.r.len() - 1].date);
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((k, m)) = cache.as_ref() { if *k == key { return Ok(m.clone()); } }
+    if let Some(m) = cache.get(&key) { return Ok(m.clone()); }
     let dir = std::env::var("VAULT_BASKET_DATA_DIR").map_err(|_| format!("needs_data: the {basket} stock basket is not loaded in this engine"))?;
     let cat = crate::baskets::Catalogue::load(std::path::Path::new(&dir)).map_err(|e| format!("needs_data: the {basket} stock basket is unavailable ({e})"))?;
     let list = cat.members(basket);
     if list.is_empty() { return Err(format!("needs_data: the {basket} stock basket is not in this engine's basket data")); }
-    let mut rows = vec![];
+    // stock by stock: each file's rows are aligned and dropped before the next is read (bounded memory)
+    let (mut mm, pos) = (Members::empty(), Members::dates(x));
     if named {
         for (sym, file) in ATM04_18 {
             let m = list.iter().find(|m| m.symbol == *file).ok_or_else(|| format!("needs_data: {sym} ({file}) is not in the {basket} files; the rule's 18-stock portfolio is incomplete"))?;
-            rows.push((if sym == file { sym.to_string() } else { format!("{sym} ({file})") }, cat.rows(&m.key).map_err(|e| format!("needs_data: {file}: {e}"))?));
+            let rs = cat.rows(&m.key).map_err(|e| format!("needs_data: {file}: {e}"))?;
+            mm.add(&pos, if sym == file { sym.to_string() } else { format!("{sym} ({file})") }, &rs);
         }
     } else {
-        for m in &list { rows.push((m.symbol.clone(), cat.rows(&m.key).map_err(|e| format!("needs_data: {}: {e}", m.symbol))?)); }
+        for m in &list { let rs = cat.rows(&m.key).map_err(|e| format!("needs_data: {}: {e}", m.symbol))?; mm.add(&pos, m.symbol.clone(), &rs); }
     }
-    let m = std::sync::Arc::new(Members::new(x, rows));
+    let m = std::sync::Arc::new(mm);
     if named && m.len() != ATM04_18.len() { return Err("needs_data: a stock of the 18-stock portfolio has no bar on this calendar".into()); }
-    *cache = Some((key, m.clone()));
+    cache.insert(key, m.clone());
     Ok(m)
 }
 
