@@ -3,13 +3,13 @@
 //! Journal of Finance/The 52-Week High and Momentum Investing.pdf", copied to Books/Thomas J. George & Chuan-Yang Hwang/.
 //! Page refs are J. Finance pages. The strategy ranks the whole CRSP cross-section each month by P / 52-week high and
 //! holds six overlapping equal-weighted winner/loser vintages. Since lane K56 (5 Nov 2026, EP5) it runs in books::rotation
-//! on the vault's stock baskets (us_sp500 on SPY, nse500 on NIFTY 50) as a declared application (decision #20; check
+//! on the vault's stock baskets (us_sp500_past on SPY, #239; India withheld) as a declared application (decision #20; check
 //! authors/titles-1030/K56w/k56_ref.py). `run` returns None. Same family as jtwl and cjlmom.
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "gh52w";
 
-const NOTE: &str = "EP5 basket ranking (lane K56). Declared application: the paper ranks all CRSP stocks, July 1963 - December 2001; here the stocks of the vault's us_sp500 basket (SPY calendar, to 11 Sep 2020) or nse500 basket (NIFTY 50 calendar). Membership caveat: each basket is today's member list (US: Norgate filename snapshot of 8 Sep 2020; India: the 2026 NSE list) applied to every past date, not dated membership (survivorship bias). Readings: ranked at each month's last close on that close / the highest daily close in the 12 months ending that day (the bars after the month end 12 months earlier, through this month end, and a stock needs a close at that earlier month end, i.e. a full 12 months of history; 'highest price' read as the highest close, CRSP's daily price; split-adjusted, price only); winners = top floor(0.3 N), losers = bottom floor(0.3 N), ties by ticker; bought and sold short at that close (no skip, as Tables I-IV, footnote 3 p.2149), held 6 months as a buy-and-hold vintage and closed at the 6th month's last close. One cash sleeve per vintage (1/6 of the account at the start, reused by the vintage formed 6 months later), equal money on every leg; shorts reserve their own principal (half long, half short, unlevered; the paper's portfolio is self-financing). p.long_only = 1 keeps only the winners (labelled option). The paper's period is outside the SPY calendar (from 1993), so 0.45% a month is not comparable.";
+const NOTE: &str = "EP5 basket ranking (lane K56). Declared application: the paper ranks all CRSP stocks, July 1963 - December 2001; here every stock in the vault that was ever in the S&P 500 (us_sp500_past on the SPY calendar, to 11 Sep 2020: current members and former members with their own price files); membership dates are not known, so a stock is ranked whenever it has prices (decision #239). p.members = 1 ranks today's list only (us_sp500, Norgate snapshot of 8 Sep 2020; labelled option, survivorship bias). India: withheld, the NSE basket is the 2026 member list; a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). Readings: ranked at each month's last close on that close / the highest daily close in the 12 months ending that day (the bars after the month end 12 months earlier, through this month end, and a stock needs a close at that earlier month end, i.e. a full 12 months of history; 'highest price' read as the highest close, CRSP's daily price; split-adjusted, price only); winners = top floor(0.3 N), losers = bottom floor(0.3 N), ties by ticker; bought and sold short at that close (no skip, as Tables I-IV, footnote 3 p.2149), held 6 months as a buy-and-hold vintage and closed at the 6th month's last close. One cash sleeve per vintage (1/6 of the account at the start, reused by the vintage formed 6 months later), equal money on every leg; shorts reserve their own principal (half long, half short, unlevered; the paper's portfolio is self-financing). p.long_only = 1 keeps only the winners (labelled option). The paper's period is outside the SPY calendar (from 1993), so 0.45% a month is not comparable.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
@@ -35,7 +35,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     })
 }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == "gh52w_52wh_6x6").then(|| vec![ParamDef { key: "long_only", label: "1 = winners only, no short side (labelled option)", def: 0., min: 0., max: 1., step: 1. }])
+    (id == "gh52w_52wh_6x6").then(|| vec![ParamDef { key: "long_only", label: "1 = winners only, no short side (labelled option)", def: 0., min: 0., max: 1., step: 1. }, ParamDef { key: "members", label: "Universe: 0 = every stock ever in the index (us_sp500_past, default, #239), 1 = today's members only (us_sp500, labelled option)", def: 0., min: 0., max: 1., step: 1. }])
 }
 pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> { None }
 

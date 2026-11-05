@@ -979,7 +979,7 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 /// Lane K28 (3 Nov 2026): rotation rules rank or weight several actual US ETFs on one account (books::rotation).
 const ROTATION_BASIS:&str="Rotation across several actual US ETFs (books::rotation, lane K28): the rule's own universe is read from the vault's US price file, SPY supplies the calendar and the benchmark, and each holding is the ETF named in its trade. It runs only on SPY; an index, another ETF or a stock cannot stand in for the universe, and India has no sector or multi-asset series in the vault (decision #11).";
 /// Lane K56 (5 Nov 2026, EP5): basket ranking rules rank the stocks of a vault basket and hold them on one account (books::rotation).
-const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the stocks of a vault basket (US: us_sp500, us_dow30 or the named 18-stock list, on the SPY calendar; India: nse500 or nifty50, on the NIFTY 50 calendar) and each trade is a stock of that basket. It runs only in those two contexts: the index or ETF is the calendar and the benchmark, never a stand-in for the stocks. Membership is the basket's current list (survivorship bias), not dated membership; a ranking on these baskets instead of the author's universe is a declared application.";
+const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the US stocks of a vault basket on the SPY calendar (default: every stock in the vault that was ever in the index, us_sp500_past / us_dow30_past, membership dates not known, decision #239; option: today's members; atm04_mtpg: the column's 18 named stocks) and each trade is one of those stocks. SPY is the calendar and the benchmark, never a stand-in for the stocks. India is withheld: the NSE basket is the 2026 member list, and a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). A ranking on these baskets instead of the author's universe is a declared application.";
 fn base_policy(def:&StrategyDef)->Policy {
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
@@ -3785,7 +3785,7 @@ mod connors_index_routing_tests {
             let d=find(id);let p=policy(&d);
             assert_eq!((p.requirement,p.allowed_types),("index_or_etf",&["index","etf"][..]),"{id}");
             let allowed=crate::gate::get(id).and_then(|g|g.allowed).unwrap();
-            assert_eq!(allowed,if *id=="atm04_mtpg" {&["SPY"][..]} else {&["NIFTY 50","SPY"][..]},"{id}");
+            assert_eq!(allowed,&["SPY"][..],"{id}"); // India withheld (#239 (2))
             for tk in allowed {assert!(check(&d,tk,false).is_none(),"{id} {tk}");}
         }
     }

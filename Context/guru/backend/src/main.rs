@@ -2739,8 +2739,8 @@ mod tests {
                 continue;
             }
             if books::rotation::is_basket(d.id) {
-                // lane K56 (EP5): stock-basket ranking on one account (books::rotation tests, K56w/k56_ref.py); no basket files in this test
-                assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with(if d.id=="atm04_mtpg" {"not_testable"} else {"needs_data"}),"{}",d.id);
+                // lane K56 (EP5): stock-basket ranking on one account (books::rotation tests, K56w/k56_ref.py); India withheld (#239 (2))
+                assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().contains("decision #239"),"{}",d.id);
                 other_path += 1;
                 continue;
             }

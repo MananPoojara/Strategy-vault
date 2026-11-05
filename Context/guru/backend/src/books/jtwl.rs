@@ -4,13 +4,13 @@
 //! the copy into Books/ was refused - COPY PENDING, see library/jtwl/README.md). Page refs are J. Finance pages.
 //! Every strategy ranks the whole NYSE/AMEX cross-section into deciles each month (CRSP 1965-1989) and holds
 //! overlapping equal-weighted winner/loser portfolios. Since lane K56 (5 Nov 2026, EP5) both run in books::rotation on
-//! the vault's stock baskets (us_sp500 on the SPY calendar, nse500 on NIFTY 50) as a declared application (decision #20);
+//! the vault's stock baskets (us_sp500_past on the SPY calendar, #239; India withheld) as a declared application (decision #20);
 //! independent check authors/titles-1030/K56w/k56_ref.py. `run` returns None (the account is in books::rotation).
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jtwl";
 
-const NOTE: &str = "EP5 basket ranking (lane K56). Declared application: the paper ranks every NYSE/AMEX stock on CRSP, January 1965 - December 1989; here the stocks of the vault's us_sp500 basket (SPY calendar, to 11 Sep 2020) or nse500 basket (NIFTY 50 calendar). Membership caveat: each basket is today's member list (US: Norgate filename snapshot of 8 Sep 2020; India: the 2026 NSE list) applied to every past date, not dated index membership, so stocks that were dropped or delisted are missing (survivorship bias). Readings: ranked at each month's last close on the close-to-close return over the last J month ends (price only: split-adjusted closes, no dividends); deciles = the top and bottom floor(N/10) of the N stocks with both closes, ties by ticker; winners bought and losers sold short at that close and held K months as a buy-and-hold vintage, closed at the K-th month's last close (the paper reports monthly-rebalanced returns and says buy-and-hold was very similar, p.68). One cash sleeve per vintage (1/K of the account at the start; a new vintage reuses the proceeds of the vintage it replaces), split equally over its legs; shorts reserve their own principal, so a vintage is half long, half short, unlevered (the paper's portfolio is self-financing). p.long_only = 1 keeps only the winners (labelled option). The paper's period is outside the SPY calendar (from 1993), so the published monthly returns are not comparable.";
+const NOTE: &str = "EP5 basket ranking (lane K56). Declared application: the paper ranks every NYSE/AMEX stock on CRSP, January 1965 - December 1989; here every stock in the vault that was ever in the S&P 500 (us_sp500_past on the SPY calendar, to 11 Sep 2020: current members and former members with their own price files); membership dates are not known, so a stock is ranked whenever it has prices (decision #239). p.members = 1 ranks today's list only (us_sp500, Norgate snapshot of 8 Sep 2020; labelled option, survivorship bias). India: withheld, the NSE basket is the 2026 member list; a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). Readings: ranked at each month's last close on the close-to-close return over the last J month ends (price only: split-adjusted closes, no dividends); deciles = the top and bottom floor(N/10) of the N stocks with both closes, ties by ticker; winners bought and losers sold short at that close and held K months as a buy-and-hold vintage, closed at the K-th month's last close (the paper reports monthly-rebalanced returns and says buy-and-hold was very similar, p.68). One cash sleeve per vintage (1/K of the account at the start; a new vintage reuses the proceeds of the vintage it replaces), split equally over its legs; shorts reserve their own principal, so a vintage is half long, half short, unlevered (the paper's portfolio is self-financing). p.long_only = 1 keeps only the winners (labelled option). The paper's period is outside the SPY calendar (from 1993), so the published monthly returns are not comparable.";
 
 macro_rules! live {
     ($id:expr, $name:expr, $rules:expr, $claim:expr) => {
@@ -50,6 +50,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         ParamDef { key: "j", label: "Ranking period J in months (paper: 3, 6, 9, 12)", def: 6., min: 1., max: 12., step: 3. },
         ParamDef { key: "k", label: "Holding period K in months (paper: 3, 6, 9, 12)", def: 6., min: 1., max: 12., step: 3. },
         ParamDef { key: "long_only", label: "1 = winners only, no short side (labelled option)", def: 0., min: 0., max: 1., step: 1. },
+        ParamDef { key: "members", label: "Universe: 0 = every stock ever in the index (us_sp500_past, default, #239), 1 = today's members only (us_sp500, labelled option)", def: 0., min: 0., max: 1., step: 1. },
     ])
 }
 pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> { None }

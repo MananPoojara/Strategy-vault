@@ -88,7 +88,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     }
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
     // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
-    if let Some(end)=books::rotation::basket_end(def.id,ctx) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker).unwrap_or("stock"))));}
+    if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}
     let Some((end,what))=ends.into_iter().filter_map(|(e,w)|Some((e?,w))).filter(|(e,_)|*e<to).min_by_key(|(e,_)|*e) else {return (to,None)};
     if end<=from {return (to,None);} // nothing covered after the start: check refuses with the full message
     (end,Some(format!("Ended {}: {what} end then. The requested end {} is later; no prices are filled or estimated.",ctx.r[end].date,ctx.r[to].date)))
@@ -473,6 +473,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                 }
                 // lane F3: a rotation rule has no fixed amounts; its `allowed` list only names the SPY calendar (books::rotation)
                 // lane K56 (EP5): a basket ranking rule has no fixed amounts; its `allowed` list names the basket's index calendars
+                if books::rotation::is_basket(def.id) && crate::preloaded_market(&row.ticker)==Some(crate::baskets::Market::India) {
+                    return issue("not_testable", format!("Not published on {}. {}", row.ticker, books::rotation::INDIA_HELD));
+                }
                 if books::rotation::is_basket(def.id) {
                     return issue("not_testable", format!("Not published on {}. Stock-basket ranking: runs only in the basket's index context ({}); the index is the calendar and the benchmark, the trades are the basket stocks named in each trade.", row.ticker, allowed.join(", ")));
                 }

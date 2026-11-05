@@ -306,7 +306,9 @@ pub fn account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params,
 pub const BASKET_IDS: &[&str] = &["alpha_weekly_mr", "atm04_mtpg", "cjlmom_r6", "dgstt_low_risk", "ggth_momentum", "gh52w_52wh_6x6", "hmrw_sp500_rotation", "jtwl_jk", "jtwl_jk_skip"];
 pub fn is_basket(id: &str) -> bool { BASKET_IDS.contains(&id) }
 pub const BASKET_MODEL: &str = "basket_ranking_v1";
-pub const BASKET_BASIS: &str = "Basket ranking account (EP5, lane K56). The rule ranks the members of a vault stock basket (US: us_sp500, us_dow30 or named us_sp500_past files on the SPY calendar; India: nse500 or nifty50 on the NIFTY 50 calendar) and holds the chosen stocks on one account. Membership is the basket's CURRENT list (Norgate filename snapshot of 8 Sep 2020 for the US, the 2026 NSE lists for India), applied to the whole history: stocks that left the index or were delisted before the snapshot are missing, so results carry survivorship bias; this is not dated (point-in-time) membership. Prices are the vault's split-adjusted daily files, price only (no dividends). The anchor index supplies only the calendar and the buy-and-hold benchmark; each trade's prices are those of the stock named in its reason. A stock is ranked or traded only on days it has its own bar (a chosen stock without a bar on the fill day is not bought and its share of the vintage stays in cash; a slot entry the account cannot pay for is not bought and its slot stays open); a held stock with no bar on a day keeps its last real close in the equity line (a mark, never a fill), and an exit that falls on such a day happens at the stock's next real bar. A held stock whose file ends is sold at its last real close (a data-end convention, as the vault's basket portfolio). Idle cash that a rule puts in an ETF grows only between two consecutive days that both have the ETF's close. Shorts reserve their own principal (no leverage): a long/short vintage puts equal money on every leg. Costs: the vault fee and slippage setting per side on each position (0 by default). The run ends where the basket's price files end.";
+pub const BASKET_BASIS: &str = "Basket ranking account (EP5, lane K56). The rule ranks the stocks of a vault US basket on the SPY calendar and holds the chosen stocks on one account. Universe (#239): every stock in the vault that was ever in the index (us_sp500_past / us_dow30_past: the current members and the former members with their own price files, e.g. old GM and Sears); membership dates are not known, so a stock is ranked whenever it has prices, also before it joined or after it left the index. p.members = 1 ranks today's list only (us_sp500 / us_dow30, the Norgate snapshot of 8 Sep 2020), a labelled option with survivorship bias. India: withheld, the NSE basket is the 2026 member list (#239 (2)). Prices are the vault's split-adjusted daily files, price only (no dividends). SPY supplies only the calendar and the buy-and-hold benchmark; each trade's prices are those of the stock named in its reason. A stock is ranked or traded only on days it has its own bar (a chosen stock without a bar on the fill day is not bought and its share of the vintage stays in cash; a slot entry the account cannot pay for is not bought and its slot stays open); a held stock with no bar on a day keeps its last real close in the equity line (a mark, never a fill), and an exit that falls on such a day happens at the stock's next real bar. A held stock whose file ends (a delisting, merger or rename) is sold at its last real close (a data-end convention, as the vault's basket portfolio). Idle cash that a rule puts in an ETF grows only between two consecutive days that both have the ETF's close. Shorts reserve their own principal (no leverage): a long/short vintage puts equal money on every leg. Costs: the vault fee and slippage setting per side on each position (0 by default). The run ends where the basket's price files end (11 Sep 2020).";
+/// #239 (2): the India results are withheld (no dated or former-member NSE list exists)
+pub const INDIA_HELD: &str = "Withheld (decision #239): the NSE basket is the 2026 member list; a ranking over 20 years of today's members is dominated by survivorship bias. No India result is published until dated members are supplied.";
 
 pub const ANCHOR_IN: &str = "NIFTY 50";
 /// Active Trader's 18-stock Standard Stock Portfolio (TSL Jul 2004 p.57, Aug 2004 p.38): the 2004 symbol and the vault file
@@ -314,15 +316,14 @@ pub const ANCHOR_IN: &str = "NIFTY 50";
 pub const ATM04_18: &[(&str, &str)] = &[("AAPL", "AAPL"), ("BA", "BA"), ("C", "C"), ("CAT", "CAT"), ("CSCO", "CSCO"), ("DIS", "DIS"), ("GM", "MTLQQ-201103"), ("HPQ", "HPQ"),
     ("IBM", "IBM"), ("INTC", "INTC"), ("IP", "IP"), ("JPM", "JPM"), ("KO", "KO"), ("MSFT", "MSFT"), ("S", "S-200503"), ("SBUX", "SBUX"), ("T", "T-200511"), ("WMT", "WMT")];
 
-/// The basket a rule ranks in the engine's anchor context (None: the rule has no home there).
-pub fn basket_for(id: &str, anchor: &str) -> Option<&'static str> {
+/// The basket a rule ranks in the engine's anchor context (None: no home there; India is withheld, #239 (2)).
+/// US default: every stock ever in the index (`_past`); p.members = 1: today's members only (labelled option).
+pub fn basket_for(id: &str, anchor: &str, p: &Params) -> Option<&'static str> {
+    let today = p.get("members").copied().unwrap_or(0.) >= 0.5;
     match (id, anchor) {
         ("atm04_mtpg", ANCHOR) => Some("us_sp500_past"),
-        ("atm04_mtpg", _) => None,
-        ("ggth_momentum", ANCHOR) => Some("us_dow30"),
-        ("ggth_momentum", ANCHOR_IN) => Some("nifty50"),
-        (_, ANCHOR) => Some("us_sp500"),
-        (_, ANCHOR_IN) => Some("nse500"),
+        ("ggth_momentum", ANCHOR) => Some(if today { "us_dow30" } else { "us_dow30_past" }),
+        (_, ANCHOR) => Some(if today { "us_sp500" } else { "us_sp500_past" }),
         _ => None,
     }
 }
@@ -374,16 +375,18 @@ impl Members {
 }
 
 /// The run's members, loaded once per basket from VAULT_BASKET_DATA_DIR (the engine's own basket files, checksums verified).
-fn members(id: &str, x: &Ctx) -> Result<std::sync::Arc<Members>, String> {
+fn members(id: &str, x: &Ctx, p: &Params) -> Result<std::sync::Arc<Members>, String> {
     // one entry per basket of this engine (at most three: us_sp500, us_dow30 and the named list; India nse500 and nifty50)
     static CACHE: std::sync::Mutex<BTreeMap<String, std::sync::Arc<Members>>> = std::sync::Mutex::new(BTreeMap::new());
     let anchor = x.r[0].ticker.as_str();
-    let basket = basket_for(id, anchor).ok_or_else(|| format!("not_testable: this basket rule has no stock basket in the {anchor} context"))?;
+    let basket = basket_for(id, anchor, p).ok_or_else(|| format!("not_testable: this basket rule has no stock basket in the {anchor} context"))?;
     let named = id == "atm04_mtpg";
-    let key = format!("{basket}|{named}|{anchor}|{}|{}", x.r.len(), x.r[x.r.len() - 1].date);
+    let dir = std::env::var("VAULT_BASKET_DATA_DIR").map_err(|_| format!("needs_data: the {basket} stock basket is not loaded in this engine"))?;
+    // the calendar's identity: every date (FNV-1a), not only its length and ends
+    let cal = x.r.iter().flat_map(|r| r.date.bytes()).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    let key = format!("{dir}|{basket}|{named}|{anchor}|{}|{cal:016x}", x.r.len());
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(m) = cache.get(&key) { return Ok(m.clone()); }
-    let dir = std::env::var("VAULT_BASKET_DATA_DIR").map_err(|_| format!("needs_data: the {basket} stock basket is not loaded in this engine"))?;
     let cat = crate::baskets::Catalogue::load(std::path::Path::new(&dir)).map_err(|e| format!("needs_data: the {basket} stock basket is unavailable ({e})"))?;
     let list = cat.members(basket);
     if list.is_empty() { return Err(format!("needs_data: the {basket} stock basket is not in this engine's basket data")); }
@@ -405,9 +408,9 @@ fn members(id: &str, x: &Ctx) -> Result<std::sync::Arc<Members>, String> {
 }
 
 /// Last bar of the basket's prices in this context (readiness::auto_end); None when the rule is not a basket rule here.
-pub fn basket_end(id: &str, x: &Ctx) -> Option<usize> {
-    if !is_basket(id) || x.r.is_empty() || basket_for(id, &x.r[0].ticker).is_none() { return None; }
-    members(id, x).ok()?.end(id == "atm04_mtpg")
+pub fn basket_end(id: &str, x: &Ctx, p: &Params) -> Option<usize> {
+    if !is_basket(id) || x.r.is_empty() || basket_for(id, &x.r[0].ticker, p).is_none() { return None; }
+    members(id, x, p).ok()?.end(id == "atm04_mtpg")
 }
 
 /// One planned position: entry at bar i (open or close), exit at bar x (usize::MAX = held to the end), its cash sleeve and size
@@ -434,6 +437,11 @@ fn simulate5(m: &Members, plans: &[P5], b: &Book5, from: usize, to: usize, cost:
         alloc.push(amt);
     };
     for k in from..=to {
+        // a long/short account is also checked at the open (equity at the opens, last real closes where a stock has no bar)
+        if open.iter().any(|&(j, _, _)| plans[j].dir < 0.) {
+            let v = cash.iter().sum::<f64>() + open.iter().map(|&(j, amt, p0)| { let p = &plans[j]; let px = px_of(p.a, k, true); value(p, amt, p0, if ok(px) { px } else { m.mark(p.a, k) }, 1.) }).sum::<f64>();
+            if v <= 0. { return Err(format!("not_testable: the account's equity reached zero at the open of bar {k} (short losses beyond the reserved principal); there is no margin model, so no result is published")); }
+        }
         for at_open in [true, false] {
             if !at_open {
                 if let Some(v) = b.cash_px.as_ref().filter(|v| k > from && ok(v[k]) && ok(v[k - 1])) { for c in cash.iter_mut() { *c *= v[k] / v[k - 1]; } }
@@ -471,6 +479,7 @@ fn simulate5(m: &Members, plans: &[P5], b: &Book5, from: usize, to: usize, cost:
             }
         }
         let v = cash.iter().sum::<f64>() + open.iter().map(|&(j, amt, p0)| { let p = &plans[j]; value(p, amt, p0, m.mark(p.a, k), 1.) }).sum::<f64>();
+        if v <= 0. { return Err(format!("not_testable: the account's equity reached zero on bar {k} (short losses beyond the reserved principal); there is no margin model, so no result is published")); }
         eq.push(v);
         prev = v;
     }
@@ -663,7 +672,7 @@ fn alpha_wmr<'a>(x: &'a Ctx<'a>, m: &'a Members, from: usize, to: usize, p: &Par
     }
 }
 
-fn atm04(x: &Ctx, m: &Members, from: usize, to: usize, p: &Params) -> Vec<P5> {
+fn atm04(x: &Ctx, m: &Members, from: usize, to: usize, p: &Params, unfunded: &std::collections::BTreeSet<(usize, usize)>) -> Vec<P5> {
     let (n, u, na) = (x.r.len(), &m.u, m.len());
     let losers = p.get("losers").copied().unwrap_or(0.) >= 0.5;
     let top = pint(p, "top", 5., 1., 9.);
@@ -690,7 +699,7 @@ fn atm04(x: &Ctx, m: &Members, from: usize, to: usize, p: &Params) -> Vec<P5> {
         }
         held = still;
         for &a in &pick {
-            if held.iter().any(|h| h.1 == a) || !m.has(a, f2) { continue; }
+            if held.iter().any(|h| h.1 == a) || !m.has(a, f2) || unfunded.contains(&(a, f2)) { continue; } // an unpaid buy is not a holding
             let r = pick.iter().position(|&v| v == a).unwrap() + 1;
             plans.push(P5 { a, dir: 1., i: f2, io: true, x: usize::MAX, xo: false, sleeve: 0, size: 0.18, legs: 0,
                 why: format!("top-{top} {} of {} ({} {}), bought at the open of the second trading day", if losers { "loser" } else { "gainer" }, &x.r[s].date[..7], r, pct(u.c[a][s] / u.c[a][b] - 1.)), xwhy: String::new() });
@@ -718,10 +727,13 @@ pub fn basket_account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &
     if !is_basket(id) { return None; }
     Some((|| {
         let anchor = x.r.first().map(|r| r.ticker.as_str()).unwrap_or("");
-        if basket_for(id, anchor).is_none() {
-            return Err(format!("not_testable: this rule ranks a stock basket and runs only in the basket's index context ({}): the index is the calendar and the benchmark, the trades are the stocks named in each trade", if id == "atm04_mtpg" { "SPY for the 18 US stocks".to_string() } else { format!("{ANCHOR} for the US basket, {ANCHOR_IN} for the India basket") }));
+        if anchor == ANCHOR_IN { return Err(format!("not_testable: {INDIA_HELD}")); }
+        if basket_for(id, anchor, p).is_none() {
+            return Err(format!("not_testable: this rule ranks a stock basket and runs only on the {ANCHOR} calendar (SPY is the calendar and the benchmark; the trades are the US stocks named in each trade)"));
         }
-        let m = members(id, x)?;
+        let m = members(id, x, p)?;
+        let end = m.end(id == "atm04_mtpg").unwrap_or(0);
+        if from >= end { return Err(format!("needs_data: the basket's stock prices end on {}; the selected period starts later, and no price is filled in", x.r[end].date)); }
         let side = p.get("long_only").copied().unwrap_or(0.) >= 0.5;
         let mom = |j: usize, k: usize, high52: bool, frac: f64, count: usize, entry_days: usize, exit_days: usize, skip_month: bool| Mom { j, k, high52, frac, count, entry_days, exit_days, skip_month, long_only: side };
         let (plans, book) = match id {
@@ -742,7 +754,7 @@ pub fn basket_account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &
                 let shy = if anchor == ANCHOR { PRELOADED.get().and_then(|d| universe(x, d, &["SHY"]).ok()).map(|v| v.c[0].clone()) } else { None };
                 funded(&m, Book5 { sleeves: 1, prev_equity: false, cash_px: shy }, from, to, cost, alpha_wmr(x, &m, from, to, p))?
             }
-            "atm04_mtpg" => (atm04(x, &m, from, to, p), Book5 { sleeves: 1, prev_equity: true, cash_px: None }),
+            "atm04_mtpg" => funded(&m, Book5 { sleeves: 1, prev_equity: true, cash_px: None }, from, to, cost, |u| atm04(x, &m, from, to, p, u))?,
             _ => return Err("not_testable: unknown basket rule".into()),
         };
         let (trades, alloc, equity, _) = simulate5(&m, &plans, &book, from, to, cost)?;
