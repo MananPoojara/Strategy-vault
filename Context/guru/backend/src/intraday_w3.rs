@@ -3,7 +3,7 @@
 //! itself lives in the book module (books/tdperl.rs run_lines_minutes).
 
 /// Rules converted in this wave that run on all four minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK): no fixed amount.
-pub const IDS: &[&str] = &["tdperl_tdline_short"];
+pub const IDS: &[&str] = &["tdperl_tdline_short", "tdperl_rebo" /* K25 code, re-applied by lane K53 (decision #229) */];
 pub fn id(id: &str) -> bool { IDS.contains(&id) || K38_SPX.contains(&id) || K38_US.contains(&id) }
 pub fn book(b: &str) -> bool { matches!(b, "tdperl" | "cpgap" | "acbff") }
 // ---- lane K38 block (4 Nov 2026, decision #202; authors/titles-1030/K38.tsv, K38w/check177.out)
@@ -29,7 +29,12 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "jb30d_gap_pct", "tdnmtt_trap_short", "tdperl_tdline_short", "putg_inside_day", "mhp_ftse_3_20040804",
     "jmls_bar_breakout" /* lane K39 (EP2 15-minute bars): SPX compounded > 10x SPY's (test c) */,
     "gfstsb_ema_cross" /* lane K42 (EP2 60-minute bars): average trade SPY +0.0122% vs SPX -0.0215% (test a) */,
-    "vdso_supreme_order" /* lane K48 (daily bars on the minute path, 2014-2025): SPX avg +0.163% vs SPY +0.009% (test b) */];
+    "vdso_supreme_order" /* lane K48 (daily bars on the minute path, 2014-2025): SPX avg +0.163% vs SPY +0.009% (test b) */,
+    "tdperl_rebo" /* K25 code re-applied by lane K53 (decisions #176/#229, 2014-2025): SPY avg -0.0291% vs SPX +0.0882% (test a) */,
+    "rwmts_60m_rsi200h" /* lane K53 (60-minute bars, 2014-2025): SPY avg -0.0166% vs SPX +0.0321% (test a) */,
+    "rwmts_60m_seven" /* lane K53 (60-minute bars, 2014-2025): SPY avg +0.0247% vs SPX -0.0152% (test a) */,
+    "rwmts_30m_rsi_cross" /* lane K53 (30-minute bars, 2014-2025): SPY avg +0.0027% vs SPX -0.0152% (test a) */,
+    "rwmts_15m_5m_rsi" /* lane K53 (15-minute bars, 2014-2025): SPY avg -0.0029% vs SPX +0.0228% (test a) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
 /// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
@@ -102,6 +107,27 @@ mod tests {
         assert!(run(&x, 1.0).is_empty());
     }
     #[test]
+    fn rebo_minutes_reverse_in_time_order() {
+        // K25. Bar 2: open 100, yesterday's true range 10 -> buy stop 103.82, sell stop 96.18; the daily bar reaches both.
+        let b = [(100., 105., 95., 100.), (100., 105., 95., 100.), (100., 110., 90., 100.), (100., 101., 99., 100.)];
+        let r: Vec<crate::Row> = b.iter().enumerate().map(|(k, &(o, h, l, c))| crate::Row { ticker: "T".into(), date: format!("2020-01-{:02}", k + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        let run = |x: &Ctx, path: f64| crate::books::tdperl::run("tdperl_rebo", x, 0, 3, &Params::from([("path".to_string(), path)])).unwrap();
+        assert!(run(&x, 0.0).is_empty()); // daily path: both levels on a flat day -> no entry
+        x.minutes = Some(minutes("rebo", &[("2020-01-03", &["09:30,100,104,99,103", "09:31,103,103.5,96,97", "09:32,97,98,97,98"]), ("2020-01-04", &["09:30,100,101,99,100"])]));
+        let t = run(&x, 1.0);
+        assert_eq!(t.len(), 2, "{t:?}");
+        assert!(t[0].dir > 0. && (t[0].legs[0].px - 103.82).abs() < 1e-9 && t[0].exit_i == 2 && (t[0].exit_px - 96.18).abs() < 1e-9, "{:?}", t[0]);
+        assert!(t[1].dir < 0. && (t[1].legs[0].px - 96.18).abs() < 1e-9 && t[1].open && t[1].exit_px == 100., "{:?}", t[1]);
+        // one minute reaching both, opened nearer the sell stop: short first [convention, flagged], then reversed long at 103.82
+        x.minutes = Some(minutes("rebo2", &[("2020-01-03", &["09:30,97,105,95,100"])]));
+        let t = run(&x, 1.0);
+        assert!(t.len() == 2 && t[0].dir < 0. && (t[0].legs[0].px - 96.18).abs() < 1e-9 && t[0].reason.contains("ambiguous") && t[1].dir > 0. && t[1].open, "{t:?}");
+        // no minutes on bar 2: no position opened
+        x.minutes = Some(minutes("rebo3", &[("2020-01-04", &["09:30,100,101,99,100"])]));
+        assert!(run(&x, 1.0).is_empty());
+    }
+    #[test]
     fn wave_3_admission_and_gate() {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
@@ -135,7 +161,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (13, 38)); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
+        assert_eq!((SPY.len(), SPX_HELD.len()), (18, 38)); // + tdperl_rebo, rwmts_60m_rsi200h, rwmts_60m_seven, rwmts_30m_rsi_cross, rwmts_15m_5m_rsi (K53) // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
             assert!(ip::intraday_p1(d) && !ip::intraday_w1_spx_id(id), "{id}");

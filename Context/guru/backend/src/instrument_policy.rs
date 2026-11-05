@@ -242,7 +242,7 @@ pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pc
 pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb","jb30d_gap_tick"];
 pub fn intraday_w1_id(id:&str)->bool {INTRADAY_W1.contains(&id) || intraday_w1_spx_id(id)}
 pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id) || crate::intraday_w2b::spx_id(id) || crate::intraday_w3::k38_spx(id) || crate::intraday_ep::spx_id(id)} // + intraday wave 2b, lane K38, lane K42
-pub fn intraday_tickers(id:&str)->&'static [&'static str] {if crate::intraday_w3::spx_held(id) {&[]} else if crate::intraday_w3::spy_id(id) {&["SPY"]} else if intraday_w1_spx_id(id) {&["SPX"]} else if crate::intraday_ep::us_id(id) || crate::intraday_w3::k38_us(id) {&["SPY","SPX"]} else {INTRADAY_P1_TICKERS}} // #177: SPY-only / SPX withheld; EP US-clock rules; lane K38: US minute series only
+pub fn intraday_tickers(id:&str)->&'static [&'static str] {if crate::intraday_w3::spx_held(id) {&[]} else if crate::intraday_w3::spy_id(id) || crate::intraday_ep::spy_only(id) {&["SPY"]} else if intraday_w1_spx_id(id) {&["SPX"]} else if crate::intraday_ep::us_id(id) || crate::intraday_w3::k38_us(id) {&["SPY","SPX"]} else {INTRADAY_P1_TICKERS}} // #177: SPY-only / SPX withheld; EP US-clock rules; lane K38: US minute series only
 const INTRADAY_W1_SPX_BASIS:&str="Intraday wave 1 (2026-10-24): the book's same-day rule is run on real SPX 1-minute bars (cash index, 2008-01..2026-08; rules that read the open start 2014-01, where the daily SPX open is real), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; excluded days make no trade. The book's levels are fixed S&P 500 points, so the rule runs only on SPX, at those printed points; on today's index levels they are much smaller relative to price than in the book's years. The book traded S&P 500 futures, so SPX runs are a declared application; cash-index shorts are hypothetical exposure. Stops and entries fill at the level, or at the minute's open when the minute opens through it; conventions for a minute that reaches two levels are stated in the notes. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
 // ---- end intraday wave 1
 const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day rule is run on real 1-minute bars (SPY 2000-01..2025-10, SPX cash index 2008-01..2026-08, NIFTY 50 2008-01..2026-10, NIFTYBANK 2010-03..2026-04), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; outage, late-start and truncated days are excluded and make no trade. Stops fill at the level, or at the minute's open when the minute opens through it. The book traded S&P and other futures (and stocks for some setups), so SPY, SPX, NIFTY 50 and NIFTYBANK runs are a declared application, not the author's test; cash-index shorts are hypothetical exposure. Conventions for a minute that reaches two levels are stated in the notes. Licence: the SPY 1-minute and NIFTY 2008-2014 sources state no licence (internal research). Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
@@ -301,6 +301,9 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
     if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
     if intraday_w1_spx_id(def.id) && (native_stock || INTRADAY_P1_TICKERS.contains(&ticker)) { // intraday wave 1
         return Some(Issue{status:"needs_data",note:format!("This day-trade rule uses the book's fixed S&P 500 point levels, which only mean what the book meant on the S&P 500 itself, and it needs real 1-minute bars. It runs on SPX only; {ticker} would need an invented conversion, so no result is published.")});
+    }
+    if crate::intraday_ep::spy_only(def.id) { // lane K53 (decision #229 (1))
+        return Some(Issue{status:"needs_data",note:format!("This day-trade rule's 1-point risk and 1/8 entry offset are literal US-dollar amounts for a share price, and it needs real 1-minute bars. It runs on SPY only, an ETF that has never split (decision #229); {ticker} would need an invented conversion, so no result is published.")});
     }
     if crate::intraday_ep::us_id(def.id) && !native_stock && INTRADAY_P1_TICKERS.contains(&ticker) { // EP (K39)
         return Some(Issue{status:"needs_data",note:format!("This rule's time filter is a US Eastern clock time and the book gives no NSE equivalent, so it runs on the US minute series only (SPY, SPX); {ticker} would need an invented time mapping, so no result is published.")});
@@ -1410,7 +1413,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
         "tdperl_setup_long"|"tdperl_setup_short"=>"Held: rules not fully defined. Perl trades a completed TD Setup only when three conditions hold, and the third, that the close of setup bar nine is 'in close proximity to' TDST support (resistance for sells) (p.13, 16), is not quantified; leaving it out or picking a distance would not be his rule.",
         "tdperl_diff_up"|"tdperl_diff_down"|"tdperl_clopwin_long"|"tdperl_clopwin_short"=>"Held: not a trade rule. Perl presents TD Differential and TD Clopwin as forecasts of the next price bar (p.26, 165-166) with no stop or exit; the vault's next-close measurement tests the forecast, not a trading strategy from the book.",
-        "tdperl_rebo"=>"Held: needs intraday data. TD REBO buys on a stop above the open and sells on a stop below it, reversing on the opposite break (p.157-159); on days that reach both levels daily bars cannot show which came first, so the reversal sequence is not known from the book or the data.",
+        // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held
         // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
         "stad1_volex"=>"Held: fixed dollar amount set for the S&P futures contract. The VolEx code closes any trade older than four bars that shows less than $500 profit on one S&P contract (Vol 1 p.76-82); a fixed point amount has no equivalent on other indices, ETFs or stocks.",
@@ -1637,7 +1640,7 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm"]; // fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts"]; // mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1919,7 +1922,7 @@ mod tests {
     fn perl_held_rules_have_plain_card_reasons() {
         use crate::books::{tdperl};
         let all:Vec<StrategyDef>=tdperl::catalogue().into_iter().collect();
-        for id in ["tdperl_rebo", "tdperl_setup_long", "tdperl_setup_short", "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
+        for id in [/* tdperl_rebo: intraday block (K25) */ "tdperl_setup_long", "tdperl_setup_short", "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -2578,7 +2581,7 @@ mod tests {
         use crate::books::{rwmts,rwtlc};
         let all:Vec<StrategyDef>=rwmts::catalogue().into_iter().chain(rwtlc::catalogue()).collect();
         let mut want:Vec<&str>=rwmts::REVIEWED.iter().chain(rwtlc::REVIEWED).copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // the ch.5 minute rules: intraday EP block (lane K53)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
