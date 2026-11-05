@@ -1521,11 +1521,13 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     arr(&mut o, &mut run.trades.iter().enumerate().filter_map(|(i,t)| {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}
         if let Some(a)=&run.option_account {allocation=a.alloc[i];}
+        // Outside the page: only the allocation moves on. TradeLedger::new's net_ret is t.ret(side rate) (source accounts are
+        // never paged); skipping its excursion pass (a minute-file read per partial bar) keeps a summary-only answer fast.
+        if page.is_some_and(|(offset,limit)|i<offset||i>=offset+limit) {allocation*=1.+t.ret(costs.side_rate());return None;}
         let mut ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         // options phase 2: the underlying's daily range says nothing about the option's excursion
         if run.option_account.as_ref().is_some_and(|a|a.model!=books::units::MODEL) {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;} // a multi-unit trade is on the underlying itself (lane K43)
         allocation*=1.+ledger.net_ret;
-        if page.is_some_and(|(offset,limit)|i<offset||i>=offset+limit) {return None;}
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
