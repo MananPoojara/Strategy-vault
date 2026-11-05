@@ -59,3 +59,19 @@ it('a summary-only run never presents an empty or one-page list as the whole his
   expect(runtime).toContain('d.trades_page ? { error: `This run has ${d.trades_page.total} trades, more than one response carries; the research workbook needs every trade');
   expect(runtime).toMatch(/exportRunTrades\(run\)\{[^\n]*if\(run\.d\.trades_page\)throw Error/);
 });
+
+it('a summary-only run shows the engine net profit, not a sum over an empty list (browser check, 5 Nov)', async () => {
+  const {returnDisplay} = await import('../src/services/return-display');
+  const d = {trades: [], trades_page: {offset: 0, limit: 0, total: 1064777, cap: 20000}, stats: {net_profit: -1.119585, trades: 1064777}};
+  expect(returnDisplay(d, 'fixed')).toMatchObject({value: -1.119585, closedTrades: 1064777, unavailableReason: null});
+  expect(returnDisplay(d, 'compound').value).toBeNull();
+  expect(returnDisplay(d, 'compound').unavailableReason).toContain('page by page');
+  expect(returnDisplay({trades: [{open: false, ret: 0.1}, {open: false, ret: 0.2}]}, 'fixed').value).toBeCloseTo(0.3, 12);
+});
+
+it('detailed statistics do not count bars in the market from one page of a large run', () => {
+  const rowsOf = VaultReport.detailRows({dates: ['2020-01-01', '2020-01-02'], trades: [], trades_page: {offset: 0, limit: 0, total: 5, cap: 20000}, stats: {}, gross_stats: {}});
+  const held = rowsOf.find((r: unknown[]) => /market/i.test(String(r[0])) && /bar/i.test(String(r[0])));
+  if (held) expect(held[1]).toBeNull();
+  expect(VaultReport.detailRows({dates: ['2020-01-01', '2020-01-02'], trades: [{entry: '2020-01-01', exit: '2020-01-02', open: false}], stats: {}, gross_stats: {}}).some((r: unknown[]) => r[1] === 2)).toBe(true);
+});
