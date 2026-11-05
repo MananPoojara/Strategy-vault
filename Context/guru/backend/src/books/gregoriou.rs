@@ -6,7 +6,7 @@
 //!           p.230: the Calyon 80-day range breakout and 80-day moving-average indexes (Burghardt, Duncan and Liu).
 //! Reading: claude-continuation-20261020/authors/gregoriou/agents/. The other chapters are academic or performance
 //! studies, or need futures, fund, credit or constituent data (authors/gregoriou/gregoriou-REPORT.md).
-use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::books::mpts::sma;
 
 pub const REVIEWED: &[&str] = &["ggth_sma_ls", "ggth_dmaco", "ggth_dmaco_es", "ggeai_ma5_30", "gghf_rb80", "gghf_ma80", "gghf_mom15", "ggfohf_ma"];
@@ -39,9 +39,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Long while the STMA is above the LTMA (VMA, p.157)",
               "X|Out (savings account, no short sales) while the STMA is below the LTMA (p.157, 160)"],
             note!("The smoothed series uses only earlier closes (S of today = 0.1 x yesterday's close + 0.9 x yesterday's S), started at the second bar of the data file with S = the first close; both averages are simple averages of S. Default (1,50); p.s, p.l and p.alpha change the pair and the smoothing (Figure 11.1 shows alpha 0.1-1.0 and a (10,20) pair that the text does not list). Interest, spread and brokerage are not modelled. ")),
-        held("ggth_momentum", "Cross-sectional stock momentum (top five long, bottom five short)", "Ch.3-4 (p.39-52, 55-56)", "ggth",
-            NeedsData("ranks every index constituent each month and holds overlapping long/short portfolios; this needs historical index membership and a ranking portfolio, while the site's stock baskets replay one rule per stock on a current member list"),
-            &["E|\"buy the top five and short the bottom five\" after a one-month skip (Ch.3)"]),
+        StrategyDef { claim: claim("monthly portfolios", "n/a", "DJIA 30: 6.24% a year (12 x 6, t 0.96)", "6 months, overlapping, after a 1-month skip", "Dec 1991 - Jan 2008, monthly Datastream return indexes (Table 3.1 Panel C, p.43)"),
+          notes: "EP5 basket ranking (lane K56; user rule: rankings run on baskets, #20). The chapter's samples are survivorship-free monthly constituent lists of five indexes (DJIA 30, EURO STOXX 50, STOXX Nordic 30, S&P/ASX 50, S&P/TSX 60; p.40-41). Declared application: US = the vault's us_dow30 basket (SPY calendar, to 4 Sep 2020), India = the nifty50 basket (NIFTY 50 calendar). Membership caveat: each basket is today's member list (US: Norgate filename snapshot of the 30 Dow stocks, Sep 2020; India: the official NIFTY 50 list of Oct 2026) applied to every past date, not the chapter's dated lists (survivorship bias). Readings: J = p.j, K = p.k (default 12 x 6, the combination the chapter's robustness tests use, p.45-47); ranked at a month's last close on the close-to-close J-month return (price only; the chapter uses return indexes with dividends); the one-month skip = bought and sold short at the NEXT month's last close; held K months as a buy-and-hold vintage (the chapter's implicit monthly rebalancing is not done); top five long, bottom five short (p.n), ties by ticker; one cash sleeve per vintage (1/K of the account at the start, reused K months later), equal money on all ten legs, shorts reserving their own principal (unlevered). p.long_only = 1 drops the short side (labelled option).",
+          ..live("ggth_momentum", "Cross-sectional stock momentum (top five long, bottom five short)", "Ch.3 · Molchanov & Stork (p.39-47)", "ggth", "Long/Short",
+            &["F|\"Every month, for a specific ranking period, the returns of all shares are calculated and ranked. The top five winners are bought and the bottom five losers are sold short, and we thus hold these 10 shares in position.\" (p.42)",
+              "F|\"We utilize the investment rule that equally weighted momentum strategies of varying vintages are simultaneously in effect at all times, following Jegadeesh and Titman (1993, 2001)\" (p.42)",
+              "E|\"we follow the common practice of skipping one month between ranking and holding periods in order to minimize microstructure price distortions\" (p.42)",
+              "X|Each vintage is held for the holding period (\"We vary both the ranking and the holding period\", p.42) and closed at the month end K months after it was bought",
+              "F|\"We vary both the ranking and the holding period between 1 and 12 months\" (p.42); \"we continue to conduct the above-used (12 x 6) combination of ranking and holding periods\" (p.47)",
+              "F|Published (Table 3.1 Panel C, Dow Jones Industrial Average 30, annualized): 12 x 6 6.24% (t 0.96), 6 x 6 2.16%, 9 x 9 6.24% (p.43); DJIA 1992-1999 10.27%, 2000-2008 1.95% (Figure 3.2, p.45)"],
+            "") },
         held("ggth_futures_mom", "Financial futures momentum (best six long, worst six short)", "Ch.5 (p.69-71)", "ggth",
             NeedsData("needs 18 rolled financial futures contracts; cash indices cannot stand in for futures prices"), &["E|Rank 18 financial futures by past returns"]),
         held("ggth_ewma_portfolio", "Monthly EWMA crossover stock portfolios", "Ch.8 Pavlov & Hurn (p.116-124)", "ggth",
@@ -94,6 +101,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "gghf_ma80" => ("gghf_ma80", "Calyon 80-day average", "80"),
         "gghf_mom15" => ("gghf_mom15", "Spurgin-Schneeweis-Georgiev momentum", "15"),
         "ggfohf_ma" => ("ggfohf_ma", "Bacmann-Jeanneret-Scholz trend factor", "224"),
+        "ggth_momentum" => ("ggth_momentum", "Molchanov-Stork constituent momentum", "12 x 6, top/bottom 5"),
         _ if id.starts_with("ggth_") || id.starts_with("ggeai_") || id.starts_with("gghf_") || id.starts_with("ggfohf_") => ("gg_nt", "Gregoriou volumes (held)", "-"),
         _ => return None,
     })
@@ -110,6 +118,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "gghf_rb80" | "gghf_ma80" => vec![p("n", "Days (book: 80)", 80., 2., 250.)],
         "gghf_mom15" => vec![p("n", "Lookback days (book: 15, 27 or 25, 55)", 15., 1., 250.)],
         "ggfohf_ma" => vec![p("n", "Average days (book: 224, 117, 61, 32)", 224., 2., 300.)],
+        "ggth_momentum" => vec![p("j", "Ranking period in months (book 1-12)", 12., 1., 12.), p("k", "Holding period in months (book 1-12)", 6., 1., 12.),
+            p("n", "Stocks long and short (book 5)", 5., 1., 10.), p("long_only", "1 = winners only, no short side (labelled option)", 0., 0., 1.)],
         _ => return None,
     })
 }
@@ -195,7 +205,8 @@ mod tests {
     }
     #[test]
     fn catalogue_admits_exactly_the_reviewed_ids() {
-        let live: Vec<_> = catalogue().into_iter().filter(|d| d.status == Status::Live).map(|d| d.id).collect();
+        // ggth_momentum runs on the basket account (books::rotation EP5, lane K56), not the reviewed single-instrument path
+        let live: Vec<_> = catalogue().into_iter().filter(|d| d.status == Status::Live && !crate::books::rotation::is_basket(d.id)).map(|d| d.id).collect();
         assert_eq!(live, REVIEWED);
     }
 }

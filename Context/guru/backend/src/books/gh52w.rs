@@ -2,20 +2,19 @@
 //! p.2145-2176. Book id `gh52w`. Source: research drive "USB HDD 2/tRADING KNO-2/_Abstracts and Misc. Articles/
 //! Journal of Finance/The 52-Week High and Momentum Investing.pdf", copied to Books/Thomas J. George & Chuan-Yang Hwang/.
 //! Page refs are J. Finance pages. The strategy ranks the whole CRSP cross-section each month by P / 52-week high and
-//! holds six overlapping equal-weighted winner/loser vintages; the engine runs one instrument at a time (NSE baskets are
-//! per-symbol tickers with no monthly cross-sectional ranking or portfolio book), so nothing is Live and `run` returns None.
-//! Same family as jtwl (Jegadeesh-Titman 1993) and cjlmom, which are also NeedsData.
+//! holds six overlapping equal-weighted winner/loser vintages. Since lane K56 (5 Nov 2026, EP5) it runs in books::rotation
+//! on the vault's stock baskets (us_sp500 on SPY, nse500 on NIFTY 50) as a declared application (decision #20; check
+//! authors/titles-1030/K56w/k56_ref.py). `run` returns None. Same family as jtwl and cjlmom.
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "gh52w";
 
-const XS: &str = "needs a monthly cross-sectional stock universe (all CRSP stocks 1963-2001: month-end price and the highest price of the prior 12 months for every stock) ranked into top/middle/bottom 30% each month, and a portfolio engine holding 6 overlapping equal-weighted long/short vintages; the vault runs single instruments only (NSE baskets are per-symbol tickers, not a ranked cross-section)";
-const NOTE: &str = "Paper period July 1963 - December 2001, all CRSP stocks (p.2148). Tables I-IV do not skip a month between ranking and holding; the regression tests (Table V on) skip one month (footnote 3, p.2149). The (6,12), (12,6) and (12,12) horizons are robustness checks of the same rule (p.2149). The JT and MG rows of Table I are other authors' strategies (JT = jtwl in the vault). India: would run on an NSE cross-section (survivorship-free membership needed), not on an index.";
+const NOTE: &str = "EP5 basket ranking (lane K56). Declared application: the paper ranks all CRSP stocks, July 1963 - December 2001; here the stocks of the vault's us_sp500 basket (SPY calendar, to 11 Sep 2020) or nse500 basket (NIFTY 50 calendar). Membership caveat: each basket is today's member list (US: Norgate filename snapshot of 8 Sep 2020; India: the 2026 NSE list) applied to every past date, not dated membership (survivorship bias). Readings: ranked at each month's last close on that close / the highest daily close in the 12 months ending that day (the bars after the month end 12 months earlier, through this month end, and a stock needs a close at that earlier month end, i.e. a full 12 months of history; 'highest price' read as the highest close, CRSP's daily price; split-adjusted, price only); winners = top floor(0.3 N), losers = bottom floor(0.3 N), ties by ticker; bought and sold short at that close (no skip, as Tables I-IV, footnote 3 p.2149), held 6 months as a buy-and-hold vintage and closed at the 6th month's last close. One cash sleeve per vintage (1/6 of the account at the start, reused by the vintage formed 6 months later), equal money on every leg; shorts reserve their own principal (half long, half short, unlevered; the paper's portfolio is self-financing). p.long_only = 1 keeps only the winners (labelled option). The paper's period is outside the SPY calendar (from 1993), so 0.45% a month is not comparable.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
         id: "gh52w_52wh_6x6", name: "52-week-high winners minus losers (6-month hold)",
-        group: "Sec. I · Data and Method (Table I)", session: 0, dir: "Long/Short", status: Status::NeedsData(XS),
+        group: "Sec. I · Data and Method (Table I)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
         rules: &[
             "F|\"For the 52-week high strategy, stocks are ranked based on P(i,t-1)/high(i,t-1), where P(i,t-1) is the price of stock i at the end of month t - 1 and high(i,t-1) is the highest price of stock i during the 12-month period that ends on the last day of month t - 1.\" (p.2149)",
@@ -35,18 +34,20 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         _ => return None,
     })
 }
-pub fn params(_id: &str) -> Option<Vec<ParamDef>> { None }
+pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    (id == "gh52w_52wh_6x6").then(|| vec![ParamDef { key: "long_only", label: "1 = winners only, no short side (labelled option)", def: 0., min: 0., max: 1., step: 1. }])
+}
 pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> { None }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn catalogue_is_needsdata_and_owned() {
+    fn catalogue_is_live_on_the_basket_account_and_owned() {
         let c = super::catalogue();
         assert!(!c.is_empty());
         for s in &c {
             assert!(s.id.starts_with("gh52w_") && s.book == super::BOOK);
-            assert!(matches!(s.status, crate::connors::Status::NeedsData(_)));
+            assert!(matches!(s.status, crate::connors::Status::Live) && crate::books::rotation::is_basket(s.id));
             assert!(super::family_of(s.id).is_some());
         }
     }

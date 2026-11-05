@@ -978,6 +978,8 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 // ---- end Joe Ross block ----
 /// Lane K28 (3 Nov 2026): rotation rules rank or weight several actual US ETFs on one account (books::rotation).
 const ROTATION_BASIS:&str="Rotation across several actual US ETFs (books::rotation, lane K28): the rule's own universe is read from the vault's US price file, SPY supplies the calendar and the benchmark, and each holding is the ETF named in its trade. It runs only on SPY; an index, another ETF or a stock cannot stand in for the universe, and India has no sector or multi-asset series in the vault (decision #11).";
+/// Lane K56 (5 Nov 2026, EP5): basket ranking rules rank the stocks of a vault basket and hold them on one account (books::rotation).
+const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the stocks of a vault basket (US: us_sp500, us_dow30 or the named 18-stock list, on the SPY calendar; India: nse500 or nifty50, on the NIFTY 50 calendar) and each trade is a stock of that basket. It runs only in those two contexts: the index or ETF is the calendar and the benchmark, never a stand-in for the stocks. Membership is the basket's current list (survivorship bias), not dated membership; a ranking on these baskets instead of the author's universe is a declared application.";
 fn base_policy(def:&StrategyDef)->Policy {
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
@@ -989,6 +991,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if crate::books::rotation::is_rotation(def.id) {let mut p=etf(ROTATION_BASIS);p.market_adaptation=def.book=="fbrs";return p;} // lane K28 rotation block
+    if crate::books::rotation::is_basket(def.id) {let mut p=requirement("basket_ranking",&["index","etf"],BASKET_BASIS);p.market_adaptation=true;return p;} // lane K56 EP5 block
     if let Some(a)=admission(def) {let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],a.basis);p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;} // per-book ADMISSION table
     if let Some(p)=schaap_policy(def) {return p;} // Schaap block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
@@ -3534,7 +3537,8 @@ mod tests {
     #[test]
     fn leverage_futures_options_and_portfolios_cannot_become_cash_backtests() {
         // s12345 is opened as a labelled declared application (connors-leftovers), see its own test
-        for (id,book) in [/* lwdg2_0105: intraday wave 1 */("lev_calls","stc9"),("hmrw_sp500_rotation","hmrw"),("alpha_weekly_mr","alpha")] {
+        // hmrw_sp500_rotation and alpha_weekly_mr run on the basket account since lane K56 (basket_rules_run_on_their_index_calendars)
+        for (id,book) in [/* lwdg2_0105: intraday wave 1 */("lev_calls","stc9")] {
             let d=def(id,book);
             for (ticker,native) in [("NIFTY 50",false),("SPY",false),("RELIANCE",true)] {
                 assert_eq!(check(&d,ticker,native).unwrap().status,"needs_data");
@@ -3776,11 +3780,22 @@ mod connors_index_routing_tests {
         }
     }
     #[test]
+    fn basket_rules_run_on_their_index_calendars() {
+        for id in crate::books::rotation::BASKET_IDS {
+            let d=find(id);let p=policy(&d);
+            assert_eq!((p.requirement,p.allowed_types),("basket_ranking",&["index","etf"][..]),"{id}");
+            let allowed=crate::gate::get(id).and_then(|g|g.allowed).unwrap();
+            assert_eq!(allowed,if *id=="atm04_mtpg" {&["SPY"][..]} else {&["NIFTY 50","SPY"][..]},"{id}");
+            for tk in allowed {assert!(check(&d,tk,false).is_none(),"{id} {tk}");}
+        }
+    }
+    #[test]
     fn ranking_and_portfolio_methods_stay_stock_or_portfolio_only() {
         // connors-final 26 Oct 2026: ats_cbp now runs on US stocks, indices and ETFs ($20 kept, US only), see cbp_us
         assert!(policy(&find("ats_cbp")).allowed_types.contains(&"individual_stock") && check(&find("ats_cbp"),"NIFTY 50",false).is_some() && check(&find("ats_cbp"),"SPY",false).is_none());
         // alpha_rising_assets / alpha_dyn_treasuries run as ETF rotations on the SPY calendar since lane K28 (rotation_rules_run_on_spy_only)
-        for id in ["alpha_weekly_mr","alpha_etf_avalanches","alpha_formula_portfolio","hmrw_sp500_rotation","afactor_portfolio"] {
+        // alpha_weekly_mr and hmrw_sp500_rotation rank the stock baskets since lane K56 (basket_rules_run_on_their_index_calendars)
+        for id in ["alpha_etf_avalanches","alpha_formula_portfolio","afactor_portfolio"] {
             let d=find(id);let p=policy(&d);
             assert!(!p.allowed_types.contains(&"index")&&!p.allowed_types.contains(&"etf"),"{id}");
             assert!(!CONNORS_INDEX_IDS.contains(&id));

@@ -300,6 +300,8 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
     if let Some(pos)=options::positions(id,ctx,from,to,p) {return option_run(ctx,pos?,from,to,cost);}
     // lane K28: rotation rules hold several ETFs on one account (books::rotation), valued at each ETF's own close
     if let Some(a)=books::rotation::account(id,ctx,from,to,cost,p,books::rotation::PRELOADED.get().copied()) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
+    // lane K56 (EP5): basket ranking rules hold several stocks of a vault basket on one account (books::rotation)
+    if let Some(a)=books::rotation::basket_account(id,ctx,from,to,cost,p) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
     // lane K43: pyramids, unequal lots and overlapping positions of one rule on one account (books::units)
     if let Some(a)=books::units::run(id,ctx,from,to,cost,p) {let a=a?;let to=a.ruin.unwrap_or(to);let equity=a.equity[..=to-from].to_vec();return Ok(Run{trades:a.trades.clone(),from,to,equity,bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
 
@@ -2733,6 +2735,12 @@ mod tests {
                     let a=run.option_account.as_ref().unwrap();
                     assert!(a.model==books::units::MODEL && run.trades.len()==a.alloc.len() && run.equity.iter().all(|v|v.is_finite()),"{}",d.id);
                 }
+                other_path += 1;
+                continue;
+            }
+            if books::rotation::is_basket(d.id) {
+                // lane K56 (EP5): stock-basket ranking on one account (books::rotation tests, K56w/k56_ref.py); no basket files in this test
+                assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with(if d.id=="atm04_mtpg" {"not_testable"} else {"needs_data"}),"{}",d.id);
                 other_path += 1;
                 continue;
             }

@@ -51,10 +51,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
           ],
           "Full 12-ETF rotation (lane K28, books::rotation; check authors/titles-1030/K28w/k28_ref.py). Readings [Book silent]: months = 21/63/126/252 trading days; momentum = the average of the four close-to-close returns; volatility = the sample standard deviation of the last 63 daily close-to-close returns; weight = (1/volatility) / the sum over the five holdings; ranked and filled at the last close of each month; ties by ticker. Every position is closed and reopened at its new weight each month, so a continuing holding is one trade per month. The rotation starts once all 12 ETFs have 253 closes (GLD starts 18 Nov 2004, so the first month end is Nov 2005; the book starts 11/2004). Price-only ETF closes (the book uses total returns). Runs on the SPY calendar; the holdings are the ETFs named in each trade. India: would need an Indian multi-asset ETF set (equity, gold, G-sec) - not in the vault.",
           claim("n/a", "n/a", "ann 9.60%", "monthly rebalance", "12 ETFs 11/2004-12/2018: vol 11.60%, maxDD -14.80%, Sharpe 0.83, alpha 6.40% (2007-2018: 9.20% / 11.50% / -14.80% / 0.80)")),
-        d(WMR, "Connors Research Weekly Mean Reversion", "Ch 6 · CR Weekly Mean Reversion", "Long",
-          NeedsData("the 500 most liquid US stocks (monthly 200-day dollar-volume ranking), 10 equal-weight slots ranked by 100-day volatility, and SHY for idle cash; see alpha_weekly_mr_single for the single-instrument version"),
+        d(WMR, "Connors Research Weekly Mean Reversion", "Ch 6 · CR Weekly Mean Reversion", "Long", Live,
           WMR_RULES,
-          "Full strategy: portfolio of up to 10 stocks. India: NIFTY 500 constituents would be the swap (not in the vault).",
+          "Full strategy on a stock basket (EP5, lane K56, books::rotation; check authors/titles-1030/K56w/k56_ref.py). Declared application: the book trades the 500 most liquid US stocks on Quantopian, 2003-2018; here the stocks of the vault's us_sp500 basket (SPY calendar, to 11 Sep 2020) or nse500 basket (NIFTY 50 calendar, a labelled swap). Membership caveat: each basket is today's member list (US: Norgate filename snapshot of 8 Sep 2020; India: the 2026 NSE list) applied to every past date, not dated membership (survivorship bias). Readings [Book silent]: the 500 most liquid = the 500 basket stocks with the highest 200-day average of close x volume, set at each month's last close (the basket has about 500 stocks, so nearly all qualify); week end = the calendar's last trading day of each Monday-Sunday week; weekly RSI(2) = Wilder RSI on each stock's last close of every week; regime = the calendar's own 126-day close-to-close return > 0 (SPY; NIFTY 50 for India); HV100 = sample standard deviation of 100 daily log returns x sqrt(252) x 100, lowest first, ties by ticker; each new position gets 10% of the equity at that close (after the day's exits), at most the free cash (no borrowing), into the open slots of 10; an entry with no free cash is not bought and its slot stays open; a stock sold at a close is not bought back at that close [Book silent], as in alpha_weekly_mr_single. Idle cash: US = held in SHY, growing with SHY's close-to-close change (price only) from SHY's first bar (30 Jul 2002; before that, and between trades, no SHY trade is counted or charged); India: there is no SHY counterpart in the vault, so idle cash earns nothing. Price only (split-adjusted, no dividends). Book result is total return with dividends, Quantopian data.",
           claim("n/a", "n/a", "ann 12.30%", "40-60 trading days", "US stocks 2003-2018: vol 10.10%, maxDD -12.80%, Sharpe 1.22, alpha 7.30%, beta 0.27 (2007-2018: 12.00% / 10.20% / -12.80% / 1.18)")),
         d(WMR1, "CR Weekly Mean Reversion · single instrument", "Ch 6 · CR Weekly Mean Reversion", "Long", Live,
           WMR_RULES,
@@ -171,7 +170,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("limit_base", "[Not from the book] Limit base: 0 = yesterday's close (default), 1 = today's open", 0.0, 0.0, 1.0, 1.0),
         ],
         TF => vec![p("lookback", "Total-return lookback (days)", 126.0, 63.0, 252.0, 21.0)],
-        RA | WMR | DT | AV | PF => vec![],
+        WMR => vec![
+            p("rsi_n", "Weekly RSI period", 2.0, 2.0, 4.0, 1.0),
+            p("entry", "Buy when weekly RSI below", 20.0, 10.0, 30.0, 5.0),
+            p("exit", "Sell when weekly RSI above", 80.0, 60.0, 90.0, 5.0),
+            p("stop_pct", "Stop: close more than % below entry", 10.0, 5.0, 15.0, 1.0),
+            p("slots", "Positions (book 10)", 10.0, 5.0, 20.0, 5.0),
+        ],
+        RA | DT | AV | PF => vec![],
         _ => return None,
     })
 }
@@ -341,7 +347,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         RSI4 => ("alpha_spy_rsi4", "SPY Mean Reversion RSI(4) (Alpha Formula Ch 4)", "Book rules"),
         RA => ("alpha_rising_assets", "Rising Assets (Alpha Formula)", "Full 12-ETF rotation"),
-        WMR => ("alpha_weekly_mr", "CR Weekly Mean Reversion (Alpha Formula)", "Full (500 stocks)"),
+        WMR => ("alpha_weekly_mr", "CR Weekly Mean Reversion (Alpha Formula)", "Full (stock basket)"),
         WMR1 => ("alpha_weekly_mr", "CR Weekly Mean Reversion (Alpha Formula)", "Single instrument"),
         DT => ("alpha_dyn_treasuries", "CR Dynamic Treasuries (Alpha Formula)", "Full (IEI/IEF/TLH/TLT)"),
         DT1 => ("alpha_dyn_treasuries", "CR Dynamic Treasuries (Alpha Formula)", "Single-ETF sleeve"),
