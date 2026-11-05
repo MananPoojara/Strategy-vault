@@ -1441,7 +1441,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "ch_pbs_cbpb_trail3"=>"Held: no exit before a new high. This workshop chart (S&P Sep-95 futures) sets a 3-day-low trailing stop only after the trade makes a new 20-day high; until then the only protection is the workshop's $1,500 stop per contract (p.23), which has no equivalent on an index, ETF or stock. Chande's complete CB-PB rule is already live as a separate strategy.",
         // ---- end Chande block
         // ---- Joe Krutsinger block (26 Oct 2026, lane B): held Live rules
-        // "jkbwts_gettess30": admitted SPX only by lane K58 (decision #202, books::jkbwts::ADMISSION_SPX)
+        "jkbwts_gettess30"=>"Held: no exact conversion. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop (p.12-13) over 01/05/87-12/26/97, a test that spans the contract's change from $500 to $250 a point (Nov 1997): $4,000 is 8 points before and 16 after, so no single exact point amount exists (decisions #196(2), #240 (2)).",
         // ---- end Joe Krutsinger held
         // ---- Murray Ruggiero block (26 Oct 2026, lane B): held Live rules
         "rgt_taylor"=>"Held: incomplete system. Ruggiero prints the Taylor trading code as a shell that is 'missing two patterns ... plus several filters' for the reader to complete (Traders' Secrets p.181-182), and its declared buy and sell filters are unused in the printed code; testing the shell would not be the author's system.",
@@ -1966,9 +1966,9 @@ mod tests {
     fn krutsinger_held_rules_have_plain_card_reasons() {
         use crate::books::{jkbwts};
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().collect();
-        for id in ["jkbwts_gettess30"] { // admitted SPX only by lane K58 (decision #202)
+        for id in ["jkbwts_gettess30"] { // K58 admitted it SPX only; held again by decision #240 (2)
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
     }
     // ---- end Joe Krutsinger held ----
@@ -2446,7 +2446,6 @@ mod tests {
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().chain(jkbk::catalogue()).chain(upg18::catalogue()).collect();
         let mut want:Vec<&str>=jkbwts::REVIEWED.iter().chain(jkbk::REVIEWED.iter()).chain(upg18::REVIEWED.iter()).copied().collect();
         want.push("upg18_gearshift"); // re-opened 2 Nov 2026 (lane K20): its own entry upg18::ADMISSION_GEARSHIFT, same checks
-        want.extend(jkbwts::SPX_PTS); // lane K58 (#202): jkbwts::ADMISSION_SPX, SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday wave 2b: minute-path ids have their own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

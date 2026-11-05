@@ -386,12 +386,3 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Joe Krutsinger built and reported these systems on S&P 500 futures (Dinapoli5, RainMaker, JK-Call Buyer), stock-index futures (SAFE) and QQQ / any market (Prince, English Channel, Parrot); runs on other indices, ETFs and single stocks (US and India) are a declared application.",
     basis: "Building Winning Trading Systems (1997): Dinapoli5 p.5, JK RainMaker p.37; joe_krut.pdf: SAFE worksheet p.22, JK-Call Buyer p.34-35 (Active Trader Sept 2000); vendor code: English Channel (EnglishChannel.pdf, English_Channel.txt), Prince 2002 (Open Code.txt), Parrot (Parrot.txt). Index/ETF/stock runs are a declared application.",
 };
-
-// Lane K58 (5 Nov 2026, decision #202 extending #196(2)): Gettess30's $4,000 money-management stop on the S&P 500 futures
-// (sheet "S&P 500 INDEX 67/99", 1/87-12/97) at that contract's $500 per index point = 8 points (stop_usd / pt_usd), SPX only.
-pub const SPX_PTS: &[&str] = &["jkbwts_gettess30"];
-pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
-    label: "Joe Krutsinger tested Gettess30 on S&P 500 futures (01/05/87-12/26/97) with a $4,000 money-management stop per contract; at that contract's $500 per index point (the CME contract's size through Nov 1997; labelled reading for the test's last eight weeks) it is 8 points. It runs on the S&P 500 index (SPX) only, the points literal, from 2014 (real opens; the entry reads tomorrow's open), as a declared application of the futures rule to the cash index.",
-    basis: "Joe Krutsinger, Building Winning Trading Systems (Dec 1997) printed p.12 (report) and p.13 (Quick System sheet: LEConsec 2, $4,000 money management), OCR authors/titles-1030/K58w/jkbwts_p12_14.txt; decisions #196(2), #202; independent check K58w/k58_jk_ref.py (jk_ref engine A), #179 check K58w/m3_jk.txt.",
-};

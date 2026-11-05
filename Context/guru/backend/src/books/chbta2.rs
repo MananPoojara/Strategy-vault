@@ -11,6 +11,9 @@ pub const BOOK: &str = "chbta2";
 /// full index point (p.134: "each point is not one tick, but one full S&P index point = $500"): $2,000 = 4, $3,000 = 6, $5,000 = 10
 /// points. Published on SPX only (gate `allowed`), the points literal; reference authors/titles-1030/K58w/k58_ch_ref.py.
 /// ch_bta2_ma1011_trend is not here: decision #179 withdraws its SPX result (instrument_policy::held_reason, gate row).
+/// Decision #240 (lane K58): stop entries whose own initial stop is reached on the entry day in more than 5% of trades;
+/// their entry day is walked on real SPX 1-minute bars (run_sys_path), p.path = 0 the daily conservative reading.
+pub const MINUTE_PATH: &[&str] = &["ch_bta2_bottom_fish_generic", "ch_bta2_xopp", "ch_bta2_xopp_trail"];
 pub const SPX_PTS: &[&str] = &["ch_bta2_ma1011_anti", "ch_bta2_tat", "ch_bta2_bottom_fish", "ch_bta2_bottom_fish_generic", "ch_bta2_xopp", "ch_bta2_xopp_trail"];
 
 // ------------------------------------------------------------------ small shared engine (also used by chntt)
@@ -60,7 +63,14 @@ fn done(p: Pos, i: usize, px: f64, why: &str, sig: usize) -> Trade {
 
 /// One position at a time, bar by bar. Order inside a bar: next-open exit, next-open entry, protective stop,
 /// stop entries, next-close entry, close exit, close signal. Gaps through a stop fill at the open.
-pub(crate) fn run_sys(x: &Ctx, from: usize, to: usize, s: &Sys) -> Vec<Trade> {
+pub(crate) fn run_sys(x: &Ctx, from: usize, to: usize, s: &Sys) -> Vec<Trade> { run_sys_path(x, from, to, s, false) }
+
+/// `run_sys`; with `minute` (lane K58, decision #240) a stop entry whose bar also reaches its initial stop is decided on the
+/// day's real 1-minute bars (intraday::stop_entry_day: the entry level's first touch fills, then the stop counts from that
+/// minute on; in the fill minute itself it counts unless the minute opened beyond it and closed back). A day without minutes
+/// (none loaded, or excluded by the minute cleaner) makes no trade, because the order cannot be known. `minute = false` is
+/// exactly the daily rule above (the stop assumed hit after the entry).
+pub(crate) fn run_sys_path(x: &Ctx, from: usize, to: usize, s: &Sys, minute: bool) -> Vec<Trade> {
     let mut out = vec![];
     let (mut pos, mut last): (Option<Pos>, f64) = (None, 0.);
     let mut pend: [Option<(f64, Kind)>; 2] = [None, None];
@@ -92,26 +102,37 @@ pub(crate) fn run_sys(x: &Ctx, from: usize, to: usize, s: &Sys) -> Vec<Trade> {
                 }
             }
             // stop entries; if both sides trigger on one bar, the level nearer the open is taken first
-            let mut hits: Vec<(f64, f64, f64)> = vec![];
+            let mut hits: Vec<(f64, f64, f64, f64)> = vec![];
             for k in 0..2 {
                 if let Some((d, Kind::Stop(lv))) = pend[k] {
                     pend[k] = None;
                     if (d > 0. && x.h[i] >= lv) || (d < 0. && x.l[i] <= lv) {
                         let px = if d > 0. { x.o[i].max(lv) } else { x.o[i].min(lv) };
-                        hits.push(((px - x.o[i]).abs(), d, px));
+                        hits.push(((px - x.o[i]).abs(), d, px, lv));
                     }
                 }
             }
             hits.sort_by(|a, b| a.0.total_cmp(&b.0));
             let free = |d: f64, pos: &Option<Pos>| !(pos.as_ref().is_some_and(|p| p.dir == d) || (s.oneway && last == d && pos.is_none()));
-            if let Some(&(_, d, px)) = hits.iter().find(|h| free(h.1, &pos)) {
+            if let Some(&(_, d, px, lv)) = hits.iter().find(|h| free(h.1, &pos)) {
                 {
                     if let Some(p) = pos.take() { out.push(done(p, i, px, "Opposite stop entry · reversal", i)); }
                     let p = Pos { dir: d, i, px, kind: "stop" };
                     let st = init(&p);
                     last = d;
                     if st.is_finite() && ((d > 0. && x.l[i] <= st) || (d < 0. && x.h[i] >= st)) {
-                        out.push(done(p, i, st, "Initial stop · same bar as entry (conservative)", i));
+                        if !minute {
+                            out.push(done(p, i, st, "Initial stop · same bar as entry (conservative)", i));
+                        } else if let Some(bars) = crate::intraday_w2b::day(x, i) {
+                            use crate::intraday::{stop_entry_day, Level};
+                            let entry = [Level { up: d > 0., px: lv }];
+                            let pts = s.stop_pts;
+                            match stop_entry_day(&bars, 0, &entry, &|_, f| Some(Level { up: d < 0., px: f - d * pts })) {
+                                Some((_, f, Some(xp))) => out.push(done(Pos { px: f, ..p }, i, xp, "Initial stop · same day as entry (1-minute path)", i)),
+                                Some((_, f, None)) => pos = Some(Pos { px: f, ..p }),
+                                None => {} // the minutes never reach the entry level: no trade
+                            }
+                        }
                     } else { pos = Some(p); }
                 }
             }
@@ -379,6 +400,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    let path = || p("path", "Entry day with a stop entry that reaches its stop: 1 = real SPX 1-minute bars (#240), 0 = daily bar, stop assumed after the entry [Not from the book]", 1., 0., 1., 1.);
     let stop = |def| p("stop_pts", "Initial stop, S&P index points (the book's dollars / $500 a point, p.134; 0 = off)", def, 0., 50., 1.);
     let tick = || p("tick", "Stop-entry offset (1 point/tick)", 0.01, 0., 5., 0.01);
     let sma_n = || p("sma", "Trend SMA closes", 65., 45., 85., 10.);
@@ -396,11 +418,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ch_bta2_bottom_fish" => vec![p("x", "Range > X points", 4., 0., 10., 0.5), p("y", "Close - open > Y points", 3., 0., 10., 0.5),
             p("low_n", "N-day low", 20., 10., 40., 5.), p("within", "Low formed within days", 5., 1., 10., 1.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), stop(4.)],
         "ch_bta2_bottom_fish_generic" => vec![p("x", "Range > X points", 0.1, 0., 10., 0.1), p("y", "Close - open > Y points", 0., 0., 10., 0.5),
-            p("low_n", "N-day low", 20., 10., 40., 5.), p("within", "Low formed within days", 5., 1., 10., 1.), p("exit_n", "Exit at N-day low", 20., 5., 40., 5.), tick(), stop(4.)],
+            p("low_n", "N-day low", 20., 10., 40., 5.), p("within", "Low formed within days", 5., 1., 10., 1.), p("exit_n", "Exit at N-day low", 20., 5., 40., 5.), tick(), stop(4.), path()],
         "ch_bta2_xopp" => vec![p("band", "Band around 50-day SMA (%)", 3., 0.5, 5., 0.5), p("slow", "Slow SMA", 50., 20., 100., 10.), p("fast", "Fast SMA", 7., 3., 15., 1.),
-            p("chan", "Entry channel days", 20., 10., 40., 5.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), tick(), stop(6.)],
+            p("chan", "Entry channel days", 20., 10., 40., 5.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), tick(), stop(6.), path()],
         "ch_bta2_xopp_trail" => vec![p("band", "Band around 50-day SMA (%)", 1., 0.5, 5., 0.5), p("slow", "Slow SMA", 50., 20., 100., 10.), p("fast", "Fast SMA", 7., 3., 15., 1.),
-            p("chan", "Entry channel days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.), tick(), stop(6.)],
+            p("chan", "Entry channel days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.), tick(), stop(6.), path()],
         "ch_bta2_cbo_trail5" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 5., 2., 20., 1.), stop(0.)],
         "ch_bta2_cbo_volexit" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Range multiple", 3., 1., 5., 0.5), stop(0.)],
         "ch_bta2_cbo_inside" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Exit range multiple", 3., 1., 5., 0.5), stop(0.)],
@@ -444,12 +466,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| (g(k).round().max(1.)) as usize;
     let nan = f64::NAN;
     let stop_pts = g("stop_pts").max(0.);
+    let minute = MINUTE_PATH.contains(&id) && g("path") >= 0.5; // K58 / #240
     let tick = if schema.iter().any(|d| d.key == "tick") { g("tick").max(0.) } else { 0. };
     let one = |o: Option<(f64, Kind)>| [o, None];
     let n = x.r.len();
     macro_rules! sys {
         ($e:expr, $c:expr, $o:expr, $t:expr, $w:expr) => {
-            run_sys(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, oneway: $w })
+            run_sys_path(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, oneway: $w }, minute)
         };
     }
     let hold_exit = |h: usize| move |i: usize, q: &Pos| (i >= q.i + h).then(|| format!("Close of day {h} in the trade"));
@@ -637,11 +660,10 @@ mod tests {
         for id in SPX_PTS { assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..])), "{id}"); }
         assert!(!SPX_PTS.contains(&"ch_bta2_ma1011_trend")); // #179: SPX withdrawn
         // the other K58 #202 rules: SPX only, the book's dollars at the named contract's $/point
-        for id in crate::books::jkbwts::SPX_PTS.iter().chain(crate::books::stad::SPX_PTS).chain(crate::books::stad2::SPX_PTS) {
+        for id in crate::books::stad::SPX_PTS.iter().chain(crate::books::stad2::SPX_PTS) { // jkbwts_gettess30: held (#240 (2))
             assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
         }
         let def = |id: &str, k: &str| crate::books::params(id).unwrap().iter().find(|d| d.key == k).unwrap().def;
-        assert_eq!(def("jkbwts_gettess30", "stop_usd") / def("jkbwts_gettess30", "pt_usd"), 8.0);
         assert_eq!(def("stad1_volex", "stale_pts"), 1.0);
         assert_eq!((def("stad13_volex", "sl_usd") / def("stad13_volex", "bpv"), def("stad13_volex", "go_usd") / def("stad13_volex", "bpv")), (4.0, 0.8));
         // instrument_policy::metadata_json writes the label into JSON unescaped (a quote broke the K58 refresh's strategies list)
