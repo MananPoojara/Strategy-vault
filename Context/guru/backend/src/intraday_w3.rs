@@ -47,9 +47,28 @@ pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m16
     "kftsm_first_hour" /* lane K42 (EP2 10-minute bars, 0.20 S&P points): scaled SPY avg -0.0074% vs SPX +0.0285% (test a) */,
     "rsrl_rlevels" /* lane K48 (5-minute bars, S&P points, 2014-2025): scaled SPY avg -0.0026% vs SPX +0.0332% (test a) */];
 pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) || K38_SPX_HELD.contains(&id) } // + lane K38
+/// Decision #231 (lane M4, 5 Nov 2026; authors/titles-1030/M4.tsv): India minute results that are India-better than SPY over the
+/// dates both minute files cover on BOTH tests (average trade > 3x SPY's and > 0.10 pp above it; compounded > 10x SPY's, or
+/// > +100% when SPY's <= 0). Those (rule, India ticker) results are withdrawn; the SPY/SPX results stay.
+pub const INDIA_HELD: &[(&str, &str)] = &[("lgvp_volpat", "NIFTYBANK") /* avg +0.1243% vs SPY +0.0189%, compounded +532.7% vs +30.6% */];
+pub fn india_held(id: &str, ticker: &str) -> bool { INDIA_HELD.iter().any(|&(i, t)| i == id && (t == ticker || (t == "NIFTYBANK" && ticker == "NIFTY BANK"))) }
+pub const INDIA_HELD_NOTE: &str = "NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates (decision #231, 5 Nov 2026).";
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn decision_231_india_withdrawals() {
+        use crate::instrument_policy as ip;
+        let cat = crate::connors::catalogue();
+        for &(id, t) in INDIA_HELD {
+            let d = cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}"));
+            assert!(ip::intraday_p1(d), "{id}");
+            assert_eq!(ip::check(d, t, false).unwrap().note, INDIA_HELD_NOTE, "{id} {t}");
+            assert!(!ip::intraday_tickers(id).contains(&t), "{id} {t}");
+            assert!(ip::check(d, "SPY", false).is_none() && ip::check(d, "SPX", false).is_none() && ip::check(d, "NIFTY 50", false).is_none(), "{id}");
+            assert!(crate::gate::get(id).unwrap().reason.contains("#231"), "{id}");
+        }
+    }
     use super::*;
     use crate::connors::{Ctx, Params};
     fn minutes(name: &str, days: &[(&str, &[&str])]) -> &'static crate::intraday::Minutes {
@@ -184,7 +203,7 @@ mod tests {
         for id in ["ats_10pct_oops", "ss_momentum_pinball", "btp2_10pct_oops", "btp2_10pct_oops_long", "btp2_10pct_oops_short",
             "lwdg2_0105", "mhp_ftse_12_20041015", "tdnmtt_trap_long", "lgvp_volpat"] {
             let d = find(&cat, id);
-            for t in ip::INTRADAY_P1_TICKERS { assert!(ip::check(d, t, false).is_none(), "{id} {t}"); }
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), !india_held(id, t), "{id} {t}"); } // #231: India pairs withdrawn separately
             assert!(crate::gate::get(id).unwrap().reason.contains("NIFTY cash-index minutes; the same rule passed the tradable-vs-cash check on SPY/SPX"), "{id}");
         }
         for id in ["lwdg2_0105", "lgvp_volpat", "tdnmtt_trap_long"] { assert!(crate::gate::get(id).unwrap().ours.contains("#177d near miss"), "{id}"); }

@@ -408,4 +408,35 @@ mod tests {
             }
         }
     }
+    /// Decision #231 (lane M4 on K53): every minute-path rule admitted on NIFTY 50 / NIFTYBANK, run on the India ticker and on
+    /// SPY over the dates both minute files cover (default params, books::run, exact trades). Run by hand:
+    /// VAULT_US=.. VAULT_IDX=.. VAULT_M1_DIR=.. M4_OUT=<tsv> cargo test --release m4_india_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn m4_india_dump() {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("M4_OUT").unwrap()).unwrap());
+        let dir = std::env::var("VAULT_M1_DIR").unwrap();
+        let load = |file: &str, t: &str| -> (Vec<crate::Row>, &'static crate::intraday::Minutes) {
+            (crate::load_csv(&std::env::var(file).unwrap()).unwrap().remove(t).unwrap(), Box::leak(Box::new(crate::intraday::Minutes::load(&dir, t).unwrap())))
+        };
+        let (spy, my) = load("VAULT_US", "SPY");
+        let cat = crate::connors::catalogue();
+        let st = |rows: &[crate::Row], m: &'static crate::intraday::Minutes, id: &str, a: &str, b: &str| -> String {
+            let mut x = Ctx::new(rows, rows, &[]);
+            x.minutes = Some(m);
+            let (i0, i1) = (rows.partition_point(|r| r.date.as_str() < a), rows.partition_point(|r| r.date.as_str() <= b) - 1);
+            let Some(t) = crate::books::run(id, &x, i0, i1, &Params::new()) else { return "none\tnone\tnone".into() };
+            let v: Vec<f64> = t.iter().map(|z| { let w: f64 = z.legs.iter().map(|g| g.w).sum(); let ep = z.legs.iter().map(|g| g.w * g.px).sum::<f64>() / w; z.dir * (z.exit_px / ep - 1.0) }).collect();
+            let comp = v.iter().fold(1.0, |c, r| c * (1.0 + r)) - 1.0;
+            format!("{}\t{}\t{}", v.len(), if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 }, comp)
+        };
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let (rows, m) = load("VAULT_IDX", t);
+            let (a, b) = (m.first().max(my.first()).to_string(), m.last().min(my.last()).min(if t == "NIFTY 50" { "2026-08-10" } else { "9999" }).to_string());
+            for d in cat.iter().filter(|d| crate::instrument_policy::intraday_p1(d) && crate::instrument_policy::check(d, t, false).is_none()) {
+                writeln!(f, "{}\t{t}\t{a}\t{b}\t{}\t{}", d.id, st(&rows, m, d.id, &a, &b), st(&spy, my, d.id, &a, &b)).unwrap();
+            }
+        }
+    }
 }
