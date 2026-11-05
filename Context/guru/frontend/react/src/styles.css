@@ -251,6 +251,7 @@ details.rules .t { font: 700 10px "IBM Plex Mono", monospace; color: var(--ink3)
 @media (max-width:600px) {.report-tabs{margin-inline:-12px;padding-inline:2px;}.report-tabs [role="tab"]{padding-inline:11px;font-size:12px;}}
 @media print {.report-tabs{display:none!important;}.report-panel[hidden]{display:block!important;}.strategy-report{break-inside:auto;}.report-panel{margin-bottom:24px;}.report-panel .tlog{max-height:none;overflow:visible;}.bk-line{stroke-dashoffset:0!important;}.bk-fill{opacity:1!important;}.bk-bar{transform:none!important;}}
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .two .box { margin: 0; } .two { margin: 18px 0; }
+.concl-pair { align-items: start; } /* Claude's and GPT's conclusions keep their own height */
 .heatwrap { padding: 0 !important; background: transparent !important; } .heat { width: 100%; border-collapse: collapse; } .heat th { font: 600 11px var(--font); color: var(--ink2); padding: 3px; text-align: center; } .heat td { text-align: center; font: 600 11px "IBM Plex Mono", monospace; padding: 5px 0; border: 2px solid var(--panel); border-radius: 4px; }
 .check { margin: -4px 0 10px; font-size: 13.5px; color: var(--green); }
 .tlog { max-height: 560px; overflow: auto; border: 1px solid var(--steel); border-radius: var(--r-field); } .tbl.tl { border: 0; border-radius: 0; } .tbl.tl th { position: sticky; top: 0; background: var(--thead); z-index: 1; }
