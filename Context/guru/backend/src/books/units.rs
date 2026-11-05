@@ -42,6 +42,8 @@ const RULES: &[(&str, W, bool, bool)] = &[
     ("vixr_all", W::Qty, false, true),
     // lane K44: Active Trader TSL Jun 2000 p.49, "Add the same number of shares/contracts as in the initial entry"
     ("atm00_fourplay", W::Qty, false, false),
+    // lane K55: STAD Vol 2 Opening Gap p.74, "Maximum number of entries per position" 4, one contract per entry
+    ("stad2_opengap", W::Qty, false, false),
 ];
 pub fn is_units(id: &str) -> bool { RULES.iter().any(|r| r.0 == id) }
 

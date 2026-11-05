@@ -3805,7 +3805,7 @@ mod bernstein_g2_tests {
             }
         }
         // Held: same-day gap stops, intraday, missing numbers, chart judgement.
-        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"/* jb30d_gap_tick, jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"|"jbudt_pop"|"jbcdt2_inside_day"|"jbcdt2_or30")) {
+        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"/* jb30d_gap_tick, jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"/* jbudt_pop: 5-minute bars, intraday_ep lane K55 */|"jbcdt2_inside_day"|"jbcdt2_or30")) {
             assert!(!reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"source_review_required");
         }

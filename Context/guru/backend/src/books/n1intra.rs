@@ -85,9 +85,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 }
 
 /// One bar of the continuous series: daily row, stamp, OHLC, its minutes, first/last bar of its day, session open minute.
-struct Bn { i: usize, s: u16, o: f64, h: f64, l: f64, c: f64, m: Vec<Bar1>, first: bool, last: bool, open: u16, close: u16 }
+/// (pub(crate) since lane K55, which reuses the series for books/jbcdt.rs, jbudt.rs and stad.rs; no change here.)
+pub(crate) struct Bn { pub i: usize, pub s: u16, pub o: f64, pub h: f64, pub l: f64, pub c: f64, pub m: Vec<Bar1>, pub first: bool, pub last: bool, pub open: u16, pub close: u16 }
 
-fn series(x: &Ctx, from: usize, to: usize, n: u16) -> Vec<Bn> {
+pub(crate) fn series(x: &Ctx, from: usize, to: usize, n: u16) -> Vec<Bn> {
     let mut out = vec![];
     for i in from..=to {
         let Some((open, close, m, v)) = crate::intraday_ep::day_bars(x, i, n) else { continue };

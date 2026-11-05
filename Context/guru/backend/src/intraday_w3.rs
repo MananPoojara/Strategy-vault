@@ -29,7 +29,10 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "jb30d_gap_pct", "tdnmtt_trap_short", "tdperl_tdline_short", "putg_inside_day", "mhp_ftse_3_20040804",
     "jmls_bar_breakout" /* lane K39 (EP2 15-minute bars): SPX compounded > 10x SPY's (test c) */,
     "gfstsb_ema_cross" /* lane K42 (EP2 60-minute bars): average trade SPY +0.0122% vs SPX -0.0215% (test a) */,
-    "vdso_supreme_order" /* lane K48 (daily bars on the minute path, 2014-2025): SPX avg +0.163% vs SPY +0.009% (test b) */];
+    "vdso_supreme_order" /* lane K48 (daily bars on the minute path, 2014-2025): SPX avg +0.163% vs SPY +0.009% (test b) */,
+    "jbcdt_mac" /* lane K55 (5-minute, 2014-2025): average trade SPY +0.0161% vs SPX -0.0111% (test a; SPY the better series, as gfstsb_ema_cross) */,
+    "stad2_bullbeater" /* lane K55 (5-minute, 2014-2025): SPY -0.0247% vs SPX +0.0537% (test a) */,
+    "stad2_opengap" /* lane K55 (10-minute, 2014-2025): compounded SPX +33.1% vs SPY +2.6% (test c) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
 /// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
@@ -135,7 +138,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (13, 38)); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
+        assert_eq!((SPY.len(), SPX_HELD.len()), (16, 38)); // + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
             assert!(ip::intraday_p1(d) && !ip::intraday_w1_spx_id(id), "{id}");
