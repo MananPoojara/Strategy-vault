@@ -277,6 +277,7 @@ pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "
 /// The tradable-vs-cash refusals (#177 minutes, #179 daily). check() and readiness::check() decide this first, before any
 /// data-coverage check, so a withdrawn (rule, ticker) pair always shows this reason. Ticker routing only; no calculation.
 pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    if let Some(note)=crate::intraday_ep6::held_note(def.id,ticker) {return Some(Issue{status:"not_testable",note:note.into()});} // EP6 (K59, #243)
     if native_stock {return None;}
     if intraday_p1(def) && crate::intraday_w3::india_held(def.id,ticker) { // decision #231 (lane M4): India-only withdrawal
         return Some(Issue{status:"not_testable",note:crate::intraday_w3::INDIA_HELD_NOTE.into()});
@@ -1689,7 +1690,7 @@ mod tests {
             lwnl::REVIEWED,lwfc10::REVIEWED,lwic6::REVIEWED,lwinb::REVIEWED].concat();
         let mut admitted:Vec<&str>=all.iter().filter(|d|lwilliams_reviewed(d)).map(|d|d.id).collect();
         let mut w=want.clone();admitted.sort();w.sort();assert_eq!(admitted,w);
-        for d in all.iter().filter(|d|want.contains(&d.id)) {
+        for d in all.iter().filter(|d|want.contains(&d.id)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             assert!(reviewed_cash_rule(d),"{}",d.id);assert!(policy(d).market_adaptation,"{}",d.id);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             match crate::books::lw_admit::only_ticker(d.id) {
@@ -1699,8 +1700,8 @@ mod tests {
                 None if crate::books::lw_admit::us_only(d.id) => {
                     for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
                     for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);} }
-                None => { for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                    assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id); }
+                None => { for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K59 #243 (c): window-only ids are refused on tickers without minutes
+                    assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); } // K59 #243 (c)
             }
         }
         for id in ["lwnl_july4_sell","lwnl_keyrev_sell"/* lwlts_mon_vb, lwdg2_0105: intraday wave 1 admission */] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
@@ -2627,7 +2628,7 @@ mod tests {
         let mut want:Vec<&str>=dlost::REVIEWED.iter().chain(dl10b::REVIEWED).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
-        for d in all.iter().filter(|d|want.contains(&d.id)) {
+        for d in all.iter().filter(|d|want.contains(&d.id)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=LANDRY_US_ONLY.contains(&d.id);
@@ -2955,7 +2956,7 @@ mod tests {
         use crate::books::{joe_ross,joe_ross_rules as jr};
         let cat=jr::catalogue();
         assert_eq!(cat.len(),jr::REVIEWED.len());
-        for d in &cat {
+        for d in &cat { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let p=policy(d);
             assert_eq!((p.requirement,p.allowed_types,p.market_adaptation),("index_etf_or_stock",&["index","etf","individual_stock"][..],true),"{}",d.id);
             assert!(p.source_basis.contains("declared application"),"{}",d.id);
@@ -3251,7 +3252,7 @@ mod tests {
         let cat=ws5::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         assert_eq!(admitted,ws5::REVIEWED_DAILY);
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let timing=ws5::TIMING.contains(&d.id);let p=policy(d);
             let held=timing && !open_all(d); // open-all 23 Oct 2026: both timing rules run everywhere
             assert_eq!(p.requirement,if held {"declared_index_timing"} else {"index_etf_or_stock"},"{}",d.id);assert!(p.market_adaptation);
@@ -3392,11 +3393,11 @@ mod tests {
         let cat=crate::books::btp::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!cbp_us(d)).map(|d|d.id).collect(); // intraday wave 1 ids: own test; CBP: connors-final
         assert_eq!(admitted,crate::books::btp::REVIEWED_DAILY);
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!cbp_us(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!cbp_us(d)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let stock=crate::books::btp::STOCK_ADMITTED.contains(&d.id) || open_all(d); // open-all 23 Oct 2026
             let p=policy(d);assert_eq!(p.requirement,if stock {"index_etf_or_stock"} else {"index_or_etf"});assert!(p.market_adaptation);
-            for t in ["SPY","QQQ","MDY","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),stock,"{}",d.id);
+            for t in ["SPY","QQQ","MDY","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K59 #243 (c): window-only ids are refused on tickers without minutes
+            assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),stock && !crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K59 #243 (c)
             assert!(check(d,"NIFTY FUTURE",false).is_some());
             assert_eq!(metadata_json(d).contains("1/8-dollar ticks"),crate::books::btp::STOCK_ADMITTED.contains(&d.id),"{}",d.id);
             assert!(metadata_json(d).contains("\"declared_application\":\"Book tested or illustrated on futures and US stocks"));

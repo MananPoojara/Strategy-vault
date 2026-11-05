@@ -124,6 +124,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     // Larry Williams block (23 Oct 2026): this work's own S&P report header (Book1 p.53, "S&P 500 IND-9967 ... Conv 2
     // P.Value $5.000" per 0.01) is $500 a point, so the book's dollar stops are converted at $500; 250 (the lwlts rate) is an option.
@@ -234,17 +240,36 @@ pub(crate) struct Cfg {
     pub(crate) prof_close: bool,        // exit on the first profitable close after the entry bar
     pub(crate) hold: Option<usize>,     // exit on the close `hold` bars after the entry bar (0 = day trade)
     pub(crate) reverse: bool,           // an opposite entry exits and reverses
+    pub(crate) order: bool,             // EP6 (#243): order-dependent days on the real 1-minute path
 }
 
 impl Cfg {
-    pub(crate) fn new(stop: f64) -> Self { Cfg { stop, day0: true, bail: None, prof_close: false, hold: None, reverse: false } }
+    pub(crate) fn new(stop: f64) -> Self { Cfg { stop, day0: true, bail: None, prof_close: false, hold: None, reverse: false, order: false } }
 }
 
-struct Pos { dir: f64, i: usize, px: f64, stop: f64, kind: &'static str }
+#[derive(Clone)]
+struct Pos { dir: f64, i: usize, px: f64, stop: f64, kind: &'static str, od: crate::intraday_ep6::Day }
+
+/// The intrabar state of one bar (EP6): position, the trades closed inside the bar, 'a stop entry filled', 'stopped out'.
+#[derive(Clone)]
+struct Bar3 { pos: Option<Pos>, out: Vec<(Pos, f64, &'static str)>, entered: bool, exited: bool, i: usize, reverse: bool }
+impl Bar3 {
+    /// A stop entry at `px` (the step-2 `enter` rule: flat opens, opposite with reverse closes and opens).
+    fn enter(&mut self, dir: f64, px: f64, mk: &dyn Fn(f64, usize, f64, &'static str) -> Pos) {
+        self.entered = true;
+        match self.pos.take() {
+            None => self.pos = Some(mk(dir, self.i, px, "stop")),
+            Some(p) if p.dir != dir && self.reverse => { self.out.push((p, px, "reverse: opposite entry")); self.pos = Some(mk(dir, self.i, px, "stop")); }
+            Some(p) => self.pos = Some(p),
+        }
+    }
+}
 
 fn done(p: &Pos, i: usize, px: f64, why: &str) -> Trade {
-    Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px, reason: why.into(),
-        entry_kind: p.kind, signal_i: i, open: false, exits: vec![] }
+    let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px, reason: why.into(),
+        entry_kind: p.kind, signal_i: i, open: false, exits: vec![] };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    t
 }
 
 /// Single-position bar simulator. `sig(i)` returns the entry orders for bar i as (dir, order); it may read bar i's open
@@ -253,7 +278,7 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(usize
     let mut out = vec![];
     let mut pos: Option<Pos> = None;
     let sd = if cfg.stop.is_finite() && cfg.stop > 0.0 { cfg.stop } else { f64::NAN };
-    let mk = |dir: f64, i: usize, px: f64, kind: &'static str| Pos { dir, i, px, stop: px - dir * sd, kind };
+    let mk = |dir: f64, i: usize, px: f64, kind: &'static str| Pos { dir, i, px, stop: px - dir * sd, kind, od: crate::intraday_ep6::Day::Plain };
     for i in from.max(1)..=to {
         let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
         // 1. at the open: bailout, then a stop gapped through
@@ -280,29 +305,67 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(usize
                 Ord::Close => {}
             }
         }
-        // 3. stop entries inside the bar (at most one), then the protective stop along the bar path O-near-far-C
-        let up_first = h - o <= o - l;
-        if pos.is_none() || cfg.reverse {
-            for (dir, lv) in stop_orders {
-                let reach = if dir > 0.0 { h >= lv } else { l <= lv };
-                if reach && pos.as_ref().map_or(true, |p| p.dir != dir) {
-                    enter(&mut pos, &mut out, dir, lv, "stop");
-                    break;
+        // 3. stop entries inside the bar (at most one), then the protective stop along the bar path O-near-far-C.
+        // EP6: an order-dependent day of an EP6 id is walked on the real 1-minute path (intraday_ep6::resolve).
+        let daily = |st: &mut Bar3, up_first: bool| -> Vec<crate::intraday_ep6::Ev> {
+            let mut ev = vec![];
+            if st.pos.is_none() || cfg.reverse {
+                for &(dir, lv) in &stop_orders {
+                    let reach = if dir > 0.0 { h >= lv } else { l <= lv };
+                    if reach && st.pos.as_ref().map_or(true, |p| p.dir != dir) {
+                        st.enter(dir, lv, &mk);
+                        ev.push(crate::intraday_ep6::Ev { k: if dir > 0.0 { 0 } else { 1 }, px: lv, up: dir > 0.0 });
+                        break;
+                    }
                 }
             }
-        }
-        if let Some(p) = &pos {
-            if p.stop.is_finite() && (p.i < i || cfg.day0) {
-                // part of the bar that is after the entry
-                let hit = if p.i < i || p.kind == "open" {
-                    if p.dir > 0.0 { l <= p.stop } else { h >= p.stop }
-                } else if p.dir > 0.0 {
-                    // long stop entry: filled on the up leg
-                    if up_first { l <= p.stop } else { c <= p.stop }
-                } else if up_first { c >= p.stop } else { h >= p.stop };
-                if hit { out.push(done(p, i, p.stop, "stop")); pos = None; }
+            if let Some(p) = &st.pos {
+                if p.stop.is_finite() && (p.i < i || cfg.day0) {
+                    // part of the bar that is after the entry
+                    let hit = if p.i < i || p.kind == "open" {
+                        if p.dir > 0.0 { l <= p.stop } else { h >= p.stop }
+                    } else if p.dir > 0.0 {
+                        // long stop entry: filled on the up leg
+                        if up_first { l <= p.stop } else { c <= p.stop }
+                    } else if up_first { c >= p.stop } else { h >= p.stop };
+                    if hit { let p = st.pos.take().unwrap(); ev.push(crate::intraday_ep6::Ev { k: 2, px: p.stop, up: p.dir < 0.0 }); let px = p.stop; st.out.push((p, px, "stop")); }
+                }
             }
-        }
+            ev
+        };
+        // the same events walked along a path: at most one stop entry, no entry after the stop-out, the stop after the fill
+        let walk = |st: &mut Bar3, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+            let mut ev = vec![];
+            for g in segs {
+                let (mut cur, end) = (g.a, g.b);
+                let up = end > cur;
+                loop {
+                    let inside = |lv: f64| lv.is_finite() && if up { lv > cur && lv <= end } else { lv < cur && lv >= end };
+                    let mut best: Option<(f64, u8)> = None;
+                    let mut take = |lv: f64, a: u8| if inside(lv) && best.map_or(true, |(b, _)| if up { lv < b } else { lv > b }) { best = Some((lv, a)); };
+                    if let Some(p) = &st.pos {
+                        if p.stop.is_finite() && (p.i < i || cfg.day0) && (p.dir > 0.0) != up { take(p.stop, 2); }
+                    }
+                    if !st.entered && !st.exited && (st.pos.is_none() || cfg.reverse) {
+                        for &(dir, lv) in &stop_orders {
+                            if (dir > 0.0) == up && st.pos.as_ref().map_or(true, |p| p.dir != dir) { take(lv, if dir > 0.0 { 0 } else { 1 }); }
+                        }
+                    }
+                    let Some((lv, a)) = best else { break };
+                    let px = g.fill(lv);
+                    if a == 2 { let p = st.pos.take().unwrap(); st.out.push((p, px, "stop")); st.exited = true; }
+                    else { st.enter(if a == 0 { 1.0 } else { -1.0 }, px, &mk); }
+                    ev.push(crate::intraday_ep6::Ev { k: a, px, up });
+                    cur = lv;
+                }
+            }
+            ev
+        };
+        let mut st = Bar3 { pos: pos.take(), out: vec![], entered: false, exited: false, i, reverse: cfg.reverse };
+        let day = crate::intraday_ep6::resolve(x, i, cfg.order, h - o <= o - l, &mut st, daily, &walk);
+        for (mut p, px, why) in st.out { p.od = p.od.worst(day); out.push(done(&p, i, px, why)); }
+        pos = st.pos;
+        if let Some(p) = pos.as_mut() { p.od = p.od.worst(day); }
         // 4. at the close: time exits, then entries on the close
         if let Some(p) = &pos {
             let why = if cfg.hold.map_or(false, |n| i >= p.i + n) { Some("time exit on the close") }
@@ -335,6 +398,7 @@ pub(crate) fn oops(x: &Ctx, i: usize, dir: f64) -> Option<(f64, Ord)> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = getter(&schema, p);
     let pts = g("stop_usd") / g("pt_usd");
     let mut cfg = Cfg::new(pts);
@@ -355,6 +419,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let n = g("tdom") as usize;
             let dir = if id.ends_with("buy") { 1.0 } else { -1.0 };
             cfg.bail = Some(0);
+            cfg.order = crate::intraday_ep6::on(id, p);
             sim(x, from, to, &cfg, |i| if td[i] == n { oops(x, i, dir).into_iter().collect() } else { vec![] })
         }
         "lwicw_mon_gap_bail" => {
