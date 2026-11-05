@@ -1741,6 +1741,6 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
 pub const SPX_PTS: &[&str] = &["stad1_volex"];
 pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
-    label: "Omega Research designed VolEx \"to trade the S&P contract using daily bars\" (Vol 1 p.76); its stale-trade exit is $500 of profit on that contract, 1.0 index point at the 1997 contract's $500 a point (one contract, TradeStation's default, a labelled reading). It runs on the S&P 500 index (SPX) only, the point literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
+    label: "Omega Research designed VolEx to trade the S&P contract using daily bars (Vol 1 p.76); its stale-trade exit is $500 of profit on that contract, 1.0 index point at the 1997 contract's $500 a point (one contract, TradeStation's default, a labelled reading). It runs on the S&P 500 index (SPX) only, the point literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
     basis: "Omega Research STAD Vol 1 ch.4 (printed p.76-82, EasyLanguage p.78); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_stad_ref.py (stad_ref engine), #179 two-window check K58w/m3_stad.txt.",
 };

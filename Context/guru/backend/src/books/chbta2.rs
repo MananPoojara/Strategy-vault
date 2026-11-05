@@ -644,6 +644,8 @@ mod tests {
         assert_eq!(def("jkbwts_gettess30", "stop_usd") / def("jkbwts_gettess30", "pt_usd"), 8.0);
         assert_eq!(def("stad1_volex", "stale_pts"), 1.0);
         assert_eq!((def("stad13_volex", "sl_usd") / def("stad13_volex", "bpv"), def("stad13_volex", "go_usd") / def("stad13_volex", "bpv")), (4.0, 0.8));
+        // instrument_policy::metadata_json writes the label into JSON unescaped (a quote broke the K58 refresh's strategies list)
+        for a in crate::books::ADMISSIONS { assert!(!a.label.contains('"') && !a.label.contains('\\'), "{}", a.label); }
     }
     use super::*;
     use crate::Row;
