@@ -52,6 +52,8 @@ export function RuleBuilder(props: {
   portfolio?: ReactNode;
   /** The custom date filter (DateFilterPanel), shown with the test period. */
   dates?: ReactNode;
+  /** A short strategy's no-trade windows (ShortWindowsPanel), shown with the filters for direction "short". */
+  shortWindows?: ReactNode;
   /** Step layout: "rules" (Your idea) or "settings" (Settings) only; both by default. */
   part?: "rules" | "settings";
   /** The exit a test uses when no sell rule is on (defaults.ts), editable here; absent: no fallback is shown. */
@@ -86,7 +88,7 @@ function FilterChoice({ dates, indicator, onDates, onIndicator, onNone }: { date
   </div>;
 }
 
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, chartMatch, settingsAside }: Parameters<typeof RuleBuilder>[0]) {
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, shortWindows, chartMatch, settingsAside }: Parameters<typeof RuleBuilder>[0]) {
   const showRules = part !== "settings", showSettings = part !== "rules";
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
   const single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
@@ -142,7 +144,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     const [entry, filters] = entryLists(`${pre}entry.all` as ListPath, short ? "Short entry" : both ? "Long entry" : "Entry", short ? "Short entry" : both ? "Long entry" : "Entry", count);
     // the section navigator's counts: buy rows, filter rows (and the date filter), exit rules plus built-in exits (stops, targets, ...)
     const rows = (getAt(spec, `${pre}entry.all` as ListPath) as RuleNode[]) ?? [], exitSpec = (getAt(spec, `${pre}exit`) ?? {}) as Record<string, unknown>;
-    const nFilters = rows.filter(isFilterRow).length + (!short && spec.date_filter ? 1 : 0);
+    const nFilters = rows.filter(isFilterRow).length + (!short && spec.date_filter ? 1 : 0) + (!short ? spec.blackouts?.length ?? 0 : 0);
     const nExit = ((exitSpec.any as RuleNode[] | undefined) ?? []).length + Object.entries(exitSpec).filter(([k, v]) => k !== "any" && v !== undefined).length;
     const id = (k: string) => `lab-card-${short ? "short-" : ""}${k}`;
     const sections: [string, string, number][] = [["entry", short ? "Short entry" : both ? "Long entry" : "Entry", rows.length - rows.filter(isFilterRow).length],
@@ -170,6 +172,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
             onDates={(on) => onChange(withDates(spec, on))} onIndicator={(on) => onChange(withFilters(spec, `${pre}entry.all` as ListPath, on))}
             onNone={() => onChange(withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false))} />
           {!short && spec.date_filter && dates}
+          {!short && spec.direction === "short" && shortWindows}
           {filters}
           </div>
         </div>
@@ -180,10 +183,9 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     <label className="dfield">From<DateField label="From" title="Empty: from the first bar" value={settings.from} onChange={(from) => onSettings({ from })} /></label>
     <label className="dfield">To<DateField label="To" title="Empty: to the last bar" value={settings.to} onChange={(to) => onSettings({ to })} /></label>
   </>;
-  // % mode costs (AFL "BROKERAGE", 0 by default); money mode charges General › Commissions and the slippage in Backtest parameters
+  // % mode costs: the AFL's BROKERAGE only (0 by default), no slippage box; money mode charges General › Commissions
   const costs = money ? null : <>
     {cost !== undefined ? <NumField label="Brokerage (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : <label className="dfield">Brokerage (bps / side)<input type="number" aria-label="Brokerage (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label>}
-    <label className="dfield">Slippage (bps / side)<input type="number" aria-label="Slippage (bps / side)" min={0} step="any" placeholder="0" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} /></label>
   </>;
   const run = <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} title={problems[0] ?? `Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>{!running && <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11L13 8 4 2.5Z" /></svg>}{running ? "Running…" : "Run backtest"}</button>;
   // the run and Optimize buttons sit at the right of the Positions · From · To row (Your idea only), with how trades fill beside them
@@ -285,9 +287,6 @@ function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, pr
             <input type="number" aria-label="Brokerage (bps / side)" min={0} step="any" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} />
           </label>
         )}
-        <label className="dfield">Slippage (bps / side)
-          <input type="number" aria-label="Slippage (bps / side)" min={0} step="any" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} />
-        </label>
         <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} title={`Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>
           {running ? "Running…" : "Run backtest"}
         </button>

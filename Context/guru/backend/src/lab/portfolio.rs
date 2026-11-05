@@ -160,6 +160,9 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
         Ok(last.filter(|&i|i<to&&ln.m.frames.d.date.last().is_some_and(|d|d<=&dates[to])))
     }).collect::<Result<_,LabError>>()?;
     let mut queued=Vec::<Candidate>::new();
+    // execution.defer_exit_on_circuit: a rule exit on a lower-circuit close waits for the next unlocked close (simulate.rs `locked`)
+    let mut deferred:Vec<Option<String>>=vec![None;lanes.len()];
+    let locked=|ln:&Lane,k:usize|ln.c.exec.defer_exit_on_circuit&&k>0&&{let d=&ln.m.frames.d;d.low[k]==d.close[k]&&d.close[k]<d.close[k-1]};
     for i in from..=to {
         pulse(deadline,stop)?;let mut exited=vec![false;lanes.len()];
         // Open exits precede ranked entries; a missing quote keeps an exit but cancels an entry.
@@ -182,11 +185,17 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
             let k=lanes[m].m.at[i].unwrap();a.close(&mut out,b,m,i,lanes[m].m.frames.d.close[k],i,"data_end".into())?;exited[m]=true;
             out.events.push(format!("{}: data ends {}; closed at the last close (historical coverage-end adaptation)",lanes[m].m.ticker,dates[i]));
         }}
+        // AFL DEAD STOCK BACKTEST YES: a member whose own data ends on the final bar sells at its close, not an open mark
+        if i==to {for &m in &order {pulse(deadline,stop)?;if let (Some(k),true)=(lanes[m].m.at[i],a.held[m].is_some()&&lanes[m].c.exec.dead_stock){
+            if k+1==lanes[m].m.frames.d.len(){a.close(&mut out,b,m,i,lanes[m].m.frames.d.close[k],i,"execution.dead_stock: last bar".into())?;exited[m]=true;}
+        }}}
         if b.mode==Mode::Signals {
-            for &m in &order {pulse(deadline,stop)?;let (Some(k),Some(h))=(lanes[m].m.at[i],a.held[m].as_ref()) else {continue;};
+            for &m in &order {pulse(deadline,stop)?;if a.held[m].is_none(){deferred[m]=None;} // a stop or data end closed it first
+                let (Some(k),Some(h))=(lanes[m].m.at[i],a.held[m].as_ref()) else {continue;};
                 if a.pending[m].is_some()||k-h.entry_k<lanes[m].c.exec.min_bars {continue;}
-                let why=lanes[m].c.exit.iter().find(|r|r.holds(k,Some(super::series::At::bar(h.entry_k)))).map(|r|r.label.clone());
+                let why=deferred[m].take().or_else(||lanes[m].c.exit.iter().find(|r|r.holds(k,Some(super::series::At::bar(h.entry_k)))).map(|r|r.label.clone()));
                 if let Some(reason)=why {match b.exit_fill {
+                    Fill::Close if locked(&lanes[m],k)&&i<to=>deferred[m]=Some(reason),
                     Fill::Close=>{a.close(&mut out,b,m,i,lanes[m].m.frames.d.close[k],i,reason)?;exited[m]=true;},
                     Fill::NextOpen if i<to=>a.pending[m]=Some(PendingExit {signal_i:i,entry_i:h.entry.i,reason}),_=>{},
                 }}
@@ -272,6 +281,20 @@ pub(crate) mod tests {
     fn rotation(max:usize,worst:usize,period:Option<usize>)->Book {Book {mode:Mode::Rotation,worst_rank_held:worst,rebalance:period,..book(max,Sizing::PctEquity(100./max as f64))}}
     fn constant(t:&str,price:f64,n:usize)->Member {let mut m=member(t,price,n,&[]);m.frames.d=from_ohlc(&vec![(price,price+1.,price-1.,price);n]);m.frames.d.date=dates(n);m.frames=Frames::new(m.frames.d);m}
 
+    #[test] fn dead_stock_sells_a_member_whose_data_ends_on_the_final_bar_at_its_close() {
+        let m=member("A",100.,10,&[]);
+        let open=go(&[lane(&m,&[2],&[],None)],&close_book(1,Sizing::Full),10);
+        assert!(open.trades[0].open);
+        let mut ln=lane(&m,&[2],&[],None);ln.c.exec.dead_stock=true;let l=go(&[ln],&close_book(1,Sizing::Full),10);
+        let t=&l.trades[0];assert_eq!((t.open,t.exit_i,t.exit_px,t.reason.as_str()),(false,9,109.5,"execution.dead_stock: last bar"));
+    }
+    #[test] fn a_rule_exit_on_a_lower_circuit_close_waits_for_the_next_unlocked_close() {
+        let mut m=member("A",100.,10,&[]);
+        let mut rows:Vec<_>=(0..10).map(|i|{let o=100.+i as f64;(o,o+1.,o-1.,o+0.5)}).collect();rows[5]=(105.,105.5,104.,104.); // closes on its low, below the 4th's 104.5
+        m.frames.d=from_ohlc(&rows);m.frames.d.date=dates(10);m.frames=Frames::new(m.frames.d);
+        let exit=|defer:bool|{let mut ln=lane(&m,&[2],&[5],None);ln.c.exec.defer_exit_on_circuit=defer;go(&[ln],&close_book(1,Sizing::Full),10).trades[0].exit_i};
+        assert_eq!((exit(false),exit(true)),(5,6));
+    }
     #[test] fn one_member_uses_identifiable_fills_and_signal_close_quantity() {
         let m=member("A",100.,10,&[]);let lanes=[lane(&m,&[2],&[5],None)];let l=go(&lanes,&book(1,Sizing::PctEquity(50.)),10);let t=&l.trades[0];
         assert_eq!((t.signal_i,t.entry_i,t.entry_px,t.exit_signal_i,t.exit_i,t.exit_px,t.qty,t.open),(2,3,103.,5,6,106.,48.,false));assert_eq!(l.equity[9],10_144.);

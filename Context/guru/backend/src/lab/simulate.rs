@@ -287,7 +287,34 @@ pub fn simulate(c: &Compiled, b: &Bars, from: usize, to: usize) -> Vec<Trade> { 
 /// The trades plus the equity-level events that changed them (risk pauses and stops, spec §6.5), for `execution_model.events`.
 pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) {
     let (trades, events) = signal_events(c, b, from, to);
-    match &c.shadow { Some((s, ok, filter_exit)) => (shadow_trades(s, ok, *filter_exit, b, trades), events), None => (trades, events) }
+    let trades = match &c.shadow { Some((s, ok, filter_exit)) => shadow_trades(s, ok, *filter_exit, b, trades), None => trades };
+    (if c.clip.is_empty() { trades } else { clip_trades(&c.clip, b, trades) }, events)
+}
+/// date_filter.reentry and spec.blackouts, as the AFLs' virtual trade: each trade the rules take with no date filter runs on
+/// paper, and the real position is that trade on the bars every clip allows. A position is covered at the close of the
+/// first blocked bar; once the bars clear, Running re-enters at that bar's close while the paper trade lasts, keeping its
+/// own exits (AFL `days >= 0`, continueOldATR), and Fresh takes no more of it (AFL `days == 0`: only a new trade's entry
+/// bar). A clear bar after a blocked one is re-entered only when every clip that blocked that bar is Running.
+fn clip_trades(clips: &[super::series::Clip], b: &Bars, paper: Vec<Trade>) -> Vec<Trade> {
+    let blocked = |i: usize| clips.iter().any(|c| c.blocked[i]);
+    let mut out = vec![];
+    for t in paper {
+        let (e, x) = (t.legs[0].i, t.exit_i);
+        if (e..x.max(e + 1)).all(|i| !blocked(i)) { out.push(t); continue; } // never cut (a block on the exit bar comes after the exit)
+        let piece = |k: usize, exit_i: usize, exit_px: f64, reason: String, signal_i: usize, open: bool| Trade {
+            legs: vec![Leg { i: k, px: if k == e { t.legs[0].px } else { b.close[k] }, w: t.legs[0].w }], entry_kind: if k == e { t.entry_kind } else { "close" },
+            exit_i, exit_px, reason, signal_i, open, exits: vec![], ..t.clone() };
+        let mut at = (!blocked(e)).then_some(e);
+        for j in e + 1..x {
+            match at {
+                Some(k) if blocked(j) => { out.push(piece(k, j, b.close[j], clips.iter().find(|c| c.blocked[j]).map_or(String::new(), |c| c.why.clone()), j, false)); at = None; }
+                None if !blocked(j) => { if clips.iter().all(|c| !c.blocked[j - 1] || c.running) { at = Some(j); } else { break; } }
+                _ => {}
+            }
+        }
+        if let Some(k) = at { out.push(piece(k, x, t.exit_px, t.reason.clone(), t.signal_i, t.open)); }
+    }
+    out
 }
 /// execution.shadow over the signal trades (the rules without the filter rows, every one taken): paper trades add their %
 /// returns and their bars in position; a positive sum resets both; a paper trade that leaves the sum below −loss_pct after
@@ -1993,6 +2020,59 @@ mod date_filter_run_tests {
     }
 }
 
+/// date_filter.reentry and spec.blackouts (clip_trades): the AFLs' Fresh / Running re-entry around no-trade windows.
+#[cfg(test)]
+mod clip_run_tests {
+    use super::*;
+    use crate::lab::rules::parse_spec;
+    use crate::lab::series::{compile, Cache, Frames};
+    use crate::lab::testdata::from_ohlc;
+    /// A short that is always signalled and holds 6 bars over 2024-01-01 .. 2024-01-12 (weekends skipped): on paper 1st → 9th,
+    /// then 10th → open at the end.
+    fn run(extra: &str) -> Vec<(String, String, String)> {
+        let mut b = from_ohlc(&(0..10).map(|i| { let c = 100. + i as f64; (c, c + 1., c - 1., c) }).collect::<Vec<_>>());
+        b.date = ["01", "02", "03", "04", "05", "08", "09", "10", "11", "12"].iter().map(|d| format!("2024-01-{d}")).collect();
+        let s = parse_spec(&format!(r#"{{"v":1,"direction":"short","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":6}}}}]}},"execution":{{"fill":"close"}}{extra}}}"#)).unwrap();
+        let fr = Frames::new(b);
+        simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 9).into_iter().map(|t| (fr.d.date[t.legs[0].i][8..].to_string(), fr.d.date[t.exit_i][8..].to_string(), t.reason)).collect()
+    }
+    const M5: &str = r#"{"name":"Master 5DP","windows":[["2024-01-03","2024-01-05"]],"reentry":"#;
+    fn days(t: &[(String, String, String)]) -> Vec<(&str, &str)> { t.iter().map(|(a, b, _)| (a.as_str(), b.as_str())).collect() }
+    #[test] fn fresh_covers_on_the_window_start_and_waits_for_the_next_paper_trade() {
+        let t = run(&format!(r#","blackouts":[{M5}"fresh"}}]"#));
+        assert_eq!(days(&t), vec![("01", "03"), ("10", "12")]);
+        assert_eq!(t[0].2, "Master 5DP: window started");
+    }
+    #[test] fn running_re_enters_on_the_exit_day_and_keeps_the_paper_trades_exit() {
+        let t = run(&format!(r#","blackouts":[{M5}"running"}}]"#));
+        assert_eq!(days(&t), vec![("01", "03"), ("05", "09"), ("10", "12")]);
+        assert_eq!(t[1].2, run("")[0].2); // the paper trade's own exit (bars_held from the 1st)
+    }
+    #[test] fn a_clear_bar_is_re_entered_only_when_every_window_that_blocked_the_bar_before_is_running() {
+        let qtr = |r: &str| format!(r#","blackouts":[{M5}"running"}},{{"name":"QTR Midcap","windows":[["2024-01-05","2024-01-08"]],"reentry":"{r}"}}]"#);
+        assert_eq!(days(&run(&qtr("fresh"))), vec![("01", "03"), ("10", "12")]); // the 5th: QTR (Fresh) blocks, so the 8th is not taken
+        assert_eq!(days(&run(&qtr("running"))), vec![("01", "03"), ("08", "09"), ("10", "12")]);
+    }
+    #[test] fn a_base_period_with_reentry_cuts_at_its_end_and_running_rejoins_the_paper_trade_in_the_next() {
+        let base = |r: &str| format!(r#","date_filter":{{"windows":[["2024-01-01","2024-01-04"],["2024-01-08","2024-01-20"]],"reentry":"{r}"}}"#);
+        assert_eq!(days(&run(&base("fresh"))), vec![("01", "04"), ("10", "12")]);
+        assert_eq!(days(&run(&base("running"))), vec![("01", "04"), ("08", "09"), ("10", "12")]);
+        assert_eq!(run(&base("fresh"))[0].2, "date_filter: window ended");
+    }
+    #[test] fn blackouts_are_for_short_strategies_with_their_own_exits() {
+        let spec = |dir: &str, extra: &str| parse_spec(&format!(r#"{{"v":1,"direction":"{dir}","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":6}}}}]}}{extra}}}"#));
+        let b = format!(r#","blackouts":[{M5}"fresh"}}]"#);
+        assert!(spec("short", &b).is_ok());
+        assert!(format!("{:?}", spec("long", &b).unwrap_err()).contains("direction"));
+        assert!(spec("short", r#","blackouts":[{"name":"X","windows":[["2024-01-03","2024-01-05"]],"reentry":"later"}]"#).is_err());
+        assert!(spec("short", r#","date_filter":{"windows":[["2024-01-03","2024-01-05"]],"exit_at_change":false,"reentry":"fresh"}"#).is_err());
+        // with reentry the date filter is no exit of its own: a spec with no exit rules is refused
+        let none = |df: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[]}},"date_filter":{df}}}"#));
+        assert!(none(r#"{"windows":[["2024-01-03","2024-01-05"]]}"#).is_ok());
+        assert!(none(r#"{"windows":[["2024-01-03","2024-01-05"]],"reentry":"fresh"}"#).is_err());
+    }
+}
+
 /// The setup / trigger / cancel node (AmiBroker's armed-flag loop) through the trade loop.
 #[cfg(test)]
 mod setup_tests {
@@ -2329,6 +2409,7 @@ mod afl_backtest_parameter_tests {
         let s = spec(r#""penny_price":2.5,"dead_stock":true,"turnover_filter":true,"aux2":true"#).unwrap();
         assert_eq!((s.exec.penny_price, s.exec.dead_stock, s.exec.turnover_filter, s.exec.aux), (2.5, true, true, [false, true]));
         let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"penny_price":5},"portfolio":{"universe":{"tickers":["SPY","QQQ"]},"max_open":2}}"#;
-        assert_eq!(parse_spec(port).unwrap_err().status(), "unsupported");
+        // a portfolio applies the gates per member (rules.rs portfolio_rules)
+        assert_eq!(parse_spec(port).unwrap().exec.penny_price, 5.);
     }
 }

@@ -56,7 +56,7 @@ export function TradesTab({ spec, catalogue, onChange }: { spec: Spec; catalogue
     : title === "Short trades" && dir === "long" ? "This strategy takes long trades only."
     : title === "Long trades" && dir === "short" ? "This strategy takes short trades only."
     : !custom ? "Set by the scenario; choose Custom to edit." : undefined;
-  const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar, ex.defer_exit_on_circuit, ex.skip_entry_on_circuit].some((x) => x !== undefined);
+  const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar].some((x) => x !== undefined);
   return <div className="lab-trades-tab" data-lab-trades-tab>
     <p className="cap lab-stab-intro">When orders fill and at what price: a scenario, or Custom for each side's price and delay.</p>
     <ScenarioPreset spec={spec} onChange={onChange} />
@@ -87,7 +87,7 @@ export function TradesTab({ spec, catalogue, onChange }: { spec: Spec; catalogue
     {stray && <p className="rnote" role="note" data-lab-portfolio-stray>
       Trade prices, re-entry delays, stop exit modes, same-bar and stop activation settings and position limits apply to one instrument only.{" "}
       <button type="button" className="dbtn sm" onClick={() => onChange(setExecution(spec, { prices: undefined, delays: undefined, reentry: undefined, limits: undefined,
-        exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined, bars_held_from: undefined, reenter_on_exit_bar: undefined, defer_exit_on_circuit: undefined, skip_entry_on_circuit: undefined }))}>Remove them</button>
+        exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined, bars_held_from: undefined, reenter_on_exit_bar: undefined }))}>Remove them</button>
     </p>}
   </div>;
 }

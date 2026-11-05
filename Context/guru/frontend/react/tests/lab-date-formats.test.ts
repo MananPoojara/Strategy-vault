@@ -1,6 +1,6 @@
 import { deflateRawSync } from "node:zlib";
 import { expect, it } from "vitest";
-import { chosenPhase, dmy, isoDate, parseDateTable, parseSheets, phaseWindows, withCurrentDateSet } from "../src/features/lab/date-sets";
+import { chosenPhase, dmy, isoDate, parseDateTable, parseSheets, phaseWindows, withCurrentDateSet, withBlackouts } from "../src/features/lab/date-sets";
 import { readXlsx } from "../src/features/lab/xlsx-read";
 import type { DateSet, Spec } from "../src/features/lab/types";
 
@@ -58,4 +58,14 @@ it("an Excel workbook with a Bull and a Bear sheet becomes one tagged set, in da
   const p = parseSheets(await readXlsx(book));
   expect(p.errors).toEqual([]);
   expect(p.windows).toEqual([{ from: "2008-11-21", to: "2010-12-31", label: "Bull" }, { from: "2010-12-31", to: "2011-09-26", label: "Bear" }]);
+});
+
+it("a short's no-trade windows pick up newly settled windows by name and are dropped when the strategy is not a short", () => {
+  const sets = [{ name: "Master 5DP", windows: [["2021-03-24", "2021-04-02"], ["2021-06-24", "2021-07-02"]] as [string, string][] }];
+  const spec = { v: 1, direction: "short", entry: { all: [] }, exit: { any: [] }, blackouts: [{ name: "Master 5DP", windows: [["2021-03-24", "2021-04-02"]], reentry: "running" }] } as unknown as Spec;
+  expect(withBlackouts(spec, sets).blackouts).toEqual([{ name: "Master 5DP", windows: sets[0].windows, reentry: "running" }]);
+  const fresh = withBlackouts(spec, sets);
+  expect(withBlackouts(fresh, sets)).toBe(fresh);
+  expect(withBlackouts({ ...spec, direction: "long" }, sets).blackouts).toBeUndefined();
+  expect(withBlackouts({ ...spec, blackouts: undefined }, sets)).toEqual({ ...spec, blackouts: undefined });
 });

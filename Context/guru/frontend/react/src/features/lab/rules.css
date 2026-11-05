@@ -206,6 +206,7 @@
 .lab-filter-chip:active { transform: scale(0.97); }
 .lab-filter-chip:focus-visible { outline: none; box-shadow: var(--ring); }
 .lab-rule-card .lab-datefilter { display: grid; gap: 8px; padding: 10px 0 4px; border-top: 1px solid var(--rule); }
+.lab-datefilter > [data-lab-date-generated] { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
 .lab-owndates summary { cursor: pointer; font-size: 13px; color: var(--blue); }
 .lab-owndates[open] { display: grid; gap: 8px; }
 /* each line a condition is compared with: its own small block */

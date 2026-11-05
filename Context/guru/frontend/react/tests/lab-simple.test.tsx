@@ -63,7 +63,8 @@ it("opens in the Simple view: Simple / Advanced only trims Settings (no AmiBroke
   // step 2 Settings: the AFLs' Backtest parameters, no AmiBroker settings and no % / cash toggle (money follows the instrument)
   const settings = host.querySelectorAll(".lab-rules")[1];
   expect([...settings.querySelectorAll("[data-lab-basics] .lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Backtest parameters"]);
-  expect(settings.querySelector('input[aria-label="Slippage (bps / side)"]')).not.toBeNull();
+  expect(settings.querySelector('input[aria-label="Brokerage (bps / side)"]')).not.toBeNull();
+  expect(settings.querySelector('input[aria-label="Slippage (bps / side)"]')).toBeNull(); // the AFL panel has BROKERAGE only
   expect(settings.querySelector("[data-lab-more-settings]")).toBeNull();
   expect(settings.querySelector('[aria-label="Results in"]')).toBeNull();
   expect(host.querySelector('input[aria-label="Tick size"]')).toBeNull();

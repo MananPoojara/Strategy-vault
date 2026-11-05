@@ -40,6 +40,7 @@ export function reasonLabeler(ctx: RunContext): (reason: string) => string {
     if (/^(short_side\.)?exit\.dual_atr$/.test(reason)) return "ATR";
     if (/^(short_side\.)?exit\.dual_line$/.test(reason)) return "Supertrend";
     if (reason.startsWith("date_filter")) return "Date window ended";
+    if (reason.endsWith(": window started")) return `${reason.slice(0, -": window started".length)} window`; // a short's no-trade window (Master 5DP, QTR …)
     if (/entry\.all\[\d+\]: filter turned false/.test(reason)) return "Filter exit";
     return friendlyReason(reason);
   };
@@ -60,7 +61,8 @@ export function rulesSheet(ctx: RunContext, r: RunResult): (string | number | nu
   if (changed.length) add("AmiBroker settings changed", changed.join(", "));
   // With / without filter, and which: the date periods and the indicator filter rows that were switched on
   const df = spec.date_filter, used = [
-    ...(df && !df.off && df.windows.length ? [`Dates: ${dateFilterName(df)} · ${df.windows.length} periods`] : []),
+    ...(df && !df.off && df.windows.length ? [`Dates: ${dateFilterName(df)} · ${df.windows.length} periods${df.reentry ? ` · ${df.reentry === "running" ? "Running" : "Fresh"}` : ""}`] : []),
+    ...(spec.blackouts ?? []).map((b) => `No short in: ${b.name} · ${b.windows.length} windows · ${b.reentry === "running" ? "Running" : "Fresh"}`),
     ...sides(spec).flatMap(({ pre, side }) => side.entry.all.filter((n) => (n as Obj).filter === true && (n as Obj).off !== true)
       .map((n) => `${pre ? "Short " : ""}Indicator: ${words(n, cat)}${(n as Obj).filter_exit === true ? " (also exits when it turns false)" : ""}`)),
   ];

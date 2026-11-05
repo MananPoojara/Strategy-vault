@@ -38,11 +38,11 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
         onChange={(e) => onChange(setExecution(spec, { reenter_on_exit_bar: e.target.checked ? true : undefined }))} />Re-enter on the exit bar</label></>}
       {/* the AFLs' circuit rules, in Settings › Trade, together and named as in the AFLs; on for a new strategy, unticking is kept as false so the heading can say so */}
       {showCircuits && <div className="lab-row lab-circuits" role="group" aria-label="Circuits" data-lab-circuits><b className="lab-circuits-h">Circuits</b>
-      <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : "No entry on a bar that closes at its high above the previous close (an upper circuit; short: at its low below it), as the AFLs' UC."}>
-        <input type="checkbox" disabled={!!spec.portfolio} checked={ex.skip_entry_on_circuit === true}
+      <label className="lab-check" title={"No entry on a bar that closes at its high above the previous close (an upper circuit; short: at its low below it), as the AFLs' UC."}>
+        <input type="checkbox" checked={ex.skip_entry_on_circuit === true}
         onChange={(e) => onChange(setExecution(spec, { skip_entry_on_circuit: e.target.checked ? true : false }))} />UC: skip entry on an upper-circuit close</label>
-      <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : "An exit at the close on a bar that closes at its low below the previous close (a lower circuit; short: at its high above it) waits for the next close that is not locked, as the AFLs' LC."}>
-        <input type="checkbox" disabled={!!spec.portfolio} checked={ex.defer_exit_on_circuit === true}
+      <label className="lab-check" title={"An exit at the close on a bar that closes at its low below the previous close (a lower circuit; short: at its high above it) waits for the next close that is not locked, as the AFLs' LC."}>
+        <input type="checkbox" checked={ex.defer_exit_on_circuit === true}
         onChange={(e) => onChange(setExecution(spec, { defer_exit_on_circuit: e.target.checked ? true : false }))} />LC: hold the exit on a lower-circuit close</label></div>}
       {showFills && <>{!ordered && !ami && <label className="dfield">Entry fill<select aria-label="Entry fill" value={fill} onChange={(e) => {
         const f = e.target.value as Fill;

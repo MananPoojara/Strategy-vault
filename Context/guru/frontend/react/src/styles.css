@@ -615,7 +615,7 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 :root[data-theme] :is(.join-item.active,.dbtn.primary,.btn.solid) {background:var(--blue);color:var(--bg);}
 :root[data-theme] :is(.legend-card,.bookcard,.box,.dist,.card,.verdict,.rgrid,.rnote,.pxread) {background-color:var(--panel);border-color:var(--steel);}
 :root[data-theme] :is(.join,.join.sm,.seg,.dcheck input) {background-color:var(--card);}
-:root[data-theme] :is(.tbl tbody tr:hover,.tbl tr:hover td,.lr:hover,.legend-card.live:hover,.join-item:hover) {background:var(--hover);}
+:root[data-theme] :is(.tbl tbody tr:hover,.tbl tr:hover td,.lr:hover,.legend-card.live:hover,.join-item:not(.active):hover) {background:var(--hover);}
 .print-only {display:none;}
 .page-actions {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:14px 0 0;}
 .page-actions [role=status] {color:var(--ink2);font-size:12px;max-width:460px;}

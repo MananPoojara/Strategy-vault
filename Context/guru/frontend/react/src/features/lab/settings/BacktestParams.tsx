@@ -27,9 +27,8 @@ export function BacktestParams({ spec, catalogue, instrument, onChange, unitCost
   const cash = (k: SizingKind) => !money || !caps.sizing.includes(k);
   // "% of equity" at 100 is the engine's default (no sizing field); any other percent is sizing.pct_equity
   const size = kind === "full" || fixed ? 100 : getAt(ex.sizing, kind) as number | undefined;
-  // the engine refuses these gates on a portfolio (rules.rs portfolio_rules); a gate already on stays enabled so it can be turned off
-  const gate = (field: string) => !caps.entry_gates?.includes(field) ? NEEDS_ENGINE
-    : spec.portfolio && !getAt(ex, field) ? "Single-instrument runs only; a portfolio refuses this gate." : null;
+  // a portfolio applies each gate to every member on its own bars (rules.rs portfolio_rules)
+  const gate = (field: string) => !caps.entry_gates?.includes(field) ? NEEDS_ENGINE : null;
   const noVolume = instrument.hasVolume === false ? "Needs volume; this instrument has no volume in its data." : null;
   return <SettingGroup title="Backtest parameters">
     <div className="lab-row" data-lab-equity>
@@ -52,14 +51,16 @@ export function BacktestParams({ spec, catalogue, instrument, onChange, unitCost
       <NumField label={per === "units" ? "No. of shares" : per === "risk_pct" ? "Risk %" : "% of equity"} value={size} disabled={fixed}
         min={per === "units" ? 1 : 0} max={per === "units" ? 1e9 : 100} step={per === "units" ? 1 : null}
         onChange={(n) => n !== undefined && (per === "equity" ? onChange(changeExecution(spec, "sizing", n === 100 ? undefined : { ...ex.sizing, pct_equity: n })) : change(`sizing.${kind}`, n))} />
-      <NumField label="Equity allocation" value={fixed ? getAt(ex.sizing, "value") as number | undefined : 100_000} min={0} max={1e12} disabled={!fixed}
-        onChange={(n) => n !== undefined && change("sizing.value", n)} />
+      {/* editable from the start: an allocation is only used as Fixed equity (AFL SIZE1 = IIf(BKTYPE==1, ALLO, SIZE)), so typing one switches to it */}
+      <NumField label="Equity allocation" value={fixed ? getAt(ex.sizing, "value") as number | undefined : 100_000} min={0} max={1e12} disabled={cash("value")}
+        onChange={(n) => n !== undefined && (fixed ? change("sizing.value", n) : onChange(changeExecution(withSizingKind(spec, "value"), "sizing.value", n)))} />
     </div>
     {per === "risk_pct" && <p className="cap">Risk % per trade: the lab's own sizing, kept because this strategy uses it; not in the AFL panel.</p>}
     <div className="lab-row" data-lab-brokerage>
       {money ? <>
         <NumField label="Brokerage (%)" value={ex.costs?.commission?.pct} min={0} max={10} placeholder="0" onChange={(n) => change("costs.commission.pct", n)} />
-        <NumField label="Slippage (bps)" value={ex.costs?.slippage?.bps} min={0} max={1000} placeholder="0" onChange={(n) => change("costs.slippage.bps", n)} />
+        {/* the AFL panel has BROKERAGE only; a strategy saved with a slippage keeps its box so the cost is seen and can be cleared */}
+        {!!ex.costs?.slippage?.bps && <NumField label="Slippage (bps)" value={ex.costs.slippage.bps} min={0} max={1000} placeholder="0" onChange={(n) => change("costs.slippage.bps", n)} />}
       </> : unitCosts}
     </div>
     <div className="lab-row" data-lab-max-position>

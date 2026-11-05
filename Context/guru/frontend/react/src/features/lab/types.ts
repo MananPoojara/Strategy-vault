@@ -143,15 +143,20 @@ export interface OptimizeDim { path: string; from: number; to: number; step: num
 export type Fill = "next_open" | "close";
 export interface Spec {
   v: 1; direction?: "long" | "short" | "both"; origin?: Origin; entry: EntrySpec; exit: ExitSpec; short_side?: ShortSide;
-  execution?: Execution; optimize?: OptimizeDim[]; portfolio?: PortfolioSpec; date_filter?: DateFilter; [extra: string]: unknown;
+  execution?: Execution; optimize?: OptimizeDim[]; portfolio?: PortfolioSpec; date_filter?: DateFilter; blackouts?: Blackout[]; [extra: string]: unknown;
 }
+/** Fresh: after a cut, wait for a new entry; Running: re-enter on the period's / window's exit day while the strategy's own
+ *  trade would still be open (the AFLs' Fresh | Running re-entry types). */
+export type Reentry = "fresh" | "running";
+/** rules.rs Blackout: no-trade windows for a short strategy (Master 5DP, QTR Midcap, …). */
+export interface Blackout { name: string; windows: [string, string][]; reentry: Reentry }
 /** A calendar window: from (inclusive) to `to` (the first day outside), YYYY-MM-DD. */
 export interface DateWindow { from: string; to: string; label?: string }
 /** A saved custom date filter (auth lab-date-sets.mjs): personal, or shared by an admin with everyone. */
 export interface DateSet { id: number; name: string; shared: boolean; windows: DateWindow[]; version: number; mine: boolean; editable: boolean; createdAt: string; updatedAt: string }
 /** rules.rs DateFilter: trade inside (bull) or outside (bear) the windows ([from, to] pairs); exit when a window ends / starts;
  *  `set` names the saved set the windows come from. */
-export interface DateFilter { mode?: "inside" | "outside"; windows: [string, string][]; exit_at_change?: boolean; off?: boolean; set?: { id?: number; name?: string } }
+export interface DateFilter { mode?: "inside" | "outside"; windows: [string, string][]; exit_at_change?: boolean; off?: boolean; set?: { id?: number; name?: string }; reentry?: Reentry }
 
 // ---- run / optimize
 export type Piece = [date: string, price: number, weight: number];

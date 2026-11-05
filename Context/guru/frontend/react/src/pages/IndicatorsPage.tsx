@@ -28,7 +28,9 @@ import { ChartPopup } from "../features/lab/ChartPopup";
 import { Workbench } from "../features/lab/Workbench";
 import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
 import { DateFilterPanel } from "../features/lab/DateFilterPanel";
-import { withCurrentDateSet } from "../features/lab/date-sets";
+import { withBlackouts, withCurrentDateSet } from "../features/lab/date-sets";
+import { loadRegimeSets, type RegimeSet } from "../features/lab/master5dp";
+import { ShortWindowsPanel } from "../features/lab/ShortWindowsPanel";
 import { RunResults, RunTables, tradeTable } from "../features/lab/RunResults";
 import { NoTradesHelp } from "../features/lab/NoTrades";
 import { SimpleOptimize } from "../features/lab/SimpleOptimize";
@@ -42,7 +44,7 @@ import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
 import { CompactContext, LabModeContext, ModeSwitch, storedMode, storeMode, type LabMode } from "../features/lab/simple";
 import type {
-  Catalogue, DateSet, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
+  Catalogue, DateSet, DateWindow, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
 import "../features/lab/typography.css";
 
@@ -117,6 +119,10 @@ function IndicatorsLab() {
   useEffect(() => { void reloadDateSets(); }, [reloadDateSets]);
   // A strategy that uses a saved date filter picks up the set's current dates (re-uploads, renames) once the sets load.
   useEffect(() => { if (dateSetList) { const next = withCurrentDateSet(state.spec, dateSetList); if (next !== state.spec) dispatch({ type: "spec", spec: next }); } }, [dateSetList, state.spec]);
+  // Master 5DP and QTR (a short's no-trade windows), generated from India index bars (master5dp.ts); a strategy using one picks up newly settled windows.
+  const [generatedSets, setGeneratedSets] = useState<RegimeSet[]>([]);
+  useEffect(() => { if (market === "in") loadRegimeSets().then(setGeneratedSets, () => setGeneratedSets([])); }, [market]);
+  useEffect(() => { const next = withBlackouts(state.spec, generatedSets); if (next !== state.spec) dispatch({ type: "spec", spec: next }); }, [generatedSets, state.spec]);
   const [mineError, setMineError] = useState<unknown>(null);
   const [myInds, setMyInds] = useState<Record<number, Indicator>>({});
   const [infos, setInfos] = useState<Record<string, FormulaCheck>>({});
@@ -262,7 +268,7 @@ function IndicatorsLab() {
   const assertRunnable = (spec: Spec) => { const issues = problemsFor(spec); if (issues.length) throw new Error(issues.join("\n")); };
 
   const run = async (current: Spec = state.spec) => {
-    const spec = dateSetList ? withCurrentDateSet(current, dateSetList) : current; // a re-uploaded date filter reaches the run
+    const spec = withBlackouts(dateSetList ? withCurrentDateSet(current, dateSetList) : current, generatedSets); // a re-uploaded date filter reaches the run
     if (!ticker && !spec.portfolio) return; // no selectable instrument on this market
     const n = ++runSeq.current;
     const sentContext=canonicalJson([market,spec.portfolio??null]);issuedContext.current=sentContext;currentContext.current=sentContext;
@@ -322,6 +328,7 @@ function IndicatorsLab() {
   // AmiBroker AFL layout: the date windows (Base 1 / Base 2) sit with the filters on the rules' Filters tab, else in Settings
   const datesPanel = <DateFilterPanel spec={state.spec} onChange={(spec) => dispatch({ type: "spec", spec })}
     sets={{ list: dateSetList, error: dateSetError, reload: reloadDateSets, canSave: canEditMine, canShare: role === "admin" }} />;
+  const shortWindows = <ShortWindowsPanel spec={state.spec} onChange={(spec) => dispatch({ type: "spec", spec })} sets={market === "in" ? generatedSets : []} />;
   const portfolioPanel = cat && <PortfolioPanel spec={state.spec} catalogue={cat} market={market} options={signalOptions} onChange={(spec)=>{clearRun();dispatch({type:"spec",spec});}}/>;
   const indicatorLibrary = cat && <div className="lab-library-slot"><Part><LibraryRail docked catalogue={cat} market={market} hasVolume={hasVolume} tf={state.tf}
           onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf, maxForeign: cat.max_foreign }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
@@ -379,7 +386,7 @@ function IndicatorsLab() {
           {!cat.execution && portfolioPanel}
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={runSettings} onSettings={changeSettings}
-            problems={problems} running={running} onRun={() => void run()} onOptimize={() => setTab("optimization")} portfolio={portfolioPanel} part="rules" dates={datesPanel}
+            problems={problems} running={running} onRun={() => void run()} onOptimize={() => setTab("optimization")} portfolio={portfolioPanel} part="rules" dates={datesPanel} shortWindows={shortWindows}
             chartMatch={<ChartMatch spec={state.spec} catalogue={cat} chips={state.chips} onSpec={(spec) => dispatch({ type: "spec", spec })}
               onChartSet={(key, params) => dispatch({ type: "chip-set", key, params })}
               onChartAdd={(ind, params) => { const key = `c${state.nextChip}`; dispatch({ type: "chip-add", indicator: ind }); dispatch({ type: "chip-set", key, params }); }} />} />

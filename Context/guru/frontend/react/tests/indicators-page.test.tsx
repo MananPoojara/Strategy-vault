@@ -244,7 +244,7 @@ it("changing the instrument clears the optimization result", async () => {
   expect(host.querySelector("[data-lab-optimize-result]")).toBeNull();
 });
 
-it.each([["From", "01-01-2010"], ["To", "01-01-2020"], ["Brokerage (bps / side)", "4"], ["Slippage (bps / side)", "2"]])("changing %s clears optimization results and their downloads", async (label, value) => {
+it.each([["From", "01-01-2010"], ["To", "01-01-2020"], ["Brokerage (bps / side)", "4"]])("changing %s clears optimization results and their downloads", async (label, value) => {
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   await act(async () => host.querySelector<HTMLInputElement>("[data-lab-dim] input[type=checkbox]")!.click());
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());

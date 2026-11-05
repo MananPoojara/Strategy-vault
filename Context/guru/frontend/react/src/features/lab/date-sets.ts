@@ -126,6 +126,14 @@ export function withCurrentDateSet(spec: Spec, sets: readonly DateSet[]): Spec {
   if (same(df.windows, windows) && df.set?.name === set.name) return spec;
   return { ...spec, date_filter: { ...df, set: { id: set.id, name: set.name }, windows: pairs(windows) } };
 }
+/** The spec with its short no-trade windows (Master 5DP, QTR …) refreshed from the sets generated from market data, by name;
+ *  dropped when the strategy is not a short (they cut short trades only). The same spec object when nothing changed. */
+export function withBlackouts(spec: Spec, sets: readonly { name: string; windows: [string, string][] }[]): Spec {
+  if (!spec.blackouts) return spec;
+  if (spec.direction !== "short") { const { blackouts: _, ...rest } = spec; return rest; }
+  const blackouts = spec.blackouts.map((b) => ({ ...b, windows: sets.find((s) => s.name === b.name)?.windows ?? b.windows }));
+  return JSON.stringify(blackouts) === JSON.stringify(spec.blackouts) ? spec : { ...spec, blackouts };
+}
 /** An uploaded workbook: every sheet with dates; a sheet named …Bull / …Bear tags its periods (Ritik's BASE 2 DATES.xlsx). */
 export function parseSheets(sheets: { name: string; rows: string[][] }[]): Parsed {
   const parts = sheets.map((s) => ({ s, p: parseDateTable(s.rows.map((r) => r.join("\t")).join("\n"), tagOf(s.name)) }))

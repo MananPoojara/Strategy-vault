@@ -28,7 +28,7 @@ function setup(spec: Spec, list: DateSet[], over: Partial<DateSetsState> = {}) {
 
 const base2Bull = BUILT_IN[1].windows.filter((w) => w.label === "Bull").map((w) => [w.from, w.to]);
 const base2Bear = BUILT_IN[1].windows.filter((w) => w.label === "Bear").map((w) => [w.from, w.to]);
-const dated = (df = defaultDates()) => ({ ...m.defaultSpec(), date_filter: df }) as Spec;
+const dated = (df: Spec["date_filter"] = defaultDates()) => ({ ...m.defaultSpec(), date_filter: df }) as Spec;
 
 it("Dates offers Base 1 and Base 2 built in; Bull / Bear sends those periods and the details list them", async () => {
   const t = setup(dated(), [set(1, "Base 1"), set(4, "Mine")]); // a saved set named like a built-in one is not listed twice
@@ -37,7 +37,7 @@ it("Dates offers Base 1 and Base 2 built in; Bull / Bear sends those periods and
   expect(q(".lab-datefilter-dates > summary").textContent).toBe("See the 14 bull periods");
   expect(document.querySelectorAll(".lab-datefilter-table tbody tr")).toHaveLength(14);
   await click(byText("Base 2"));
-  expect(t.onChange.mock.lastCall![0].date_filter).toEqual({ set: { name: "Base 2" }, windows: base2Bull });
+  expect(t.onChange.mock.lastCall![0].date_filter).toEqual({ set: { name: "Base 2" }, windows: base2Bull, reentry: "fresh" });
   await unmount();
   const u = setup(dated({ set: { name: "Base 2" }, windows: base2Bull as [string, string][] }), []);
   await u.render();
@@ -67,7 +67,7 @@ it("own dates: pasted in any format, saved for reuse and used for this strategy"
   await type(q("input[aria-label='Date filter name']"), "Crashes");
   await click(q("[data-lab-date-save]"));
   expect(t.api.create).toHaveBeenCalledWith({ name: "Crashes", windows: [{ from: "2008-01-01", to: "2008-01-31", label: "Bull" }, { from: "2008-11-21", to: "2010-12-31", label: "Bull" }, { from: "2011-01-01", to: "2011-09-26", label: "Bear" }] });
-  expect(t.onChange.mock.lastCall![0].date_filter).toEqual({ set: { id: 9, name: "Crashes" }, windows: [["2008-01-01", "2008-01-31"], ["2008-11-21", "2010-12-31"]] });
+  expect(t.onChange.mock.lastCall![0].date_filter).toEqual({ set: { id: 9, name: "Crashes" }, windows: [["2008-01-01", "2008-01-31"], ["2008-11-21", "2010-12-31"]], reentry: "fresh" });
 });
 
 it("own dates that cannot be saved are still used for this strategy; bad lines say which line", async () => {
@@ -80,7 +80,7 @@ it("own dates that cannot be saved are still used for this strategy; bad lines s
   await type(q("textarea[aria-label='Date windows']"), "21/11/2008 31/12/2010");
   await click(q("[data-lab-date-save]"));
   expect(t.api.create).not.toHaveBeenCalled();
-  expect(t.onChange.mock.lastCall![0].date_filter).toEqual({ set: { name: "My dates" }, windows: [["2008-11-21", "2010-12-31"]] });
+  expect(t.onChange.mock.lastCall![0].date_filter).toEqual({ set: { name: "My dates" }, windows: [["2008-11-21", "2010-12-31"]], reentry: "fresh" });
 });
 
 it("an active date filter with its window-change exit counts as an exit; switched off or without that exit it does not", () => {
@@ -89,4 +89,16 @@ it("an active date filter with its window-change exit counts as an exit; switche
   expect(m.specProblems(dated, cat)).toEqual([]);
   expect(m.specProblems({ ...dated, date_filter: { ...dated.date_filter, exit_at_change: false } }, cat).join()).toMatch(/Pick an exit/);
   expect(m.specProblems({ ...dated, date_filter: { ...dated.date_filter, off: true } }, cat).join()).toMatch(/Pick an exit/);
+});
+
+it("Re-entry offers Fresh and Running for the Base filter; a new filter starts Fresh, an older strategy shows neither until one is picked", async () => {
+  const t = setup(dated(), []);
+  await t.render();
+  expect(q("[aria-label='Date re-entry'] .active").textContent).toBe("Fresh");
+  await click(byText("Running"));
+  expect(t.onChange.mock.lastCall![0].date_filter.reentry).toBe("running");
+  await unmount();
+  const old = setup(dated({ set: { name: "Base 2" }, windows: base2Bull as [string, string][] }), []);
+  await old.render();
+  expect(document.querySelector("[aria-label='Date re-entry'] .active")).toBeNull();
 });

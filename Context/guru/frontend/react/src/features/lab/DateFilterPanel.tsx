@@ -6,7 +6,7 @@ import { BUILT_IN } from "./builtin-periods";
 import { chosenPhase, dmy, pairs, parseDateTable, parseSheets, phaseWindows, withBear, type Parsed, type Phase } from "./date-sets";
 import { readXlsx } from "./xlsx-read";
 import { Segmented } from "./ui";
-import type { DateSet, DateWindow, Spec } from "./types";
+import type { DateSet, DateWindow, Reentry, Spec } from "./types";
 import "./rules.css";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
@@ -16,8 +16,13 @@ const span = (w: readonly DateWindow[]) => (w.length ? `${dmy(w.reduce((a, x) =>
 export interface DateSetsState { list: DateSet[] | null; error?: unknown; reload(): Promise<DateSet[] | undefined>; canSave: boolean; canShare: boolean; api?: DateSetsApi }
 interface Base { key: string; name: string; id?: number; windows: DateWindow[] }
 
-/** The Dates filter turned on with nothing chosen yet: Base 1's bull periods. */
-export const defaultDates = () => ({ set: { name: BUILT_IN[0].name }, windows: pairs(phaseWindows(BUILT_IN[0].windows, "Bull")) });
+/** The AFLs' Fresh | Running re-entry types, for the Base filter and a short's no-trade windows. */
+export const REENTRY: { value: Reentry; label: string; title: string }[] = [
+  { value: "fresh", label: "Fresh", title: "After a cut, wait for a new entry signal" },
+  { value: "running", label: "Running", title: "Re-enter on the exit day while the strategy's own trade would still be open, keeping its stops" }];
+
+/** The Dates filter turned on with nothing chosen yet: Base 1's bull periods, Fresh re-entry. */
+export const defaultDates = () => ({ set: { name: BUILT_IN[0].name }, windows: pairs(phaseWindows(BUILT_IN[0].windows, "Bull")), reentry: "fresh" as Reentry });
 
 export function DateFilterPanel({ spec, onChange, sets }: { spec: Spec; onChange(spec: Spec): void; sets: DateSetsState }) {
   const df = spec.date_filter;
@@ -40,6 +45,10 @@ export function DateFilterPanel({ spec, onChange, sets }: { spec: Spec; onChange
     <div className="lab-param-row"><span className="lab-param-k">Trade in</span><span className="lab-param-v">
       <Segmented label="Trade in" value={phase} options={PHASES.map((p) => ({ value: p, label: p }))} onChange={(p) => base && use(base, p as Phase)} />
     </span></div>
+    {/* a strategy saved before Fresh / Running shows neither: it keeps the older rule (a new signal inside the period) until one is picked */}
+    {df.exit_at_change !== false && <div className="lab-param-row"><span className="lab-param-k">Re-entry</span><span className="lab-param-v">
+      <Segmented label="Date re-entry" value={df.reentry ?? ("" as Reentry)} options={REENTRY} onChange={(reentry) => onChange({ ...spec, date_filter: { ...df, reentry } })} />
+    </span></div>}
     {/* an open trade always closes when its period ends (the AFLs' forced exit); the box shows only for a strategy that turned it off */}
     {df.exit_at_change === false && <label className="lab-check"><input type="checkbox" checked={false} onChange={() => { const { exit_at_change: _, ...rest } = df; onChange({ ...spec, date_filter: rest }); }} />
       Close an open trade when the period ends</label>}

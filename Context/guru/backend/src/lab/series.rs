@@ -248,14 +248,21 @@ pub struct Compiled {
     pub shadow: Option<(super::rules::Shadow, Vec<bool>, bool)>,
     /// exit.stop_loss.candle: each daily bar's low (a short side's high); empty when unused.
     pub candle: Vec<f64>,
+    /// date_filter with reentry and spec.blackouts: the trades run on paper and are cut to the bars every clip allows
+    /// (simulate.rs clip_trades); empty: off.
+    pub clip: Vec<Clip>,
 }
+/// One Fresh / Running cut over the daily bars: `blocked[i]` no position on bar i, `running` re-enter once it clears, `why`
+/// the exit reason of a position it cuts.
+#[derive(Clone, Debug)]
+pub struct Clip { pub blocked: Vec<bool>, pub running: bool, pub why: String }
 /// Daily levels of exit.dual_atr for this side: the initial and favour stops, the switch band and the close they are
 /// compared with (on W/M: completed periods' values and the period close, held until the next period's last bar, as the
 /// AmiBroker AFL's TimeFrameExpand(…, expandLast)), and which bars end a period (exits tested there only when `end_only`).
 pub struct DualBands { pub init: Vec<f64>, pub fav: Vec<f64>, pub up: Vec<f64>, pub close: Vec<f64>, pub end: Vec<bool>, pub end_only: bool }
 impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
-    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None, dline: None, shadow: None, candle: vec![] } }
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None, dline: None, shadow: None, candle: vec![], clip: vec![] } }
     pub fn has_order(&self) -> bool { self.exec.has_order() }
     /// Setup nodes start disarmed: a Compiled is run again per window (walk-forward, optimize).
     pub fn reset_setups(&self) { for s in self.setups() { s.armed.iter().for_each(|a| a.set(false)); } }
@@ -532,10 +539,17 @@ pub fn compile_with(spec: &Spec, fr: &Frames, others: &Others, cache: &mut Cache
         o.exec.sizing = spec.exec.sizing; // one sizing for both sides (optimize changes the spec's)
         c.other = Some(Box::new(o));
     }
-    if let Some(d) = &spec.date_filter {
-        date_gate(&mut c, d, &fr.d.date);
-        if let Some(o) = c.other.as_deref_mut() { date_gate(o, d, &fr.d.date); }
+    let within = |w: &[(String, String)]| -> Vec<bool> { fr.d.date.iter().map(|t| w.iter().any(|(from, to)| from.as_str() <= t.as_str() && t.as_str() < to.as_str())).collect() };
+    match &spec.date_filter {
+        Some(d) if d.running.is_none() => {
+            date_gate(&mut c, d, &fr.d.date);
+            if let Some(o) = c.other.as_deref_mut() { date_gate(o, d, &fr.d.date); }
+        }
+        Some(d) => c.clip.push(Clip { blocked: within(&d.windows).into_iter().map(|w| w != d.inside).collect(), running: d.running == Some(true),
+            why: (if d.inside { "date_filter: window ended" } else { "date_filter: window started" }).into() }),
+        None => {}
     }
+    for x in &spec.blackouts { c.clip.push(Clip { blocked: within(&x.windows), running: x.running, why: format!("{}: window started", x.name) }); }
     entry_gates(&mut c, &spec.exec, &fr.d)?;
     if let Some(o) = c.other.as_deref_mut() { entry_gates(o, &spec.exec, &fr.d)?; }
     Ok(c)

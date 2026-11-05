@@ -316,14 +316,27 @@ pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Optio
     /// AmiBroker Settings › Report risk-free rates (Sharpe, UPI) in percent from `execution.report` (lab/report.rs rates); None: defaults.
     pub report: Option<(f64, f64)>,
     /// spec.date_filter (None: no filter, or switched off).
-    pub date_filter: Option<DateFilter> }
+    pub date_filter: Option<DateFilter>,
+    /// spec.blackouts: no-trade windows for a short strategy (the AFLs' Master 5DP and QTR), each Fresh or Running.
+    pub blackouts: Vec<Blackout> }
 /// A custom date filter (the AmiBroker AFLs' Base 1 / Base 2 windows): a bar is in a window when from <= date < to.
 /// `inside` (bull): entries only in a window; `outside` (bear): entries only outside. With `exit_at_change` an open
 /// position exits on the first bar after an inside window ends (the first trading day on or after `to`), or, outside,
 /// on a window's first bar.
+/// `running`: None keeps the window test as an entry rule (a new signal inside the windows); Some, the AFLs' virtual trade
+/// (simulate.rs clip_trades): Some(false) Fresh, Some(true) Running.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DateFilter { pub inside: bool, pub windows: Vec<(String, String)>, pub exit_at_change: bool }
+pub struct DateFilter { pub inside: bool, pub windows: Vec<(String, String)>, pub exit_at_change: bool, pub running: Option<bool> }
+impl DateFilter {
+    /// The window change itself exits a position (an empty exit list still exits).
+    pub fn exits(&self) -> bool { self.exit_at_change && self.running.is_none() }
+}
+/// A no-trade window set (Master 5DP, QTR Midcap, …): a short is covered on a window's first bar; `running` re-enters it on
+/// the window's exit bar while the strategy's own trade lasts, Fresh waits for a new entry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Blackout { pub name: String, pub windows: Vec<(String, String)>, pub running: bool }
 pub const MAX_DATE_WINDOWS: usize = 200;
+pub const MAX_BLACKOUTS: usize = 4;
 /// The short side of a `direction: both` spec: its own rule lists and price orders (exec.short = true).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
@@ -331,7 +344,7 @@ pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
 pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if text.len() > MAX_SPEC_BYTES { return Err(inv(format!("spec is {} bytes; the limit is {MAX_SPEC_BYTES}", text.len()))); }
     let root = json::parse(text).map_err(|e| inv(format!("spec is not valid JSON: {e}")))?;
-    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize", "portfolio", "date_filter"], &["short", "scale_in"])?;
+    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize", "portfolio", "date_filter", "blackouts"], &["short", "scale_in"])?;
     if root.get("v").and_then(Json::as_f64) != Some(1.) { return Err(inv("v must be 1")); }
     let mut exec = Exec::default();
     let both = match root.get("direction") {
@@ -346,7 +359,13 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     let portfolio = root.get("portfolio").map(|v|portfolio(v,&mut budget)).transpose()?;
     let rotation = portfolio.as_ref().is_some_and(|p|p.mode==Mode::Rotation);
     let date_filter = root.get("date_filter").map(date_filter).transpose()?.flatten();
-    let dated = date_filter.as_ref().is_some_and(|d| d.exit_at_change);
+    let dated = date_filter.as_ref().is_some_and(DateFilter::exits);
+    let blackouts = match root.get("blackouts") {
+        None => vec![],
+        Some(Json::Arr(items)) if items.len() <= MAX_BLACKOUTS => items.iter().enumerate().map(|(k, v)| blackout(v, &format!("blackouts[{k}]"))).collect::<Result<Vec<_>, _>>()?,
+        _ => return Err(inv(format!("blackouts must be a list of at most {MAX_BLACKOUTS}"))),
+    };
+    if !blackouts.is_empty() && (!exec.short || both) { return Err(inv("blackouts cut short trades: use direction \"short\"")); }
     let (entry, exit) = side(root.get("entry"), root.get("exit"), "", both, rotation, dated, &mut exec, &mut budget)?;
     let mut short_side = match (both, root.get("short_side")) {
         (true, Some(s)) => {
@@ -524,7 +543,13 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     }
     let report = root.get("execution").and_then(|x| x.get("report")).map(super::report::rates).transpose()?;
     if report.is_some() && portfolio.is_some() { return Err(LabError::Unsupported("execution.report applies to single-instrument runs; a portfolio run has no AmiBroker report".into())); }
-    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio, report, date_filter };
+    if !blackouts.is_empty() || date_filter.as_ref().is_some_and(|d| d.running.is_some()) {
+        let at = "Fresh / Running re-entry (date_filter.reentry, blackouts)";
+        if exec.shadow.is_some() { return Err(inv(format!("{at} does not combine with execution.shadow"))); }
+        if [Some(&exec), short_side.as_ref().map(|s| &s.exec)].into_iter().flatten().any(|x| x.scale_in.is_some() || !x.take_profits.is_empty()) { return Err(inv(format!("{at} does not combine with entry.scale_in or take_profits"))); }
+        if portfolio.is_some() { return Err(LabError::Unsupported(format!("{at} applies to single-instrument runs"))); }
+    }
+    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio, report, date_filter, blackouts };
     validate_applied(&spec)?;
     if let Some(o) = root.get("optimize") { spec.optimize = dims(&spec, o)?; }
     Ok(spec)
@@ -588,7 +613,7 @@ fn iso_date(s: &str) -> bool {
 /// spec.date_filter; a switched-off filter (`off: true`) is validated and then ignored.
 fn date_filter(v: &Json) -> Result<Option<DateFilter>, LabError> {
     let at = "date_filter";
-    fields(v, at, &["mode", "windows", "exit_at_change", "off", "set"], &[])?;
+    fields(v, at, &["mode", "windows", "exit_at_change", "off", "set", "reentry"], &[])?;
     let inside = match v.get("mode").map(Json::as_str) { None | Some(Some("inside")) => true, Some(Some("outside")) => false, _ => return Err(inv(format!("{at}.mode must be inside or outside"))) };
     let flag = |k: &str, d: bool| match v.get(k) { None => Ok(d), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("{at}.{k} must be true or false"))) };
     let (exit_at_change, off) = (flag("exit_at_change", true)?, flag("off", false)?);
@@ -598,10 +623,27 @@ fn date_filter(v: &Json) -> Result<Option<DateFilter>, LabError> {
         if s.get("id").is_some_and(|x| x.as_f64().is_none_or(|n| n.fract() != 0. || n < 1.)) { return Err(inv(format!("{at}.set.id must be a whole number"))); }
         if s.get("name").is_some_and(|x| x.as_str().is_none_or(|n| n.chars().count() > 60)) { return Err(inv(format!("{at}.set.name must be text of at most 60 characters"))); }
     }
+    let running = v.get("reentry").map(|r| reentry(r, at)).transpose()?;
+    if running.is_some() && !exit_at_change { return Err(inv(format!("{at}.reentry needs exit_at_change (the position is cut when its period ends)"))); }
+    Ok((!off).then_some(DateFilter { inside, windows: windows(v, at)?, exit_at_change, running }))
+}
+/// "fresh" | "running" → Some(running).
+fn reentry(v: &Json, at: &str) -> Result<bool, LabError> {
+    match v.as_str() { Some("fresh") => Ok(false), Some("running") => Ok(true), _ => Err(inv(format!("{at}.reentry must be \"fresh\" or \"running\""))) }
+}
+/// spec.blackouts[k]: {name, windows, reentry}.
+fn blackout(v: &Json, at: &str) -> Result<Blackout, LabError> {
+    fields(v, at, &["name", "windows", "reentry"], &[])?;
+    let name = v.get("name").and_then(Json::as_str).filter(|n| !n.is_empty() && n.chars().count() <= 60).ok_or_else(|| inv(format!("{at}.name must be text of 1 to 60 characters")))?;
+    let running = reentry(v.get("reentry").ok_or_else(|| inv(format!("{at}.reentry must be \"fresh\" or \"running\"")))?, at)?;
+    Ok(Blackout { name: name.to_string(), windows: windows(v, at)?, running })
+}
+/// `{at}.windows`: 1 to MAX_DATE_WINDOWS pairs ["from", "to"] of real YYYY-MM-DD dates, from before to.
+fn windows(v: &Json, at: &str) -> Result<Vec<(String, String)>, LabError> {
     let Some(Json::Arr(items)) = v.get("windows") else { return Err(inv(format!("{at}.windows must be a list"))) };
     if items.is_empty() || items.len() > MAX_DATE_WINDOWS { return Err(inv(format!("{at}.windows needs 1 to {MAX_DATE_WINDOWS} windows"))); }
     // each window is a pair ["from", "to"] (compact: a spec travels in the request, up to MAX_SPEC_BYTES)
-    let windows = items.iter().enumerate().map(|(k, w)| {
+    items.iter().enumerate().map(|(k, w)| {
         let a = format!("{at}.windows[{k}]");
         let Json::Arr(pair) = w else { return Err(inv(format!("{a} must be a pair [\"from\", \"to\"]"))) };
         if pair.len() != 2 { return Err(inv(format!("{a} must be a pair [\"from\", \"to\"]"))); }
@@ -609,8 +651,7 @@ fn date_filter(v: &Json) -> Result<Option<DateFilter>, LabError> {
         let (from, to) = (date(0, "from")?, date(1, "to")?);
         if from >= to { return Err(inv(format!("{a}: from ({from}) must be before to ({to})"))); }
         Ok((from, to))
-    }).collect::<Result<Vec<_>, LabError>>()?;
-    Ok((!off).then_some(DateFilter { inside, windows, exit_at_change }))
+    }).collect::<Result<Vec<_>, LabError>>()
 }
 fn dual_atr(v: &Json, at: &str) -> Result<DualAtr, LabError> {
     fields(v, at, &["initial", "favour", "tf", "period_end_only"], &[])?;
@@ -813,13 +854,12 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.tick_size>0.{return unsupported("execution.tick_size");}
     if x.pad_align{return unsupported("execution.pad_align");}
     if x.held_from_signal{return unsupported("execution.bars_held_from");}
-    if x.defer_exit_on_circuit{return unsupported("execution.defer_exit_on_circuit");}
-    if x.skip_entry_on_circuit{return unsupported("execution.skip_entry_on_circuit");}
-    if x.dead_stock||x.penny_price>0.||x.turnover_filter||x.aux.contains(&true){return unsupported("execution.dead_stock, penny_price, turnover_filter, aux1 or aux2");}
+    // the circuits and the BACKTEST PARAMETER gates run per member: skip_entry_on_circuit, penny_price, turnover_filter and
+    // aux join each member's compiled entry rules (series.rs); defer_exit_on_circuit and dead_stock are in portfolio.rs run
     if x.shadow.is_some(){return unsupported("execution.shadow");}
     if x.dual_atr.is_some(){return unsupported("exit.dual_atr");}
     if x.dual_line.is_some(){return unsupported("exit.dual_line");}
-    if s.date_filter.is_some(){return unsupported("date_filter");}
+    if s.date_filter.is_some()||!s.blackouts.is_empty(){return unsupported("date_filter and blackouts");}
     if s.exit.iter().any(|n|matches!(n,Node::Cmp(c) if matches!(c.lhs,Operand::SinceEntry(_))||matches!(c.rhs,Operand::SinceEntry(_)))){return unsupported("since_entry exit values");}
     if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
     if p.max_open==0||p.max_open>MAX_OPEN{return Err(inv(format!("portfolio.max_open must be a whole number from 1 to {MAX_OPEN}")));}
@@ -1521,7 +1561,7 @@ fn active_rules(s: &Spec) -> Result<(), String> {
     let sides = std::iter::once((&s.entry, &s.exit, &s.exec, "")).chain(s.short_side.as_ref().map(|x| (&x.entry, &x.exit, &x.exec, "short_side.")));
     for (entry, exit, x, pre) in sides {
         if all_off(entry) { return Err(format!("{pre}entry.all: every rule is switched off")); }
-        if all_off(exit) && !priced(x) && s.short_side.is_none() && !rotation && !s.date_filter.as_ref().is_some_and(|d| d.exit_at_change) { return Err(format!("{pre}exit.any: every rule is switched off")); }
+        if all_off(exit) && !priced(x) && s.short_side.is_none() && !rotation && !s.date_filter.as_ref().is_some_and(DateFilter::exits) { return Err(format!("{pre}exit.any: every rule is switched off")); }
     }
     Ok(())
 }

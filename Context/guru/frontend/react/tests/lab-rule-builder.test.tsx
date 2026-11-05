@@ -210,7 +210,8 @@ it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay 
   // the basics come first; Positions and From/To sit over the rule cards in Your idea; the AmiBroker settings are always open, named when something is changed
   const basics = host.querySelector("[data-lab-basics]")!;
   expect([...basics.querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Backtest parameters"]); // the AFLs' panel
-  expect(basics.querySelector('input[aria-label="Slippage (bps / side)"]')).not.toBeNull(); // always shown
+  expect(basics.querySelector('input[aria-label="Brokerage (bps / side)"]')).not.toBeNull(); // always shown
+  expect(basics.querySelector('input[aria-label="Slippage (bps / side)"]')).toBeNull(); // the AFL panel has BROKERAGE only
   expect(basics.querySelector('[data-lab-exec="positions"]')).toBeNull();
   const idea = host.querySelector("[data-lab-idea-basics]")!;
   expect(idea.querySelector('[data-lab-exec="positions"]')).not.toBeNull();

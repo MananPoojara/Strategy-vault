@@ -15,7 +15,7 @@ import { MARGIN_NOTE, PAD_NOTE, RiskPanel, TICK_NOTE } from "../src/features/lab
 import { BacktestParams, NEEDS_ENGINE } from "../src/features/lab/settings/BacktestParams";
 import { GeneralTab } from "../src/features/lab/settings/GeneralTab";
 import { FUTURES_NOTE, MONEY_BASIS_HINT, MONEY_BLOCKED } from "../src/features/lab/labels";
-import { withMode, type InstrumentContext } from "../src/features/lab/execution-model";
+import { withMode, withSizingKind, type InstrumentContext } from "../src/features/lab/execution-model";
 
 const usEtf: InstrumentContext = { kind: "etf", market: "us" };
 const moneyCat = { ...catalogue7Fixture, execution: { ...catalogue7Fixture.execution!, sizing: ["pct_equity", "risk_pct", "units", "value"] } };
@@ -68,8 +68,9 @@ it("money mode on a US ETF: capital, sizing in shares, costs, taxes, borrow for 
   expect(host.textContent).not.toContain(MONEY_BASIS_HINT); // the cost disclaimer is not shown
   await choose(host.querySelector('select[aria-label="Position size per"]')!, "units");
   expect(last().execution?.sizing).toEqual({ units: 100 });
-  await type(host.querySelector('input[aria-label="Slippage (bps)"]')!, "20");
-  expect(last().execution?.costs).toEqual({ slippage: { bps: 20 } });
+  expect(host.querySelector('input[aria-label="Slippage (bps)"]')).toBeNull(); // the AFL panel has BROKERAGE only
+  await type(host.querySelector('input[aria-label="Brokerage (%)"]')!, "0.05");
+  expect(last().execution?.costs).toEqual({ commission: { pct: 0.05 } });
   await click(host.querySelector('button[aria-label="Add tax"]')!);
   expect(last().execution?.costs?.taxes).toEqual([{ name: "Tax", pct: 0.1, side: "both" }]);
   expect(host.querySelector('input[aria-label="Borrow % per year"]')).toBeNull();
@@ -94,13 +95,13 @@ it("the AFL backtest parameter rows, in its order, with its defaults", async () 
   const { host } = await risk(withMode(defaultSpec(), "money"), { kind: "index", market: "in" });
   const block = host.querySelector('[aria-label="Backtest parameters"]')!;
   const labels = [...block.querySelectorAll("input[aria-label], select[aria-label]")].map((e) => e.getAttribute("aria-label"));
-  expect(labels.slice(0, 13)).toEqual(["Initial equity", "Position size per", "Equity mode", "% of equity", "Equity allocation", "Brokerage (%)", "Slippage (bps)",
+  expect(labels.slice(0, 12)).toEqual(["Initial equity", "Position size per", "Equity mode", "% of equity", "Equity allocation", "Brokerage (%)",
     "Maximum position", "Dead stock backtest", "Penny stock price", "Turnover filter", "Aux1", "Aux2"]);
   const val = (l: string) => block.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${l}"]`)!;
   expect(["Initial equity", "% of equity", "Equity allocation", "Maximum position", "Penny stock price"].map((l) => val(l).value)).toEqual(["1000000", "100", "100000", "1", "0"]);
   expect([...block.querySelectorAll<HTMLSelectElement>("select")].slice(0, 6).map((s) => s.selectedOptions[0].textContent))
     .toEqual(["Equity", "% of equity", "No", "No", "Off", "Off"]);
-  expect(val("Equity allocation").disabled).toBe(true); // only for Fixed equity
+  expect(val("Equity allocation").disabled).toBe(false); // editable from the start (typing switches to Fixed equity)
 });
 
 it("equity mode and share sizing map to the spec as the AFL's SetPositionSize", async () => {
@@ -114,6 +115,10 @@ it("equity mode and share sizing map to the spec as the AFL's SetPositionSize", 
   expect(last().execution?.sizing).toEqual({ value: 250_000 });
   await choose(host.querySelector('select[aria-label="Equity mode"]')!, "full");
   expect(last().execution?.sizing).toBeUndefined(); // 100 % of equity = no sizing field
+  await rerender(last());
+  await type(host.querySelector('input[aria-label="Equity allocation"]')!, "300000"); // an allocation is only used as Fixed equity
+  expect(last().execution?.sizing).toEqual({ value: 300_000 });
+  await rerender(withSizingKind(last(), "full"));
   await rerender(setExecution(last(), { sizing: { units: 100 } }));
   expect(host.querySelector('select[aria-label="Equity mode"]')).toBeNull(); // Share has no equity mode
   await type(host.querySelector('input[aria-label="No. of shares"]')!, "250");
@@ -151,10 +156,10 @@ it("entry gates are greyed until the engine lists them; turnover needs volume", 
   expect(turnover.disabled).toBe(true);
   expect(turnover.closest("[title]")!.getAttribute("title")).toContain("volume");
   expect(noVol.host.querySelector<HTMLSelectElement>('select[aria-label="Aux1"]')!.disabled).toBe(false);
-  // the engine refuses the gates on a portfolio: off ones are greyed, one already on stays enabled to turn it off
+  // a portfolio applies the gates per member: all of them stay available
   const port = withMode({ ...defaultSpec(), portfolio: { universe: { basket: "nifty50" }, max_open: 5 } } as Spec, "money");
   const p = await setup(setExecution(port, { aux1: true }), { ...usEtf, hasVolume: true }, gateCat);
-  expect(p.host.querySelector<HTMLSelectElement>('select[aria-label="Aux2"]')!.disabled).toBe(true);
+  expect(p.host.querySelector<HTMLSelectElement>('select[aria-label="Aux2"]')!.disabled).toBe(false);
   expect(p.host.querySelector<HTMLSelectElement>('select[aria-label="Aux1"]')!.disabled).toBe(false);
 });
 

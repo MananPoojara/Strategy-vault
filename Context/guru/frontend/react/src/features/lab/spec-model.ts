@@ -189,7 +189,8 @@ export function specProblems(spec: Spec, cat: Catalogue): string[] {
   const sides = [{ side: spec, prefix: "", title: "" },
     ...(spec.short_side ? [{ side: spec.short_side, prefix: "short_side.", title: "Short side: " }] : [])];
   for (const { side, prefix, title } of sides) {
-    const dated = !!spec.date_filter && !spec.date_filter.off && spec.date_filter.exit_at_change !== false; // rules.rs: the window-change exit closes trades
+    // rules.rs DateFilter::exits: the window-change exit closes trades; with Fresh / Running the rules' own exits end the paper trade
+    const dated = !!spec.date_filter && !spec.date_filter.off && spec.date_filter.exit_at_change !== false && !spec.date_filter.reentry;
     const filterExit = side.entry.all.some((n) => { const x = n as Record<string, unknown>; return x.filter_exit === true && x.off !== true; }); // rules.rs filter_exits
     const priceExit = ["stop_loss", "target", "trailing", "breakeven", "dual_atr", "dual_line"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length || dated || filterExit;
     if (spec.portfolio?.mode!=="rotation" && !alwaysIn && !side.exit.any.length && !priceExit)

@@ -130,7 +130,7 @@ export function changedSettings(spec: Spec): string[] {
     ["opposite signal", ex.opposite], ["no same-bar exit and entry", ex.allow_same_bar_exit === false || undefined],
     ["re-enter on the exit bar", ex.reenter_on_exit_bar], ["no circuit exit hold", ex.defer_exit_on_circuit === false || undefined], ["entry on an upper-circuit close", ex.skip_entry_on_circuit === false || undefined], ["tick size", ex.tick_size || undefined],
     ["pad and align", ex.pad_align], ["report rates", ex.report], ["entry on", ex.entry_on], ["same-bar order", ex.intrabar], ["costs (cash)", ex.costs],
-    ["portfolio", spec.portfolio], ["date filter", spec.date_filter && !spec.date_filter.off ? spec.date_filter : undefined]];
+    ["portfolio", spec.portfolio], ["date filter", spec.date_filter && !spec.date_filter.off ? spec.date_filter : undefined], ["short no-trade windows", spec.blackouts?.length ? spec.blackouts : undefined]];
   for (const [name, v] of named) if (v !== undefined && v !== false) out.push(name);
   return out;
 }
@@ -147,6 +147,8 @@ export function tradeBlockers(spec: Spec, period?: { from?: string; to?: string;
     const phase = df.mode === "outside" ? "outside its" : built ? `its ${(chosenPhase(df.windows, built.windows) ?? "Bull").toLowerCase()}` : "its chosen";
     out.push({ id: "date_filter", text: `Dates${df.set?.name ? ` “${df.set.name}”` : ""}: trades only in ${phase} periods`, off: (s) => { const { date_filter: _, ...rest } = s; return rest as Spec; } });
   }
+  if (spec.blackouts?.length) out.push({ id: "blackouts", text: `${spec.blackouts.map((b) => `${b.name} (${b.reentry === "running" ? "Running" : "Fresh"})`).join(", ")}: no short inside ${spec.blackouts.length === 1 ? "its" : "their"} windows`,
+    off: (s) => { const { blackouts: _, ...rest } = s; return rest as Spec; } });
   if (ex.shadow) out.push({ id: "shadow", text: `Trade after a losing streak: real trades start only after the paper trades lose ${ex.shadow.loss_pct}%`, off: (s) => setExecution(s, { shadow: undefined }) });
   if (ex.risk?.max_consecutive_losses) out.push({ id: "loss_pause", text: `Loss-streak pause: no new trade for ${ex.risk.pause_bars} bars after ${ex.risk.max_consecutive_losses} losses in a row`,
     off: (s) => setExecution(s, { risk: dropKeys(s.execution?.risk, "max_consecutive_losses", "pause_bars") }) });
