@@ -13,7 +13,6 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "lebcafm";
 const FUT: &str = "futures dollar amounts (per-contract $ stops, $ targets and $ trailing stops) have no index equivalent";
-const INTRA: &str = "1992 S&P futures intraday bars with fixed point amounts (e.g. 150, 5 and 75 points = 1.50, 0.05 and 0.75 index points at 1992 prices); the vault's 1-minute bars are cash-index and ETF bars, and the book gives no rule to scale the points";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let make = |id, name, group, dir, status, rules, notes| StrategyDef {
@@ -122,15 +121,26 @@ pub fn catalogue() -> Vec<StrategyDef> {
     ]);
     // Chapter 4 day-trading methods (also "Day Trading Systems & Methods", same text)
     v.extend([
-        nd("lebcafm_dt_5_25", "5-25 Envelope Method", "Ch. 4 · Day trading p.204 (DTSM ch. 2)", INTRA,
-            &["E|\"Use 30-minute bars on the S&P futures. Set up an envelope study for five periods ... 25/100 of 1 percent from the closes. Look for trades only when the boundaries ... are at least 150 points apart. When one of the 30-minute bars closes at least 5 points outside the envelope, look to initiate a trade in the opposite direction as soon as the next bar closes back inside\"",
-              "X|\"initial stop loss at the extreme high or low point just before your entry. After the market has moved 75 points in your favor, the stop loss should be changed to at least your break-even point.\" \"Take profits when the market reaches the opposite side of the envelope.\""]),
+        make("lebcafm_dt_5_25", "5-25 Envelope Method (30-minute bars, fade the envelope)", "Ch. 4 · Day trading p.204-205 (DTSM ch. 2)", "Long/Short", Status::NotTestable("coded on real SPX 1-minute bars in lane K57 (decision 236: 30-minute bars, 5-bar envelope at +/-0.25%, the 150/5-point filters as the % at the book's ~380, the 75-point break-even trigger as 0.75 literal S&P index points, SPX only), but 1,853 of 3,593 SPX trades (51.6%, 2014-01-02..2026-08) depend on the order inside one minute: the minute that reaches the 0.75-point trigger also comes back to the entry price, and which came first decides between a break-even exit and a held trade (decision 175 limit 5%). #177b on tradable SPY with the points scaled passes (SPX avg +0.0104% vs SPY +0.0039%, compounded +40.9% vs +13.6%, 2014-01-02..2025-10-21). No result is published. authors/titles-1030/K57w/"),
+            &["F|\"Use 30-minute bars on the S&P futures. Set up an envelope study for five periods, normal (no smoothing), and at a distance of 25/100 of 1 percent from the closes.\" (rules 1-2, p.204) = 5-bar simple average of closes, bands x (1 +/- 0.0025)",
+              "F|\"Look for trades only when the boundaries of the envelope are at least 150 points apart.\" (rule 3) 150 points = 1.50 index points (Exhibit 4-1 axis 34550-35100 = 345.50-351.00). Default: the % equivalent at the book's ~380 (1.50/380 of the average, decision 236 / 207); p.points = 1 uses the literal 1.50 points. +/-0.25% bands are always 0.50% apart, so on either reading this filter never binds on SPX [Declared reading]",
+              "E|\"When one of the 30-minute bars closes at least 5 points outside the envelope, look to initiate a trade in the opposite direction as soon as the next bar closes back inside the envelope.\" (rule 3) 5 points = 0.05 index points; default the % equivalent (0.05/380 of the average), p.points = 1 the literal 0.05. Read: a close at least that far above the upper band arms a short (below the lower band: a long); the first later 30-minute close back inside the bands (no time limit; the stricter reading, only the very next bar, is not coded) is the signal, filled at the next bar's open; a close beyond the opposite band disarms; arming and the excursion are tracked while a position is open, but a signal is taken only if no position is open at its close (Codex review) [Declared reading]",
+              "X|\"Use an initial stop loss at the extreme high or low point just before your entry. After the market has moved 75 points in your favor, the stop loss should be changed to at least your break-even point.\" (rule 4) Read: the stop = the highest high (short) / lowest low (long) of the excursion: the run of 30-minute closes beyond the band that includes the arming bar, through the signal bar; 75 points = 0.75 S&P index points, literal (decision 236, 196(2)), then the stop moves to the entry price [Declared reading]",
+              "X|\"Take profits when the market reaches the opposite side of the envelope. If you want to simplify the profit taking, use the boundary of the envelope at the time you enter the trade as the target, otherwise you might have to adjust your exit point every half hour.\" (rule 5) Default: the opposite band at the signal bar's close, a fixed limit; p.band = 1 re-sets it to the opposite band at each 30-minute close [labelled option]. No close-of-day exit is printed, so none is coded: positions carry overnight",
+              "A|Read: session-aligned 30-minute bars built from the vault's SPX 1-minute file (09:30-16:00 ET), one continuous series across days. Stops and the target fill at their level, or at the minute's open when it opens through; inside a minute the price runs open, the nearer extreme, the farther extreme, close (a tie: the extreme against the position first) [convention]; a minute whose fills differ between the two orders is counted as ambiguous (decision 175)"],
+            "Lane K57 (decision 236): LeBeau & Lucas Ch.4 p.204-205 (PDF 212-213, OCR batch-h3/ocr2/cafm_pdf212*.txt); the chapter's methods are 1992 S&P futures day-trading methods. The 75-point break-even trigger is S&P points, so the card runs on SPX only, from 2014 where the SPX opens are real. Exhibit 4-1 is a chart, not a results table: no book result to compare. No costs; cash-index shorts are hypothetical."),
         nt("lebcafm_dt_hi_mom", "Hi MOM system", "Ch. 4 · p.205-206 (DTSM ch. 3)", "divergence spotting and peak/valley trailing stops are chart judgement",
             &["E|9-minute S&P bars, six-bar momentum, divergence whose first spike penetrates +/-150; enter after the hook (p.205)"]),
         nt("lebcafm_dt_ohama", "Ohama 3-D intermarket divergence", "Ch. 4 · p.207 (DTSM ch. 4)", "\"This method is not a complete system, because of the lack of specific stops and the lack of a more specific exit strategy\" (p.207)",
             &["E|Five-minute charts of related markets; trade the divergence in the most liquid one (p.207)"]),
-        nd("lebcafm_dt_kane", "Kane's %K hooks", "Ch. 4 · p.209 (DTSM ch. 5)", INTRA,
-            &["F|\"Trade only when the hourly chart has made a higher high or lower low within the last two hours\"", "E|5-minute chart, 12-period slow stochastic: \"Buy when the %K ... goes below 20 and turns up\"", "X|\"initial stop of 100 points, or put a closer stop just beyond a recent trading range\"; \"Take profits when the %K hooks in the opposite direction from +80 or -20\""]),
+        make("lebcafm_dt_kane", "Kane's %K hooks (5-minute 12-bar slow stochastic, hourly trend filter)", "Ch. 4 · Day trading p.209-210 (DTSM ch. 5)", "Long/Short", Status::NotTestable("coded on real SPX 1-minute bars in lane K57 (decision 236: 5-minute 12-bar slow stochastic with the book's own Ch.2 3-bar smoothing, hourly trend filter, 1.00-point stop literal, SPX only; 0 of 7,423 SPX trades depend on the order inside one minute), but on tradable SPY with the stop scaled by the trailing 250-day SPX/SPY ratio (decision 177b, 2014-01-02..2025-10-21) the average trade has the opposite sign (scaled SPY -0.0004% over 6,315 trades, compounded -2.9%; SPX +0.0113% over 6,972, +117.8%): test a fires, so the SPX minute result is withheld. No result is published. authors/titles-1030/K57w/"),
+            &["F|\"Determine the trend using one-hour charts. Trade only when the hourly chart has made a higher high or lower low within the last two hours. When the trend is up, look for buy signals only. When the trend is down, look for sell signals only.\" (rule 1, p.209) Read: session-aligned 1-hour bars (09:30 ET; the last one 15:30-16:00); at a 5-minute close, up = one of the last two completed hourly bars made a high above the hourly bar before it, down = a low below it; both or neither = no trend, no entry [Declared reading]",
+              "F|\"Use a five-minute chart with a 12-period slow stochastics.\" (rule 2) The book's own definition (Ch.2 'Slow Stochastics' p.131, PDF 139, OCR K57w/ocr_pdf139.txt): \"%K = today's close minus the low of the last n days, divided by the high of the last n days minus the low of the last n days. %D is a three-day moving average of %K ... Fast %K and %D smoothed by three again produce the slow stochastic\": slow %K = the 3-bar simple average of fast %K(12) [book definition; simple average = Declared reading, 50 when the 12-bar range is 0]",
+              "E|\"Buy when the %K (the faster moving line) goes below 20 and turns up. Sell short when the %K goes above 80 and turns down.\" (rule 2) Read: a buy hook = slow %K one bar ago below 20, at or under the bar before it, and higher now; a sell hook mirrors above 80; with the hourly trend agreeing it fills at the next 5-minute bar's open [Declared reading]",
+              "X|\"Use an initial stop of 100 points\" (rule 3) = 1.00 S&P index point from the fill, literal (Exhibit 4-4 axis 37600-38200 = 376.00-382.00; decision 236, 196(2)); \"or put a closer stop just beyond a recent trading range\" is a judgement and is not modelled",
+              "X|\"Take profits when the %K hooks in the opposite direction from +80 or -20.\" (rule 4) Read: a long exits on a sell hook, a short on a buy hook, at the next bar's open, whatever the trend; if the trend agrees the opposite entry is taken there too (reverse). No close-of-day exit is printed, so positions carry overnight [Declared reading]",
+              "A|Not modelled (advice, decision 236): the break-even move ('a good idea'), the 'very sudden' 100-point profit take, the range stop, the one-minute stochastic divergence exit and the stop-after-two-losses rule. Minute path: the stop fills at its level, or at the minute's open when it opens through [convention]"],
+            "Lane K57 (decision 236): LeBeau & Lucas Ch.4 p.209-210 (PDF 217-218, OCR batch-h3/ocr2/cafm_pdf217*.txt, 218). 5-minute and 1-hour bars built from the vault's SPX 1-minute file, one continuous series across days. The 100-point stop is S&P points, so the card runs on SPX only, from 2014 where the SPX opens are real. Exhibit 4-4 is a chart, not a results table: no book result to compare. No costs; cash-index shorts are hypothetical."),
         nt("lebcafm_dt_chang", "One-minute charts with stochastics", "Ch. 4 · p.211 (DTSM ch. 6)", "trailing stops \"using swing patterns\" are chart judgement",
             &["E|1-minute S&P bars, 21-period stochastic, both lines beyond 80/20 then cross, first hour only (p.211)"]),
         nt("lebcafm_dt_pivots", "Pivot points", "Ch. 4 · p.212-213 (DTSM ch. 7)", "support/resistance levels only; no entry or exit rules",
@@ -181,6 +191,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lebcafm_xt_rsi_trail" => { let mut v = vec![]; ma(&mut v); v.push(p("rsi_n", "RSI days", 9., 2., 30., 1.)); v }
         "lebcafm_xt_hl" => { let mut v = vec![]; ma(&mut v); v.push(p("n", "Trailing stop days (book: 3, 10)", 3., 1., 30., 1.)); v }
         "lebcafm_st_noprofit" => { let mut v = vec![]; ma(&mut v); v.push(p("days", "Days after entry (book: 1, 5, 10)", 1., 1., 20., 1.)); v }
+        // intraday EP block (lane K57): S&P index points, SPX only
+        "lebcafm_dt_5_25" => vec![p("n", "Envelope moving average (30-minute bars)", 5., 2., 50., 1.), p("pct", "Envelope distance (% of the average; book 0.25)", 0.25, 0.05, 2., 0.05),
+            p("be", "Break-even trigger (S&P points in favour; book 75 points = 0.75)", 0.75, 0.05, 20., 0.05),
+            p("points", "Filters: 0 = % equivalent at the book's ~380 (default), 1 = literal 1.50 / 0.05 points", 0., 0., 1., 1.),
+            p("band", "Target: 0 = opposite band at entry (default), 1 = opposite band re-set every 30 minutes", 0., 0., 1., 1.)],
+        "lebcafm_dt_kane" => vec![p("n", "Stochastic length (5-minute bars)", 12., 3., 50., 1.), p("smooth", "Slow %K smoothing (book Ch.2: 3)", 3., 1., 10., 1.),
+            p("lower", "Buy hook below", 20., 1., 50., 1.), p("upper", "Sell hook above", 80., 50., 99., 1.),
+            p("stop", "Initial stop (S&P points; book 100 points = 1.00)", 1., 0.1, 20., 0.05)],
         _ => return None,
     })
 }
@@ -262,6 +280,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let u = |k: &str| g(k).round().max(1.) as usize;
+    match id { // intraday EP block (lane K57)
+        "lebcafm_dt_5_25" => return Some(env_5_25(x, from, to, u("n"), g("pct") / 100., g("be"), g("points") >= 0.5, g("band") >= 0.5)),
+        "lebcafm_dt_kane" => return Some(kane(x, from, to, u("n"), u("smooth"), g("lower"), g("upper"), g("stop"))),
+        _ => {}
+    }
     let mut out: Vec<Trade> = vec![];
     let mut cur: Option<Trade> = None;
     match id {
@@ -438,6 +461,117 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(out)
 }
 
+// ---- intraday EP block (lane K57, 5 Nov 2026, decision #236; authors/titles-1030/K57.tsv)
+// Ch.4 day-trading methods on N-minute bars built from the vault's 1-minute file (n1intra::series over intraday_ep::day_bars,
+// session-aligned), one continuous series across days (EP2); orders inside a bar walked by the K46 minute walker
+// (n1intra::minute). Amounts in S&P index points: SPX only. Independent check: authors/titles-1030/K57w/k57_ref.py.
+use super::n1intra::{minute, series, Ord};
+use crate::intraday::day_trade;
+
+/// A position: direction, entry price, entry day row, stop, target, break-even reached.
+#[derive(Clone, Copy)]
+struct Dp { d: f64, ep: f64, ei: usize, stop: f64, tgt: f64, be: bool }
+/// Walker state: the position and the exits filled in the current bar (position, price, reason).
+#[derive(Clone, Default)]
+struct Ds { pos: Option<Dp>, done: Vec<(Dp, f64, &'static str)> }
+impl Ds {
+    fn walk(&mut self, z: &super::n1intra::Bn, orders: &dyn Fn(&Ds) -> Vec<Ord>, fill: &dyn Fn(&mut Ds, u8, f64), out: &mut Vec<Trade>) {
+        for q in &z.m { let adv = self.pos.map_or(false, |p| p.d < 0.0); minute(q, self, orders, fill, adv); } // ambiguity: counted by the reference
+        for (p, px, why) in self.done.drain(..) { out.push(day_trade(p.d, p.ei, p.ep, z.i, px, why, "open", false)); }
+    }
+    fn finish(self, b: &[super::n1intra::Bn], mut out: Vec<Trade>) -> Vec<Trade> {
+        if let (Some(p), Some(z)) = (self.pos, b.last()) { out.push(day_trade(p.d, p.ei, p.ep, z.i, z.c, "open", "open", true)); }
+        out
+    }
+}
+
+/// 5-25 Envelope (p.204-205): 30-minute bars, n-bar SMA of closes +/- pct. A close at least `thr` beyond a band arms the
+/// opposite trade; the first later close back inside (bands at least `wide` apart) enters at the next bar's open; stop at the
+/// excursion extreme, moved to the entry once the price has gone `be` points in favour; target the opposite band.
+fn env_5_25(x: &Ctx, from: usize, to: usize, n: usize, pct: f64, be: f64, points: bool, update: bool) -> Vec<Trade> {
+    let b = series(x, from, to, 30);
+    let ma = sma(&b.iter().map(|z| z.c).collect::<Vec<_>>(), n);
+    let orders = |s: &Ds| -> Vec<Ord> {
+        let Some(p) = s.pos else { return vec![] };
+        let mut v = vec![Ord { up: p.d < 0.0, lv: p.stop, tag: 10 }, Ord { up: p.d > 0.0, lv: p.tgt, tag: 11 }];
+        if !p.be { v.push(Ord { up: p.d > 0.0, lv: p.ep + p.d * be, tag: 12 }); }
+        v
+    };
+    let fill = |s: &mut Ds, t: u8, px: f64| {
+        let Some(mut p) = s.pos else { return };
+        if t == 12 { p.be = true; p.stop = if p.d > 0.0 { p.stop.max(p.ep) } else { p.stop.min(p.ep) }; s.pos = Some(p); return; }
+        s.pos = None;
+        s.done.push((p, px, if t == 11 { "target" } else if p.be { "break-even stop" } else { "initial stop" }));
+    };
+    let (mut st, mut out) = (Ds::default(), vec![]);
+    let (mut pend, mut armed, mut ext) = (None::<(f64, f64, f64)>, 0.0, 0.0);
+    let (mut run_hi, mut run_lo) = (f64::NEG_INFINITY, f64::INFINITY); // extremes of the current run of closes beyond a band
+    for (k, z) in b.iter().enumerate() {
+        if let Some((d, stop, tgt)) = pend.take() { st.pos = Some(Dp { d, ep: z.m[0].o, ei: z.i, stop, tgt, be: false }); }
+        st.walk(z, &orders, &fill, &mut out);
+        if !ma[k].is_finite() { continue; }
+        let (u, l) = (ma[k] * (1.0 + pct), ma[k] * (1.0 - pct));
+        if update { if let Some(p) = st.pos.as_mut() { p.tgt = if p.d > 0.0 { u } else { l }; } }
+        let (thr, wide) = if points { (0.05, 1.5) } else { (ma[k] * 0.05 / 380.0, ma[k] * 1.5 / 380.0) };
+        let mut sig = 0.0;
+        if z.c > u {
+            run_hi = run_hi.max(z.h);
+            if armed > 0.0 { armed = 0.0; }
+            if armed < 0.0 { ext = f64::max(ext, z.h); } else if z.c - u >= thr { armed = -1.0; ext = run_hi; }
+        } else if z.c < l {
+            run_lo = run_lo.min(z.l);
+            if armed < 0.0 { armed = 0.0; }
+            if armed > 0.0 { ext = f64::min(ext, z.l); } else if l - z.c >= thr { armed = 1.0; ext = run_lo; }
+        } else if armed != 0.0 {
+            ext = if armed < 0.0 { ext.max(z.h) } else { ext.min(z.l) };
+            sig = armed;
+            armed = 0.0;
+        }
+        if z.c <= u { run_hi = f64::NEG_INFINITY; }
+        if z.c >= l { run_lo = f64::INFINITY; }
+        if sig != 0.0 && u - l >= wide && st.pos.is_none() { pend = Some((sig, ext, if sig > 0.0 { u } else { l })); }
+    }
+    st.finish(&b, out)
+}
+
+/// Kane's %K hooks (p.209-210): slow %K = `sm`-bar simple average of fast %K(n) on 5-minute bars (Ch.2 p.131); a hook under
+/// `lo` buys / over `hi` sells at the next bar's open when the hourly trend agrees; the opposite hook exits; stop `stop` points.
+fn kane(x: &Ctx, from: usize, to: usize, n: usize, sm: usize, lo: f64, hi: f64, stop: f64) -> Vec<Trade> {
+    let (b, hb) = (series(x, from, to, 5), series(x, from, to, 60));
+    let fast: Vec<f64> = (0..b.len()).map(|k| if k + 1 < n { f64::NAN } else {
+        let w = &b[k + 1 - n..=k];
+        let hh = w.iter().map(|z| z.h).fold(f64::NEG_INFINITY, f64::max);
+        let ll = w.iter().map(|z| z.l).fold(f64::INFINITY, f64::min);
+        if hh > ll { 100.0 * (b[k].c - ll) / (hh - ll) } else { 50.0 } }).collect();
+    let sk = sma(&fast, sm);
+    let orders = |s: &Ds| -> Vec<Ord> { s.pos.map_or(vec![], |p| vec![Ord { up: p.d < 0.0, lv: p.stop, tag: 10 }]) };
+    let fill = |s: &mut Ds, _: u8, px: f64| { if let Some(p) = s.pos.take() { s.done.push((p, px, "initial stop")); } };
+    let (mut st, mut out) = (Ds::default(), vec![]);
+    let (mut pend, mut pend_exit, mut j) = (0.0, false, 0usize); // j = hourly bars completed so far
+    for (k, z) in b.iter().enumerate() {
+        if pend_exit || pend != 0.0 {
+            let o = z.m[0].o;
+            if let Some(p) = st.pos.filter(|p| pend_exit || p.d != pend) { out.push(day_trade(p.d, p.ei, p.ep, z.i, o, "%K hook", "open", false)); st.pos = None; }
+            if pend != 0.0 && st.pos.is_none() { st.pos = Some(Dp { d: pend, ep: o, ei: z.i, stop: o - pend * stop, tgt: f64::NAN, be: false }); }
+            (pend, pend_exit) = (0.0, false);
+        }
+        st.walk(z, &orders, &fill, &mut out);
+        while j < hb.len() && (hb[j].i < z.i || (hb[j].i == z.i && hb[j].s <= z.s)) { j += 1; }
+        if k < 2 || !(sk[k].is_finite() && sk[k - 1].is_finite() && sk[k - 2].is_finite()) { continue; }
+        let buy = sk[k - 1] < lo && sk[k] > sk[k - 1] && sk[k - 1] <= sk[k - 2];
+        let sell = sk[k - 1] > hi && sk[k] < sk[k - 1] && sk[k - 1] >= sk[k - 2];
+        let trend = if j < 3 { 0.0 } else {
+            let h = &hb[j - 3..j];
+            let (up, dn) = (h[2].h > h[1].h || h[1].h > h[0].h, h[2].l < h[1].l || h[1].l < h[0].l);
+            if up && !dn { 1.0 } else if dn && !up { -1.0 } else { 0.0 } };
+        let d = st.pos.map_or(0.0, |p| p.d);
+        if (d > 0.0 && sell) || (d < 0.0 && buy) { pend_exit = true; }
+        if buy && trend > 0.0 && d <= 0.0 { pend = 1.0; } else if sell && trend < 0.0 && d >= 0.0 { pend = -1.0; }
+    }
+    st.finish(&b, out)
+}
+// ---- end intraday EP block
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,6 +592,100 @@ mod tests {
         assert_eq!(t.legs[0].i, 41); // cross on the close of bar 40, open of 41
         assert_eq!(t.exit_i, 46);
         assert_eq!(t.exit_px, c[46]);
+    }
+    // ---- lane K57: the Ch.4 minute rules on hand-built minutes (one minute per 5- or 30-minute bucket = that bar)
+    fn minutes(name: &str, days: &[(&str, Vec<String>)]) -> &'static crate::intraday::Minutes {
+        let dir = std::env::temp_dir().join(format!("k57{name}{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut body, mut idx) = (String::from("Date,Time,Open,High,Low,Close\n"), String::from("Date,offset,bytes\n"));
+        for (d, lines) in days {
+            let start = body.len();
+            for l in lines { body.push_str(&format!("{d},{l}\n")); }
+            idx.push_str(&format!("{d},{start},{}\n", body.len() - start));
+        }
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), &idx).unwrap();
+        Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap()))
+    }
+    fn line(m: u16, o: f64, h: f64, l: f64, c: f64) -> String { format!("{:02}:{:02},{o},{h},{l},{c}", m / 60, m % 60) }
+    fn day_rows(d: &[&str]) -> Vec<Row> { d.iter().map(|d| Row { ticker: "T".into(), date: (*d).into(), open: 1., high: 1., low: 1., close: 1., volume: None }).collect() }
+    fn t4(t: &[Trade]) -> Vec<(f64, f64, f64, String)> { t.iter().map(|z| (z.dir, (z.legs[0].px * 1e6).round() / 1e6, (z.exit_px * 1e6).round() / 1e6, z.reason.clone())).collect() }
+    #[test]
+    fn k57_envelope_fade_target_and_break_even() {
+        // 30-minute bars: five closes at 100 (MA 100, bands 99.75 / 100.25), bar 6 closes 100.6 (0.23 above its upper band
+        // 100.37 >= 0.05/380 of the MA): short armed, excursion high 100.7; bar 7 closes 100.2, inside (bands 99.9096 /
+        // 100.4104): short at bar 8's open 100.1, stop 100.7, target the lower band 99.9096, reached on bar 8's low.
+        let flat = |m: u16| line(m, 100., 100.05, 99.95, 100.);
+        let mut v: Vec<String> = (0..5).map(|k| flat(570 + 30 * k)).collect();
+        v.push(line(720, 100.1, 100.7, 100.05, 100.6));
+        v.push(line(750, 100.5, 100.5, 100.15, 100.2));
+        let mut v1 = v.clone();
+        v1.push(line(780, 100.1, 100.15, 99.8, 99.85));
+        let r = day_rows(&["2020-01-02"]);
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.minutes = Some(minutes("env1", &[("2020-01-02", v1)]));
+        assert_eq!(t4(&run("lebcafm_dt_5_25", &x, 0, 0, &Params::new()).unwrap()), vec![(-1., 100.1, 99.909600, "target".into())]);
+        // break-even trigger 0.1 (option): bar 8 reaches 100.0 (not the target), bar 9 comes back to the entry 100.1
+        let mut v2 = v.clone();
+        v2.push(line(780, 100.1, 100.12, 99.95, 100.05));
+        v2.push(line(810, 100.05, 100.2, 100.0, 100.15));
+        x.minutes = Some(minutes("env2", &[("2020-01-02", v2.clone())]));
+        let mut p = Params::new();
+        p.insert("be".into(), 0.1);
+        assert_eq!(t4(&run("lebcafm_dt_5_25", &x, 0, 0, &p).unwrap()), vec![(-1., 100.1, 100.1, "break-even stop".into())]);
+        // default 0.75 trigger is not reached: the position is still open at the end, marked open at the last close
+        let t = run("lebcafm_dt_5_25", &x, 0, 0, &Params::new()).unwrap();
+        assert_eq!((t4(&t), t[0].open), (vec![(-1., 100.1, 100.15, "open".into())], true));
+        // literal-point filters (option): at a price of 100 the bands are 0.50 apart, under the literal 1.50: no trade
+        p.insert("points".into(), 1.0);
+        x.minutes = Some(minutes("env3", &[("2020-01-02", v2)]));
+        assert!(run("lebcafm_dt_5_25", &x, 0, 0, &p).unwrap().is_empty());
+    }
+    #[test]
+    fn k57_kane_hook_with_hourly_trend_and_stop() {
+        // day 1 rises 0.1 every 5 minutes (hourly highs and lows rising: trend up); day 2: 107.0, 106.0, 105.0 (%K 0, 0, 0 with
+        // n = 3, no smoothing), 105.5 (%K 50): a buy hook from under 20 at the 09:50 close; long at the next bar's open 105.8,
+        // whose low 104.7 reaches the 1.00 stop 104.8 after the high (the nearer extreme).
+        let d1: Vec<String> = (0..78u16).map(|k| { let p = 100. + 0.1 * k as f64; line(570 + 5 * k, p, p, p, p) }).collect();
+        let d2: Vec<String> = [107.0, 106.0, 105.0, 105.5].iter().enumerate().map(|(k, &p)| line(570 + 5 * k as u16, p, p, p, p))
+            .chain([line(590, 105.8, 105.9, 104.7, 104.9)]).collect();
+        let r = day_rows(&["2020-01-02", "2020-01-03"]);
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.minutes = Some(minutes("kane1", &[("2020-01-02", d1.clone()), ("2020-01-03", d2)]));
+        let mut p = Params::new();
+        p.insert("n".into(), 3.0);
+        p.insert("smooth".into(), 1.0);
+        assert_eq!(t4(&run("lebcafm_dt_kane", &x, 0, 1, &p).unwrap()), vec![(1., 105.8, 104.8, "initial stop".into())]);
+        // the same day 2 after a falling day 1 (hourly trend down): the buy hook is not taken
+        let d0: Vec<String> = (0..78u16).map(|k| { let p = 115. - 0.1 * k as f64; line(570 + 5 * k, p, p, p, p) }).collect();
+        let d2b: Vec<String> = [107.0, 106.0, 105.0, 105.5].iter().enumerate().map(|(k, &p)| line(570 + 5 * k as u16, p, p, p, p)).collect();
+        x.minutes = Some(minutes("kane2", &[("2020-01-02", d0), ("2020-01-03", d2b)]));
+        assert!(run("lebcafm_dt_kane", &x, 0, 1, &p).unwrap().is_empty());
+    }
+    /// Lane K57 engine-vs-reference dump (run by hand; K57w/cmp_dump.py compares with k57_ref.py):
+    /// VAULT_US=<data/us_data.csv> VAULT_M1_DIR=<data/intraday> K57_OUT=<file> cargo test --release k57_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn k57_dump() {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("K57_OUT").unwrap()).unwrap());
+        for tk in ["SPX", "SPY"] {
+            let rows = crate::load_csv(&std::env::var("VAULT_US").unwrap()).unwrap().remove(tk).unwrap();
+            let mut x = Ctx::new(&rows, &rows, &[]);
+            x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(&std::env::var("VAULT_M1_DIR").unwrap(), tk).unwrap())));
+            let from = rows.partition_point(|r| r.date.as_str() < x.minutes.unwrap().first());
+            let sets: [(&str, &str, &[(&str, f64)]); 5] = [("lebcafm_dt_5_25", "default", &[]), ("lebcafm_dt_5_25", "points_band", &[("points", 1.), ("band", 1.)]),
+                ("lebcafm_dt_kane", "default", &[]), ("lebcafm_dt_kane", "n14_s1_stop2", &[("n", 14.), ("smooth", 1.), ("stop", 2.)]), ("lebcafm_dt_5_25", "be0.3_n8", &[("be", 0.3), ("n", 8.)])];
+            for (id, tag, kv) in sets {
+                let mut p = Params::new();
+                for (k, v) in kv { p.insert((*k).into(), *v); }
+                for a in [from, rows.partition_point(|r| r.date.as_str() < "2014-01-02")] {
+                    for z in run(id, &x, a, rows.len() - 1, &p).unwrap() {
+                        writeln!(f, "{tk},{id},{tag},{},{},{},{},{},{},{},{}", rows[a].date, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason, z.open).unwrap();
+                    }
+                }
+            }
+        }
     }
     #[test]
     fn parabolic_flips_and_trails() {

@@ -146,6 +146,12 @@ pub const K53: &[&str] = &["jb30d_or30", "stad7_idbo", "stad7_fibret", "mlhpt_ma
 pub const K53_SPY: &[&str] = &["jchr1_lizard_long", "jchr1_lizard_short"];
 pub fn spy_only(id: &str) -> bool { K53_SPY.contains(&id) }
 // ---- end lane K53 block
+// ---- lane K57 block (5 Nov 2026, decision #236; authors/titles-1030/K57.tsv; books/lebcafm.rs)
+// lebcafm_dt_5_25 and lebcafm_dt_kane (LeBeau & Lucas Ch.4, S&P points, SPX only) are coded on the minute bars but held:
+// 5-25: 1,853 of 3,593 SPX trades (51.6%, 2014-2026) depend on the order inside one minute (the literal 0.75-point break-even
+// trigger and the return to the entry in the same minute), decision #175 limit 5%; Kane: #177b test a fires (scaled SPY avg
+// -0.0004% vs SPX +0.0113%, 2014-01-02..2025-10-21). K57w/check177b.out, ambiguity_breakdown.txt.
+// ---- end lane K57 block
 // Decision #177a for these rules (flagged on the SPY/SPX overlap: SPY only) goes into intraday_w3::SPY, the one #177a list.
 
 #[cfg(test)]
