@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
 import {
-  research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, ago, dayKey, readHashParams, hashWith,
-  type Card, type Employee, type Me, type Note, type NoteType, type Page, type Site, type Strategy, type TimelineItem, type Verdict,
+  research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, csvCell, ago, dayKey, readHashParams, hashWith,
+  type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareInventory, type ShareSource, type Site, type Strategy,
+  type TimelineItem, type Verdict,
 } from "../services/research";
 
 /* Research page: employees enter with their name and the team PIN, then browse author → book → strategy cards,
@@ -78,6 +79,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
   if (p.get("s")) body = <StrategyView key={p.get("s")} sKey={p.get("s")!} me={me} />;
   else if (v === "mine" && who) body = <WorkView person={who} title="My work" admin={false} />;
   else if (v === "team" && me.admin) body = <TeamView />;
+  else if (v === "share" && me.admin) body = <ShareView />;
   else if (v === "claude") body = <ClaudeView />;
   else if (v === "emp" && me.admin && p.get("emp")) body = <WorkView person={p.get("emp")!} title={`${p.get("emp")}'s work`} admin />;
   else if (p.get("book")) body = <BookView author={p.get("author") || ""} book={p.get("book")!} />;
@@ -92,6 +94,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
           {who && <a href={hashWith({ v: "mine" }, "#/research")} aria-current={v === "mine" ? "page" : undefined}>My work</a>}
           <a href={hashWith({ v: "claude" }, "#/research")} aria-current={v === "claude" ? "page" : undefined}>Claude's work</a>
           {me.admin && <a href={hashWith({ v: "team" }, "#/research")} aria-current={v === "team" || v === "emp" ? "page" : undefined}>Employees</a>}
+          {me.admin && <a href={hashWith({ v: "share" }, "#/research")} aria-current={v === "share" ? "page" : undefined}>Research share</a>}
         </nav>
         <span className="rp-who">{who ? <>Hi, <b>{who}</b></> : null}{me.admin && <span className="rp-tag">Admin</span>}
           <button type="button" className="rp-link" onClick={leave}>Switch person</button></span>
@@ -488,5 +491,229 @@ function TeamView() {
         </div>
       )}
     </section>
+  );
+}
+
+/* ---------------------------------------------------------------- admin: what the research share holds */
+
+const KIND_ORDER = ["author", "company", "website", "magazine", "publisher", "course", "platform", "unknown"];
+const Check = ({ ok, children }: { ok: boolean; children: ReactNode }) => (
+  <p className={`rp-check ${ok ? "ok" : "bad"}`}><b aria-hidden="true">{ok ? "✓" : "✗"}</b> <span className="rp-visually-hidden">{ok ? "Check passed:" : "Check failed:"}</span> {children}</p>
+);
+type SortKey = "name" | "kind" | "files" | "titles" | "bytes" | "opened" | "strategies" | "backtested";
+const SHARE_PER = 50;
+
+function ShareView() {
+  const inv = useLoad(research.share, []);
+  if (inv.error) return <section><h1>Research share</h1><Problem error={inv.error} retry={inv.reload} /></section>;
+  if (!inv.data) return <p className="rp-loading">Counting…</p>;
+  return <ShareBody d={inv.data} />;
+}
+
+function ShareBody({ d }: { d: ShareInventory }) {
+  const L = d.listing, c = d.claude;
+  const typeSum = d.types.reduce((a, t) => a + t.files, 0), typeBytes = d.types.reduce((a, t) => a + t.bytes, 0);
+  const srcSum = d.sources.reduce((a, s) => a + s.files, 0), kindSum = d.kinds.reduce((a, k) => a + k.files, 0);
+  const people = d.kinds.find(k => k.kind === "author")?.sources ?? 0;
+  const unnamed = d.kinds.filter(k => k.kind !== "author").reduce((a, k) => a + k.sources, 0);
+  const strategiesOnSources = d.sources.reduce((a, s) => a + s.strategies, 0);
+  const listed = fmtDate(L.date);
+  return (
+    <section className="rp-share">
+      <h1>Research share</h1>
+      <p className="rp-muted">What <code>{L.root}</code> holds, counted file by file from the read-only listing of <b>{fmtStamp(L.date)}</b>, and what Claude has done with it so far.</p>
+      <div className="rp-stats">
+        <Stat n={L.files} label="Files" cls="team" />
+        <div className="rp-stat team" title={`${L.bytes.toLocaleString("en-IN")} bytes`}><b>{fmtBytes(L.bytes)}</b><span>Total size</span></div>
+        <Stat n={L.folders} label="Folders" cls="team" />
+        <Stat n={people} label="Named authors (people)" cls="todo" />
+        <Stat n={unnamed} label="Unnamed sources (company, website, magazine…)" cls="todo" />
+        {c.strategies != null && <Stat n={c.strategies} label="Strategies found" cls="held" />}
+        {c.backtested != null && <Stat n={c.backtested} label="Backtested" cls="ok" />}
+      </div>
+      <div className="rp-checks">
+        <Check ok={typeSum === L.files && typeBytes === L.bytes}>Every file is in exactly one resource type: {d.types.length} types add up to {num(typeSum)} files and {typeBytes.toLocaleString("en-IN")} bytes (listing: {num(L.files)} files, {L.bytes.toLocaleString("en-IN")} bytes).</Check>
+        <Check ok={srcSum === L.files && kindSum === L.files}>Every file has exactly one source: {num(d.sources.length)} sources in {d.kinds.length} kinds add up to {num(srcSum)} files.</Check>
+        {c.strategies != null && <Check ok={strategiesOnSources + c.unmatched.strategies === c.strategies}>Strategies: {num(strategiesOnSources)} sit on a share source + {num(c.unmatched.strategies)} whose site author has no matching share name = {num(c.strategies)} on the site.</Check>}
+        {d.compare && <Check ok={d.compare.base_files + d.compare.added - d.compare.removed === L.files}>
+          Since the listing of {fmtDate(d.compare.base_date)} ({num(d.compare.base_files)} files): <b>{num(d.compare.added)}</b> added, <b>{num(d.compare.removed)}</b> removed, {num(d.compare.size_changed)} changed size; {num(d.compare.base_files)} + {num(d.compare.added)} − {num(d.compare.removed)} = {num(L.files)}.
+        </Check>}
+      </div>
+
+      <h2 className="rp-section">By resource type</h2>
+      <TypeBars d={d} />
+
+      <h2 className="rp-section">By author or source</h2>
+      <SourceTable d={d} />
+
+      <h2 className="rp-section">What Claude has done</h2>
+      <ClaudeDone d={d} />
+
+      <h2 className="rp-section">How these numbers are counted</h2>
+      <div className="rp-panel rp-how">
+        <p><b>The listing.</b> One read-only <code>find</code> run over the whole share on {fmtStamp(L.date)} ({L.file}): every file with its size. Nothing on the share is changed. Folders: {L.folders_method}. Sizes are shown as Windows Explorer shows them (1 GB = 1024³ bytes); hover a size for the exact bytes.</p>
+        <p><b>Copies.</b> {num(L.duplicate_copies)} of the {num(L.files)} files are extra copies (same file name and size somewhere else, mostly the USB HDD backups); every count on this page includes them, so the totals match what Explorer shows. Without the copies: {num(L.unique_files)} files.</p>
+        <p><b>Resource types.</b> {d.rules.types}</p>
+        <table className="rp-table rp-rules-table">
+          <thead><tr><th>Type</th><th>Rule</th></tr></thead>
+          <tbody>{d.types.map(t => <tr key={t.id}><td>{t.label}</td><td>{t.rule}</td></tr>)}</tbody>
+        </table>
+        <p><b>Sources.</b></p>
+        <ul>{d.rules.sources.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        <p><b>Claude's work.</b></p>
+        <ul>{d.rules.claude.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        <p><b>Reconciliation.</b> The generator stops without writing the page data if the types, the sources, or the source kinds do not add up to the listing's file and byte totals, or the strategies do not add up to the site's count. The green ticks above repeat that check in your browser.</p>
+        <p className="rp-small rp-muted">Listing {listed}; page data generated {fmtStamp(d.generated_at)}{c.as_of ? `; site counts as of ${fmtStamp(c.as_of)} (run ${c.run})` : ""}.</p>
+      </div>
+    </section>
+  );
+}
+
+function TypeBars({ d }: { d: ShareInventory }) {
+  const max = Math.max(1, ...d.types.map(t => t.files));
+  const groups = [...new Set(d.types.map(t => t.group))];
+  return (
+    <div className="rp-panel">
+      {groups.map(g => {
+        const rows = d.types.filter(t => t.group === g);
+        return (
+          <div key={g} className="rp-hgroup">
+            <h3>{g} <span className="rp-muted">· {num(rows.reduce((a, t) => a + t.files, 0))} files</span></h3>
+            <ul className="rp-hbars">
+              {rows.map(t => (
+                <li key={t.id} title={t.rule}>
+                  <span className="rp-hlabel">{t.label}</span>
+                  <span className="rp-htrack"><i style={{ width: `${(100 * t.files) / max}%` }} /></span>
+                  <b>{num(t.files)}</b>
+                  <span className="rp-small rp-muted" title={`${t.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(t.bytes)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function topTypes(s: ShareSource, label: Map<string, string>) {
+  return Object.entries(s.types).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${label.get(k) || k} ${n.toLocaleString("en-IN")}`);
+}
+
+function SourceTable({ d }: { d: ShareInventory }) {
+  const [q, setQ] = useState(""), [kind, setKind] = useState(""), [page, setPage] = useState(1);
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "files", desc: true });
+  const label = useMemo(() => new Map(d.types.map(t => [t.id, t.label])), [d]);
+  const kindLabel = useMemo(() => new Map(d.kinds.map(k => [k.kind, k.label])), [d]);
+  const rows = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const list = d.sources.filter(s => (!kind || s.kind === kind) && words.every(w => s.name.toLowerCase().includes(w) || s.aliases.some(a => a.toLowerCase().includes(w))));
+    const k = sort.key, dir = sort.desc ? -1 : 1;
+    return list.sort((a, b) => (k === "name" || k === "kind" ? a[k].localeCompare(b[k]) : a[k] - b[k]) * dir || a.name.localeCompare(b.name));
+  }, [d, q, kind, sort]);
+  const pages = Math.max(1, Math.ceil(rows.length / SHARE_PER)), at = Math.min(page, pages);
+  const head = (key: SortKey, text: string, numeric = true) => (
+    <th aria-sort={sort.key === key ? (sort.desc ? "descending" : "ascending") : undefined} className={numeric ? "n" : undefined}>
+      <button type="button" onClick={() => { setSort({ key, desc: sort.key === key ? !sort.desc : numeric }); setPage(1); }}>{text}{sort.key === key ? (sort.desc ? " ↓" : " ↑") : ""}</button>
+    </th>
+  );
+  const download = () => {
+    const cols = ["Source", "Kind", "Files", "Bytes", "Titles", "Files opened by Claude", "Files with a Claude decision", "Strategies found", "Backtested", "Held", "Not reviewed", "Resource types", "Other spellings"];
+    const lines = [cols, ...rows.map(s => [s.name, kindLabel.get(s.kind) || s.kind, s.files, s.bytes, s.titles, s.opened, s.decided, s.strategies, s.backtested, s.held, s.unreviewed, topTypes(s, label).join("; "), s.aliases.join("; ")])];
+    const blob = new Blob(["﻿" + lines.map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `research-share-sources-${d.listing.date.slice(0, 10)}.csv`;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const kinds = [...d.kinds].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+  return (
+    <>
+      <div className="rp-panel">
+        <table className="rp-table">
+          <thead><tr><th>Kind</th><th className="n">Sources</th><th className="n">Files</th><th className="n">Titles</th><th className="n">Size</th></tr></thead>
+          <tbody>
+            {kinds.map(k => (
+              <tr key={k.kind}><td>{k.label}</td><td className="n">{num(k.sources)}</td><td className="n">{num(k.files)}</td><td className="n">{num(k.titles)}</td><td className="n" title={`${k.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(k.bytes)}</td></tr>
+            ))}
+          </tbody>
+          <tfoot><tr><td>Total</td><td className="n">{num(d.sources.length)}</td><td className="n">{num(kinds.reduce((a, k) => a + k.files, 0))}</td><td className="n">{num(kinds.reduce((a, k) => a + k.titles, 0))}</td><td className="n">{fmtBytes(kinds.reduce((a, k) => a + k.bytes, 0))}</td></tr></tfoot>
+        </table>
+      </div>
+      <div className="rp-tools">
+        <input type="search" placeholder="Find an author or source…" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} aria-label="Find an author or source" />
+        <div className="rp-chips" role="group" aria-label="Kind of source">
+          <button type="button" aria-pressed={!kind} onClick={() => { setKind(""); setPage(1); }}>All</button>
+          {kinds.map(k => <button key={k.kind} type="button" aria-pressed={kind === k.kind} onClick={() => { setKind(k.kind); setPage(1); }}>{k.label.replace(/ \(.*\)$/, "")}</button>)}
+        </div>
+        <button type="button" onClick={download}>Download CSV ({num(rows.length)} rows)</button>
+      </div>
+      <div className="rp-panel rp-scroll">
+        <table className="rp-table rp-sources">
+          <thead><tr>{head("name", "Source", false)}{head("kind", "Kind", false)}{head("files", "Files")}{head("titles", "Titles")}{head("bytes", "Size")}<th>Resource types</th>{head("opened", "Opened")}{head("strategies", "Strategies")}{head("backtested", "Backtested")}</tr></thead>
+          <tbody>
+            {rows.slice((at - 1) * SHARE_PER, at * SHARE_PER).map(s => (
+              <tr key={s.id}>
+                <td><b>{s.name}</b>{s.aliases.length > 0 && <span className="rp-small rp-muted"> also {s.aliases.slice(0, 3).join(", ")}</span>}</td>
+                <td className="rp-small">{(kindLabel.get(s.kind) || s.kind).replace(/ \(.*\)$/, "")}</td>
+                <td className="n">{num(s.files)}</td><td className="n">{num(s.titles)}</td>
+                <td className="n" title={`${s.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(s.bytes)}</td>
+                <td className="rp-small rp-muted">{topTypes(s, label).slice(0, 3).join(" · ")}{Object.keys(s.types).length > 3 ? " …" : ""}</td>
+                <td className="n">{num(s.opened)}</td><td className="n">{s.strategies ? num(s.strategies) : "–"}</td><td className="n">{s.strategies ? num(s.backtested) : "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length && <p className="rp-empty">No source matches “{q}”.</p>}
+      </div>
+      <p className="rp-small rp-muted">{num(rows.length)} of {num(d.sources.length)} sources · {num(rows.reduce((a, s) => a + s.files, 0))} files. “Opened” = files Claude's records say were read; “–” = no strategy on the site for this source.</p>
+      <Pager page={{ page: at, pages }} set={setPage} />
+    </>
+  );
+}
+
+const counted = (n: number | undefined) => (n == null ? "not counted" : num(n));
+function ClaudeDone({ d }: { d: ShareInventory }) {
+  const c = d.claude, f = c.files;
+  const parts: [string, number, string][] = [["Opened (text read)", f.opened, "ok"], ["Decided from the title or name", f.title, "held"],
+    ["Decided, reading not stated", f.stated, "team"], ["Covered by a folder-level decision", f.folder, "fold"], ["No record yet", f.none, "todo"]];
+  return (
+    <>
+      <div className="rp-panel">
+        <p className="rp-big"><b>{num(f.opened)}</b> of <b>{num(f.total)}</b> files opened, <b>{counted(c.strategies)}</b> strategies found, <b>{counted(c.backtested)}</b> backtested.</p>
+        <div className="rp-bar3 rp-bar5" role="img" aria-label={parts.map(([l, n]) => `${l}: ${n}`).join(", ")}>
+          {parts.map(([l, n, cls]) => <i key={l} className={cls} style={{ width: `${(100 * n) / Math.max(1, f.total)}%` }} />)}
+        </div>
+        <ul className="rp-legend rp-legend5">
+          {parts.map(([l, n, cls]) => <li key={l}><i className={cls} />{l}: <b>{num(n)}</b></li>)}
+        </ul>
+        <Check ok={parts.reduce((a, p) => a + p[1], 0) === f.total}>{parts.map(p => num(p[1])).join(" + ")} = {num(f.total)} files.</Check>
+        {c.strategies != null && (
+          <>
+            <h3>Strategies on the site</h3>
+            <p>{num(c.strategies)} found: <b>{num(c.backtested)}</b> backtested, <b>{num(c.held)}</b> held with a reason, <b>{num(c.unreviewed)}</b> not reviewed yet (site counts as of {fmtStamp(c.as_of!)}).</p>
+            {c.reasons && <ul className="rp-reasons">{c.reasons.map(r => <li key={r.reason}><span>{r.reason}</span><b>{num(r.count)}</b></li>)}</ul>}
+            {c.unmatched.strategies > 0 && <p className="rp-small rp-muted">{num(c.unmatched.strategies)} strategies ({num(c.unmatched.backtested)} backtested) belong to {num(c.unmatched.authors.length)} site authors whose name is not a source name in the share (for example company packs or book co-authors filed under another name): {c.unmatched.authors.slice(0, 12).join(", ")}{c.unmatched.authors.length > 12 ? "…" : ""}. They are counted in the totals, not on a source row.</p>}
+          </>
+        )}
+      </div>
+      <div className="rp-panel rp-scroll">
+        <h3>By batch of work</h3>
+        <table className="rp-table">
+          <thead><tr><th>Batch</th><th>Last record</th><th className="n">Records</th><th className="n">Files named</th><th className="n">Opened</th><th className="n">From title</th><th className="n">In folder decisions</th><th className="n">Paths not in today's listing</th></tr></thead>
+          <tbody>
+            {c.batches.map(b => (
+              <tr key={b.id} title={b.record_files.join("\n")}>
+                <td>{b.label}</td><td>{b.date ? fmtDate(b.date) : "not counted"}</td><td className="n">{num(b.records)}</td><td className="n">{num(b.files)}</td>
+                <td className="n">{num(b.opened)}</td><td className="n">{num(b.title)}</td><td className="n">{num(b.folder_files)}</td><td className="n">{num(b.paths_not_found)}</td>
+              </tr>
+            ))}
+            {c.ocr.map(o => (
+              <tr key={o.file}><td>OCR of scanned rule pages ({o.file.split("/").pop()})</td><td>{fmtDate(o.date)}</td><td className="n">{num(o.methods)}</td><td className="n" colSpan={5}>records name methods and pages, not files: files not counted</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="rp-small rp-muted">A file can appear in more than one batch, so the batch rows do not add up to the file total above; the total counts each file once, with its strongest evidence.</p>
+      </div>
+    </>
   );
 }
