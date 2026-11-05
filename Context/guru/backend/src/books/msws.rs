@@ -424,6 +424,9 @@ impl<'a> Eng<'a> {
                 let (src, p) = match a.len() { 1 => (Rc::new(x.c.clone()), self.per(&a[0])?), 2 => (self.ev(&a[0])?, self.per(&a[1])?), _ => return Err("RSI() arguments".into()) };
                 rsi(&src, p)
             }
+            // lane K60 (decision #244 (3)): RMI(data, periods, momentum) = MetaStock's RSI counted from the close against the close
+            // `momentum` bars ago ("a 20,1 parameter RMI is equivalent to a 20-period RSI", MetaStock Pro 8.0 manual p.510-511)
+            "rmi" => { argc(3)?; let (src, p, m) = (self.ev(&a[0])?, self.per(&a[1])?, self.per(&a[2])?); rsi_m(&src, p, m) }
             "cci" => { argc(1)?; let p = self.per(&a[0])?; cci(x, p) }
             "stoch" => { argc(2)?; let (k, s) = (self.per(&a[0])?, self.per(&a[1])?); stoch(x, k, s) }
             "willr" => {
@@ -456,8 +459,10 @@ fn tr(x: &Ctx) -> Vec<f64> {
     (0..x.c.len()).map(|i| if i == 0 { NAN } else { let pc = x.c[i - 1]; (x.h[i] - x.l[i]).max((x.h[i] - pc).abs()).max((x.l[i] - pc).abs()) }).collect()
 }
 /// Wilder RSI on any series (seeded with the mean of the first n changes).
-pub fn rsi(c: &[f64], n: usize) -> Vec<f64> {
-    let d: Vec<f64> = (0..c.len()).map(|i| if i == 0 { NAN } else { c[i] - c[i - 1] }).collect();
+pub fn rsi(c: &[f64], n: usize) -> Vec<f64> { rsi_m(c, n, 1) }
+/// The same RSI over m-bar changes (c[i] - c[i-m]); m = 1 is the RSI (MetaStock RMI).
+pub fn rsi_m(c: &[f64], n: usize, m: usize) -> Vec<f64> {
+    let d: Vec<f64> = (0..c.len()).map(|i| if i < m { NAN } else { c[i] - c[i - m] }).collect();
     let up = wild(&map1(&d, |v| v.max(0.0)), n);
     let dn = wild(&map1(&d, |v| (-v).max(0.0)), n);
     (0..c.len()).map(|i| if fin(up[i]) && fin(dn[i]) { if dn[i] == 0.0 { if up[i] == 0.0 { 50.0 } else { 100.0 } } else { 100.0 - 100.0 / (1.0 + up[i] / dn[i]) } } else { NAN }).collect()

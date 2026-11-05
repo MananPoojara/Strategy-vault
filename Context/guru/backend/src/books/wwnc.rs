@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|SI = 50 [C2 - C1 + 0.5(C2 - O2) + 0.25(C1 - O1)] / R x K / L, L = limit move (p.88-92)",
             "E|\"Entrar en posición Al Alza cuando el ASI cruza por encima del anterior HSP significativo\" (p.102)",
             "X|Index SAR: the previous LSP (HSP) after the switch, then the first LSP (HSP) after a new HSP (LSP); trailing SAR 60 ASI points from the most favourable ASI (p.98-102)",
-        ], "Same reason as stad6_asi in the vault."),
+        ], "STAD Vol 6's ASI system (stad6_asi) runs because it only compares two ASI values, where L cancels (decision #244 (2)); this system's 60-ASI-point trailing SAR depends on L."),
         d("wwnc_csi", "Commodity Selection Index", "Sec IX · CSI", NotTestable("Ranks futures by ADXR x ATR14 with each contract's dollar value per point, margin and commission (p.104-116): needs a futures universe with contract specifications, not an index."), &[
             "F|CSI = ADXR x ATR14 x [V / sqrt(M) x 1/(150 + C)] x 100; trade the five or six commodities highest on the CSI (p.104-116)",
         ], "Market selection across a futures portfolio."),

@@ -43,7 +43,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("tdwb_tdline_fade_long", "Disqualified TD Demand Line break · buy, out on the close", "WB5 · TD Points & TD Lines", "Long", Live, FADE_L,
           "Mirror of tdwb_tdline_fade_short. India: instrument swap only."),
         nt("tdwb_open_trap_clop_clopwin", "TD Open, TD Trap, TD Clop, TD ClopWin (workbook 1)", "WB1",
-           "the workbook gives the entry patterns and how often 'indications closed below the previous high' (S&P 1996-97 tallies, TD Open p.7-12) but no exit; the same patterns are in tdperl (clop/clopwin) and tdnmtt (trap, with DeMark's close exit)",
+           "duplicate of tdnmtt_trap_long / tdnmtt_trap_short and tdperl_clop_long / tdperl_clop_short (decision #244): the workbook restates TD Open, TD Trap, TD Clop and TD ClopWin with S&P 1996-97 tallies but no exit of its own (TD Open p.7-12); TD Trap runs as tdnmtt_trap_* with DeMark's close exit, TD Clop as tdperl_clop_*, and TD ClopWin (tdperl_clopwin_*) is held as a forecast without a trade rule",
            &["E|TD Open: \"When a current trading bar's OPEN is BELOW the previous trading bar's LOW, and price trades ABOVE that LOW, a potential low risk BUY indication is given\" (WB1 TD Open p.1; 2- and 5-bars-back variants p.2-3)",
              "E|TD Trap: open within the previous bar's range and price trades above the high / below the low (TD Trap p.1)",
              "E|TD Clop: open below the previous open and close, then trades one tick above both (TD Clop p.1); TD ClopWin: open and close within the previous open-close, entry the NEXT bar (TD ClopWin p.1-3)"]),

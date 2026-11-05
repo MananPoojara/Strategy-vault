@@ -15,7 +15,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "the 'trading unit' is not defined and no stop or exit is given; the battery has no MA or oscillator settings",
           &["E|Two units one way, two inside them: the fifth unit is expected to follow the first two (p.149-150)"]),
         d("mdafcc_3lb", "Three-line break turnaround after three lines (Nison, as reported)", "The Forex Chartist Companion · Ch.33", "mdafcc",
-          "a report of Nison's method with a judgement filter ('avoid trading in trendless markets', p.226); the line-break reversal itself is already tested as Pring's mpcse_3lb",
+          "duplicate of mpcse_3lb (decision #244): Archer only reports Nison's three-line-break turnaround with a judgement filter ('avoid trading in trendless markets', p.226); the line-break reversal itself runs in the vault as Pring's mpcse_3lb",
           &["E|Buy when a white line emerges after three adjacent black lines; sell when a black line appears after three white lines (p.226)"]),
         d("mdafcc_pnf", "Point-and-figure breakouts, kagi and arbitrage oscillator", "The Forex Chartist Companion · Ch.5, 12-18, 33", "mdafcc",
           "box sizes and kagi reversal amounts are forex pips (no index rule) and no exits are given; the arbitrage oscillator needs tick forex quotes",

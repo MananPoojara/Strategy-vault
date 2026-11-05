@@ -1373,7 +1373,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
     match id {
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>return Some("Held: needs NYSE TICK data. Real 15-minute bars are now built from 1-minute data (SPY 2000-2025, SPX 2008-2026, NIFTY 50 2008-2026), but these day trades are taken only on days the course's 30-signal Market Timing count gives a buy bias, and one of the 30 signals is the NYSE TICK, which the vault does not have; counting only the other signals changes the strategy."),
         "ss_smart_money_index"=>return Some("Held: rules not fully defined. The first-hour and last-hour prices are now built from real 1-minute bars, but the book uses the Smart Money Index as an indicator reading and gives no entry price, exit or stop for it (Ch 21, p.173-175)."),
-        "cwin_vix_gap_window"=>return Some("Held: waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
+        "cwin_vix_gap_window"=>return Some("Held: needs data, not rules (decision #244; the rule is coded from the Connors Windows course, VIX Gap Window): waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
         _=>{}
     }
     Some(match id {
@@ -1427,7 +1427,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
         // "stad1_volex": admitted SPX only by lane K58 (decision #202, books::stad::ADMISSION_SPX)
         // "stad13_volex": admitted SPX only by lane K58 (decision #202, books::stad2::ADMISSION_SPX)
-        "stad13_tripleplay"=>"Held: rules not fully defined. The printed Triple Play code reads its WeakLow from Value1, a variable that is not defined anywhere in the code, so it does not do what the text explains (Vol 13 p.138-140; Vol 11 p.118-120 has the same line); choosing the intended value would be a new rule.",
+        // "stad13_tripleplay": admitted by lane K60 (decision #244 (1): the literal Value1 = 0 reading is the default)
+        "stad6_asi"=>"Held: the order inside the day decides too many trades (decision #240). The ASI system is coded from STAD Vol 6 p.19-20 on Wilder's Swing Index (decision #244 (2)), but its buy stop and its initial stop are live on the same bar: on 188 of 3,108 trades (6.05%) in the check contexts (SPY, QQQ, SPX, DJI, NIFTY 50, NIFTYBANK, IBM, AAPL, RELIANCE) a bar reached both a rising and a falling order level, so which came first is the daily-bar convention, not data. Above the 5% threshold the card waits for the real 1-minute order (the shared minute-order resolver, decision #243) (authors/titles-1030/K60w/checks.txt).",
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
         "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
@@ -1941,11 +1942,12 @@ mod tests {
     }
     // ---- end Jason Perl held ----
     // ---- STAD leftovers held (2026-10-26, lane B) ----
+    // stad1_volex, stad13_volex: admitted SPX only (K58 #202); stad13_tripleplay: admitted by lane K60 (#244 (1))
     #[test]
     fn stadb_held_rules_have_plain_card_reasons() {
         use crate::books::{stad, stad2};
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
-        for id in [/* stad1_volex, stad13_volex: admitted SPX only, K58 #202 */ "stad13_tripleplay"] {
+        for id in ["stad6_asi" /* lane K60: coded, held by #240 */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }

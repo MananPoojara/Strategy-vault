@@ -5,10 +5,13 @@ use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jkzap";
 const SOLD: &str = "rules not disclosed: commercial system ($3,500), the slides give only the concept and a performance report";
+/// Lane K60 (decision #244): the slides are the book text of systems whose code runs in the vault.
+const PRINCE: &str = "duplicate of upg18_prince (decision #244): the slides give the concept and a performance report (slides 28-31); the same Prince system runs in the vault from its open code as upg18_prince";
+const DREAM: &str = "duplicate of upg18_traders_dream (decision #244): the slides give the concept and a performance report (slides 16-21); the same Trader's Dream system runs in the vault from its open code as upg18_traders_dream (S&P index only)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, rules, notes, claim| StrategyDef { id, name, group: "Commercial systems (rules undisclosed)", session: 0, dir,
-        status: Status::NotTestable(SOLD), needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };
+        status: Status::NotTestable(match id { "jkzap_prince" => PRINCE, "jkzap_traders_dream" => DREAM, _ => SOLD }), needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };
     vec![
         d("jkzap_traders_dream", "Trader's Dream (book text; code version: upg18_traders_dream)", "Long/Short",
           &["F|'In a short-term down trend always looks to buy; in a short-term up trend always looks to sell' (slide 17)",
