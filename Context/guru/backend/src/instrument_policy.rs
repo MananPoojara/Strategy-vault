@@ -1256,7 +1256,7 @@ fn base_policy(def:&StrategyDef)->Policy {
 pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
     if native_stock {return "individual_stock";}
     match ticker {
-        "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"|"SPX"|"NDX"|"DJI" => "index",
+        "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"|"NIFTYMIDCAPSELECT"|"NIFTY MIDCAP SELECT"|"SPX"|"NDX"|"DJI" => "index",
         t if US_ETFS.contains(&t) => "etf",
         _ => "unknown",
     }
@@ -3451,7 +3451,7 @@ mod tests {
             assert!(json.contains("selected-baseline-ledger-check"));
             assert_eq!(policy(&def(id,"another_book")).requirement,"source_review_required");
             // These price-return adaptations never admit contract or premium P&L.
-            for ticker in ["NIFTY FUTURE", "SPY OPTION", "NIFTYMIDCAPSELECT"] {
+            for ticker in ["NIFTY FUTURE", "SPY OPTION", "NIFTY SMALLCAP 250"] { // K58: NIFTYMIDCAPSELECT is now a known NSE index (#227)
                 assert_eq!(check(&d,ticker,false).unwrap().status,"needs_data");
             }
         }
@@ -3621,7 +3621,7 @@ mod tests {
             assert!(check(&def(id,"stc9"),"RELIANCE",true).is_none());
         }
         assert!(check(&def("r3r4_base","r3r4"),"RELIANCE",true).is_none());
-        for ticker in ["NIFTYBANK","NIFTYIT","NIFTYMIDCAP100"] {assert_eq!(selected_type(ticker,false),"index");}
+        for ticker in ["NIFTYBANK","NIFTYIT","NIFTYMIDCAP100","NIFTYMIDCAPSELECT"] /* K58 #227 */ {assert_eq!(selected_type(ticker,false),"index");}
         for ticker in ["MDY","SMH"] {assert_eq!(selected_type(ticker,false),"etf");}
         assert!(metadata_json(&def("f1a","stc9")).contains("\"native_india_currency_admitted\":true"));
     }
