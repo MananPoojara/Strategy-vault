@@ -1456,7 +1456,7 @@ fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run
 const TRADE_CAP:usize=20_000;
 /// None = the full trade list, byte-identical to the response before E6 (no page asked for, and at or under the cap).
 /// Some((offset,limit)) = only trades[offset..offset+limit] (chronological) plus a trades_page block; limit 0 = summary-only.
-/// Source-account runs carry per-trade audit arrays that must stay aligned with the full list, so they are never paged.
+/// Source-account runs and the kfsc high-volatility orders carry per-trade arrays that must stay aligned with the full list, so they are never paged.
 fn trade_page(q:&BTreeMap<String,String>,total:usize,pageable:bool)->Result<Option<(usize,usize)>,String>{
     let get=|k:&str|q.get(k).map(|v|v.parse::<usize>().map_err(|_|format!("{k} must be a whole number")));
     let (offset,limit)=(get("trades_offset").transpose()?,get("trades_limit").transpose()?);
@@ -1516,7 +1516,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     arr(&mut o, &mut run.bh.iter().map(|v| num(*v)));
     o.push_str(",\"trades\":");
     // Lane E6 (decisions #208/#239): a large trade list is served summary-only or by page; a run at or under the cap is unchanged.
-    let page=trade_page(q,run.trades.len(),run.source_account.is_none())?;
+    let page=trade_page(q,run.trades.len(),run.source_account.is_none()&&!(def.book=="kfsc"&&books::kfsc::reviewed_hv_rule(id)))?; // both carry per-trade arrays
     let mut allocation=1.;
     arr(&mut o, &mut run.trades.iter().enumerate().filter_map(|(i,t)| {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}

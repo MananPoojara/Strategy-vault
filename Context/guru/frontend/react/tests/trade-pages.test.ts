@@ -52,3 +52,10 @@ it('a page asks the engine for exactly the run the card shows, and the chart dra
   expect(runtime).toContain("st.d._run_url+'&'+new URLSearchParams({trades_offset:at,trades_limit:VaultUI.TRADE_PAGE})");
   expect(runtime).toContain('const d = STRAT.d.trades_page?{...STRAT.d,trades:[]}:STRAT.d;');
 });
+
+it('a summary-only run never presents an empty or one-page list as the whole history (Codex review, 5 Nov)', () => {
+  expect(runtime).toContain("...(d.trades_page?{status:'trades_paged',blocked:`This run has ${d.trades_page.total.toLocaleString('en-US')} trades");
+  expect(runtime).toContain("if (d.trades_page) tradeTxt = '<span class=\"muted\">trades not drawn for this run; see the tradesheet</span>';");
+  expect(runtime).toContain('d.trades_page ? { error: `This run has ${d.trades_page.total} trades, more than one response carries; the research workbook needs every trade');
+  expect(runtime).toMatch(/exportRunTrades\(run\)\{[^\n]*if\(run\.d\.trades_page\)throw Error/);
+});
