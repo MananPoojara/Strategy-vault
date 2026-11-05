@@ -645,18 +645,26 @@ fn defs_b() -> Vec<Def> {
         "X|Long: ExitLong next bar at EntryPrice - 1*ATRVal stop and at PosHigh - 2.5*ATRVal stop (PosHigh = highest High since entry) (short mirror)"],
       "Vol 7 ch.3 p.39-47. Book: Microsoft (4 years): return 52%, PF 1.5, wins 2x losses (no counts printed).", ("stad7_masr", "MA Support/Resistance", "Vol 7")),
     d("stad7_idbo", "Intraday Breakout", "Vol 7 · Support/Resistance", "Long/Short",
-      NeedsData("Intraday system (initial 90-minute range, entries on intraday closes, close all trades at the end of the day session); needs intraday bars (series OPEN90_HIGH/OPEN90_LOW and intraday closes)."),
-      &["F|Range of the first InitMin(90) minutes of the session (Vol 7 p.49 code)", "E|Close crosses above the range high: Buy this bar on close (once per day); below the low: Sell", "X|ExitLong next bar at SetLow stop; ExitShort at SetHigh stop; close at end of day"],
-      "Vol 7 ch.3 p.47-53. Book: 10-minute IBM/AMZN/LU/BA, 1/99.", ("stad7_idbo", "Intraday Breakout", "Vol 7")),
+      Live, // lane K53: run in books/k53intra.rs
+      &["F|\"If TradeTime <= SessStartMin + InitMin Then Begin If Date <> Date[1] Then Begin SetHigh = High; SetLow = Low; LongFlag = True; ShortFlag = True; End Else Begin If High > SetHigh Then SetHigh = High; If Low < SetLow Then SetLow = Low\" InitMin 90 (Vol 7 p.49 code)",
+        "E|\"If Time < Sess1EndTime Then Begin If LongFlag AND Close Crosses Above SetHigh Then Buy This Bar on Close; If ShortFlag AND Close Crosses Below SetLow Then Sell This Bar on Close\" (p.49)",
+        "X|\"If MarketPosition = 1 Then Begin LongFlag = False; ExitLong Next Bar at SetLow Stop\"; short mirror at SetHigh (p.49); \"We did enable the option 'Close all trades at end of day session'\"; money management stop disabled (p.52)",
+        "A|Read [lane K53, decision 229]: session-aligned 10-minute bars from the 1-minute file (\"In general 10 minute charts were used\", p.52), Time = the bar's end stamp; MarketPosition read at a close is the value before that close's order fills (TradeStation), so the protective stop starts from the second bar of a position; the session's last bar closes every position; the stop fills at its level or at the minute's open when the minute opened through it.",
+        crate::books::n1intra2::MIN],
+      "Vol 7 ch.3 p.47-53. Book: 10-minute IBM/AMZN/LU/BA, 1/12-2/1/99 (with a money management stop the code does not print), too short to compare. Runs on SPY and SPX minutes (declared application); the NIFTY 50 and NIFTYBANK minute results are withdrawn (decisions #231/#234: NSE cash-index minutes are dominated by stale component prices). No costs in the vault's run. Cash-index shorts are hypothetical.", ("stad7_idbo", "Intraday Breakout", "Vol 7")),
     d("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7 · Support/Resistance", "Long",
       NeedsData("Needs weekly Treasury bond (Data2) and Treasury bill (Data3) futures aligned to the traded index; no bond/bill futures in the vault."),
       &["E|Close Data2 > XAverage(Close,30) Data2 and Close Data3 > XAverage(Close,30) Data3 and SlowK(9) crosses above 30: buy stop at Close + .30*ATR for 5 bars (Vol 7 p.55 code)",
         "X|ExitLong at EntryPrice - 1.5*ATR stop; after SlowK > 70: ExitLong at Lowest(Low,2)[1] stop"],
       "Vol 7 ch.3 p.54-60. Book: 57% profitable, win/loss 1.43, PF 1.88.", ("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7")),
     d("stad7_fibret", "Fibonacci Retracement (intraday)", "Vol 7 · Support/Resistance", "Long/Short",
-      NeedsData("Intraday system (range until StartTme 12:00, limit entries at .50/.33 retracements, one trade per day); needs intraday bars."),
-      &["E|After 12:00, high of the range more recent: buy limits at the .50 and .33 retracements (Vol 7 p.61-63 code)", "X|Stop at EntryPrice - 2*Average(Range,4), then StopPrice + (Low - StopPrice)/2 each bar"],
-      "Vol 7 ch.3 p.60-68. Book: 5-minute S&P, 10 days: 71% profitable.", ("stad7_fibret", "Fibonacci Retracement", "Vol 7")),
+      Live, // lane K53: run in books/k53intra.rs
+      &["F|\"If Date <> Date[1] Then Begin NewHigh=High; NewLow = Low; NewHighTime = TimeToMinutes(Time); NewLowTime = TimeToMinutes(Time); NoTradesToday = True\"; \"Condition1 = TimeToMinutes(Time) > TimeToMinutes(StartTme)\"; while Condition1 is false the new highs/lows and their times are recorded and \"Price66 = NewLow + (NewHigh - NewLow) * .66; Price50 = (NewLow + NewHigh) / 2; Price33 = NewLow + (NewHigh - NewLow) * .33\"; StartTme 1200, R66 False, R50 True, R33 True (Vol 7 p.62-63 code)",
+        "E|\"If Condition1 AND NoTradesToday Then Begin If NewHighTime > NewLowTime Then Begin ... Buy (\"L50\") Next Bar at Price50 Limit; ... Buy (\"L33\") Next Bar at Price33 Limit; End Else Begin ... Sell (\"S50\") Next Bar at Price50 Limit; ... Sell (\"S33\")\"; \"If MP = 1 OR MP =-1 Then NoTradesToday = False\" (p.62-63); 'Do not allow multiple entries in the same direction' (p.65)",
+        "X|\"If MP = 1 Then Begin If MP[1] <> 1 Then LExitPrice = EntryPrice - Average(Range, 4) * 2 Else LExitPrice = LExitPrice + (Low - LExitPrice) / 2; ExitLong Next Bar at LExitPrice Stop\"; short mirror (p.63); no end-of-day exit and no money management stop (p.65)",
+        "A|Read [lane K53, decision 229]: session-aligned 5-minute bars (\"we used 5 minute charts\", p.60) from the 1-minute file, one continuous series (Range and the stop carry across days, as the code has no session exit); Time = the bar's end stamp; StartTme 12:00 ET = 150 minutes after the session open, used the same way on NSE (11:45 IST); orders the code places on a session's last bar work in the next bar (the next session's first), as TradeStation runs it.",
+        crate::books::n1intra2::MIN],
+      "Vol 7 ch.3 p.60-68. Book: 5-minute S&P futures, 10 trading days: 7 trades, 71% profitable, $2,350 (too short to compare). Runs on SPY, SPX, NIFTY 50 and NIFTYBANK minutes (declared application). No costs in the vault's run. Cash-index shorts are hypothetical.", ("stad7_fibret", "Fibonacci Retracement", "Vol 7")),
     d("stad7_trbo", "Trading Range Breakout", "Vol 7 · Volatility breakout", "Long/Short", Live,
       &["F|RangeH = Highest(High,7)[1]; RangeL = Lowest(Low,7)[1]; TRange = RangeH - RangeL; ATR = AvgTrueRange(2) (Vol 7 p.75-76 code)",
         "F|NoTrades = sum over the previous 7 bars of (RangeH - High) where High < RangeH plus (Low - RangeL) where Low > RangeL",
@@ -2363,6 +2371,7 @@ mod tests {
         for d in cat.iter().filter(|d| d.status == Status::Live) {
             live += 1;
             assert!(d.id.starts_with("stad") && !crate::books::stad::catalogue().iter().any(|s| s.id == d.id), "{}", d.id);
+            if crate::intraday_ep::id(d.id) { continue; } // intraday EP block (K42 stad3, lane K53 stad7_idbo/_fibret): minute rules, tested in their modules
             let ts = run(d.id, &x, 0, 699, &Params::new()).unwrap_or_else(|| panic!("{} did not run", d.id));
             for t in &ts {
                 let mut fills: Vec<(usize, f64)> = t.legs.iter().map(|g| (g.i, g.px)).collect();
@@ -2373,6 +2382,6 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 63); // + stad6_tenbar (lane K47)
+        assert_eq!(live, 65); // + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }

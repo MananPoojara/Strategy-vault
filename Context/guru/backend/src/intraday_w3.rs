@@ -3,7 +3,7 @@
 //! itself lives in the book module (books/tdperl.rs run_lines_minutes).
 
 /// Rules converted in this wave that run on all four minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK): no fixed amount.
-pub const IDS: &[&str] = &["tdperl_tdline_short"];
+pub const IDS: &[&str] = &["tdperl_tdline_short", "tdperl_rebo" /* K25 code, re-applied by lane K53 (decision #229) */];
 pub fn id(id: &str) -> bool { IDS.contains(&id) || K38_SPX.contains(&id) || K38_US.contains(&id) }
 pub fn book(b: &str) -> bool { matches!(b, "tdperl" | "cpgap" | "acbff") }
 // ---- lane K38 block (4 Nov 2026, decision #202; authors/titles-1030/K38.tsv, K38w/check177.out)
@@ -32,11 +32,16 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "vdso_supreme_order" /* lane K48 (daily bars on the minute path, 2014-2025): SPX avg +0.163% vs SPY +0.009% (test b) */,
     "jbcdt_mac" /* lane K55 (5-minute, 2014-2025): average trade SPY +0.0161% vs SPX -0.0111% (test a; SPY the better series, as gfstsb_ema_cross) */,
     "stad2_bullbeater" /* lane K55 (5-minute, 2014-2025): SPY -0.0247% vs SPX +0.0537% (test a) */,
-    "stad2_opengap" /* lane K55 (10-minute, 2014-2025): compounded SPX +33.1% vs SPY +2.6% (test c) */];
+    "stad2_opengap" /* lane K55 (10-minute, 2014-2025): compounded SPX +33.1% vs SPY +2.6% (test c) */,
+    "tdperl_rebo" /* K25 code re-applied by lane K53 (decisions #176/#229, 2014-2025): SPY avg -0.0291% vs SPX +0.0882% (test a) */,
+    "rwmts_60m_rsi200h" /* lane K53 (60-minute bars, 2014-2025): SPY avg -0.0166% vs SPX +0.0321% (test a) */,
+    "rwmts_60m_seven" /* lane K53 (60-minute bars, 2014-2025): SPY avg +0.0247% vs SPX -0.0152% (test a) */,
+    "rwmts_30m_rsi_cross" /* lane K53 (30-minute bars, 2014-2025): SPY avg +0.0027% vs SPX -0.0152% (test a) */,
+    "rwmts_15m_5m_rsi" /* lane K53 (15-minute bars, 2014-2025): SPY avg -0.0029% vs SPX +0.0228% (test a) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #232 (1): the SPY-only rules whose #177a flag has the tradable SPY as the BETTER series (gate `ours` numbers);
 /// their withdrawal note says the cash index understates the rule. Every other SPY id was flagged with SPX better.
-pub const SPY_BETTER: &[&str] = &["gfstsb_ema_cross", "jbcdt_mac"];
+pub const SPY_BETTER: &[&str] = &["gfstsb_ema_cross", "jbcdt_mac", "rwmts_60m_seven", "rwmts_30m_rsi_cross"]; // #232 (1): SPY the better series
 pub fn spy_better(id: &str) -> bool { SPY_BETTER.contains(&id) }
 /// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
 /// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
@@ -49,9 +54,42 @@ pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m16
     "kftsm_first_hour" /* lane K42 (EP2 10-minute bars, 0.20 S&P points): scaled SPY avg -0.0074% vs SPX +0.0285% (test a) */,
     "rsrl_rlevels" /* lane K48 (5-minute bars, S&P points, 2014-2025): scaled SPY avg -0.0026% vs SPX +0.0332% (test a) */];
 pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) || K38_SPX_HELD.contains(&id) } // + lane K38
+/// Decision #231 (lane M4, 5 Nov 2026; authors/titles-1030/M4.tsv): India minute results that are India-better than SPY over the
+/// dates both minute files cover on BOTH tests (average trade > 3x SPY's and > 0.003 pp above it, #234; compounded > 10x SPY's, or
+/// > +100% when SPY's <= 0). Those (rule, India ticker) results are withdrawn; the SPY/SPX results stay.
+pub const INDIA_HELD: &[(&str, &str)] = &[
+    ("jb30d_or30", "NIFTY 50") /* avg +0.0622% vs SPY +0.0041%, compounded +1184.1% vs +8.6% */,
+    ("jmls_ma_cross_30m", "NIFTY 50") /* avg +0.1091% vs SPY +0.0302%, compounded +2526.7% vs +128.4% */,
+    ("stad7_idbo", "NIFTY 50") /* avg +0.0772% vs SPY +0.0095%, compounded +2501.5% vs +36.1% */,
+    ("mlhpt_ma3", "NIFTY 50") /* avg +0.0634% vs SPY +0.0135%, compounded +19698.9% vs +184.9% */,
+    ("atm04_60min", "NIFTY 50") /* avg +0.0603% vs SPY +0.0135%, compounded +803.9% vs +54.0% */,
+    ("sgbic_breakout", "NIFTY 50") /* avg +0.0194% vs SPY +0.0023%, compounded +82.8% vs +7.1% */,
+    ("jb30d_or30", "NIFTYBANK") /* avg +0.0715% vs SPY +0.0022%, compounded +1185.9% vs +1.8% */,
+    ("stad7_idbo", "NIFTYBANK") /* avg +0.0875% vs SPY +0.0077%, compounded +2239.9% vs +26.2% */,
+    ("lgvp_volpat", "NIFTYBANK") /* avg +0.1243% vs SPY +0.0189%, compounded +532.7% vs +30.6% */,
+    ("acbff_open_rel", "NIFTYBANK") /* avg +0.0312% vs SPY +0.0030%, compounded +165.3% vs +1.8% */,
+    ("acbff_9oc", "NIFTYBANK") /* avg +0.0056% vs SPY +0.0008%, compounded +689.5% vs +21.7% */,
+    ("mlhpt_ma3", "NIFTYBANK") /* avg +0.0753% vs SPY +0.0116%, compounded +28227.8% vs +124.0% */,
+    ("atm04_60min", "NIFTYBANK") /* avg +0.0686% vs SPY +0.0066%, compounded +768.4% vs +18.2% */];
+pub fn india_held(id: &str, ticker: &str) -> bool { INDIA_HELD.iter().any(|&(i, t)| i == id && (t == ticker || (t == "NIFTYBANK" && ticker == "NIFTY BANK"))) }
+pub const INDIA_HELD_NOTE: &str = "NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates (decision #231, 5 Nov 2026).";
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn decision_231_india_withdrawals() {
+        use crate::instrument_policy as ip;
+        let cat = crate::connors::catalogue();
+        for &(id, t) in INDIA_HELD {
+            let d = cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}"));
+            assert!(ip::intraday_p1(d), "{id}");
+            assert_eq!(ip::check(d, t, false).unwrap().note, INDIA_HELD_NOTE, "{id} {t}");
+            assert!(!ip::intraday_tickers(id).contains(&t), "{id} {t}");
+            assert!(ip::check(d, "SPY", false).is_none() && !crate::intraday_w3::spy_id(id), "{id}");
+            for o in ["NIFTY 50", "NIFTYBANK"] { assert_eq!(ip::check(d, o, false).is_none(), !india_held(id, o), "{id} {o}"); }
+            assert!(crate::gate::get(id).unwrap().reason.contains("#231"), "{id}");
+        }
+    }
     use super::*;
     use crate::connors::{Ctx, Params};
     fn minutes(name: &str, days: &[(&str, &[&str])]) -> &'static crate::intraday::Minutes {
@@ -109,6 +147,27 @@ mod tests {
         assert!(run(&x, 1.0).is_empty());
     }
     #[test]
+    fn rebo_minutes_reverse_in_time_order() {
+        // K25. Bar 2: open 100, yesterday's true range 10 -> buy stop 103.82, sell stop 96.18; the daily bar reaches both.
+        let b = [(100., 105., 95., 100.), (100., 105., 95., 100.), (100., 110., 90., 100.), (100., 101., 99., 100.)];
+        let r: Vec<crate::Row> = b.iter().enumerate().map(|(k, &(o, h, l, c))| crate::Row { ticker: "T".into(), date: format!("2020-01-{:02}", k + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        let run = |x: &Ctx, path: f64| crate::books::tdperl::run("tdperl_rebo", x, 0, 3, &Params::from([("path".to_string(), path)])).unwrap();
+        assert!(run(&x, 0.0).is_empty()); // daily path: both levels on a flat day -> no entry
+        x.minutes = Some(minutes("rebo", &[("2020-01-03", &["09:30,100,104,99,103", "09:31,103,103.5,96,97", "09:32,97,98,97,98"]), ("2020-01-04", &["09:30,100,101,99,100"])]));
+        let t = run(&x, 1.0);
+        assert_eq!(t.len(), 2, "{t:?}");
+        assert!(t[0].dir > 0. && (t[0].legs[0].px - 103.82).abs() < 1e-9 && t[0].exit_i == 2 && (t[0].exit_px - 96.18).abs() < 1e-9, "{:?}", t[0]);
+        assert!(t[1].dir < 0. && (t[1].legs[0].px - 96.18).abs() < 1e-9 && t[1].open && t[1].exit_px == 100., "{:?}", t[1]);
+        // one minute reaching both, opened nearer the sell stop: short first [convention, flagged], then reversed long at 103.82
+        x.minutes = Some(minutes("rebo2", &[("2020-01-03", &["09:30,97,105,95,100"])]));
+        let t = run(&x, 1.0);
+        assert!(t.len() == 2 && t[0].dir < 0. && (t[0].legs[0].px - 96.18).abs() < 1e-9 && t[0].reason.contains("ambiguous") && t[1].dir > 0. && t[1].open, "{t:?}");
+        // no minutes on bar 2: no position opened
+        x.minutes = Some(minutes("rebo3", &[("2020-01-04", &["09:30,100,101,99,100"])]));
+        assert!(run(&x, 1.0).is_empty());
+    }
+    #[test]
     fn wave_3_admission_and_gate() {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
@@ -142,7 +201,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (16, 38)); // + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
+        assert_eq!((SPY.len(), SPX_HELD.len()), (21, 38)); // + tdperl_rebo, rwmts_60m_rsi200h, rwmts_60m_seven, rwmts_30m_rsi_cross, rwmts_15m_5m_rsi (K53); + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
         assert!(SPY_BETTER.iter().all(|id| SPY.contains(id))); // #232 (1)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
@@ -170,7 +229,7 @@ mod tests {
         for id in ["ats_10pct_oops", "ss_momentum_pinball", "btp2_10pct_oops", "btp2_10pct_oops_long", "btp2_10pct_oops_short",
             "lwdg2_0105", "mhp_ftse_12_20041015", "tdnmtt_trap_long", "lgvp_volpat"] {
             let d = find(&cat, id);
-            for t in ip::INTRADAY_P1_TICKERS { assert!(ip::check(d, t, false).is_none(), "{id} {t}"); }
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), !india_held(id, t), "{id} {t}"); } // #231: India pairs withdrawn separately
             assert!(crate::gate::get(id).unwrap().reason.contains("NIFTY cash-index minutes; the same rule passed the tradable-vs-cash check on SPY/SPX"), "{id}");
         }
         for id in ["lwdg2_0105", "lgvp_volpat", "tdnmtt_trap_long"] { assert!(crate::gate::get(id).unwrap().ours.contains("#177d near miss"), "{id}"); }

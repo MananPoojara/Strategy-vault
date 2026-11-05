@@ -93,9 +93,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Only follow-through 1 is fully mechanical; the author calls the pattern \"not a trading system\" (p.127) and filters for \"small or minor crossovers\" have no printed size. Entry on the close."),
         def!("jb30d_oc8_target", "Eight-bar open/close · target / fifth-bar exits", "Lesson 15 · Eight-Bar Open/Close", "Long/Short", NotTestable("no stop or handling of an opposite cross before the target is given; the author: \"this method is not totally objective\""),
             &["X|\"Exit a portion of your position at a profit target that is equal to the range of the last eight bars prior to the trigger\"; \"Exit part or all of your position on the close of the fifth bar after entry if it is profitable\" (p.128)"], ""),
-        def!("jb30d_or30", "Advanced 30-minute breakout (S&P, E-mini, SPY)", "Lesson 18 · 30MBO", "Long/Short", NeedsData("intraday 30-minute bars"),
-            &["E|\"A buy trigger occurs when and if any subsequent 30-minute price bar ends above the high of the first 30-minute price bar\" (p.152)",
-              "X|Stop = the opposite trigger, reverse once per day; first target = the first 30-minute range; break-even and second-target stops; \"Exit MOC\" (p.153)"], ""),
+        def!("jb30d_or30", "Advanced 30-minute breakout (S&P, E-mini, SPY)", "Lesson 18 · 30MBO", "Long/Short", Live, // lane K53: run in books/k53intra.rs
+            &["F|\"uses the price high and price low of the first 30 minutes of each trading session (day session only) as the setup\" (p.151-152)",
+              "E|\"A buy trigger occurs when and if any subsequent 30-minute price bar ends above the high of the first 30-minute price bar. A sell trigger occurs when any subsequent 30-minute price bar ends below the low\"; \"A trigger can occur at the end of any 30-minute bar up to, but no later than, the last hour of trading\"; \"All entry orders are at the market\" (p.152-153)",
+              "X|\"As soon as a trade has triggered, your stop-loss becomes the opposite side of the trade ... a 30-minute ending price below the low of the first 30-minute ending bar\"; \"If you get a buy first and are stopped out, then reverse to a sell\"; \"Only take one reverse trade per day\"; \"If and when the trade achieves twice the range of the first 30 minutes place a stop at the first profit target\"; \"Exit MOC (market on close) on all positions not stopped out\" (p.153)",
+              "A|Read [lane K53, decision 229]: one contract, so the partial exits and the break-even stop (\"If you have multiple contracts\") do not apply; session-aligned 30-minute bars from the 1-minute file; a trigger fills at the trigger bar's close (as jbcdt2_or30); the last trigger bar is the one ending one hour before the close (15:00 ET, 14:30 IST), and a stop-out after it exits without reversing; once the open profit has reached twice the first bar's range (minute path) a stop sits at the entry plus the range; a trade stopped there is not reversed and no new trade follows that day. Same method as jb624_or30 (6-2-4 report pp.51-55).",
+              crate::books::n1intra2::MIN], "The book names S&P, E-mini S&P, SPY, DIA and QQQ (p.152); no performance table. Runs on SPY and SPX minutes (declared application on SPX); the NIFTY 50 and NIFTYBANK minute results are withdrawn (decisions #231/#234: NSE cash-index minutes are dominated by stale component prices). No costs in the vault's run. Cash-index shorts are hypothetical."),
     ]
 }
 
@@ -115,7 +118,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "jb30d_cmc" => ("jb30d_cmc", "CMC pattern", "Channel target, next-day exit"),
         "jb30d_oc8" => ("jb30d_oc8", "Eight-bar open/close", "Reverse on the opposite cross"),
         "jb30d_oc8_target" => ("jb30d_oc8", "Eight-bar open/close", "Target exits · not testable"),
-        "jb30d_or30" => ("jb30d_or30", "Advanced 30-minute breakout", "Needs intraday"),
+        "jb30d_or30" => ("jb30d_or30", "Advanced 30-minute breakout", "30-minute bars"),
         _ => return None,
     })
 }
