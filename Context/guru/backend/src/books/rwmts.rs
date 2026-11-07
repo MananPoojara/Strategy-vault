@@ -699,7 +699,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let v = cci(x, u("cci_n"));
             let (lo, hi, xl, xs, cl) = (g("lo"), g("hi"), g("xl"), g("xs"), g("cci"));
             let bars = if id == "rwmts_stoch_cci_time" { Some(u("bars")) } else { None };
-            let cnt = if id == "rwmts_stoch_cci_time" { u("count").min(1) } else { 0 };
+            let cnt = if id == "rwmts_stoch_cci_time" { (g("count") >= 0.5) as usize } else { 0 }; // not u(): it clamps 0 to 1
             sim(x, from, to, &|s| if xbelow(&ssd, |_| lo, s) && v[s] < -cl { 1 } else if xabove(&ssd, |_| hi, s) && v[s] > cl { -1 } else { 0 },
                 &|s, q| {
                     if (q.dir > 0.0 && xabove(&ssd, |_| xl, s)) || (q.dir < 0.0 && xbelow(&ssd, |_| xs, s)) { Some("SSD exit cross") }
