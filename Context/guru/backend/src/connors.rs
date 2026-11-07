@@ -24,10 +24,14 @@ use std::collections::BTreeMap;
 /// summed in integers at the series' decimal scale and divided ONCE (correctly rounded), so an exact decimal tie gives the
 /// identical float everywhere: SMA10 of MSFT 2004-04-06..19 is exactly 25.53 = the close, not 25.529999999999998.
 /// Fallback: a series with any value that is not decimal-exact (computed values such as ratios or oscillators, not
-/// printed prices) or not finite keeps the float window sum, each window summed directly, left to right (#249).
+/// printed prices) or not finite, or whose window sums could overflow i128, keeps the float window sum, each window
+/// summed directly, left to right (#249).
+/// Limit: an exact tie gives equal floats, but two UNEQUAL averages (or a price and an average) can round to the same float
+/// once a window sum exceeds about 2^52 integer units. Vault series whose closes carry 13-15 decimals (float32 residue such
+/// as 170.67999267578125; K64w/exactscan.txt) reach that, so the #253 exact comparisons in bpqst/kftsm/t2w stay.
 pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
     if n == 0 { return vec![f64::NAN; v.len()]; }
-    if let Some(e) = ExactSeries::new(&[v]) {
+    if let Some(e) = ExactSeries::new(&[v]).filter(|e| e.v[0].iter().flatten().map(|a| a.unsigned_abs()).max().unwrap_or(0).checked_mul(n as u128 + 1).is_some_and(|m| m < i128::MAX as u128)) {
         let x = &e.v[0];
         let den = n as i128 * 10i128.pow(e.scale);
         // the integer running sum is exact, so it carries no drift
@@ -50,14 +54,15 @@ pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
 }
 
 /// num/den (den > 0) correctly rounded to f64. Both exact in f64 (<= 2^53): one IEEE division is correctly rounded.
-/// Otherwise the exact decimal quotient (digits until the remainder is 0, else 60 digits plus a sticky 1) is parsed,
-/// which Rust rounds correctly; a non-terminating quotient cannot sit on a halfway point between two floats.
+/// Otherwise the exact decimal quotient is parsed, which Rust rounds correctly: digits until the remainder is 0 (a
+/// quotient with den < 2^127 terminates within 127 digits if it terminates at all, so every halfway point between two
+/// floats is written exactly), else 200 digits plus a sticky 1 (a non-terminating quotient is not a halfway point).
 fn ratio_f64(num: i128, den: i128) -> f64 {
     const P53: i128 = 1 << 53;
     if num.abs() <= P53 && den <= P53 { return num as f64 / den as f64; }
     let (q, mut r) = (num.abs() / den, num.abs() % den);
     let mut t = format!("{}{q}.", if num < 0 { "-" } else { "" });
-    for _ in 0..60 { if r == 0 { break; } r *= 10; t.push((b'0' + (r / den) as u8) as char); r %= den; }
+    for _ in 0..200 { if r == 0 { break; } r *= 10; t.push((b'0' + (r / den) as u8) as char); r %= den; }
     if r != 0 { t.push('1'); }
     t.parse().unwrap()
 }
@@ -65,7 +70,8 @@ fn ratio_f64(num: i128, den: i128) -> f64 {
 /// Exact decimal arithmetic on printed prices (R4 #253): each value is read as the shortest decimal that round-trips to the
 /// stored f64 (the printed price), scaled to integers at one common scale for all the given series. Window sums are then
 /// exact, so an average can be compared with a price (n*P vs the sum) or with another average (m*S_n vs n*S_m) without
-/// rounding. `None` when a value has more than 15 decimals or is not finite: the caller keeps its float comparison.
+/// rounding (#253), and `sma` divides each exact sum once (#256). `None` when a value has more than 15 decimals or is not
+/// finite: the caller keeps its float comparison.
 pub struct ExactSeries { pub v: Vec<Vec<Option<i128>>>, /** decimals of the common integer scale */ pub scale: u32 }
 impl ExactSeries {
     pub fn new(series: &[&[f64]]) -> Option<ExactSeries> {
@@ -1449,5 +1455,7 @@ mod sma_gap_tests {
         assert_eq!(super::ratio_f64(1 << 60, 3), (1i128 << 60) as f64 / 3.0);
         assert_eq!(super::ratio_f64(255_300_000_000_000_000, 10_000_000_000_000_000), 25.53);
         assert_eq!(super::ratio_f64(-7, 2), -3.5);
+        // a halfway point with a long terminating expansion (Codex review): ties-to-even, not truncated at 60 digits
+        assert_eq!(super::ratio_f64(274_877_906_944_000_091_552_734_375, 70_368_744_177_664_000_000_000_000_000), ((1u64 << 52) + 2) as f64 / 2f64.powi(60));
     }
 }
