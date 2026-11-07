@@ -37,6 +37,78 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// order, each filled at its level or a gapped open; with `be` the stop moves to the entry price (from the next bar)
 /// once the first piece is out; at bar `last` (time exit, usize::MAX = none) the rest is sold at that close.
 pub fn manage(x: &Ctx, d: f64, e: usize, ep: f64, kind: &'static str, stop0: f64, pieces: &[(f64, f64)], be: bool, last: usize, to: usize) -> Trade {
+    manage_ep6(x, d, e, ep, kind, stop0, pieces, be, last, to, false)
+}
+
+/// One day of `manage` (EP6 state, lane K63): pieces out so far, the fills, stopped.
+#[derive(Clone)]
+struct Mg { j: usize, done: Vec<(usize, f64, f64)>, stopped: bool }
+
+/// `manage` with EP6 (#243, lane K63): with `on`, a day whose exits differ between its two extreme orders is walked on its
+/// real 1-minute path where minutes exist (intraday_ep6::resolve_conv); otherwise the stop first, then the pieces.
+#[allow(clippy::too_many_arguments)]
+pub fn manage_ep6(x: &Ctx, d: f64, e: usize, ep: f64, kind: &'static str, stop0: f64, pieces: &[(f64, f64)], be: bool, last: usize, to: usize, on: bool) -> Trade {
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, Day, Ev, Seg};
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut od = Day::Plain;
+    let rest = |j: usize| pieces[j..].iter().map(|z| z.0).sum::<f64>();
+    let (mut stop, mut j, mut done, mut why, mut open) = (stop0, 0usize, Vec::<(usize, f64, f64)>::new(), "open", true);
+    let end = last.min(to);
+    for k in e + 1..=end {
+        let conv = |z: &mut Mg| {
+            if (d > 0. && l[k] <= stop) || (d < 0. && h[k] >= stop) {
+                z.done.push((k, if d > 0. { o[k].min(stop) } else { o[k].max(stop) }, rest(z.j))); z.j = pieces.len(); z.stopped = true; return;
+            }
+            while z.j < pieces.len() {
+                let lv = pieces[z.j].1;
+                if !((d > 0. && h[k] >= lv) || (d < 0. && l[k] <= lv)) { break; }
+                z.done.push((k, if d > 0. { o[k].max(lv) } else { o[k].min(lv) }, pieces[z.j].0)); z.j += 1;
+            }
+        };
+        let walk = |z: &mut Mg, segs: &[Seg]| -> Vec<Ev> {
+            let mut ev = vec![];
+            if segs.is_empty() {
+                let op = o[k];
+                if z.j < pieces.len() && d * (op - stop) <= 0. { z.done.push((k, op, rest(z.j))); z.j = pieces.len(); z.stopped = true; ev.push(Ev { k: 0, px: op, up: d < 0. }); }
+                while z.j < pieces.len() && !z.stopped && d * (op - pieces[z.j].1) >= 0. { z.done.push((k, op, pieces[z.j].0)); z.j += 1; ev.push(Ev { k: 1 + z.j as u8, px: op, up: d > 0. }); }
+                return ev;
+            }
+            for g in segs {
+                if z.j >= pieces.len() || g.a == g.b { continue; }
+                if g.up() != (d > 0.) {
+                    if g.inside(stop) { let px = g.fill(stop); z.done.push((k, px, rest(z.j))); z.j = pieces.len(); z.stopped = true; ev.push(Ev { k: 0, px, up: d < 0. }); }
+                    continue;
+                }
+                while z.j < pieces.len() && g.inside(pieces[z.j].1) { let px = g.fill(pieces[z.j].1); z.done.push((k, px, pieces[z.j].0)); z.j += 1; ev.push(Ev { k: 1 + z.j as u8, px, up: d > 0. }); }
+            }
+            ev
+        };
+        let mut z = Mg { j, done: std::mem::take(&mut done), stopped: false };
+        let day = if on {
+            resolve_conv(x, k, true, &mut z, conv, |w: &mut Mg, hf: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[k], h[k], l[k], c[k], hf))); v }, walk)
+        } else { conv(&mut z); Day::Plain };
+        od = od.worst(day);
+        (j, done) = (z.j, z.done);
+        if z.stopped { why = "stop"; open = false; break; }
+        if j == pieces.len() { why = "target"; open = false; break; }
+        if be && j > 0 { stop = ep; }
+    }
+    if j < pieces.len() {
+        if last <= to { why = "time exit"; open = false; }
+        done.push((end, c[end], rest(j)));
+    }
+    let xi = done.last().map_or(end, |z| z.0);
+    let xp: f64 = done.iter().map(|z| z.1 * z.2).sum();
+    let mut t = Trade { dir: d, legs: vec![Leg { i: e, px: ep, w: 1. }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: kind, signal_i: xi, open,
+        exits: if pieces.len() > 1 { done } else { vec![] } };
+    mark(&mut t, od);
+    t
+}
+
+/// The pre-EP6 `manage`, kept for the equality check in the tests (`manage_ep6(.., false)` must equal it).
+#[cfg(test)]
+#[allow(dead_code)]
+fn manage_old(x: &Ctx, d: f64, e: usize, ep: f64, kind: &'static str, stop0: f64, pieces: &[(f64, f64)], be: bool, last: usize, to: usize) -> Trade {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let (mut stop, mut j, mut done, mut why, mut open) = (stop0, 0usize, Vec::<(usize, f64, f64)>::new(), "open", true);
     let end = last.min(to);

@@ -24,7 +24,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     (id == "lcttr_minor").then_some(("lcttr_minor", "Trident (Lindsay)", "minor swings subset"))
 }
 
-pub fn params(id: &str) -> Option<Vec<ParamDef>> { reviewed(id).then(Vec::new) }
+pub fn params(id: &str) -> Option<Vec<ParamDef>> { reviewed(id).then(|| { let mut v = vec![]; crate::intraday_ep6::add_param(id, &mut v); v }) } // EP6 (#243, lane K63)
 
 /// Alternating swing list: (+1 peak / -1 valley, bar, price); phantoms fill two equal kinds in a row.
 fn add(p: &mut Vec<(i8, usize, f64)>, k: i8, j: usize, px: f64, h: &[f64], l: &[f64]) {
@@ -38,8 +38,11 @@ fn add(p: &mut Vec<(i8, usize, f64)>, k: i8, j: usize, px: f64, h: &[f64], l: &[
     p.push((k, j, px));
 }
 
-pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec<Trade>> {
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63): the stop and the target on one bar
+    let mut od = crate::intraday_ep6::Day::Plain; // EP6 mark of the open trade
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let tk = x.market_tick();
     let mut pts: Vec<(i8, usize, f64)> = vec![];
@@ -52,8 +55,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
             if t > *e {
                 let stop = if *win { *best - *d * *sd } else if *hit_cp { *ep } else { *p3 - *d * tk };
                 let (hi, lo) = if *d > 0. { (h[t], l[t]) } else { (-l[t], -h[t]) };
-                if lo <= *d * stop { out.push(mk(*d, *e, *ep, "stop", t, if *d > 0. { o[t].min(stop) } else { o[t].max(stop) }, "Trident stop", false, t)); exited = true; }
-                else if hi >= *d * *tg { out.push(mk(*d, *e, *ep, "stop", t, if *d > 0. { o[t].max(*tg) } else { o[t].min(*tg) }, "Trident target", false, t)); exited = true; }
+                let (dd, tgv) = (*d, *tg);
+                let (hit, day) = crate::intraday_ep6::stop_target(x, t, dd, stop, tgv, on, ("Trident stop", "Trident target"), || {
+                    if lo <= dd * stop { Some((if dd > 0. { o[t].min(stop) } else { o[t].max(stop) }, "Trident stop")) }
+                    else if hi >= dd * tgv { Some((if dd > 0. { o[t].max(tgv) } else { o[t].min(tgv) }, "Trident target")) } else { None }
+                });
+                od = od.worst(day);
+                if let Some((px, why)) = hit { let mut z = mk(*d, *e, *ep, "stop", t, px, why, false, t); crate::intraday_ep6::mark(&mut z, od); out.push(z); exited = true; }
                 else {
                     if hi >= *d * *cp { *hit_cp = true; }
                     if hi >= *d * (*p2 + *d * tk) { *win = true; }
@@ -81,6 +89,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
                     let ep = if d > 0 { o[t].max(entry) } else { o[t].min(entry) };
                     let tg = p2.2 + p3 - p1.2;
                     cur = Some((df, t, ep, p2.2, p3, tg, (p3 + tg) / 2., (p3 - p2.2).abs() / 4., false, false, if d > 0 { f64::NEG_INFINITY } else { f64::INFINITY }));
+                    od = crate::intraday_ep6::Day::Plain;
                 }
             }
         }
@@ -94,7 +103,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
         if vl { add(&mut pts, -1, j, l[j], h, l); }
         if pk && !peak_first && vl { add(&mut pts, 1, j, h[j], h, l); }
     }
-    if let Some((d, e, ep, ..)) = cur { out.push(mk(d, e, ep, "stop", to, c[to], "open", true, to)); }
+    if let Some((d, e, ep, ..)) = cur { let mut z = mk(d, e, ep, "stop", to, c[to], "open", true, to); crate::intraday_ep6::mark(&mut z, od); out.push(z); }
     Some(out)
 }
 

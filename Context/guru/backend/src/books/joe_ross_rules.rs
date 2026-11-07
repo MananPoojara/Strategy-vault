@@ -145,6 +145,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let tick = || p("tick_pct", "1 tick = % of the previous close (-1 = auto: 0.01% on an index/ETF, the real tick on a stock) [declared convention]", -1.0, -1.0, 0.2, 0.01);
     // the book's own market: 1 tick / price in its worked example (lead decision 23 Oct); -1 = auto stays an option
@@ -173,6 +179,7 @@ fn getp(id: &str, p: &Params, key: &str) -> f64 {
     p.get(key).copied().unwrap_or_else(|| params(id).and_then(|s| s.iter().find(|d| d.key == key).map(|d| d.def)).unwrap_or_else(|| panic!("{id} has no param {key}")))
 }
 
+#[derive(Clone, Copy)]
 struct Pos { dir: f64, e: usize, px: f64, stop: f64, tgt: f64, kind: &'static str }
 
 fn trade(p: &Pos, k: usize, px: f64, sig: usize, why: &str) -> Trade {
@@ -214,7 +221,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let tick = |k: usize| match (tp < 0.0, x.stock_tick()) { (true, Some(t)) => t, (true, None) => c[k - 1] * 0.01 / 100.0, (false, _) => c[k - 1] * tp / 100.0 };
     let from = from.max(1);
     Some(match id {
-        "jr_zulu" => zulu(x, from, to, g("target_ticks"), g("stop_ticks"), &tick),
+        "jr_zulu" => {
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+            zulu(x, from, to, g("target_ticks"), g("stop_ticks"), &tick, crate::intraday_ep6::on(id, p)) // EP6 (#243, lane K63)
+        }
         "jr_ambush" => ambush(x, from, to, g("target_ticks"), g("stop_ticks"), g("days").round().max(1.0) as usize, &tick),
         "jr_ledge_tbtb" => ledge(x, from, to, g("match_ticks"), g("match_pct"), g("with_ticks"), g("against_ticks"), &tick),
         "jr_sne_l" | "jr_sne_s" => {
@@ -239,13 +249,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 // ---------------------------------------------------------------- course packages
 
-fn zulu(x: &Ctx, from: usize, to: usize, tt: f64, st: f64, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
+/// ZULU with EP6 (#243, lane K63): with `on`, a held bar with the stop and the target both inside the range is walked on the
+/// real 1-minute path (intraday_ep6::stop_target), and an entry bar whose outcome differs between its two extreme orders is
+/// walked on the minutes too (the stop entry where the minutes reach it, a gapped minute at its open; then the stop and the
+/// target as reached), in place of the entry-bar proof rule; days without minutes keep the daily rules.
+fn zulu(x: &Ctx, from: usize, to: usize, tt: f64, st: f64, tick: &dyn Fn(usize) -> f64, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, stop_target, Day, Ev, Seg};
     let (o, h, l) = (&x.o, &x.h, &x.l);
     let (mut out, mut pos): (Vec<Trade>, Option<Pos>) = (Vec::new(), None);
+    let mut od = Day::Plain;
     for k in from..=to {
         if let Some(p) = &pos {
-            if let Some((px, why)) = bar_exit(x, k, p.dir, p.stop, p.tgt) {
-                out.push(trade(p, k, px, k, why));
+            let (r, day) = stop_target(x, k, p.dir, p.stop, p.tgt, on, ("stop", "target"), || bar_exit(x, k, p.dir, p.stop, p.tgt));
+            od = od.worst(day);
+            if let Some((px, why)) = r {
+                let mut t = trade(p, k, px, k, why);
+                mark(&mut t, od);
+                out.push(t);
                 pos = None;
             }
             continue; // a new trade needs a flat book at the previous close
@@ -258,11 +278,39 @@ fn zulu(x: &Ctx, from: usize, to: usize, tt: f64, st: f64, tick: &dyn Fn(usize) 
             let px = h[k - 1] - t;
             Some(Pos { dir: -1.0, e: k, px, stop: px + st * t, tgt: px - tt * t, kind: "stop" })
         } else { None };
-        if let Some(p) = new {
-            if let Some((px, why)) = entry_bar_exit(x, k, &p) { out.push(trade(&p, k, px, k, why)); } else { pos = Some(p); }
+        if let Some(mut p) = new {
+            // (entered at, exit)
+            let mut z: (Option<f64>, Option<(f64, &'static str)>) = (None, None);
+            let day = if on {
+                let (d, lv, sp, tg) = (p.dir, p.px, p.stop, p.tgt);
+                let walk = |w: &mut (Option<f64>, Option<(f64, &'static str)>), sg: &[Seg]| -> Vec<Ev> {
+                    let mut ev = vec![];
+                    for g in sg {
+                        if w.1.is_some() { break; }
+                        if w.0.is_none() {
+                            if g.up() == (d > 0.0) && g.inside(lv) {
+                                let px = g.fill(lv); w.0 = Some(px); ev.push(Ev { k: 0, px, up: d > 0.0 });
+                                if g.gap && d * (px - tg) >= 0.0 { w.1 = Some((px, "target")); ev.push(Ev { k: 2, px, up: d > 0.0 }); } // the jump also passed the target
+                                else if !g.gap && (Seg { a: lv, b: g.b, gap: false }).inside(tg) { w.1 = Some((tg, "target")); ev.push(Ev { k: 2, px: tg, up: d > 0.0 }); }
+                            }
+                            continue;
+                        }
+                        if g.up() == (d > 0.0) { if g.inside(tg) { w.1 = Some((g.fill(tg), "target")); ev.push(Ev { k: 2, px: g.fill(tg), up: d > 0.0 }); } }
+                        else if g.inside(sp) { w.1 = Some((g.fill(sp), "stop")); ev.push(Ev { k: 1, px: g.fill(sp), up: d < 0.0 }); }
+                    }
+                    ev
+                };
+                let pc = Pos { ..p };
+                resolve_conv(x, k, true, &mut z, |w: &mut (Option<f64>, Option<(f64, &'static str)>)| { w.0 = Some(pc.px); w.1 = entry_bar_exit(x, k, &pc); },
+                    |w: &mut (Option<f64>, Option<(f64, &'static str)>), hf: bool| walk(w, &bar_segs(o[k], h[k], l[k], x.c[k], hf)), walk)
+            } else { z = (Some(p.px), entry_bar_exit(x, k, &p)); Day::Plain };
+            let Some(fill) = z.0 else { continue }; // the minutes never reached the entry level: no trade
+            p.px = fill;
+            od = day;
+            if let Some((px, why)) = z.1 { let mut t = trade(&p, k, px, k, why); mark(&mut t, od); out.push(t); } else { pos = Some(p); }
         }
     }
-    if let Some(p) = pos { out.push(open_trade(&p, x, to)); }
+    if let Some(p) = pos { let mut t = open_trade(&p, x, to); mark(&mut t, od); out.push(t); }
     out
 }
 

@@ -156,7 +156,17 @@ pub const IDS: &[&str] = &[
     // Pierce's NR4 stop entries (books::sprfs nr4_trades_ep6: the entry bar's two stops and the protective stop)
     "sprfs_nr4ib", "sprfs_hvr_nr4ib", "sprfs_hvr_nr4",
     // Chong's pyramid (books::rcmm day_walk), Lien's CCI trade (books::kllien cci_walk)
-    "rcmm_20", "rcmm_55", "klhpt_cci_right"];
+    "rcmm_20", "rcmm_55", "klhpt_cci_right",
+    // part B (lane K63): Lindsay's Trident (stop_target), Dorfman's 3-EMA turn (books::vrsdd manage_ep6)
+    "lcttr_minor", "rdhft_ema3_turn",
+    // Stridsman's Meander (books::strmm sim_ep6: the stop and the target on one bar)
+    "strmm_meander",
+    // Bowden's ABC swing trade (books::dbnotp held_walk and the entry-bar walk)
+    "dbnotp_abc_stock", "dbnotp_abc_currency", "dbnotp_abc_index", "dbnotp_abc_trail",
+    // Stridsman's Gold Digger column (books::atm00: the stop, the target and the intrabar lock-in)
+    "atm00_gold_digger",
+    // Ross's ZULU gap reversal (books::joe_ross_rules zulu: held bars via stop_target, the entry bar walked on the minutes)
+    "jr_zulu"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -166,7 +176,8 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     // wave 3 (lane K62)
     "dlost_simple_pb", "dlost_tko", "ltcoat_coat_tails", "scluisi_nr", "stad2_adxdiff", "stad5_stochob", "tsvega_stoch",
     // wave 5 (lane K63)
-    "acbff_3rd_fade", "lgtt30_tt30", "rcmm_55", "wwnc_tbp"];
+    "acbff_3rd_fade", "lgtt30_tt30", "rcmm_55", "wwnc_tbp",
+    "dbnotp_abc_index", "strmm_meander", "atm00_gold_digger", "jr_zulu"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or

@@ -264,7 +264,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm00_gold_digger" => vec![p("stop_pct", "Stop loss %", 1.1, 0.2, 5., 0.1), p("lock_pct", "Lock-in profit %", 0.6, 0.1, 3., 0.1),
             p("tgt_pct", "Profit target %", 2.8, 0.5, 10., 0.1), p("hold", "Exit after days", 8., 2., 20., 1.), p("low_n", "New-low exception days", 60., 10., 120., 5.),
             p("entry_open", "Entry: 0 at the close, 1 next open", 0., 0., 1., 1.), p("lock_close", "Lock trigger: 0 intrabar, 1 close", 0., 0., 1., 1.),
-            p("low_basis", "New 60-day low by: 0 low, 1 close", 0., 0., 1., 1.)],
+            p("low_basis", "New 60-day low by: 0 low, 1 close", 0., 0., 1., 1.)].into_iter().chain({ let mut v = vec![]; crate::intraday_ep6::add_param(id, &mut v); v }).collect(), // EP6 (#243, lane K63)
         "atm00_fourplay" => vec![p("ma", "Moving average days", 50., 10., 200., 5.), p("add_pct", "First add-on %", 1., 0.25, 5., 0.25)],
         "atm00_bear_claw" => vec![p("ma", "Trend MA days", 200., 50., 300., 10.), p("pdi_n", "DMI+ days", 14., 5., 30., 1.), p("mdi_n", "DMI- days", 8., 3., 30., 1.)],
         "atm00_ma_9_18" => vec![p("fast", "Short MA days", 9., 2., 50., 1.), p("slow", "Long MA days", 18., 5., 200., 1.)],
@@ -280,6 +280,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let (c, o, h, l) = (&x.c, &x.o, &x.h, &x.l);
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     Some(match id {
         "atm00_gold_digger" => {
             let wc = prev_week_closes(x);
@@ -310,13 +312,50 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     let armed = (k0..t).any(|k| if lock_close { q.dir * (c[k] - lock_lvl) >= 0.0 } else { touched(k) });
                     let base_stop = q.epx * (1.0 - q.dir * sp);
                     let stop = if armed { if q.dir > 0.0 { base_stop.max(lock_lvl) } else { base_stop.min(lock_lvl) } } else { base_stop };
-                    if let Some((px, why)) = levels(x, t, q.dir, Some(stop), Some(q.epx * (1.0 + q.dir * tp))) {
-                        return Some((px, if why.starts_with("stop") && armed { "lock-in stop" } else { why }));
-                    }
-                    // armed on this bar intrabar and closed back through the lock: the lock was hit after the touch
-                    if !armed && !lock_close && touched(t) && q.dir * (c[t] - lock_lvl) < 0.0 {
-                        return Some((lock_lvl, "lock-in stop (same bar)"));
-                    }
+                    let tgt = q.epx * (1.0 + q.dir * tp);
+                    let conv = || -> Option<(f64, &'static str)> {
+                        if let Some((px, why)) = levels(x, t, q.dir, Some(stop), Some(tgt)) {
+                            return Some((px, if why.starts_with("stop") && armed { "lock-in stop" } else { why }));
+                        }
+                        // armed on this bar intrabar and closed back through the lock: the lock was hit after the touch
+                        if !armed && !lock_close && touched(t) && q.dir * (c[t] - lock_lvl) < 0.0 {
+                            return Some((lock_lvl, "lock-in stop (same bar)"));
+                        }
+                        None
+                    };
+                    if on {
+                        // EP6 (#243, lane K63): the stop, the target and the intrabar lock-in on the real 1-minute path
+                        use crate::intraday_ep6::{bar_segs, resolve_conv, Ev, Seg};
+                        let d = q.dir;
+                        let lock_stop = if d > 0.0 { base_stop.max(lock_lvl) } else { base_stop.min(lock_lvl) };
+                        let walk = |z: &mut (bool, Option<(f64, &'static str)>), sg: &[Seg]| -> Vec<Ev> {
+                            let mut ev = vec![];
+                            if sg.is_empty() {
+                                let op = o[t];
+                                let s = if z.0 { lock_stop } else { stop };
+                                if d * (op - s) <= 0.0 { z.1 = Some((op, if z.0 { "lock-in stop" } else { "stop (gap at open)" })); ev.push(Ev { k: 0, px: op, up: d < 0.0 }); }
+                                else if d * (op - tgt) >= 0.0 { z.1 = Some((op, "target (gap at open)")); ev.push(Ev { k: 1, px: op, up: d > 0.0 }); }
+                                else if !z.0 && !lock_close && d * (op - lock_lvl) >= 0.0 { z.0 = true; ev.push(Ev { k: 2, px: op, up: d > 0.0 }); }
+                                return ev;
+                            }
+                            for g in sg {
+                                if z.1.is_some() { break; }
+                                if g.up() == (d > 0.0) {
+                                    if g.inside(tgt) { z.1 = Some((g.fill(tgt), "target")); ev.push(Ev { k: 1, px: g.fill(tgt), up: d > 0.0 }); }
+                                    else if !z.0 && !lock_close && g.inside(lock_lvl) { z.0 = true; ev.push(Ev { k: 2, px: lock_lvl, up: d > 0.0 }); }
+                                } else {
+                                    let s = if z.0 { lock_stop } else { stop };
+                                    if g.inside(s) { z.1 = Some((g.fill(s), if z.0 { "lock-in stop" } else { "stop" })); ev.push(Ev { k: 0, px: g.fill(s), up: d < 0.0 }); }
+                                }
+                            }
+                            ev
+                        };
+                        let mut z = (armed, None);
+                        let day = resolve_conv(x, t, true, &mut z, |w: &mut (bool, Option<(f64, &'static str)>)| w.1 = conv(),
+                            |w: &mut (bool, Option<(f64, &'static str)>), hf: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[t], h[t], l[t], c[t], hf))); v }, walk);
+                        EP6_DAY.with(|cl| cl.set(cl.get().worst(day)));
+                        if z.1.is_some() { return z.1; }
+                    } else if let Some(r) = conv() { return Some(r); }
                 }
                 if days >= hold && t > q.ei { return Some((c[t], "time exit (8 days)")); }
                 None

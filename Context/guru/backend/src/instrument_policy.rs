@@ -2965,8 +2965,9 @@ mod tests {
             let p=policy(d);
             assert_eq!((p.requirement,p.allowed_types,p.market_adaptation),("index_etf_or_stock",&["index","etf","individual_stock"][..],true),"{}",d.id);
             assert!(p.source_basis.contains("declared application"),"{}",d.id);
-            for t in ["SPX","NDX","DJI","SPY","QQQ","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            for t in ["AAPL","RELIANCE"] {assert!(check(d,t,true).is_none(),"{} {t}",d.id);}
+            let ep6=|t:&str| crate::intraday_ep6::held_note(d.id,t).is_some(); // K63 #243 (c): jr_zulu publishes the minute window only
+            for t in ["SPX","NDX","DJI","SPY","QQQ","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||ep6(t),"{} {t}",d.id);}
+            for t in ["AAPL","RELIANCE"] {assert!(check(d,t,true).is_none()||ep6(t),"{} {t}",d.id);}
         }
         for d in joe_ross::catalogue() {
             assert_eq!(policy(&d).requirement,"source_review_required","{}",d.id);
