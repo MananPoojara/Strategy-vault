@@ -4,6 +4,7 @@
 //! Acme Trade Manager (p.16-18, p.272-273). Stock systems: run on NSE stock baskets (basket:<list>:<SYMBOL>) or an index.
 //! Source and checks: library/cbpst/.
 use crate::connors::{wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::intraday_ep6::{bar_segs, Day, Ev, Seg};
 
 pub const BOOK: &str = "cbpst";
 /// Admitted ids (lane C, authors/conway): M and R on US instruments, N on US stocks, V everywhere.
@@ -94,6 +95,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         _ => return None,
     };
     v.extend(tm);
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
     Some(v)
 }
 
@@ -302,7 +304,8 @@ fn m_counts(x: &Ctx, n: &Ind, i: usize) -> (usize, usize) {
 }
 
 // ------------------------------------------------------------------ TradeStation-style simulator with the Acme Trade Manager
-struct Pos { dir: f64, ei: usize, ep: f64, rem: f64, t1: bool, t2: bool, exits: Vec<(usize, f64, f64)> }
+#[derive(Clone)]
+struct Pos { dir: f64, ei: usize, ep: f64, rem: f64, t1: bool, t2: bool, exits: Vec<(usize, f64, f64)>, od: Day }
 #[derive(Clone, Copy)]
 struct Tm { ef: f64, sb: usize, pt: bool, pf: f64, hold: usize }
 
@@ -312,11 +315,115 @@ fn close_pos(p: Pos, x: &Ctx, out: &mut Vec<Trade>, why: &str, sig: usize, open:
     let xi = p.exits.last().map_or(p.ei, |e| e.0);
     let exits = if p.exits.len() > 1 { p.exits.clone() } else { vec![] };
     let _ = x;
-    out.push(Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.ep, w: 1. }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: "stop", signal_i: sig, open, exits });
+    let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.ep, w: 1. }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: "stop", signal_i: sig, open, exits };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    out.push(t);
 }
 
-/// entries(i) -> (buy stop, short stop) for bar i+1, computed on bar i's close.
-fn simulate(x: &Ctx, from: usize, to: usize, tm: Tm, entries: &dyn Fn(usize) -> (Option<f64>, Option<f64>)) -> Vec<Trade> {
+/// The orders working on one bar: the held position's exits (stop, target 1 (px, size), target 2, time exit at the open)
+/// and the entry stops.
+#[derive(Clone, Copy)]
+struct Lv { xo: Option<(f64, Option<(f64, f64)>, Option<(f64, f64)>, bool)>, buy: Option<f64>, sell: Option<f64> }
+
+/// One bar's state: the position, the position held at the prior close (`pid`: its exit orders apply only to it), the
+/// orders already triggered this bar, the positions closed on it (position, reason, signal bar) and how many of those
+/// closed at the open (their exit does not depend on the order inside the day, so they keep their own mark).
+#[derive(Clone)]
+struct BarSt { pos: Option<Pos>, pid: Option<(usize, f64)>, done: [bool; 6], closed: Vec<(Pos, &'static str, usize)>, at_open: usize }
+
+/// One triggered order on bar i (kind 0 time exit, 1 stop, 2/3 targets, 4 buy stop, 5 short stop) at `px`; false when it
+/// did nothing (an exit order of another position, a same-direction entry).
+fn apply(s: &mut BarSt, i: usize, kind: u8, px: f64, sz: f64) -> bool {
+    if kind <= 3 {
+        let Some(p) = s.pos.as_mut() else { return false };
+        if Some(p.ei) != s.pid.map(|q| q.0) { return false; } // orders belong to the position held at the prior close
+        let q = if kind <= 1 { p.rem } else { sz.min(p.rem) };
+        if q <= 1e-12 { return false; }
+        p.exits.push((i, px, q)); p.rem -= q;
+        if kind == 2 { p.t1 = true; } if kind == 3 { p.t2 = true; }
+        if p.rem <= 1e-12 {
+            let why = match kind { 0 => "time exit (HoldBars) at open", 1 => "stop loss", 2 => "profit target 1", _ => "profit target 2" };
+            let p = s.pos.take().unwrap();
+            s.closed.push((p, why, if kind == 0 { i - 1 } else { i }));
+        }
+        return true;
+    }
+    let d = if kind == 4 { 1. } else { -1. };
+    if s.pos.as_ref().is_some_and(|p| p.dir == d) { return false; }
+    if let Some(mut p) = s.pos.take() { let r = p.rem; p.exits.push((i, px, r)); p.rem = 0.; s.closed.push((p, "reversed by opposite entry", i)); }
+    s.pos = Some(Pos { dir: d, ei: i, ep: px, rem: 1., t1: false, t2: false, exits: vec![], od: Day::Plain });
+    true
+}
+
+/// The book's daily bar (TradeStation path: open -> nearer extreme -> other extreme -> close); every order fills once,
+/// in the order the path reaches it, ties by rank (time exit, stop, targets, entries).
+fn bar_ts(x: &Ctx, i: usize, s: &mut BarSt, lv: &Lv) {
+    let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+    let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
+    // when along the path a level is reached: (time, fill)
+    let when = |lvl: f64, up: bool| -> Option<(f64, f64)> {
+        if (up && o >= lvl) || (!up && o <= lvl) { return Some((0., o)); }
+        for k in 0..3 {
+            let (a, b) = (path[k], path[k + 1]);
+            if up && b > a && lvl > a && lvl <= b { return Some((k as f64 + (lvl - a) / (b - a), lvl)); }
+            if !up && b < a && lvl < a && lvl >= b { return Some((k as f64 + (a - lvl) / (a - b), lvl)); }
+        }
+        None
+    };
+    // events: (time, rank, kind, fill, size)
+    let mut ev: Vec<(f64, u8, u8, f64, f64)> = vec![];
+    if let (Some(p), Some((stop, t1, t2, tx))) = (s.pos.as_ref(), lv.xo) {
+        let up = p.dir < 0.;
+        if tx { ev.push((-1., 0, 0, o, 1.)); }
+        if let Some(e) = when(stop, up) { ev.push((e.0, 1, 1, e.1, 1.)); }
+        for (k, t) in [(2u8, t1), (3u8, t2)] { if let Some((lvl, sz)) = t { if let Some(e) = when(lvl, !up) { ev.push((e.0, 2, k, e.1, sz)); } } }
+    }
+    if let Some(b) = lv.buy { if let Some(e) = when(b, true) { ev.push((e.0, 3, 4, e.1, 0.)); } }
+    if let Some(v) = lv.sell { if let Some(e) = when(v, false) { ev.push((e.0, 3, 5, e.1, 0.)); } }
+    ev.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
+    for (t, _, kind, px, sz) in ev { apply(s, i, kind, px, sz); if t <= 0. { s.at_open = s.closed.len(); } }
+}
+
+/// EP6 (#243, lane K63): the same orders walked along any price path (`segs` empty = the bar's open: the time exit and every
+/// level the open is at or through, in rank order; then each piece of the path in turn, levels in the order it reaches them,
+/// a gapped piece filling at its end). On a daily bar's two paths this is `bar_ts`; on the minutes it is the real order.
+fn bar_walk(x: &Ctx, i: usize, s: &mut BarSt, lv: &Lv, segs: &[Seg]) -> Vec<Ev> {
+    // (kind, level, touched moving up, rank, size); exits only for the position held at the prior close
+    let mut cand: Vec<(u8, f64, bool, u8, f64)> = vec![];
+    if let (Some((_, dir)), Some((stop, t1, t2, tx))) = (s.pid, lv.xo) {
+        let up = dir < 0.;
+        if tx { cand.push((0, f64::NAN, up, 0, 1.)); }
+        cand.push((1, stop, up, 1, 1.));
+        for (k, t) in [(2u8, t1), (3u8, t2)] { if let Some((lvl, sz)) = t { cand.push((k, lvl, !up, 2, sz)); } }
+    }
+    if let Some(b) = lv.buy { cand.push((4, b, true, 3, 0.)); }
+    if let Some(v) = lv.sell { cand.push((5, v, false, 3, 0.)); }
+    let mut ev = vec![];
+    let o = x.o[i];
+    if segs.is_empty() {
+        for &(k, _, up, _, sz) in cand.iter().filter(|c| c.0 == 0 || if c.2 { o >= c.1 } else { o <= c.1 }) {
+            if s.done[k as usize] { continue; }
+            s.done[k as usize] = true;
+            if apply(s, i, k, o, sz) { ev.push(Ev { k, px: o, up }); }
+            s.at_open = s.closed.len();
+        }
+        return ev;
+    }
+    for g in segs {
+        let mut hit: Vec<&(u8, f64, bool, u8, f64)> = cand.iter().filter(|c| c.0 != 0 && !s.done[c.0 as usize] && c.2 == g.up() && g.inside(c.1)).collect();
+        hit.sort_by(|a, b| (a.1 - g.a).abs().total_cmp(&(b.1 - g.a).abs()).then(a.3.cmp(&b.3)));
+        for &&(k, lvl, up, _, sz) in &hit {
+            s.done[k as usize] = true;
+            let px = g.fill(lvl);
+            if apply(s, i, k, px, sz) { ev.push(Ev { k, px, up }); }
+        }
+    }
+    ev
+}
+
+/// entries(i) -> (buy stop, short stop) for bar i+1, computed on bar i's close. `on`: EP6 (#243, lane K63), a bar whose
+/// events differ between its two extreme orders is walked on the real 1-minute path (bar_walk); bar_ts otherwise.
+fn simulate(x: &Ctx, from: usize, to: usize, tm: Tm, entries: &dyn Fn(usize) -> (Option<f64>, Option<f64>), on: bool) -> Vec<Trade> {
     let atr = ts_vol(x, 20);
     let mut out = vec![];
     let mut pos: Option<Pos> = None;
@@ -326,52 +433,19 @@ fn simulate(x: &Ctx, from: usize, to: usize, tm: Tm, entries: &dyn Fn(usize) -> 
     let pb = tm.hold / 2 + 1;
     for i in from..=to {
         if i > from {
+            let lv = Lv { xo, buy, sell };
+            let pid = pos.as_ref().map(|p| (p.ei, p.dir));
+            let mut st = BarSt { pos: pos.take(), pid, done: [false; 6], closed: vec![], at_open: 0 };
             let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
-            let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
-            // when along the path a level is reached: (time, fill)
-            let when = |lvl: f64, up: bool| -> Option<(f64, f64)> {
-                if (up && o >= lvl) || (!up && o <= lvl) { return Some((0., o)); }
-                for k in 0..3 {
-                    let (a, b) = (path[k], path[k + 1]);
-                    if up && b > a && lvl > a && lvl <= b { return Some((k as f64 + (lvl - a) / (b - a), lvl)); }
-                    if !up && b < a && lvl < a && lvl >= b { return Some((k as f64 + (a - lvl) / (a - b), lvl)); }
-                }
-                None
-            };
-            // events: (time, rank, kind, fill, size)
-            let mut ev: Vec<(f64, u8, u8, f64, f64)> = vec![];
-            if let (Some(p), Some((stop, t1, t2, tx))) = (pos.as_ref(), xo) {
-                let up = p.dir < 0.;
-                if tx { ev.push((-1., 0, 0, o, 1.)); }
-                if let Some(e) = when(stop, up) { ev.push((e.0, 1, 1, e.1, 1.)); }
-                for (k, t) in [(2u8, t1), (3u8, t2)] { if let Some((lvl, sz)) = t { if let Some(e) = when(lvl, !up) { ev.push((e.0, 2, k, e.1, sz)); } } }
+            let day = crate::intraday_ep6::resolve_conv(x, i, on, &mut st, |s| bar_ts(x, i, s, &lv),
+                |s, hf| { let mut e = bar_walk(x, i, s, &lv, &[]); e.extend(bar_walk(x, i, s, &lv, &bar_segs(o, h, l, c, hf))); e },
+                |s, g| bar_walk(x, i, s, &lv, g));
+            for (n, (mut p, why, sig)) in st.closed.into_iter().enumerate() {
+                if n >= st.at_open { p.od = p.od.worst(day); }
+                close_pos(p, x, &mut out, why, sig, false);
             }
-            if let Some(b) = buy { if let Some(e) = when(b, true) { ev.push((e.0, 3, 4, e.1, 0.)); } }
-            if let Some(s) = sell { if let Some(e) = when(s, false) { ev.push((e.0, 3, 5, e.1, 0.)); } }
-            ev.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
-            let pid = pos.as_ref().map(|p| p.ei);
-            for (_, _, kind, px, sz) in ev {
-                match kind {
-                    0 | 1 | 2 | 3 => {
-                        let Some(p) = pos.as_mut() else { continue };
-                        if Some(p.ei) != pid { continue; } // orders belong to the position held at the prior close
-                        let q = if kind <= 1 { p.rem } else { sz.min(p.rem) };
-                        if q <= 1e-12 { continue; }
-                        p.exits.push((i, px, q)); p.rem -= q;
-                        if kind == 2 { p.t1 = true; } if kind == 3 { p.t2 = true; }
-                        if p.rem <= 1e-12 {
-                            let why = match kind { 0 => "time exit (HoldBars) at open", 1 => "stop loss", 2 => "profit target 1", _ => "profit target 2" };
-                            close_pos(pos.take().unwrap(), x, &mut out, why, if kind == 0 { i - 1 } else { i }, false);
-                        }
-                    }
-                    _ => {
-                        let d = if kind == 4 { 1. } else { -1. };
-                        if pos.as_ref().is_some_and(|p| p.dir == d) { continue; }
-                        if let Some(mut p) = pos.take() { let r = p.rem; p.exits.push((i, px, r)); p.rem = 0.; close_pos(p, x, &mut out, "reversed by opposite entry", i, false); }
-                        pos = Some(Pos { dir: d, ei: i, ep: px, rem: 1., t1: false, t2: false, exits: vec![] });
-                    }
-                }
-            }
+            pos = st.pos;
+            if let Some(p) = pos.as_mut() { p.od = if p.ei == i { day } else { p.od.worst(day) }; }
         }
         if i == to { break; }
         // orders for bar i+1, from bar i's close
@@ -419,7 +493,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let s = (ss >= minp && x.h[i] > hi(&x.h, i - 1, mr - 1) && rp(x, x.l[i], i, mr) >= 1. - mpct && x.l[i] < x.h[i - 1]).then(|| x.l[i] - ef * a);
                 (b, s)
             };
-            simulate(x, from, to, tm, &f)
+            simulate(x, from, to, tm, &f, false)
         }
         "cbpst_n" => {
             let (rpct, mrr, rb, mp, madx, mhv) = (g("range_pct"), g("max_range_ratio"), g("retrace_bars") as usize, g("min_price"), g("min_adx"), g("min_hv"));
@@ -435,7 +509,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let s = ((!on || med < n.ma50[i]) && retrace(x, i, rb, false)).then(|| x.l[i] - ef * a);
                 (b, s)
             };
-            simulate(x, from, to, tm, &f)
+            simulate(x, from, to, tm, &f, false)
         }
         "cbpst_r" => {
             let (rl, rr, rf, rat, matr) = (g("rect_len") as usize, g("rect_range") as usize, g("rect_factor"), g("rect_ratio"), g("min_atr"));
@@ -451,7 +525,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if !inr { return (None, None); }
                 (Some(rh + ef * a), Some(rlw - ef * a))
             };
-            simulate(x, from, to, tm, &f)
+            simulate(x, from, to, tm, &f, false)
         }
         "cbpst_v" => {
             let (rb, rf) = (g("reg_bars") as usize, g("range_factor"));
@@ -463,7 +537,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let ok = x.h[i] < lo(&x.h, i - 1, rb - 1) && rng(x, i) <= rf * a && x.l[i] > linreg_next(&x.l, i, rb) && x.l[i] > n.ma50[i] && x.h[i] > x.l[i - 1];
                 (ok.then(|| x.c[i] + ef * a), None)
             };
-            simulate(x, from, to, tm, &f)
+            simulate(x, from, to, tm, &f, crate::intraday_ep6::on(id, p)) // EP6 (#243, lane K63)
         }
         _ => return None,
     };
@@ -488,7 +562,7 @@ mod tests {
         let tm = Tm { ef: 5., sb: 1, pt: false, pf: 0.9, hold: 5 };
         // a buy stop at 100.5 only for bar 21 -> fills at 100.5 on bar 21; exit at the open of bar 26
         let f = |i: usize| if i == 20 { (Some(100.5), None) } else { (None, None) };
-        let ts = simulate(&x, 0, 39, tm, &f);
+        let ts = simulate(&x, 0, 39, tm, &f, false);
         assert_eq!(ts.len(), 1);
         assert_eq!(ts[0].legs[0].i, 21); assert_eq!(ts[0].legs[0].px, 100.5);
         assert_eq!(ts[0].exit_i, 26); assert_eq!(ts[0].exit_px, 100.);

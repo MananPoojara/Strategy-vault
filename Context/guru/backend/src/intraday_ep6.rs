@@ -166,7 +166,17 @@ pub const IDS: &[&str] = &[
     // Stridsman's Gold Digger column (books::atm00: the stop, the target and the intrabar lock-in)
     "atm00_gold_digger",
     // Ross's ZULU gap reversal (books::joe_ross_rules zulu: held bars via stop_target, the entry bar walked on the minutes)
-    "jr_zulu"];
+    "jr_zulu",
+    // part C (lane K63): Conway & Behle's Acme V (books::cbpst bar_walk: the Trade Manager's stop, targets, time exit and
+    // the entry stops along the path)
+    "cbpst_v",
+    // Landry's Explosion Gap Pivot (books::dl10b day_walk: the entry stop, the stop and the half-off target along the path)
+    "dl10b_egp",
+    // Connors's Windows (books::cwin sim_ep6: the entry day's stop entry and its same-day protective stop)
+    "cwin_single_window", "cwin_double_window", "cwin_first_window", "cwin_weekly_window",
+    // Street Smarts (books::ss sim: the entry bar's stop entries, stop-and-reverse, stop and target via entry_walk; held
+    // bars' stop and target via stop_target)
+    "ss_turtle_soup_plus_one", "ss_holy_grail", "ss_three_day_unfilled_gap", "ss_id_nr4", "ss_hist_vol_crabel"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -177,13 +187,15 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "dlost_simple_pb", "dlost_tko", "ltcoat_coat_tails", "scluisi_nr", "stad2_adxdiff", "stad5_stochob", "tsvega_stoch",
     // wave 5 (lane K63)
     "acbff_3rd_fade", "lgtt30_tt30", "rcmm_55", "wwnc_tbp",
-    "dbnotp_abc_index", "strmm_meander", "atm00_gold_digger", "jr_zulu"];
+    "dbnotp_abc_index", "strmm_meander", "atm00_gold_digger", "jr_zulu",
+    "cwin_single_window", "cwin_double_window", "cwin_first_window", "ss_three_day_unfilled_gap", "ss_holy_grail",
+    "ss_hist_vol_crabel"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
 /// above +100% when SPY's is not positive): those India results are withdrawn (K63w/india231.tsv).
 pub const INDIA231: &[(&str, &str)] = &[("ltcoat_coat_tails", "NIFTY 50"), ("ltcoat_coat_tails", "NIFTYBANK"), ("stad2_adxdiff", "NIFTY 50"), ("wwnc_tbp", "NIFTY 50"),
-    ("lgtt30_tt30", "NIFTY 50"), ("lgtt30_tt30", "NIFTYBANK")];
+    ("lgtt30_tt30", "NIFTY 50"), ("lgtt30_tt30", "NIFTYBANK"), ("ss_hist_vol_crabel", "NIFTY 50")];
 const INDIA231_NOTE: &str = "The India minute-window result is withdrawn (decisions #231, #234, #255, lane K63): NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates.";
 
 /// #243: ids HELD. The five thin ids (M6: over 5% order-dependent, fewer than 10 trades inside the minute window), and EP6 ids
@@ -198,7 +210,7 @@ pub const HELD: &[(&str, &str)] = &[
 const CASH177B_K62: &str = "Held (decisions #177b, #246, lane K62): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule loses over 2014-2025 while SPX gains (opposite sign, the cash-vs-tradable check), and SPX is this rule's only ticker, so no results are published.";
 /// #246 (a), lane K62: daily rules whose RESOLVED result fails #179 on SPX (SPX better than SPY in both check windows): the SPX
 /// result is withdrawn and, as #179 rules for SPX-flagged rules, the NIFTY 50 / NIFTYBANK results are held; SPY and the rest stay.
-pub const SPX179: &[&str] = &["bfmmx_nql4"];
+pub const SPX179: &[&str] = &["bfmmx_nql4", "cwin_single_window"]; // + lane K63 (wave 5)
 const SPX179_NOTE: &str = "The SPX daily result is withdrawn (decisions #179, #246, lane K62): with the same-day order resolved on 1-minute bars, SPX beats tradable SPY over the same dates in both check windows (2014-01-02..2017-06-30 and 2017-07-01..2020-09-11); SPX daily open/high/low come from stale component prints, so the SPY result carries the S&P rule.";
 const SPX179_INDIA: &str = "Not published on this index (decisions #179, #246, lane K62): the same rule fails the tradable-vs-cash check on SPX/SPY with its same-day order resolved on 1-minute bars, and India has no tradable index series to check it on, so the NIFTY result is held.";
 /// #246 (a): SPX-point rules whose RESOLVED result fails #177b (SPX vs tradable SPY with the points scaled, 2014-2025); SPX is

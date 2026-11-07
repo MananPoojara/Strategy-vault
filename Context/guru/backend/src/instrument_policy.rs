@@ -263,7 +263,7 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "lkcpt_rsimild", "lwdtfo_vb_open", "lwmdc_open_up_oc", "msadd_n_can_ha", "msadd_n_can_pl",
     "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "qsfund_trendline", "rarsys_trend_weaver",
     "rgc_runaway_gap", "rgc_runaway_gap_f5", "rinadz_rsi9", "rpdt_range_bo", "scdshark_32", "scjleq_vol", "sdtcp_donchian", "sdtcp_nr7id",
-    "slct_ct_formula", "sprfs_nr4ib", "ss_hist_vol_crabel", "ss_three_day_unfilled_gap", "stad12_ntw", "stad13_luxor", "stad1_maco",
+    "slct_ct_formula", "sprfs_nr4ib", "stad12_ntw", "stad13_luxor", "stad1_maco",
     "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad7_masr", "stad9_dyf", "stad9_luxor", "stad9_nohurry", "stad9_redrover",
     "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tttt1_tradetimer",
     "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
@@ -3144,13 +3144,14 @@ mod tests {
             let stock=ss::STOCK_SHOWN.contains(&d.id);let also=ss::STOCK_ALSO.contains(&d.id);
             let open=open_all(d); // open-all 23 Oct 2026
             assert_eq!(policy(d).requirement,if stock||also||open {"index_etf_or_stock"} else {"declared_index_timing"},"{}",d.id);
-            assert_eq!(check(d,"AAPL",true).is_none(),stock||also||(open&&!nyse_breadth(d)),"{}",d.id); // NYSE breadth: native US stocks go through check_native
-            assert_eq!(check(d,"QQQ",false).is_none(),stock||open,"{}",d.id);
+            let ep6=|t:&str| crate::intraday_ep6::held_note(d.id,t).is_some(); // K63 #243 (c): minute-window ids have no stock/QQQ result
+            assert_eq!(check(d,"AAPL",true).is_none(),(stock||also||(open&&!nyse_breadth(d)))&&!ep6("AAPL"),"{}",d.id); // NYSE breadth: native US stocks go through check_native
+            assert_eq!(check(d,"QQQ",false).is_none(),(stock||open)&&!ep6("QQQ"),"{}",d.id);
             let futures=["SPX","NDX","DJI","SPY","NIFTY 50","NIFTYBANK"];
             match d.id {
                 "ss_ad_market_buster" => for t in futures {assert_eq!(check(d,t,false).is_none(),!t.starts_with("NIFTY"),"{t}");}, // NYSE breadth: every US instrument
                 "ss_ad_market_buster_nse" => for t in futures {assert!(check(d,t,false).is_some(),"{t}");}, // held (NSE breadth)
-                _ => for t in futures {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);},
+                _ => for t in futures {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||ep6(t),"{} {t}",d.id);},
             }
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
         }
@@ -3241,7 +3242,8 @@ mod tests {
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let p=policy(d);assert_eq!(p.requirement,"index_etf_or_stock");assert!(p.market_adaptation);
             for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none() && check(d,"NIFTY FUTURE",false).is_some());
+            let ep6=|t:&str| crate::intraday_ep6::held_note(d.id,t).is_some(); // K63 #243 (c): minute-window ids have no stock result
+            assert!((check(d,"AAPL",true).is_none()||ep6("AAPL")) && (check(d,"RELIANCE",true).is_none()||ep6("RELIANCE")) && check(d,"NIFTY FUTURE",false).is_some());
             assert!(metadata_json(d).contains("\"declared_application\":\"The book and course show Windows"));
         }
         // connors-final 26 Oct 2026: admitted on NIFTY 50 only (India VIX 1-minute series); US / other instruments refused.
@@ -3904,7 +3906,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(73,17,44)); // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(71,17,44)); // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);

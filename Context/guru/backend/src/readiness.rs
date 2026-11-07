@@ -745,6 +745,7 @@ mod tests {
             let guarded=!crate::gate::get(id).is_some_and(|g|g.clamp_open);
             assert_eq!(guarded,id=="cwin_window_two_rule_exit_test");
             let (old,new,spy)=(mk("SPX","2013"),mk("SPX","2014"),mk("SPY","1995"));
+            if crate::intraday_ep6::held_note(id,"SPX").is_some() {continue;} // K63 #246: cwin_single_window's SPX result withdrawn (#179)
             assert_eq!(check(&Ctx::new(&old,&old,&old),&d,0,4,&Params::new()).is_some(),guarded,"{id}");
             assert!(check(&Ctx::new(&new,&new,&new),&d,0,4,&Params::new()).is_none(),"{id}");
             assert!(check(&Ctx::new(&spy,&spy,&spy),&d,0,4,&Params::new()).is_none(),"{id}");
