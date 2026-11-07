@@ -345,7 +345,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                                     else if !z.0 && !lock_close && g.inside(lock_lvl) { z.0 = true; ev.push(Ev { k: 2, px: lock_lvl, up: d > 0.0 }); }
                                 } else {
                                     let s = if z.0 { lock_stop } else { stop };
-                                    if g.inside(s) { z.1 = Some((g.fill(s), if z.0 { "lock-in stop" } else { "stop" })); ev.push(Ev { k: 0, px: g.fill(s), up: d < 0.0 }); }
+                                    // a lock armed exactly at the end of the previous piece is hit by a fall from that level (Codex)
+                                    if g.inside(s) || (z.0 && s == g.a && d * (g.b - s) < 0.0) { z.1 = Some((g.fill(s), if z.0 { "lock-in stop" } else { "stop" })); ev.push(Ev { k: 0, px: g.fill(s), up: d < 0.0 }); }
                                 }
                             }
                             ev
