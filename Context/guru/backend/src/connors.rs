@@ -35,6 +35,43 @@ pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
         .collect()
 }
 
+/// Exact decimal arithmetic on printed prices (R4 #253): each value is read as the shortest decimal that round-trips to the
+/// stored f64 (the printed price), scaled to integers at one common scale for all the given series. Window sums are then
+/// exact, so an average can be compared with a price (n*P vs the sum) or with another average (m*S_n vs n*S_m) without
+/// rounding. `None` when a value has more than 15 decimals or is not finite: the caller keeps its float comparison.
+pub struct ExactSeries { pub v: Vec<Vec<Option<i128>>> }
+impl ExactSeries {
+    pub fn new(series: &[&[f64]]) -> Option<ExactSeries> {
+        let parse = |x: f64| -> Option<(i128, u32)> {
+            if !x.is_finite() { return None; }
+            let s = format!("{x}");
+            let (neg, s) = s.strip_prefix('-').map_or((false, s.as_str()), |r| (true, r));
+            let (ip, fp) = s.split_once('.').unwrap_or((s, ""));
+            if fp.len() > 15 || ip.len() > 18 { return None; }
+            let m: i128 = format!("{ip}{fp}").parse().ok()?;
+            Some((if neg { -m } else { m }, fp.len() as u32))
+        };
+        let raw: Vec<Vec<Option<(i128, u32)>>> = series.iter().map(|s| s.iter().map(|&x| if x.is_nan() { None } else { parse(x) }).collect()).collect();
+        // a finite value that cannot be read exactly makes the whole set fall back to floats
+        for (s, r) in series.iter().zip(&raw) { if s.iter().zip(r).any(|(x, p)| !x.is_nan() && p.is_none()) { return None; } }
+        let sc = raw.iter().flatten().flatten().map(|p| p.1).max().unwrap_or(0);
+        Some(ExactSeries { v: raw.into_iter().map(|r| r.into_iter().map(|p| p.map(|(m, k)| m * 10i128.pow(sc - k))).collect()).collect() })
+    }
+    /// Exact window sums of series `k` (None in warm-up or when the window holds a missing value).
+    pub fn sums(&self, k: usize, n: usize) -> Vec<Option<i128>> {
+        let v = &self.v[k];
+        (0..v.len()).map(|i| if n == 0 || i + 1 < n { None } else { v[i + 1 - n..=i].iter().try_fold(0i128, |a, x| x.map(|x| a + x)) }).collect()
+    }
+}
+/// Sign of SMA_n(series k at bar i) - price (series j at bar i) in exact arithmetic: n*P vs the window sum.
+pub fn exact_avg_vs(e: &ExactSeries, sum: &[Option<i128>], n: usize, j: usize, i: usize) -> Option<std::cmp::Ordering> {
+    Some(sum[i]?.cmp(&(e.v[j][i]? * n as i128)))
+}
+/// Sign of SMA_a - SMA_b at bar i from exact window sums of lengths na and nb: nb*S_a vs na*S_b.
+pub fn exact_avg_vs_avg(sa: &[Option<i128>], na: usize, sb: &[Option<i128>], nb: usize, i: usize) -> Option<std::cmp::Ordering> {
+    Some((sa[i]? * nb as i128).cmp(&(sb[i]? * na as i128)))
+}
+
 /// Wilder smoothed moving average (SMMA, alpha = 1/n) seeded with the SMA of the
 /// first n valid values. NaN inputs before the first valid value are skipped.
 pub fn wilder(v: &[f64], n: usize) -> Vec<f64> {

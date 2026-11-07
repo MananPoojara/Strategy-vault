@@ -423,15 +423,25 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 fn oops(x: &Ctx, from: usize, to: usize, kind: u8, shorts: bool, trend: usize, exit_ma: usize, rlo: f64, rhi: f64, gap: f64, ext: f64) -> Vec<Trade> {
     let (c, o, h, l) = (&x.c, &x.o, &x.h, &x.l);
     let (tr, m5, r2) = (x.sma_n(trend), x.sma_n(exit_ma), &x.rsi2);
+    // R4 #253: the close against the 200-day / 5-day average in exact arithmetic on the printed prices (n*C vs the window
+    // sum); floats only when a price cannot be read exactly
+    let ex = crate::connors::ExactSeries::new(&[c]);
+    let (st, s5) = ex.as_ref().map_or((vec![], vec![]), |e| (e.sums(0, trend), e.sums(0, exit_ma)));
+    let cv = |sm: &[Option<i128>], n: usize, v: &[f64], i: usize| -> Option<std::cmp::Ordering> { // close vs the average
+        if !v[i].is_finite() { return None; }
+        match &ex { Some(e) => crate::connors::exact_avg_vs(e, sm, n, 0, i).map(|o| o.reverse()), None => c[i].partial_cmp(&v[i]) }
+    };
+    use std::cmp::Ordering::{Equal, Greater, Less};
     let setup = |j: usize, d: f64| -> bool {
         if j < 1 || !tr[j].is_finite() || !m5[j].is_finite() { return false; }
-        let base = if d > 0.0 { c[j] > tr[j] && c[j] < m5[j] } else { c[j] < tr[j] && c[j] > m5[j] };
+        let (ct, c5) = (cv(&st, trend, &tr, j), cv(&s5, exit_ma, &m5, j));
+        let base = if d > 0.0 { ct == Some(Greater) && c5 == Some(Less) } else { ct == Some(Less) && c5 == Some(Greater) };
         base && if kind == 1 {
             if d > 0.0 { r2[j] < rlo } else { r2[j] > rhi }
         } else if d > 0.0 { r2[j - 1] < rlo && c[j] < c[j - 1] * (1.0 - ext / 100.0) } else { r2[j - 1] > rhi && c[j] > c[j - 1] * (1.0 + ext / 100.0) }
     };
     let dirs: &[f64] = if shorts { &[1.0, -1.0] } else { &[1.0] };
-    let exit = |i: usize, d: f64| if d > 0.0 { c[i] >= m5[i] } else { c[i] <= m5[i] };
+    let exit = |i: usize, d: f64| { let o = cv(&s5, exit_ma, &m5, i); if d > 0.0 { matches!(o, Some(Greater | Equal)) } else { matches!(o, Some(Less | Equal)) } };
     if kind == 2 {
         let entry = |i: usize| -> i8 { dirs.iter().find(|&&d| setup(i, d)).map_or(0, |&d| d as i8) };
         return next_open_sim(x, from, to, 1, &entry, &|_, _, _| false, &exit, "close vs 5MA · next open");

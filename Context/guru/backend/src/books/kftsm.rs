@@ -410,6 +410,28 @@ fn run_signal(x: &Ctx, from: usize, to: usize, sig: &[i8], why: &str) -> Vec<Tra
     b.done()
 }
 /// change = (trend - trend[1])*100/close[1], latched by filter and lag (TSMMAsignal / TSMExpSignal).
+/// SMA_a vs SMA_b of one series (a length of 1 = the price itself), exact on printed prices (R4 #253); floats as the fallback.
+struct AvgCmp { a: Vec<f64>, b: Vec<f64>, sa: Vec<Option<i128>>, sb: Vec<Option<i128>>, na: usize, nb: usize, exact: bool }
+impl AvgCmp {
+    fn new(c: &[f64], na: usize, nb: usize) -> AvgCmp {
+        let e = crate::connors::ExactSeries::new(&[c]);
+        let (sa, sb) = e.as_ref().map_or((vec![], vec![]), |e| (e.sums(0, na), e.sums(0, nb)));
+        AvgCmp { a: sma(c, na), b: sma(c, nb), sa, sb, na, nb, exact: e.is_some() }
+    }
+    fn at(&self, i: usize) -> Option<std::cmp::Ordering> {
+        if !(self.a[i].is_finite() && self.b[i].is_finite()) { return None; }
+        if self.exact { crate::connors::exact_avg_vs_avg(&self.sa, self.na, &self.sb, self.nb, i) } else { self.a[i].partial_cmp(&self.b[i]) }
+    }
+}
+fn latch(ch: &[f64], filter: f64, lag: usize) -> Vec<i8> {
+    let mut s = vec![0i8; ch.len()];
+    let mut cur = 0;
+    for i in 0..ch.len() {
+        if i >= lag { let v = ch[i - lag]; if v > filter { cur = 1 } else if v < -filter { cur = -1 } }
+        s[i] = cur;
+    }
+    s
+}
 fn latch_change(c: &[f64], tr: &[f64], filter: f64, lag: usize, pct: bool) -> Vec<i8> {
     let n = c.len();
     let mut ch = vec![f64::NAN; n];
@@ -514,8 +536,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     Some(match id {
         "kftsm_ma" => {
-            let ma = sma(c, u("period").max(1));
-            run_signal(x, from, to, &latch_change(c, &ma, g("filter"), u("lag"), true), "trendline turned")
+            let pn = u("period").max(1);
+            let ma = sma(c, pn);
+            // R4 #253: SMA_t - SMA_t-1 = (C[t] - C[t-n]) / n, exact in sign (the filter compares the same value in %)
+            let ch: Vec<f64> = (0..n).map(|i| if i >= pn && ma[i].is_finite() && ma[i - 1].is_finite() { (c[i] - c[i - pn]) / pn as f64 * 100. / c[i - 1] } else { f64::NAN }).collect();
+            run_signal(x, from, to, &latch(&ch, g("filter"), u("lag")), "trendline turned")
         }
         "kftsm_exp" => {
             let pn = u("period").max(1);
@@ -702,23 +727,19 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             adaptive_driver(x, from, to, &tr, pn, g("sdfilter"), g("mfilter"))
         }
-        "kftsm_hh_ma" => {
-            let ma = sma(c, u("period").max(1));
+        "kftsm_hh_ma" | "kftsm_hh_cross" => {
+            // R4 #253: the close (an average of length 1) or the fast average against the slow one, in exact arithmetic
+            let (na, nb) = if id == "kftsm_hh_ma" { (1, u("period").max(1)) } else { (u("fast").max(1), u("slow").max(1)) };
+            let ac = AvgCmp::new(c, na, nb);
             let mut b = Bk::new(x, from, to);
             for i in from..=to {
                 if h[i] == l[i] { continue; }
-                if crosses_above(c, &ma, i) { b.at_close(i, 1, "close crossed above MA"); }
-                else if crosses_below(c, &ma, i) { b.at_close(i, -1, "close crossed below MA"); }
-            }
-            b.done()
-        }
-        "kftsm_hh_cross" => {
-            let (f, s) = (sma(c, u("fast").max(1)), sma(c, u("slow").max(1)));
-            let mut b = Bk::new(x, from, to);
-            for i in from..=to {
-                if h[i] == l[i] { continue; }
-                if crosses_above(&f, &s, i) { b.at_close(i, 1, "fast MA crossed above slow MA"); }
-                else if crosses_below(&f, &s, i) { b.at_close(i, -1, "fast MA crossed below slow MA"); }
+                let (now, prev) = (ac.at(i), if i > 0 { ac.at(i - 1) } else { None });
+                use std::cmp::Ordering::{Greater, Less};
+                let up = now == Some(Greater) && matches!(prev, Some(o) if o != Greater);
+                let dn = now == Some(Less) && matches!(prev, Some(o) if o != Less);
+                let what = if id == "kftsm_hh_ma" { ("close crossed above MA", "close crossed below MA") } else { ("fast MA crossed above slow MA", "fast MA crossed below slow MA") };
+                if up { b.at_close(i, 1, what.0); } else if dn { b.at_close(i, -1, what.1); }
             }
             b.done()
         }
@@ -731,11 +752,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             b.done()
         }
         "kftsm_mod_3ma" | "kftsm_4_9_18" => {
-            let (m1, m2, m3) = (sma(c, u("length1").max(1)), sma(c, u("length2").max(1)), sma(c, u("length3").max(1)));
+            let (n1, n2, n3) = (u("length1").max(1), u("length2").max(1), u("length3").max(1));
+            let m3 = sma(c, n3);
+            let ac = AvgCmp::new(c, n2, n1); // fast vs slow, exact (R4 #253)
             let mut b = Bk::new(x, from, to);
             for i in from.max(1)..=to {
-                if m2[i] > m1[i] && m3[i] > m3[i - 1] { b.at_close(i, 1, "crossover up, confirming MA rising"); }
-                if m2[i] < m1[i] && m3[i] < m3[i - 1] { b.at_close(i, -1, "crossover down, confirming MA falling"); }
+                // confirming average rising/falling: sign of C[i] - C[i-n3] (R4 #253), both averages defined
+                let rise = if m3[i].is_finite() && m3[i - 1].is_finite() { c[i] - c[i - n3] } else { f64::NAN };
+                let fs = ac.at(i);
+                if fs == Some(std::cmp::Ordering::Greater) && rise > 0. { b.at_close(i, 1, "crossover up, confirming MA rising"); }
+                if fs == Some(std::cmp::Ordering::Less) && rise < 0. { b.at_close(i, -1, "crossover down, confirming MA falling"); }
             }
             b.done()
         }
