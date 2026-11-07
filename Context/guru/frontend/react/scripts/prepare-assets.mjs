@@ -7,3 +7,5 @@ for(const path of ['img','vendor','backtest-trust.js','joe-ross-evidence.js','ch
 await writeFile(resolve(directory,'public/full-variant1.html'),'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Strategy Vault</title><script>location.replace("/"+location.search+location.hash)</script></head><body><a href="/">Open Strategy Vault</a></body></html>');
 
 await cp(resolve(directory,"src/services/maintenance-watch.js"),resolve(directory,"public/maintenance-watch.js"));
+
+await cp(resolve(directory,"src/services/update-notice.js"),resolve(directory,"public/vendor/update-notice.js"));
