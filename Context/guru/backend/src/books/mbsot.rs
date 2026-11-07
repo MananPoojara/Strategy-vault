@@ -34,6 +34,7 @@ const MCCLELLAN: &[&str] = &[
     "F|\"This is the difference between the 19 day EMA and the 39 day EMA of daily (advances - declines).\" (Timing Models - 20, pdf p.159) EMA smoothing 2/(n+1) (= McClellan's 10% and 5%), started from the first breadth day [Book silent].",
     "E|\"buy when it crosses from below 0 to above 0\" (p.20). Buy on that close.",
     "X|\"exit when the two day m.a. of the McClellan Osc drops to < 0 from above\" (p.20). Sell on that close.",
+    "F|[Labelled option, R4 #259 (2)] p.side = 2: long+short. The text gives only the long rule, but the p.20 table (DJIA 1971-78: 164 trades, 40% winners) fits the mirrored version: sell short on that close when the long exit fires (also when flat), cover (and buy) on the next buy signal; on a bar where both fire the position is long (short and cover on the same close cancel). Default p.side = 1 = the printed long-only rule.",
 ];
 const APPEL_IMP: &[&str] = &[
     "F|\"Compute a 6, 8, and 15 day EMA of (advances - declines).\" (Timing Models - 21, pdf p.160)",
@@ -332,7 +333,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "mbsot_renshaw_thrust" | "mbsot_renshaw_thrust_nse" => vec![
             p("rise", "Index one-day rise, %", 2.75, 1.0, 5.0, 0.25), p("adv", "Advancing issues % of issues traded", 70.0, 55.0, 85.0, 1.0),
             p("stop", "Open protective stop and trailing stop, %", 10.0, 3.0, 20.0, 1.0), p("trail_hi", "Trail from highs instead of closes (1 = yes; book silent)", 0.0, 0.0, 1.0, 1.0)],
-        "mbsot_mcclellan" | "mbsot_mcclellan_nse" => vec![p("fast", "Fast EMA days", 19.0, 5.0, 30.0, 1.0), p("slow", "Slow EMA days", 39.0, 20.0, 80.0, 1.0)],
+        "mbsot_mcclellan" | "mbsot_mcclellan_nse" => vec![p("fast", "Fast EMA days", 19.0, 5.0, 30.0, 1.0), p("slow", "Slow EMA days", 39.0, 20.0, 80.0, 1.0),
+            p("side", "1 = long only (the printed rule); 2 = long+short: sell short when the long exit fires, cover on the next buy signal (labelled option: the p.20 table fits it, R4 #259 (2))", 1.0, 1.0, 2.0, 1.0)],
         "mbsot_appel_impulse" | "mbsot_appel_impulse_nse" | "mbsot_appel_combo" | "mbsot_appel_combo_nse" | "mbsot_appel_mcclellan" | "mbsot_appel_mcclellan_nse" => vec![
             p("e15", "15-day EMA of A-D at or above", 300.0, 100.0, 600.0, 25.0), p("e8", "8-day EMA of A-D at or above", 400.0, 100.0, 800.0, 25.0),
             p("e6", "6-day EMA of A-D at or above", 500.0, 100.0, 1000.0, 25.0), p("drop", "Impulse exit: close down from the highest close, %", 1.5, 0.5, 5.0, 0.25),
@@ -749,16 +751,27 @@ fn breadth(x: &Ctx, nse: bool, kind: u8, from: usize, to: usize, g_: &dyn Fn(&st
     if kind == 0 {
         let (f, sl) = (ema(&net, g_("fast").round() as usize), ema(&net, g_("slow").round() as usize));
         let osc: Vec<f64> = f.iter().zip(&sl).map(|(a, b)| a - b).collect();
+        // R4 #259 (2): side = 2 also sells short when the long exit fires and covers on the next buy signal (long+short; the p.20
+        // table fits it, the printed text is long only). side = 1 (default) is the printed rule, unchanged.
+        let ls = g_("side").round() as i64 == 2;
         for i in from.max(2)..=to {
-            if cur.is_some() {
-                let (m0, m1) = ((osc[i] + osc[i - 1]) / 2.0, (osc[i - 1] + osc[i - 2]) / 2.0);
-                if m1 >= 0.0 && m0 < 0.0 {
+            let (m0, m1) = ((osc[i] + osc[i - 1]) / 2.0, (osc[i - 1] + osc[i - 2]) / 2.0);
+            let (up, dn) = (osc[i - 1] < 0.0 && osc[i] > 0.0, m1 >= 0.0 && m0 < 0.0);
+            if let Some(dir) = cur.as_ref().map(|t| t.dir) {
+                if (dir > 0.0 && dn) || (dir < 0.0 && up) {
                     let mut t = cur.take().unwrap();
-                    (t.exit_i, t.exit_px, t.signal_i, t.reason) = (i, c[i], i, "2-day MA of the oscillator dropped below 0".into());
+                    t.reason = if dir > 0.0 { "2-day MA of the oscillator dropped below 0" } else { "oscillator crossed above 0 (short covered)" }.into();
+                    (t.exit_i, t.exit_px, t.signal_i) = (i, c[i], i);
                     out.push(t);
-                }
-            } else if i < to && osc[i - 1] < 0.0 && osc[i] > 0.0 {
+                    if !ls { continue }
+                } else { continue }
+            }
+            if i < to && up {
                 cur = Some(mk(i, c[i]));
+            } else if i < to && ls && dn {
+                let mut t = mk(i, c[i]);
+                t.dir = -1.0;
+                cur = Some(t);
             }
         }
         return finish(out, cur, x, to);
@@ -822,6 +835,23 @@ mod tests {
     use crate::Row;
     fn rows(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
         v.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect()
+    }
+    #[test]
+    fn mcclellan_side2_mirrors_the_long_exit() {
+        // R4 #259 (2): breadth +,-,+,-,+ blocks (net +-100); side 1 = long only, side 2 = also short from a long-exit signal (when flat too) to the next buy
+        let r: Vec<Row> = (0..40).map(|i| Row { ticker: "T".into(), date: format!("2020-{:02}-{:02}", 1 + i / 28, 1 + i % 28), open: 100.0 + i as f64, high: 101.0 + i as f64, low: 99.0 + i as f64, close: 100.0 + i as f64, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        let pos = |i: usize| i < 3 || (12..22).contains(&i) || i >= 32;
+        x.extra.insert("NYSE_ADV_DEC.Advances".into(), (0..40).map(|i| if pos(i) { 200. } else { 100. }).collect());
+        x.extra.insert("NYSE_ADV_DEC.Declines".into(), (0..40).map(|i| if pos(i) { 100. } else { 200. }).collect());
+        let pr = |side: f64| Params::from([("fast".into(), 2.), ("slow".into(), 3.), ("side".into(), side)]);
+        let l = run("mbsot_mcclellan", &x, 0, 39, &pr(1.)).unwrap();
+        let b = run("mbsot_mcclellan", &x, 0, 39, &pr(2.)).unwrap();
+        let key = |v: &Vec<Trade>| v.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>();
+        assert_eq!(key(&run("mbsot_mcclellan", &x, 0, 39, &Params::from([("fast".into(), 2.), ("slow".into(), 3.)])).unwrap()), key(&l)); // default = side 1
+        assert_eq!(key(&l), vec![(1.0, 12, 22, false), (1.0, 32, 39, true)]);
+        assert_eq!(key(&b), vec![(-1.0, 3, 12, false), (1.0, 12, 22, false), (-1.0, 22, 32, false), (1.0, 32, 39, true)]);
+        assert!((b[2].exit_px - x.c[32]).abs() < 1e-12 && b[2].reason.contains("short covered"));
     }
     #[test]
     fn lane_sd5_and_gti_and_pivots() {

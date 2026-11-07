@@ -129,7 +129,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           concat!("Mirror of pstc_rsi20_long (SPX 41/41 short entries+exits identical with SPX3periodRSI.xls). ", idx_note!()),
           claim("41 (SPX short of 137)", "75.91% (all trades)", "-", "5.49 bars (all trades)", "1995-2005 SPX all trades: net 1355.34 pts, PF 4.63 (Week 3)")),
         d("pstc_rsi1pct", "RSI 1% Method (RSI(2) < 10 and down 1%)", "Week 3 · RSI 1%", "Long", Live, RSI1,
-          concat!("[Book-vs-results gap] The printed results (SPX 1995-2005: net 1127.79, PF 5.76, 83.33%) are the course's TradeStation list SPX_RSI_1_ls.xls (strategy _2dayRSI<10test, 78 trades): it has NO 1% down-day condition (SPX 73/78 identical without it; with it 39/78). The default is the printed rule (down at least 1%); p.down_pct = 0 reproduces the trade list behind the printed numbers. ",
+          concat!("[Book-vs-results gap] The printed results (SPX 1995-2005: net 1127.79, PF 5.76, 83.33%) are the course's TradeStation list SPX_RSI_1_ls.xls (strategy _2dayRSI<10test, 78 trades): it has NO 1% down-day condition (SPX 73/78 identical without it; with it 39/78). The default is the printed rule (down at least 1%); p.down_pct = 0 [labelled option, R4 #259 (5): the course trade list's reading] reproduces the trade list behind the printed numbers. ",
                   "'Closes down at least 1% on the day' = close <= prior close x (1 - 1%). ", idx_note!()),
           claim("78 (list without the 1% rule)", "83.33%", "-", "6.82 bars", "1995-2005 SPX: net 1127.79 pts, PF 5.76, max DD -138.12 (Week 3) - computed without the 1% condition, see notes")),
         d("pstc_r4_long", "R4 Method · long", "Week 4-5 · R4", "Long", Live, R4_L,
@@ -229,7 +229,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "pstc_rsi1pct" => vec![
             p("trend", "200-day MA filter length", 200., 50., 300., 50.),
             p("rsi_lt", "RSI(2) below", 10., 2., 30., 1.),
-            p("down_pct", "Close down at least % on the day (0 = off: the trade list behind the printed results)", 1., 0., 3., 0.5),
+            p("down_pct", "Close down at least % on the day (1 = the printed rule; 0 = labelled option: the course trade list SPX_RSI_1_ls.xls behind the printed results, which has no 1% condition)", 1., 0., 3., 0.5),
             p("exit_gt", "Exit when RSI(2) closes above", 80., 50., 95., 5.),
         ],
         "pstc_4_10_60" => vec![
