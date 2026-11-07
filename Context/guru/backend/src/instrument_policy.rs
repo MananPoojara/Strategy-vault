@@ -3314,8 +3314,9 @@ mod tests {
         assert!(ok("ats_hv_thrust","QQQ") && ok("ats_hv_thrust","NIFTYMIDCAP100") && check(&def("ats_hv_thrust","ats"),"RELIANCE",true).is_none()); // open-all
         for id in ["ats_1234","ats_8day_hl_reversal","ats_smtp","ats_two_for_one","ats_gipsons"] {
             assert_eq!(policy(&def(id,"ats")).requirement,"index_etf_or_stock");
-            assert!(ok(id,"NIFTY 50") && ok(id,"NIFTYMIDCAP100") && !ok(id,"AAPL"),"{id}");
-            assert!(check(&def(id,"ats"),"RELIANCE",true).is_none() && check_native(&def(id,"ats"),"AAPL",&NativeEvidence::us_test_fixture()).is_none(),"{id}");
+            let ep6=|t:&str| crate::intraday_ep6::held_note(id,t).is_some(); // K63 #243 (c): ats_8day_hl_reversal publishes the minute window only
+            assert!(ok(id,"NIFTY 50") && (ok(id,"NIFTYMIDCAP100")||ep6("NIFTYMIDCAP100")) && !ok(id,"AAPL"),"{id}");
+            assert!((check(&def(id,"ats"),"RELIANCE",true).is_none()||ep6("RELIANCE")) && (check_native(&def(id,"ats"),"AAPL",&NativeEvidence::us_test_fixture()).is_none()||ep6("AAPL")),"{id}");
             assert!(metadata_json(&def(id,"ats")).contains("\"stock_adaptation\":\"Actual stocks are admitted"));
             assert!(metadata_json(&def(id,"ats")).contains("\"declared_application\""));
         }
