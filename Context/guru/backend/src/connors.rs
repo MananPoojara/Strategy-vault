@@ -19,14 +19,32 @@ use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------- indicators
 
-/// Simple moving average: each window summed directly, left to right (R4 #249). A window that contains a missing value
-/// (NaN) is NaN. A running sum (add the new bar, subtract the leaving one) carries floating-point drift from the first bar
-/// of history (about 1e-11), which flips EXACT ties between averages (IBM 1980-06-25: SMA5 = SMA12 = 14.6875); the
-/// direct sum is what every independent reference computes. Cost O(n) per bar.
+/// Simple moving average (R4 #249, #256). A window that contains a missing value (NaN) is NaN.
+/// Exact path: when every value reads as a printed decimal (connors::ExactSeries: at most 15 decimals), each window is
+/// summed in integers at the series' decimal scale and divided ONCE (correctly rounded), so an exact decimal tie gives the
+/// identical float everywhere: SMA10 of MSFT 2004-04-06..19 is exactly 25.53 = the close, not 25.529999999999998.
+/// Fallback: a series with any value that is not decimal-exact (computed values such as ratios or oscillators, not
+/// printed prices) or not finite, or whose window sums could overflow i128, keeps the float window sum, each window
+/// summed directly, left to right (#249).
+/// Limit: an exact tie gives equal floats, but two UNEQUAL averages (or a price and an average) can round to the same float
+/// once a window sum exceeds about 2^52 integer units. Vault series whose closes carry 13-15 decimals (float32 residue such
+/// as 170.67999267578125; K64w/exactscan.txt) reach that, so the #253 exact comparisons in bpqst/kftsm/t2w stay.
 pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
+    if n == 0 { return vec![f64::NAN; v.len()]; }
+    if let Some(e) = ExactSeries::new(&[v]).filter(|e| e.v[0].iter().flatten().map(|a| a.unsigned_abs()).max().unwrap_or(0).checked_mul(n as u128 + 1).is_some_and(|m| m < i128::MAX as u128)) {
+        let x = &e.v[0];
+        let den = n as i128 * 10i128.pow(e.scale);
+        // the integer running sum is exact, so it carries no drift
+        let (mut s, mut miss) = (0i128, 0usize);
+        return (0..x.len()).map(|i| {
+            match x[i] { Some(a) => s += a, None => miss += 1 }
+            if i >= n { match x[i - n] { Some(a) => s -= a, None => miss -= 1 } }
+            if i + 1 < n || miss > 0 { f64::NAN } else { ratio_f64(s, den) }
+        }).collect();
+    }
     (0..v.len())
         .map(|i| {
-            if n == 0 || i + 1 < n {
+            if i + 1 < n {
                 return f64::NAN;
             }
             let w = &v[i + 1 - n..=i];
@@ -35,11 +53,26 @@ pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
         .collect()
 }
 
+/// num/den (den > 0) correctly rounded to f64. Both exact in f64 (<= 2^53): one IEEE division is correctly rounded.
+/// Otherwise the exact decimal quotient is parsed, which Rust rounds correctly: digits until the remainder is 0 (a
+/// quotient with den < 2^127 terminates within 127 digits if it terminates at all, so every halfway point between two
+/// floats is written exactly), else 200 digits plus a sticky 1 (a non-terminating quotient is not a halfway point).
+fn ratio_f64(num: i128, den: i128) -> f64 {
+    const P53: i128 = 1 << 53;
+    if num.abs() <= P53 && den <= P53 { return num as f64 / den as f64; }
+    let (q, mut r) = (num.abs() / den, num.abs() % den);
+    let mut t = format!("{}{q}.", if num < 0 { "-" } else { "" });
+    for _ in 0..200 { if r == 0 { break; } r *= 10; t.push((b'0' + (r / den) as u8) as char); r %= den; }
+    if r != 0 { t.push('1'); }
+    t.parse().unwrap()
+}
+
 /// Exact decimal arithmetic on printed prices (R4 #253): each value is read as the shortest decimal that round-trips to the
 /// stored f64 (the printed price), scaled to integers at one common scale for all the given series. Window sums are then
 /// exact, so an average can be compared with a price (n*P vs the sum) or with another average (m*S_n vs n*S_m) without
-/// rounding. `None` when a value has more than 15 decimals or is not finite: the caller keeps its float comparison.
-pub struct ExactSeries { pub v: Vec<Vec<Option<i128>>> }
+/// rounding (#253), and `sma` divides each exact sum once (#256). `None` when a value has more than 15 decimals or is not
+/// finite: the caller keeps its float comparison.
+pub struct ExactSeries { pub v: Vec<Vec<Option<i128>>>, /** decimals of the common integer scale */ pub scale: u32 }
 impl ExactSeries {
     pub fn new(series: &[&[f64]]) -> Option<ExactSeries> {
         let parse = |x: f64| -> Option<(i128, u32)> {
@@ -55,7 +88,7 @@ impl ExactSeries {
         // a finite value that cannot be read exactly makes the whole set fall back to floats
         for (s, r) in series.iter().zip(&raw) { if s.iter().zip(r).any(|(x, p)| !x.is_nan() && p.is_none()) { return None; } }
         let sc = raw.iter().flatten().flatten().map(|p| p.1).max().unwrap_or(0);
-        Some(ExactSeries { v: raw.into_iter().map(|r| r.into_iter().map(|p| p.map(|(m, k)| m * 10i128.pow(sc - k))).collect()).collect() })
+        Some(ExactSeries { v: raw.into_iter().map(|r| r.into_iter().map(|p| p.map(|(m, k)| m * 10i128.pow(sc - k))).collect()).collect(), scale: sc })
     }
     /// Exact window sums of series `k` (None in warm-up or when the window holds a missing value).
     pub fn sums(&self, k: usize, n: usize) -> Vec<Option<i128>> {
@@ -1381,5 +1414,48 @@ mod sma_gap_tests {
         assert!(!(a[t] < b[t]), "no 'crosses below' on a tie");
         let running = |n: usize| { let mut s = 0.0; for i in 0..=t { s += v[i]; if i >= n { s -= v[i - n] } } s / n as f64 };
         assert!(running(5) < running(12), "the old running sum flips this tie (the defect this guards)");
+    }
+
+    /// R4 #256: the same IBM tie on the vault's printed closes (us_sp500 IBM, 1950 prefix as stored): the exact path.
+    #[test]
+    fn ibm_1980_06_25_tie_exact_path() {
+        let mut v = vec![0.3083888, 0.3069409, 0.3127323];
+        v.extend([14.1875, 14.375, 14.5, 14.5, 14.71875, 15.09375, 14.71875, 14.90625, 14.46875, 14.46875, 14.71875, 14.84375, 14.9375]);
+        assert!(super::ExactSeries::new(&[&v]).is_some());
+        let (t, a, b) = (v.len() - 1, sma(&v, 5), sma(&v, 12));
+        assert_eq!((a[t], b[t]), (14.6875, 14.6875));
+        assert!(a[t - 1] > b[t - 1] && !(a[t] < b[t]));
+    }
+
+    /// R4 #256 / RA F1: MSFT (us_sp500) closes 2004-04-05..19. SMA10 on 04-19 is exactly 25.53 = the close, so
+    /// "Close > Average(Close,10)" is false (the float window sum gave 25.529999999999998, true).
+    #[test]
+    fn msft_2004_04_19_close_equals_sma10() {
+        let c = [25.95, 25.8, 25.59, 25.48, 25.61, 25.45, 25.51, 25.22, 25.16, 25.53];
+        let m = sma(&c, 10);
+        assert_eq!(m[9], 25.53);
+        assert!(!(c[9] > m[9]));
+        assert!(c.iter().sum::<f64>() / 10.0 < 25.53, "the float window sum misses this tie (the defect this guards)");
+    }
+
+    /// 200,000 decimal prices: the exact SMA equals the correctly rounded mean of each window (no drift), and a run of
+    /// identical closes after a long history averages to that close exactly.
+    #[test]
+    fn long_series_no_drift() {
+        let mut v: Vec<f64> = (0..200_000u64).map(|k| (k * 7919 % 100_003 + 1) as f64 / 100.0).collect();
+        assert!(super::ExactSeries::new(&[&v]).is_some());
+        v.extend([12.34; 50]);
+        let m = sma(&v, 50);
+        assert_eq!(*m.last().unwrap(), 12.34);
+        for i in [49usize, 1_000, 123_457, 199_999] {
+            let s: i128 = v[i - 49..=i].iter().map(|x| (x * 100.0).round() as i128).sum();
+            assert_eq!(m[i], s as f64 / 5000.0);
+        }
+        // the slow path (sums above 2^53) rounds the same as one IEEE division where both are exact
+        assert_eq!(super::ratio_f64(1 << 60, 3), (1i128 << 60) as f64 / 3.0);
+        assert_eq!(super::ratio_f64(255_300_000_000_000_000, 10_000_000_000_000_000), 25.53);
+        assert_eq!(super::ratio_f64(-7, 2), -3.5);
+        // a halfway point with a long terminating expansion (Codex review): ties-to-even, not truncated at 60 digits
+        assert_eq!(super::ratio_f64(274_877_906_944_000_091_552_734_375, 70_368_744_177_664_000_000_000_000_000), ((1u64 << 52) + 2) as f64 / 2f64.powi(60));
     }
 }
