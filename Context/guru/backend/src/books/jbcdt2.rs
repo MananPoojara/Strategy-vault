@@ -3,7 +3,7 @@
 //! Most methods run on 5- to 30-minute bars; the daily-bar rules are the DBO day-of-week breakouts (ch.5), the
 //! high-probability calendar dates and pre-holiday day trades (ch.5) and the Monday pattern (ch.5).
 //! Also holds the shared DBO / weekday / US-holiday helpers used by `jbeft`.
-use super::jb624::{bar_path, finish, getp, mark_open, new_trade, stop_fill, week_changes};
+use super::jb624::{bar_path, entry_bar, finish, getp, mark_open, new_trade, stop_fill, week_changes};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jbcdt2";
@@ -103,6 +103,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let dbo = |b, s, st| vec![p("buy_off", "Buy stop above the setup day's high (points)", b, 0., 10., 0.05), p("sell_off", "Sell stop below the setup day's low (points)", s, 0., 10., 0.05),
         p("stop", "Stop loss from the entry (points)", st, 1., 40., 0.1), p("entry_day", "Entry-day stop: 0 = bar path O-near-far-C, 1 = any touch", 0., 0., 1., 1.)];
@@ -202,16 +208,20 @@ pub fn us_holidays(y: i64) -> Vec<(i64, u8)> {
 /// entry price, or the stop `stop` points from the entry (resting from the day after entry; on the entry day only if the
 /// bar path reaches it after the fill, or any touch with entry_any).
 #[allow(clippy::too_many_arguments)]
-pub fn dbo(x: &Ctx, from: usize, to: usize, thursday: bool, bo: f64, so: f64, sl: f64, entry_any: bool) -> Vec<Trade> {
+/// `ep6`: EP6 (#243, lane K62) on: an order-dependent entry bar (entry level and stop inside it) is decided on the real
+/// 1-minute path (jb624::entry_bar); off (p.order = 0, or the any-touch option) = the daily reading only.
+pub fn dbo(x: &Ctx, from: usize, to: usize, thursday: bool, bo: f64, so: f64, sl: f64, entry_any: bool, ep6: bool) -> Vec<Trade> {
     let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (Vec::new(), None);
     let mut stop = f64::NAN;
+    let (on, mut od) = (ep6 && !entry_any, crate::intraday_ep6::Day::Plain);
+    let fin = |t: Trade, od| { let mut t = t; crate::intraday_ep6::mark(&mut t, od); t };
     for i in from..=to {
         if let Some(t) = cur.as_ref().filter(|t| t.legs[0].i < i) {
             let (d, e) = (t.dir, t.legs[0].px);
             if (x.o[i] - e) * d > 0.0 {
-                out.push(finish(cur.take().unwrap(), i, x.o[i], i, "First profitable opening"));
+                out.push(fin(finish(cur.take().unwrap(), i, x.o[i], i, "First profitable opening"), od));
             } else if let Some(px) = stop_fill(x, i, -d, stop) {
-                out.push(finish(cur.take().unwrap(), i, px, i, "Stop loss"));
+                out.push(fin(finish(cur.take().unwrap(), i, px, i, "Stop loss"), od));
             }
         }
         if cur.is_some() || i >= to {
@@ -224,14 +234,16 @@ pub fn dbo(x: &Ctx, from: usize, to: usize, thursday: bool, bo: f64, so: f64, sl
         let j = i + 1;
         let d = if x.c[i] > x.o[i] { 1.0 } else if x.c[i] < x.o[i] { -1.0 } else { continue };
         let lvl = if d > 0.0 { x.h[i] + bo } else { x.l[i] - so };
-        if let Some(px) = stop_fill(x, j, d, lvl) {
-            stop = px - d * sl;
+        let conv = |_px: f64, stop: f64| if entry_any { if d > 0.0 { x.l[j] <= stop } else { x.h[j] >= stop } } else { hit_after(x, j, d, lvl, stop) };
+        if let Some((px, st, hit, day)) = entry_bar(x, j, d, lvl, sl, on, conv) {
+            stop = st;
             let t = new_trade(d, j, px, "stop", i);
-            let hit = if entry_any { if d > 0.0 { x.l[j] <= stop } else { x.h[j] >= stop } } else { hit_after(x, j, d, lvl, stop) };
-            if hit { out.push(finish(t, j, stop, j, "Stop loss (entry day)")); } else { cur = Some(t); }
+            if let Some(xp) = hit { out.push(fin(finish(t, j, xp, j, "Stop loss (entry day)"), day)); } else { cur = Some(t); od = day; }
         }
     }
-    mark_open(&mut out, cur, x, to);
+    let mut v = vec![];
+    mark_open(&mut v, cur, x, to);
+    out.extend(v.into_iter().map(|t| fin(t, od)));
     out
 }
 
@@ -253,7 +265,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     match id {
         "jbcdt2_or30" => return Some(or30(x, from, to, g("pen"), g("stop"), g("floor"), g("trail") / 100.0, g("maxn").round() as usize)), // intraday EP block (K42)
         "jbcdt2_dbo_mon" | "jbcdt2_dbo_thu" => {
-            return Some(dbo(x, from, to, id == "jbcdt2_dbo_thu", g("buy_off"), g("sell_off"), g("stop"), g("entry_day") >= 0.5));
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+            return Some(dbo(x, from, to, id == "jbcdt2_dbo_thu", g("buy_off"), g("sell_off"), g("stop"), g("entry_day") >= 0.5, crate::intraday_ep6::on(id, p)));
         }
         "jbcdt2_dates_oc" => {
             for i in from..=to {

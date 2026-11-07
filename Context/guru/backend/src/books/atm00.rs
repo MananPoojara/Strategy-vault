@@ -59,7 +59,38 @@ pub(crate) fn avg_tr(x: &Ctx, n: usize) -> Vec<f64> { sma(&true_range(x.r), n) }
 pub(crate) enum Ord { Open, Close, Stop(f64), Limit(f64) }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Pos { pub dir: f64, pub ei: usize, pub epx: f64, pub sig: usize, pub kind: &'static str, pub hh: f64, pub ll: f64 }
+pub(crate) struct Pos { pub dir: f64, pub ei: usize, pub epx: f64, pub sig: usize, pub kind: &'static str, pub hh: f64, pub ll: f64,
+    od: crate::intraday_ep6::Day } // od: EP6 (lane K62) mark of the days that decided this position
+
+thread_local! {
+    /// EP6 (#243, lane K62): the worst same-day-order mark of the `levels_ep6` calls inside one `ex` call (read and reset by `sim`).
+    static EP6_DAY: std::cell::Cell<crate::intraday_ep6::Day> = const { std::cell::Cell::new(crate::intraday_ep6::Day::Plain) };
+}
+
+/// `levels` with EP6 (#243, lane K62): with `on`, a bar where both the stop and the target lie inside the range (and the open
+/// is through neither) is decided on the real 1-minute path (the first level the minutes reach; a gap fills at the minute's
+/// open); otherwise, and on days without minutes, `levels` (stop before target).
+pub(crate) fn levels_ep6(x: &Ctx, t: usize, dir: f64, stop: Option<f64>, tgt: Option<f64>, on: bool) -> Option<(f64, &'static str)> {
+    use crate::intraday_ep6::{bar_segs, resolve_conv, Ev, Seg};
+    if !on { return levels(x, t, dir, stop, tgt); }
+    let (s, g) = (stop.filter(|v| v.is_finite()).unwrap_or(f64::NAN), tgt.filter(|v| v.is_finite()).unwrap_or(f64::NAN));
+    let walk = |st: &mut Option<(f64, &'static str)>, segs: &[Seg]| -> Vec<Ev> {
+        let mut ev = vec![];
+        for sg in segs {
+            if st.is_some() { break; }
+            let against = sg.up() != (dir > 0.0);
+            let (lv, k, why) = if against { (s, 0u8, "stop") } else { (g, 1u8, "target") };
+            if sg.inside(lv) { let px = sg.fill(lv); *st = Some((px, why)); ev.push(Ev { k, px, up: sg.up() }); }
+        }
+        ev
+    };
+    let mut st = None;
+    let gap = |lv: f64, with: bool| lv.is_finite() && if (dir > 0.0) == with { x.o[t] >= lv } else { x.o[t] <= lv };
+    if gap(s, false) || gap(g, true) { return levels(x, t, dir, stop, tgt); }
+    let day = resolve_conv(x, t, true, &mut st, |z| *z = levels(x, t, dir, stop, tgt), |z, hf| walk(z, &bar_segs(x.o[t], x.h[t], x.l[t], x.c[t], hf)), walk);
+    EP6_DAY.with(|c| c.set(c.get().worst(day)));
+    st
+}
 
 /// Fill price of an entry order on bar t (None = not filled).
 pub(crate) fn fill(x: &Ctx, t: usize, dir: f64, o: Ord) -> Option<f64> {
@@ -87,8 +118,17 @@ pub(crate) fn levels(x: &Ctx, t: usize, dir: f64, stop: Option<f64>, tgt: Option
 }
 
 fn trade(p: &Pos, i: usize, px: f64, reason: &str, sig: usize) -> Trade {
-    Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.epx, w: 1.0 }], exit_i: i, exit_px: px, reason: reason.into(),
-        entry_kind: p.kind, signal_i: sig, open: false, exits: vec![] }
+    let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.epx, w: 1.0 }], exit_i: i, exit_px: px, reason: reason.into(),
+        entry_kind: p.kind, signal_i: sig, open: false, exits: vec![] };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    t
+}
+/// Call `ex` and fold the EP6 mark of its `levels_ep6` calls into the position.
+fn ex_marked(ex: &dyn Fn(usize, &Pos) -> Option<(f64, &'static str)>, t: usize, p: &mut Pos) -> Option<(f64, &'static str)> {
+    EP6_DAY.with(|c| c.set(crate::intraday_ep6::Day::Plain));
+    let r = ex(t, p);
+    p.od = p.od.worst(EP6_DAY.with(|c| c.get()));
+    r
 }
 
 /// One-position simulator. `ent(t)` = entry orders working on bar t (direction, order) built from data the trader
@@ -102,7 +142,7 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> Vec<(f
     for t in from.max(1)..=to {
         let mut exited = false;
         if let Some(mut p) = pos {
-            if let Some((px, why)) = ex(t, &p) {
+            if let Some((px, why)) = ex_marked(ex, t, &mut p) {
                 let sig = if why.contains("next open") { t - 1 } else { t };
                 out.push(trade(&p, t, px, why, sig));
                 pos = None;
@@ -125,8 +165,8 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> Vec<(f
             if let Some((d, px, o)) = best {
                 let kind = match o { Ord::Open => "open", Ord::Close => "close", Ord::Stop(_) => "stop", Ord::Limit(_) => "limit" };
                 let sig = if o == Ord::Close { t } else { t - 1 };
-                let p = Pos { dir: d, ei: t, epx: px, sig, kind, hh: x.h[t], ll: x.l[t] };
-                if let Some((epx, why)) = ex(t, &p) {
+                let mut p = Pos { dir: d, ei: t, epx: px, sig, kind, hh: x.h[t], ll: x.l[t], od: crate::intraday_ep6::Day::Plain };
+                if let Some((epx, why)) = ex_marked(ex, t, &mut p) {
                     out.push(trade(&p, t, epx, why, t));
                 } else {
                     pos = Some(p);

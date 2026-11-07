@@ -8,7 +8,7 @@
 //! equity per trade (sizing noted, not modelled). India: NIFTY 50, or basket:nifty50:<SYMBOL> for the stock systems.
 //! Duplicates already in the vault (not repeated): Relative Strength Bands (Mar 2001) = strmm_rsbands_orig; Rotation
 //! (May 2001) = strmm_rotation_orig; Harris 3L-R variation with 4%/12% exits (Nov 2001) = strmm_harris_orig.
-use super::atm00::{hi_n, levels, lo_n, sim, Ord};
+use super::atm00::{hi_n, levels, levels_ep6, lo_n, sim, Ord};
 use crate::connors::{sma, Claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "atm01";
@@ -130,6 +130,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "atm01_five_for_five" => vec![p("ma", "Trend MA days", 100., 20., 300., 10.), p("slope", "MA compared with days earlier", 5., 1., 20., 1.),
@@ -155,6 +161,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("atm01_") { return None; }
     let schema = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K62)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let (c, o, h, l) = (&x.c, &x.o, &x.h, &x.l);
@@ -172,7 +180,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     if c[t] > hi_n(x, t - 1, n) + d { return Some((c[t], "entry-day close above 2-day high + risk")); }
                     return None;
                 }
-                levels(x, t, 1.0, Some(lo_n(x, t - 1, n)), Some(hi_n(x, t - 1, n) + d))
+                levels_ep6(x, t, 1.0, Some(lo_n(x, t - 1, n)), Some(hi_n(x, t - 1, n) + d), on)
             })
         }
         "atm01_old_faithful" => {
@@ -256,7 +264,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }, &|t, q| {
                 if t > q.ei {
                     let (stop, tgt) = if q.dir > 0.0 { (l[t - 1], hi_n(x, t - 1, hn)) } else { (h[t - 1], lo_n(x, t - 1, hn)) };
-                    if let Some(e) = levels(x, t, q.dir, Some(stop), Some(tgt)) { return Some(e); }
+                    if let Some(e) = levels_ep6(x, t, q.dir, Some(stop), Some(tgt), on) { return Some(e); }
                 }
                 (t + 1 - q.ei >= hold).then(|| (c[t], "time exit on close (day 5)"))
             })

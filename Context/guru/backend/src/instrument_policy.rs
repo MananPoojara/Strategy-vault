@@ -1429,7 +1429,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // "stad1_volex": admitted SPX only by lane K58 (decision #202, books::stad::ADMISSION_SPX)
         // "stad13_volex": admitted SPX only by lane K58 (decision #202, books::stad2::ADMISSION_SPX)
         // "stad13_tripleplay": admitted by lane K60 (decision #244 (1): the literal Value1 = 0 reading is the default)
-        "stad6_asi"=>"Held: the order inside the day decides too many trades (decision #240). The ASI system is coded from STAD Vol 6 p.19-20 on Wilder's Swing Index (decision #244 (2)), but its buy stop and its initial stop are live on the same bar: on 188 of 3,108 trades (6.05%) in the check contexts (SPY, QQQ, SPX, DJI, NIFTY 50, NIFTYBANK, IBM, AAPL, RELIANCE) a bar reached both a rising and a falling order level, so which came first is the daily-bar convention, not data. Above the 5% threshold the card waits for the real 1-minute order (the shared minute-order resolver, decision #243) (authors/titles-1030/K60w/checks.txt).",
+        // "stad6_asi": admitted by lane K62 (decision #243: its same-day order resolved on 1-minute bars, EP6; 0% ambiguous)
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
         "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
@@ -1662,7 +1662,7 @@ mod tests {
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {
                     // Kaeppel's US-only rules keep their own symbol check (kaeppel_symbol_issue; kaeppel_review_... test).
                     // Fosback's Seasonality Indicator likewise (fosback_symbol_issue; fosback_seasonality_runs_on_us_instruments_only test).
-                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
+                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && crate::intraday_ep6::held_note(d.id,t).is_none() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
                 }
             }
         }
@@ -1699,7 +1699,7 @@ mod tests {
                     for o in ["SPY","QQQ","NIFTY 50","NIFTYBANK",if t=="SPX" {"NDX"} else {"SPX"}] {assert!(check(d,o,false).is_some(),"{} {o}",d.id);}
                     assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some(),"{}",d.id); }
                 None if crate::books::lw_admit::us_only(d.id) => {
-                    for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+                    for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
                     for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);} }
                 None => { for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K59 #243 (c): window-only ids are refused on tickers without minutes
                     assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); } // K59 #243 (c)
@@ -1720,8 +1720,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d));assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
         assert!(!elder_reviewed(&def("eltfl_fi2","elcim")));
     }
@@ -1737,8 +1737,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
         for d in all.iter().filter(|d|!want.contains(&d.id)) {assert!(!reviewed_cash_rule(d));assert!(d.status!=crate::connors::Status::Live,"{}",d.id);}
         assert!(!reviewed_cash_rule(&def("jscgf_ma","jbudt")));
@@ -1779,8 +1779,8 @@ mod tests {
             assert!(d.status==crate::connors::Status::Live,"{}",d.id);
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
         for d in all.iter().filter(|d|!want.contains(&d.id)) {assert!(!reviewed_cash_rule(d),"{}",d.id);}
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
@@ -1798,7 +1798,7 @@ mod tests {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=SCHAAP_US_ONLY.contains(&d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             // check() has no market for a native stock (treated as non-US); the served path uses the stock's real market
             if !us_only {assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);}
@@ -1818,8 +1818,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Active Trader Trading System Lab 2000-2002 block ----
@@ -1835,8 +1835,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Futures Magazine block ----
@@ -1851,8 +1851,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) block ----
@@ -1868,8 +1868,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Active Trader Magazine block ----
@@ -1885,8 +1885,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Crabel block ----
@@ -1903,8 +1903,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end STAD block ----
@@ -1948,9 +1948,9 @@ mod tests {
     fn stadb_held_rules_have_plain_card_reasons() {
         use crate::books::{stad, stad2};
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
-        for id in ["stad6_asi" /* lane K60: coded, held by #240 */] {
+        for id in ["stad6_asi" /* lane K60 code; admitted by lane K62 (#243, EP6) */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end STAD leftovers held ----
@@ -2089,8 +2089,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Leslie Masonson block ----
@@ -2106,8 +2106,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Art Collins block ----
@@ -2122,7 +2122,7 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
             assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
         }
@@ -2140,7 +2140,7 @@ mod tests {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=wtdtt::US_ONLY.contains(&d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             if !us_only {assert!(check(d,"AAPL",true).is_none(),"{}",d.id);} assert_eq!(check(d,"RELIANCE",true).is_some(),us_only,"{}",d.id);
         }
@@ -2164,8 +2164,8 @@ mod tests {
                 assert!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_some_and(|i|i.note.contains("#208")),"{}",d.id); // #166/#208: withheld on US stocks
             } else {
                 assert_eq!(policy(d).requirement,"index_etf_or_stock");
-                for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+                for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+                assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
             }
         }
     }
@@ -2181,8 +2181,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end day lane A2 block ----
@@ -2197,8 +2197,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end titles K1 block ----
@@ -2216,13 +2216,13 @@ mod tests {
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             if d.id=="cbpst_n" {assert_eq!(policy(d).requirement,"individual_stock");for t in ["SPY","SPX","NIFTY 50"] {assert!(check(d,t,false).is_some(),"{t}");} continue;}
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             if lc_palets_reviewed(d) || (lc_cbpst_reviewed(d) && d.id!="cbpst_v") {
                 for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
                 assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
             } else {
                 for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+                assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
             }
         }
     }
@@ -2239,13 +2239,13 @@ mod tests {
             assert!(d.status==crate::connors::Status::Live,"{}",d.id);
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             if d.id=="agtsic_expiry" {
                 for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
                 assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
             } else {
                 for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+                assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
             }
         }
     }
@@ -2260,7 +2260,7 @@ mod tests {
             assert!(d.status==crate::connors::Status::Live,"{}",d.id);
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             if !(matches!(d.book,"awcpf"|"mdssc") || d.id=="tscb2_smash") {assert!(check(d,"AAPL",true).is_none(),"{}",d.id);}
             if matches!(d.book,"awcpf"|"mdssc") || d.id=="tscb2_smash" {
                 for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
@@ -2295,8 +2295,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Lane A newsletters block ----
@@ -2322,8 +2322,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Lane A vendor1 block ----
@@ -2349,8 +2349,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Lane A vendor2 block ----
@@ -2376,8 +2376,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Lane A elmtrader block ----
@@ -2392,8 +2392,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Headley block ----
@@ -2408,8 +2408,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Gettess block ----
@@ -2424,8 +2424,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Primo block ----
@@ -2440,8 +2440,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Meyers block ----
@@ -2457,8 +2457,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Krutsinger block ----
@@ -2473,8 +2473,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Stendahl block ----
@@ -2489,8 +2489,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Boucher block ----
@@ -2505,8 +2505,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Dunnigan block ----
@@ -2521,8 +2521,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Katsanos block ----
@@ -2537,8 +2537,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Pardo block ----
@@ -2553,8 +2553,8 @@ mod tests {
         for d in all.iter().filter(|d|bllstr::reviewed(d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Lakonishok block ----
@@ -2569,8 +2569,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end BWilliams block ----
@@ -2585,8 +2585,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Stridsman block ----
@@ -2601,8 +2601,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Weissman block ----
@@ -2617,8 +2617,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Lydon block ----
@@ -2634,7 +2634,7 @@ mod tests {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=LANDRY_US_ONLY.contains(&d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             // check() has no market for a native stock (treated as non-US); the served path uses the stock's real market
             if !us_only {assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);}
@@ -2652,8 +2652,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Pruitt block ----
@@ -2669,7 +2669,7 @@ mod tests {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=HIRSCH_US_ONLY.contains(&d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             // check() has no market for a native stock (treated as non-US); the served path uses the stock's real market
             if !us_only {assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);}
@@ -2688,8 +2688,8 @@ mod tests {
             assert!(reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Bandy block ----
@@ -2705,8 +2705,8 @@ mod tests {
             assert!(reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Kestner block ----
@@ -2721,8 +2721,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Sperandeo block ----
@@ -2736,8 +2736,8 @@ mod tests {
         for d in all.iter().filter(|d|g::reviewed(d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
         assert!(!reviewed_cash_rule(&def("ggth_dmaco","mpts")));
     }
@@ -2752,8 +2752,8 @@ mod tests {
         for d in all.iter().filter(|d|mccic::reviewed(d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Crisp block ----
@@ -2768,8 +2768,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end DeMark block ----
@@ -2784,8 +2784,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Kroll block ----
@@ -2801,7 +2801,7 @@ mod tests {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=kpss::US_ONLY.contains(&d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             assert_eq!(check(d,"RELIANCE",true).is_some(),us_only,"{}",d.id);
         }
@@ -2835,8 +2835,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Hamon block ----
@@ -2851,8 +2851,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Toghraie block ----
@@ -2867,8 +2867,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Harris block ----
@@ -2883,8 +2883,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Etzkorn block ----
@@ -2899,8 +2899,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end LeBeau block ----
@@ -2915,8 +2915,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Person block ----
@@ -2931,8 +2931,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Kaufman block ----
@@ -2947,8 +2947,8 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
     }
     // ---- end Appel block ----
@@ -3215,13 +3215,13 @@ mod tests {
         for d in all.iter().filter(|d|reviewed_cash_rule(d)) {
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);assert!(policy(d).market_adaptation);
             if d.id=="jb624_fri_mon" {
-                assert!(check(d,"SPX",false).is_none());
+                assert!(check(d,"SPX",false).is_some_and(|i|i.note.starts_with("Held (decisions #177b, #246, lane K62)"))); // K62 #246: held
                 for t in ["SPY","NDX","DJI","NIFTY 50"] {assert!(check(d,t,false).is_some(),"{t}");}
                 assert!(check(d,"AAPL",true).is_some());continue;
             }
             assert_eq!(policy(d).requirement,"index_etf_or_stock");
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
+            assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
         // Held: discretionary, intraday, futures/COT data, or incomplete in the book.
         for d in all.iter().filter(|d|!want.contains(&d.id)) {
@@ -3236,7 +3236,7 @@ mod tests {
         assert_eq!(admitted,crate::books::cwin::REVIEWED_DAILY);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let p=policy(d);assert_eq!(p.requirement,"index_etf_or_stock");assert!(p.market_adaptation);
-            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
             assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none() && check(d,"NIFTY FUTURE",false).is_some());
             assert!(metadata_json(d).contains("\"declared_application\":\"The book and course show Windows"));
         }
@@ -3821,6 +3821,7 @@ mod bernstein_g2_tests {
         let (us,india)=(NativeEvidence::us_test_fixture(),NativeEvidence::india_test_fixture());
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)) {
             assert!(matches!(d.status,crate::connors::Status::Live),"{}",d.id);
+            if crate::intraday_ep6::held_note(d.id,"SPX").is_some() {continue;} // K62 #246: held (intraday_ep6::HELD)
             if matches!(d.id,"jb30d_rev_buy_stop"|"jb30d_rev_buy_3pc"|"jbcdt2_dbo_mon"|"jbcdt2_dbo_thu") {
                 assert!(check(d,"SPX",false).is_none(),"{}",d.id);
                 for t in ["SPY","NDX","NIFTY 50"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
@@ -3906,7 +3907,7 @@ mod decision_179_tests {
                 if d.status!=crate::connors::Status::Live {continue;} // held since (K37: rarsys_trend_weaver, lead decision 199)
                 assert!(check(d,x,false).unwrap().note.contains(&format!("{x} daily open/high/low come from stale component prints; on the tradable {y} over the same dates this rule fails the check (M3)")),"{id} {x}");
                 assert!(tradable_check_issue(d,y,false).is_none(),"{id} {y}");
-                assert!(tradable_check_issue(d,"AAPL",true).is_none(),"{id}");
+                assert!(tradable_check_issue(d,"AAPL",true).is_none() || crate::intraday_ep6::WINDOW_ONLY.contains(id),"{id}"); // K62 #243 (c)
                 if let Some(g)=crate::gate::get(id) {assert!(g.ours.contains("M3 tradable-vs-cash daily check (#179, flagged)")&&g.reason.contains("Decision #179"),"{id}");}
             }
         }

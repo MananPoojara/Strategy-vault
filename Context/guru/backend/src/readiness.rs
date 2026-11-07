@@ -681,7 +681,7 @@ mod tests {
             ("SPX","2013","jb624_mac2_sar",false),("SPX","1990","jbcaf_stoch_2575",false),("SPX","1990","jbssf_ma3",false),("NIFTY 50","2005","jb624_3hl",false),
             ("SPX","2013","jb624_mac5",false),("SPX","2013","jb624_fri_mon",true),("SPX","2014","jb624_fri_mon",false),("SPY","2014","jb624_fri_mon",true)] {
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::intraday_ep6::held_note(id,t).is_some(),"{id} {t} {y}"); // K62 #246: jb624_fri_mon held
         }
     }
     #[test]

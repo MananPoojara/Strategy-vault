@@ -225,14 +225,17 @@ impl St {
     fn profit_pts(&self, c: f64) -> f64 { if self.pos == 0 { 0.0 } else { self.pos as f64 * (c - self.entry_px) } }
 }
 
+#[derive(Clone)]
 struct Eng<'a> { x: &'a Ctx<'a>, pos: i8, pid: u64, cur: Option<Trade>, prev_pos: i8, out: Vec<Trade>, tag: &'static str, prot: f64,
     /// TradeStation "Maximum number of entries per position" (1 = "Do not allow multiple entries in same direction")
-    max_ent: usize, nent: usize }
+    max_ent: usize, nent: usize,
+    /// EP6 (#243, lane K62): the id's resolver is on; `od` = the open position's same-day-order mark
+    ep6: bool, od: crate::intraday_ep6::Day }
 
 impl<'a> Eng<'a> {
     fn close_pos(&mut self, i: usize, px: f64, why: &str, sig: usize) {
         if let Some(mut t) = self.cur.take() {
-            t.exit_i = i; t.exit_px = px; t.reason = why.into(); t.signal_i = sig; self.out.push(t);
+            t.exit_i = i; t.exit_px = px; t.reason = why.into(); t.signal_i = sig; crate::intraday_ep6::mark(&mut t, self.od); self.out.push(t);
         }
         self.prev_pos = self.pos; self.pos = 0; self.pid += 1; self.prot = f64::NAN;
     }
@@ -246,7 +249,7 @@ impl<'a> Eng<'a> {
                     return;
                 }
                 if self.pos == -d { self.close_pos(i, px, od.tag, sig); }
-                self.pos = d; self.pid += 1; self.tag = od.tag; self.prot = od.prot; self.nent = 1;
+                self.pos = d; self.pid += 1; self.tag = od.tag; self.prot = od.prot; self.nent = 1; self.od = crate::intraday_ep6::Day::Plain;
                 self.cur = Some(Trade { dir: d as f64, legs: vec![Leg { i, px, w: od.w }], exit_i: i, exit_px: px,
                     reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] });
             }
@@ -304,6 +307,21 @@ impl<'a> Eng<'a> {
             }).map(|(k, _)| k);
             match hit { Some(k) => { fire!(k, op); } None => break }
         }
+        if self.ep6 {
+            // EP6 (#243, lane K62): an order-dependent bar (its fills differ between the two extreme orders, walked without the
+            // bounce) is walked on its real 1-minute path; every other bar keeps the daily path with the 10% bounce (ep6_bounce)
+            let keep = std::mem::take(&mut self.out);
+            let mut st = (self.clone(), ords, done);
+            let walk = |s: &mut (Eng<'a>, Vec<O>, Vec<bool>), segs: &[crate::intraday_ep6::Seg]| ep6_walk(s, i, segs);
+            let day = crate::intraday_ep6::resolve_conv(x, i, true, &mut st, |s| ep6_bounce(s, i),
+                |s, hf| walk(s, &crate::intraday_ep6::bar_segs(op, hi, lo, cl, hf)), walk);
+            *self = st.0;
+            let mut today = std::mem::replace(&mut self.out, keep);
+            for t in today.iter_mut() { crate::intraday_ep6::remark(t, day); }
+            self.out.extend(today);
+            if self.pos != 0 { self.od = self.od.worst(day); }
+            return;
+        }
         // intrabar path with 10% bounce after each fill
         let bounce = 0.1 * (hi - lo);
         let mut path: std::collections::VecDeque<f64> =
@@ -336,14 +354,74 @@ impl<'a> Eng<'a> {
 }
 fn kind_of(od: &O) -> &'static str { match od.p { P::Mkt => "open", P::Stop(_) => "stop", P::Lim(_) => "limit" } }
 
+// ---- EP6 (#243, lane K62): the fill step of `fill_bar` on a cloned state (engine, orders, done flags)
+fn ep6_fire(s: &mut (Eng, Vec<O>, Vec<bool>), i: usize, k: usize, px: f64) {
+    s.2[k] = true; let od = s.1[k]; s.0.exec(&od, i, px, kind_of(&od), i - 1);
+    if matches!(od.a, A::Buy | A::Sell) && od.prot.is_finite() {
+        s.1.push(O { a: if od.a == A::Buy { A::Xl } else { A::Xs }, p: P::Stop(od.prot), w: 1.0, tag: "Entry-bar stop (at$)", from: od.tag, prot: f64::NAN });
+        s.2.push(false);
+    }
+}
+/// The nearest live level on a segment from `cur` towards `t` (fill_bar's rule).
+fn ep6_best(s: &(Eng, Vec<O>, Vec<bool>), cur: f64, t: f64) -> Option<(usize, f64)> {
+    let rising = |a: A| matches!(a, A::Buy | A::Xs);
+    let up = t > cur;
+    let mut best: Option<(usize, f64)> = None;
+    for (k, od) in s.1.iter().enumerate() {
+        if s.2[k] || !s.0.valid(od, 0, 0) { continue; }
+        let lv = match od.p { P::Stop(v) if rising(od.a) == up => v, P::Lim(v) if rising(od.a) != up => v, _ => continue };
+        let inside = if up { lv > cur && lv <= t } else { lv < cur && lv >= t };
+        if inside && best.map_or(true, |(_, b)| (lv - cur).abs() < (b - cur).abs()) { best = Some((k, lv)); }
+    }
+    best
+}
+/// The daily path with the 10% bounce (fill_bar's convention, unchanged).
+fn ep6_bounce(s: &mut (Eng, Vec<O>, Vec<bool>), i: usize) {
+    let x = s.0.x;
+    let (op, hi, lo, cl) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+    let bounce = 0.1 * (hi - lo);
+    let mut path: std::collections::VecDeque<f64> = if hi - op < op - lo { [hi, lo, cl].into() } else { [lo, hi, cl].into() };
+    let mut cur = op;
+    while let Some(&t) = path.front() {
+        let up = t > cur;
+        match ep6_best(s, cur, t) {
+            Some((k, lv)) => {
+                ep6_fire(s, i, k, lv);
+                cur = lv;
+                let back = if up { (lv - bounce).max(lo) } else { (lv + bounce).min(hi) };
+                if back != lv { path.push_front(back); }
+            }
+            None => { cur = t; path.pop_front(); }
+        }
+    }
+}
+/// The same fills along path segments without the bounce (a gap fills at its end).
+fn ep6_walk(s: &mut (Eng, Vec<O>, Vec<bool>), i: usize, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    let mut ev = vec![];
+    for g in segs {
+        let mut cur = g.a;
+        while let Some((k, lv)) = ep6_best(s, cur, g.b) {
+            let px = g.fill(lv);
+            ep6_fire(s, i, k, px);
+            ev.push(crate::intraday_ep6::Ev { k: k as u8, px, up: g.b > cur });
+            cur = lv;
+        }
+    }
+    ev
+}
+
 /// Run TradeStation-style strategy code `f(i, state, close_orders, next_bar_orders)` over bars 0..=to.
 /// Indicators and the code's own variables run from MaxBarsBack (`mbb`); orders are only taken from `from` on.
 fn run_ts(x: &Ctx, from: usize, to: usize, mbb: usize, f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
     run_ts_n(x, from, to, mbb, 1, f)
 }
 /// run_ts with TradeStation's "Allow multiple entries in the same direction", at most `max_ent` entries per position.
-fn run_ts_n(x: &Ctx, from: usize, to: usize, mbb: usize, max_ent: usize, mut f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
-    let mut e = Eng { x, pos: 0, pid: 0, cur: None, prev_pos: 0, out: vec![], tag: "", prot: f64::NAN, max_ent: max_ent.max(1), nent: 0 };
+fn run_ts_n(x: &Ctx, from: usize, to: usize, mbb: usize, max_ent: usize, f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
+    run_ts_ep6(x, from, to, mbb, max_ent, false, f)
+}
+/// run_ts_n with EP6 (#243, lane K62): `ep6` = the id's resolver is on (intraday_ep6::on).
+fn run_ts_ep6(x: &Ctx, from: usize, to: usize, mbb: usize, max_ent: usize, ep6: bool, mut f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
+    let mut e = Eng { x, pos: 0, pid: 0, cur: None, prev_pos: 0, out: vec![], tag: "", prot: f64::NAN, max_ent: max_ent.max(1), nent: 0, ep6, od: crate::intraday_ep6::Day::Plain };
     let mut pending: Vec<O> = vec![];
     for i in 0..=to {
         if i > from { e.fill_bar(i, &pending); }
@@ -361,7 +439,7 @@ fn run_ts_n(x: &Ctx, from: usize, to: usize, mbb: usize, max_ent: usize, mut f: 
             if i < to { pending = next; }
         }
     }
-    if let Some(mut t) = e.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; e.out.push(t); }
+    if let Some(mut t) = e.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; crate::intraday_ep6::mark(&mut t, e.od); e.out.push(t); }
     e.out
 }
 
@@ -676,6 +754,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def: f64, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "stad1_maco" => vec![p("fast", "Fast MA", 9., 3., 30., 1.), p("slow", "Slow MA", 18., 10., 60., 1.), p("chlen", "Channel / order life bars", 12., 4., 30., 1.),
@@ -730,6 +814,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     if matches!(id, "stad2_bullbeater" | "stad2_opengap") { // intraday EP block (K55)
         let g = |k: &str| p.get(k).copied().unwrap_or_else(|| params(id).unwrap().iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
         if from > to || to >= x.r.len() { return Some(vec![]); }
@@ -918,7 +1003,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ar4 = sma(&(0..n).map(|i| h[i] - l[i]).collect::<Vec<_>>(), 4);
             let (ch, pb) = (u("ch") as i64, u("prot"));
             let (mut up, mut dn, mut lob, mut sp, mut mpp) = (0.0, 0.0, 0i64, 0.0, 0i8);
-            run_ts(x, from, to, 3 * u("adx") + u("avg"), |i, st, _now, nx| {
+            run_ts_ep6(x, from, to, 3 * u("adx") + u("avg"), 1, crate::intraday_ep6::on(id, p), |i, st, _now, nx| {
                 let mp = st.pos;
                 if (davg[i] < 0.0 || xover(&davg, &zero, i)) && st.bn > 1 { up = c[i] + ar4[i] / 2.0; dn = c[i] - ar4[i] / 2.0; lob = st.bn; }
                 if mp != 0 { lob = -999; }

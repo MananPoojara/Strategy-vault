@@ -91,6 +91,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let dbo = |b, s, st| vec![p("buy_off", "Buy stop above the setup day's high (points)", b, 0., 10., 0.05), p("sell_off", "Sell stop below the setup day's low (points)", s, 0., 10., 0.05),
         p("stop", "Stop loss from the entry (points)", st, 1., 40., 0.1), p("entry_day", "Entry-day stop: 0 = bar path O-near-far-C, 1 = any touch", 0., 0., 1., 1.)];
@@ -119,7 +125,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let am = Amounts { sl: g("stop_long"), ss: g("stop_short"), floor: g("floor"), keep: 1.0 - g("trail") / 100.0 };
         return Some(if id == "jbeft_oc_osc" { oc_osc(x, from, to, u("ma_open"), u("ma_close"), u("ma_diff"), am) } else { channel(x, from, to, u("bars_high"), u("bars_low"), am) });
     }
-    Some(dbo(x, from, to, id == "jbeft_dow_wt", g("buy_off"), g("sell_off"), g("stop"), g("entry_day") >= 0.5))
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    Some(dbo(x, from, to, id == "jbeft_dow_wt", g("buy_off"), g("sell_off"), g("stop"), g("entry_day") >= 0.5, crate::intraday_ep6::on(id, p)))
 }
 
 // ---- intraday EP block (lane K45, 4 Nov 2026, decision #214; authors/titles-1030/K45.tsv): the open/close oscillator (Ch.8

@@ -130,6 +130,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let side = || p("side", "Side: 0 = long and short (book), 1 = long only, 2 = short only", 0.0, 0.0, 2.0, 1.0);
     let common = || vec![
@@ -220,7 +226,20 @@ fn hv256(c: &[f64], n: usize) -> Vec<f64> {
 struct Order { dir: f64, level: f64, stop: f64, signal: usize }
 
 /// Landry position management on a sequence of working orders (one position at a time).
-fn manage(x: &Ctx, from: usize, to: usize, orders: &[Vec<Order>], tick: f64, max_risk: f64) -> Vec<Trade> {
+fn manage(x: &Ctx, from: usize, to: usize, orders: &[Vec<Order>], tick: f64, max_risk: f64) -> Vec<Trade> { manage_ep6(x, from, to, orders, tick, max_risk, false) }
+
+/// One bar of a Landry position (EP6, lane K62: cloned to walk an order-dependent bar on its real 1-minute path).
+/// e = NaN until the entry fills on the entry bar; `void`: the fill was at or beyond the stop (no trade possible).
+#[derive(Clone)]
+struct Lp { e: f64, stop: f64, target: f64, half: bool, half_now: bool, closed: bool, void: bool, exits: Vec<(usize, f64, f64)>, why: &'static str }
+
+/// `manage` with EP6 (#243, lane K62): with `on`, a bar where the entry, the stop and the half-off target leave the order
+/// open (the two extreme orders give different fills) is walked on the real 1-minute path: the entry fills when the minutes
+/// reach its level (at the minute's open on a gap), the stop and target as the minutes reach them. [Declared reading] When the
+/// minutes take the half off first, the stop on the rest stays where it was for the rest of that bar and moves to breakeven
+/// from the next bar (the daily rule's timing). Every other bar, and days without minutes, keep the daily rules below.
+fn manage_ep6(x: &Ctx, from: usize, to: usize, orders: &[Vec<Order>], tick: f64, max_risk: f64, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, resolve_conv, Day, Ev, Seg};
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = Vec::new();
     let mut i = from;
@@ -231,50 +250,125 @@ fn manage(x: &Ctx, from: usize, to: usize, orders: &[Vec<Order>], tick: f64, max
             let px = if od.dir > 0.0 { (h[i] >= od.level).then(|| o[i].max(od.level)) } else { (l[i] <= od.level).then(|| o[i].min(od.level)) };
             px.map(|px| (*od, px))
         });
-        let Some((od, e)) = fill else { i += 1; continue };
-        used.push((od.dir, od.signal));
+        let Some((od, e_daily)) = fill else { i += 1; continue };
         let d = od.dir;
-        let cap = e * (1.0 - d * max_risk / 100.0);
-        let s0 = if d > 0.0 { od.stop.max(cap) } else { od.stop.min(cap) };
-        let risk = d * (e - s0);
-        let mut t = Trade { dir: d, legs: vec![Leg { i, px: e, w: 1.0 }], exit_i: to, exit_px: c[to], reason: "open".into(),
-            entry_kind: "stop", signal_i: od.signal, open: true, exits: Vec::new() };
-        if !(risk > 0.0) { i += 1; continue; } // fill at or beyond the stop: no trade possible
-        let target = e + d * risk;
-        let (mut stop, mut half) = (s0, false);
-        let mut k = i;
-        let mut closed = false;
-        loop {
-            // stop first (on the entry bar only the part of the range after the fill can hit it: assume it can)
+        let enter = |s: &mut Lp, e: f64| {
+            let cap = e * (1.0 - d * max_risk / 100.0);
+            let s0 = if d > 0.0 { od.stop.max(cap) } else { od.stop.min(cap) };
+            let risk = d * (e - s0);
+            s.e = e; s.stop = s0; s.target = e + d * risk; s.void = !(risk > 0.0);
+        };
+        // the daily rules of bar k (unchanged): stop first (on the entry bar only the part of the range after the fill can hit
+        // it: assume it can), then the half-off target, else the two-bar trail
+        let daily = |s: &mut Lp, k: usize| {
+            if k == i { enter(s, e_daily); if s.void { return; } }
+            let (e, stop) = (s.e, s.stop);
             let hit = if d > 0.0 { l[k] <= stop } else { h[k] >= stop };
             if hit {
                 let px = if k > i { if d > 0.0 { o[k].min(stop) } else { o[k].max(stop) } } else { stop };
-                let why = if !half { "Initial stop" } else if d * (stop - e) > 1e-12 { "Two-bar trailing stop" } else { "Breakeven stop" };
-                t.exits.push((k, px, if half { 0.5 } else { 1.0 }));
-                t.reason = why.into();
-                closed = true;
-                break;
+                s.why = if !s.half { "Initial stop" } else if d * (stop - e) > 1e-12 { "Two-bar trailing stop" } else { "Breakeven stop" };
+                s.exits.push((k, px, if s.half { 0.5 } else { 1.0 }));
+                s.closed = true;
+                return;
             }
-            if !half && (if d > 0.0 { h[k] >= target } else { l[k] <= target }) {
-                let px = if k > i { if d > 0.0 { o[k].max(target) } else { o[k].min(target) } } else { target };
-                t.exits.push((k, px, 0.5));
-                half = true;
-                stop = e; // breakeven from the next bar
-            } else if half && k >= 1 {
+            if !s.half && (if d > 0.0 { h[k] >= s.target } else { l[k] <= s.target }) {
+                let px = if k > i { if d > 0.0 { o[k].max(s.target) } else { o[k].min(s.target) } } else { s.target };
+                s.exits.push((k, px, 0.5));
+                s.half = true;
+                s.stop = e; // breakeven from the next bar
+            } else if s.half && k >= 1 {
                 // trail 1/16 beyond the extreme of the prior two bars, effective next bar, ratchet only
                 let tr = if d > 0.0 { l[k].min(l[k - 1]) - tick } else { h[k].max(h[k - 1]) + tick };
-                stop = if d > 0.0 { stop.max(tr) } else { stop.min(tr) };
+                s.stop = if d > 0.0 { s.stop.max(tr) } else { s.stop.min(tr) };
             }
-            if k >= to { break; }
+        };
+        let walk = |s: &mut Lp, k: usize, segs: &[Seg]| -> Vec<Ev> {
+            let mut ev = vec![];
+            for g0 in segs {
+                let mut g = *g0;
+                loop {
+                    if s.closed || s.void { break; }
+                    if s.e.is_nan() {
+                        if g.up() != (d > 0.0) || !g.inside(od.level) { break; }
+                        let px = g.fill(od.level);
+                        enter(s, px);
+                        ev.push(Ev { k: 0, px, up: g.up() });
+                        g.a = od.level; // the rest of this segment can still reach the target
+                        continue;
+                    }
+                    if g.up() != (d > 0.0) {
+                        if g.inside(s.stop) {
+                            let (px, e, stop) = (g.fill(s.stop), s.e, s.stop);
+                            s.why = if !s.half { "Initial stop" } else if d * (stop - e) > 1e-12 { "Two-bar trailing stop" } else { "Breakeven stop" };
+                            s.exits.push((k, px, if s.half { 0.5 } else { 1.0 }));
+                            s.closed = true;
+                            ev.push(Ev { k: 1, px, up: g.up() });
+                        }
+                    } else if !s.half && g.inside(s.target) {
+                        let px = g.fill(s.target);
+                        s.exits.push((k, px, 0.5));
+                        s.half = true;
+                        s.half_now = true;
+                        ev.push(Ev { k: 2, px, up: g.up() });
+                    }
+                    break;
+                }
+            }
+            ev
+        };
+        // after a bar walked on minutes: the stop moves as the daily rules move it (breakeven after a half off, else the trail)
+        let after = |s: &mut Lp, k: usize| {
+            if s.closed || s.void || s.e.is_nan() { return; }
+            if s.half_now { s.stop = s.e; s.half_now = false; } else if s.half && k >= 1 {
+                let tr = if d > 0.0 { l[k].min(l[k - 1]) - tick } else { h[k].max(h[k - 1]) + tick };
+                s.stop = if d > 0.0 { s.stop.max(tr) } else { s.stop.min(tr) };
+            }
+        };
+        let mut s = Lp { e: f64::NAN, stop: f64::NAN, target: f64::NAN, half: false, half_now: false, closed: false, void: false, exits: vec![], why: "open" };
+        let mut od_mark = Day::Plain;
+        let mut k = i;
+        loop {
+            let mut st = s.clone();
+            if k == i && (if d > 0.0 { o[k] >= od.level } else { o[k] <= od.level }) { enter(&mut st, o[k]); } // through at the open
+            if k > i && !st.closed {
+                // a carried position whose stop or target the open is already through: filled at the open, before the path
+                if (if d > 0.0 { o[k] <= st.stop } else { o[k] >= st.stop }) {
+                    st.why = if !st.half { "Initial stop" } else if d * (st.stop - st.e) > 1e-12 { "Two-bar trailing stop" } else { "Breakeven stop" };
+                    st.exits.push((k, o[k], if st.half { 0.5 } else { 1.0 }));
+                    st.closed = true;
+                } else if !st.half && (if d > 0.0 { o[k] >= st.target } else { o[k] <= st.target }) {
+                    st.exits.push((k, o[k], 0.5));
+                    st.half = true;
+                    st.half_now = true;
+                }
+            }
+            let day = if !on { daily(&mut s, k); Day::Plain } else {
+                let day = resolve_conv(x, k, true, &mut st, |z| { let mut y = s.clone(); daily(&mut y, k); *z = y; },
+                    |z, hf| walk(z, k, &bar_segs(o[k], h[k], l[k], c[k], hf)), |z, segs| walk(z, k, segs));
+                if matches!(day, Day::Minutes | Day::Ambiguous) { after(&mut st, k); }
+                s = st;
+                day
+            };
+            od_mark = od_mark.worst(day);
+            if k == i && (s.e.is_nan() || s.void) { break; }
+            if s.closed || k >= to { break; }
             k += 1;
         }
-        if closed {
+        if s.e.is_nan() { i += 1; continue; } // the minutes never reached the entry level: no fill on this bar
+        used.push((od.dir, od.signal));
+        if s.void { i += 1; continue; } // fill at or beyond the stop: no trade possible
+        let e = s.e;
+        let mut t = Trade { dir: d, legs: vec![Leg { i, px: e, w: 1.0 }], exit_i: to, exit_px: c[to], reason: "open".into(),
+            entry_kind: "stop", signal_i: od.signal, open: true, exits: s.exits.clone() };
+        if s.closed {
             let (sum_w, sum_px): (f64, f64) = t.exits.iter().fold((0.0, 0.0), |a, e| (a.0 + e.2, a.1 + e.1 * e.2));
             t.exit_i = k;
             t.exit_px = sum_px / sum_w;
             t.signal_i = k;
             t.open = false;
+            t.reason = s.why.into();
             if t.exits.len() == 1 { t.exits.clear(); }
+            crate::intraday_ep6::mark(&mut t, od_mark);
             out.push(t);
             i = k + 1;
         } else {
@@ -284,6 +378,7 @@ fn manage(x: &Ctx, from: usize, to: usize, orders: &[Vec<Order>], tick: f64, max
                 t.exits.push((to, c[to], 1.0 - done));
                 t.exit_px = t.exits.iter().map(|e| e.1 * e.2).sum();
             }
+            crate::intraday_ep6::mark(&mut t, od_mark);
             out.push(t);
             break;
         }
@@ -294,6 +389,7 @@ fn manage(x: &Ctx, from: usize, to: usize, orders: &[Vec<Order>], tick: f64, max
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.c.len() { return Some(vec![]); }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(0.0) as usize;
     let side = u("side");
@@ -401,7 +497,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
     }
     // one position at a time; when both sides have an order on a bar the earlier-listed (long) is tried first
-    Some(manage(x, from, to, &orders, tick, max_risk))
+    Some(manage_ep6(x, from, to, &orders, tick, max_risk, crate::intraday_ep6::on(id, p)))
 }
 
 // ------------------------------------------------------------------ Chapter 10 systems (on the close)

@@ -125,20 +125,43 @@ pub const IDS: &[&str] = &[
     "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td18_buy_7d", "lwicw_oops_tdom_buy", "lwicw_oops_tdom_sell",
     // wave 2: btp2 (books/btp.rs sim; its daily convention is 'the stop first', not a bar-path order: resolve_conv)
     "btp2_wide_range_exhaustion_gap_long", "btp2_momentum_ma_long", "btp2_momentum_ma_short", "btp2_gipsons_long",
-    "btp2_8day_hl_reversal_short", "btp2_8day_hl_reversal_long", "btp2_1234_long", "btp2_1234_short"];
+    "btp2_8day_hl_reversal_short", "btp2_8day_hl_reversal_long", "btp2_1234_long", "btp2_1234_short",
+    // wave 3 (lane K62): Bernstein day-of-week stop entries (jb624::entry_bar), the rrsim / run_ts_pp TradeStation engines,
+    // the ajmisc Sim, Luisi's narrow-range day trade
+    "jb624_fri_mon", "jbcdt2_dbo_mon", "jbcdt2_dbo_thu", "jbeft_dow_fm97", "jbeft_dow_wt",
+    "bfmmx_esl4", "bfmmx_nql4", "bfmmx_s4", "mtenl_dx2", "tsvega_stoch", "jkppnt_code",
+    "axsym_gap_breakout", "ltcoat_coat_tails", "scluisi_nr",
+    // the STAD engines (books::stad, books::stad2: the 10% bounce stays the daily convention)
+    "stad2_adxdiff", "stad5_stochob", "stad6_adxmac", "stad6_asi",
+    // the Active Trader TSL simulator (books::atm00 levels_ep6: stop and target on one bar)
+    "atm01_five_for_five", "atm01_deep_pockets",
+    // Dave Landry's swing patterns (books::dlost manage_ep6: entry, stop and the 2-for-1 half-off target)
+    "dlost_simple_pb", "dlost_tko", "dlost_dtko", "dlost_tpp", "dlost_bow_tie",
+    // Burns inside-day breakout (books::jbid: both day-2 stops; stop and target 1 on one day)
+    "jbid_inside_day"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
 pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_reversal_short", "btp2_wide_range_exhaustion_gap_long",
     "lwicw_oops_tdom_buy", "lwlts_oops_buy", "lwlts_oops_buy_ma9", "lwlts_vb_sp_40_200", "lwnl_aug97_td7_sell_bail", "lwnl_mar_short",
-    "lwnl_proj_contra", "lwnl_pullback"];
+    "lwnl_proj_contra", "lwnl_pullback",
+    // wave 3 (lane K62)
+    "dlost_simple_pb", "dlost_tko", "ltcoat_coat_tails", "scluisi_nr", "stad2_adxdiff", "stad5_stochob", "tsvega_stoch"];
 
 /// #243: ids HELD. The five thin ids (M6: over 5% order-dependent, fewer than 10 trades inside the minute window), and EP6 ids
 /// whose resolved path has more than 5% ambiguous-minute trades (#175).
 pub const HELD: &[(&str, &str)] = &[
     ("btp2_gipsons_short", THIN), ("dl10b_rgs", THIN), ("jr_ledge_tbtb", THIN), ("ws5_gap_window_intraday", THIN), ("ws5_outside_window", THIN),
     ("lwlts_mon_gap_t1000", CASH177B), ("lwlts_oops_buy_ma9", CASH177B), ("lwlts_oops_sell_thu", CASH177B), ("lwlts_talon_sp", CASH177B), ("lwlts_hh5", CASH177B), ("lwlts_hh20", CASH177B), ("lwnl_aug97_td7_sell_bail", CASH177B), ("lwnl_nov97_td17_buy_7d", CASH177B),
-    ("lwnl_aug97_td2_sell_7d", AMB), ("lwnl_jan_rally", AMB), ("lwnl_jul97_td17_buy", AMB), ("lwnl_jul97_td4_buy", AMB), ("lwnl_nov97_td18_buy_7d", AMB)];
+    ("lwnl_aug97_td2_sell_7d", AMB), ("lwnl_jan_rally", AMB), ("lwnl_jul97_td17_buy", AMB), ("lwnl_jul97_td4_buy", AMB), ("lwnl_nov97_td18_buy_7d", AMB),
+    // wave 3 (lane K62): Bernstein's S&P-point day-of-week stops (#246 (a): #177b on the resolved versions)
+    ("jb624_fri_mon", CASH177B_K62), ("jbcdt2_dbo_mon", CASH177B_K62), ("jbcdt2_dbo_thu", CASH177B_K62)];
+const CASH177B_K62: &str = "Held (decisions #177b, #246, lane K62): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule loses over 2014-2025 while SPX gains (opposite sign, the cash-vs-tradable check), and SPX is this rule's only ticker, so no results are published.";
+/// #246 (a), lane K62: daily rules whose RESOLVED result fails #179 on SPX (SPX better than SPY in both check windows): the SPX
+/// result is withdrawn and, as #179 rules for SPX-flagged rules, the NIFTY 50 / NIFTYBANK results are held; SPY and the rest stay.
+pub const SPX179: &[&str] = &["bfmmx_nql4"];
+const SPX179_NOTE: &str = "The SPX daily result is withdrawn (decisions #179, #246, lane K62): with the same-day order resolved on 1-minute bars, SPX beats tradable SPY over the same dates in both check windows (2014-01-02..2017-06-30 and 2017-07-01..2020-09-11); SPX daily open/high/low come from stale component prints, so the SPY result carries the S&P rule.";
+const SPX179_INDIA: &str = "Not published on this index (decisions #179, #246, lane K62): the same rule fails the tradable-vs-cash check on SPX/SPY with its same-day order resolved on 1-minute bars, and India has no tradable index series to check it on, so the NIFTY result is held.";
 /// #246 (a): SPX-point rules whose RESOLVED result fails #177b (SPX vs tradable SPY with the points scaled, 2014-2025); SPX is
 /// their only ticker, so nothing is published.
 const CASH177B: &str = "Held (decisions #177b, #246, lane K59): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule fails the cash-vs-tradable check over 2014-2025 (opposite sign, or SPX more than 3x SPY), and SPX is this rule's only ticker, so no results are published.";
@@ -149,6 +172,10 @@ const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane
 /// The hold or minute-window refusal for (id, ticker), if any (instrument_policy::tradable_check_issue).
 pub fn held_note(id: &str, ticker: &str) -> Option<&'static str> {
     if let Some(&(_, n)) = HELD.iter().find(|h| h.0 == id) { return Some(n); }
+    if SPX179.contains(&id) {
+        if ticker == "SPX" { return Some(SPX179_NOTE); }
+        if matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTY BANK") { return Some(SPX179_INDIA); }
+    }
     (WINDOW_ONLY.contains(&id) && !matches!(ticker, "SPY" | "SPX" | "NIFTY 50" | "NIFTYBANK" | "NIFTY BANK")).then_some(WINDOW_NOTE)
 }
 
@@ -273,5 +300,31 @@ mod tests {
         assert!(t.len() == 1 && t[0].open && t[0].legs[0].px == 99.0 && t[0].reason.ends_with(Day::Minutes.note()), "{t:?}");
         // a card that is not an EP6 id is untouched: lwlts_mon_gap_close has no same-day order question here either way
         assert!(crate::books::lwlts::params("lwlts_mon_gap_close").unwrap().iter().all(|d| d.key != "order"));
+    }
+
+    #[test]
+    fn k62_bernstein_entry_day_and_luisi_day_trade_on_minutes() {
+        // Friday closes above its open (high 101): Monday buy stop 101.15, stop 6.8 points under the fill (94.35). Monday's daily
+        // bar (h-o 3 < o-l 6: high first) enters and is stopped; the minutes put the low (94) before the fill: entered, not stopped.
+        let r = vec![row("2020-01-02", 100., 100.5, 99.5, 100.), row("2020-01-03", 100., 101., 99.8, 100.8), row("2020-01-06", 100., 103., 94., 99.)];
+        let mut x = crate::connors::Ctx::new(&r, &r, &[]);
+        let p0: Params = [("order".to_string(), 0.0)].into_iter().collect();
+        let conv = crate::books::jbcdt2::run("jbcdt2_dbo_mon", &x, 0, 2, &p0).unwrap();
+        assert!(conv.len() == 1 && (conv[0].exit_px - 94.35).abs() < 1e-9 && !conv[0].open && !conv[0].reason.contains("same-day"), "{conv:?}");
+        let none = crate::books::jbcdt2::run("jbcdt2_dbo_mon", &x, 0, 2, &Params::new()).unwrap();
+        assert!(none.len() == 1 && none[0].reason.ends_with(Day::Convention.note()), "{none:?}");
+        x.minutes = Some(minutes("dbo", &[("2020-01-06", &["09:30,100,100.2,94,95", "09:31,95,103,95,102", "09:32,102,102,99,99"])]));
+        let t = crate::books::jbcdt2::run("jbcdt2_dbo_mon", &x, 0, 2, &Params::new()).unwrap();
+        assert!(t.len() == 1 && t[0].open && (t[0].legs[0].px - 101.15).abs() < 1e-9 && t[0].reason.ends_with(Day::Minutes.note()), "{t:?}");
+        // Luisi: yesterday's range 0.5 (<= 0.6% of 100.8); today trades both its high 101 and its low 100.5. Daily reading: the
+        // level nearer the open (101, open 100.9) and the stop at half the range (100.75) counts; the minutes go low first.
+        let r = vec![row("2020-01-02", 100., 100.5, 99.5, 100.), row("2020-01-03", 100.6, 101., 100.5, 100.8), row("2020-01-06", 100.9, 101.6, 100.2, 101.5)];
+        let mut x = crate::connors::Ctx::new(&r, &r, &[]);
+        let d = crate::books::scluisi::run("scluisi_nr", &x, 0, 2, &p0).unwrap();
+        assert!(d.len() == 1 && d[0].dir > 0.0 && d[0].exit_px == 100.75, "{d:?}");
+        x.minutes = Some(minutes("luisi", &[("2020-01-06", &["09:30,100.9,100.9,100.2,100.3", "09:31,100.3,101.6,100.3,101.5"])]));
+        let m = crate::books::scluisi::run("scluisi_nr", &x, 0, 2, &Params::new()).unwrap();
+        // the low came first: short at 100.5, stopped at 100.75 on the way up
+        assert!(m.len() == 1 && m[0].dir < 0.0 && m[0].legs[0].px == 100.5 && m[0].exit_px == 100.75 && m[0].reason.ends_with(Day::Minutes.note()), "{m:?}");
     }
 }

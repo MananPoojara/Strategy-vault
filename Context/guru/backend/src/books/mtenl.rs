@@ -2,7 +2,7 @@
 //! (research share USB HDD 1/META TRADER/MetaTrader/enLight DX II (fxchannel.ru)/enLight_DX_II_Trader_1_02.mq4). Book id `mtenl`.
 //! Lane K18 (titles loop, 2 Nov 2026), to-code row 328; independent check authors/titles-1030/K18w/k18_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
-use super::rrsim::{o, run_ts, sma, true_range, A, P};
+use super::rrsim::{o, run_ts_ep6, sma, true_range, A, P};
 use super::sctraub::ema0;
 
 pub const REVIEWED: &[&str] = &["mtenl_dx2"];
@@ -23,7 +23,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    reviewed(id).then(|| vec![p("tpk", "Target x ATR (9.87)", 9.87, 0.5, 20., 0.01), p("tsk", "Trailing x ATR (2.2)", 2.2, 0.5, 10., 0.1), p("nlk", "Break-even at x ATR profit (0.6)", 0.6, 0.1, 5., 0.1)])
+    let mut v = reviewed(id).then(|| vec![p("tpk", "Target x ATR (9.87)", 9.87, 0.5, 20., 0.01), p("tsk", "Trailing x ATR (2.2)", 2.2, 0.5, 10., 0.1), p("nlk", "Break-even at x ATR profit (0.6)", 0.6, 0.1, 5., 0.1)])?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
 }
 
 #[derive(Clone, Copy)]
@@ -31,6 +33,7 @@ struct Pend { d: i8, lv: f64, sl: f64, tp: f64 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let (tpk, tsk, nlk) = (g("tpk", 9.87), g("tsk", 2.2), g("nlk", 0.6));
     let (o_, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
@@ -44,7 +47,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }).collect();
     let mut pend: Option<Pend> = None;
     let (mut sl, mut tp) = (f64::NAN, f64::NAN);
-    Some(run_ts(x, from, to, |t, st, _now, next| {
+    Some(run_ts_ep6(x, from, to, crate::intraday_ep6::on(id, p), |t, st, _now, next| {
         if t < from { return; }
         // the pending stop of bar t: filled when the bar reached it; the position then carries its stop and target
         if let Some(q) = pend {

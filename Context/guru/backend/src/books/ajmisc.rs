@@ -31,12 +31,13 @@ pub fn ord(k: K, ty: Ty, nm: &'static str) -> Ord { Ord { k, ty, nm } }
 
 fn buy_side(k: K) -> bool { matches!(k, K::Buy | K::XS) }
 
-pub struct Sim { pub out: Vec<Trade>, pub cur: Option<Trade>, pub pos: i8 }
+#[derive(Clone)]
+pub struct Sim { pub out: Vec<Trade>, pub cur: Option<Trade>, pub pos: i8, od: crate::intraday_ep6::Day } // od: EP6 (K62) mark of the open position
 
 impl Default for Sim { fn default() -> Self { Self::new() } }
 
 impl Sim {
-    pub fn new() -> Self { Sim { out: vec![], cur: None, pos: 0 } }
+    pub fn new() -> Self { Sim { out: vec![], cur: None, pos: 0, od: crate::intraday_ep6::Day::Plain } }
     /// TradeStation EntryPrice (0 when flat).
     pub fn ep(&self) -> f64 { self.cur.as_ref().map_or(0., |t| t.legs[0].px) }
     /// Bar index of the current entry.
@@ -50,12 +51,14 @@ impl Sim {
         if let Some(mut t) = self.cur.take() {
             t.exit_i = i; t.exit_px = px; t.signal_i = sig;
             t.reason = if matches!(k, K::XL | K::XS) { nm.to_string() } else { format!("reversed by {nm}") };
+            crate::intraday_ep6::mark(&mut t, self.od);
             self.out.push(t);
         }
         self.pos = 0;
         if matches!(k, K::Buy | K::Short) {
             let dir = if k == K::Buy { 1. } else { -1. };
             self.pos = dir as i8;
+            self.od = crate::intraday_ep6::Day::Plain;
             self.cur = Some(Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] });
         }
         true
@@ -65,7 +68,11 @@ impl Sim {
     pub fn on_close(&mut self, x: &Ctx, i: usize, k: K, nm: &str) -> bool { let p = self.pos; self.apply(i, i, x.c[i], k, nm, p, "close") }
 
     /// Bar j with the orders generated at the close of bar j-1.
-    pub fn bar(&mut self, x: &Ctx, j: usize, ords: &[Ord]) {
+    pub fn bar(&mut self, x: &Ctx, j: usize, ords: &[Ord]) { self.bar_ep6(x, j, ords, false) }
+
+    /// `bar` with EP6 (#243, lane K62): with `on` (intraday_ep6::on for the id) the path after the open is walked as segments,
+    /// and an order-dependent bar on its real 1-minute path where minutes exist; off = `bar` unchanged.
+    pub fn bar_ep6(&mut self, x: &Ctx, j: usize, ords: &[Ord], on: bool) {
         let (o, h, l, c) = (x.o[j], x.h[j], x.l[j], x.c[j]);
         let pos_open = self.pos;
         let sig = j.saturating_sub(1);
@@ -82,6 +89,41 @@ impl Sim {
                 };
                 if at_open && self.apply(j, sig, o, q.k, q.nm, pos_open, kind(q.ty)) { done[n] = true; }
             }
+        }
+        if on {
+            use crate::intraday_ep6::{bar_segs, remark, resolve, Ev, Seg};
+            let walk = |st: &mut (Sim, Vec<bool>), segs: &[Seg]| -> Vec<Ev> {
+                let mut ev = vec![];
+                for g in segs {
+                    let (a, b) = (g.a, g.b);
+                    if a == b { continue; }
+                    let up = b > a;
+                    let mut cand: Vec<(f64, usize)> = ords.iter().enumerate().filter(|(n, _)| !st.1[*n]).filter_map(|(n, q)| {
+                        let lv = match q.ty { Ty::Mkt => return None, Ty::Stop(v) | Ty::Lim(v) => v };
+                        let trig = match q.ty { Ty::Stop(_) => buy_side(q.k) == up, _ => buy_side(q.k) != up };
+                        let inside = if up { lv > a && lv <= b } else { lv < a && lv >= b };
+                        (trig && inside).then_some((lv, n))
+                    }).collect();
+                    cand.sort_by(|p, q| {
+                        let c = if up { p.0.total_cmp(&q.0) } else { q.0.total_cmp(&p.0) };
+                        c.then_with(|| (!matches!(ords[p.1].k, K::XL | K::XS)).cmp(&!matches!(ords[q.1].k, K::XL | K::XS)))
+                    });
+                    for (lv, n) in cand {
+                        let px = g.fill(lv);
+                        if !st.1[n] && st.0.apply(j, sig, px, ords[n].k, ords[n].nm, pos_open, kind(ords[n].ty)) { st.1[n] = true; ev.push(Ev { k: n as u8, px, up }); }
+                    }
+                }
+                ev
+            };
+            let keep = std::mem::take(&mut self.out);
+            let mut st = (self.clone(), done);
+            let day = resolve(x, j, true, h - o <= o - l, &mut st, |s, hf| walk(s, &bar_segs(o, h, l, c, hf)), &walk);
+            *self = st.0;
+            let mut today = std::mem::replace(&mut self.out, keep);
+            for t in today.iter_mut() { remark(t, day); }
+            self.out.extend(today);
+            if self.pos != 0 { self.od = self.od.worst(day); }
+            return;
         }
         let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
         for s in path.windows(2) {
@@ -105,7 +147,7 @@ impl Sim {
     }
 
     pub fn done(mut self, x: &Ctx, to: usize) -> Vec<Trade> {
-        if let Some(mut t) = self.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; self.out.push(t); }
+        if let Some(mut t) = self.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; crate::intraday_ep6::mark(&mut t, self.od); self.out.push(t); }
         self.out
     }
 }

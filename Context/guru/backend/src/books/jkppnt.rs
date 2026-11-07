@@ -3,7 +3,7 @@
 //! (titles loop, 2 Nov 2026), to-code row 353; independent check authors/titles-1030/K18w/k18_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::rrsim::{o, sma, A, P};
-use super::tstango::run_ts_pp;
+use super::tstango::run_ts_pp_ep6;
 
 pub const REVIEWED: &[&str] = &["jkppnt_code"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
@@ -23,16 +23,19 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    reviewed(id).then(|| vec![p("buybo", "BuyBO (2)", 2., 0., 20., 1.), p("sellbo", "SellBO (6)", 6., 0., 20., 1.), p("walk", "Walk (10)", 10., 1., 50., 1.)])
+    let mut v = reviewed(id).then(|| vec![p("buybo", "BuyBO (2)", 2., 0., 20., 1.), p("sellbo", "SellBO (6)", 6., 0., 20., 1.), p("walk", "Walk (10)", 10., 1., 50., 1.)])?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let (bbo, sbo, walk) = (g("buybo", 2.), g("sellbo", 6.), g("walk", 10.));
     let c = &x.c;
     let a40 = sma(c, 40);
-    Some(run_ts_pp(x, from, to, |i, st, next| {
+    Some(run_ts_pp_ep6(x, from, to, crate::intraday_ep6::on(id, p), |i, st, next| {
         if i < 2 { return; }
         let r = x.h[i] - x.l[i];
         let (up, dn) = (c[i] + r * 0.10 * bbo, c[i] - r * 0.10 * sbo);

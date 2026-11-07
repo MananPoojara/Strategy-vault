@@ -2,7 +2,7 @@
 //! Open Code.rar -> Open Code.txt; no author named). Book id `tsvega`. Lane K18 (titles loop, 2 Nov 2026), to-code row 346;
 //! independent check authors/titles-1030/K18w/k18_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
-use super::rrsim::{highest, lowest, o, run_ts, A, P};
+use super::rrsim::{highest, lowest, o, run_ts_ep6, A, P};
 use super::sctraub::ticks;
 use super::tsprosc::slow_kd;
 
@@ -24,17 +24,20 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    reviewed(id).then(|| vec![p("len", "Length (12)", 12., 3., 50., 1.), p("tick", "1 point = ticks (1)", 1., 0., 10., 1.), p("smooth", "0 = legacy TradeStation SlowK/SlowD smoothing, 1 = 3-bar averages", 0., 0., 1., 1.)])
+    let mut v = reviewed(id).then(|| vec![p("len", "Length (12)", 12., 3., 50., 1.), p("tick", "1 point = ticks (1)", 1., 0., 10., 1.), p("smooth", "0 = legacy TradeStation SlowK/SlowD smoothing, 1 = 3-bar averages", 0., 0., 1., 1.)])?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let len = p.get("len").copied().unwrap_or(12.).round().max(1.) as usize;
     let pt = ticks(x, p);
     let (k, d) = slow_kd(x, len, p.get("smooth").copied().unwrap_or(0.) > 0.5);
     let (ob, os, sul) = (70., 30., 6.);
     let (mut bsu, mut ssu, mut bp, mut sp, mut bstop, mut sstop) = (0., 0., 99., 99., 0., 0.);
-    Some(run_ts(x, from, to, |i, st, _now, next| {
+    Some(run_ts_ep6(x, from, to, crate::intraday_ep6::on(id, p), |i, st, _now, next| {
         let up = i > 0 && k[i] > d[i] && k[i - 1] <= d[i - 1];
         let dn = i > 0 && k[i] < d[i] && k[i - 1] >= d[i - 1];
         if k[i] < os && up { bsu = highest(&x.h, 2, i); bstop = x.l[i]; bp = 0.; }
