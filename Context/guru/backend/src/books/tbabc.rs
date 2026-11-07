@@ -18,7 +18,7 @@
 //! the protective stop and target as soon as the entry fills.
 use crate::books::bwntd::tick_of;
 /// Admitted ids (authors/bierovic/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool"];
+pub const REVIEWED: &[&str] = &["tbabc_ma_cross" /* lane K60, #244 (4) */, "tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 use crate::connors::{true_range, sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
@@ -99,10 +99,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|Basic buy signal: an X column exceeds the previous X column; basic sell signal: an O column falls below the previous O column (p.53-54)",
             "X|Basic long/short exit (p.54-55); big profit exit: \"When your open profits reach ten boxes or more, take profits on the next reversal\" (p.57)"],
           "Three-box reversal (p.52).", None),
-        d("tbabc_ma_cross", "Moving-average crossover chart examples", "Moving Averages", "Long",
-          NotTestable("chart captions only (charts #77-78: \"Buy at A when SMA:5 crosses above SMA:12\", \"Sell at B\"); the fill bar/price is not stated and chart #78 (SMA 5/15) does not say whether a sell reverses"),
-          &["E|\"Buy at A when SMA:5 crosses above SMA:12\"; \"Sell at B when SMA:5 crosses below SMA:12\"; \"Buy again at C\" (chart #77, p.61)"],
-          "Chart #93 (\"Buy at A when the stock closes above the SMA [100] / Sell at B when the stock closes below\") duplicates apta_ma100_dji and is not added.", None),
+        d("tbabc_ma_cross", "Moving-average crossover chart examples", "Moving Averages", "Long", Live,
+          &["E|\"Buy at A when SMA:5 crosses above SMA:12\" (chart #77, ADCT, p.61): the 5-bar simple average of the close ends a bar above the 12-bar average after ending the bar before at or below it",
+            "X|\"Sell at B when SMA:5 crosses below SMA:12\"; \"Buy again at C\" (chart #77): the sell ends the long position; out of the market until the next buy",
+            "F|Chart #78 (p.61, \"Dual moving average crossover method\", SMA:5 and SMA:15): the same rule with a 15-bar slow average = option slow = 15",
+            "F|[Declared reading, decisions #230 (1) and #244 (4)] the captions do not say on which bar the order fills: default = the next bar's open after the crossing close; option fill = 1 fills at the crossing bar's close. Long only: the charts mark buys and sells of a long position, never a short"],
+          "Chart #93 (\"Buy at A when the stock closes above the SMA [100] / Sell at B when the stock closes below\") duplicates apta_ma100_dji and is not added. Bierovic shows the rule on two stock charts without results; runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K60w/k60_ref.py.", None),
         d("tbabc_discretionary", "Chart patterns, candlesticks, Fibonacci, indicators", "Bar-chart & candlestick patterns", "Long/Short",
           NotTestable("discretionary: trendlines, flags, triangles, wedges, head-and-shoulders, double tops, candlestick patterns, Fibonacci zones and indicator divergences are drawn/judged by eye and have no exit rules (p.15-74)"),
           &["F|Swing highs/lows, trendlines, gaps, key/closing-price reversals, chart patterns, candlesticks, Bollinger, momentum, RSI, OBV, Fibonacci (p.15-74)"],
@@ -140,6 +142,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.extend(stops());
             v
         }
+        "tbabc_ma_cross" => vec![p("fast", "Fast SMA (bars)", 5., 2., 20., 1.), p("slow", "Slow SMA (bars): 12 = chart #77, 15 = chart #78", 12., 5., 50., 1.),
+            p("fill", "Fill: 0 = next bar's open, 1 = the crossing bar's close", 0., 0., 1., 1.)],
         "tbabc_powertool" => {
             let mut v = vec![p("timing", "Timing EMA", 10., 5., 15., 2.), p("trend", "Trend EMA", 50., 30., 70., 5.), p("atr", "ATR length", 20., 10., 30., 5.)];
             v.extend(stops());
@@ -356,6 +360,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             sim(x, from, to, false, &gen, &none)
         }
+        "tbabc_ma_cross" => {
+            let (f, sl, at_close) = (g("fast").round() as usize, g("slow").round() as usize, g("fill") >= 0.5);
+            // each average summed over its own window (the shared rolling sma carries rounding into exact ties of 1/8 prices)
+            let wsma = |n: usize| -> Vec<f64> { (0..x.c.len()).map(|i| if i + 1 < n { f64::NAN } else { x.c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect() };
+            let (a, b) = (wsma(f.max(1)), wsma(sl.max(1)));
+            let cross = |i: usize, up: bool| i >= 1 && [a[i], b[i], a[i - 1], b[i - 1]].iter().all(|v| v.is_finite())
+                && if up { a[i] > b[i] && a[i - 1] <= b[i - 1] } else { a[i] < b[i] && a[i - 1] >= b[i - 1] };
+            let fill = |i: usize| if at_close { Some((i, x.c[i])) } else if i < to { Some((i + 1, x.o[i + 1])) } else { None };
+            let kind = if at_close { "close" } else { "open" };
+            let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
+            for i in from..=to {
+                if let Some(t) = cur.as_ref() { if t.legs[0].i > i { continue; } }
+                if cur.is_some() && cross(i, false) {
+                    if let Some((k, px)) = fill(i) { let mut t = cur.take().unwrap(); t.exit_i = k; t.exit_px = px; t.signal_i = i; t.reason = "SMA fast crosses below slow".into(); out.push(t); }
+                } else if cur.is_none() && cross(i, true) {
+                    if let Some((k, px)) = fill(i) { cur = Some(Trade { dir: 1., legs: vec![Leg { i: k, px, w: 1. }], exit_i: k, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i, open: false, exits: vec![] }); }
+                }
+            }
+            if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.open = true; t.reason = "open".into(); out.push(t); }
+            out
+        }
         "tbabc_powertool" => {
             let timing = xaverage(&x.c, g("timing") as usize);
             let trend = xaverage(&x.c, g("trend") as usize);
@@ -395,6 +420,24 @@ mod tests {
         assert_eq!(touch(&p, 0., 99., false).map(|v| v.1), Some(99.));
         assert_eq!(touch(&p, 0., 102., false).map(|v| v.1), Some(100.)); // gap through a sell stop = open
         assert!(touch(&p, 0., 102., true).is_none());
+    }
+
+    /// Lane K60: SMA(2) vs SMA(3) by hand: up-cross at bar 4 -> buy at bar 5's open; down-cross at bar 7 -> sell at bar 8's open.
+    #[test]
+    fn ma_cross_buys_and_sells_at_the_next_open() {
+        let c = [10., 10., 10., 9., 12., 13., 13., 9., 8., 8.];
+        let b: Vec<(f64, f64, f64, f64)> = c.iter().enumerate().map(|(i, &v)| (v + 0.1 * i as f64, v + 1., v - 1., v)).collect();
+        let r = rows(&b);
+        let x = Ctx::new(&r, &r, &[]);
+        let mut p = Params::new(); p.insert("fast".into(), 2.); p.insert("slow".into(), 3.);
+        // sma2: -,10,10,9.5,10.5,12.5,13,11,8.5,8 ; sma3: -,-,10,9.67,10.33,11.33,12.67,11.67,10,8.33
+        let t = run("tbabc_ma_cross", &x, 0, 9, &p).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].signal_i, t[0].exit_i), (5, b[5].0, 7, 8));
+        assert!((t[0].exit_px - b[8].0).abs() < 1e-12 && !t[0].open && t[0].entry_kind == "open");
+        p.insert("fill".into(), 1.);
+        let t = run("tbabc_ma_cross", &x, 0, 9, &p).unwrap();
+        assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (4, 12., 7, 9.));
     }
 
     #[test]
