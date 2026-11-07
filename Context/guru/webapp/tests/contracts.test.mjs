@@ -27,8 +27,8 @@ test('post-login destinations cannot redirect to another origin', () => {
 
 test('saved views accept local strategy routes and reject malformed destinations', async () => {
   const { validateSavedView } = await import('../auth/src/contracts.mjs');
-  for (const value of ['#/', '#/strategies?region=us&tk=SPX', '#/s/f1a?from=2020-01-01', '#/guru/connors', '#/o/rsi2_5d?region=us', '#/guru/ross']) assert.equal(validateSavedView(value),value);
-  for (const value of ['https://evil.invalid','#//evil.invalid','#/s/%zz','#/\n',null,'#/s/'+ 'x'.repeat(5000)]) assert.throws(()=>validateSavedView(value));
+  for (const value of ['#/', '#/strategies?region=us&tk=SPX', '#/s/f1a?from=2020-01-01', '#/guru/connors', '#/o/rsi2_5d?region=us', '#/guru/ross', '#/yt', '#/yt?tab=sharpe']) assert.equal(validateSavedView(value),value);
+  for (const value of ['https://evil.invalid','#//evil.invalid','#/s/%zz','#/\n',null,'#/ytx','#/yt/x','#/s/'+ 'x'.repeat(5000)]) assert.throws(()=>validateSavedView(value));
 });
 
 test('actual login script blocks control-character redirects', async () => {

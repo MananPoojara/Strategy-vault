@@ -3,6 +3,17 @@ import {vaultStore} from '../state/store';
 import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
+import {ATH_VERIFY} from './ath-verification.js';
+import {ATH_CARD} from './ath-card-results.js';
+import {ATH_MASTER_IDS} from './ath-masters.js';
+import {btstVerify} from './btst-verification.js';
+import {ADR_VERIFY} from './adr-verification.js';
+import {buildTsWorkbook, maeOf, maeBars, tsBytes} from './ts-workbook.js';
+import {buildReport, yoyMonthly} from './report-stats.js';
+import {reportHTML, statisticsBlocks, tradeRows, TRADE_COLUMNS, yoyAoa} from './report-view.js';
+import {buildLabXlsx} from './lab-xlsx.js';
+import {labRows, resultsHTML, listHTML} from './optimize-view.js';
+import {AM_COLUMNS, buildOptimizationXlsx, optimsFileName, rangeLine, zipStored} from './optimize-sheet.js';
 import {authorProfileHtml} from '../services/author-profiles';
 import {loadOwnerRows} from '../services/summary-loader';
 import {bookContext} from '../services/book-context';
@@ -22,6 +33,18 @@ import {visibleBacktestCount,measuredWindow} from '../services/library-count-con
 import {unavailableBookMethods} from '../services/unavailable-book-methods';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
+import {strategyDataWindow} from '../services/series-coverage';
+import {BEST_SETTING, NO_TRADESHEET, bestActive, btstReference, mainTradesheet, referenceDefaults, universeReferenceDefaults, universeTradesheet} from '../services/btst-reference';
+import {athOptParams, athOptimizeQuery, carMdd, comboCount, defaultRange, gridProblem, optGridHeight, OPT_ROWS_SHOWN, rangeValues, sortRows as athSortRows, validAthResult} from '../services/ath-optimize';
+import {UNIVERSE_PERCENT_COLUMNS, UNIVERSE_TRADE_HEADERS, isUniverseOnly, normaliseRunScope, positionStats, universeAflRows, universeChoiceLabel, universeQuery, universeRunnable, universeSchema, universeText, universeTradeRows, tradePage, universeTradedLine} from '../services/btst-universe';
+import {AFL_PARAMS_ALL as AFL_PARAMS} from '../services/afl-params-all';
+import {ATH_CHECKED_IDS} from '../services/ath-reference';
+import {ytFamilyFolder, ytFamilyReference, ytReferenceDefaults, ytRefPath, ytUniverseReferenceDefaults} from '../services/yt-reference';
+import {btstFuturesSymbol, btstInstrument} from '../services/btst-instrument';
+import {paramValues, renderRule} from '../services/rule-template';
+import {PLAIN_LABELS, changedParams, clampParam, hhmm, inactiveParams, isCoded, paramOptions, paramSections, paramTitle, plainOptions, strategyKeys, timeOptions} from '../services/param-dialog';
+import {MAIN_VARIANT_NOTES, YT_PRESETS, presetActive, ytMainVariant, ytMainVariants} from '../services/yt-family';
+import {isIntradayStrategy, layerMarkers, lowerBound, tradeLayers, tradeSpans, tradeWindow} from '../services/intraday-trade';
 import {orderAuthors} from '../services/author-order';
 import {chooseBacktestContext,referenceBacktestContexts} from '../services/library-backtest-context';
 import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
@@ -75,7 +98,7 @@ window.VaultUI=(()=>{
  const label=(n,type)=>typeof n!=='number'||!Number.isFinite(n)?'—':type==='percent'?(n*100).toFixed(2)+'%':n.toFixed(type==='count'?0:type==='days'?1:2);
  let currentBenchmark=null;
  const tradeHeadersFor=d=>d.source_account?sourceTradeHeaders(VaultReport.tradeHeaders):VaultReport.tradeHeaders;
- const tradeRowsFor=(d,tk)=>VaultReport.tradeRows(d,tk).map((row,i)=>(d.source_account||d.unit_exposure_report)?row.map((value,column)=>column===13?d.trades[i].ret_full_precision:value):row);
+ const tradeRowsFor=(d,tk)=>VaultReport.tradeRows(d,tk).map((row,i)=>(d.source_account||d.unit_exposure_report)?row.map((value,column)=>column===13?d.trades[i].ret_full_precision:value):row).map((row,i)=>{const t=d.trades?.[i];if(!t?.entry_ts)return row;const r=[...row];r[2]=t.entry_ts;if(t.exit_ts&&!t.open)r[4]=t.exit_ts;return r;});
  // Icons: Lucide (ISC) line icons and Simple Icons (CC0) brand marks, inlined from lucide-static@1.55.0 / simple-icons@16.35.0.
  const ICON={"share": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"18\" cy=\"5\" r=\"3\" /> <circle cx=\"6\" cy=\"12\" r=\"3\" /> <circle cx=\"18\" cy=\"19\" r=\"3\" /> <line x1=\"8.59\" x2=\"15.42\" y1=\"13.51\" y2=\"17.49\" /> <line x1=\"15.41\" x2=\"8.59\" y1=\"6.51\" y2=\"10.49\" /></svg>", "download": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M12 18v-6\" /> <path d=\"m9 15 3 3 3-3\" /></svg>", "save": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z\" /></svg>", "saved": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z\" /> <path d=\"m9 10 2 2 4-4\" /></svg>", "back": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 19-7-7 7-7\" /> <path d=\"M19 12H5\" /></svg>", "png": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" /></svg>", "xls": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M8 13h2\" /> <path d=\"M14 13h2\" /> <path d=\"M8 17h2\" /> <path d=\"M14 17h2\" /></svg>", "csv": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" /></svg>", "link": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 17H7A5 5 0 0 1 7 7h2\" /> <path d=\"M15 7h2a5 5 0 1 1 0 10h-2\" /> <line x1=\"8\" x2=\"16\" y1=\"12\" y2=\"12\" /></svg>", "mail": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7\" /> <rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\" /></svg>", "check": "<svg class=\"ic ic-line\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\" /></svg>", "wa": "<svg class=\"ic ic-brand\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z\"/></svg>", "x": "<svg class=\"ic ic-brand\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z\"/></svg>", "tg": "<svg class=\"ic ic-brand\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z\"/></svg>", "gmail": "<svg class=\"ic ic-brand\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z\"/></svg>"};
  // Like: Lucide thumbs-up, ISC; verified official 0.557.0 SVG on 2026-10-13.
@@ -114,8 +137,8 @@ window.VaultUI=(()=>{
   <button type="button" class="sa${saved?' on':''}" data-action="save" aria-label="Save" aria-pressed="${saved}" title="${saved?'Remove from Saved':'Save to your Saved list'}">${saved?ICON.saved:ICON.save}</button><span class="sa-settings" data-react-slot="strategy-settings"></span>
  </div><span role="status" id="page-action-message"></span></div>`;}
  function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table"><thead><tr><th>Statistic</th><th class="n">Net</th><th class="n">Gross</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${label(n,t)}</td><td class="n">${label(g,t)}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
- function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=d.unit_exposure_report?{...d.benchmark_stats,from:d.dates[0],to:d.dates.at(-1)}:VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${label(d.stats[key],type)}</td><td class="n">${label(b?.[key],type)}</td></tr>`).join('')}</tbody></table></section>`;}
- function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)?'n '+(v<0?'neg':'pos'):''}">${v===null?'—':[8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
+ function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const own=!!(d.instrument&&d.benchmark_symbol&&d.benchmark_stats); /* BTST: the engine's buy & hold of the futures traded */const b=(d.unit_exposure_report||own)?{...d.benchmark_stats,from:d.dates[0],to:d.dates.at(-1)}:VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),bn=own?d.benchmark_symbol:(LABEL[tk]||tk),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(own?bn:tk)}"><div class="box-h">Strategy vs ${escText(bn)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(bn)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'}${own&&d.benchmark_basis?` ${escText(d.benchmark_basis)}.`:''} Book-reported figures remain separate reference claims.</p><table class="tbl"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(bn)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${label(d.stats[key],type)}</td><td class="n">${label(b?.[key],type)}</td></tr>`).join('')}</tbody></table></section>`;}
+ function tradeHTML(d,tk){const adr=adrReport(d),rows=tradeRowsFor(d,tk).map((row,n)=>adr&&adr.trades[n]?[...row,adr.trades[n].bars,adr.trades[n].accountDd]:row);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${/^ytadr_/.test(STRAT?.v?.id||'')?'<button class="dbtn sm" id="ts-download" title="The research team\'s Excel tradesheet: every number is a live formula; costs in C1:E1 are editable">Download TS</button>':''}${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${[...tradeHeadersFor(d),...(adr?['Bars held','DD %']:[])].map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)||(adr&&i===18)?'n '+(v<0?'neg':'pos'):adr&&i===17?'n':''}">${v===null?'—':[8,11,13,14,15].includes(i)||(adr&&i===18)?label(v,'percent'):adr&&i===17?String(v):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
  function equityNavigator(ch,d){const box=document.getElementById('equity-navigator');if(!box)return;const a=box.querySelector('[data-range=start]'),b=box.querySelector('[data-range=end]'),text=box.querySelector('output'),n=d.dates.length;if(n<2){a.disabled=b.disabled=true;text.textContent=d.dates[0]||'No dated results';return;}a.max=b.max=n-1;a.value=0;b.value=n-1;const show=()=>{let lo=+a.value,hi=+b.value;if(lo>=hi){if(document.activeElement===a)lo=Math.max(0,hi-1);else hi=Math.min(n-1,lo+1);}a.value=lo;b.value=hi;ch.timeScale().setVisibleLogicalRange({from:lo,to:hi});text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;};a.oninput=b.oninput=show;box.querySelectorAll('[data-equity-year]').forEach(btn=>btn.onclick=()=>{const y=btn.dataset.equityYear;if(y==='all'){a.value=0;b.value=n-1;}else{const indices=d.dates.map((x,i)=>x.startsWith(y)?i:-1).filter(i=>i>=0);a.value=indices[0];b.value=indices.at(-1);}show();});ch.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(!range)return;const lo=Math.max(0,Math.min(n-1,Math.ceil(range.from))),hi=Math.max(lo,Math.min(n-1,Math.floor(range.to)));a.value=lo;b.value=hi;text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;});show();}
  const msg=text=>{const el=document.getElementById('page-action-message');if(el)el.textContent=text;};
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
@@ -125,7 +148,7 @@ window.VaultUI=(()=>{
   const benchmark=currentBenchmark?.d===STRAT.d?currentBenchmark:null;
   const benchmarkTk=document.querySelector('[data-benchmark-comparison]')?.getAttribute('data-benchmark-symbol')||benchmark?.tk||(region==='us'?'SPX':'NIFTY 50');
   return Object.freeze({d,v,unit,display:immutable(STRAT.display),tk:STRAT.tk,region,state,url:location.href,params:immutable(STRAT.account||unit?STRAT.indicatorParameters:STRAT.d.params||state.p||{}),px:immutable(STRAT.px),
-   actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||STRAT.tk,
+   actualSymbol:d.kind==='basket'?d.basket:d.kind==='universe'?d.universe:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||STRAT.tk,
    benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px)});
  }
  const filePart=value=>String(value??'report').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90)||'report';
@@ -137,24 +160,28 @@ window.VaultUI=(()=>{
   const clean=rows.map(row=>row.map(cellValue)),sheet=XLSX.utils.aoa_to_sheet(clean),width=rows.reduce((n,r)=>Math.max(n,r.length),0);
   for(let r=0;r<rows.length;r++)for(let c=0;c<width;c++){
    const address=XLSX.utils.encode_cell({r,c}),value=clean[r]?.[c];if(!sheet[address])sheet[address]={t:'z'};const cell=sheet[address];
-   if(typeof value==='string'){cell.t='s';cell.v=value;delete cell.f;}
+   // a plain date (YYYY-MM-DD, e.g. Entry date / Exit date) is written as an Excel date, so it sorts, filters and works in date formulas
+   const isDate=r>0&&typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value);
+   if(isDate){const[y,m,d]=value.split('-').map(Number);cell.t='n';cell.v=Date.UTC(y,m-1,d)/86400000+25569;delete cell.f;}
+   else if(typeof value==='string'){cell.t='s';cell.v=value;delete cell.f;}
    const percent=r>0&&typeof value==='number'&&(percentColumns.includes(c)||rowTypes[r]==='percent');
-   const z=percent?'0.00%;[Red]-0.00%;0.00%':rowTypes[r]==='count'?'0':rowTypes[r]==='days'?'0.0':r>0&&precisionColumns.includes(c)?'0.000000':'0.00';
+   const z=isDate?'dd-mm-yyyy':percent?'0.00%;[Red]-0.00%;0.00%':rowTypes[r]==='count'?'0':rowTypes[r]==='days'?'0.0':r>0&&precisionColumns.includes(c)?'0.000000':'0.00';
    cell.s={font:{name:'Calibri',sz:11,color:{rgb:r===0?'FFFFFF':typeof value==='number'&&value<0?'C00000':'000000'},bold:r===0},
-    fill:{fgColor:{rgb:r===0?'1F3864':r%2?'FFFFFF':'F3F6FA'}},alignment:{vertical:'center',horizontal:typeof value==='number'?'right':'left',wrapText:true},
-    border:{bottom:{style:'thin',color:{rgb:'DCE2EA'}}},...(typeof value==='number'?{numFmt:z}:{})};if(typeof value==='number')cell.z=z;
+    fill:{fgColor:{rgb:r===0?'1F3864':r%2?'FFFFFF':'F3F6FA'}},alignment:{vertical:'center',horizontal:typeof value==='number'||isDate?'right':'left',wrapText:true},
+    border:{bottom:{style:'thin',color:{rgb:'DCE2EA'}}},...(typeof value==='number'||isDate?{numFmt:z}:{})};if(typeof value==='number'||isDate)cell.z=z;
   }
   sheet['!cols']=Array.from({length:width},(_,i)=>({wch:clean.reduce((n,row)=>Math.max(n,typeof row[i]==='string'?Math.min(55,row[i].length+2):0),i===0?20:14)}));
   sheet['!rows']=[{hpt:30}];if(rows.length&&width){sheet['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:width-1}})};}sheet['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft',state:'frozen'};
   return sheet;
  }
- async function xlsx(kind,rows,percentColumns,st,rowTypes=[]){
+ async function xlsx(kind,rows,percentColumns,st,rowTypes=[],extraSheets=[]){
   msg('Preparing Excel…');await (typeof loadXlsx==='function'?loadXlsx():loadScript('vendor/xlsx-js-style-1.2.0.min.js'));
   if(!window.XLSX?.utils)throw Error('The Excel library did not load.');
   const unit=unitFor(st),unitTables=unit?unitExposureTables(unit):null;
   const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region)),tables=account?sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)):null,copy=account?sourceAccountCopy(account):null;
   const book=XLSX.utils.book_new(),names={trades:'Trades','detailed-statistics':'Detailed statistics','monthly-returns':'Monthly returns',equity:'Equity',benchmark:'Benchmark','account-audit':'Account audit','unit-audit':'Unit return audit','unit-daily':'Unit daily report'};
   XLSX.utils.book_append_sheet(book,styledSheet(rows,percentColumns,rowTypes,kind==='account-audit'?tables.audit.numericColumns:kind==='unit-audit'?unitTables.audit.numericColumns:kind==='unit-daily'?unitTables.daily.numericColumns:[]),names[kind]||'Report');
+  for(const sheet of extraSheets)XLSX.utils.book_append_sheet(book,styledSheet(sheet.rows,[],[]),sheet.name);
   const costs=st.d.costs||{},provenance=st.d.provenance||{},context=[['Field','Value'],['Report',kind],['Strategy ID',st.v.id],['Strategy',st.v.name||st.v.family_name],['Book',st.v.book],['Actual symbol',st.actualSymbol],['Selected data key',st.tk],['Market',st.region],['From',st.d.dates?.[0]],['To',st.d.dates?.at(-1)],['Execution fees (bps per side)',costs.fees_bps??null],['Slippage (bps per side)',costs.slippage_bps??null],['Rollover (bps per event)',costs.rollover_bps??null],['Benchmark symbol',st.benchmarkTk],['Report link',st.url],[st.d.source_account?'Closed weighted-return display':'Net Profit display',st.display?.reportMode??'Portfolio realized contribution'],[st.d.source_account?'Displayed closed weighted return (fraction)':'Displayed Net Profit (fractional return)',st.display?st.display.value:st.d.stats?.net_profit??null],['Display formula',st.display?.description??st.d.accounting_basis??null],['Display unavailable reason',st.display?.unavailableReason??null],['Trade count basis','Closed positions; open exits remain marked Open.'],['Accounting basis',st.d.accounting_basis||'Recorded return-only engine report. No monetary sizing or statutory tax schedule is supplied.']];
   const sources=[['Field','Value'],['Source',provenance.source??null],['Basket',provenance.basket??null],['Source SHA-256',provenance.source_sha256??null],['Derived CSV SHA-256',provenance.csv_sha256??null],['Membership',provenance.membership??null],['Source coverage from',provenance.first??null],['Source coverage to',provenance.last??null],['Excluded source prefix',provenance.excluded_prefix_count??null],['Coverage note',provenance.coverage_note??null],['Qualification','Source identity and format admission are not certification of book authorship, historical membership or reproduced performance.'],['Unavailable fields','Monetary P&L and taxes stay empty. Observed excursions are partial daily-bar bounds; event bars cannot establish exact intraday MAE/MFE.'],['Execution costs',costs.basis??null]];
   if(account){
@@ -253,8 +280,33 @@ window.VaultUI=(()=>{
  }
  document.addEventListener('click',e=>{const s=e.target.closest('[data-share]');if(s){share(s.dataset.share);return;}const m=document.querySelector('.share-menu');if(m&&!m.hidden&&!e.target.closest('.share-menu,[data-action="share-menu"]'))m.hidden=true;});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=document.querySelector('.share-menu');if(m)m.hidden=true;}});
+
+ // "Download TS" (ADR): the research team's Excel tradesheet template with live formulas (ts-workbook.js). Costs are the run's own (fees + slippage per side, charged on both sides) and stay editable in C1:E1.
+ async function downloadTs(){
+  const s=STRAT;if(!s?.d?.trades?.length||!s?.px?.o)throw Error('No trades or prices to build the tradesheet from.');
+  msg('Preparing Excel…');const {bytes,name}=await adrTsFile({d:s.d,px:s.px,v:s.v,tk:s.tk,params:s.indicatorParameters});
+  downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),name);msg('Tradesheet downloaded.');
+ }
+ document.addEventListener('click',async e=>{const b=e.target.closest('#ts-download');if(!b)return;try{await downloadTs();}catch(err){msg('Export failed: '+err.message);}});
+
+ // ADR results page: the AmiBroker-style report, the DD % / Bars held trade columns, "Download report" and "YOY-Monthly Excel" (report-stats.js, report-view.js)
+ async function adrExcel(kind){
+  const d=STRAT?.d,rep=adrReport(d);if(!rep)throw Error('No report for this page.');
+  const dmy=x=>String(x).slice(0,10).split('-').reverse().join('-'),tk=STRAT.tk;
+  let bytes,name;
+  if(kind==='report'){
+   bytes=buildLabXlsx([{name:'Statistics',layout:'blocks',blocks:statisticsBlocks(rep,benchLabel(d))},{name:'Trades',layout:'table',header:TRADE_COLUMNS,rows:tradeRows(rep,tk)}]);
+   name=`${tk} report ${dmy(d.dates[0])} to ${dmy(d.dates.at(-1))}.xlsx`;
+  }else{
+   const [header,...rows]=yoyAoa(yoyMonthly(d.dates,d.equity));
+   bytes=buildLabXlsx([{name:'YOY-Monthly',layout:'table',header,rows}]);name=`${tk} YOY-Monthly.xlsx`;
+  }
+  downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),name);msg('Excel downloaded.');
+ }
+ document.addEventListener('click',e=>{const m=e.target.closest('[data-rep-mode]');if(!m)return;const root=document.getElementById('adr-report');if(!root)return;root.dataset.mode=m.dataset.repMode;root.querySelectorAll('[data-rep-mode]').forEach(x=>x.classList.toggle('active',x===m));});
+ document.addEventListener('click',async e=>{const b=e.target.closest('#adr-report-xlsx,#adr-yoy-xlsx');if(!b)return;try{await adrExcel(b.id==='adr-report-xlsx'?'report':'yoy');}catch(err){msg('Export failed: '+err.message);}});
  async function init(){iconize();}
- document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot],[data-report-export],#trades-xlsx,#csv');if(!b)return;try{if(b.dataset.action)return await action(b.dataset.action);if(b.dataset.chartSnapshot)return await snapshot(b.dataset.chartSnapshot);if(!STRAT)return;const st=snapshotContext();if(b.id==='csv')return downloadBlob(new Blob([VaultReport.csv(csvSafeRows([tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)]))],{type:'text/csv;charset=utf-8'}),reportName(st,'trades','csv'));if(b.id==='trades-xlsx')return await xlsx('trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st);const kind=b.dataset.reportExport;if(kind==='unit-audit'||kind==='unit-daily'){const unit=unitFor(st);if(!unit)throw Error('No validated unit-exposure report is available.');const table=unitExposureTables(unit)[kind==='unit-audit'?'audit':'daily'];return await xlsx(kind,[table.headers,...table.rows],table.percentColumns,st);}if(kind==='account-audit'){const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region));if(!account)throw Error('No protected source account is available.');const table=sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)).audit;return await xlsx('account-audit',[table.headers,...table.rows],table.percentColumns,st);}if(kind==='details')return await xlsx('detailed-statistics',[['Statistic','Net','Gross'],...VaultReport.detailRows(st.d).map(r=>r.slice(0,3))],[],st,['header',...VaultReport.detailRows(st.d).map(r=>r[3])]);if(kind==='monthly'){const m=VaultReport.monthly(st.d),mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return await xlsx('monthly-returns',[['Year',...mon,'Total'],...m.years.map(y=>[y,...mon.map((_,i)=>m.months[`${y}-${String(i+1).padStart(2,'0')}`]??null),m.annual[y]]),['Avg',...m.averages,m.annualAverage]],Array.from({length:13},(_,i)=>i+1),st);}if(kind==='equity')return await xlsx('equity',[['Date',st.d.source_account?sourceAccountCopy(st.d.source_account).bandy?'Net cash-account equity (initial unit)':'Net risk-sized account equity (initial unit)':'Net equity (normalized)',st.d.source_account?'Gross same-quantity account equity (initial unit)':'Gross equity (normalized)','Selected-symbol buy & hold'],...st.d.dates.map((date,i)=>[date,st.d.equity[i],st.d.gross_equity?.[i]??null,st.d.bh[i]])],[],st);if(kind==='benchmark'){const px=st.benchmarkPx||immutable(await ohlc(st.benchmarkTk)),benchmark=st.unit?st.d.benchmark_stats:VaultReport.benchmark(px,st.d.dates[0],st.d.dates.at(-1)),keys=['total_return','cagr','max_dd','sharpe','sortino','mar','vol','exposure'];return await xlsx('benchmark',[['Statistic','Selected strategy',st.benchmarkLabel+' buy & hold'],...keys.map(k=>[k,st.d.stats[k]??null,benchmark?.[k]??null])],[],st,['header','percent','percent','percent','ratio','ratio','ratio','percent','percent']);}}catch(e){msg('Export failed: '+e.message);}});
+ document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot],[data-report-export],#trades-xlsx,#csv');if(!b)return;try{if(b.dataset.action)return await action(b.dataset.action);if(b.dataset.chartSnapshot)return await snapshot(b.dataset.chartSnapshot);if(!STRAT)return;const st=snapshotContext();if(st.d.kind==='universe'&&(b.id==='csv'||b.id==='trades-xlsx')){const table=[UNIVERSE_TRADE_HEADERS,...universeTradeRows(st.d.trades)];if(b.id==='csv')return downloadBlob(new Blob([VaultReport.csv(csvSafeRows(table))],{type:'text/csv;charset=utf-8'}),reportName(st,'trades','csv'));let extra=[];if(/^ytath_/.test(st.v.id)){if(!STRAT.runQuery)throw Error('The original ATH run settings are unavailable. Rerun the backtest and try again.');msg('Building the daily DetailLog…');const q=new URLSearchParams(STRAT.runQuery);q.set('detail_log','1');const traced=await fetchUniverse(q.toString());if(traced?.status!=='ready'||!Array.isArray(traced.detail_log))throw Error(traced?.note||traced?.error||'The engine did not return the daily DetailLog.');extra=[{name:'DetailLog',rows:[['Date','Information'],...traced.detail_log.map(r=>[r[0]||'',r[1]])]}];}return await xlsx('trades',table,UNIVERSE_PERCENT_COLUMNS,st,[],extra);}if(b.id==='csv')return downloadBlob(new Blob([VaultReport.csv(csvSafeRows([tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)]))],{type:'text/csv;charset=utf-8'}),reportName(st,'trades','csv'));if(b.id==='trades-xlsx')return await xlsx('trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st);const kind=b.dataset.reportExport;if(kind==='unit-audit'||kind==='unit-daily'){const unit=unitFor(st);if(!unit)throw Error('No validated unit-exposure report is available.');const table=unitExposureTables(unit)[kind==='unit-audit'?'audit':'daily'];return await xlsx(kind,[table.headers,...table.rows],table.percentColumns,st);}if(kind==='account-audit'){const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region));if(!account)throw Error('No protected source account is available.');const table=sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)).audit;return await xlsx('account-audit',[table.headers,...table.rows],table.percentColumns,st);}if(kind==='details')return await xlsx('detailed-statistics',[['Statistic','Net','Gross'],...VaultReport.detailRows(st.d).map(r=>r.slice(0,3))],[],st,['header',...VaultReport.detailRows(st.d).map(r=>r[3])]);if(kind==='monthly'){const m=VaultReport.monthly(st.d),mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return await xlsx('monthly-returns',[['Year',...mon,'Total'],...m.years.map(y=>[y,...mon.map((_,i)=>m.months[`${y}-${String(i+1).padStart(2,'0')}`]??null),m.annual[y]]),['Avg',...m.averages,m.annualAverage]],Array.from({length:13},(_,i)=>i+1),st);}if(kind==='equity')return await xlsx('equity',[['Date',st.d.source_account?sourceAccountCopy(st.d.source_account).bandy?'Net cash-account equity (initial unit)':'Net risk-sized account equity (initial unit)':'Net equity (normalized)',st.d.source_account?'Gross same-quantity account equity (initial unit)':'Gross equity (normalized)','Selected-symbol buy & hold'],...st.d.dates.map((date,i)=>[date,st.d.equity[i],st.d.gross_equity?.[i]??null,st.d.bh[i]])],[],st);if(kind==='benchmark'){const px=st.benchmarkPx||immutable(await ohlc(st.benchmarkTk)),benchmark=st.unit?st.d.benchmark_stats:VaultReport.benchmark(px,st.d.dates[0],st.d.dates.at(-1)),keys=['total_return','cagr','max_dd','sharpe','sortino','mar','vol','exposure'];return await xlsx('benchmark',[['Statistic','Selected strategy',st.benchmarkLabel+' buy & hold'],...keys.map(k=>[k,st.d.stats[k]??null,benchmark?.[k]??null])],[],st,['header','percent','percent','percent','ratio','ratio','ratio','percent','percent']);}}catch(e){msg('Export failed: '+e.message);}});
  const refreshHeat=()=>{const el=document.getElementById('heatbox');if(el&&STRAT?.d)el.innerHTML=heatTable(STRAT.d);};
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
@@ -272,6 +324,31 @@ const decodeP = s => Object.fromEntries((s || '').split(',').filter(Boolean).map
 const encodeP = p => Object.entries(p).map(([k, v]) => `${k}:${v}`).join(',');
 const optKey = (id, tk) => [id, tk, S.from, S.to, S.cost, S.slippage, S.rollover, S.region, S.basket].join('|');
 const nVals = g => g.step > 0 && g.max >= g.min ? Math.floor((g.max - g.min) / g.step + 1e-9) + 1 : 0;
+// Optimization grid laid out like the Indicators page: settings grouped by section, "fixed" until ticked, the first 10 shown, then a scroll.
+let OPT_TRIED = 0; // backtests run by optimizations in this browser session
+const optTried = () => `Variants tried this session: ${n0(OPT_TRIED)}`;
+const optTriedAdd = n => { OPT_TRIED += n || 0; document.querySelectorAll('.otried').forEach(e => { e.textContent = optTried(); }); };
+// ADR optimizer: the lab groups the ranges table as Entry / Filters / Exits
+function adrSections(secs) {
+  if (!/^ytadr_/.test(STRAT?.v?.id || '')) return secs;
+  const g = {E: [], F: [], X: [], S: []}; secs.forEach(s => s.params.forEach(p => g[adrGroup(p.key)].push(p)));
+  return [['E', 'Entry'], ['F', 'Filters'], ['X', 'Exits'], ['S', 'Other']].filter(([k]) => g[k].length).map(([k, title]) => ({title, params: g[k]}));
+}
+// ATH grid: Entry, Filters, Exit, Portfolio, Engine options (headings without settings are left out)
+function athSections(ps) {
+  const g = {E: [], F: [], X: [], S: [], O: []}; ps.forEach(p => g[athEngineOpt(p.label) ? 'O' : athGroup(p.key, p.label)].push(p));
+  return [['E', 'Entry'], ['F', 'Filters'], ['X', 'Exit'], ['S', 'Portfolio'], ['O', 'Engine options']].filter(([k]) => g[k].length).map(([k, title]) => ({title, params: g[k]}));
+}
+function optGrid(ps, row, id = '') {
+  const secs = /^ytath_/.test(STRAT?.v?.id || '') ? athSections(ps) : adrSections(paramSections(ps)), h = optGridHeight(secs);
+  return `<div class="ogrid-wrap"${h ? ` style="max-height:${h}px"` : ''}><table class="ogrid"${id ? ` id="${id}"` : ''}><thead><tr><th></th><th>Setting</th><th>From</th><th>To</th><th>Step</th><th class="n">Values</th></tr></thead><tbody>${secs.map(s => `<tr class="ogrp"><td colspan="6">${esc(s.title)}</td></tr>${s.params.map(row).join('')}`).join('')}</tbody></table></div>`;
+}
+/** After drawing: cut each grid's scroll box at the top of its 11th setting (long labels wrap, so the estimate above is only a start). */
+function optFit() {
+  document.querySelectorAll('.ogrid-wrap').forEach(w => { const r = w.querySelectorAll('tr[data-k]'); if (r.length <= OPT_ROWS_SHOWN) return;
+    let cut = r[OPT_ROWS_SHOWN]; if (cut.previousElementSibling?.classList.contains('ogrp')) cut = cut.previousElementSibling; w.style.maxHeight = `${cut.offsetTop + 2}px`; });
+}
+window.addEventListener('resize', () => optFit());
 const pLabel = (id, k) => (OPT.schemaSync?.[id] || []).find(x => x.key === k)?.label || k;
 // compact column names for tables
 const SHORT = { trend: 'Trend SMA', rsi_n: 'RSI period', exit_rsi: 'Exit RSI', rsi_lt: 'Entry RSI <', rsi_gt: 'Entry RSI >', hold: 'Hold bars', ma: 'Short SMA', low_n: 'Lookback', limit: 'Limit %',
@@ -319,15 +396,16 @@ function optimBanner(v) {
 const bookLoader = (t = 'Loading…') => `<div class="bload" role="status" aria-live="polite"><div class="bflip" aria-hidden="true"><i class="bcv l"></i><i class="bcv r"></i><i class="bpg"></i><i class="bpg"></i><i class="bpg"></i></div><p>${esc(t)}</p></div>`;
 const minWait = (t0, ms) => new Promise(ok => setTimeout(ok, Math.max(0, ms - (performance.now() - t0))));
 
+// YT strategies open the manual grid unticked on the default settings (From = To = default), so a run tests exactly the values entered.
+const ytGrid = ps => Object.fromEntries(ps.map(p => [p.key, { on: false, min: p.def, max: p.def, step: p.step }]));
 async function optimSection(v, tk, d, detailed = true) {
   OPT.schemaSync = await optSchema();
   const ps = OPT.schemaSync[v.id] || [];
-  const opt = detailed && ps.length ? (() => { const g = OPT.grids[v.id] || (OPT.grids[v.id] = OptimCore.defaultGrid(ps, OPT_LIMIT));
-    return `<section class="box" id="optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the default value. Runs on the period selected above.</small></div>
-    <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Default</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
-    ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(p.label)}"></td><td>${esc(p.label)}</td><td class="n">${p.def}</td>
-      ${['min', 'max', 'step'].map(f => `<td class="n"><input type="number" data-f="${f}" value="${x[f]}" step="any"></td>`).join('')}<td class="n muted" data-cnt>${nVals(x)}</td></tr>`; }).join('')}</tbody></table>
-    <form class="obar" id="oform"><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
+  const opt = detailed && ps.length ? (() => { const g = OPT.grids[v.id] || (OPT.grids[v.id] = isYt(v) ? ytGrid(ps) : OptimCore.defaultGrid(ps, OPT_LIMIT));
+    return `<section class="box${/^ytadr_/.test(v.id) ? ' adr-opt' : ''}" id="optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the default value. Runs on the period selected above.</small></div>
+    ${optGrid(ps, p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}" title="Default ${esc(p.def)}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(p.label)}"></td><td>${esc(p.label)}</td>
+      ${['min', 'max', 'step'].map(f => `<td><input type="number" data-f="${f}" value="${x[f]}" step="any"></td>`).join('')}<td class="n muted" data-cnt>${x.on ? nVals(x) : 'fixed'}</td></tr>`; })}
+    <form class="obar" id="oform"><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button><span class="grow"></span><span class="otried muted">${optTried()}</span></form>
     <p class="ostat" id="otime"></p><div id="opt-out"></div></section>`; })() : '';
   const claude = detailed ? `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Top 3 chosen once on all the data (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD), shown for ${esc(PERIOD_NAME[periodKind()])} and split before / after the book</small></div><p class="rnote">This summary is calculated locally from Rust backtests. Opening a strategy does not call an AI model or use AI tokens. Parameter selection is research, not proof of future performance or reproduction of the book.</p><div id="cc-body">${ps.length ? bookLoader('Rust is testing the parameter grid…') : '<p class="muted">This rule has no settings to vary, so there is nothing to rank.</p>'}</div></section>` : `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Parameter research is available on the optimization page</small></div><p>Open Optimization to run the existing full-history parameter ranking, read its comparisons and download its workbook.</p><a class="dbtn sm" href="${href('/o/'+encodeURIComponent(v.id),{...S})}">Open parameter research</a></section>`;
   return `${opt}${claude}${gptSection(v,tk,d)}
@@ -338,8 +416,8 @@ async function optimSection(v, tk, d, detailed = true) {
 
 function optCount() {
   const el = $('#optim'); if (!el) return 0;
-  let n = 1, on = 0; el.querySelectorAll('tr[data-k]').forEach(tr => { const x = OPT.grids[R.id][tr.dataset.k], k = nVals(x); tr.querySelector('[data-cnt]').textContent = k || '–'; tr.classList.toggle('offrow', !x.on); if (x.on) { n *= k; on++; } });
-  $('#ocount').innerHTML = on ? `<b class="${n > OPT_LIMIT || !n ? 'neg' : ''}">${n0(n)}</b> combinations${n > OPT_LIMIT ? `, limit ${n0(OPT_LIMIT)}` : ''}` : 'Tick a setting to vary';
+  let n = 1, on = 0; el.querySelectorAll('tr[data-k]').forEach(tr => { const x = OPT.grids[R.id][tr.dataset.k], k = nVals(x); tr.querySelector('[data-cnt]').textContent = x.on ? k || '–' : 'fixed'; tr.classList.toggle('offrow', !x.on); if (x.on) { n *= k; on++; } });
+  $('#ocount').innerHTML = on ? `<b class="${n > OPT_LIMIT || !n ? 'neg' : ''}">${n0(n)}</b> combinations${n > OPT_LIMIT ? `, limit ${n0(OPT_LIMIT)}` : ''}` : 'Tick at least one setting';
   $('#orun').disabled = !on || !n || n > OPT_LIMIT || (window.VAULT_APP && window.VAULT_USER?.role === 'viewer'); return n;
 }
 
@@ -350,8 +428,9 @@ function optimInit() {
     const g = OPT.grids[v.id];
     el.addEventListener('input', e => { const tr = e.target.closest('tr[data-k]'); if (!tr) return; const f = e.target.dataset.f; g[tr.dataset.k][f] = f === 'on' ? e.target.checked : +e.target.value; optCount(); });
     $('#oform').addEventListener('submit', e => { e.preventDefault(); runOpt(); });
-    optCount();
+    optCount(); optFit();
     const c = OPT.cache[optKey(v.id, tk)]; if (c) showOpt(c.res);
+    if (OPT.runAfterPeriod) { OPT.runAfterPeriod = false; if (!c && !$('#orun').disabled) runOpt(); }
   }
   if ($('#cc-body') && (OPT.schemaSync[v.id] || []).length && (!window.VAULT_APP || window.VAULT_USER?.role !== 'viewer')) conclusionRun(v, tk);
   const key = `${v.id}.${S.region}`, noteText = $('#yt-text'), noteMessage = $('#yt-msg');
@@ -361,17 +440,18 @@ function optimInit() {
     try { const r = await fetch(`${API_IN}/notes?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: noteText.value }); m.textContent = r.ok ? `Saved at ${new Date().toLocaleTimeString()}` : 'Save failed: ' + await r.text(); } catch (err) { m.textContent = 'Save failed: ' + err.message; } };
 }
 
-const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:S.slippage||'0',rollover:S.rollover||'0', ...(slim ? { slim: '1' } : {}) });
+const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:S.slippage||'0',rollover:S.rollover||'0', ...(slim ? { slim: '1' } : {}), ...(!slim && /^ytadr_/.test(v.id) ? { sheet: '1' } : {}) });
   Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
 async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
 
 async function runOpt() {
+  const pending = ytPeriod(); if (Object.keys(pending).length) { OPT.runAfterPeriod = true; return go(R.path, { ...S, ...pending }); }
   const { v, tk } = STRAT, g = OPT.grids[v.id], key=optKey(v.id,tk), out=$('#opt-out');
   const n = optCount(); $('#orun').disabled = true; $('#otime').textContent = `Running ${n0(n)} backtests…`;
   $('#opt-out').innerHTML = bookLoader(`Running ${n0(n)} backtests in Rust…`);
   const t0 = performance.now();
   try {
-    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false)); await minWait(t0, 900); res.rt = performance.now() - t0;
+    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false)); await minWait(t0, 900); res.rt = performance.now() - t0; optTriedAdd(res.combos);
     OPT.cache[key] = { res }; if (STRAT && optKey(STRAT.v.id,STRAT.tk)===key && $('#opt-out')===out) showOpt(res);
   } catch (e) { if ($('#opt-out')===out) {out.innerHTML = ''; $('#otime').innerHTML = `<span class="neg">${esc(e.message)}</span>`;} }
   finally { if ($('#orun')) optCount(); }
@@ -381,6 +461,95 @@ const applyLink = p => `<button class="olink" data-apply="${esc(encodeP(p))}">Ap
 const setLine = (p, def) => Object.keys(def).map(k => `<span class="oset">${esc(sLabel(k))} <b class="${Math.abs((p[k] ?? def[k]) - def[k]) > 1e-9 ? 'chg' : ''}">${p[k] ?? def[k]}</b></span>`).join(' ');
 const statCells = m => CC_STATS.map(([k, , f, signed]) => `<td class="n ${k === 'max_dd' ? 'neg' : signed ? cls(m[k]) : ''}">${f(m[k])}</td>`).join('');
 const statHead = () => CC_STATS.map(([, t]) => `<th class="n">${t}</th>`).join('');
+
+// ---- ADR: the research team's Excel tradesheet ("Download TS") for any run, used by the strategy page and by the optimizer's Tradesheet buttons
+function saveBytes(bytes, name, type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+  const url = URL.createObjectURL(new Blob([bytes], {type})), a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+async function adrTsFile({d, px, v, tk, params}) {
+  const fmt = x => String(x).slice(0, 10), dmy = x => fmt(x).split('-').reverse().join('-');
+  const num = k => Number(params?.[k]), code = {'NIFTY 50': 'NF', NIFTYBANK: 'BN', 'NIFTY BANK': 'BN'}[tk] || String(tk).replace(/\s/g, '').slice(0, 6);
+  const exitShort = num('exit_n') > 0 ? `Ncandle-${num('exit_n')}` : num('exit_type') === 1 ? `ADR${num('exit_ad')}` : 'Exit';
+  const tab = `${code}_En_ADR${Number.isFinite(num('thr')) ? ' thr ' + num('thr') : ''}_EX_${exitShort}`.slice(0, 31);
+  const lines = c => ruleLines(v, params || {}).filter(r => r[0] === c).map(r => r[1]);
+  const dates = d.dates || [], cost = d.costs || {}, side = (Number(cost.fees_bps) || 0) + (Number(cost.slippage_bps) || 0);
+  await loadXlsx(); if (!window.XLSX?.utils) throw Error('The Excel library did not load.');
+  const book = buildTsWorkbook(XLSX, {ticker: tk, tabName: tab,
+    trades: d.trades.filter(t => Number.isFinite(t.avg_px) && Number.isFinite(t.exit_px)).map(t => ({dir: t.dir === -1 ? 'Short' : 'Long', entry: fmt(t.entry), entryPx: t.avg_px, exit: fmt(t.exit), exitPx: t.exit_px})),
+    bars: {d: px.d.map(fmt), o: px.o, h: px.h, l: px.l, c: px.c},
+    rules: {timeframe: 'Daily', index: tk, period: `${dmy(dates[0])} to ${dmy(dates.at(-1))}`, position: 'Long', filter: lines('F').join('; ') || 'Without filter', setup: '—', entry: lines('E').join('; '), exit: lines('X').join('; '), aflPath: ''},
+    costs: {impact: 2 * side / 10000, rollLong: 0, rollShort: 0}});
+  return {bytes: await tsBytes(XLSX, book), name: `TS_${tab}.xlsx`};
+}
+
+// ---- ADR optimizer, laid out like the lab (optimize-view.js): Now / #1-#3, 3D surface, downloads, sortable result list. The older block stays in the page (hidden) because its handlers still drive the conclusion workbook and the GPT review.
+const ADR_OPT = {};
+const adrLabel = (id, k) => OPT.schemaSync?.[id]?.find(p => p.key === k)?.label || sLabel(k);
+const adrGroup = k => /^(st\d?_|filter|flt_|athc_|bear|bull)/.test(k) ? 'F' : /^(exit_|pb$|hsl$|buffer$)/.test(k) ? 'X' : /^(thr|n_entry|lookback|consec|entry_|avg_|prev_|rsi_|adx_|roc_|adr_on|patch|candle|deadstock|penny|turn)/.test(k) ? 'E' : 'S';
+function adrOptHTML(res) {
+  const v = STRAT.v, labels = res.dims.map(d => adrLabel(v.id, d.key)), position = (res.fixed?.entry_type ?? bookDefaults(v.id)?.entry_type ?? 0) >= 0.5 ? 'Short' : 'Long';
+  const lab = labRows(res, position, bookDefaults(v.id)), top = (res.rank?.top3 || []).map(c => c.row);
+  const sort = {col: labels.length + 2, dir: -1};      // the lab lists the combinations on CAR/MDD, highest first
+  Object.assign(ADR_OPT, {res, labels, lab, position, top, metric: 'CAR', sort});
+  return `<div class="lab-results">${resultsHTML(res, labels, lab, top, 'CAR', sort)}</div>`;
+}
+const adrRunQuery = (res, k) => { const p = rowOf(res, res.rows[k]).p, S_ = S; return new URLSearchParams({id: res.id, ticker: STRAT.tk, from: res.from, to: res.to, cost: S_.cost || '0', slippage: S_.slippage || '0', rollover: S_.rollover || '0', ...Object.fromEntries(Object.entries(p).map(([a, b]) => ['p.' + a, b]))}); };
+async function adrRunOf(res, k) { const r = await fetch(enginePath(res.id, 'run') + '?' + adrRunQuery(res, k)); if (!r.ok) throw new Error((await r.text()).slice(0, 160)); return { d: await r.json(), p: rowOf(res, res.rows[k]).p }; }
+const adrComboName = (A, k) => A.labels.map((l, i) => `${l} ${A.lab.rows[k].settings[i]}`).join(' · ');
+const fileSafe = s => s.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+function adrOptSheet() {
+  const {res, labels, lab, position} = ADR_OPT, v = STRAT.v, g = OPT.grids[v.id] || {}, tk = STRAT.tk, dmy = x => String(x).slice(0, 10).split('-').reverse().join('-');
+  const lines = {E: [], F: [], X: [], S: []};
+  res.dims.forEach((d, i) => lines[adrGroup(d.key)].push(rangeLine(labels[i], g[d.key]?.min ?? d.values[0], g[d.key]?.max ?? d.values.at(-1), g[d.key]?.step ?? (d.values[1] - d.values[0]))));
+  const bps = (Number(S.cost || 0) + Number(S.slippage || 0));
+  const bytes = buildOptimizationXlsx({labels, rows: lab.rows.map(r => ({no: r.no, am: r.am, settings: r.settings})), rules: {timeframe: 'Daily', index: tk, period: `${dmy(res.from)} to ${dmy(res.to)}`, brokerage: bps > 0 ? `${bps} bps per side` : 0, openPosition: 1,
+    aflPath: 'Strategy Vault · YT Strategies', strategy: v.name || v.id, position, filter: lines.F.join('; '), setup: lines.S.join('; '), entry: lines.E, exit: lines.X}});
+  saveBytes(bytes, optimsFileName(LABEL[tk] || tk, position, ''));
+}
+/** daily bars for a tradesheet: the optimizer page loads none (the strategy page does), so fetch the full history from the engine */
+async function adrPx() {
+  const px = STRAT.px || await fullOhlc(STRAT.tk).catch(() => null) || await ohlc(STRAT.tk);
+  if (!px?.d) throw new Error('Price history unavailable for ' + STRAT.tk);
+  return px;
+}
+async function adrTsRow(k) {
+  const A = ADR_OPT, {d, p} = await adrRunOf(A.res, k), px = await adrPx();
+  const {bytes, name} = await adrTsFile({d, px, v: STRAT.v, tk: STRAT.tk, params: p}); saveBytes(bytes, name);
+}
+async function adrTsAll(btn) {
+  const A = ADR_OPT, n = A.lab.rows.length, one = $('#adr-ts-mode')?.value === 'one', px = await adrPx(), tk = STRAT.tk, label0 = btn.textContent;
+  const files = [], sheets = [], sum = [['No.', 'Combination', 'Net Profit %', 'CAR', 'MaxSysDD', 'CAR/MDD', '# trades', '# winners', '# losers', 'Avg. profit/loss %', 'Sharpe', 'Buy & hold CAGR']];
+  btn.disabled = true;
+  try {
+    for (let k = 0; k < n; k++) {
+      btn.textContent = `Running ${k + 1} of ${n}…`;
+      const {d} = await adrRunOf(A.res, k), rep = buildReport({dates: d.dates, close: d.close, equity: d.equity, bh: d.bh, trades: d.trades}, px, {side: ((Number(d.costs?.fees_bps) || 0) + (Number(d.costs?.slippage_bps) || 0)) / 10000}), s = rep.system, a = rep.all, nn = String(k + 1).padStart(2, '0'), name = adrComboName(A, k);
+      sum.push([k + 1, name, 100 * s.net_profit, 100 * s.cagr, 100 * s.max_sys_dd, s.car_mdd, a.trades, a.winners.count, a.losers.count, 100 * a.avg, s.sharpe_trades, rep.buy_hold ? 100 * rep.buy_hold.cagr : null]);
+      const sheet = {name: one ? `${nn} ${name}`.slice(0, 31) : 'Tradesheet', layout: 'table', header: TRADE_COLUMNS, rows: tradeRows(rep, tk)};
+      if (one) sheets.push(sheet);
+      else files.push([`${nn} ${fileSafe(name)}`.slice(0, 90) + '.xlsx', buildLabXlsx([sheet])]);
+    }
+    btn.textContent = 'Building the workbook…';
+    const summary = {name: 'Summary', layout: 'table', header: sum[0], rows: sum.slice(1)};
+    if (one) saveBytes(buildLabXlsx([summary, ...sheets]), `tradesheets ${tk}.xlsx`);
+    else { files.unshift(['00 Summary.xlsx', buildLabXlsx([summary])]); saveBytes(zipStored(files), `tradesheets ${tk}.zip`, 'application/zip'); }
+  } finally { btn.disabled = false; btn.textContent = label0; }
+}
+function adrOptWire(out, res) {
+  if (out.__adr) out.removeEventListener('click', out.__adr);
+  out.__adr = async e => {
+    const A = ADR_OPT, t = e.target;
+    const stats = t.closest('[data-stats]'); if (stats) return go(R.path, { ...S, ...ytPeriod(), p: encodeP(rowOf(res, res.rows[+stats.dataset.stats]).p) });
+    const ts = t.closest('[data-tsrow]'); if (ts) { const b = ts, l = b.textContent; b.textContent = '…'; try { await adrTsRow(+ts.dataset.tsrow); } catch (err) { console.error('Tradesheet download failed', err); b.title = 'Failed: ' + (err?.message || err); b.textContent = 'Failed'; return; } b.textContent = l; return; }
+    const th = t.closest('th[data-sort]'); if (th) { const c = +th.dataset.sort; A.sort = A.sort && A.sort.col === c ? {...A.sort, dir: -A.sort.dir} : {col: c, dir: c < A.labels.length ? 1 : -1}; $('#adr-list').innerHTML = listHTML(A.labels, A.lab, A.sort); return; }
+    if (t.closest('[data-showall]')) { A.sort = {...(A.sort || {col: -1, dir: 1}), all: true}; $('#adr-list').innerHTML = listHTML(A.labels, A.lab, A.sort); return; }
+    if (t.closest('#adr-opt-sheet')) return adrOptSheet();
+    const all = t.closest('#adr-ts-all'); if (all) return adrTsAll(all).catch(err => { all.textContent = 'Failed: ' + err.message; });
+    if (t.closest('#adr-concl')) return $('#oxlsx')?.click();
+    if (t.closest('#adr-gpt')) return $('#gpt-grid-review')?.click();
+  };
+  out.addEventListener('click', out.__adr);
+}
 
 // Manual optimization result: the default settings and the top 3 by Claude's ranking, the parameter map, the top 25 by score.
 function showOpt(res) {
@@ -395,16 +564,19 @@ function showOpt(res) {
   const sel = (id, cur, opts) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
   const dOpts = dims.map(d => [d.key, sLabel(d.key)]);
   const map = dims.length ? `<div class="ohead"><h4>Parameter map</h4><span class="osel">${sel('hx-x', hx[0], dOpts)} across, ${sel('hx-y', hx[1], [['', 'nothing'], ...dOpts])} down, showing ${sel('hx-m', hx[2], [['sharpe', 'Sharpe'], ['cagr', 'CAGR'], ['max_dd', 'Max DD'], ['mar', 'CAR/MDD'], ['expectancy_ratio', 'Expectancy ratio'], ['monthly_thickness', 'Monthly thickness'], ['trades', 'Trades'], ['win_rate', 'Win %']])}</span></div><div id="hx"></div>` : '';
-  out.innerHTML = `<div class="ohead"><h4>Default settings and Claude’s top 3 on this run</h4><span><button class="dbtn primary sm" id="grid-xlsx">Download all ${n0(res.combos)} rows</button> <button class="dbtn sm" id="oxlsx">Conclusion workbook</button> <button class="dbtn sm" id="gpt-grid-review">GPT analysis of this grid</button></span></div>${tbl}
+  const legacy = `<div class="ohead"><h4>Default settings and Claude’s top 3 on this run</h4><span><button class="dbtn primary sm" id="grid-xlsx">Download all ${n0(res.combos)} rows</button> <button class="dbtn sm" id="oxlsx">Conclusion workbook</button> <button class="dbtn sm" id="gpt-grid-review">GPT analysis of this grid</button></span></div>${tbl}
     <p class="cap">Score = average percentile on the five ranking stats (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD) among the ${n0(rk.eligible)} settings with ${rk.min_trades}+ trades (${fx(rk.per_year, 1)} a year). Highlighted values differ from the default settings.</p>${map}`;
+  const adr = /^ytadr_/.test(v.id) && res.sheet?.length;
+  out.innerHTML = adr ? adrOptHTML(res) + `<div id="opt-legacy" hidden>${legacy}</div>` : legacy;
+  if (adr) adrOptWire(out, res);
   const an = { res, rows, pick: top[0], def };
   const drawHx = () => { OPT.hx[v.id] = [$('#hx-x').value, $('#hx-y').value, $('#hx-m').value]; $('#hx').innerHTML = heatGrid(an, ...OPT.hx[v.id]); };
   if (dims.length) { drawHx(); ['#hx-x', '#hx-y', '#hx-m'].forEach(s => $(s).onchange = drawHx); }
-  out.onclick = e => { const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, p: b_.dataset.apply }); };
+  out.onclick = e => { const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, ...ytPeriod(), p: b_.dataset.apply }); };
   if ($('#grid-xlsx')) $('#grid-xlsx').onclick=async()=>{const b=$('#grid-xlsx');b.disabled=true;try{await exportFullGrid(res,v,STRAT.tk);}catch(err){b.textContent='Export failed: '+err.message;}finally{b.disabled=false;}};
   if ($('#oxlsx')) $('#oxlsx').onclick = async () => { const b = $('#oxlsx'); b.disabled = true; b.textContent = 'Building Excel…';
     const tk=STRAT.tk,win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
-    try { await exportXlsx(await conclusionData(v, tk, res, win, context)); b.textContent = 'Download Excel'; } catch (err) { b.textContent = 'Excel failed: ' + err.message; } finally { b.disabled = false; } };
+    try { await exportXlsx(await conclusionData(v, tk, res, win, context)); b.textContent = 'Conclusion workbook'; } catch (err) { b.textContent = 'Excel failed: ' + err.message; } finally { b.disabled = false; } };
   if ($('#gpt-grid-review')) $('#gpt-grid-review').onclick=async()=>{
     const b=$('#gpt-grid-review'),body=$('#gpt-body'),tk=STRAT.tk,key=optKey(v.id,tk),win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
     OPT.gptGeneration=(OPT.gptGeneration||0)+1;b.disabled=true;b.textContent='Comparing the recorded grid…';
@@ -512,7 +684,7 @@ function gptRecordsHtml(D) {
 function gptConclusionWire(D) {
   const body=$('#gpt-body');if(!body)return;
   const A=VaultAnalyst.analyze(D);body.innerHTML=gptConclusionHtml(D,A);
-  body.onclick=e=>{const b=e.target.closest('[data-apply]');if(b)go(R.path,{...S,p:b.dataset.apply});};
+  body.onclick=e=>{const b=e.target.closest('[data-apply]');if(b)go(R.path,{...S,...ytPeriod(),p:b.dataset.apply});};
   $('#gpt-more').onclick=()=>{const det=$('#gpt-detail'),open=det.hidden;det.hidden=!open;$('#gpt-more').setAttribute('aria-expanded',String(open));$('#gpt-more').textContent=open?'Hide detailed stats':'Detailed stats';if(open&&!det.innerHTML)det.innerHTML=gptDetailHtml(D,A);};
   $('#gpt-xlsx').onclick=async()=>{const b=$('#gpt-xlsx');b.disabled=true;b.textContent='Building Excel…';try{await exportXlsx(D,true);b.textContent='Download GPT Excel';}catch(e){b.textContent='Excel failed: '+e.message;}finally{b.disabled=false;}};
 }
@@ -526,7 +698,7 @@ function ratioToLeader(res,c,s) {
 
 function conclusionWire(D) {
   const body = $('#cc-body');
-  body.onclick = e => { const b = e.target.closest('[data-apply]'); if (b) go(R.path, { ...S, p: b.dataset.apply }); };
+  body.onclick = e => { const b = e.target.closest('[data-apply]'); if (b) go(R.path, { ...S, ...ytPeriod(), p: b.dataset.apply }); };
   if ($('#cc-more')) $('#cc-more').onclick = () => { const det = $('#cc-detail'), open = det.hidden; det.hidden = !open; $('#cc-more').setAttribute('aria-expanded', open); $('#cc-more').textContent = open ? 'Hide detailed stats' : 'Detailed stats';
     if (open && !det.innerHTML) det.innerHTML = detailHtml(D); if (open) anim(det, { opacity: [0, 1], transform: ['translateY(-4px)', 'translateY(0)'] }, { duration: .3 }); };
   if ($('#cc-xlsx')) $('#cc-xlsx').onclick = async () => { const b = $('#cc-xlsx'); b.disabled = true; b.textContent = 'Building Excel…';
@@ -813,7 +985,7 @@ const bookCtx = id => {
  TABS.working.metric.label=PUB?`Sharpe since ${PUB}`:'Publication year unconfirmed';
  TABS.working.note=PUB?`Compare Sharpe since publication (${PUB}) with the period before it. Missing history remains unavailable; this is a research comparison, not a certified holdout.`:'The publication year is not established for this book.';
 };
-const srcOf = v => v.guru === 'ross' ? (sourceEvidence(v)?.pages || 'Source reference') : v.session ? `Session ${v.session}` : 'Part III';
+const srcOf = v => v.api === 'yt' ? 'Team-supplied AFL rules' : v.guru === 'ross' ? (sourceEvidence(v)?.pages || 'Source reference') : v.session ? `Session ${v.session}` : 'Part III';
 let TICK_IN = [], TICK_US = null;
 const IN_INDICES = ['NIFTY 50', 'NIFTYBANK', 'NIFTYMIDCAP100'], US_INDICES = ['SPX', 'NDX', 'DJI']; // the Indian indices the vault shows (Nifty IT and Midcap Select are left out)
 const isUS = () => API === API_US;
@@ -929,7 +1101,7 @@ function readingReviewHTML(source){
 const BOOK = {}; LIB.forEach(g => g.books.forEach((b, k) => { b.guru = g; b.c = CLOTH[(LIB.indexOf(g) * 2 + k) % CLOTH.length]; BOOK[b.id] = b; }));
 const GURU = Object.fromEntries(LIB.map(g => [g.id, g]));
 const bookYear = b => b.year || 'Edition year unconfirmed';
-const ownerOf = id => ALLCAT.find(v => v.id === id)?.api || (pristineMethod(id,PRISTINE_BOOK)?'pristine':id.startsWith('jr_') ? 'ross' : id.startsWith('ch_') ? 'chande' : 'connors');
+const ownerOf = id => ALLCAT.find(v => v.id === id)?.api || (pristineMethod(id,PRISTINE_BOOK)?'pristine':id.startsWith('jr_') ? 'ross' : id.startsWith('ch_') ? 'chande' : /^yt[a-z]+_/.test(id) ? 'yt' : 'connors');
 const enginePath = (id, endpoint, api = API) => `${api}/guru/${ownerOf(id)}/${endpoint}`;
 const guruIds = () => GURUS_API.map(g => g.id);
 function sourceEvidence(v) { return v.guru==='chande'?window.ChandeEvidence.methods[v.id]:window.JoeRossEvidence.methods[v.id]; }
@@ -966,12 +1138,12 @@ function gptSection(v,tk,d=null,issue=null) {
   }
   const review=VaultResearch.review(v,d,issue,e);
   const assessment=`<div class="tlog"><table class="tbl gpt-evidence"><thead><tr><th>Research check</th><th>Evidence / finding</th><th>Status</th></tr></thead><tbody>${review.assessment.map(r=>`<tr><td>${esc(r.label)}</td><td>${r.values.map(t=>`<div>${esc(t)}</div>`).join('')}</td><td>${esc(r.status)}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<section class="box" id="gpt-c" data-source-audit><div class="box-h">GPT’s conclusion <small>Independent analyst assessment · five-percentile method from prompt.md</small></div><p><b>${esc(review.verdict)}</b></p><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. Calculated from Rust results and reviewed source evidence; opening this page does not call an AI model.</p>${detailed&&!issue?`<div id="gpt-body">${bookLoader('Preparing the analyst comparison from the same Rust runs…')}</div>`:!issue?`<p>Book and top-three statistics, percentile groups, analyst tradeoffs, detailed charts and a formula workbook are available in Optimization.</p><a class="dbtn sm" href="${href('/o/'+encodeURIComponent(v.id),{...S})}">Open GPT parameter research</a>`:''}<h4 class="cc-h">Source and data assessment</h4>${assessment}<details class="gpt-source-detail"><summary>Detailed source findings</summary>${review.evidence.map(t=>`<p>${esc(t)}</p>`).join('')}<ul>${review.caveats.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>${e?`<p class="rnote">${esc(e.source.path)} · ${esc(e.pages)}. Reviewed core sources; full corpus review remains in progress.</p>`:''}</details>${review.links.length?`<p class="rnote">External evidence: ${review.links.map((url,i)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Source ${i+1}</a>`).join(' · ')}</p>`:''}</section>`;
+  return `<section class="box" id="gpt-c" data-source-audit><div class="box-h">GPT’s conclusion <small>Independent analyst assessment · five-percentile method from prompt.md</small></div><p><b>${esc(review.verdict)}</b></p><p class="rnote">${esc(btstFuturesSymbol(tk) && btstReference(v.id) ? btstFuturesSymbol(tk) : LABEL[tk])} · ${esc(v.name)}. Calculated from Rust results and reviewed source evidence; opening this page does not call an AI model.</p>${detailed&&!issue?`<div id="gpt-body">${bookLoader('Preparing the analyst comparison from the same Rust runs…')}</div>`:!issue?`<p>Book and top-three statistics, percentile groups, analyst tradeoffs, detailed charts and a formula workbook are available in Optimization.</p><a class="dbtn sm" href="${href('/o/'+encodeURIComponent(v.id),{...S})}">Open GPT parameter research</a>`:''}<h4 class="cc-h">Source and data assessment</h4>${assessment}<details class="gpt-source-detail"><summary>Detailed source findings</summary>${review.evidence.map(t=>`<p>${esc(t)}</p>`).join('')}<ul>${review.caveats.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>${e?`<p class="rnote">${esc(e.source.path)} · ${esc(e.pages)}. Reviewed core sources; full corpus review remains in progress.</p>`:''}</details>${review.links.length?`<p class="rnote">External evidence: ${review.links.map((url,i)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Source ${i+1}</a>`).join(' · ')}</p>`:''}</section>`;
 }
 
 
 // ---------------------------------------------------------------- state (kept in the URL hash so any view can be shared)
-const DEF = { mode: 'strategies', market: 'india', tk: 'NIFTY 50', tab: 'sharpe', q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', sort: 'primary', view: 'grid' };
+const DEF = { mode: 'strategies', market: 'india', tk: 'NIFTY 50', tab: 'sharpe', q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', grp: '', sort: 'primary', view: 'grid' };
 let S = { ...DEF };
 const readHash = () => { const q = new URLSearchParams(location.hash.slice(1)); S = { ...DEF }; for (const k in DEF) if (q.has(k)) S[k] = q.get(k); };
 const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) if (S[k] !== DEF[k]) q.set(k, S[k]); history.replaceState(null, '', '#' + q); };
@@ -1033,8 +1205,20 @@ async function getSum(tk, from = '', to = '', api = API) {
   const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
   SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
   if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
-  return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
+  const rows=Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
+  await btstCardRows(rows,tk,from,to,api);
+  return rows;
  })());
+}
+// BTST cards show the run their page opens with: the reference sheet's settings and the team's 0.03% brokerage
+// (the summary endpoint runs the engine defaults with no cost, which would not match the page).
+async function btstCardRows(rows,tk,from,to,api){
+ const ids=Object.keys(rows).filter(id=>rows[id]?.stats&&referenceDefaults(id,tk));let i=0;
+ const sample=(eq,n=121)=>!eq?.length?null:Array.from({length:Math.min(n,eq.length)},(_,k)=>eq[Math.round(k*(eq.length-1)/Math.max(1,Math.min(n,eq.length)-1))]);
+ const worker=async()=>{while(i<ids.length){const id=ids[i++],ref=referenceDefaults(id,tk);
+  try{const d=await runData(id,tk,from,to,'0',encodeP(ref.params),api,{slippage:String(ref.cost),rollover:'0'});
+   if(d&&!d.error&&d.stats){const sp=sample(d.equity);rows[id]={...rows[id],stats:d.stats,...(sp?{spark:sp}:{}),costs:d.costs||rows[id].costs,btst_reference:true};}}catch(e){/* keep the summary row */}}};
+ await Promise.all(Array.from({length:4},worker));
 }
 function summaryNoticeHTML(issues) {
  if(!issues.length)return '';
@@ -1103,8 +1287,8 @@ async function rows(S = getS()) {
 async function marketRows(S, region, api, tickers, CAT) {
   const T = TABS[S.tab], tks = S.tk === 'ALL' ? tickers.map(t => t.ticker) : [S.tk];
   const qq = S.q.trim().toLowerCase();
-  const textOk = v => !qq || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${v.dir} ${BOOK[v.book].title} ${GURU[v.guru].name} ${(v.rules || []).join(' ')}`.toLowerCase().includes(qq);
-  const metaOk = v => textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
+  const textOk = v => !qq || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${v.dir} ${BOOK[v.book]?.title || ''} ${GURU[v.guru]?.name || ''} ${(v.rules || []).join(' ')}`.toLowerCase().includes(qq);
+  const metaOk = v => (R.name === 'yt') === isYt(v) && textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family) && (!S.grp || ytMainVariant(v.group) === S.grp);
   if (S.tab === 'awaiting') {
     const availability = await Promise.all(tks.map(tk => getReadiness(tk,S.from,S.to,'',{},api)));
     return CAT.filter(metaOk).map(v => {
@@ -1135,7 +1319,8 @@ function spark(r, w = 300, h = 86) {
   const L = Math.log, lo = Math.min(...a.map(L)), hi = Math.max(...a.map(L)), n = a.length;
   const X = i => i / (n - 1) * w, Y = v => h - 4 - (L(v) - lo) / ((hi - lo) || 1) * (h - 10);
   const P = a.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
-  const end = new Date(r.w.to || lastOf(r.tk)), start = new Date(end - r.s.years * 365.25 * 864e5);
+  const cov = isYt(r.v) && btstReference(r.v.id) ? coverageWindow(r.v, r.tk) : null; // BTST: the futures data's own period
+  const end = new Date(r.w.to || cov?.to || lastOf(r.tk)), start = new Date(end - r.s.years * 365.25 * 864e5);
   const f = (new Date(`${PUB}-01-01`) - start) / (end - start);
   const mark = f > .03 && f < .97 ? `<rect x="${f * w}" y="0" width="${(1 - f) * w}" height="${h}" fill="var(--blue-soft)" opacity=".55"/><line x1="${f * w}" x2="${f * w}" y1="0" y2="${h}" stroke="var(--chart)" stroke-dasharray="3 3" stroke-width="1"/>` : '';
   const small = w < 200; // table rows: no axis labels, the dashed line still marks the book
@@ -1169,16 +1354,53 @@ function distBox(rs) {
 
 // ---------------------------------------------------------------- shared pieces
 const appLink = r => stratLink(r.v.id, r.tk, r.region); // opens the single-strategy page inside this page
+// ADR results page: the AmiBroker-style report (report-stats.js / report-view.js), computed once per run
+// the 4 ATH variants the research team verifies get the same Results as ADR: Report, report and YOY Excel, lab-style optimizer with the optimization sheet
+const ATH_RESULT_IDS=['ytath_chk_pctswing_turnover_running_buy','ytath_chk_all_st_variations_all_ranking','ytath_chk_19pct_swing_sl_probability','ytath_plus_pct_buy_pctswing_exit_nse500_2'];
+const isAth4=id=>ATH_RESULT_IDS.includes(id??STRAT?.v?.id??'');
+const isAdr=()=>/^ytadr_/.test(STRAT?.v?.id||'')||isAth4();
+/** a stock-universe run as the report maths want it: one entry per trade with its bar numbers, the engine's own money (shares, pnl, weight) and the benchmark filled across gaps */
+function athRunOf(d){
+ const at=new Map(d.dates.map((x,i)=>[String(x).slice(0,10),i]));let last=1;
+ let bh=(d.bh||[]).map(x=>Number.isFinite(x)?(last=x):last);
+ const px=STRAT?.benchPx;
+ if(d.kind==='universe'&&'benchmark_label' in d&&d.benchmark_label==null)bh=null;   // the basket has no index (F&O): no Buy&Hold
+ else if(!('benchmark_label' in d)&&!(d.bh||[]).some(x=>Number.isFinite(x)&&x!==1)&&px?.d&&px.c){      // an older run without its benchmark: NIFTY 50 closes at or before each date, from the first date
+  const pd=px.d.map(x=>String(x).slice(0,10));let j=0,base=null;
+  bh=d.dates.map(x=>{const k=String(x).slice(0,10);while(j+1<pd.length&&pd[j+1]<=k)j++;if(pd[j]>k)return base??1;if(base==null)base=px.c[j];return px.c[j]/base;});
+ }
+ const trades=d.trades.filter(t=>at.has(String(t.entry).slice(0,10))).map(t=>({legs:[[at.get(String(t.entry).slice(0,10))]],exit_i:at.get(String(t.exit).slice(0,10))??d.dates.length-1,ret:t.ret,dir:1,entry:t.entry,exit:t.exit,avg_px:t.entry_px,exit_px:t.exit_px,open:!!t.open,reason:t.reason,symbol:t.symbol,pnl:t.pnl,shares:t.shares,weight:t.weight}));
+ return {dates:d.dates,close:null,equity:d.equity,bh,trades,portfolio:true};
+}
+const ADR_REPORTS=new WeakMap();
+function adrReport(d){
+ if(!isAdr()||!d?.equity?.length||!d.dates||!d.bh||!Array.isArray(d.trades))return null;
+ if(ADR_REPORTS.has(d))return ADR_REPORTS.get(d);
+ const side=((Number(d.costs?.fees_bps)||0)+(Number(d.costs?.slippage_bps)||0))/10000;
+ let rep;
+ if(isAth4())rep=buildReport(athRunOf(d),null,{capital:d.model_initial_equity||1000000,side});
+ else{if(!d.close)return null;rep=buildReport({dates:d.dates,close:d.close,equity:d.equity,bh:d.bh,trades:d.trades},STRAT.px,{side});}
+ ADR_REPORTS.set(d,rep);return rep;
+}
+// the Buy&Hold index of a stock-universe run follows its basket (engine `benchmark_label`: NSE 500, NIFTY 50, or null = no index); older runs: NIFTY 50
+const uniBench=d=>d&&'benchmark_label' in d?d.benchmark_label:'NIFTY 50';
+const benchLabel=d=>isAth4()?(uniBench(d)??'no index'):STRAT.tk;
+const adrReportHTML=d=>{const r=adrReport(d);return r?reportHTML(r,benchLabel(d)):'';};
 const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
-const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
+// rule lines [section, text]; YT templates filled with the schema defaults plus `overrides` (rule-template.ts)
+const ruleLines = (v, overrides = {}) => { const sch = OPT.schemaSync?.[v.id]?.length ? OPT.schemaSync[v.id] : isYt(v) && universeRunnable(uniOf(v.id), v.id) ? universeSchema(uniOf(v.id), v.id, OPT.schemaSync?.ytbtst_core || []) : OPT.schemaSync?.[v.id], vals = isYt(v) ? paramValues(sch, overrides) : null; return (v.rules || []).map(x => { const [t, ...rest] = x.split('|'), raw = rest.join('|') || x; return [t, vals ? renderRule(raw, vals) : raw]; }).filter(([, r]) => r !== null); };
+const rulesList = v => `<details class="rules"><summary>${isYt(v) ? 'Rules as specified' : 'Rules as written in the book'}</summary><ul>${ruleLines(v).map(([t, r]) => `<li><span class="t">${RTAG[t] || ''}</span>${esc(r)}</li>`).join('')}</ul></details>`;
+// YT cards (BTST, ATH): Net return (equity, B&H below) · Max DD (CAGR below) · Win (trades below)
+const ytKpis = (s, note = '') => `<div class="kpis yt-kpis"><div><span>Net return</span><b class="${cls(s.total_return ?? s.net_profit)}">${pct(s.total_return ?? s.net_profit, 2, true)}</b><i>${s.bh_total != null ? 'B&amp;H ' + pct(s.bh_total, 2, true) : esc(note)}</i></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 2)}</b><i>CAGR ${pct(s.cagr, 2, true)}</i></div><div><span>Win</span><b class="p">${pct(s.win_rate, 2)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
 const kpiTriplet = r => {
+  if (isYt(r.v)) return ytKpis(r.s);
   const M = TABS[S.tab].metric, s = r.s;
   const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : 'Before-book result unavailable'}</i></div>`
     : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
     : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
   return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
 };
-const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${bookYear(BOOK[v.book])}) · ${srcOf(v)}`;
+const byline = v => isYt(v) ? 'YT Strategies' : `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${bookYear(BOOK[v.book])}) · ${srcOf(v)}`;
 
 // ---------------------------------------------------------------- MODES
 function unavailableBookCard(method){
@@ -1197,47 +1419,121 @@ async function unavailableForSelectedBook(){
   // A ready result on any selected instrument admits the method; never let a later
   // blocked context overwrite it when browsing all loaded indices.
   const merged=new Map();for(const reason of reasons){const old=merged.get(reason.id);if(!old||reason.status==='available'||old.status!=='available'&&reason.status==='no_trades')merged.set(reason.id,reason);}
-  const query=S.q.trim().toLowerCase(),matching=defs.filter(v=>(!query||`${v.name} ${v.family_name} ${v.variant||''} ${v.group} ${v.dir} ${BOOK[v.book]?.title||''} ${GURU[v.guru]?.name||''} ${(v.rules||[]).join(' ')}`.toLowerCase().includes(query))&&(!S.style||v.style===S.style)&&(!S.dir||v.dir===S.dir)&&(!S.family||v.family===S.family));
+  const query=S.q.trim().toLowerCase(),matching=defs.filter(v=>(!query||`${v.name} ${v.family_name} ${v.variant||''} ${v.group} ${v.dir} ${BOOK[v.book]?.title||''} ${GURU[v.guru]?.name||''} ${(v.rules||[]).join(' ')}`.toLowerCase().includes(query))&&(!S.style||v.style===S.style)&&(!S.dir||v.dir===S.dir)&&(!S.family||v.family===S.family)&&(!S.grp||ytMainVariant(v.group)===S.grp));
   return unavailableBookMethods(matching,[...merged.values()]);
 }
+// YT families with main variants (e.g. BTST) open as their own page: family card -> main variants -> sub-variants.
+const ytFamilyCard = (r, perVariant) => R.name === 'yt' && !perVariant && !S.family && ytMainVariants(ALLCAT, r.v.family).length > 0;
+// green dot from outside: how many sub-variants in `ids` have a reference trade sheet (dot shown on the main-variant / family card)
+const refSheetCount = ids => ids.filter(id => ytFamilyReference(id)?.tradesheets?.length).length;
+const refGroupDot = (ids, what = 'sub-variant') => { const n = refSheetCount(ids); return n ? `<i class="ref-dot ok" role="img" aria-label="${n} of ${ids.length} ${what}s have a reference trade sheet" title="${n} of ${ids.length} ${what}s have a reference trade sheet"></i>` : ''; };
+function ytGroupCards(mv) {
+  const fam = S.family, name = familyDisplayName(ALLCAT.find(v => v.family === fam) || {});
+  return `<div class="grid">${mv.map((m, i) => `<article class="card yt-main" data-yt-main="${esc(m.name)}"><div class="rank"><span>${refGroupDot(m.ids)}Main variant ${i + 1}</span><span class="stamp">${m.ids.length} sub-variant${m.ids.length === 1 ? '' : 's'}</span></div>
+      <h3>${esc(m.name)}</h3><div class="by">${esc(name)} · YT Strategies</div><p class="yt-main-note">${esc(MAIN_VARIANT_NOTES[m.name] || '')}</p>
+      <div class="btns"><a class="btn solid" href="${href('/yt', { tk: S.tk, from: S.from, to: S.to, family: fam, grp: m.name, mode: 'variants' })}">View sub-variants</a></div></article>`
+  ).join('')}</div>`;
+}
+// Inside a YT main variant: the sub-variants that run only on the F&O stock universe (no index result to rank).
+// ATH and BTST cards: green % = checked against the variant's own tradesheet; yellow % = checked against the nearest version's sheet; nothing = no similar version
+const verifyBadge = (id, tk) => { const a = ATH_VERIFY[id] || ADR_VERIFY[id] || btstVerify(id, tk); if (!a) return ''; const own = a[0] === 'own';
+  return `<span class="ath-ver ${own ? 'own' : 'near'}" title="${own ? 'Checked against its own tradesheet' : 'Checked against the nearest version\'s tradesheet'}: ${esc(a[2])}">${a[1].toFixed(1)}%</span>`; };
+// green name: the sub-variants added from the team's "AFL ATH checking" folder
+// ATH sub-variants whose page offers the All F&O basket (FO SCRIPTS C&P) next to NSE 500; the others stay on their reference list until this one is confirmed
+const ATH_FO_CHOICE = ['ytath_plus_pct_buy_pctswing_exit_nse500_2'];
+// ATH cards: the equity curve and headline numbers of one default run, calculated ahead (scripts/ath_card_results.py), drawn like the BTST cards
+function athSpark(a, first, last, w = 300, h = 86) {
+  const v = (a || []).map(x => Math.max(x, 1e-4)); if (v.length < 2) return '';
+  const L = Math.log, lo = Math.min(...v.map(L)), hi = Math.max(...v.map(L)), n = v.length;
+  const X = i => i / (n - 1) * w, Y = x => h - 4 - (L(x) - lo) / ((hi - lo) || 1) * (h - 10);
+  const P = v.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(x).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${w} ${h + 14}" width="100%" class="strip" role="img" aria-label="Equity curve of the default run"><path d="${P}L${w},${h}L0,${h}Z" fill="var(--chart)" opacity=".08"/><path d="${P}" fill="none" stroke="var(--chart)" stroke-width="1.6"/><text x="0" y="${h + 12}">${esc(String(first).slice(0, 4))}</text><text x="${w}" y="${h + 12}" text-anchor="end">${esc(String(last).slice(0, 4))}</text></svg>`;
+}
+// green name: also the strategies marked by the research team (shown first on their main-variant page)
+const ATH_MARKED = { ytath_plus_pct_buy_pctswing_exit_nse500_2: 'Marked by the research team: ATHC + % buy, %Swing exit, NSE500/F&O universe, running trade' };
+const greenIds = id => ATH_CHECKED_IDS.includes(id) || id in ATH_MARKED;
+// red name: the MASTER of a same-result group (the variant that contains almost all the rules of the others): verify these first
+const masterName = id => ATH_MASTER_IDS.includes(id) ? ' class="yt-master" title="Master of its group of variants with the same result: it contains almost all the rules of the others, verify this one first"' : '';
+// green + master (user 2026-10-31): green name first, then a red MASTER tag after it (masterTag)
+const greenMaster = id => ATH_MASTER_IDS.includes(id) && (ATH_CHECKED_IDS.includes(id) || id in ATH_MARKED);
+const masterTag = id => greenMaster(id) ? ' <span class="yt-master yt-master-tag" title="Master of its group of variants with the same result: it contains almost all the rules of the others, verify this one first">MASTER</span>' : '';
+const checkedName = id => greenMaster(id) ? ` class="yt-checked" title="${esc(ATH_MARKED[id] || 'Added from the team\'s AFL ATH checking folder')}"` : ATH_MASTER_IDS.includes(id) ? masterName(id) : ATH_CHECKED_IDS.includes(id) ? ' class="yt-checked" title="Added from the team\'s AFL ATH checking folder"' : id in ATH_MARKED ? ` class="yt-checked" title="${esc(ATH_MARKED[id])}"` : '';
+const greenFirst = defs => [...defs].sort((a, b) => greenIds(b.id) - greenIds(a.id));
+function ytUniverseCards(perVariant) {
+  if (R.name !== 'yt' || !perVariant || !S.grp || !S.family || !(UNIVERSE || ATH_UNIVERSE)) return '';
+  const q = S.q.trim().toLowerCase();
+  const defs = greenFirst(ALLCAT.filter(v => v.family === S.family && ytMainVariant(v.group) === S.grp && isUniverseOnly(v.id) && universeRunnable(uniOf(v.id), v.id) && (!q || `${v.name} ${v.variant || ''}`.toLowerCase().includes(q))));
+  return defs.map(v => { const last = UNIVERSE_SUMMARY[v.id], pre = ATH_CARD[v.id], link = last?.hash || href('/s/' + encodeURIComponent(v.id), { run_scope: 'universe' });
+    return `<article class="card yt-universe" data-yt-universe="${esc(v.id)}"><div class="rank"><span>${refDot(v, S.tk)}${esc(universeText(uniOf(v.id), 'badge', 'F&O stocks'))}</span>${verifyBadge(v.id)}<span class="stamp">${esc(universeText(uniOf(v.id), 'stamp', 'Runs on F&O stocks'))}</span></div>
+      <h3${checkedName(v.id)}>${esc(v.variant || v.name)}${masterTag(v.id)}</h3><div class="by"><b style="font-weight:600">${esc(familyDisplayName(v))} · ${esc(S.grp)}</b> · ${esc(universeChoiceLabel(uniOf(v.id)))}</div>
+      ${!last && pre ? `${athSpark(pre.sp, pre.first, pre.last)}${ytKpis(pre.stats, `${pre.max_positions} positions · default run`)}<div class="tags"><span class="tag">${esc(pre.universe)} (${esc(pre.symbols)})</span><span class="tag">${esc(pre.max_positions)} positions</span><span class="tag">${esc(v.dir || 'Long')}</span><span class="tag" title="Default settings of the AFL, 0.65 % brokerage per side, ${esc(pre.first)} to ${esc(pre.last)}. Calculated ${esc(pre.date)}; open the strategy to run it again.">calculated ${esc(pre.date)}</span></div>` : ''}
+      ${last ? `${ytKpis(last.stats, `${last.max_positions} positions · last run`)}<div class="tags"><span class="tag">${esc(uniOf(v.id)?.universe || 'F&O stocks')} (${esc(uniOf(v.id)?.symbols || '')})</span><span class="tag">${esc(last.max_positions)} positions</span><span class="tag">${esc(v.dir || 'Long')}</span></div>`
+        : pre ? '' : `<p class="yt-main-note">${esc(universeText(uniOf(v.id), 'card_note', `A portfolio of the team's rule on every stock of the ${uniOf(v.id).universe} watchlist (${uniOf(v.id).symbols} F&O stock futures, ${uniOf(v.id).first.slice(0, 4)}–${uniOf(v.id).last.slice(0, 4)}). Not run on an index; open it to run the stock-universe backtest.`))}</p>`}
+      ${rulesList(v)}<div class="btns"><a class="btn solid" href="${link}">${v.id.startsWith('ytath_') ? 'Full backtest' : esc(universeText(uniOf(v.id), 'run_label', 'Run on F&O stocks'))}</a></div></article>`; }).join('');
+}
+// YT families none of whose sub-variants can run yet (ATH: waiting for its database) still get their cards:
+// family card -> main variants (ytGroupCards) -> sub-variant cards with rules, reference dot and the reason.
+function ytPendingCards(perVariant) {
+  if (R.name !== 'yt') return '';
+  const q = S.q.trim().toLowerCase(), hit = v => !q || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${(v.rules || []).join(' ')}`.toLowerCase().includes(q);
+  const yt = ALLCAT.filter(isYt), fams = [...new Set(yt.map(v => v.family))].filter(f => !yt.some(v => v.family === f && v.status === 'live') && ytMainVariants(yt, f).length);
+  if (!S.family && !perVariant) return fams.map(f => {
+    const defs = yt.filter(v => v.family === f && hit(v)); if (!defs.length) return '';
+    const mv = ytMainVariants(defs, f), name = familyDisplayName(defs[0]), why = defs[0].status_note || 'Backtest unavailable';
+    const runnable = defs.filter(v => universeRunnable(uniOf(v.id), v.id)).length;
+    return `<article class="card yt-pending" data-yt-pending="${esc(f)}"><div class="rank"><span>${refGroupDot(defs.map(v => v.id))}YT Strategies</span><span class="stamp" style="color:#8a6a2f">${runnable ? 'PARTLY TESTABLE' : 'NOT TESTABLE YET'}</span></div>
+      <h3>${esc(name)}</h3><div class="by">YT Strategies · ${srcOf(defs[0])}</div><p class="yt-main-note">${mv.length} main variants · ${defs.length} sub-variants${refSheetCount(defs.map(v => v.id)) ? ` · ${refSheetCount(defs.map(v => v.id))} with a reference trade sheet (green dot)` : ''}. ${runnable ? `${runnable} can be backtested on the stock universe (checked against the team's trade sheet); the others wait for their engine.` : `${esc(why)}.`}</p>
+      <div class="btns"><a class="btn solid" href="${href('/yt', { tk: S.tk, from: S.from, to: S.to, family: f })}">View variants</a></div></article>`; }).join('');
+  if (!S.family || !S.grp || !fams.includes(S.family)) return '';
+  return yt.filter(v => v.family === S.family && ytMainVariant(v.group) === S.grp && hit(v) && !universeRunnable(uniOf(v.id), v.id)).map(v => `<article class="card yt-pending" data-yt-pending-variant="${esc(v.id)}"><div class="rank"><span>${refDot(v, S.tk)}${esc(S.grp)}</span><span class="stamp" style="color:#8a6a2f">BACKTEST UNAVAILABLE</span></div>
+      <h3${checkedName(v.id)}>${esc(v.variant || v.name)}${masterTag(v.id)}</h3><div class="by"><b style="font-weight:600">${esc(familyDisplayName(v))} · ${esc(S.grp)}</b></div>
+      <div class="unavailable-reasons"><p>${esc(v.status_note || 'Backtest unavailable')}</p></div>${rulesList(v)}
+      <div class="btns"><a class="btn solid" href="${stratLink(v.id, S.tk)}">Open rules &amp; parameters</a></div></article>`).join('');
+}
 function viewStrategies(rs, perVariant, missing = []) {
+  const uniCards = ytUniverseCards(perVariant) + ytPendingCards(perVariant);
   const missingGrid=missing.length?`<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>`:'';
   // strategies = one entry per family (best variant by the current sort); variants = every rule set
   let list = rs;
-  if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()]; }
+  if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()];
+    // YT families open on their first variant (the team's own default), not on whichever ranks best; rank order is unchanged.
+    if (R.name === 'yt') { const at = r => ALLCAT.findIndex(v => v.id === r.v.id); list = list.map(e => ({ ...e.all.reduce((a, b) => at(b) < at(a) ? b : a), all: e.all })); } }
   const nVar = r => r.all ? new Set(r.all.map(x => x.v.id)).size : 1, nIdx = r => r.all ? new Set(r.all.map(x => x.tk)).size : 1;
-  const title = r => esc(familyDisplayName(r.v)) + gateBadge(r.v);
-  const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
+  // inside a YT main variant every card is the same family, so the sub-variant name is the title
+  const subTitled = r => perVariant && R.name === 'yt' && S.grp && r.v.variant;
+  const title = r => esc(subTitled(r) ? r.v.variant : familyDisplayName(r.v)) + gateBadge(r.v);
+  const sub = r => subTitled(r) ? `<b style="font-weight:600">${esc(familyDisplayName(r.v))} · ${esc(S.grp)}</b> · ` : perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
   if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
+  const uniGrid = uniCards ? `<div class="grid yt-universe-grid">${uniCards}</div>` : '';
   if (S.view === 'list') {
-    const M = TABS[S.tab].metric, ruleLine = v => { const e = (v.rules || []).find(x => x.startsWith('E|')), x = (v.rules || []).find(x => x.startsWith('X|')); return [e && 'Entry: ' + e.slice(2), x && 'Exit: ' + x.slice(2)].filter(Boolean).map(esc).join(' · '); };
-    return `<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
+    const M = TABS[S.tab].metric, ruleLine = v => { const L = ruleLines(v), e = L.find(([t]) => t === 'E'), x = L.find(([t]) => t === 'X'); return [e && 'Entry: ' + e[1], x && 'Exit: ' + x[1]].filter(Boolean).map(esc).join(' · '); };
+    return `<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${refDot(r.v, r.tk)}${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
       <div class="lt"><b>${title(r)}</b><small>${sub(r)}${byline(r.v)}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</small><span class="rl">${ruleLine(r.v)}</span>
         <span class="ltags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}</span></div>
       <div class="lk"><span>${esc(M.label)}<b class="p">${M.fmt(M.get(r))}</b></span><span>CAGR<b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></span><span>Max DD<b class="neg">${pct(r.s.max_dd, 1)}</b></span><span>Trades<b>${fx(r.s.trades, 0)}</b></span></div>
-      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>${missingGrid}`;
+      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span>${ytFamilyCard(r, perVariant) ? `<a class="go" href="${href('/yt', { tk: S.tk, from: S.from, to: S.to, family: r.v.family })}">View variants</a>` : `<a class="go" href="${appLink(r)}">Full backtest</a>`}</div></div>`; }).join('')}</div>${uniGrid}${missingGrid}`;
   }
   if (S.view === 'table') {
     const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
     return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
       ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
         <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n neg">${pct(r.s.max_dd, 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}">Backtest</a></td></tr>`).join('')}
-      </tbody></table></div>${missingGrid}`;
+      </tbody></table></div>${uniGrid}${missingGrid}`;
   }
   return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
-      <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
+      <div class="rank"><span>${refDot(r.v, r.tk)}#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span>${verifyBadge(r.v.id, r.tk)}<span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
       <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
       ${spark(r)}${kpiTriplet(r)}
-      <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
+      <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(isYt(r.v) ? (btstFuturesSymbol(r.tk) || LABEL[r.tk] || r.tk) : r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
       ${rulesList(r.v)}
-      <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
-    </article>`; }).join('')}${missing.map(unavailableBookCard).join('')}</div>`;
+      <div class="btns">${ytFamilyCard(r, perVariant) ? `<a class="btn solid" href="${href('/yt', { tk: S.tk, from: S.from, to: S.to, family: r.v.family })}">View variants</a>` : `<a class="btn solid" href="${appLink(r)}">Full backtest</a>`}${isYt(r.v) ? '' : `<button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button>`}</div>
+    </article>`; }).join('')}${uniCards}${missing.map(unavailableBookCard).join('')}</div>`;
 }
 function awaiting(rs) {
   const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${esc(heldLabel(issue))}</b><br>${esc(issue.note)}</p>`).join('');
   const link = r => `<a href="${stratLink(r.v.id,r.tk,r.region)}">${esc(familyDisplayName(r.v))}</a>`;
   if (S.view === 'table' || S.view === 'list') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${rs.map((r,i)=>`<tr><td class="rk">${i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
+  return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>${refDot(r.v, r.tk)}#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
 }
 function groupBy(rs, key) { const m = new Map(); for (const r of rs) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
 function summarise(list) {
@@ -1317,7 +1613,7 @@ function exitCheck(t) { return tradeExitCheck(t); }
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.only=''; DEF.uni_basket=''; DEF.uni_set=''; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1331,16 +1627,20 @@ let R = { name: 'home' };
 // ---------------------------------------------------------------- routing (state after "?", so Back/Forward work)
 function readRoute() {
   const [path, q = ''] = (location.hash.slice(1) || '/').split('?'), p = path.split('/').filter(Boolean);
-  R = p[0] === 'source' && p[1] ? {name:'source',id:decodeURIComponent(p[1]),path:path} : p[0] === 'saved' ? { name: 'saved', path: '/saved' } : p[0] === 'strategies' ? { name: 'all', path: '/strategies' } : p[0] === 'guru' && GURU[p[1]] ? { name: 'guru', id: p[1], path: '/guru/' + p[1] }
+  R = p[0] === 'source' && p[1] ? {name:'source',id:decodeURIComponent(p[1]),path:path} : p[0] === 'saved' ? { name: 'saved', path: '/saved' } : p[0] === 'strategies' ? { name: 'all', path: '/strategies' } : p[0] === 'yt' ? { name: 'yt', path: '/yt' } : p[0] === 'guru' && GURU[p[1]] ? { name: 'guru', id: p[1], path: '/guru/' + p[1] }
     : ['s','o'].includes(p[0]) && p[1] ? { name: 'strategy', optim: p[0] === 'o', id: decodeURIComponent(p[1]), path: path } : { name: 'home', path: '/' };
   S = { ...DEF }; for (const [k, v] of new URLSearchParams(q)) if (k in DEF) S[k] = v;
   S.report_mode=S.report_mode==='compound'?'compound':'fixed';
-  S.run_scope=R.name==='strategy'&&S.run_scope==='basket'?'basket':'single';
+  S.run_scope=normaliseRunScope(S.run_scope,R.name==='strategy',R.id); // BTST: 'universe' = the F&O stock universe (universe-only sub-variants always)
+  if(S.run_scope==='universe'&&uniOf(R.id)&&!universeRunnable(uniOf(R.id),R.id))S.run_scope='single';
+  if(S.run_scope==='universe'){S.tk='NIFTY 50';S.basket='';} // the universe run uses the NIFTY calendar and benchmark
   S.membership=S.membership==='past'?'past':'current';
   S.max_positions=String(positionLimit(S.max_positions)||10);
   S.position_choice=['10','20','custom'].includes(S.position_choice)?S.position_choice:'10';
   if(!pristineMethod(R.id,PRISTINE_BOOK))S.cost='0'; // Legacy interface retains its existing fee setting.
   if (R.name === 'guru') S.guru = R.id;
+  // YT strategies have no author or book: drop those filters and the book-based views.
+  if (R.name === 'yt') { S.guru = ''; S.book = ''; if (!['strategies', 'variants'].includes(S.mode)) S.mode = 'strategies'; if (S.tab === 'working') S.tab = 'sharpe'; }
   if (S.book?.startsWith('jr_') && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
   if (S.book?.startsWith('jr_') && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
   // Use each source-qualified basket only with the market engine that admitted it.
@@ -1357,10 +1657,10 @@ function readRoute() {
     S.tk=pool.find(t=>preferred?.symbols?.includes(t.ticker))?.ticker||S.tk;
   }
   const stocks=isDetail&&types.includes('individual_stock')?stockChoices(pool,S.tk):[];
-  TICKERS=isDetail&&S.run_scope==='single'
+  TICKERS=isDetail&&S.run_scope==='universe'?indices.filter(t=>t.ticker==='NIFTY 50'):isDetail&&S.run_scope==='single'
     ? [...instrumentTickers(chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book),...stocks]
     : S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker))
-    : instrumentTickers(['home','guru','all'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book);
+    : instrumentTickers(['home','guru','all','yt'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book);
   // Keep an explicitly named, admitted source even when its instrument is
   // incompatible. The readiness gate explains the mismatch without replacing it.
   const explicitStock=isDetail&&S.run_scope==='single'&&explicit.get('tk')?.startsWith('basket:')?pool.find(t=>t.ticker===S.tk):null;
@@ -1375,10 +1675,30 @@ function readRoute() {
 }
 // Market-specific variants (NSE breadth on India, NYSE breadth on the US) are shown only on their own market.
 let ALLCAT = [];
+let UNIVERSE = null; // BTST F&O stock universe info (guru/yt/universe), null until loaded or when the engine has none
+let ATH_UNIVERSE = null; // ATH stock universe info (guru/yt/ath-universe): the sub-variants the Rust ATH engine runs on the NSE 500 C&P watchlist
+const uniOf = id => { // the universe a sub-variant runs on (ATH: the info of the engine, with the wording of the sub-variant's own database)
+  if (!id || !id.startsWith('ytath_')) return UNIVERSE;
+  if (!ATH_UNIVERSE) return null;
+  const own = ATH_UNIVERSE.by_id?.[id];
+  return own ? { ...ATH_UNIVERSE, ...own } : ATH_UNIVERSE;
+};
+// stock-universe baskets (engine `baskets`): NSE 500 / Nifty 50 / All F&O, each as Current, Past (C&P minus current) or C&P (default)
+const uniBaskets = id => (id?.startsWith('ytath_') ? ATH_UNIVERSE?.baskets?.[ATH_UNIVERSE?.by_id?.[id]?.members_key] : UNIVERSE?.baskets) || [];
+const uniDefaultBasket = id => { const U = uniOf(id), bs = uniBaskets(id); return bs.find(b => b.cp.replace(/\.tls$/, '') === U?.universe)?.key || bs[0]?.key || ''; };
+const uniPick = id => { const bs = uniBaskets(id), key = S.uni_basket || uniDefaultBasket(id), b = bs.find(x => x.key === key) || null, set = b?.current ? (S.uni_set || 'cp') : 'cp';
+  return { b, key, set, isDefault: key === uniDefaultBasket(id) && set === 'cp' }; };
+const UNI_SET = { current: 'Current', past: 'Past', cp: 'C&P' };
+const uniMembers = id => (id?.startsWith('ytath_') ? ATH_UNIVERSE?.members?.[ATH_UNIVERSE?.by_id?.[id]?.members_key] : UNIVERSE?.members) || [];
+const universeScope = v => S.run_scope === 'universe' && R.name === 'strategy' && !!v && universeRunnable(uniOf(v.id), v.id);
+// the parameter schema of the page's run: a universe run has its own (engine `schemas`, else core rules + portfolio keys)
+const btSchema = v => universeScope(v) ? universeSchema(uniOf(v.id), v.id, OPT.schemaSync?.ytbtst_core || []) : OPT.schemaSync?.[v.id] || [];
+const btRef = (v, tk) => universeScope(v) ? ytUniverseReferenceDefaults(v.id) : ytReferenceDefaults(v.id, tk); // BTST and ATH sub-variants
 const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(n) : /^NYSE_/.test(n));
 const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
-const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region !== 'in' && !('region' in st)) q.set('region', S.region); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
+const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path==='/yt'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region !== 'in' && !('region' in st)) q.set('region', S.region); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
+const isYt = v => v.api === 'yt'; // YT strategies: no author or book, own tab
 const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 const stratLink = (id, tk, region) => href('/s/' + encodeURIComponent(id), { ...(region ? { region } : S.region === 'all' ? { region: 'in' } : {}), ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
@@ -1415,7 +1735,7 @@ window.closeGuru = () => { document.querySelectorAll('.gmodal').forEach(m => m.r
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeGuru(); });
 async function heroStats(guru, book) {
   const tk = S.tk === 'ALL' || S.market !== 'india' ? TICKERS[0].ticker : S.tk, sum = await getSum(tk,S.from||'',S.to||'');
-  const inScope = v => (!guru || v.guru === guru) && (!book || v.book === book);
+  const inScope = v => !isYt(v) && (!guru || v.guru === guru) && (!book || v.book === book);
   const st = CAT.filter(v => v.status === 'live' && inScope(v)).map(v => ({ v, s: sum[v.id]?.stats })).filter(x => TRUST.hasResult(sum[x.v.id]));
   const best = st.filter(x => x.s.trades >= 20 && Number.isFinite(x.s.sharpe)).sort((a, b) => b.s.sharpe - a.s.sharpe)[0];
   return { tk, fams: new Set(CAT.filter(inScope).map(v => v.family)).size, tested: new Set(st.map(x => x.v.family)).size, booksTested:new Set(st.map(x=>x.v.book)).size, variants: st.length, sig: st.filter(x => x.s.t_stat >= 2).length, best };
@@ -1460,7 +1780,7 @@ let PV = true;
 window.togglePV = () => { PV = !PV; render(); };
 async function viewHome() {
   const h = await heroStats(), readiness=await getReadiness(h.tk), allRecords=libraryRecords(), visibleAuthors=VaultLibraryBrowser.matchingAuthors(LIB,allRecords,S.library_q,S.book_category), live = LIB.filter(g => g.books.some(b => b.live)), pre = LIB.filter(g => !g.books.some(b => b.live));
-  const implementedFamilies=new Set(CAT.filter(v=>v.status==='live' && v.guru!=='ross').map(v=>v.family)).size;
+  const implementedFamilies=new Set(CAT.filter(v=>v.status==='live' && v.guru!=='ross' && !isYt(v)).map(v=>v.family)).size;
   const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
   HOME_STATS = scoped;
   const awaitedSummary=await getSum(h.tk),cardStates=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,awaitedSummary,readiness)]));
@@ -1493,7 +1813,7 @@ async function counts(k) {
   const c = {}; famBest(await rows({ ...S, [k]: '', ...(k === 'guru' && R.name !== 'guru' ? { book: '' } : {}) })).forEach(r => { const v = f(r); c[v] = (c[v] || 0) + 1; }); return c;
 }
 const FILTERS = {
-  mode: { t: 'Browse', noAll: true, vals: () => Object.entries(MODES) },
+  mode: { t: 'Browse', noAll: true, vals: () => Object.entries(MODES).filter(([k]) => R.name !== 'yt' || ['strategies', 'variants'].includes(k)) },
   tk: { t: 'Market', noAll: true, cur: () => S.market !== 'india' ? '@' + S.market : S.tk, vals: () => [...TICKERS.map(t => [t.ticker, LABEL[t.ticker]]), ['ALL', isUS() ? 'All US indices' : 'All Indian indices'], ['@global', 'Global · soon'], ['@stocks', 'Single stocks · soon']], set: v => v.startsWith('@') ? { market: v.slice(1) } : { market: 'india', tk: v } },
   tab: { t: 'Rank by', noAll: true, vals: () => Object.entries(TABS).filter(([k])=>PUB || k!=='working').map(([k, x]) => [k, x.name]), set: v => ({ tab: v, sort: 'primary' }) },
   guru: { t: 'Guru', vals: () => LIB.map(g => [g.id, g.name+(g.id==='ross'?' · Source research':'')]), set: v => ({ guru: v, book: '' }) },
@@ -1514,7 +1834,7 @@ function dropdown(k, cnt) {
   return `<details class="dd ${isSet(k) ? 'set' : ''}"><summary class="dd-btn"><span class="dd-l">${F.t}</span>${set && on ? `<b>${esc(on[1])}</b>` : ''}<i class="chev"></i></summary><ul class="menu">${items}</ul></details>`;
 }
 async function filterBar() {
-  const keys = ['mode', 'tk', 'tab', ...(R.name === 'guru' ? [] : ['guru']), 'book', 'style', 'dir', 'hold', 'verdict', 'min'];
+  const keys = ['mode', 'tk', 'tab', ...(R.name === 'guru' || R.name === 'yt' ? [] : ['guru']), ...(R.name === 'yt' ? [] : ['book']), 'style', 'dir', 'hold', 'verdict', 'min'];
   const cnt = {}; for (const k of keys) if (!['mode', 'tab'].includes(k)) cnt[k] = await counts(k);
   const chips = ['guru', 'book', 'style', 'dir', 'hold', 'verdict', 'min'].filter(k => isSet(k) && !(R.name === 'guru' && k === 'guru')).map(k => { const F = FILTERS[k], c = curOf(k); return `<span class="chip">${F.t}: ${esc(F.vals().find(([v]) => v === c)?.[1] || c)}<button data-set="${ds({ [k]: F.zero || '' })}" aria-label="Remove">×</button></span>`; });
   if (S.family) chips.push(`<span class="chip">Strategy: ${esc((CAT.find(v => v.family === S.family)?familyDisplayName(CAT.find(v => v.family === S.family)):''))}<button data-set="${ds({ family: '', mode: 'strategies' })}" aria-label="Remove">×</button></span>`);
@@ -1531,9 +1851,11 @@ function resultsBar(rs) {
 }
 function resultsHtml(rs, missing = []) {
   if (S.market !== 'india') return `<div class="empty"><b>${S.market === 'global' ? 'Global markets' : 'Single stocks'}: no data loaded yet</b>The same gurus, books and strategies appear here once that data is in the Rust backend.</div>`;
+  if (R.name === 'yt' && S.family && !S.grp) { const mv = ytMainVariants(ALLCAT, S.family); if (mv.length) return ytGroupCards(mv); }
   const pv = S.book && !BOOK[S.book].live ? BOOK[S.book].title : S.guru && !GURU[S.guru].books.some(b => b.live) ? GURU[S.guru].name : '';
   if (pv && !rs.length) return `<div class="empty"><b>${esc(pv)}: not converted yet</b>Its strategies, stats and charts appear here once its rules are coded in Rust.</div>`;
   if (!rs.length && missing.length) return viewStrategies([],S.mode==='variants',missing);
+  if (!rs.length && R.name === 'yt' && S.tab !== 'awaiting') { const pend = ytUniverseCards(S.mode === 'variants') + ytPendingCards(S.mode === 'variants'); if (pend) return `<div class="grid yt-universe-grid">${pend}</div>`; }
   if (!rs.length && (S.mode === 'strategies' || S.mode === 'variants')) return `<div class="empty"><b>Nothing matches</b>Loosen a filter or press Clear all.</div>`;
   if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
   return S.mode === 'gurus' ? viewGurus(rs) : S.mode === 'books' ? viewBooks(rs) : viewStrategies(rs, S.mode === 'variants',missing);
@@ -1550,7 +1872,10 @@ async function viewList() {
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
       <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p>${b ? `<p class="gbook">${esc(g.id==='pristine'&&b.id==='p_tpm1'?readingSummary(g,b):(b.blurb || BOOK_BLURB[b.id] || ''))}</p>` : authorProfileHtml(g.id)}</div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
       <dl class="lstrip library-summary" data-author-counts><div><dt>Books</dt><dd>${b?1:libraryEntryCounts(g.id).total}</dd></div><div><dt>Strategies</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).strategies}</dd></div><div><dt>Backtested</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).backtested}</dd></div></dl>${b?`<p class="library-count-note" data-book-result-context>Backtested counts strategies with a result on any instrument, India and US together (same as the book card). All counts are strategies, never variants.</p>`:''}`;
-  } else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
+  } else if (R.name === 'yt' && S.family) { const fname = familyDisplayName(ALLCAT.find(v => v.family === S.family) || {}), fl = href('/yt', { tk: S.tk, from: S.from, to: S.to, family: S.family });
+    head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${href('/yt', { tk: S.tk, from: S.from, to: S.to })}">YT Strategies</a><span>/</span>${S.grp ? `<a href="${fl}">${esc(fname)}</a><span>/</span><span>${esc(S.grp)}</span>` : `<span>${esc(fname)}</span>`}</nav><section class="ahero"><h1>${esc(S.grp || fname)}</h1><p class="lede">${esc(S.grp ? (MAIN_VARIANT_NOTES[S.grp] || '') : `${fname}: its main variants. Open one to see its sub-variants, each a separate rule set from the team's AFLs.`)}</p></section>`;
+  } else if (R.name === 'yt') head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>YT Strategies</span></nav><section class="ahero"><h1>YT Strategies</h1><p class="lede">Rule sets the team sourced outside the book library, backtested on the selected India or US instrument. These are simulated results; no published figures exist for them.</p></section>`;
+  else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
   if(S.from||S.to)head+=`<p class="rnote" data-list-period><b>Selected results period:</b> ${esc(S.from||'First available bar')} to ${esc(S.to||'Latest available bar')}. Top Sharpe results and linked backtests use this window.</p>`;
   if(R.name==='guru' && R.id==='chande' && S.book) head+=experimentNotice({guru:'chande'},null);
   if(R.name==='guru' && S.book) head+=readingReviewHTML(bookSources(GURU[R.id],BOOK[S.book]).find(x=>x.review));
@@ -1604,30 +1929,203 @@ const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execu
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
 function marketControls(v,tk){
- const allIndices=S.region==='us'?TICK_US:TICK_IN,unitMethod=unitExposureMethod(v.id,v.book),indices=unitMethod?(allIndices||[]).filter(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50')):allIndices,controls=instrumentControls(v.instrument_policy,v.id,v.book),portfolio=S.run_scope==='basket',sourceAccountOnly=v.instrument_policy?.execution_scope==='single_symbol_source_account'||unitMethod;
+ const allIndices=S.region==='us'?TICK_US:TICK_IN,unitMethod=unitExposureMethod(v.id,v.book),indices=unitMethod?(allIndices||[]).filter(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50')):allIndices,controls=instrumentControls(v.instrument_policy,v.id,v.book),uni=isYt(v)&&universeRunnable(uniOf(v.id),v.id),uniOnly=uni&&isUniverseOnly(v.id),onUni=universeScope(v),portfolio=S.run_scope==='basket'||onUni,sourceAccountOnly=uni||v.instrument_policy?.execution_scope==='single_symbol_source_account'||unitMethod;
  const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
  const stocks=stockChoices(S.region==='us'?TICK_ALL_US:TICK_ALL_IN,tk);
- const singleState=ticker=>({...S,run_scope:'single',basket:'',tk:ticker,from:'',to:''});
- const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
+ const singleState=ticker=>({...S,run_scope:'single',basket:'',tk:ticker,from:'',to:'',only:'',uni_basket:'',uni_set:'',...(btstReference(v.id)?{p:'',slippage:'0'}:{})}); // BTST: the new index opens with its own reference settings
+ const noSeries=t=>isYt(v)&&v.needs_series?.length&&t.coverage&&!t.coverage[v.needs_series[0]]; // YT series coverage is reported per ticker (BTST has no Midcap 100 series); other books are gated by readiness
+ const fut=!!btstReference(v.id),tkName=t=>fut&&btstFuturesSymbol(t.ticker)||LABEL[t.ticker]||t.ticker; // BTST: the button names the futures series traded
+ const indexButtons=(indices||[]).map(t=>uniOnly?`<button type="button" class="join-item" disabled title="${esc(familyDisplayName(v))} ${esc(v.variant||v.name)} runs on the F&O stock universe only">${esc(tkName(t))}</button>`:controls.index&&noSeries(t)?`<button type="button" class="join-item" disabled title="No ${esc(familyDisplayName(v))} data for this index">${esc(tkName(t))}</button>`:controls.index?`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(tkName(t))}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(tkName(t))}</button>`).join('');
  const basketButtons=basketChoices().map(([key,name])=>{const entry=BASKETS.find(b=>b.id===key),missing=!entry?.symbols?.length;return `<button type="button" class="join-item ${portfolio&&S.basket===key?'active':''}" data-basket="${key}" ${!controls.basket||missing?`disabled title="${esc(!controls.basket?controls.note:'No admitted constituent prices are available for this basket.')}"`:''}>${esc(name)}</button>`;}).join('');
- const stockPicker=controls.stock?`<label class="dfield stock-picker"><span class="swl">Stock</span><select id="strategy-stock" aria-label="Stock"><option value="" ${portfolio||!tk.startsWith('basket:')?'selected':''}>Select a stock</option>${stocks.map(t=>`<option value="${esc(t.ticker)}" ${!portfolio&&t.ticker===tk?'selected':''}>${esc(t.symbol||t.ticker.split(':').at(-1))}</option>`).join('')}</select></label>`:'';
+ const stockPicker=controls.stock&&!uni?`<label class="dfield stock-picker"><span class="swl">Stock</span><select id="strategy-stock" aria-label="Stock"><option value="" ${portfolio||!tk.startsWith('basket:')?'selected':''}>Select a stock</option>${stocks.map(t=>`<option value="${esc(t.ticker)}" ${!portfolio&&t.ticker===tk?'selected':''}>${esc(t.symbol||t.ticker.split(':').at(-1))}</option>`).join('')}</select></label>`:'';
  const pastTooltip=S.region==='us'?'Includes current and former constituents.\nDate-specific membership remains unverified.':'Historical constituent lists were found.\nPrice admission and dated membership are under review.';
- return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${indexButtons}</div></div>${stockPicker}${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}${sourceAccountOnly?'':`<div class="basket-selector" data-selector-panel><div class="basket-heading"><span class="swl">Basket</span><div class="join sm membership-toggle" role="group" aria-label="Basket membership"><button type="button" class="join-item ${S.membership==='current'?'active':''}" data-membership="current" aria-pressed="${S.membership==='current'}" title="Source-listed current constituents; historical tests can have survivorship bias.">Current</button><button type="button" class="join-item ${S.membership==='past'?'active':''}" data-membership="past" aria-pressed="${S.membership==='past'}" title="${esc(pastTooltip)}">Past</button></div></div><div class="join sm">${basketButtons}</div></div>`}<div class="control-run"><button class="dbtn primary sm" type="submit" form="period">Run backtest</button>${v.status==='live'&&!portfolio?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
+ return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">${fut?'Index (futures)':'Index'}</span><div class="join sm">${indexButtons}</div></div>${uni?(()=>{const U=uniOf(v.id),mem=uniMembers(v.id),uniState={...S,run_scope:'universe',basket:'',tk:'NIFTY 50',from:'',to:'',p:'',slippage:'0',only:'',uni_basket:'',uni_set:''};
+  // STOCK: one stock of the universe (the same rules on that stock alone); BASKET: the whole watchlist (C&P = current and past members)
+  return `<label class="dfield stock-picker" data-yt-stock><span class="swl">Stock</span><select id="yt-stock" aria-label="Stock" ${mem.length?'':'disabled title="The engine did not list the stocks of this universe"'}><option value="">Select a stock</option>${mem.map(m=>`<option value="${esc(m)}" ${onUni&&S.only===m?'selected':''}>${esc(m)}</option>`).join('')}</select></label>
+  <div class="basket-selector" data-universe-choice><div class="basket-heading"><span class="swl">Basket</span><div class="join sm membership-toggle" role="group" aria-label="Basket membership">${['current','past','cp'].map(k=>{const pk=uniPick(v.id),n=pk.b?(k==='cp'?pk.b.n_cp:k==='current'?pk.b.n_current:pk.b.n_past):0,tip={current:`Current members only (${n}): survivors, results look better`,past:`Former members only (${n}): stocks that left the list, results look worse`,cp:`Current and past members (${n}): the complete list, the team's reference`}[k];
+    return `<button type="button" class="join-item ${onUni&&pk.set===k?'active':''}" data-uni-set="${k}" aria-pressed="${onUni&&pk.set===k}" title="${esc(tip)}" ${!pk.b||(k!=='cp'&&!pk.b.current)?'disabled':''}>${esc(UNI_SET[k])}</button>`;}).join('')}</div></div><div class="join sm">${[['nse500','NSE 500'],['allfo','All F&O']].filter(([key])=>uniDefaultBasket(v.id)!=='nse500'||key==='nse500'||ATH_FO_CHOICE.includes(v.id)).map(([key,label])=>{const b=uniBaskets(v.id).find(x=>x.key===key),pk=uniPick(v.id);
+    return b?`<button type="button" class="join-item ${onUni&&!S.only&&pk.key===key?'active':''}" data-uni-basket="${key}" title="${esc(b.cp.replace(/\.tls$/,''))} (${b.n_cp}) · current ${b.n_current}${key===uniDefaultBasket(v.id)?' · the reference list of this sub-variant':''}">${esc(label)}</button>`:`<button type="button" class="join-item" disabled title="Not in this database">${esc(label)}</button>`;}).join('')}</div></div>`;})():''}${stockPicker}${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}${sourceAccountOnly?'':`<div class="basket-selector" data-selector-panel><div class="basket-heading"><span class="swl">Basket</span><div class="join sm membership-toggle" role="group" aria-label="Basket membership"><button type="button" class="join-item ${S.membership==='current'?'active':''}" data-membership="current" aria-pressed="${S.membership==='current'}" title="Source-listed current constituents; historical tests can have survivorship bias.">Current</button><button type="button" class="join-item ${S.membership==='past'?'active':''}" data-membership="past" aria-pressed="${S.membership==='past'}" title="${esc(pastTooltip)}">Past</button></div></div><div class="join sm">${basketButtons}</div></div>`}<div class="control-run"><button class="dbtn primary sm" ${isYt(v)&&btSchema(v).length?'type="button" data-bt-open':'type="submit" form="period"'}>Run backtest</button>${(v.status==='live'&&!portfolio)||v.id.startsWith('ytath_')?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note&&!uni?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
 }
 function varyingControls(v,tk) {
- const fam=CAT.filter(x=>x.family===v.family),stock=instrumentControls(v.instrument_policy,v.id,v.book).basket;
- return `<div class="sw variant-basket">${fam.length>1?`<div class="swg"><span class="swl">Variant</span><div class="join sm">${fam.map(x=>`<a class="join-item ${x.id===v.id?'active':''}" href="${stratLink(x.id,tk)}">${esc((x.variant||x.name).split(' · ')[0])}</a>`).join('')}</div></div>`:''}${stock?`<div class="swg position-controls"><span class="swl">Positions</span><div class="join sm" role="group" aria-label="Maximum simultaneous positions">${['10','20','custom'].map(n=>`<button type="button" class="join-item ${S.position_choice===n?'active':''}" data-position-choice="${n}" aria-pressed="${S.position_choice===n}">${n==='custom'?'Custom':n+' open'}</button>`).join('')}</div>${S.position_choice==='custom'?`<form id="position-limit" class="custom-position"><label>Max open <input name="max_positions" type="number" min="1" max="100" step="1" required value="${esc(S.max_positions)}"></label><button type="submit" class="dbtn sm">Apply</button><span role="status" id="position-error"></span></form>`:''}<small>${S.run_scope==='basket'?`1/${esc(S.max_positions)} per position · unused slots in cash`:'Applies when a basket is selected'}</small></div>`:''}</div>`;
+ const stock=instrumentControls(v.instrument_policy,v.id,v.book).basket&&!(isYt(v)&&universeRunnable(uniOf(v.id),v.id)),presets=universeScope(v)?[]:YT_PRESETS[v.id]||[],cur=decodeP(S.p);
+ return `<div class="sw variant-basket">${presets.length?`<div class="swg yt-presets"><span class="swl">Preset</span><div class="join sm">${presets.map((x,k)=>`<button type="button" class="join-item ${presetActive(cur,x)&&(!x.ticker||x.ticker===tk)?'active':''}" data-preset="${k}" title="${esc(x.note)}">${esc(x.label)}</button>`).join('')}</div></div>`:''}${stock?`<div class="swg position-controls"><span class="swl">Positions</span><div class="join sm" role="group" aria-label="Maximum simultaneous positions">${['10','20','custom'].map(n=>`<button type="button" class="join-item ${S.position_choice===n?'active':''}" data-position-choice="${n}" aria-pressed="${S.position_choice===n}">${n==='custom'?'Custom':n+' open'}</button>`).join('')}</div>${S.position_choice==='custom'?`<form id="position-limit" class="custom-position"><label>Max open <input name="max_positions" type="number" min="1" max="100" step="1" required value="${esc(S.max_positions)}"></label><button type="submit" class="dbtn sm">Apply</button><span role="status" id="position-error"></span></form>`:''}<small>${S.run_scope==='basket'?`1/${esc(S.max_positions)} per position · unused slots in cash`:'Applies when a basket is selected'}</small></div>`:''}</div>`;
 }
 function selectedSpan(tk){
  const basket=BASKETS.find(b=>b.id===S.basket),span=S.run_scope==='basket'&&basket?basketSpan((S.region==='us'?TICK_ALL_US:TICK_ALL_IN).filter(t=>basket.symbols?.includes(t.ticker))):null;
  if(span){const calendar=(S.region==='us'?TICK_US:TICK_IN)?.find(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50'));if(calendar?.first&&calendar?.last)return {first:span.first>calendar.first?span.first:calendar.first,last:span.last<calendar.last?span.last:calendar.last};}
  return span||TICKERS.find(x=>x.ticker===tk)||TICKERS[0]||{first:'',last:''};
 }
+// Where the team's own reference AFL and trade sheet for a variant are (inside the team's family folder).
+// Dot: green = reference trade sheet; yellow = optimization workbook / highest-return setting; red = neither.
+function refDot(v, tk) {
+  const r = ytFamilyReference(v?.id); if (!r) return '';
+  const m = (R.name === 'strategy' ? universeScope(v) : isUniverseOnly(v.id)) ? universeTradesheet(r, R.name === 'strategy' ? decodeP(S.p) : {}) : mainTradesheet(r, tk, R.name === 'strategy' ? decodeP(S.p) : {});
+  if (m) return `<i class="ref-dot ok" role="img" aria-label="Reference trade sheet available" title="Reference trade sheet: ${esc(m.file.split('/').at(-1))} · ${esc(m.sheet)}"></i>`;
+  if (r.best) return `<i class="ref-dot best" role="img" aria-label="${esc(BEST_SETTING)}" title="${esc(BEST_SETTING)}: ${esc(r.best.file.split('/').at(-1))} · sheet ${esc(r.best.sheet.trim())} · ${esc(r.best.row)}"></i>`;
+  if (r.hasOptimization || r.summary) return `<i class="ref-dot optim" role="img" aria-label="Optimization workbook available" title="Optimization workbook available in the ATH folder${r.summary ? `: ${esc(r.summary.file.split('/').at(-1))}` : ''}"></i>`;
+  return `<i class="ref-dot no" role="img" aria-label="${esc(NO_TRADESHEET)}" title="${esc(NO_TRADESHEET)}${r.summary ? ' · team results cannot be run in the Vault yet' : ''}"></i>`;
+}
+// ---- "Run backtest" parameter window for YT strategies (AmiBroker Parameters style; param-dialog.ts) ----
+// BTST: the AFL's own Param() rows in AFL order and labels (afl-params.ts), opening on the reference sheet's settings.
+// Every row carries its baseline (data-bt-base) for "changed" marking and Reset; rows the engine cannot set are listed apart.
+// BTST: plain labels and choices (param-dialog.ts PLAIN_*); other YT strategies keep their schema labels.
+const btOpts = (p, plain) => (plain && plainOptions(p)) || paramOptions(p) || timeOptions(p);
+const btFmt = (p, x, plain = false) => timeOptions(p) ? hhmm(x) : (btOpts(p, plain)?.find(o => o.value === x)?.label ?? String(+(+x).toFixed(4)));
+function btControl(p, val, base, o = {}) {
+  const id = `bt-${p.key}`, label = o.label || paramTitle(p);
+  const opts = o.options || btOpts(p, o.plain);
+  const ctl = opts
+    ? `<select id="${id}" name="${esc(p.key)}">${opts.map(x => `<option value="${x.value}" ${x.value === val ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`
+    : `<input id="${id}" type="number" name="${esc(p.key)}" ${p.min >= 0 ? 'min="0"' : ''} step="any" value="${val}" inputmode="decimal" data-aflrange="${p.min}:${p.max}:${p.step}">`;
+  const baseLabel = opts?.find(x => x.value === base)?.label ?? btFmt(p, base, o.plain);
+  return `<div class="bt-row${val !== base ? ' changed' : ''}" data-bt-key="${esc(p.key)}" data-bt-base="${base}"><label for="${id}">${esc(label)}</label><div class="bt-ctl">${ctl}</div><small class="bt-def">default ${esc(baseLabel)}${opts ? '' : ` · AFL range ${p.min}–${p.max}, any value runs`}</small></div>`;
+}
+// the instrument named in the window's subtitle: the futures symbol a BTST run trades, the universe, else the index
+function btInstrumentShort(v, tk, src) {
+  if (universeScope(v)) return `${universeText(uniOf(v.id), 'badge', 'F&O stocks')} (${uniOf(v.id)?.symbols ?? ''})`;
+  return btstInstrument(v.id, tk, src)?.symbol || LABEL[tk] || tk;
+}
+function btDialogHtml(v, tk) {
+  const onUni = universeScope(v), btst = !!ytFamilyReference(v.id), schema = btSchema(v), f = document.getElementById('period'), ref = btRef(v, tk), afl = onUni ? universeAflRows(AFL_PARAMS[v.id]) : AFL_PARAMS[v.id];
+  const base = paramValues(schema, ref?.params || {}), cur = { ...base, ...decodeP(S.p) }, sk = Object.fromEntries(schema.map(p => [p.key, p]));
+  const from = f?.elements.from?.value || '', to = f?.elements.to?.value || '', slip = f?.elements.slippage?.value || S.slippage || '0', roll = f?.elements.rollover?.value || S.rollover || '0';
+  const cost = +(S.slippage || 0), costBase = ref ? ref.cost : 0;
+  const row = p => btControl(p, clampParam(p, cur[p.key]), base[p.key], {
+    plain: btst,
+    label: btst ? PLAIN_LABELS[p.key] : undefined,
+    // This ATH variant's engine codes are 1=Daily, 0=Weekly, 2=Monthly.
+    // Keep the displayed order intuitive without sending BTST's 1/2/3 codes.
+    options: v.id === 'ytath_close_entry_on_daily_chart_exit_below' && p.key === 'flt_tf'
+      ? [{value: 1, label: 'Daily'}, {value: 0, label: 'Weekly'}, {value: 2, label: 'Monthly'}]
+      : undefined,
+  });
+  const dateRows = `<div class="bt-row"><label for="bt-from">From</label><div class="bt-ctl"><input id="bt-from" type="date" name="from" value="${esc(from)}" required></div></div>
+        <div class="bt-row"><label for="bt-to">To</label><div class="bt-ctl"><input id="bt-to" type="date" name="to" value="${esc(to)}" required></div></div>`;
+  const costRows = btst
+    ? `<div class="bt-row${cost !== costBase ? ' changed' : ''}" data-bt-key="@cost" data-bt-base="${costBase / 100}"><label for="bt-cost">Brokerage (% a side)</label><div class="bt-ctl"><input id="bt-cost" type="number" name="@cost" min="0" max="1" step="0.01" value="${cost / 100}"></div><small class="bt-def">default ${costBase / 100}</small></div>` // sent as the Vault's slippage (bps a side, taken off returns; trade prices unchanged)
+    : `<div class="bt-row"><label for="bt-slip">Slippage (bps a side)</label><div class="bt-ctl"><input id="bt-slip" type="number" name="slippage" min="0" step="0.1" value="${esc(slip)}"></div></div><div class="bt-row"><label for="bt-roll">Rollover (bps per roll)</label><div class="bt-ctl"><input id="bt-roll" type="number" name="rollover" min="0" step="0.1" value="${esc(roll)}"></div></div>`;
+  // one data source only (user decision 2026-10-26): the main IEOD_FO database as stored; shown, not selectable
+  const srcRow = sk.src ? `<div class="bt-row" data-bt-key="src" data-bt-base="1"><label>Data source</label><div class="bt-ctl"><input type="hidden" name="src" value="1"><span class="bt-fixed">IEOD_FO database (shared, as stored)</span></div><small class="bt-def">2007-01-02 to 2023-02-07</small></div>` : '';
+  const keys = strategyKeys(schema, btst ? (afl || []).map(r => r.key) : []).filter(k => k !== 'sizing');
+  // position sizing as two cards (like the Net Profit choice of the toolbar's Strategy settings)
+  const sz = sk.sizing ? clampParam(sk.sizing, cur.sizing) : null, szBase = sk.sizing ? base.sizing : null;
+  const card = (val, title, note) => `<label class="bt-card${sz === val ? ' selected' : ''}"><input type="radio" name="sizing" value="${val}" ${sz === val ? 'checked' : ''}><span><strong>${title}</strong><small>${note}</small></span></label>`;
+  const sizing = sk.sizing ? `<fieldset class="bt-sec bt-sizing"><legend>Position sizing</legend><div class="bt-row wide bt-cards${sz !== szBase ? ' changed' : ''}" data-bt-key="sizing" data-bt-base="${szBase}">${card(2, 'Fixed quantity', 'The same amount in every trade; profits are not reinvested.')}${card(1, 'Compounding', 'Each trade is a share of current equity; profits are reinvested.')}</div></fieldset>` : '';
+  const body = `${sizing}<fieldset class="bt-sec"><legend>Period and costs</legend>${dateRows}${costRows}${srcRow}</fieldset><fieldset class="bt-sec"><legend>Strategy settings</legend>${keys.map(k => row(sk[k])).join('')}</fieldset>`;
+  return `<dialog id="bt-dialog" class="bt-dialog" aria-labelledby="bt-title"><form id="bt-form" method="dialog">
+    <header class="bt-head"><div><h2 id="bt-title">Strategy settings</h2><p class="bt-sub">${esc(v.variant || v.name)} · ${esc(v.dir || 'Long')} · ${esc(btInstrumentShort(v, tk, cur.src))}</p></div><button type="button" class="bt-x" data-bt-close aria-label="Close">×</button></header>
+    <div class="bt-body">${body}</div>
+    <p class="bt-err" id="bt-err" role="alert"></p>
+    <footer class="bt-foot"><button type="button" class="dbtn sm" data-bt-reset>Reset to defaults</button><span></span><button type="button" class="dbtn sm" data-bt-close>Cancel</button><button type="submit" class="dbtn primary sm">Apply</button></footer>
+    <p class="bt-hint">Apply keeps these settings; <b>Run backtest</b> runs them.</p>
+  </form></dialog>`;
+}
+function btOpen() {
+  if (!STRAT) return; document.getElementById('bt-dialog')?.remove();
+  document.body.insertAdjacentHTML('beforeend', btDialogHtml(STRAT.v, STRAT.tk));
+  const d = document.getElementById('bt-dialog'); btInactive(d); d.showModal ? d.showModal() : d.setAttribute('open', '');
+}
+function btInactive(d) { const vals = {}; d.querySelectorAll('.bt-row [name]').forEach(el => { if (el.name && el.type !== 'date' && !(el.type === 'radio' && !el.checked)) vals[el.name] = +el.value; }); const off = inactiveParams(vals); d.querySelectorAll('[data-bt-key]').forEach(r => r.classList.toggle('inactive', off.has(r.dataset.btKey))); }
+function btMarkChanged(row) { row?.querySelectorAll('.bt-card').forEach(c => c.classList.toggle('selected', !!c.querySelector('input')?.checked)); const el = row?.querySelector('[name]:checked') || row?.querySelector('[name]'); if (el && row.dataset.btBase !== undefined) row.classList.toggle('changed', Math.abs(+el.value - +row.dataset.btBase) > 1e-9); }
+// after a run from the window: bring the results into view and say what ran
+function btAnnounce() {
+  let n = 0; const t = setInterval(() => { const m = document.querySelector('.metrics'); if (m || ++n > 120) { clearInterval(t); if (!m) return; m.scrollIntoView({behavior: 'smooth', block: 'center'}); m.classList.add('bt-flash'); setTimeout(() => m.classList.remove('bt-flash'), 2400); } }, 250);
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-bt-open]')) { e.preventDefault(); return btRun(); }
+  const d = document.getElementById('bt-dialog'); if (!d) return;
+  if (e.target.closest('[data-bt-close]') || e.target === d) { d.close?.(); d.remove(); return; }
+  if (e.target.closest('[data-bt-reset]')) { d.querySelectorAll('[data-bt-key][data-bt-base]').forEach(row => { row.querySelectorAll('[name], [data-bt-range]').forEach(el => { if (el.type === 'radio') el.checked = el.value === row.dataset.btBase; else el.value = row.dataset.btBase; }); btMarkChanged(row); }); btInactive(d); }
+});
+document.addEventListener('input', e => {
+  const d = e.target.closest('#bt-dialog'); if (!d) return;
+  const k = e.target.dataset.btRange || e.target.name, row = e.target.closest('.bt-row');
+  if (e.target.dataset.btRange) { const n = d.querySelector(`input[type=number][name="${k}"]`); if (n) n.value = e.target.value; }
+  else if (e.target.type === 'number') { const r = d.querySelector(`[data-bt-range="${k}"]`); if (r) r.value = e.target.value; }
+  btMarkChanged(row); btInactive(d);
+});
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'bt-form' || !STRAT) return; e.preventDefault();
+  const fd = new FormData(e.target), schema = btSchema(STRAT.v), from = String(fd.get('from') || ''), to = String(fd.get('to') || '');
+  if (!from || !to || from >= to) { document.getElementById('bt-err').textContent = 'From must be before To.'; return; }
+  const vals = {}; for (const p of schema) if (fd.has(p.key)) vals[p.key] = +fd.get(p.key);
+  // the URL keeps every changed value plus the reference sheet's own settings, so the reference is not re-applied over them
+  const ref = btRef(STRAT.v, STRAT.tk), p = changedParams(schema, vals);
+  for (const k of Object.keys(ref?.params || {})) if (k in vals) { const d = schema.find(x => x.key === k); p[k] = d ? clampParam(d, vals[k]) : vals[k]; }
+  const bps = fd.has('@cost') ? Math.max(0, Math.round(+fd.get('@cost') * 10000) / 100) : null;
+  const t = selectedSpan(S.tk), win = coverageWindow(STRAT.v, S.tk), slip = bps !== null ? bps : Math.max(0, +fd.get('slippage') || 0), slippage = slip === 0 ? '0.0' : String(slip);
+  const f2 = from <= t.first || (win && from === win.from) ? '' : from, t2 = to >= t.last || (win && to === win.to) ? '' : to;
+  const dlg = document.getElementById('bt-dialog'); dlg.close?.(); dlg.remove();
+  // a zero cost is written as 0.0: the plain default '0' would be dropped from the URL and the reference 0.03% applied again.
+  // The Net Profit display follows the sizing (fixed quantity: rupee result; compounding: compounded returns).
+  const sizing = 'sizing' in vals ? { report_mode: vals.sizing === 2 ? 'fixed' : 'compound' } : {};
+  BT_PENDING = { path: R.path, state: { ...S, p: encodeP(p), from: f2, to: t2, slippage, ...sizing, ...(fd.has('rollover') ? { rollover: String(Math.max(0, +fd.get('rollover') || 0)) } : {}) } };
+  btPendingMark();
+});
+// settings applied in the Strategy settings popup wait for "Run backtest"
+let BT_PENDING = null;
+function btPendingMark() {
+  const b = document.querySelector('[data-bt-open]'); if (!b) return;
+  b.classList.toggle('bt-pending', !!BT_PENDING);
+  let n = document.getElementById('bt-pending-note');
+  if (BT_PENDING && !n) { b.insertAdjacentHTML('afterend', '<small id="bt-pending-note" class="bt-pending-note" role="status">Settings changed — press Run backtest</small>'); }
+  else if (!BT_PENDING && n) n.remove();
+}
+function btRun() {
+  const job = BT_PENDING && BT_PENDING.path === R.path ? BT_PENDING : null; BT_PENDING = null;
+  if (job && href(job.path, job.state) !== location.hash) go(job.path, job.state); else render();
+  btAnnounce();
+}
+addEventListener('hashchange', () => { if (BT_PENDING && BT_PENDING.path !== R.path) BT_PENDING = null; });
+// the toolbar's settings icon opens the parameter popup on pages that have one
+document.addEventListener('click', e => {
+  const t = e.target.closest('.strategy-settings-trigger'); if (!t || !STRAT || R.name !== 'strategy' || !btSchema(STRAT.v)?.length || !isYt(STRAT.v)) return;
+  e.preventDefault(); e.stopPropagation(); btOpen();
+}, true);
+function btstInstrumentNote(v, tk) {
+  if (universeScope(v)) return `<p class="instrument-note btst-instrument" data-btst-instrument><b>${esc(universeTradedLine(decodeP(S.p).src || 1, uniOf(v.id), STRAT?.d?.instrument?.database || undefined))}</b>. A portfolio of up to ${esc(STRAT?.d?.max_positions ?? decodeP(S.p).max_positions ?? 10)} positions; ${esc(universeText(uniOf(v.id), 'calendar_note', 'NIFTY futures supply the calendar and the buy & hold comparison.'))}</p>`;
+  const ins = btstInstrument(v?.id, tk, decodeP(S.p).src || 1); if (!ins) return '';
+  return `<p class="instrument-note btst-instrument" data-btst-instrument><b>Traded: ${esc(ins.symbol)}</b> · ${esc(ins.source)}. The index button only selects the series.</p>`;
+}
+function referenceBox(v, tk) {
+  const r = ytFamilyReference(v?.id); if (!r) return '';
+  const file = f => `<code class="ref-path">${esc(ytRefPath(v?.id, f.file))}</code><span class="ref-sub">sheet <b>${esc(f.sheet)}</b> · ${esc(f.detail)}</span>`;
+  const main = universeScope(v) ? universeTradesheet(r, decodeP(S.p)) : mainTradesheet(r, tk, decodeP(S.p));
+  const sheet = main ? file(main) : r.best ? bestSettingBlock(v, tk, r.best)
+    : `<b class="ref-none">${esc(NO_TRADESHEET)}</b>${r.summary ? `<span class="ref-sub">Team results only (no trade list):</span>${file(r.summary)}` : ''}`;
+  return `<section class="box ref-box" data-btst-reference><div class="box-h">Reference <small>the team's own files, inside the ${esc(ytFamilyFolder(v?.id))} folder</small></div>
+    <dl class="ref-list"><div><dt>Reference AFL</dt><dd><code class="ref-path">${esc(ytRefPath(v?.id, r.afl))}</code><span class="ref-sub">${esc(r.aflNote)}</span></dd></div>
+    <div><dt>${!main && r.best ? 'Compared with' : 'Reference trade sheet'}</dt><dd>${sheet}${(() => { if (!universeScope(v)) return ''; const pk = uniPick(v.id), def = uniBaskets(v.id).find(b => b.key === uniDefaultBasket(v.id)); if (pk.isDefault && !S.only) return '';
+      const now = S.only ? `the stock ${S.only} alone` : `${pk.b?.label || ''} · ${UNI_SET[pk.set]}`; return `<span class="ref-sub ref-none" data-ref-basket-note>This run uses ${esc(now)}; the reference sheet was made on ${esc((def?.cp || '').replace(/\.tls$/, ''))} (C&amp;P). Compare with it only on that basket.</span>`; })()}</dd></div></dl></section>`;
+}
+// no trade sheet: the team's highest-return row (results workbook), where it is, its settings and numbers, and one link that
+// sets the whole run (instrument, settings, brokerage, period); a tick when the page already runs it
+function bestSettingBlock(v, tk, best) {
+  const uni = universeScope(v), vals = paramValues(btSchema(v), decodeP(S.p)), t = best.team, n = x => (+x).toLocaleString('en-IN', {maximumFractionDigits: 2});
+  const on = bestActive(best, {universe: uni, ticker: tk, params: vals, cost: +(S.slippage || 0), from: S.from || '', to: S.to || ''});
+  const where = best.scope === 'universe' ? `F&O stocks (${UNIVERSE?.universe || 'FO STOCKS C&P'})` : btstFuturesSymbol(best.ticker) || LABEL[best.ticker] || best.ticker;
+  const state = {...S, run_scope: best.scope === 'universe' ? 'universe' : 'single', basket: '', tk: best.scope === 'universe' ? 'NIFTY 50' : best.ticker, from: best.from || '', to: best.to, p: encodeP(best.params), slippage: String(best.cost), report_mode: 'compound'};
+  return `<b class="ref-best">${esc(BEST_SETTING)}</b><code class="ref-path">${esc(ytRefPath(v?.id, best.file))}</code>
+    <span class="ref-sub">sheet <b>${esc(best.sheet.trim())}</b>${best.table ? ` · table ${esc(best.table)}` : ''} · <b>${esc(best.row)}</b> · ${esc(best.cells)}</span>
+    <span class="ref-sub">Setting: ${esc(best.settings)}; period ${esc(best.from || 'first data day')} to ${esc(best.to)}.</span>
+    <span class="ref-sub">Team result: Net ${n(t.net)}% · CAR ${n(t.car)}% · max drawdown ${n(t.mdd)}% · ${n(t.trades)} trades · ${n(t.win)}% winners · avg ${n(t.avg)}% per trade</span>
+    ${on ? `<span class="ref-best-on" role="status" data-best-active>✓ This page runs the best setting (${esc(where)})</span>`
+      : `<span class="ref-best-off"><a class="dbtn sm" data-best-setting href="${href(R.path, state)}">Run with the best setting</a><small>sets ${esc(where)}, the settings, brokerage ${n(best.cost / 100)}% and the period</small></span>`}`;
+}
+// The dates in which every series a strategy requires has data, when narrower than the instrument's history (e.g. BTST futures bars).
+function coverageWindow(v, tk) {
+  if (universeScope(v) && uniOf(v.id)?.first && uniOf(v.id)?.last) return { from: uniOf(v.id).first, to: uniOf(v.id).last };
+  const needs = v?.id?.startsWith('ytbtst_') && decodeP(S.p).src === 2 ? ['BTST_F5M.C1525'] : v?.needs_series;
+  return strategyDataWindow(needs, [...TICK_ALL_IN, ...(TICK_ALL_US || [])].find(x => x.ticker === tk)?.coverage, selectedSpan(tk));
+}
 function periodPanel(tk, d, issue = null) {
-  const t = selectedSpan(tk), first = t.first, last = t.last, f = S.from || first, to = S.to || last;
+  // A blank period means all the data the strategy has, so such a strategy's default period is its data coverage.
+  const t = selectedSpan(tk), first = t.first, last = t.last, win = coverageWindow(STRAT?.v || ALLCAT.find(v => v.id === R.id), tk), f = S.from || (win ? win.from : first), to = S.to || (win ? win.to : last);
   // All / Before book / After book (the book's publication year splits the data like in-sample and out-of-sample)
   const noBefore = +first.slice(0, 4) > PUB - 1, noAfter = +last.slice(0, 4) < PUB;
   const tog = [['All', '', '', `${first.slice(0, 4)}–${last.slice(0, 4)}`, false], ['Before book', '', `${PUB - 1}-12-31`, noBefore ? 'no data' : `to ${PUB - 1}`, noBefore], ['After book', `${PUB}-01-01`, '', noAfter ? 'no data' : `${PUB}–${last.slice(0, 4)}`, noAfter]].filter((_,i)=>PUB || i===0);
+  // Such a strategy cannot run on the instrument's whole history, so its coverage replaces "All" and is selected by default.
+  if (win) tog.splice(0, tog.length, ['Data coverage', '', '', `${win.from.slice(0, 4)}–${win.to.slice(0, 4)}`, false]);
   const on = ([, a, b]) => (S.from || '') === a && (S.to || '') === b;
   return `<p class="print-only">Backtest: ${esc(f)} to ${esc(to)} · Slippage: ${esc(S.slippage||0)} bps per side · Rollover: ${esc(S.rollover||0)} bps per actual roll · Basket: ${esc(S.basket||'Single instrument')}</p><form class="period" id="period"><span class="swl">Backtest period</span>
     <div class="join sm ptog" role="group" aria-label="Period">${tog.map(x => `<button type="button" class="join-item ${on(x) ? 'active' : ''} ${x[4] ? 'off' : ''}" data-period="${x[1]}|${x[2]}" aria-pressed="${on(x)}" ${x[4] ? 'disabled title="No data before the book was published"' : ''}>${x[0]}<small>${x[3]}</small></button>`).join('')}</div>
@@ -1645,7 +2143,244 @@ function withheldStrategy(v,tk,crumbs,switches,issue) {
   const recovery=S.run_scope==='basket'&&S.membership==='current'&&instrumentControls(v.instrument_policy,v.id,v.book).basket&&issue.status==='needs_data'
     ?priceRecoveryPeriod(coverage,S.from||span.first,S.to||span.last):null;
   const recoveryHTML=recovery?`<p data-price-recovery>Daily price coverage is available from ${esc(recovery.from)} to ${esc(recovery.to)}. Some requested dates have no supplied quotation; the selected dates have not been changed. <button type="button" class="dbtn sm" data-period="${recovery.from}|${recovery.to}">Run available price period</button></p>`:'';
-  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${esc(heldLabel(issue))}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${esc(heldLabel(issue))}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p>${recoveryHTML}</div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}<span data-react-slot="visual-rules"></span></div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
+  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${esc(heldLabel(issue))}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${esc(heldLabel(issue))}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. ${isYt(v)?'The rules below':'The book information and rules below'} are reference material, not evidence of a completed backtest.</p>${recoveryHTML}</div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':isYt(v)?'Rules and implementation notes':'Book rules and implementation notes'}<span data-react-slot="visual-rules"></span></div>${rulesPanel(v)}</section>${referenceBox(v, tk)}${gptSection(v,tk,null,issue)}`;
+}
+
+// ---- BTST on the F&O stock universe (guru/yt/universe-run): portfolio of the team's AFL rules over FO STOCKS C&P ----
+const UNIVERSE_RUNS = new Map(), UNIVERSE_SUMMARY = {}; // results of this session (4 kept), last summary per sub-variant for the cards
+const UNIVERSE_BUSY = 'Another stock-universe run is in progress, try again in a few seconds.';
+async function fetchUniverse(query) {
+  const url = `${API_IN}/guru/yt/${new URLSearchParams(query).get('id')?.startsWith('ytath_') ? 'ath-run' : 'universe-run'}?${query}`;
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, { signal: AbortSignal.timeout(125000) });
+    if (response.status === 429) { if (attempt) throw Error(UNIVERSE_BUSY); await new Promise(ok => setTimeout(ok, 4000)); continue; }
+    if (!response.ok) throw Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+}
+// universe trade sheet: every trade reachable — symbol filter, year, pages of 500 (newest first); downloads hold all
+const UNI_SHEET = { symbol: '', year: '', page: 1 };
+function universeTradeSheet(d) {
+  const all = universeTradeRows(d.trades), pg = tradePage(all.slice().reverse(), { ...UNI_SHEET, size: 500 });
+  const cell = (v, i) => v === null ? '—' : UNIVERSE_PERCENT_COLUMNS.includes(i) ? pct(v, 2) : i === 8 ? fx(v, 0) : i === 10 ? (+v).toFixed(4) : typeof v === 'number' ? v.toFixed(2) : esc(v);
+  const count = `${pg.total ? `${fx(pg.first, 0)}–${fx(pg.last, 0)} of ${fx(pg.total, 0)}` : 'No trades'}${UNI_SHEET.symbol || UNI_SHEET.year ? ` (filtered from ${fx(all.length, 0)})` : ''} · page ${pg.page} of ${pg.pages}`;
+  const pager = `<span class="uni-pages"><button type="button" class="dbtn sm" data-uni-page="${pg.page - 1}" ${pg.page <= 1 ? 'disabled' : ''}>‹ Newer</button><span class="uni-count">${count}</span><button type="button" class="dbtn sm" data-uni-page="${pg.page + 1}" ${pg.page >= pg.pages ? 'disabled' : ''}>Older ›</button></span>`;
+  // the Year choice and the pager sit in the toolbar next to the Symbol filter; a second pager below the table box
+  const top = `<label class="dfield">Year <select id="universe-year"><option value="">All years</option>${pg.years.map(y => `<option ${y === UNI_SHEET.year ? 'selected' : ''}>${y}</option>`).join('')}</select></label>${pager}`;
+  const table = `<table class="tbl tl" id="tradesheet"><thead><tr>${UNIVERSE_TRADE_HEADERS.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${pg.rows.map(r => `<tr>${r.map((v, i) => `<td class="${[4, 7, 8, 9, 10, 11].includes(i) ? 'n' : ''}${i === 11 ? (v < 0 ? ' neg' : ' pos') : ''}">${cell(v, i)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  const bottom = `${pg.pages > 1 ? pager : ''}<p class="rnote" data-universe-shown>All ${fx(all.length, 0)} trades are in the Excel and CSV downloads.</p>`;
+  return { top, table, bottom };
+}
+const uniRedraw = () => { if (STRAT?.d?.kind !== 'universe') return; const t = universeTradeSheet(STRAT.d);
+  for (const [id, html] of [['universe-nav', t.top], ['universe-trades', t.table], ['universe-nav-bottom', t.bottom]]) { const el = document.getElementById(id); if (el) el.innerHTML = html; } };
+document.addEventListener('input', e => { if (STRAT?.d?.kind !== 'universe') return;
+  if (e.target.id === 'universe-symbol') { UNI_SHEET.symbol = e.target.value; UNI_SHEET.page = 1; uniRedraw(); }
+  else if (e.target.id === 'universe-year') { UNI_SHEET.year = e.target.value; UNI_SHEET.page = 1; uniRedraw(); } });
+document.addEventListener('click', e => { const b = e.target.closest('[data-uni-page]'); if (!b || STRAT?.d?.kind !== 'universe') return; UNI_SHEET.page = +b.dataset.uniPage; uniRedraw(); document.getElementById('universe-nav')?.closest('.uni-toolbar')?.scrollIntoView({ block: 'start' }); });
+// ---- ATH stock-universe parameter optimization (guru/yt/ath-optimize): the engine runs the backtest once per combination of the ticked settings ----
+
+// ---- the lab-style result of an ATH grid for the 4 verified variants (same look and files as ADR): Now / #1-#3, downloads, sortable list
+const ATH_LAB = {};
+// S = the portfolio / backtest settings (positions, start bar, sizing, ranking), listed under Setup: on the optimization sheet's Rules
+const athEngineOpt = (label = '') => /^\s*(ENGINE OPTION|\(engine option|ASSUMPTION)/i.test(label); // the engine's own choices, not AFL Params
+// E entry, F filters (stock and market), X exit, S portfolio / backtest set-up (positions, sizing, ranking, reshuffle, engine options);
+// the label decides where the key alone cannot ("ST EXIT Period" is an exit setting, "Buying Buffer %" an entry one, "RANK FOR ENTRY" a ranking one)
+const athGroup = (k, label = '') =>
+  athEngineOpt(label) || /^(max_positions|tstart|pct|equity|sizing|alloc|eqallo|deadstock|rank\w*|resf|exitrank|backtest|backtestmarket|bkmkt|entryday|janentryday|buysize|sellsize|comm1|mcxsymbl)$/.test(k) || /rank/i.test(label) ? 'S'
+  : /\bexit\b/i.test(label) ? 'X'
+  : /\bentry\b|buying buffer|buy buffer|buy-side/i.test(label) || /^(noofloss|losspct)$/.test(k) ? 'E'
+  : /^(exit|hardstop|hardsl|hsl|tsl|buffer|sell|pb|minprofit|profit|pt_pct|sl_pct|slpct|trail|atr_sl|atr_pt|atrtrail|days_sl|ndays|holdingdays|typeofexit|swing|sharesselling|prcnt|ver$)/.test(k) || /_(exit|sell)/.test(k) ? 'X'
+  : /^(bpd|bfactor|stflt|st_flt|flt|filter|aux|penny|turn|mkt|sflt|iflt|istflt|prflt|circuit|bigprice|volflt|avg_turnover|avgturnover|vix|avg_vix|datahole|ver1$)/.test(k) ? 'F' : 'E';
+function athLabHTML(v, res) {
+  const keys = Object.keys(res.grid), ps = athOptParams(btSchema(v)), fixed = {...Object.fromEntries(ps.map(d => [d.key, d.def])), ...decodeP(S.p)};
+  const labels = keys.map(k => ps.find(d => d.key === k)?.label || k);
+  const idx = res.rows.map((_, i) => i).filter(i => !res.rows[i].default), now = res.rows.findIndex(r => r.default);
+  const ares = {id: v.id, dims: keys.map(k => ({key: k, values: res.grid[k]})), fixed, rows: idx.map(i => keys.map(k => res.rows[i].p[k])), sheet: idx.map(i => res.sheet[i]), now_sheet: res.sheet[now]};
+  const lab = labRows(ares, 'Long', fixed), ci = AM_COLUMNS.indexOf('CAR/MDD'), ti = AM_COLUMNS.indexOf('# Trades');
+  // the three best on CAR/MDD among the combinations that traded at least once a year (25 trades over the 22 years)
+  const top = lab.rows.filter(r => r.am[ti] >= 25 && Number.isFinite(r.am[ci])).sort((a, b) => b.am[ci] - a.am[ci]).slice(0, 3).map(r => r.k);
+  const sort = ATH_LAB[v.id]?.sort || {col: labels.length + 2, dir: -1};
+  ATH_LAB[v.id] = {res, ares, keys, labels, lab, top, sort, fixed, params: idx.map(i => res.rows[i].p)};
+  return `<div class="lab-results">${resultsHTML(ares, labels, lab, top, 'CAR', sort, false)}</div>`;
+}
+async function athLabRun(v, k, bars = false) {
+  const A = ATH_LAB[v.id], uq = universeQuery(v.id, {from: S.from, to: S.to, slippage: S.slippage, params: {...A.fixed, ...A.params[k]}});
+  if (bars) uq.set('bars', '1');                                          // each trade's own daily bars, for the team tradesheet's All Index Explore and MAE
+  { const pk = uniPick(v.id); if (pk.b && !pk.isDefault) { uq.set('watchlist', pk.set === 'current' ? pk.b.current : pk.b.cp); if (pk.set === 'past') uq.set('exclude_watchlist', pk.b.current); } }
+  const d = await fetchUniverse(uq.toString()); if (d?.status !== 'ready') throw new Error(d?.note || d?.error || 'The run is not available.');
+  return d;
+}
+const athLabReport = d => buildReport(athRunOf(d), null, {capital: d.model_initial_equity || 1000000, side: ((Number(d.costs?.fees_bps) || 0) + (Number(d.costs?.slippage_bps) || 0)) / 10000});
+const athShort = l => l.replace(/\s*[(;].*$/, '').trim() || l;             // the sheet's header cell is narrow: "Hard Stoploss % (0 = off; ...)" -> "Hard Stoploss %"
+const athLabName = (A, k) => A.keys.map((key, i) => `${key} ${A.lab.rows[k].settings[i]}`).join(' · ');
+// the research team's Excel tradesheet for one ATH combination, the same workbook as ADR's "Download TS" (ts-workbook.js): every trade of the basket with its own symbol,
+// All Index Explore holds, per trade, the bar that sets its MAE (maeBars), costs are the run's own (fees + slippage per side, both sides) and stay editable in C1:E1
+async function athLabTradesheet(v, k) {
+  const A = ATH_LAB[v.id], d = await athLabRun(v, k, true), params = {...A.fixed, ...A.params[k]};
+  const fmt = x => String(x).slice(0, 10), dmy = x => fmt(x).split('-').reverse().join('-'), name = athLabName(A, k);
+  const lines = c => ruleLines(v, params).filter(r => r[0] === c).map(r => r[1]);
+  const cost = d.costs || {}, side = (Number(cost.fees_bps) || 0) + (Number(cost.slippage_bps) || 0), dates = d.dates || [];
+  const rows = (d.trades || []).filter(t => Number.isFinite(t.entry_px) && Number.isFinite(t.exit_px))
+    .map(t => ({dir: /short/.test(t.reason || '') ? 'Short' : 'Long', entry: fmt(t.entry), entryPx: t.entry_px, exit: fmt(t.exit), exitPx: t.exit_px, sym: t.symbol, bars: (t.bars || []).map(b => [fmt(b[0]), b[1], b[2], b[3], b[4]])}))
+    .sort((a, b) => (a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
+  if (!rows.length) throw Error('This combination has no trades.');
+  const bars = maeBars(rows);                                              // one bar per trade (the one that sets its MAE) keeps the file small; the MAE formulas give the same result
+  await loadXlsx(); if (!window.XLSX?.utils) throw Error('The Excel library did not load.');
+  const tab = fileSafe(name).replace(/'/g, '').slice(0, 31);
+  const book = buildTsWorkbook(XLSX, {ticker: '', tabName: tab, trades: rows, bars, mae: rows.map(t => maeOf(t, t.bars)),
+    rules: {timeframe: 'Daily', index: d.universe || STRAT.tk, period: `${dmy(dates[0])} to ${dmy(dates.at(-1))}`, position: rows.some(t => t.dir === 'Short') ? 'Short' : 'Long', filter: lines('F').join('; ') || 'Without filter', setup: '—', entry: lines('E').join('; '), exit: lines('X').join('; '), aflPath: ''},
+    costs: {impact: 2 * side / 10000, rollLong: 0, rollShort: 0}});
+  saveBytes(await tsBytes(XLSX, book), `TS_${fileSafe(name)}.xlsx`);
+}
+async function athLabAll(v, btn) {
+  const A = ATH_LAB[v.id], n = A.lab.rows.length, one = $('#adr-ts-mode')?.value === 'one', tk = STRAT.tk, label0 = btn.textContent;
+  const files = [], sheets = [], sum = [['No.', 'Combination', 'Net Profit %', 'CAR', 'MaxSysDD', 'CAR/MDD', '# trades', '# winners', '# losers', 'Avg. profit/loss %', 'Sharpe', 'Buy & hold CAGR']];
+  btn.disabled = true;
+  try {
+    for (let k = 0; k < n; k++) {
+      btn.textContent = `Running ${k + 1} of ${n}…`;
+      const d = await athLabRun(v, k), rep = athLabReport(d), s = rep.system, a = rep.all, nn = String(k + 1).padStart(2, '0'), name = athLabName(A, k);
+      sum.push([k + 1, name, 100 * s.net_profit, 100 * s.cagr, 100 * s.max_sys_dd, s.car_mdd, a.trades, a.winners.count, a.losers.count, 100 * a.avg, s.sharpe_trades, rep.buy_hold ? 100 * rep.buy_hold.cagr : null]);
+      const sheet = {name: one ? `${nn} ${name}`.slice(0, 31) : 'Tradesheet', layout: 'table', header: TRADE_COLUMNS, rows: tradeRows(rep, '')};
+      if (one) sheets.push(sheet); else files.push([`${nn} ${fileSafe(name)}`.slice(0, 90) + '.xlsx', buildLabXlsx([sheet])]);
+    }
+    btn.textContent = 'Building the workbook…';
+    const summary = {name: 'Summary', layout: 'table', header: sum[0], rows: sum.slice(1)};
+    if (one) saveBytes(buildLabXlsx([summary, ...sheets]), `tradesheets ${tk}.xlsx`);
+    else { files.unshift(['00 Summary.xlsx', buildLabXlsx([summary])]); saveBytes(zipStored(files), `tradesheets ${tk}.zip`, 'application/zip'); }
+  } finally { btn.disabled = false; btn.textContent = label0; }
+}
+function athLabSheet(v) {
+  const A = ATH_LAB[v.id], tk = uniOf(v.id)?.universe || STRAT.tk, dmy = x => String(x).slice(0, 10).split('-').reverse().join('-'), st = athOptState(v), short = A.labels.map(athShort);
+  const lines = {E: [], F: [], X: [], S: []};
+  A.keys.forEach((k, i) => { const vals = A.res.grid[k], r = st.rng[k]; lines[athGroup(k, A.labels[i])].push(rangeLine(short[i], vals[0], vals.at(-1), r ? +r.step : (vals[1] - vals[0]) || 1)); });
+  // each section as the lab writes it: the rule text (optimized settings at their From value), then " · " and the setting ranges
+  const rules = ruleLines(v, {...A.fixed, ...Object.fromEntries(A.keys.map(k => [k, A.res.grid[k][0]]))});
+  const sec = g => [rules.filter(r => r[0] === g).map(r => r[1]).join('; '), ...lines[g]].filter(Boolean).join(' · ');
+  const bps = Number(A.res.slippage ?? S.slippage ?? 0), from = S.from || '2000-01-03', to = S.to || '2022-03-31';
+  const bytes = buildOptimizationXlsx({labels: short, rows: A.lab.rows.map(r => ({no: r.no, am: r.am, settings: r.settings})), rules: {timeframe: 'Daily', index: tk, period: `${dmy(from)} to ${dmy(to)}`, brokerage: bps > 0 ? `${bps} bps per side` : 0, openPosition: A.fixed.max_positions ?? 1,
+    aflPath: 'Strategy Vault · YT Strategies', strategy: v.name || v.id, position: 'Long', filter: sec('F'), setup: sec('S'), entry: [sec('E')].filter(Boolean), exit: [sec('X')].filter(Boolean)}});
+  saveBytes(bytes, optimsFileName(tk, 'Long', ''));
+}
+function athLabClick(e) {
+  const v = STRAT?.v, A = v && ATH_LAB[v.id]; if (!A) return false;
+  const t = e.target;
+  const stats = t.closest('[data-stats]'); if (stats) { go('/s/' + encodeURIComponent(v.id), {...S, p: encodeP({...A.fixed, ...A.params[+stats.dataset.stats]}), run_scope: 'universe'}); return true; }
+  const ts = t.closest('[data-tsrow]'); if (ts) { const l = ts.textContent; ts.textContent = '…'; athLabTradesheet(v, +ts.dataset.tsrow).then(() => { ts.textContent = l; }, err => { console.error('Tradesheet download failed', err); ts.title = 'Failed: ' + (err?.message || err); ts.textContent = 'Failed'; }); return true; }
+  const th = t.closest('th[data-sort]'); if (th) { const c = +th.dataset.sort; A.sort = A.sort && A.sort.col === c ? {...A.sort, dir: -A.sort.dir} : {col: c, dir: c < A.labels.length ? 1 : -1}; $('#adr-list').innerHTML = listHTML(A.labels, A.lab, A.sort); return true; }
+  if (t.closest('[data-showall]')) { A.sort = {...(A.sort || {col: -1, dir: 1}), all: true}; $('#adr-list').innerHTML = listHTML(A.labels, A.lab, A.sort); return true; }
+  if (t.closest('#adr-opt-sheet')) { athLabSheet(v); return true; }
+  const all = t.closest('#adr-ts-all'); if (all) { athLabAll(v, all).catch(err => { all.textContent = 'Failed: ' + err.message; }); return true; }
+  return false;
+}
+
+const ATH_OPT = {}; // per sub-variant: { on: {key: bool}, rng: {key: {from,to,step}}, sort, res, msg, busy }
+const athOptState = v => ATH_OPT[v.id] || (ATH_OPT[v.id] = { on: {}, rng: {}, sort: 'cagr', res: null, msg: '', busy: false });
+function athOptGrids(v, st) {
+  const out = {}, fixed = decodeP(S.p); for (const d of athOptParams(btSchema(v))) { if (!st.on[d.key]) continue; const r = st.rng[d.key] || defaultRange({ ...d, def: fixed[d.key] ?? d.def }); out[d.key] = rangeValues(+r.from, +r.to, +r.step, d); } return out;
+}
+function athOptBody(v) {
+  const st = athOptState(v), ps = athOptParams(btSchema(v)), fixed = decodeP(S.p), grids = athOptGrids(v, st), problem = gridProblem(grids), n = Object.keys(grids).length ? comboCount(grids) : 0;
+  const viewer = window.VAULT_APP && window.VAULT_USER?.role === 'viewer';
+  const row = d => { const r = st.rng[d.key] || defaultRange({ ...d, def: fixed[d.key] ?? d.def }), inp = f => `<input type="number" data-f="${f}" value="${esc(r[f])}" step="any">`;
+    return `<tr data-k="${esc(d.key)}" class="${st.on[d.key] ? '' : 'offrow'}" title="Default ${esc(fixed[d.key] ?? d.def)} · AFL range ${esc(d.min)} – ${esc(d.max)}; any value runs"><td><input type="checkbox" data-f="on" ${st.on[d.key] ? 'checked' : ''} aria-label="Vary ${esc(d.label || d.key)}"></td><td>${esc(d.label || d.key)}</td><td>${inp('from')}</td><td>${inp('to')}</td><td>${inp('step')}</td><td class="n muted" data-cnt>${st.on[d.key] ? (grids[d.key]?.length ?? 0) : 'fixed'}</td></tr>`; };
+  const form = `<section class="box${isAth4(v.id) ? ' adr-opt' : ''}" id="ath-optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the default value (or the value set on the backtest page). Runs on the period selected above.</small></div>
+    ${optGrid(ps, row, 'ath-opt-grid')}
+    <div class="obar"><span class="ocount" id="ath-opt-count">${n ? `${fx(n, 0)} combinations plus the current settings · about ${fx(Math.max(1, n + 1) * 1.5, 0)}–${fx((n + 1) * 4, 0)} seconds. ` : ''}${esc(problem)}</span><button class="dbtn primary sm" type="button" id="ath-opt-run" ${problem || st.busy || viewer ? 'disabled' : ''} ${viewer ? 'title="Researcher access is required to optimize"' : ''}>${st.busy ? 'Running…' : 'Run optimization'}</button><span class="grow"></span><span class="otried muted">${optTried()}</span></div></section>`;
+  let result = '';
+  if (st.busy) result = `<section class="box" id="ath-opt-res">${bookLoader('Rust is running the stock-universe backtests…')}</section>`;
+  else if (st.msg) result = `<section class="box" id="ath-opt-res"><div class="empty gapbox"><b>Optimization not available</b>${esc(st.msg)}</div></section>`;
+  else if (st.res && st.res.sheet && isAth4(v.id)) result = `<section class="box adr-opt" id="ath-opt-res">${athLabHTML(v, st.res)}</section>`;
+  else if (st.res) {
+    const res = st.res, keys = Object.keys(res.grid), sorted = athSortRows(res.rows, st.sort);
+    const link = r => href('/s/' + encodeURIComponent(v.id), { ...S, p: encodeP({ ...fixed, ...r.p }), run_scope: 'universe' });
+    const sortBtn = (k, t) => `<button type="button" class="join-item ${st.sort === k ? 'active' : ''}" data-ath-sort="${k}">${t}</button>`;
+    result = `<section class="box" id="ath-opt-res"><div class="box-h">Results <span class="legend"><small>${fx(res.rows.length, 0)} runs in ${fx(res.seconds, 0)} s · ${esc(S.from || 'start of data')} to ${esc(S.to || 'end of data')}</small><span class="join sm">${sortBtn('cagr', 'CAGR')}${sortBtn('sharpe', 'Sharpe')}${sortBtn('car_mdd', 'CAR/MDD')}</span></span></div>
+      <div class="tlog"><table class="tbl" id="ath-opt-table"><thead><tr><th>#</th>${keys.map(k => `<th>${esc(ps.find(d => d.key === k)?.label || k)}</th>`).join('')}<th>CAGR</th><th>Sharpe</th><th>Max DD</th><th>CAR/MDD</th><th>Trades</th><th>Win rate</th><th></th></tr></thead><tbody>${sorted.map((r, i) => { const m = r.stats || {}, cur = r.default;
+        return `<tr ${cur ? 'class="hl" style="background:var(--hover,rgba(120,120,255,.12));font-weight:600"' : ''}><td>${i + 1}</td>${keys.map(k => `<td class="n">${esc(cur ? (fixed[k] ?? ps.find(d => d.key === k)?.def ?? '') : r.p[k])}</td>`).join('')}<td class="n ${cls(m.cagr)}">${pct(m.cagr, 2)}</td><td class="n">${fx(m.sharpe)}</td><td class="n neg">${pct(m.max_dd, 2)}</td><td class="n">${fx(carMdd(m))}</td><td class="n">${fx(m.trades, 0)}</td><td class="n">${pct(m.win_rate, 1)}</td><td>${cur ? 'current settings · ' : ''}<a href="${link(r)}">Open backtest</a></td></tr>`; }).join('')}</tbody></table></div>
+      <p class="rnote">The highlighted row is the setting now in use. Parameter selection is research, not proof of future performance; the best row of a grid is partly luck. Each row is a complete portfolio backtest of the team's AFL rules.</p></section>`;
+  }
+  return form + result;
+}
+function athOptDraw() { const el = $('#ath-opt-body'); if (el && STRAT?.ath) { el.innerHTML = athOptBody(STRAT.v); optFit(); } }
+async function athOptRun() {
+  const v = STRAT.v, st = athOptState(v), grids = athOptGrids(v, st); if (st.busy || gridProblem(grids)) return;
+  st.busy = true; st.msg = ''; st.res = null; athOptDraw();
+  const oq = athOptimizeQuery(v.id, { from: S.from, to: S.to, slippage: S.slippage, params: decodeP(S.p), grids });
+  if (isAth4(v.id)) oq.set('sheet', '1');
+  { const pk = uniPick(v.id); if (pk.b && !pk.isDefault) { oq.set('watchlist', pk.set === 'current' ? pk.b.current : pk.b.cp); if (pk.set === 'past') oq.set('exclude_watchlist', pk.b.current); } } // the basket chosen on the backtest page
+  const q = oq.toString();
+  try {
+    let d;
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(`${API_IN}/guru/yt/ath-optimize?${q}`, { signal: AbortSignal.timeout(150000) });
+      if (r.status === 429) { if (attempt) throw Error(UNIVERSE_BUSY); await new Promise(ok => setTimeout(ok, 4000)); continue; }
+      if (!r.ok) throw Error((await r.text()) || `HTTP ${r.status}`);
+      d = await r.json(); break;
+    }
+    if (!validAthResult(d)) throw Error('The engine returned no complete optimization result.');
+    d.slippage = S.slippage; st.res = d; optTriedAdd(d.rows.length);                // the brokerage this optimization ran with, for its sheet's Rules
+  } catch (e) { st.msg = e.name === 'TimeoutError' ? 'The optimization reached its time limit. Tick fewer settings or use a bigger step.' : (e.message || 'The optimization failed.'); }
+  st.busy = false; athOptDraw();
+}
+function athOptInit() {
+  const root = $('#ath-opt-body'); if (!root || !STRAT?.ath) return;
+  const st = athOptState(STRAT.v);
+  optFit();
+  root.addEventListener('input', e => { const tr = e.target.closest('tr[data-k]'); if (!tr) return; const f = e.target.dataset.f, k = tr.dataset.k;
+    if (f === 'on') { st.on[k] = e.target.checked; athOptDraw(); return; }
+    const d = athOptParams(btSchema(STRAT.v)).find(x => x.key === k); st.rng[k] = { ...(st.rng[k] || defaultRange({ ...d, def: decodeP(S.p)[k] ?? d.def })), [f]: e.target.value };
+    const grids = athOptGrids(STRAT.v, st), problem = gridProblem(grids), n = Object.keys(grids).length ? comboCount(grids) : 0, cnt = $('#ath-opt-count'), btn = $('#ath-opt-run');
+    if (cnt) cnt.textContent = (n ? `${n} combinations plus the current settings. ` : '') + problem; if (btn) btn.disabled = !!problem || st.busy || (window.VAULT_APP && window.VAULT_USER?.role === 'viewer');
+    const cell = tr.querySelector('td:last-child'); if (cell) cell.textContent = st.on[k] ? grids[k]?.length ?? 0 : 'fixed'; });
+  root.addEventListener('click', e => { if (athLabClick(e)) return; if (e.target.closest('#ath-opt-run')) athOptRun(); const b = e.target.closest('[data-ath-sort]'); if (b) { st.sort = b.dataset.athSort; athOptDraw(); } });
+}
+function athOptimPage(v, tk, crumbs, switches, selection) {
+  if (!athOptParams(btSchema(v)).length) return withheldStrategy(v, tk, crumbs, switches, { status: 'not_testable', note: 'This rule has no settings to vary.' });
+  STRAT = { v, tk, region: 'in', ath: true };
+  return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(familyDisplayName(v))}</h1><a class="dbtn sm back-btn" href="${href('/s/' + encodeURIComponent(v.id), { ...S })}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(universeChoiceLabel(uniOf(v.id)))} · ${esc(v.name)}. Each combination is a complete stock-universe portfolio backtest; the engine runs them one after another.</p>${switches}${periodPanel(tk, null)}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}</section><div id="ath-opt-body">${athOptBody(v)}</div>`;
+}
+async function viewUniverse(v, crumbs, switches, selection, generation) {
+  const tk = 'NIFTY 50';
+  if (R.optim && !v.id.startsWith('ytath_')) return withheldStrategy(v, tk, crumbs, switches, { status: 'not_testable', note: 'Parameter optimization is not available for stock-universe runs. Open the backtest page and use Run backtest to change the settings.' });
+  const U = uniOf(v.id);
+  if (!U) return withheldStrategy(v, tk, crumbs, switches, { status: 'needs_data', note: v.id.startsWith('ytath_') ? 'The ATH stock universe is not loaded in the engine.' : 'The F&O stock universe is not loaded in the engine.' });
+  if (R.optim) return athOptimPage(v, tk, crumbs, switches, selection);
+  const params = decodeP(selection.p), uq = universeQuery(v.id, { from: selection.from, to: selection.to, slippage: selection.slippage, params });
+  if (S.only) uq.set('only', S.only);
+  { const pk = uniPick(v.id); if (pk.b && !pk.isDefault) { uq.set('watchlist', pk.set === 'current' ? pk.b.current : pk.b.cp); if (pk.set === 'past') uq.set('exclude_watchlist', pk.b.current); } }
+  const query = uq.toString();
+  let d = UNIVERSE_RUNS.get(query);
+  try {
+    if (!d) { d = await fetchUniverse(query); if (d?.status === 'ready') { UNIVERSE_RUNS.set(query, d); while (UNIVERSE_RUNS.size > 4) UNIVERSE_RUNS.delete(UNIVERSE_RUNS.keys().next().value); } }
+  } catch (error) { if (generation !== busy) return ''; return withheldStrategy(v, tk, crumbs, switches, { status: 'unavailable', note: error.name === 'TimeoutError' ? 'The stock-universe run reached its time limit. No partial result is displayed.' : error.message }); }
+  if (generation !== busy) return '';
+  if (d?.status !== 'ready' || !d.stats || !d.dates?.length) return withheldStrategy(v, tk, crumbs, switches, { status: d?.status || 'unavailable', note: d?.note || d?.error || 'No complete stock-universe result is available.' });
+  // buy & hold may miss a date: carry the last value so the charts stay continuous
+  let last = 1; d.bh = (d.bh || []).map(x => (Number.isFinite(x) ? (last = x) : last));
+  const bName = uniBench(d), bText = bName ? `${esc(bName)} buy &amp; hold` : 'No buy &amp; hold (no index for this basket)';
+  const s = d.stats, p = d.portfolio || {}, ps = positionStats(d.positions), src = d.src ?? (params.src || 1);
+  if (!S.only && uniPick(v.id).isDefault) UNIVERSE_SUMMARY[v.id] = { stats: s, src, max_positions: d.max_positions, pct: d.pct, hash: location.hash }; // a one-stock run is not the basket's result
+  const tiles = [['Net Profit', s.net_profit ?? s.total_return, x => pct(x, 2, true), 'Portfolio equity return, net', cls(s.net_profit ?? s.total_return)], ['CAGR', s.cagr, x => pct(x, 2, true), 'Compounded a year', cls(s.cagr)], ['No. of trades', d.trades.length, x => fx(x, 0), (n => n ? `Accepted stock trades, ${fx(n, 0)} still open` : 'Accepted stock trades')(d.trades.filter(t => t.open).length)], ['Win Rate', s.win_rate, x => pct(x, 1), 'Closed trades'], ['Avg trade', s.avg_trade, x => pct(x, 3, true), `Per closed trade, net · profit factor ${fx(s.profit_factor)}`, cls(s.avg_trade)], ['MaxDD', s.max_dd, x => pct(x, 2), 'Portfolio equity decline', 'neg'], ['Sharpe', s.sharpe, x => fx(x), 'Portfolio daily returns · rf = 0']];
+ STRAT = { d, v, tk: d.universe || U.universe, region: 'in', tiles, px: null, display: { value: s.net_profit, reportMode: 'Compounded portfolio equity', description: 'Stock-universe portfolio', unavailableReason: null }, indicatorParameters: params, runQuery: query };
+  RULE_VISUAL = makeRuleVisualModel({ strategy: { ...v, family_name: familyDisplayName(v) }, parameters: { ...paramValues(btSchema(v), {}), ...params }, symbol: universeChoiceLabel(U) });
+  const benchmarkPrices = await ohlc(tk).catch(() => null); if (generation !== busy) return '';
+  STRAT.benchPx = benchmarkPrices || (isAth4(v.id) ? await fullOhlc(tk).catch(() => null) : null); if (generation !== busy) return '';
+  const sizing = d.pct ? `${fx(d.pct, 2)}% of equity per position` : `100 / ${d.max_positions}% of equity per position`;
+  const basis = `<div class="portfolio-basis" data-universe-basis><b>${esc(d.max_positions)} simultaneous positions · ${esc(sizing)}${d.pad ? ' · padded and aligned to NIFTY' : ''}.</b> ${esc(p.sizing || '')}.<br>${esc(p.ranking || '')}. ${esc(p.timing || '')}.<br>${fx(p.candidates, 0)} signals · ${fx(p.accepted, 0)} accepted · ${fx(p.rejected_capacity, 0)} over the position limit · ${fx(p.rejected_cash, 0)} without cash · ${fx(p.last_day_signals_dropped, 0)} on a symbol's last data day (never entered)${ps ? ` · on average ${fx(ps.avg, 1)} open positions (most ${fx(ps.max, 0)}), invested on ${pct(ps.invested, 0)} of days` : ''}${Number.isFinite(p.seconds) ? ` · computed in ${fx(p.seconds, 1)} s` : ''}.</div>`;
+  const period = `<p class="rnote" data-results-provenance><b>Computed stock-universe portfolio · ${esc(universeChoiceLabel(U))}.</b> Period ${esc(d.dates[0])} to ${esc(d.dates.at(-1))} (data coverage ${esc(U.first)} to ${esc(U.last)}). Brokerage ${fx(+(d.costs?.total_side_bps ?? selection.slippage ?? 0) / 100, 2)}% a side, taken off returns; trade prices unchanged. ${esc((d.notices || []).join(' '))}</p>`;
+  return `${crumbs}<section class="box" data-universe-result><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>${switches}${btstInstrumentNote(v, tk)}${periodPanel(tk, d)}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}${period}
+    <div class="metrics">${tiles.map(([k, x, f, i, c], n) => `<div class="metric"><span>${k}</span><b class="${c || ''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div>${basis}</section>
+  <section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>implemented interpretation of the team-supplied AFL rules, run on every stock of the watchlist</small></div>${rulesPanel(v)}</section>
+  ${referenceBox(v, tk)}
+  <section class="box"><div class="box-h">Portfolio equity <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>Portfolio</span><label class="dcheck"><input type="checkbox" id="cmp"${bName ? '' : ' disabled'}> <i class="sw-line" style="background:var(--bh)"></i>${bName ? `Compare with ${bText}` : bText}</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(x => x.slice(0, 4)))].map(y => `<button class="dbtn sm" data-equity-year="${y}">${y}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">Cash plus open positions marked each day · portfolio ${d.equity.at(-1).toFixed(2)}× (gross ${(d.gross_equity?.at(-1) ?? NaN).toFixed(2)}×) · NIFTY futures buy &amp; hold ${d.bh.at(-1).toFixed(2)}×</div></section>
+  <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd, 1)}</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section>
+    <section class="box"><div class="box-h">Calendar-year returns <span class="legend"><span><i class="sw-box" style="background:var(--blue)"></i>Portfolio</span><span><i class="sw-box" style="background:var(--bh)"></i>${bText}</span></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
+  ${d.positions?.length ? `<section class="box"><div class="box-h">Open positions <small>at each day's close · limit ${esc(d.max_positions)}</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-pos">Download PNG</button></div><div class="bkc" id="c-pos"></div></section>` : ''}
+  ${adrReportHTML(d)}${VaultUI.benchmarkHTML(d, tk, benchmarkPrices)}${VaultUI.detailHTML(d)}
+  <section class="box"><div class="box-h">Monthly returns (%) <span class="legend"><small>${Object.keys(periods(d, 4))[0]} – ${Object.keys(periods(d, 4)).slice(-1)[0]} · darker = larger</small><span class="join sm"><button class="join-item ${HEAT_DESC ? '' : 'active'}" data-heat="asc">Oldest first</button><button class="join-item ${HEAT_DESC ? 'active' : ''}" data-heat="desc">Newest first</button></span></span></div><div class="chart-tools"><label class="dfield">Colors <select id="heat-palette"><option value="classic">Green / red</option><option value="ocean">Blue / orange</option><option value="violet">Teal / magenta</option><option value="mono">Single hue</option></select></label><button class="dbtn sm" data-report-export="monthly">Download Excel</button>${isAdr()?'<button class="dbtn sm" id="adr-yoy-xlsx" title="Year x month grid in percent units, with Total and Avg rows">Download YOY Excel</button>':''}</div><div class="heat-scroll"><div id="heatbox">${heatTable(d)}</div></div><p class="rnote">Calendar returns of the portfolio equity including open-position marks. Avg/Total is the arithmetic mean of displayed calendar-year returns.</p></section>
+  <section class="box" data-tradesheet data-universe-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${fx(d.trades.length, 0)} trades · ${esc(d.trades.length ? `${String(d.trades[0].entry).slice(0, 4)}–${String(d.trades.at(-1).entry).slice(0, 4)}` : '')} · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button></span></div><p class="rnote">One row per stock trade: entry and exit bar (date and time), fill prices as stored in the database, whole shares, weight = position value / portfolio equity at entry, score = the AFL's PositionScore (higher first), return net of brokerage.</p>${(() => { Object.assign(UNI_SHEET, { symbol: '', year: '', page: 1 }); const t = universeTradeSheet(d);
+    return `<div class="uni-toolbar"><label class="dfield">Symbol <input type="search" id="universe-symbol" placeholder="Filter, e.g. RELIANCE" autocomplete="off"></label><span class="uni-nav" id="universe-nav">${t.top}</span></div><div class="tlog" id="universe-trades">${t.table}</div><div class="uni-toolbar uni-foot" id="universe-nav-bottom">${t.bottom}</div>`; })()}</section>`;
 }
 
 const BASKET_RUNS=new Map();
@@ -1678,10 +2413,11 @@ async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
 }
 
 function rulesPanel(v) {
-  const sec = { F: [], E: [], A: [], X: [] }; (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); (sec[t] || sec.E).push(r.join('|')); });
+  // YT rule templates show the page's current parameter values (rule-template.ts); guarded lines may drop out
+  const sec = { F: [], E: [], A: [], X: [] }; ruleLines(v, isYt(v) ? decodeP(S.p) : {}).forEach(([t, r]) => (sec[t] || sec.E).push(r));
   const act = r => /^(Buy|Short|Sell|Cover|Next day|No other signal|Once|After|Stop)/.test(r);
   const col = (t, sub, c, items) => items.length ? `<div class="rcol"><h4><i style="background:${c}"></i>${t}</h4><p class="rsub">${sub}</p><ul>${items.map(r => `<li class="${act(r) ? 'act' : ''}">${esc(r)}</li>`).join('')}</ul></div>` : '';
-  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
+  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':isYt(v)&&v.id.startsWith('ytmr_')?'The exit type is a toggle; the optional stops apply alongside it':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
 }
 async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization){
  const stocks=TICK_ALL_US.flatMap(row=>pristineInstrumentContext(row.ticker,'us',[row])?[{ticker:row.ticker,symbol:row.symbol}]:[]);
@@ -1717,11 +2453,20 @@ async function viewStrategy() {
   if (!v) { const other = ALLCAT.find(x => x.id === R.id), sib = other && CAT.find(x => x.family === other.family && x.status === other.status) || other && CAT.find(x => x.family === other.family);
     if (sib) { setTimeout(() => go('/s/' + encodeURIComponent(sib.id), S), 0); return bookLoader(`Switching to the ${S.region === 'us' ? 'NYSE' : 'NSE'} version…`); } } // same rule, this market's data
   if (v) bookCtx(v.book);
+  if (v && isYt(v)) { try { await optSchema(runApi); } catch (e) { /* rules then show their templates' defaults */ } }
+  if (v && !R.optim) { const ref = btRef(v, S.tk === 'ALL' ? 'NIFTY 50' : S.tk); if (ref) { const raw = new URLSearchParams(location.hash.split('?')[1] || '');
+    let pp = raw.has('p') ? S.p : encodeP(ref.params);
+    { const q = decodeP(pp); if ('src' in q && q.src !== 1) { delete q.src; pp = encodeP(q); } } // only the main database is offered
+    const sizing = decodeP(pp).sizing === 2 ? 2 : 1;
+    // the Net Profit display follows the position sizing: compounding -> compounded returns, fixed quantity -> rupee result
+    const want = { ...S, p: pp, slippage: raw.has('slippage') ? S.slippage : String(ref.cost), report_mode: raw.has('report_mode') ? S.report_mode : sizing === 2 ? 'fixed' : 'compound' }, target = href(R.path, want); // the Vault's per-side cost setting is 'slippage' (fees are fixed at 0 outside Pristine)
+    if (target !== location.hash) { location.replace(target); return bookLoader('Loading the reference settings…'); } } }
   if (!v) return `<nav class="crumbs"><a href="#/">Guru's</a></nav><div class="empty"><b>This strategy is not in the vault</b>The link may be old.</div>`;
   const g = GURU[v.guru], b = BOOK[v.book], fam = CAT.filter(x => x.family === v.family), tk = S.tk === 'ALL'&&!pristineMethod(v.id,v.book) ? TICKERS[0].ticker : S.tk;
-  const crumbs = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(familyDisplayName(v))}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
+  const ytMain = ytMainVariant(v.group), crumbs = isYt(v) ? `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${href('/yt',{tk:S.tk,from:S.from,to:S.to})}">YT Strategies</a><span>/</span>${ytMain ? `<a href="${href('/yt',{tk:S.tk,from:S.from,to:S.to,family:v.family})}">${esc(familyDisplayName(v))}</a><span>/</span><a href="${href('/yt',{tk:S.tk,from:S.from,to:S.to,family:v.family,grp:ytMain,mode:'variants'})}">${esc(ytMain)}</a><span>/</span><span>${esc(v.name)}</span>` : `<span>${esc(familyDisplayName(v))}</span>`}<a class="back" href="${LIST_HASH || href('/yt')}">Back to strategies</a></nav>` : `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(familyDisplayName(v))}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
   if(pristineMethod(v.id,v.book))return viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization);
   const switches = marketControls(v,tk);
+  if(universeScope(v))return viewUniverse(v,crumbs,switches,selection,generation);
   const selectedBasket=BASKETS.find(b=>b.id===S.basket);
   if(S.run_scope==='basket'&&S.basket&&(!['ready','partial'].includes(selectedBasket?.price_status)||!selectedBasket.symbols.includes(tk)))return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:selectedBasket?.note||'Data missing: verified constituent prices and universe coverage for this basket are not available. Index prices cannot substitute for basket constituents.'});
   if(selection.run_scope==='basket')return viewBasket(v,tk,crumbs,switches,selection,runApi,generation);
@@ -1746,20 +2491,22 @@ async function viewStrategy() {
   if(R.optim) return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(familyDisplayName(v))}</h1><a class="dbtn sm back-btn" href="${href('/s/'+encodeURIComponent(v.id),{...S})}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. ${unit?'Only the fixed DEMA16/8 and raw-Buy clock1 configuration is reviewed. Alternative settings and optimizer searches do not inherit this admission.':account?sourceAccountCopy(account).bandy?'Only the fixed reviewed method and allocation are available. Other parameter settings require their own review; closed-display modes cannot resize the cash account.':'Only the fixed reviewed source/account configuration is available. Other indicator, stop and risk settings remain held; closed-display modes cannot resize the account.':'Parameter searches are research; selected settings and before/after displays do not establish an untouched holdout. Net profit sums closed-trade net returns; CAGR and risk measures use the separate compounded model.'}</p>${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk,d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}</section>${unit?'<section class="box"><div class="box-h">Fixed reviewed index configuration</div><p class="rnote">DEMA first length16 / second length8 / Bars since raw Buy1. Only this source-reviewed configuration is admitted; changed parameters require separate review. No optimization or book-performance claim is made.</p></section>':account?sourceAccountCopy(account).bandy?`<section class="box"><div class="box-h">Fixed reviewed cash-account configuration</div><p class="rnote">${esc(v.name)}. ${esc(sourceAccountCopy(account).sizing)} The account allocation stays fixed; new configurations require their own review.</p></section>`:'<section class="box"><div class="box-h">Fixed protected configuration</div><p class="rnote">EMA13 / MACD12-26-9 / weekly EMA26 / SafeZone10-2 / source2%-6% risk. The account controller stays fixed; new configurations require their own review.</p></section>':await optimSection(v,tk,d,true)}`;
   return `${crumbs}
     <section class="box"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>
-      ${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk, d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}
+      ${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${btstInstrumentNote(v,tk)}${periodPanel(tk, d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}
       <div class="metrics">${tiles.map(([k, x, f, i, c], n) => `<div class="metric"><span>${k}</span><b class="${c || ''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div>
       </section>
-    <section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>${v.guru==='chande'?'Source interpretation and declared adaptation':'implemented interpretation of the'} ${v.book === 'stc9' ? 'course' : 'book'}, ${srcOf(v)}</small></div>${rulesPanel(v)}</section>
-    <section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>
+    <section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>${isYt(v)?'implemented interpretation of the team-supplied AFL rules':`${v.guru==='chande'?'Source interpretation and declared adaptation':'implemented interpretation of the'} ${v.book === 'stc9' ? 'course' : 'book'}, ${srcOf(v)}`}</small></div>${rulesPanel(v)}</section>
+    ${referenceBox(v, tk)}
+    ${isYt(v)?'':`<section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>`}
     <section class="box"><div class="box-h">${unit?'Canonical unit-exposure model':account?sourceAccountCopy(account).accountEquity:'Compounded return model'} <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>${account?'Account':'Strategy'}</span><label class="dcheck"><input type="checkbox" id="cmp"> <i class="sw-line" style="background:var(--bh)"></i>Compare with buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div>
       <div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(x=>x.slice(0,4)))].map(y=>`<button class="dbtn sm" data-equity-year="${y}">${y}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">${account?'Actual source-account return '+pct(s.total_return,2,true)+' · including open marks · account':'Strategy'} ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div></section>
     <section class="box"><div class="box-h">Price &amp; signals · ${esc(LABEL[tk])} <span class="legend"><span><i class="mk up"></i>Buy / cover</span><span><i class="mk ex"></i>Sell / short</span><span><i class="zk win"></i>Winning trade</span><span><i class="zk loss"></i>${unit?'Non-winning closed trade':'Losing trade'}</span><span><i class="zk open"></i>Open</span><span class="muted">shaded from entry day to exit day · zoom in for each return</span>
-        <span class="join sm">${[["D", "Daily"], ["W", "Weekly"], ["M", "Monthly"]].map(([k, t]) => `<button class="join-item ${TF === k ? "active" : ""}" data-tf="${k}">${t}</button>`).join("")}</span><span class="join sm"><button class="join-item active" id="px3">Last 3 years</button><button class="join-item" id="px1">Last year</button><button class="join-item" id="pxall">Show all</button></span></span></div>
+        <span class="join sm">${[["D", "Daily"], ["W", "Weekly"], ["M", "Monthly"], ...(isIntradayStrategy(v.needs_series) ? [["I", "5 min"]] : [])].map(([k, t]) => `<button class="join-item ${TF === k ? "active" : ""}" data-tf="${k}">${t}</button>`).join("")}</span><span class="join sm"><button class="join-item" id="px3m" style="display:none">Last 3 months</button><button class="join-item active" id="px3">Last 3 years</button><button class="join-item" id="px1">Last year</button><button class="join-item" id="pxall">Show all</button></span></span></div>
       <div class="pxread" id="pxread">Hover the chart: open, high, low, close and the trade you were in.</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-px">Download PNG</button></div><div class="lwc px" id="c-px"></div>${indicatorControlsHTML(STRAT.indicators,true)}</section>
     <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd, 1)} · ${fx(s.max_dd_days, 0)} ${unit?'observed sessions':'days'} under water</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section>
       <section class="box"><div class="box-h">Calendar-year returns <span class="legend"><span><i class="sw-box" style="background:var(--blue)"></i>Strategy</span><span><i class="sw-box" style="background:var(--bh)"></i>Buy &amp; hold</span></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
+    ${adrReportHTML(d)}
     ${VaultUI.benchmarkHTML(d,isUS()?'SPX':'NIFTY 50',await ohlc(isUS()?'SPX':'NIFTY 50'))}${VaultUI.detailHTML(d)}
-    <section class="box"><div class="box-h">Monthly returns (%) <span class="legend"><small>${Object.keys(periods(d, 4))[0]} – ${Object.keys(periods(d, 4)).slice(-1)[0]} · follows the backtest period · darker = larger</small><span class="join sm"><button class="join-item ${HEAT_DESC ? '' : 'active'}" data-heat="asc">Oldest first</button><button class="join-item ${HEAT_DESC ? 'active' : ''}" data-heat="desc">Newest first</button></span></span></div><div class="chart-tools"><label class="dfield">Colors <select id="heat-palette"><option value="classic">Green / red</option><option value="ocean">Blue / orange</option><option value="violet">Teal / magenta</option><option value="mono">Single hue</option></select></label><button class="dbtn sm" data-report-export="monthly">Download Excel</button></div><div class="heat-scroll"><div id="heatbox">${heatTable(d)}</div></div><p class="rnote">Avg/Total is the arithmetic mean of displayed calendar-year returns, including partial years; it is not CAGR. Zero returns display 0.00; absent months stay empty. ${unit?esc(UNIT_VISUAL_BASIS):''}</p></section>
+    <section class="box"><div class="box-h">Monthly returns (%) <span class="legend"><small>${Object.keys(periods(d, 4))[0]} – ${Object.keys(periods(d, 4)).slice(-1)[0]} · follows the backtest period · darker = larger</small><span class="join sm"><button class="join-item ${HEAT_DESC ? '' : 'active'}" data-heat="asc">Oldest first</button><button class="join-item ${HEAT_DESC ? 'active' : ''}" data-heat="desc">Newest first</button></span></span></div><div class="chart-tools"><label class="dfield">Colors <select id="heat-palette"><option value="classic">Green / red</option><option value="ocean">Blue / orange</option><option value="violet">Teal / magenta</option><option value="mono">Single hue</option></select></label><button class="dbtn sm" data-report-export="monthly">Download Excel</button>${isAdr()?'<button class="dbtn sm" id="adr-yoy-xlsx" title="Year x month grid in percent units, with Total and Avg rows">Download YOY Excel</button>':''}</div><div class="heat-scroll"><div id="heatbox">${heatTable(d)}</div></div><p class="rnote">Avg/Total is the arithmetic mean of displayed calendar-year returns, including partial years; it is not CAGR. Zero returns display 0.00; absent months stay empty. ${unit?esc(UNIT_VISUAL_BASIS):''}</p></section>
     ${VaultUI.tradeHTML(d,tk)}
 
     ${unit?'<section class="box"><div class="box-h">Reviewed parameter scope</div><p class="rnote">Fixed DEMA16/8 and one observed bar since raw Buy. Alternate parameters, instrument classes and execution conventions require separate review.</p></section>':account?'<section class="box"><div class="box-h">Reviewed parameter scope</div><p class="rnote">This protected account is limited to the fixed reviewed configuration. Changed indicator, stop or risk settings need separate source and ledger review; no optimization selection inherits this acceptance.</p></section>':await optimSection(v, tk, d, false)}`;
@@ -1827,8 +2574,88 @@ function heatTable(d) {
     <tbody>${years.map(y => `<tr><th class="y">${y}</th>${MON.map((_, k) => cell(m[key(y, k)])).join('')}<td class="t" style="background:${bg(ys[y], capY)};color:${ink(ys[y], capY)}">${flat(ys[y]) ? '' : (ys[y] * 100).toFixed(2)}</td></tr>`).join('')}</tbody>
     <tfoot><tr><th class="y">Avg</th>${avg.map(v => `<td style="background:${bg(v, cap)};color:${ink(v, cap)}">${v == null ? '' : (v * 100).toFixed(2)}</td>`).join('')}<td class="t" style="background:${bg(report.annualAverage, capY)};color:${ink(report.annualAverage, capY)}" data-annual-average>${report.annualAverage===null?'':(report.annualAverage*100).toFixed(2)}</td></tr></tfoot></table>`;
 }
+// 5-minute view of an intraday strategy (BTST): every bar of the selected period in one zoomable chart (engine route
+// guru/yt/intraday?compact=1), with an In/Out arrow and a shaded span for every trade, like the Daily chart.
+let INTRA = { key: '', data: null };
+async function drawIntraday(el) {
+  const snapshot = STRAT, request = ++SIGNAL_REQUEST, { d } = snapshot, trades = d.trades || [];
+  INDICATOR_CHARTS?.dispose(); INDICATOR_CHARTS = null;
+  if (PXCH) { try { PXCH.__ro?.disconnect(); PXCH.remove(); } catch (e) {} CHARTS = CHARTS.filter(c => c.ch !== PXCH); PXCH = null; } el.innerHTML = '';
+  document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('active', b.dataset.tf === 'I'));
+  const read = $('#pxread'), still = () => snapshot === STRAT && TF === 'I' && request === SIGNAL_REQUEST && el.isConnected;
+  const old = document.getElementById('intra-bar'); if (old) old.remove();
+  const bar = document.createElement('div'); bar.id = 'intra-bar'; bar.className = 'chart-tools intra-bar';
+  bar.innerHTML = `<span class="ib-label">Trade</span><button type="button" class="ib-step" id="intra-prev" aria-label="Previous trade" title="Previous trade">‹</button><select id="intra-sel" aria-label="Jump to trade"><option value="">Jump to Trade/Overall</option>${trades.map((t, k) => `<option value="${k}">${esc(t.entry)} · ${t.open ? 'open' : esc(t.reason || '')} · ${t.open ? '' : pct(t.ret, 2, true)}</option>`).join('')}</select><button type="button" class="ib-step" id="intra-next" aria-label="Next trade" title="Next trade">›</button><span class="ib-note">5-minute bars of Nifty front-month futures (the strategy’s own data); 1-minute bars are not loaded in the engine</span>`;
+  read.parentNode.insertBefore(bar, read); // above the hover readout, so the chart follows it directly
+  document.querySelectorAll('#px3,#px1,#pxall,#px3m').forEach(b => { b.parentElement.style.display = ''; }); $('#px3m').style.display = '';
+  try { await optSchema(); } catch (e) { /* defaults fall back to the strategy's own */ }
+  const params = { ...bookDefaults(snapshot.v.id), ...decodeP(S.p) };
+  const from = d.dates[0], to = d.dates[d.dates.length - 1], key = `${snapshot.tk}|${from}|${to}|${params.src || 1}`;
+  read.textContent = 'Loading 5-minute bars…';
+  let data = INTRA.key === key ? INTRA.data : null;
+  if (!data) {
+    try {
+      const r = await fetch(`${API}/guru/yt/intraday?` + new URLSearchParams({ ticker: snapshot.tk, from, to, compact: '1', src: String(params.src || 1) }));
+      if (!r.ok) throw Error((await r.text()) || r.statusText); data = await r.json(); INTRA = { key, data };
+    } catch (e) { if (still()) { read.textContent = ''; el.innerHTML = `<div class="empty">5-minute bars are not available: ${esc(e.message || e)}</div>`; } return; }
+  }
+  if (!still() || !window.LightweightCharts) return;
+  const n = data.n;
+  if (!n) { read.textContent = ''; el.innerHTML = '<div class="empty">No 5-minute bars in this period.</div>'; return; }
+  const L = LightweightCharts, ch = L.createChart(el, { width: el.clientWidth, height: el.clientHeight, layout: { attributionLogo: false, background: { color: cv('--panel') }, textColor: cv('--ink3'), fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
+    grid: { vertLines: { visible: false }, horzLines: { color: cv('--rule') } }, rightPriceScale: { borderColor: cv('--steel') }, timeScale: { borderColor: cv('--steel'), timeVisible: true, secondsVisible: false, minBarSpacing: 0.002, lockVisibleTimeRangeOnResize: true }, crosshair: { mode: L.CrosshairMode.Normal }, handleScale: { axisPressedMouseMove: false } });
+  PXCH = ch; CHARTS.push({ ch, el });
+  const cs = ch.addCandlestickSeries({ upColor: cv('--green'), downColor: cv('--red'), borderUpColor: cv('--green'), borderDownColor: cv('--red'), wickUpColor: cv('--green'), wickDownColor: cv('--red'), priceLineVisible: false });
+  const t0 = performance.now(), rows = new Array(n); for (let i = 0; i < n; i++) rows[i] = { time: data.t[i], open: data.o[i], high: data.h[i], low: data.l[i], close: data.c[i] };
+  cs.setData(rows); window.__intraMs = Math.round(performance.now() - t0);
+  const layers = tradeLayers(trades, data.t, params), spans = tradeSpans(layers, data.t[n - 1]);
+  cs.setMarkers(layerMarkers(layers, { buy: cv('--green'), sell: cv('--red') }));
+  el.style.position = 'relative';
+  const ov = document.createElement('canvas'); ov.className = 'zone-ov'; el.appendChild(ov);
+  const col = t => t.open ? cv('--ink3') : t.ret >= 0 ? cv('--green') : cv('--red');
+  const draw = () => {
+    if (PXCH !== ch || !el.isConnected || !el.clientWidth || !el.clientHeight) return;
+    const ts = ch.timeScale(), w = el.clientWidth, h = el.clientHeight, dpr = devicePixelRatio || 1, plotW = w - ch.priceScale('right').width(), plotH = h - ts.height();
+    ov.width = w * dpr; ov.height = h * dpr; ov.style.width = w + 'px'; ov.style.height = h + 'px';
+    const g = ov.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h); g.save(); g.beginPath(); g.rect(0, 0, plotW, plotH); g.clip();
+    const half = Math.max(1, ts.options().barSpacing / 2), lw = ts.options().barSpacing * 75; // one session is 75 bars wide
+    let lastLabel = -1e9; g.font = `700 11px ${getComputedStyle(document.body).fontFamily}`; g.textAlign = 'center';
+    const seen = spans.map(z => ({ z, x0: ts.timeToCoordinate(z.a), x1: ts.timeToCoordinate(z.b) })).filter(o => o.x0 != null && o.x1 != null && o.x1 + half >= 0 && o.x0 - half <= plotW);
+    for (const { z, x0, x1 } of seen) { const t = trades[z.index];
+      g.fillStyle = rgba_(col(t), .16); g.fillRect(x0 - half, 0, Math.max(2, x1 - x0 + 2 * half), plotH);
+      g.fillStyle = rgba_(col(t), .75); g.fillRect(x0 - half, 0, Math.max(2, x1 - x0 + 2 * half), 3); }
+    if (lw > 150) for (const { z, x0, x1 } of seen) { const l = layers[z.index]; // profit-booking / hard-stop level, only once a session is wide enough to read
+      for (const [lvl, c] of [[l.profitLine, cv('--green')], [l.stopLine, cv('--red')]]) { if (lvl == null) continue; const y = cs.priceToCoordinate(lvl); if (y == null) continue;
+        g.strokeStyle = c; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke(); g.setLineDash([]); } }
+    for (const { z, x0, x1 } of seen) { const cx = (x0 + x1) / 2; if (cx < 0 || cx > plotW) continue; const t = trades[z.index];
+      const txt = t.open ? 'open' : pct(t.ret, 2, true), tw = g.measureText(txt).width + 10;
+      if (cx - tw / 2 < lastLabel + 4) continue; lastLabel = cx + tw / 2;
+      g.fillStyle = cv('--panel'); g.fillRect(cx - tw / 2, 6, tw, 16); g.fillStyle = col(t); g.fillText(txt, cx, 18); }
+    g.restore();
+  };
+  const relabel = () => requestAnimationFrame(() => { try { draw(); } catch (e) { /* chart torn down mid-frame */ } });
+  const ro = new ResizeObserver(relabel); ro.observe(el); ch.__ro = ro;
+  ch.timeScale().subscribeVisibleTimeRangeChange(relabel);
+  const last = data.t[n - 1], DAY = 86400, showRange = (a, b) => { ch.timeScale().setVisibleRange({ from: a, to: b }); relabel(); };
+  const presets = { px3m: 92 * DAY, px3: 3 * 365 * DAY, px1: 365 * DAY, pxall: 0 };
+  const mark = id => document.querySelectorAll('#px3,#px1,#pxall,#px3m').forEach(x => x.classList.toggle('active', x.id === id));
+  Object.entries(presets).forEach(([id, span]) => { $('#' + id).onclick = () => { $('#intra-sel').value = ''; if (span) showRange(Math.max(data.t[0], last - span), last); else { ch.timeScale().fitContent(); relabel(); } mark(id); }; });
+  const sel = $('#intra-sel');
+  sel.onchange = () => { if (sel.value === '') { ch.timeScale().fitContent(); relabel(); mark('pxall'); return; } const w = tradeWindow(trades[+sel.value]); showRange(w.from, w.to); mark(''); };
+  const step = by => { if (!trades.length) return; const at = sel.value === '' ? (by > 0 ? -1 : trades.length) : +sel.value, to = Math.min(trades.length - 1, at + by); sel.value = to < 0 ? '' : String(to); sel.onchange(); };
+  $('#intra-prev').onclick = () => step(-1); $('#intra-next').onclick = () => step(1);
+  ch.timeScale().fitContent(); mark('pxall'); relabel();
+  const f = x => x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  read.innerHTML = `5-minute candles · ${n.toLocaleString('en-IN')} bars · ${trades.length} trades · hover for open, high, low, close and the trade you were in.`;
+  ch.subscribeCrosshairMove(p => { if (!p.time) return; const i = lowerBound(data.t, p.time); if (data.t[i] !== p.time) return;
+    const sp = spans.find(z => z.a <= p.time && p.time <= z.b), t = sp ? trades[sp.index] : null, stamp = new Date(p.time * 1000).toISOString().slice(0, 16).replace('T', ' ');
+    read.innerHTML = `<b>${stamp}</b> O ${f(data.o[i])} · H ${f(data.h[i])} · L ${f(data.l[i])} · C <b>${f(data.c[i])}</b> · ${t ? `in trade ${esc(t.entry)} to ${t.open ? 'open' : esc(t.exit)}: <b class="${cls(t.ret)}">${t.open ? 'open' : pct(t.ret, 2, true)}</b>${t.reason && !t.open ? ' (' + esc(t.reason) + ')' : ''}` : '<span class="muted">no position</span>'}`; });
+}
 async function drawSignals(tf) {
   const el = $('#c-px'); if (!el || !STRAT) return; const { d } = STRAT;
+  if (tf === 'I' && !(isYt(STRAT.v) && isIntradayStrategy(STRAT.v.needs_series))) tf = TF = 'D';
+  if (tf === 'I') return drawIntraday(el);
+  { const old = document.getElementById('intra-bar'); if (old) old.remove(); const m3 = $('#px3m'); if (m3) { m3.style.display = 'none'; m3.classList.remove('active'); } }
   const generation=busy,snapshot=STRAT,request=++SIGNAL_REQUEST;
   const px = tf === 'D' ? STRAT.px : STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf);
   if(generation!==busy||snapshot!==STRAT||tf!==TF||request!==SIGNAL_REQUEST||!reportVisible(el))return;
@@ -1898,12 +2725,12 @@ async function drawSignals(tf) {
 }
 const safe = (name, f) => { try { f(); } catch (e) { console.warn(name, e); } };
 function drawStrategy() {
-  if (!STRAT||STRAT.pristine) return; if (R.optim) {safe('optim',optimInit);return;} const { d, tiles } = STRAT;
+  if (!STRAT||STRAT.pristine) return; if (R.optim) {safe('optim',STRAT.ath?athOptInit:optimInit);return;} const { d, tiles } = STRAT;
   safe('tiles', () => {
   // count-up tiles
   finishMetricAnimations(); // Financial values are shown atomically, without intermediate mixed counts/returns.
   });
-  if(d.kind!=='basket')safe('optim', optimInit);
+  if(d.kind!=='basket'&&d.kind!=='universe')safe('optim', optimInit);
   const report=document.querySelector('[data-strategy-report]');
   if(report&&typeof ResizeObserver==='function'){
     REPORT_OBSERVER?.disconnect();REPORT_OBSERVER=new ResizeObserver(()=>resizeVisibleReportCharts());REPORT_OBSERVER.observe(report);
@@ -1932,7 +2759,7 @@ async function drawVisibleReportCharts(){
     $('#cmp').onchange = e => bh.applyOptions({ visible: e.target.checked });
     $('#logs').onchange = e => ch.priceScale('right').applyOptions({ mode: e.target.checked ? L.PriceScaleMode.Logarithmic : L.PriceScaleMode.Normal });
   } });
-  if(d.kind!=='basket'&&reportVisible($('#c-px'))&&!PXCH){
+  if(d.kind!=='basket'&&d.kind!=='universe'&&reportVisible($('#c-px'))&&!PXCH){
     const snapshot=STRAT,tf=TF;
     if(!SIGNAL_PENDING||SIGNAL_PENDING.snapshot!==snapshot||SIGNAL_PENDING.tf!==tf){
       const pending={snapshot,tf,promise:drawSignals(tf)};SIGNAL_PENDING=pending;
@@ -1942,6 +2769,7 @@ async function drawVisibleReportCharts(){
     if(snapshot!==STRAT)return;
   }
   safe('drawdown', () => { const el=$('#c-dd');if(!reportVisible(el)||el.dataset.reportWidth===String(el.clientWidth))return;let pk = 1; const dd = d.equity.map(v => { pk = Math.max(pk, v); return v / pk - 1; }); bkArea(el, d.dates, dd, { color: cv('--red'), fmt: v => pct(v, 2), axFmt: pctAx, markMin: true });el.dataset.reportWidth=String(el.clientWidth); });
+  safe('positions', () => { const el=$('#c-pos');if(!el||!d.positions?.length||!reportVisible(el)||el.dataset.reportWidth===String(el.clientWidth))return;bkArea(el, d.dates, d.positions, { color: cv('--blue'), fmt: v => fx(v, 0) + ' open', axFmt: v => fx(v, 0) });el.dataset.reportWidth=String(el.clientWidth); });
   safe('years', () => { const el=$('#c-yr');if(!reportVisible(el)||el.dataset.reportWidth===String(el.clientWidth))return;const ys = periods(d, 4), yb = periods({ dates: d.dates, equity: d.bh }, 4); bkBars(el, Object.keys(ys).map(k => ({ label: k, a: ys[k], b: yb[k] })), {});el.dataset.reportWidth=String(el.clientWidth); });
 }
 addEventListener('resize',resizeVisibleReportCharts);
@@ -1960,8 +2788,8 @@ document.addEventListener('vault-saved', () => { savedCount(); if (R.name === 's
 document.addEventListener('click', e => { const b = e.target.closest('[data-unsave]'); if (b) VaultUI.writeSaved(VaultUI.savedList().filter(x => x.key !== b.dataset.unsave)); });
 async function render() {
   const my=++busy,ticket=vaultStore.begin(R.path),route=resolveRoute(location.hash);
-  if(R.name==='guru'||R.name==='all')LIST_HASH=location.hash||'#/';
-  STRAT=null;RULE_VISUAL=null;if(R.name!=='strategy')bookCtx(S.book||'stc9');
+  if(R.name==='guru'||R.name==='all'||R.name==='yt')LIST_HASH=location.hash||'#/';
+  STRAT=null;RULE_VISUAL=null;if(R.name!=='strategy')bookCtx(R.name==='yt'?'':S.book||'stc9');
   try {
     const custom=customPages.find(page=>page.path===route.path);
     let home=null,reading=null,html='';
@@ -1975,7 +2803,7 @@ async function render() {
     cleanupCharts();
     const focus=document.activeElement?.id,pos=document.activeElement?.selectionStart;
     pendingFocus={id:focus,pos};
-    const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
+    const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':(R.name==='yt'&&S.family==='ytbtst'&&btstFuturesSymbol(S.tk))||LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
     vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null});
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
@@ -2006,6 +2834,7 @@ document.addEventListener('click', e => {
   const basketButton=e.target.closest('[data-basket]');if(basketButton){if(basketButton.disabled)return;const key=basketButton.dataset.basket;return go('/s/'+encodeURIComponent(R.id),{...S,run_scope:'basket',basket:key,from:'',to:''});}
   const tfb = e.target.closest('[data-tf]'); if (tfb) { TF = tfb.dataset.tf; drawSignals(TF); return; }
   if(e.target.closest('.source-pdfs'))return;
+  const pr = e.target.closest('[data-preset]'); if (pr && STRAT) { const x = (YT_PRESETS[STRAT.v.id] || [])[+pr.dataset.preset]; if (x) { e.preventDefault(); return go(R.path, { ...S, p: encodeP(x.params), ...(x.ticker ? { tk: x.ticker } : {}) }); } }
   const t = e.target.closest('[data-set], [data-fam], [data-book], [data-guru], [data-guru-strats], [data-sort]'); if (!t) return;
   const d = t.dataset;
   e.preventDefault();
@@ -2020,10 +2849,23 @@ document.addEventListener('submit', e => { if(e.target.id==='position-limit'){e.
   const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
   if (!from || !to || from >= to) { $('#perr').textContent = 'From must be before To.'; return; }
   go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to, cost,slippage,rollover }); });
+// YT strategies: the backtest and optimization pages share one From/To. A typed date applies by itself once it is a
+// complete date inside the data range, and Run optimization, Apply and the page links use a date not yet applied.
+function ytPeriod() {
+  const f = document.getElementById('period'); if (!f || !STRAT || !isYt(STRAT.v)) return {};
+  const [a, b] = [f.elements.from, f.elements.to]; if (!a?.value || !b?.value || !a.checkValidity() || !b.checkValidity() || a.value >= b.value) return {};
+  const t = selectedSpan(S.tk), win = coverageWindow(STRAT.v, S.tk), from = a.value <= t.first || (win && !S.from && a.value === win.from) ? '' : a.value, to = b.value >= t.last || (win && !S.to && b.value === win.to) ? '' : b.value;
+  return from === (S.from || '') && to === (S.to || '') ? {} : { from, to };
+}
+let ytPeriodTimer; document.addEventListener('change', e => { if (e.target.form?.id !== 'period' || !['from', 'to'].includes(e.target.name)) return; clearTimeout(ytPeriodTimer); ytPeriodTimer = setTimeout(() => { const p = ytPeriod(); if (Object.keys(p).length) go(R.path, { ...S, ...p }); }, 700); });
+document.addEventListener('click', e => { const a = e.target.closest('#open-optimization, .back-btn[href^="#/s/"]'); if (!a) return; const p = ytPeriod(); if (!Object.keys(p).length) return; e.preventDefault(); clearTimeout(ytPeriodTimer); go('/' + (R.optim ? 's' : 'o') + '/' + encodeURIComponent(STRAT.v.id), { ...S, ...p }); }, true);
 document.addEventListener('click', e => { const b = e.target.closest('[data-period]'); if (!b) return; const [from, to] = b.dataset.period.split('|'); go(R.path, { ...S, from, to }); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('.bookcard[data-book]')) e.target.click(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
-document.addEventListener('change', e => {if(e.target.id==='strategy-stock'){if(!e.target.value)return;return setState({run_scope:'single',basket:'',tk:e.target.value,from:'',to:''});}if(e.target.id==='library-stock')return setState({tk:e.target.value,from:'',to:''});if(e.target.id==='library-instrument'){const value=e.target.value;if(value.startsWith('i:'))return setState({basket:'',tk:value.slice(2),from:'',to:''});const key=value.slice(2),basket=BASKETS.find(b=>b.id===key);if(basket?.symbols?.length)return setState({basket:key,tk:basket.symbols[0],from:'',to:''});return;}if(e.target.id==='library-sort')return setState({library_sort:e.target.value,library_limit:'24',library_page:'1',source_page:'1'}); if(e.target.id==='basket-universe'){const base=S.basket.replace(/_past$/,''),key=base+(e.target.value==='current_plus_past'?'_past':''),basket=BASKETS.find(b=>b.id===key),symbol=S.tk.split(':').at(-1),match=basket?.symbols?.find(x=>x.split(':').at(-1)===symbol);return setState({basket:key,tk:match||basket?.symbols?.[0]||S.tk,from:'',to:''});} if(e.target.id==='basket-symbol')return setState({tk:e.target.value});const k = e.target.dataset?.key; if (k) setState({ [k]: e.target.value }); });
+document.addEventListener('click', e => { const bk = e.target.closest('[data-uni-basket],[data-uni-set]'); if (!bk || bk.disabled || !STRAT?.v) return; const id = STRAT.v.id;
+  if (bk.dataset.uniBasket) return setState({ run_scope: 'universe', basket: '', tk: 'NIFTY 50', only: '', uni_basket: bk.dataset.uniBasket === uniDefaultBasket(id) ? '' : bk.dataset.uniBasket });
+  return setState({ run_scope: 'universe', basket: '', tk: 'NIFTY 50', only: '', uni_set: bk.dataset.uniSet === 'cp' ? '' : bk.dataset.uniSet }); });
+document.addEventListener('change', e => {if(e.target.id==='yt-stock')return setState({run_scope:'universe',basket:'',tk:'NIFTY 50',from:'',to:'',only:e.target.value});if(e.target.id==='strategy-stock'){if(!e.target.value)return;return setState({run_scope:'single',basket:'',tk:e.target.value,from:'',to:''});}if(e.target.id==='library-stock')return setState({tk:e.target.value,from:'',to:''});if(e.target.id==='library-instrument'){const value=e.target.value;if(value.startsWith('i:'))return setState({basket:'',tk:value.slice(2),from:'',to:''});const key=value.slice(2),basket=BASKETS.find(b=>b.id===key);if(basket?.symbols?.length)return setState({basket:key,tk:basket.symbols[0],from:'',to:''});return;}if(e.target.id==='library-sort')return setState({library_sort:e.target.value,library_limit:'24',library_page:'1',source_page:'1'}); if(e.target.id==='basket-universe'){const base=S.basket.replace(/_past$/,''),key=base+(e.target.value==='current_plus_past'?'_past':''),basket=BASKETS.find(b=>b.id===key),symbol=S.tk.split(':').at(-1),match=basket?.symbols?.find(x=>x.split(':').at(-1)===symbol);return setState({basket:key,tk:match||basket?.symbols?.[0]||S.tk,from:'',to:''});} if(e.target.id==='basket-symbol')return setState({tk:e.target.value});const k = e.target.dataset?.key; if (k) setState({ [k]: e.target.value }); });
 let qt; document.addEventListener('input', e => { if (e.target.id !== 'q') return; clearTimeout(qt); qt = setTimeout(() => setState({ q: e.target.value }), 300); });
 addEventListener('hashchange', () => { if(!GURUS_API.length||!ALLCAT.length)return;readRoute(); render(); });
 
@@ -2036,11 +2878,15 @@ async function initializeRuntime(account) {
     const get = async u => { const response = await fetch(API + u); if (!response.ok) throw new Error(await response.text()); return response.json(); };
     const [connorsCat, rossCat, chandeCat, tk, gurus] = await Promise.all([get('/guru/connors/strategies'), get('/guru/ross/strategies'), get('/guru/chande/strategies'), get('/tickers'), get('/gurus')]);
     const pristineCat=gurus.some(owner=>owner.id==='pristine')?await get('/guru/pristine/strategies'):[];
-    const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'})),...pristineCat.map(v=>({...v,api:'pristine',guru:'pristine'}))]; // guru = the book's author; api = the engine namespace that serves it
+    const ytCat=gurus.some(owner=>owner.id==='yt')?await get('/guru/yt/strategies'):[];
+    const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'})),...pristineCat.map(v=>({...v,api:'pristine',guru:'pristine'})),...ytCat.map(v=>({...v,api:'yt',guru:'yt'}))]; // guru = the book's author; api = the engine namespace that serves it
     TICK_ALL_IN=tk;tk.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);});
     TICKERS = TICK_IN = tk.filter(t => IN_INDICES.includes(t.ticker)); GURUS_API = gurus;
     try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
+    if (ytCat.length) { try { await optSchema(API_IN); } catch (e) { /* rule templates fall back to their placeholders */ } }
+    if (ytCat.some(v => v.id?.startsWith('ytath_'))) { try { const r = await fetch(API_IN + '/guru/yt/ath-universe'); if (r.ok) { const u = await r.json(); if (Array.isArray(u?.ids)) ATH_UNIVERSE = u; } } catch (e) { /* no ATH data: the ATH sub-variants stay unavailable */ } }
+    if (ytCat.some(v => v.id?.startsWith('ytbtst_'))) { try { const r = await fetch(API_IN + '/guru/yt/universe'); if (r.ok) { const u = await r.json(); if (Array.isArray(u?.ids)) UNIVERSE = u; } } catch (e) { /* no stock universe: universe choices stay hidden */ } }
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });
     const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json'];
     const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));

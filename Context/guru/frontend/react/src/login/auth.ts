@@ -14,10 +14,15 @@ export function safeLoginNext(raw: string | null, hash = '', origin = window.loc
     return url.pathname+url.search+url.hash;
   } catch {return '/';}
 }
+/** A plain username signs in as <username>@vault.local (accounts are stored by email), as the earlier login page did. */
+export function loginEmail(value: string): string {
+  const login=value.trim().toLowerCase();
+  return login.includes('@')?login:`${login}@vault.local`;
+}
 export async function signInEmail(email: string,password: string,fetcher: typeof fetch=fetch,signal?: AbortSignal): Promise<void> {
   let response: Response;
   try {
-    response=await fetcher('/api/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),password}),signal});
+    response=await fetcher('/api/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:loginEmail(email),password}),signal});
   } catch(error) {
     if(signal?.aborted)throw error;
     throw new Error('Connection interrupted. Please try again.');

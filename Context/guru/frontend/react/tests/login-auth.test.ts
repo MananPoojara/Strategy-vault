@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {safeLoginNext,signInEmail} from '../src/login/auth';
+import {loginEmail,safeLoginNext,signInEmail} from '../src/login/auth';
 describe('login return routing',()=>{
  const origin='http://vault.test';
  it.each(['https://evil.invalid/','javascript:alert(1)','//evil.invalid/','/\\evil.invalid','/path\\x','/path\nx','/login.html','/nested/../login.html?next=/','/%6cogin.html','/%2f%2fevil.invalid','/%5cevil.invalid','/%0alogin','/LOGIN.html'])('rejects unsafe or looping return %s',value=>expect(safeLoginNext(value,'',origin)).toBe('/'));
@@ -27,5 +27,17 @@ describe('real email authentication contract',()=>{
  it('reports a network interruption with a safe retry message',async()=>{
   const fetcher=vi.fn().mockRejectedValue(new Error('private host info'));
   await expect(signInEmail('test@example.invalid','wrong',fetcher)).rejects.toThrow('Connection interrupted');
+ });
+});
+
+describe('login by username',()=>{
+ it('maps a plain username to its vault.local email and leaves emails alone',()=>{
+  expect(loginEmail(' Kripalsinh ')).toBe('kripalsinh@vault.local');
+  expect(loginEmail('Test@Example.Invalid')).toBe('test@example.invalid');
+ });
+ it('sends the mapped email to the server',async()=>{
+  const fetcher=vi.fn().mockResolvedValue({ok:true,status:200}) as unknown as typeof fetch;
+  await signInEmail('Kripalsinh','123',fetcher);
+  expect(JSON.parse((fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body)).toEqual({email:'kripalsinh@vault.local',password:'123'});
  });
 });

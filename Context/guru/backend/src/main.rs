@@ -6,8 +6,10 @@ mod connors;
 mod readiness;
 mod gate;
 mod accounting;
+mod amsheet;
 mod baskets;
 mod basket_portfolio;
+mod btst_universe;
 mod instrument_policy;
 mod trade_validation;
 mod unit_exposure_report;
@@ -23,6 +25,30 @@ mod pristine_request;
 mod pristine_transport;
 mod pristine_http;
 mod pristine_api;
+mod ath_core;
+mod ath_ind;
+mod ath_pctswing;
+mod ath_exits1;
+mod ath_exits2;
+mod ath_loss1;
+mod ath_loss2;
+mod ath_plus;
+mod ath_rank;
+mod ath_new_scan;
+mod ath_new_swing;
+mod ath_new_st;
+mod ath_new_prob;
+mod ath_v2_e2;
+mod ath_v2_e1;
+mod ath_v2_d2;
+mod ath_v2_d1;
+mod ath_v2_c2;
+mod ath_v2_c1;
+mod ath_v2_b;
+mod ath_v2_a2;
+mod ath_v2_a1;
+mod ath_registry;
+mod ath_run;
 
 // Source-prefix loading and exact account work are serialized for this owner.
 // Metadata stays responsive, and concurrent requests receive a retry response.
@@ -63,6 +89,10 @@ mod guru_ownership_tests {
         let chande= guru_catalogue("chande");
         assert_eq!(chande.len(),5);
         assert!(chande.iter().all(|d|d.book==books::chande::BOOK && d.claim.is_none()));
+        let yt=guru_catalogue("yt");
+        assert!(yt.iter().any(|d|d.id==books::ytmr::ID) && yt.iter().any(|d|d.id==books::ytjb::ID));
+        assert!(yt.iter().all(|d|d.book.starts_with("yt_") && d.claim.is_none()));
+        assert!(connors.iter().all(|d|!d.book.starts_with("yt_")));
     }
     #[test]
     fn caller_cannot_override_the_route_owner() {
@@ -297,7 +327,22 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
         return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None,unit_exposure_report:None});
     }
     let trades = connors::run(id, ctx, from, to, p).ok_or("Strategy implementation unavailable")?;
-    normalized_run(ctx,trades,from,to,cost)
+    let mut run = normalized_run(ctx,trades,from,to,cost)?;
+    if books::ytbtst::is_variant(id) {
+        if let Some(bh) = btst_buy_and_hold(ctx, p, from, to) { run.bh = bh; }
+    }
+    Ok(run)
+}
+
+/// BTST buy & hold: the daily close of the futures series the run trades (src 1: IEOD BTST_5M.DC, src 3: the team-copy
+/// daily close rebuilt from the kept bars, src 2: the feed's daily close from bars up to 15:25), normalized to the
+/// first close of the window and carried over days without a close. Continuous near-month futures, not back-adjusted
+/// (roll jumps included, as in AmiBroker's NIFTY_F1). None when the window has no futures close.
+fn btst_buy_and_hold(ctx: &Ctx, p: &Params, from: usize, to: usize) -> Option<Vec<f64>> {
+    let closes = books::ytbtst::day_closes(ctx, books::ytbtst::src_of(p), to);
+    let base = (from..=to).map(|k| closes[k]).find(|v| v.is_finite())?;
+    let mut last = base;
+    Some((from..=to).map(|k| { if closes[k].is_finite() { last = closes[k]; } last / base }).collect())
 }
 
 /// Shared ordinary percentage account finalization, also exercised with frozen
@@ -531,6 +576,260 @@ fn full_precision_trade_return(v:f64)->String{
 fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
+/// First and last date with a value for each series that some strategy requires, so a client can offer the data window
+/// that really exists (for example the BTST futures bars, which start years after the cash index history).
+fn series_coverage_json(c: &connors::Ctx, needed: &std::collections::BTreeSet<&str>) -> String {
+    needed
+        .iter()
+        .filter_map(|name| {
+            let values = c.series(name)?;
+            let first = values.iter().position(|v| v.is_finite())?;
+            let last = values.iter().rposition(|v| v.is_finite())?;
+            Some(format!("\"{}\":[\"{}\",\"{}\"]", esc(name), c.r[first].date, c.r[last].date))
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The 5-minute futures bars of one ticker between two dates as JSON, built from the loaded `<FAMILY>.<O|H|L|C><HHMM>` series
+/// of the selected BTST data source (`src` 1 = IEOD `BTST_5M`, every loaded bar column; 2 = feed `BTST_F5M`, bars 0915 to 1525,
+/// its lone 1530 print is never used); a bar is listed only when its open, high, low and close are all present.
+fn intraday_bars_json(c: &connors::Ctx, ticker: &str, from: &str, to: &str, src: i64) -> Result<String, String> {
+    const MAX_DAYS: i64 = 31;
+    let (Some(a), Some(b)) = (books::ytmr::day_number(from), books::ytmr::day_number(to)) else {
+        return Err("from and to must be YYYY-MM-DD dates".into());
+    };
+    if from.len() != 10 || to.len() != 10 || b < a {
+        return Err("from and to must be YYYY-MM-DD dates with from <= to".into());
+    }
+    if b - a + 1 > MAX_DAYS {
+        return Err(format!("the intraday range is capped at {MAX_DAYS} calendar days; narrow from and to"));
+    }
+    let fam = books::ytbtst::family(src);
+    let times = books::ytbtst::bar_times(c, src);
+    let rule = books::ytbtst::team_rule(ticker);
+    let kept = |date: &str, t: u32| src != 3 || books::ytbtst::team_keep(rule, date.get(0..4).and_then(|y| y.parse().ok()).unwrap_or(0), t);
+    let cols: Vec<[Option<&[f64]>; 4]> = times.iter().map(|t| ["O", "H", "L", "C"].map(|k| c.series(&format!("{fam}.{k}{t:04}")))).collect();
+    if cols.iter().all(|k| k.iter().all(Option::is_none)) {
+        return Err(format!("{ticker} has no loaded {fam} 5-minute series"));
+    }
+    let mut bars: Vec<String> = Vec::new();
+    for (i, r) in c.r.iter().enumerate() {
+        if r.date.as_str() < from || r.date.as_str() > to {
+            continue;
+        }
+        for (s, t) in times.iter().enumerate() {
+            if !kept(&r.date, *t) {
+                continue;
+            }
+            let v: Option<Vec<f64>> = cols[s].iter().map(|col| col.and_then(|v| v.get(i)).copied().filter(|x| x.is_finite())).collect();
+            let Some(v) = v else { continue };
+            bars.push(format!("{{\"t\":\"{} {:02}:{:02}\",\"o\":{},\"h\":{},\"l\":{},\"c\":{}}}", r.date, t / 100, t % 100, num(v[0]), num(v[1]), num(v[2]), num(v[3])));
+        }
+    }
+    Ok(format!("{{\"ticker\":\"{}\",\"interval\":\"5min\",\"bars\":[{}]}}", esc(ticker), bars.join(",")))
+}
+/// The same bars as `intraday_bars_json` in columnar form for whole-window charts: `t` is the bar start as epoch seconds with the
+/// exchange clock read as UTC (so a chart axis shows market time), then `o`, `h`, `l` and `c`. No day cap; more than
+/// `COMPACT_MAX_BARS` bars is refused rather than truncated.
+fn intraday_compact_json(c: &connors::Ctx, ticker: &str, from: &str, to: &str, src: i64) -> Result<String, String> {
+    use std::fmt::Write;
+    const COMPACT_MAX_BARS: usize = 250_000;
+    if books::ytmr::day_number(from).is_none() || books::ytmr::day_number(to).is_none() || from.len() != 10 || to.len() != 10 || to < from {
+        return Err("from and to must be YYYY-MM-DD dates with from <= to".into());
+    }
+    let fam = books::ytbtst::family(src);
+    let times = books::ytbtst::bar_times(c, src);
+    let rule = books::ytbtst::team_rule(ticker);
+    let kept = |date: &str, t: u32| src != 3 || books::ytbtst::team_keep(rule, date.get(0..4).and_then(|y| y.parse().ok()).unwrap_or(0), t);
+    let cols: Vec<[Option<&[f64]>; 4]> = times.iter().map(|t| ["O", "H", "L", "C"].map(|k| c.series(&format!("{fam}.{k}{t:04}")))).collect();
+    if cols.iter().all(|k| k.iter().all(Option::is_none)) {
+        return Err(format!("{ticker} has no loaded {fam} 5-minute series"));
+    }
+    let (mut t, mut o, mut h, mut l, mut cl) = (String::new(), String::new(), String::new(), String::new(), String::new());
+    let mut n = 0usize;
+    for (i, r) in c.r.iter().enumerate() {
+        if r.date.as_str() < from || r.date.as_str() > to {
+            continue;
+        }
+        let day = books::ytmr::day_number(&r.date).unwrap_or(0) * 86_400;
+        for (s, tm) in times.iter().enumerate() {
+            if !kept(&r.date, *tm) {
+                continue;
+            }
+            let mut v = [0.0f64; 4];
+            let mut ok = true;
+            for (k, col) in cols[s].iter().enumerate() {
+                match col.and_then(|x| x.get(i)).copied().filter(|x| x.is_finite()) {
+                    Some(x) => v[k] = x,
+                    None => { ok = false; break; }
+                }
+            }
+            if !ok { continue; }
+            n += 1;
+            if n > COMPACT_MAX_BARS {
+                return Err(format!("the range holds more than {COMPACT_MAX_BARS} 5-minute bars; narrow from and to"));
+            }
+            let sep = if n > 1 { "," } else { "" };
+            let _ = write!(t, "{sep}{}", day + i64::from(tm / 100) * 3600 + i64::from(tm % 100) * 60);
+            let _ = write!(o, "{sep}{}", num(v[0]));
+            let _ = write!(h, "{sep}{}", num(v[1]));
+            let _ = write!(l, "{sep}{}", num(v[2]));
+            let _ = write!(cl, "{sep}{}", num(v[3]));
+        }
+    }
+    Ok(format!("{{\"ticker\":\"{}\",\"interval\":\"5min\",\"n\":{n},\"t\":[{t}],\"o\":[{o}],\"h\":[{h}],\"l\":[{l}],\"c\":[{cl}]}}", esc(ticker)))
+}
+fn intraday_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    let ticker = q.get("ticker").map(String::as_str).unwrap_or(BENCHMARK);
+    let c = st.ctxs.get(ticker).ok_or("unknown ticker")?;
+    let (from, to) = (q.get("from").map_or("", String::as_str), q.get("to").map_or("", String::as_str));
+    // BTST data source: 1 = the team's IEOD database (default), 2 = the futures feed
+    let src = match q.get("src").map(String::as_str) {
+        None | Some("") | Some("1") => 1,
+        Some("2") => 2,
+        Some("3") => 3,
+        Some(_) => return Err("src must be 1 (IEOD), 2 (futures feed) or 3 (IEOD as the team's 2021 copy)".into()),
+    };
+    if q.get("compact").map(String::as_str) == Some("1") {
+        return intraday_compact_json(c, ticker, from, to, src);
+    }
+    intraday_bars_json(c, ticker, from, to, src)
+}
+
+#[cfg(test)]
+mod series_coverage_tests {
+    use super::*;
+    #[test]
+    fn coverage_is_the_first_and_last_dated_value_of_each_required_series() {
+        let r: Vec<Row> = (1..=6).map(|i| Row { ticker: "T".into(), date: format!("2024-01-0{i}"), open: 1., high: 1., low: 1., close: 1., volume: None }).collect();
+        let mut ctx = connors::Ctx::new(&r, &r, &[]);
+        ctx.extra.insert("A.C1".into(), vec![f64::NAN, f64::NAN, 5., f64::NAN, 7., f64::NAN]);
+        ctx.extra.insert("B.C1".into(), vec![f64::NAN; 6]);
+        ctx.extra.insert("OTHER".into(), vec![1.; 6]);
+        let needed: std::collections::BTreeSet<&str> = ["A.C1", "B.C1", "MISSING"].into_iter().collect();
+        assert_eq!(series_coverage_json(&ctx, &needed), "\"A.C1\":[\"2024-01-03\",\"2024-01-05\"]");
+    }
+    #[test]
+    fn intraday_bars_come_from_the_loaded_five_minute_series() {
+        let r: &'static Vec<Row> = Box::leak(Box::new((1..=3).map(|i| Row { ticker: "T".into(), date: format!("2024-01-0{i}"), open: 1., high: 1., low: 1., close: 1., volume: None }).collect()));
+        let mut ctx = connors::Ctx::new(&r, &r, &[]);
+        for fam in ["BTST_5M", "BTST_F5M"] {
+            for (t, base) in [("0915", 100.), ("0920", 110.), ("1530", 900.)] {
+                for (k, off) in [("O", 0.), ("H", 2.), ("L", -1.), ("C", 1.)] {
+                    // day 2 has no 0920 bar; day 3 has only an open for 0915 (incomplete, skipped)
+                    let v = vec![base + off, if t == "0920" { f64::NAN } else { base + off + 1. }, if k == "O" && t == "0915" { base } else { f64::NAN }];
+                    ctx.extra.insert(format!("{fam}.{k}{t}"), v);
+                }
+            }
+        }
+        // src 2 (feed): 0915 to 1525 only, the stray 1530 print is never listed
+        let j = intraday_bars_json(&ctx, "T", "2024-01-01", "2024-01-03", 2).unwrap();
+        assert_eq!(j, "{\"ticker\":\"T\",\"interval\":\"5min\",\"bars\":[{\"t\":\"2024-01-01 09:15\",\"o\":100,\"h\":102,\"l\":99,\"c\":101},{\"t\":\"2024-01-01 09:20\",\"o\":110,\"h\":112,\"l\":109,\"c\":111},{\"t\":\"2024-01-02 09:15\",\"o\":101,\"h\":103,\"l\":100,\"c\":102}]}");
+        // src 1 (IEOD): every loaded bar column, 15:30 included (after-hours minutes are real bars there)
+        let j1 = intraday_bars_json(&ctx, "T", "2024-01-01", "2024-01-03", 1).unwrap();
+        assert!(j1.contains("{\"t\":\"2024-01-01 15:30\",\"o\":900,\"h\":902,\"l\":899,\"c\":901}") && j1.contains("2024-01-02 15:30") && j1.contains("2024-01-01 09:20"));
+        // compact mode: columnar, same bars, epoch seconds (2024-01-01 09:15 UTC = 1704100500), no day cap
+        let cj = intraday_compact_json(&ctx, "T", "2024-01-01", "2024-03-01", 2).unwrap();
+        assert_eq!(cj, "{\"ticker\":\"T\",\"interval\":\"5min\",\"n\":3,\"t\":[1704100500,1704100800,1704186900],\"o\":[100,110,101],\"h\":[102,112,103],\"l\":[99,109,100],\"c\":[101,111,102]}");
+        assert!(intraday_compact_json(&ctx, "T", "2024-01-01", "2024-03-01", 1).unwrap().contains("\"n\":5"));
+        assert!(intraday_compact_json(&ctx, "T", "2024-02-01", "2024-01-01", 2).is_err());
+        let none = intraday_compact_json(&ctx, "T", "2025-01-01", "2025-01-02", 2).unwrap();
+        assert!(none.contains("\"n\":0") && none.contains("\"t\":[]"));
+        assert!(intraday_compact_json(&connors::Ctx::new(&r, &r, &[]), "T", "2024-01-01", "2024-01-02", 1).unwrap_err().contains("no loaded BTST_5M"));
+        let one = intraday_bars_json(&ctx, "T", "2024-01-02", "2024-01-02", 2).unwrap();
+        assert!(one.contains("2024-01-02 09:15") && !one.contains("2024-01-01") && !one.contains("15:30"));
+        assert!(intraday_bars_json(&ctx, "T", "2024-01-01", "2024-03-01", 1).unwrap_err().contains("capped at 31"));
+        assert!(intraday_bars_json(&ctx, "T", "2024-01-05", "2024-01-01", 1).is_err());
+        assert!(intraday_bars_json(&ctx, "T", "x", "y", 1).is_err());
+        let bare = connors::Ctx::new(&r, &r, &[]);
+        assert!(intraday_bars_json(&bare, "T", "2024-01-01", "2024-01-02", 1).unwrap_err().contains("no loaded BTST_5M"));
+        assert!(intraday_bars_json(&bare, "T", "2024-01-01", "2024-01-02", 2).unwrap_err().contains("no loaded BTST_F5M"));
+        // the route's src query parameter: default 1, 2 = feed, anything else refused
+        let st = State { ctxs: BTreeMap::from([("T".to_string(), ctx)]), baskets: Default::default(), vix: vec![], market_extra: Default::default() };
+        let q = |kv: &[(&str, &str)]| -> BTreeMap<String, String> { kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect() };
+        let base = [("ticker", "T"), ("from", "2024-01-01"), ("to", "2024-01-03")];
+        assert!(intraday_json(&st, &q(&base)).unwrap().contains("15:30"));
+        assert!(!intraday_json(&st, &q(&[base[0], base[1], base[2], ("src", "2")])).unwrap().contains("15:30"));
+        assert!(intraday_json(&st, &q(&[base[0], base[1], base[2], ("src", "2"), ("compact", "1")])).unwrap().contains("\"n\":3"));
+        assert!(intraday_json(&st, &q(&[base[0], base[1], base[2], ("src", "4")])).unwrap_err().contains("src must be"));
+        // src 3 (team copy, NIFTY rule): 2024 keeps 15:30 (only 2011-2015 drop it)
+        assert!(intraday_json(&st, &q(&[base[0], base[1], base[2], ("src", "3")])).unwrap().contains("15:30"));
+    }
+    /// BTST sizing 2 by hand: equity 10,000, alloc 1,000; trade 1 buys 10 units at 100 (row 1) and sells at 110 (row 2),
+    /// trade 2 buys 5 at 200 (row 2) and sells at 190 (row 3); futures daily closes 100, 105, 210, 190.
+    /// Equity: 10,000; 9,000 + 10 x 105 = 10,050; 10,100 - 1,000 + 5 x 210 = 10,150; 9,100 + 950 = 10,050.
+    #[test]
+    fn btst_fixed_amount_book_is_additive() {
+        let r: Vec<Row> = (1..=4).map(|i| Row { ticker: "NIFTY 50".into(), date: format!("2024-01-0{i}"), open: 1., high: 1., low: 1., close: 1., volume: None }).collect();
+        let mut ctx = connors::Ctx::new(&r, &r, &[]);
+        ctx.extra.insert("BTST_5M.DC".into(), vec![100., 105., 210., 190.]);
+        let tr = |i: usize, px: f64, x: usize, xp: f64| Trade { dir: 1.0, legs: vec![connors::Leg { i, px, w: 1.0 }], exit_i: x, exit_px: xp, reason: String::new(), entry_kind: "close", signal_i: x, open: false, exits: vec![] };
+        let trades = vec![tr(1, 100., 2, 110.), tr(2, 200., 3, 190.)];
+        let core = books::ytbtst::catalogue().remove(0);
+        let p: Params = [("sizing".to_string(), 2.0), ("alloc".to_string(), 1000.0), ("equity".to_string(), 10_000.0)].into_iter().collect();
+        let f = btst_fixed(&ctx, &core, &p, &trades, 0, 3, 0.0).unwrap();
+        assert_eq!(f.net, vec![1.0, 1.005, 1.015, 1.005]);
+        assert_eq!((f.units.clone(), f.pnl.clone()), (vec![10.0, 5.0], vec![100.0, -50.0]));
+        // costs per side come out of the P&L; the gross curve is the zero-cost book
+        let f = btst_fixed(&ctx, &core, &p, &trades, 0, 3, 0.001).unwrap();
+        assert!((f.pnl[0] - 10.0 * (110.0 * 0.999 - 100.0 * 1.001)).abs() < 1e-9 && f.gross[3] == 1.005);
+        // sizing 1 (default) and other books: no fixed book
+        assert!(btst_fixed(&ctx, &core, &Params::new(), &trades, 0, 3, 0.0).is_none());
+        let other = books::ytmr::catalogue().remove(0);
+        assert!(btst_fixed(&ctx, &other, &p, &trades, 0, 3, 0.0).is_none());
+        // cash caps the units: alloc 1,000,000 with 10,000 cash buys 100 units at 100
+        let big: Params = [("sizing".to_string(), 2.0), ("alloc".to_string(), 1e6), ("equity".to_string(), 10_000.0)].into_iter().collect();
+        assert_eq!(btst_fixed(&ctx, &core, &big, &trades, 0, 3, 0.0).unwrap().units[0], 100.0);
+    }
+    /// BTST buy & hold follows the traded futures' daily close (carried over a day without one), not the cash index;
+    /// other strategies keep the cash close.
+    #[test]
+    fn btst_buy_and_hold_uses_the_futures_close() {
+        let r: Vec<Row> = (1..=4).map(|i| Row { ticker: "NIFTY 50".into(), date: format!("2024-01-0{i}"), open: 50., high: 60., low: 40., close: 50. + i as f64, volume: None }).collect();
+        let mut ctx = connors::Ctx::new(&r, &r, &[]);
+        ctx.extra.insert("BTST_5M.DC".into(), vec![100., f64::NAN, 110., 90.]);
+        assert_eq!(btst_buy_and_hold(&ctx, &Params::new(), 0, 3), Some(vec![1.0, 1.0, 1.1, 0.9]));
+        assert_eq!(btst_buy_and_hold(&ctx, &Params::new(), 1, 3), Some(vec![1.0, 1.0, 90.0 / 110.0]));
+        // the feed (src 2) has no series here: no futures buy & hold
+        assert!(btst_buy_and_hold(&ctx, &[("src".to_string(), 2.0)].into_iter().collect(), 0, 3).is_none());
+        let b = backtest(&ctx, books::ytbtst::ID, 0, 3, 0.0, &Params::new()).unwrap();
+        assert_eq!(b.bh, vec![1.0, 1.0, 1.1, 0.9]);
+        let other = books::ytmr::catalogue().remove(0);
+        let m = backtest(&ctx, other.id, 0, 3, 0.0, &Params::new()).unwrap();
+        assert_eq!(m.bh, (0..4).map(|k| (51.0 + k as f64) / 51.0).collect::<Vec<_>>());
+    }
+    #[test]
+    fn a_blank_period_defaults_to_the_data_window_but_typed_dates_are_never_moved() {
+        let r: Vec<Row> = (1..=10).map(|i| Row { ticker: "T".into(), date: format!("2024-01-{i:02}"), open: 1., high: 1., low: 1., close: 1., volume: None }).collect();
+        let mut ctx = connors::Ctx::new(&r, &r, &[]);
+        for name in books::ytbtst::catalogue().remove(0).needs_series {
+            let mut v = vec![100.; 10];
+            for k in [0, 1, 2, 9] { v[k] = f64::NAN; } // data on rows 3..=8
+            ctx.extra.insert(name.to_string(), v);
+        }
+        let btst = books::ytbtst::catalogue().remove(0);
+        let other = books::ytmr::catalogue().remove(0);
+        let q = |kv: &[(&str, &str)]| -> BTreeMap<String, String> { kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect() };
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[]), 0, 9), (3, 8));
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[("from", ""), ("to", "")]), 0, 9), (3, 8));
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[("from", "2024-01-01")]), 0, 9), (0, 8)); // typed start stays, blank end defaults
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[("to", "2024-01-10")]), 0, 9), (3, 9)); // typed end stays
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[]), 5, 7), (5, 7)); // blank never widens a window already inside the data
+        assert_eq!(strategy_window(&ctx, &other, &q(&[]), 0, 9), (0, 9)); // strategies without those series are unchanged
+        // src 2 follows the futures feed's coverage (rows 5..=9); without it loaded the window is unchanged
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[("p.src", "2")]), 0, 9), (0, 9));
+        let mut v = vec![100.; 10];
+        for k in 0..5 { v[k] = f64::NAN; }
+        ctx.extra.insert("BTST_F5M.C1525".into(), v);
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[("p.src", "2")]), 0, 9), (5, 9));
+        assert_eq!(strategy_window(&ctx, &btst, &q(&[("p.src", "1")]), 0, 9), (3, 8));
+        // /api/tickers coverage lists both sources
+        let needed: std::collections::BTreeSet<&str> = books::ytbtst::COVERAGE_SERIES.into_iter().collect();
+        assert_eq!(series_coverage_json(&ctx, &needed), "\"BTST_5M.DC\":[\"2024-01-04\",\"2024-01-09\"],\"BTST_F5M.C1525\":[\"2024-01-06\",\"2024-01-10\"]");
+    }
+}
+
 fn stats_json(s: &BTreeMap<&str, f64>) -> String {
     let body: Vec<String> = s.iter().map(|(k, v)| format!("\"{k}\":{}", num(*v))).collect();
     format!("{{{}}}", body.join(","))
@@ -538,9 +837,10 @@ fn stats_json(s: &BTreeMap<&str, f64>) -> String {
 
 fn guru_catalogue(guru: &str) -> Vec<connors::StrategyDef> {
     connors::catalogue().into_iter().filter(|d| match guru {
-        "connors" => !d.book.starts_with("jr_") && d.book!=books::chande::BOOK,
+        "connors" => !d.book.starts_with("jr_") && d.book!=books::chande::BOOK && !d.book.starts_with("yt_"),
         "ross" => d.book.starts_with("jr_"),
         "chande" => d.book==books::chande::BOOK,
+        "yt" => d.book.starts_with("yt_"),
         _ => false,
     }).collect()
 }
@@ -594,11 +894,13 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     let cat=query_catalogue(q);
     if q.get("id").is_some_and(|id| !cat.iter().any(|d| d.id==id)) { return Err("unknown strategy".into()); }
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
+        let (from,to)=strategy_window(ctx,d,q,from,to);
         let issue=readiness::check(ctx,d,from,to,&p).or_else(||native_admission(ctx,d,from,to,&selected,st,q));
         let (mut status,note)=issue.as_ref().map_or(("ready","Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results."),|i| (i.status,i.note.as_str()));
         let note=if let Some(roll)=costs.rollover_issue(){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
         format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\"}}",d.id,status,esc(&note))
     }).collect();
+    let (from,to)=cat.iter().find(|d| q.get("id").is_some_and(|id| d.id==id)).map_or((from,to),|d| strategy_window(ctx,d,q,from,to));
     Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){unit_exposure_report::costs_json(costs)}else{costs.json()},source_provenance(st,q)))
 }
 
@@ -1052,6 +1354,20 @@ fn resolve<'a>(st:&'a State,q:&BTreeMap<String,String>)->Result<(&'a Ctx<'a>,usi
     let t=q.get("ticker").map(String::as_str).unwrap_or(BENCHMARK);resolve_context(st.ctxs.get(t).ok_or("unknown ticker")?,q)
 }
 
+/// A period the caller left blank means "all the data the strategy has". Strategies that run on intraday futures bars (the
+/// `BTST_5M.` series) only have data from where those bars start, so a blank start or end defaults to that coverage instead of
+/// reaching past it. A date the caller typed is never moved: readiness reports it as outside the coverage.
+fn strategy_window(ctx: &Ctx, d: &connors::StrategyDef, q: &BTreeMap<String, String>, from: usize, to: usize) -> (usize, usize) {
+    let blank = |key: &str| q.get(key).is_none_or(|value| value.is_empty());
+    let names = if d.book == books::ytbtst::BOOK { books::ytbtst::required_series(&params_of(q)) } else { d.needs_series };
+    // ADR: the Nifty 50 breadth series ends 2024-08-06, so a page that sends no dates opens on 2000-2024-08-06 (explicit dates are still refused when they run past it)
+    let spans: Vec<(usize, usize)> = names.iter().filter(|name| readiness::intraday_futures_column(name) || d.book == books::ytadr::BOOK).filter_map(|name| readiness::finite_span(ctx, name)).collect();
+    let Some(first) = spans.iter().map(|s| s.0).max() else { return (from, to) };
+    let last = spans.iter().map(|s| s.1).min().unwrap_or(to);
+    if first > last { return (from, to); }
+    (if blank("from") { from.max(first) } else { from }, if blank("to") { to.min(last) } else { to })
+}
+
 /// VIX strategies start where India VIX data starts, so their CAGR is not diluted by years they could never trade.
 fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usize> {
     // Accuracy gate: rules that fill at the open start where this index's opens are real (stale earlier).
@@ -1087,6 +1403,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
     let mut rows = Vec::new();
     for d in definitions.iter() {
+        let (from, to) = strategy_window(ctx, d, q, from, to);
         if let Some(issue) = readiness::check(ctx, d, from, to, &Params::new()).or_else(||native_admission(ctx,d,from,to,&selected,st,q)) {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
@@ -1096,7 +1413,9 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,esc(&note)));
             continue;
         };
-        let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
+        // ADR grid cards run on the team's reference setting (the AFL defaults never trade); explicit page runs are untouched
+        let card_params=if d.book==books::ytadr::BOOK{books::ytadr::card_params(d.id).unwrap_or_default()}else{Params::new()};
+        let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&card_params){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
         let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
@@ -1317,6 +1636,78 @@ fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run
     format!("{{\"id\":\"{}\",\"book\":\"hbiab\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{},\"ohlc\":{},\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",id,dates,numbers(&ctx.c[from..=to]),numbers(&run.equity),numbers(&gross.equity),numbers(&run.bh),list(trades),ohlc,account.json(ctx),stats_json(&financial_stats(ctx,run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,run)),bandy_costs_json(costs),esc(books::hbiab_reviewed::basis(id)))
 }
 
+/// BTST sizing 2 (AFL "FIXED EQUITY": EQUITY ALLOCATION per trade on `equity` initial capital): floor(alloc / entry)
+/// units of the futures price (RoundLotSize 1), shrunk to the cash available (skipped below 1 unit), additive P&L;
+/// open positions marked at the futures daily close. Equity is returned normalized by the initial capital (net and
+/// gross), with the units and net P&L in Rs of every trade. None for sizing 1 (the compounding report) or other books.
+struct FixedBook { net: Vec<f64>, gross: Vec<f64>, units: Vec<f64>, pnl: Vec<f64>, equity0: f64, alloc: f64 }
+fn btst_fixed(ctx: &Ctx, d: &connors::StrategyDef, p: &Params, trades: &[Trade], from: usize, to: usize, cost: f64) -> Option<FixedBook> {
+    if d.book != books::ytbtst::BOOK || p.get("sizing").map_or(1.0, |v| v.round()) != 2.0 {
+        return None;
+    }
+    let defaults = books::ytbtst::sizing_params();
+    let get = |k: &str| p.get(k).copied().unwrap_or_else(|| defaults.iter().find(|x| x.key == k).map_or(0.0, |x| x.def));
+    let (equity0, alloc) = (get("equity"), get("alloc"));
+    let closes = books::ytbtst::day_closes(ctx, books::ytbtst::src_of(p), to);
+    let curve = |c: f64| -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+        let (mut eq, mut units, mut pnl) = (Vec::with_capacity(to + 1 - from), vec![0.0; trades.len()], vec![f64::NAN; trades.len()]);
+        let (mut cash, mut j, mut open): (f64, usize, Option<usize>) = (equity0, 0, None);
+        let mut last = f64::NAN;
+        for k in from..=to {
+            loop {
+                if let Some(o) = open {
+                    let t = &trades[o];
+                    if !t.open && t.exit_i == k {
+                        cash += units[o] * t.exit_px * (1.0 - c);
+                        pnl[o] = units[o] * (t.exit_px * (1.0 - c) - t.legs[0].px * (1.0 + c));
+                        open = None;
+                        continue;
+                    }
+                } else if j < trades.len() && trades[j].legs[0].i <= k {
+                    let px = trades[j].legs[0].px;
+                    let mut u = (alloc / px).floor();
+                    if u * px * (1.0 + c) > cash {
+                        u = (cash / (px * (1.0 + c))).floor();
+                    }
+                    units[j] = u.max(0.0);
+                    cash -= units[j] * px * (1.0 + c);
+                    last = px;
+                    open = Some(j);
+                    j += 1;
+                    continue;
+                }
+                break;
+            }
+            if closes[k].is_finite() {
+                last = closes[k];
+            }
+            eq.push((cash + open.map_or(0.0, |o| units[o] * if last.is_finite() { last } else { trades[o].legs[0].px })) / equity0);
+        }
+        for (o, t) in trades.iter().enumerate() {
+            if t.open {
+                pnl[o] = units[o] * (t.exit_px * (1.0 - c) - t.legs[0].px * (1.0 + c));
+            }
+        }
+        (eq, units, pnl)
+    };
+    let (net, units, pnl) = curve(cost);
+    let (gross, _, _) = curve(0.0);
+    Some(FixedBook { net, gross, units, pnl, equity0, alloc })
+}
+/// financial_stats with the gross keys of a fixed-amount book taken from its own zero-cost curve.
+fn btst_fixed_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs, fixed: &Option<FixedBook>) -> BTreeMap<&'static str, f64> {
+    let mut s = financial_stats(ctx, run, costs);
+    if let Some(f) = fixed {
+        let zero = Run { trades: run.trades.clone(), from: run.from, to: run.to, equity: f.gross.clone(), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None };
+        let g = stats(ctx, &zero, 0.);
+        for (key, source) in [("gross_total_return", "total_return"), ("gross_avg_trade", "avg_trade"), ("gross_win_rate", "win_rate"), ("gross_sharpe", "sharpe"), ("gross_max_dd", "max_dd")] {
+            s.insert(key, g[source]);
+        }
+        s.insert("net_pnl_rs", (f.net.last().copied().unwrap_or(1.0) - 1.0) * f.equity0);
+    }
+    s
+}
+
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let selected=select_context(st,q)?;let held=selected.context(st);
@@ -1326,12 +1717,15 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id.as_str()).ok_or("unknown strategy")?;
     let p = checked_params_of(q)?;
+    let (from, to) = strategy_window(ctx, def, q, from, to);
     if let Some(issue) = readiness::check(ctx, def, from, to, &p).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
-    let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
+    let mut run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
+    let fixed = btst_fixed(ctx, def, &p, &run.trades, from, to, costs.side_rate());
+    if let Some(f) = &fixed { run.equity = f.net.clone(); }
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
@@ -1367,9 +1761,16 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     arr(&mut o, &mut run.bh.iter().map(|v| num(*v)));
     o.push_str(",\"trades\":");
     let mut allocation=1.;
+    // BTST: the futures series actually traded and the start-stamped bar times of each fill
+    let btst=(def.book==books::ytbtst::BOOK).then(||{
+        let times=books::ytbtst::trade_times(id,ctx,from,to,&p);
+        (books::ytbtst::instrument(&ctx.r[from].ticker,books::ytbtst::src_of(&p)),times)
+    });
+    let hhmm=|date:&str,t:u32|format!("\"{date} {:02}:{:02}\"",t/100,t%100);
     arr(&mut o, &mut run.trades.iter().enumerate().map(|(i,t)| {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}
-        let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
+        let mut ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
+        if let Some(((sym,_),_))=&btst {ledger.set_symbol(sym);}
         allocation*=1.+ledger.net_ret;
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
@@ -1380,8 +1781,18 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         );
         if books::lkqts::stock_research_profile(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
+        if let Some((_,times))=&btst {
+            let (et,xt)=times.get(i).copied().filter(|_|times.len()==run.trades.len()).unwrap_or((0,0));
+            row.pop();
+            let (units,pnl)=fixed.as_ref().map_or(("null".to_string(),"null".to_string()),|f|(num(f.units[i]),num(f.pnl[i])));
+            let _=write!(row,",\"entry_ts\":{},\"exit_ts\":{},\"units\":{units},\"pnl\":{pnl}}}",if et>0{hhmm(&ctx.r[t.legs[0].i].date,et)}else{"null".into()},if xt>0&&!t.open{hhmm(&ctx.r[t.exit_i].date,xt)}else{"null".into()});
+        }
         row
     }));
+    if let Some(((sym,desc),_))=&btst {
+        let _=write!(o,",\"instrument\":{{\"symbol\":\"{}\",\"description\":\"{}\",\"database\":\"{}\"}}",esc(sym),esc(desc),esc(books::ytbtst::source_of(sym)));
+        let _=write!(o,",\"sizing\":{}",fixed.as_ref().map_or("{\"mode\":1,\"basis\":\"% of equity, compounding: the whole equity per trade (the team's sheets)\"}".to_string(),|f|format!("{{\"mode\":2,\"equity\":{},\"alloc\":{},\"basis\":\"Fixed amount per trade: floor(alloc / entry price) units of the futures price, cash-capped; additive P&L on the initial capital; open positions marked at the futures daily close\",\"final_equity_rs\":{}}}",num(f.equity0),num(f.alloc),num(f.net.last().copied().unwrap_or(1.)*f.equity0))));
+    }
     if let Some(d)=&diagnostics.kestner_next {
         let qualified=q.get("ticker").filter(|key|st.baskets.native_evidence(key).is_some()).ok_or("needs_data: Kestner report requires the actual server-qualified stock identity")?;
         let _=write!(o,",\"kestner_research\":{{\"id\":\"{}\",\"book\":\"lkqts\",\"qualified_ticker\":\"{}\",\"ticker\":\"{}\",\"provenance\":{},\"profile\":\"{}\",\"source_convention\":\"{}\",\"states\":[",esc(id),esc(qualified),esc(&ctx.r[from].ticker),source_provenance(st,q),d.profile,esc(books::lkqts::next_source_convention(id).unwrap_or("")));
@@ -1445,14 +1856,18 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
         o.push_str("]}");
     }
-    let gross_equity=run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect());
+    let gross_equity=if let Some(f)=&fixed {f.gross.clone()} else {run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
     let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None};
     if let Some(account)=&run.source_account {
         let _=write!(o,",\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",account.json(ctx),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.source_account_json(),esc(books::elcim_account::BASIS));
         return Ok(o);
     }
-    let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"Return-only report. The normalized compounding model begins at unit equity 1 before the first event. The first daily model return is equity[0]/1 - 1, including an initial fee or loss, and risk/drawdown reports retain that initial event. Net profit/closed_return_sum sums actual closed-trade net percentage returns and equals unrounded avg_net_pnl times closed trades. Open marks are excluded from that sum. total_return/compounded_return and charts use a separately labelled sequential unit-exposure compounding model including open liquidation estimates. No sized portfolio result is implied. Gross equity/stats independently compound the same fills at zero cost. Ledger gross/fee/slippage returns use the actual net pretrade allocation, so ledger_gross_return minus fee_return minus slippage_return reconciles net total_return. Open trades include modeled liquidation costs. No monetary sizing, statutory tax schedule or verified futures roll events are supplied.\"}}", stats_json(&financial_stats(ctx, &run, costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json());
+    let bench_symbol = btst.as_ref().map_or_else(|| ctx.r[from].ticker.clone(), |((sym, _), _)| sym.to_string());
+    if btst.is_some() {
+        o.push_str(",\"benchmark_basis\":\"Buy & hold of the futures series the run trades (daily close), continuous near-month futures, not back-adjusted: roll jumps included, as in AmiBroker's NIFTY_F1\"");
+    }
+    let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"Return-only report. The normalized compounding model begins at unit equity 1 before the first event. The first daily model return is equity[0]/1 - 1, including an initial fee or loss, and risk/drawdown reports retain that initial event. Net profit/closed_return_sum sums actual closed-trade net percentage returns and equals unrounded avg_net_pnl times closed trades. Open marks are excluded from that sum. total_return/compounded_return and charts use a separately labelled sequential unit-exposure compounding model including open liquidation estimates. No sized portfolio result is implied. Gross equity/stats independently compound the same fills at zero cost. Ledger gross/fee/slippage returns use the actual net pretrade allocation, so ledger_gross_return minus fee_return minus slippage_return reconciles net total_return. Open trades include modeled liquidation costs. No monetary sizing, statutory tax schedule or verified futures roll events are supplied.\"}}", stats_json(&btst_fixed_stats(ctx, &run, costs, &fixed)),stats_json(&stats(ctx,&gross,0.)),esc(&bench_symbol),stats_json(&benchmark_stats(ctx,&run)),costs.json());
     if def.book==books::chande::BOOK {o.pop();let _=write!(o,",\"experiment\":{}}}",experiment_json(id));}
     Ok(o)
 }
@@ -1515,6 +1930,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id).ok_or("unknown strategy")?;
     let base = checked_params_of(q)?;
+    let (from, to) = strategy_window(ctx, def, q, from, to);
     if let Some(issue) = readiness::check(ctx, def, from, to, &base).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
@@ -1558,24 +1974,43 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         .filter(|s| !s.is_empty())
         .map(|s| dates.partition_point(|d| *d < s.as_str()))
         .filter(|&s| s > from + 20 && s + 20 < to);
+    // sheet=1: after the stat columns every row also carries the 36 AmiBroker columns of the team's optimization sheet (split off again below, so ranking and picks do not change)
+    let want_sheet = q.get("sheet").is_some_and(|v| v == "1");
     let metrics_v = |p: &Params| -> Result<Vec<f64>,String> {
         if let Some(issue)=readiness::check(ctx,def,from,to,p){return Err(issue.note);}
-        let full = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,p)?;
-        let s = financial_stats(ctx, &full, costs);
+        let mut full = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,p)?;
+        let fixed = btst_fixed(ctx, def, p, &full.trades, from, to, costs.side_rate());
+        if let Some(f) = &fixed { full.equity = f.net.clone(); }
+        let s = btst_fixed_stats(ctx, &full, costs, &fixed);
         let mut out: Vec<f64> = FULL_COLS.iter().map(|k| s[k]).collect();
+        let sheet_part: Vec<f64> = if want_sheet {
+            let dates_w: Vec<&str> = ctx.r[from..=to].iter().map(|r| r.date.as_str()).collect();
+            let trades_in: Vec<amsheet::TradeIn> = full.trades.iter().filter(|t| !t.legs.is_empty()).map(|t| {
+                let w: f64 = t.legs.iter().map(|l| l.w).sum();
+                amsheet::TradeIn { dir: t.dir, entry: t.legs[0].i.saturating_sub(from), exit: t.exit_i.saturating_sub(from), ret: t.ret(costs.side_rate()), avg_px: t.legs.iter().map(|l| l.px * l.w).sum::<f64>() / w, exit_px: t.exit_px, profit: None, weight: 0.0 }
+            }).collect();
+            amsheet::row(&dates_w, &ctx.c[from..=to], &full.equity, &trades_in)
+        } else { Vec::new() };
         for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
-            let r = selected_backtest_costs(&selected,st,q,ctx,id,a,b,costs,p)?;
-            let s = financial_stats(ctx, &r, costs);
+            let mut r = selected_backtest_costs(&selected,st,q,ctx,id,a,b,costs,p)?;
+            let fixed = btst_fixed(ctx, def, p, &r.trades, a, b, costs.side_rate());
+            if let Some(f) = &fixed { r.equity = f.net.clone(); }
+            let s = btst_fixed_stats(ctx, &r, costs, &fixed);
             out.extend(PART_COLS.iter().map(|k| s[k]));
         }
+        out.extend(sheet_part);
         Ok(out)
     };
-    let book_metrics=metrics_v(&Params::new())?;
+    let mut book_metrics=metrics_v(&Params::new())?;
+    if want_sheet { book_metrics.truncate(book_metrics.len() - amsheet::COLUMNS); }
+    // the team's "Now" row: the settings the page currently holds (base), not the AFL defaults of the book
+    let now_sheet: Vec<f64> = if want_sheet { let mut v = metrics_v(&base)?; v.split_off(v.len() - amsheet::COLUMNS) } else { Vec::new() };
+    let now_json = now_sheet.iter().map(|v| if v.is_finite() { format!("{v}") } else { "null".to_string() }).collect::<Vec<_>>().join(",");
     let serialize_stat:fn(f64)->String=if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::statistic_number}else{num};
     let metrics = book_metrics.iter().map(|v|serialize_stat(*v)).collect::<Vec<_>>().join(",");
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
     // each row: parameter values, then FULL_COLS (and IS/OOS PART_COLS)
-    let rows_v: Vec<Vec<f64>> = std::thread::scope(|sc| -> Result<Vec<Vec<f64>>,String> {
+    let mut rows_v: Vec<Vec<f64>> = std::thread::scope(|sc| -> Result<Vec<Vec<f64>>,String> {
         let hs: Vec<_> = (0..threads)
             .map(|t| {
                 let (dims, base, metrics_v) = (&dims, &base, &metrics_v);
@@ -1602,6 +2037,9 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         all.sort_by_key(|r| r.0);
         Ok(all.into_iter().map(|r| r.1).collect())
     })?;
+    // the sheet columns ride at the end of each row; take them off so the rest of the endpoint sees the usual rows
+    let sheet_rows: Vec<Vec<f64>> = if want_sheet { let base = dims.len() + book_metrics.len(); rows_v.iter_mut().map(|r| r.split_off(base)).collect() } else { Vec::new() };
+    let sheet_json = sheet_rows.iter().map(|r| format!("[{}]", r.iter().map(|v| if v.is_finite() { format!("{v}") } else { "null".to_string() }).collect::<Vec<_>>().join(","))).collect::<Vec<_>>().join(",");
     let col = |name: &str| dims.len() + FULL_COLS.iter().position(|c| *c == name).unwrap();
     // a setting must trade regularly: at least half the book setting's yearly rate, clamped to 1..5 trades a year, and 10 in total
     let yrs = years(ctx, from, to);
@@ -1626,9 +2064,9 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let dims_json: Vec<String> = dims.iter().map(|(k, v)| format!("{{\"key\":\"{k}\",\"values\":[{}]}}", v.iter().map(|x| serialize_stat(*x)).collect::<Vec<_>>().join(","))).collect();
     let fixed: Vec<String> = base.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), serialize_stat(*v))).collect();
     Ok(format!(
-        "{{\"id\":\"{id}\",\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":[{}],\"fixed\":{{{}}},\"cols\":[{}],\"book\":[{}],\"rank\":{rank_json},\"picked\":{{{}}},\"rows\":[{}],\"costs\":{},\"provenance\":{},\"experiment\":{}}}",
+        "{{\"id\":\"{id}\",\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":[{}],\"fixed\":{{{}}},\"cols\":[{}],\"book\":[{}],\"rank\":{rank_json},\"picked\":{{{}}},\"rows\":[{}],\"sheet\":[{}],\"now_sheet\":[{}],\"costs\":{},\"provenance\":{},\"experiment\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
-        dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::costs_json(costs)}else if books::hbiab_reviewed::reviewed(id){bandy_costs_json(costs)}else if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
+        dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),sheet_json,now_json,if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::costs_json(costs)}else if books::hbiab_reviewed::reviewed(id){bandy_costs_json(costs)}else if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
     ))
 }
 
@@ -1823,10 +2261,12 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
     match path.as_str() {
         "/api/ohlc" => json(chart_ohlc_json(&st,&q), &mut stream),
         "/api/tickers" => {
+            let mut needed: std::collections::BTreeSet<&str> = connors::catalogue().iter().flat_map(|d| d.needs_series.iter().copied()).collect();
+            needed.extend(books::ytbtst::COVERAGE_SERIES); // both BTST data sources (src 1 IEOD, src 2 futures feed)
             let mut items: Vec<String> = st
                 .ctxs
                 .iter()
-                .map(|(t, c)| format!("{{\"ticker\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"has_volume\":{},\"series\":[{}]}}", esc(t), c.r[0].date, c.r[c.r.len() - 1].date, c.has_volume, c.extra.keys().filter(|k| c.series(k).is_some()).map(|k| format!("\"{}\"", esc(k))).collect::<Vec<_>>().join(",")))
+                .map(|(t, c)| format!("{{\"ticker\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"has_volume\":{},\"series\":[{}],\"coverage\":{{{}}}}}", esc(t), c.r[0].date, c.r[c.r.len() - 1].date, c.has_volume, c.extra.keys().filter(|k| c.series(k).is_some()).map(|k| format!("\"{}\"", esc(k))).collect::<Vec<_>>().join(","), series_coverage_json(c, &needed)))
                 .collect();
             items.extend(st.baskets.tickers_json());
             json(Ok(format!("[{}]", items.join(","))), &mut stream)
@@ -1834,11 +2274,12 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/gurus" => {
             let cat = guru_catalogue("connors");
             let ross = guru_catalogue("ross");
+            let yt = guru_catalogue("yt");
             let live = cat.iter().filter(|d| d.status == Status::Live).count();
             let thesis: Vec<String> = connors::THESIS.iter().map(|(h, b)| format!("{{\"title\":\"{}\",\"body\":\"{}\"}}", esc(h), esc(b))).collect();
             json(Ok(format!(
-                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}}]",
-                connors::GURU_ID, esc(connors::GURU_NAME), esc(connors::TAGLINE), esc(connors::BOOK), cat.len(), live, thesis.join(","), ross.len()
+                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}},{{\"id\":\"yt\",\"name\":\"YT Strategies\",\"tagline\":\"Rule sets the team sourced outside the book library, simulated on the selected index or ETF. No published performance figures.\",\"book\":\"Team-supplied AFL rules\",\"strategies\":{},\"testable\":{},\"thesis\":[]}}]",
+                connors::GURU_ID, esc(connors::GURU_NAME), esc(connors::TAGLINE), esc(connors::BOOK), cat.len(), live, thesis.join(","), ross.len(), yt.len(), yt.iter().filter(|d| d.status == Status::Live).count()
             )), &mut stream)
         }
         "/api/guru/connors/strategies" => json(Ok(catalogue_json("connors")), &mut stream),
@@ -1862,6 +2303,30 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/ross/basket-run" => basket_json(&st,&owned_query(&q,"ross"),&mut stream),
         "/api/guru/ross/params" => json(Ok(params_json("ross")), &mut stream),
         "/api/guru/ross/optimize" => json(optimize(&st, &owned_query(&q,"ross")), &mut stream),
+        "/api/guru/yt/strategies" => json(Ok(catalogue_json("yt")), &mut stream),
+        "/api/guru/yt/readiness" => json(readiness_json(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/yt/summary" => json(summary(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/yt/run" => json(detail(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/yt/intraday" => json(intraday_json(&st, &q), &mut stream),
+        "/api/guru/yt/universe" => json(btst_universe::info_json(), &mut stream),
+        "/api/guru/yt/universe-run" => match btst_universe::run_json(&q) {
+            Ok(b) => respond(&mut stream, "200 OK", "application/json; charset=utf-8", b.as_bytes()),
+            Err(e) if e.starts_with("busy:") => respond(&mut stream, "429 Too Many Requests", "text/plain; charset=utf-8", e.as_bytes()),
+            Err(e) => respond(&mut stream, "400 Bad Request", "text/plain; charset=utf-8", e.as_bytes()),
+        },
+        "/api/guru/yt/ath-universe" => json(ath_run::info_json(), &mut stream),
+        "/api/guru/yt/ath-run" => match ath_run::run_json(&q) {
+            Ok(b) => respond(&mut stream, "200 OK", "application/json; charset=utf-8", b.as_bytes()),
+            Err(e) if e.starts_with("busy:") => respond(&mut stream, "429 Too Many Requests", "text/plain; charset=utf-8", e.as_bytes()),
+            Err(e) => respond(&mut stream, "400 Bad Request", "text/plain; charset=utf-8", e.as_bytes()),
+        },
+        "/api/guru/yt/ath-optimize" => match ath_run::optimize_json(&q) {
+            Ok(b) => respond(&mut stream, "200 OK", "application/json; charset=utf-8", b.as_bytes()),
+            Err(e) if e.starts_with("busy:") => respond(&mut stream, "429 Too Many Requests", "text/plain; charset=utf-8", e.as_bytes()),
+            Err(e) => respond(&mut stream, "400 Bad Request", "text/plain; charset=utf-8", e.as_bytes()),
+        },
+        "/api/guru/yt/params" => json(Ok(params_json("yt")), &mut stream),
+        "/api/guru/yt/optimize" => json(optimize(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/notes" => match note_path(&q) {
             Ok(f) => respond(&mut stream, "200 OK", "text/plain; charset=utf-8", &std::fs::read(f).unwrap_or_default()),
             Err(e) => respond(&mut stream, "400 Bad Request", "text/plain", e.as_bytes()),
@@ -1904,7 +2369,7 @@ mod pristine_route_tests {
         assert!(out.contains("prior-session low - 0.05"));
         let owners=request(b"GET /api/gurus HTTP/1.1\r\nHost: localhost\r\n\r\n");
         assert!(owners.starts_with("HTTP/1.1 200"));
-        for owner in ["connors","ross","chande","pristine"] {
+        for owner in ["connors","ross","chande","pristine","yt"] {
             assert_eq!(owners.matches(&format!("\"id\":\"{owner}\"")).count(),1);
         }
     }

@@ -26,6 +26,25 @@ fn event_column(name: &str) -> bool {
     ["LONG_FILLS", "SHORT_FILLS", "LONG_STOPS", "SHORT_STOPS", "VIXFILL_", "VIXUP_", "VIXDN_"].iter().any(|prefix| name.starts_with(prefix))
 }
 
+/// The BTST 5-minute futures bars (one column per bar, empty = bar missing) exist only where the futures data does:
+/// the IEOD family `BTST_5M` and the futures-feed family `BTST_F5M`.
+pub fn intraday_futures_column(name: &str) -> bool { name.starts_with("BTST_5M.") || name.starts_with("BTST_F5M.") }
+
+/// First and last bar that has a value for the series.
+pub fn finite_span(ctx: &Ctx, name: &str) -> Option<(usize, usize)> {
+    let values=ctx.series(name)?;
+    Some((values.iter().position(|v| v.is_finite())?, values.iter().rposition(|v| v.is_finite())?))
+}
+
+/// Those columns are not required to be finite on every bar: a single missing bar or day is the strategy's own
+/// "missing" case. The window must lie inside the loaded coverage, so a period before the futures history (or after it)
+/// is reported with that coverage instead of silently running without trades.
+fn intraday_coverage(ctx: &Ctx, name: &str, from: usize, to: usize) -> Option<Issue> {
+    let (first,last)=finite_span(ctx,name)?;
+    if from>=first && to<=last { return None; }
+    issue("needs_data",format!("Required series {name} covers {} to {} only, and the selected period {} to {} reaches outside it. Choose a period inside the loaded coverage; no missing prices are estimated.",ctx.r[first].date,ctx.r[last].date,ctx.r[from].date,ctx.r[to].date))
+}
+
 #[cfg(test)]
 mod short_course_readiness_tests {
     use super::*;
@@ -304,7 +323,11 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
         return issue("needs_data", "Required volume data is missing on one or more trading days in this period. A price-only index cannot substitute for this rule's volume or stock-universe filter.");
     }
-    let mut required=def.needs_series.to_vec();
+    // BTST reads one data source per run: its coverage series follows the selected `src`.
+    if def.book==books::ytbtst::BOOK {
+        if let Some((status,note))=books::ytbtst::unsupported(def.id,p) { return issue(status,note); }
+    }
+    let mut required=if def.book==books::ytbtst::BOOK {books::ytbtst::required_series(p).to_vec()} else {def.needs_series.to_vec()};
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
@@ -314,6 +337,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // A series existing somewhere in history does not mean it covers the requested dates.
     for &name in &required {
+        if intraday_futures_column(name) {
+            if let Some(found)=intraday_coverage(ctx,name,from,to) { return Some(found); }
+            continue;
+        }
         if event_column(name) { continue; }
         let values=ctx.series(name).unwrap();
         let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite())).collect();
@@ -358,6 +385,44 @@ mod tests {
             let def=books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();
             assert!(check(&ctx,&def,250,449,&Params::new()).unwrap().note.contains("Full supplied"));
         }
+    }
+    #[test]
+    fn btst_futures_series_need_window_coverage_but_tolerate_single_missing_days() {
+        let r:Vec<Row>=(0..10).map(|i|Row{ticker:"NIFTY 50".into(),date:format!("2024-01-{:02}",i+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        let d=definition(books::ytbtst::ID);
+        let mut ctx=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&ctx,&d,0,9,&Params::new()).unwrap().status,"needs_data"); // series absent
+        for s in d.needs_series {
+            let mut v=vec![100.;10];
+            for k in 0..3 {v[k]=f64::NAN;}   // futures history starts on row 3
+            v[6]=f64::NAN;                    // and a single day is missing inside it
+            ctx.extra.insert(s.to_string(),v);
+        }
+        assert!(check(&ctx,&d,3,9,&Params::new()).is_none());
+        let e=check(&ctx,&d,0,9,&Params::new()).unwrap();
+        assert_eq!(e.status,"needs_data");
+        assert!(e.note.contains("2024-01-04 to 2024-01-10") && e.note.contains("2024-01-01"));
+        // src 2 reads the futures-feed family: absent here, then its own (shorter) coverage
+        let feed=Params::from([("src".into(),2.)]);
+        assert!(check(&ctx,&d,3,9,&feed).unwrap().note.contains("BTST_F5M.C1525"));
+        let mut v=vec![100.;10];
+        for k in 0..5 {v[k]=f64::NAN;}
+        ctx.extra.insert("BTST_F5M.C1525".into(),v);
+        assert!(check(&ctx,&d,5,9,&feed).is_none());
+        assert!(check(&ctx,&d,3,9,&feed).unwrap().note.contains("BTST_F5M.C1525 covers 2024-01-06 to 2024-01-10"));
+        assert!(check(&ctx,&d,3,9,&Params::new()).is_none()); // src 1 unchanged
+        // volume needs src 1; an unknown source is refused; stock-only placeholders are not testable
+        let vol=definition("ytbtst_volume");
+        assert_eq!(check(&ctx,&vol,5,9,&feed).unwrap().status,"needs_data");
+        assert!(check(&ctx,&vol,3,9,&Params::new()).is_none());
+        assert_eq!(check(&ctx,&d,3,9,&Params::from([("src".into(),4.)])).unwrap().status,"not_testable");
+        assert!(check(&ctx,&d,3,9,&Params::from([("src".into(),3.)])).is_none()); // src 3 = src 1 coverage
+        let ph=check(&ctx,&definition("ytbtst_index_filter"),3,9,&Params::new()).unwrap();
+        assert_eq!(ph.status,"not_testable");
+        assert!(ph.note.contains("needs the F&O stock universe (Phase 2)"));
+        let uni=check(&ctx,&definition("ytbtst_rank_price"),3,9,&Params::new()).unwrap();
+        assert!(uni.status=="not_testable" && uni.note.contains("runs on the F&O stock universe"));
+        assert!(intraday_futures_column("BTST_F5M.C0915") && intraday_futures_column("BTST_5M.DC") && !intraday_futures_column("VIX.Close"));
     }
     fn rows() -> Vec<Row> {
         (1..=5).map(|i| Row{ticker:"TEST".into(),date:format!("2020-01-0{i}"),open:100.0,high:101.0,low:99.0,close:100.0,volume:Some(1000.0)}).collect()

@@ -50,6 +50,7 @@ function ResearchRoute({ snapshot }: { snapshot: ViewSnapshot }) {
     home: HomePage,
     author: AuthorPage,
     strategies: StrategiesPage,
+    yt: StrategiesPage,
     strategy: StrategyPage,
     optimization: OptimizationPage,
     saved: SavedPage,

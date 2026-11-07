@@ -3,6 +3,7 @@ WORKDIR /frontend
 COPY frontend/react/package.json frontend/react/package-lock.json ./react/
 RUN --mount=type=secret,id=build_ca --mount=type=cache,id=vault-frontend-npm,target=/root/.npm if [ -s /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; npm --prefix react ci --no-audit --no-fund
 COPY frontend ./
+COPY webapp/public/login.css /webapp/public/login.css
 RUN --mount=type=secret,id=login_audio,target=/run/secrets/login-audio VAULT_LOGIN_AUDIO=/run/secrets/login-audio npm --prefix react run build
 
 FROM rust:1.97.1-slim-bookworm AS build

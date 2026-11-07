@@ -454,6 +454,13 @@ fn base_policy(def:&StrategyDef)->Policy {
             let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Supplied partial Chande 1997 text, printed pp.75-80 and pp.101-111. These two rules are explicitly named OHLC return-based adaptations on actual selected prices; they do not reproduce the original futures contracts, dollar stops, 23-market portfolio or intraday drawdown.");p.market_adaptation=true;p
         },
         "ch_bta" if member(id,&["ch_cbpb_dollar","ch_cbpb_target","ch_cbpb_trail"]) => future("Chande Tables 4.8-4.10 require actual futures contract dollar/tick values, dated contract/roll prices and supported stop/target ordering. No cash-point or percentage substitute is authorized."),
+        "yt_mr" if id==crate::books::ytmr::ID => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's AFL (Monday Reversal, Type 1), not a book method. Daily OHLC rules are simulated on the selected actual index or ETF series; there is no published study to reproduce."),
+        "yt_adr" if crate::books::ytadr::is_variant(id) => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's Advance Decline Ratio AFLs, not a book method. Daily rules run on the selected index with Nifty 50 breadth (advances / declines) supplied as a series; the team ran them on NIFTY. There is no published study to reproduce."),
+        "yt_jb" if id==crate::books::ytjb::ID => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's AFL (January Barometer 5 Days), not a book method. Daily OHLC rules are simulated on the selected actual index or ETF series; there is no published study to reproduce."),
+        "yt_btst" if crate::books::ytbtst::is_placeholder(id) => portfolio("YT strategy from the team's stock-only BTST AFLs (rankings or index conditions across the F&O stock universe), not a book method. It needs the F&O stock universe (Phase 2); an index cannot substitute for it."),
+        "yt_btst" if crate::books::ytbtst::is_universe_only(id) => portfolio("YT strategy from the team's BTST AFLs ranking or filtering signals across the F&O stock universe (FO STOCKS C&P), not a book method. It runs as a universe portfolio on actual stock futures data; an index cannot substitute for it."),
+        "yt_ath" if crate::books::ytath::is_variant(id) => portfolio("YT strategy from the team's ATH AFLs (entries on a new all-time-high close across the NSE 500 cash / F&O stock universe), not a book method. It runs as a universe portfolio on actual stock data; an index cannot substitute for it. The ATH database is not added yet, so it is not testable."),
+        "yt_btst" if crate::books::ytbtst::is_variant(id) => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's BTST AFLs (Up-close), not a book method. Rules run on index futures 5-minute bars supplied as series (src 1 the team's IEOD database, src 2 the futures feed); the selected index only provides the trading calendar. There is no published study to reproduce."),
         _ => review(),
     }
 }
@@ -628,6 +635,31 @@ pub fn metadata_json(def:&StrategyDef)->String {
 mod tests {
     use super::*;
     use crate::connors::{Status, StrategyDef};
+    #[test]
+    fn yt_monday_reversal_admits_indices_and_etfs_only() {
+        let d=crate::books::ytmr::catalogue().into_iter().next().unwrap();
+        let p=policy(&d);
+        assert_eq!((p.requirement,p.allowed_types),("index_or_etf",&["index","etf"][..]));
+        assert!(!reviewed_cash_rule(&d));
+        assert_eq!(policy(&def(crate::books::ytmr::ID,"other_book")).requirement,"source_review_required");
+        let d=crate::books::ytjb::catalogue().into_iter().next().unwrap();
+        assert_eq!(policy(&d).allowed_types,&["index","etf"][..]);
+        assert_eq!(policy(&def(crate::books::ytjb::ID,"yt_mr")).requirement,"source_review_required");
+        let all=crate::books::ytbtst::catalogue();
+        assert_eq!(all.len(),21);
+        for d in &all {
+            if crate::books::ytbtst::is_placeholder(d.id) || crate::books::ytbtst::is_universe_only(d.id) {assert_eq!((policy(d).requirement,policy(d).allowed_types),("portfolio",&[][..]));}
+            else {assert_eq!(policy(d).allowed_types,&["index","etf"][..]);}
+        }
+        assert_eq!(all.iter().filter(|d|crate::books::ytbtst::is_placeholder(d.id)).count(),1);
+        assert_eq!(all.iter().filter(|d|crate::books::ytbtst::is_universe_only(d.id)).count(),7);
+        assert_eq!(policy(&def("ytbtst_unknown","yt_btst")).requirement,"source_review_required");
+        let ath=crate::books::ytath::catalogue();
+        assert!(ath.iter().all(|d|(policy(d).requirement,policy(d).allowed_types)==("portfolio",&[][..])));
+        assert_eq!(policy(&def("ytath_unknown","yt_ath")).requirement,"source_review_required");
+        assert_eq!(policy(&def(crate::books::ytath::ID,"yt_btst")).requirement,"source_review_required");
+        assert_eq!(policy(&def(crate::books::ytbtst::ID,"yt_jb")).requirement,"source_review_required");
+    }
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }

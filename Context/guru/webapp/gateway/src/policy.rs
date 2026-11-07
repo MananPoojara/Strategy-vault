@@ -30,10 +30,22 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/pristine/readiness"
             | "guru/pristine/run"
             | "guru/pristine/params"
+            | "guru/yt/strategies"
+            | "guru/yt/summary"
+            | "guru/yt/readiness"
+            | "guru/yt/run"
+            | "guru/yt/params"
+            | "guru/yt/intraday"
+            | "guru/yt/optimize"
+            | "guru/yt/universe"
+            | "guru/yt/universe-run"
+            | "guru/yt/ath-universe"
+            | "guru/yt/ath-run"
+            | "guru/yt/ath-optimize"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
-    matches!(path,"guru/connors/optimize"|"guru/ross/optimize"|"guru/chande/optimize")
+    matches!(path,"guru/connors/optimize"|"guru/ross/optimize"|"guru/chande/optimize"|"guru/yt/optimize"|"guru/yt/ath-optimize")
 }
 pub fn can_optimize(role: &str) -> bool {
     matches!(role, "admin" | "researcher")
@@ -58,7 +70,19 @@ mod tests {
             assert!(allowed_engine_path(&format!("guru/ross/{route}")));
             assert!(allowed_engine_path(&format!("guru/chande/{route}")));
         }
-        for owner in ["connors","ross","chande"] {assert!(is_optimization_path(&format!("guru/{owner}/optimize")));}
+        for route in ["strategies","summary","readiness","run","params","optimize","intraday"] {
+            assert!(allowed_engine_path(&format!("guru/yt/{route}")));
+        }
+        assert!(!allowed_engine_path("guru/yt/basket-run"));
+        // BTST universe (F&O stock portfolio): info and one bounded run; not an optimization path
+        assert!(allowed_engine_path("guru/yt/universe") && allowed_engine_path("guru/yt/universe-run"));
+        assert!(!is_optimization_path("guru/yt/universe-run"));
+        // ATH stock universe (NSE 500 C&P portfolio on the Rust engine): info and one bounded run
+        assert!(allowed_engine_path("guru/yt/ath-universe") && allowed_engine_path("guru/yt/ath-run"));
+        assert!(!is_optimization_path("guru/yt/ath-run") && !allowed_engine_path("guru/yt/ath-run/x"));
+        assert!(!allowed_engine_path("guru/connors/universe-run") && !allowed_engine_path("guru/yt/universe-run/x"));
+        assert!(!is_optimization_path("guru/yt/intraday"));
+        for owner in ["connors","ross","chande","yt"] {assert!(is_optimization_path(&format!("guru/{owner}/optimize")));}
         assert!(!is_optimization_path("guru/other/optimize"));
         for path in [
             "../notes",
@@ -129,6 +153,15 @@ mod numeric_tests {
         ])));
     }
     #[test]
+    fn capital_and_date_settings_may_exceed_one_million_other_settings_may_not() {
+        for pair in [("p.equity", "2000000"), ("p.equity", "10000000000"), ("p.alloc", "100000000"), ("p.rangefrom", "20100101"), ("p.histfrom", "99999999")] {
+            assert!(safe_engine_numbers(&params(&[pair])), "{pair:?}");
+        }
+        for pair in [("p.equity", "20000000000"), ("p.equity", "inf"), ("p.rangefrom", "200000000"), ("p.trend", "2000000"), ("cost", "2000000"), ("g.hold", "1:2000000:1000000")] {
+            assert!(!safe_engine_numbers(&params(&[pair])), "{pair:?}");
+        }
+    }
+    #[test]
     fn basket_capacity_membership_and_all_execution_costs_are_bounded(){
         assert!(safe_engine_numbers(&params(&[("max_positions","20"),("membership","current"),("slippage","2"),("rollover","0")])));
         assert!(safe_engine_numbers(&params(&[("max_positions","100"),("membership","past")])));
@@ -138,6 +171,16 @@ mod numeric_tests {
         assert!(!allowed_engine_path("guru/other/basket-run"));
         assert!(allowed_engine_path("guru/connors/basket-run"));
         assert!(!is_optimization_path("guru/connors/basket-run"));
+    }
+}
+
+/// Largest magnitude a single setting may take: rupee amounts (initial capital, amount per position) and
+/// yyyymmdd dates of the BTST/ATH engines go beyond 1,000,000; every other setting stays bounded at 1,000,000.
+fn value_limit(key: &str) -> f64 {
+    match key.trim_start_matches("p.").trim_start_matches("g.") {
+        "equity" | "alloc" => 1.0e10,
+        "rangefrom" | "histfrom" => 1.0e8,
+        _ => 1_000_000.0,
     }
 }
 
@@ -153,7 +196,7 @@ pub fn safe_engine_numbers(params: &std::collections::BTreeMap<String, String>) 
         if key.starts_with("p.") || matches!(key.as_str(),"cost"|"slippage"|"rollover") {
             if !value
                 .parse::<f64>()
-                .is_ok_and(|n| n.is_finite() && n.abs() <= 1_000_000.0)
+                .is_ok_and(|n| n.is_finite() && n.abs() <= value_limit(key))
             {
                 return false;
             }
@@ -169,7 +212,7 @@ pub fn safe_engine_numbers(params: &std::collections::BTreeMap<String, String>) 
             };
             if numbers
                 .iter()
-                .any(|n| !n.is_finite() || n.abs() > 1_000_000.0)
+                .any(|n| !n.is_finite() || n.abs() > value_limit(key))
             {
                 return false;
             }

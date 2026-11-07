@@ -2,6 +2,7 @@ export type RouteName =
   | "home"
   | "author"
   | "strategies"
+  | "yt"
   | "strategy"
   | "optimization"
   | "reading"
@@ -22,6 +23,7 @@ export function resolveRoute(hash: string): Route {
   if (!parts.length) return { ...route, name: "home" };
   if (parts.length === 1 && parts[0] === "strategies")
     return { ...route, name: "strategies" };
+  if (parts.length === 1 && parts[0] === "yt") return { ...route, name: "yt" };
   if (parts.length === 1 && parts[0] === "saved")
     return { ...route, name: "saved" };
   const names: Record<string, RouteName> = {

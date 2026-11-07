@@ -17,8 +17,8 @@ export default function LoginForm({autoFocus=false,onSignIn}:{autoFocus?:boolean
  return <form id="login-form" className={`lf${error?' has-error':''}`} onSubmit={submit} aria-labelledby="lf-title" aria-busy={busy}>
   <h1 id="lf-title" className="lf-title">Sign in</h1>
   <p className="lf-sub">Your private strategy research workspace.</p>
-  <div className="lf-field"><label htmlFor="email">Email address</label><div className="lf-control"><span className="lf-icon"><Icon name="user"/></span>
-   <input id="email" name="email" type="email" autoComplete="username" placeholder="you@company.com" required autoFocus={autoFocus} disabled={busy} value={email} aria-describedby="login-error" onChange={e=>{setEmail(e.target.value);setError('');}}/>
+  <div className="lf-field"><label htmlFor="email">Email or username</label><div className="lf-control"><span className="lf-icon"><Icon name="user"/></span>
+   <input id="email" name="email" type="text" inputMode="email" autoCapitalize="none" spellCheck={false} autoComplete="username" placeholder="Email or username" required autoFocus={autoFocus} disabled={busy} value={email} aria-describedby="login-error" onChange={e=>{setEmail(e.target.value);setError('');}}/>
   </div></div>
   <div className="lf-field"><label htmlFor="password">Password</label><div className="lf-control"><span className="lf-icon"><Icon name="lock"/></span>
    <input id="password" ref={passwordRef} name="password" type={visible?'text':'password'} autoComplete="current-password" placeholder="Enter your password" required disabled={busy} value={password} aria-describedby="login-error" onChange={e=>{setPassword(e.target.value);setError('');}}/>

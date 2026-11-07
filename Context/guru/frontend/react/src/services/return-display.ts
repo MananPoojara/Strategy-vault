@@ -18,6 +18,8 @@ export interface ReturnDisplay {
  * execution, sizing, other statistics or open-position equity marks. */
 export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", account: SourceAccount | null = null, unit: UnitExposureView | null = null): ReturnDisplay {
   if (unit) return unitExposureDisplay(data,mode,unit);
+  const fixed = fixedQuantityDisplay(data);
+  if (fixed) return fixed;
   const result: ReturnDisplay = {
     mode,
     label: "Net Profit",
@@ -76,4 +78,21 @@ export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", 
   }
   result.value = mode === "compound" ? value - 1 : value;
   return result;
+}
+
+/** BTST runs with "Fixed quantity" sizing (sizing.mode 2): the result in rupees on the initial capital, not a sum of
+ * trade returns (which does not depend on the amount per trade). */
+export function fixedQuantityDisplay(data: unknown): ReturnDisplay | null {
+  const d = data as {sizing?: {mode?: number; equity?: number; alloc?: number; final_equity_rs?: number}; trades?: {open?: boolean}[]} | null;
+  const z = d?.sizing;
+  if (!z || z.mode !== 2 || !(typeof z.equity === 'number' && z.equity > 0) || typeof z.final_equity_rs !== 'number') return null;
+  const rs = (x: number) => '₹' + Math.round(x).toLocaleString('en-IN');
+  const pnl = z.final_equity_rs - z.equity;
+  return {
+    mode: 'fixed', label: 'Net Profit', value: pnl / z.equity,
+    closedTrades: Array.isArray(d?.trades) ? d!.trades!.filter(t => t && t.open === false).length : null,
+    description: `Fixed quantity: ${typeof z.alloc === 'number' ? rs(z.alloc) + ' per trade' : 'a fixed amount per trade'}, no compounding; P&L ${rs(pnl)} on ${rs(z.equity)} initial capital.`,
+    reportMode: `Fixed quantity · ${rs(pnl)} on ${rs(z.equity)}`,
+    unavailableReason: null,
+  };
 }
