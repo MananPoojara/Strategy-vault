@@ -67,3 +67,7 @@ it("the page's sets are the AFLs' hard-punched dates: Master 5DP as typed (Mahek
   expect(qtr.at(-1)).toEqual(["2025-02-28", "2025-03-31"]); // the list ends here: nothing generated after it
   expect(qtr.every(([from]) => QTR_MIDCAP.includes(from))).toBe(true);
 });
+
+it("Master 5DP needs no bars: without the midcap calendar only QTR is left out", () => {
+  expect(regimeSets({ midcap: [] }).map((s) => s.name)).toEqual(["Master 5DP"]);
+});

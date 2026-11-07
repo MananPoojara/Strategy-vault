@@ -258,6 +258,11 @@ pub struct Exec {
     /// ATR, N-candle counts, stops), as ST_Sell_Short_With_QDP ATR (05-11-2026). Off (default): the re-entered position keeps
     /// the original trade's exits and ends with it, the AFLs' continueOldATR (StochD, RSI, UltimateOscillator, EMA_MeanReversion).
     pub fresh_reentry_exits: bool,
+    /// `execution.restart_virtual_on_signal`: with date_filter / blackouts, every entry signal on a bar no Fresh clip blocks
+    /// restarts the virtual (paper) trade from that bar with fresh exits, as monthlyROC_below_threshold_weeklyBB_Master 5 Dp
+    /// _Final_ATR Running.afl (04-11-2026, lines 1541-1554: dp_running_trade restarts on every shortSig). Off (default): a
+    /// signal while the paper trade is open is ignored (StochD, RSI, UltimateOscillator AFLs).
+    pub restart_virtual_on_signal: bool,
     /// `execution.defer_exit_on_circuit`: a long's close-priced exit on a lower-circuit bar (low = close below the previous close)
     /// waits for the next close that is not locked (rust_test main.rs MultiTF Supertrend `lc_exit`; RSI_Setup_Entry.afl
     /// `LowerCircuitExit`). Longs only: no team AFL holds a short's cover on an upper circuit.
@@ -282,7 +287,7 @@ impl Default for Exec {
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
-               tick_size: 0., pad_align: false, pad_ref: None, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, fresh_reentry_exits: false, defer_exit_on_circuit: false, skip_entry_on_circuit: false,
+               tick_size: 0., pad_align: false, pad_ref: None, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, fresh_reentry_exits: false, restart_virtual_on_signal: false, defer_exit_on_circuit: false, skip_entry_on_circuit: false,
                dead_stock: false, penny_price: 0., turnover_filter: false, aux: [false; 2], shadow: None, filter_rows: vec![] }
     }
 }
@@ -384,7 +389,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "fresh_reentry_exits", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "fresh_reentry_exits", "restart_virtual_on_signal", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -496,6 +501,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         (exec.stops_immediately, exec.nbar_first, exec.same_bar) = (flag("activate_stops_immediately", true)?, flag("nbar_has_priority", false)?, flag("allow_same_bar_exit", true)?);
         exec.reenter_on_exit_bar = flag("reenter_on_exit_bar", false)?;
         exec.fresh_reentry_exits = flag("fresh_reentry_exits", false)?;
+        exec.restart_virtual_on_signal = flag("restart_virtual_on_signal", false)?;
         exec.defer_exit_on_circuit = flag("defer_exit_on_circuit", false)?;
         exec.skip_entry_on_circuit = flag("skip_entry_on_circuit", false)?;
         (exec.dead_stock, exec.turnover_filter, exec.aux) = (flag("dead_stock", false)?, flag("turnover_filter", false)?, [flag("aux1", false)?, flag("aux2", false)?]);

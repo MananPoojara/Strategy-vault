@@ -114,6 +114,10 @@ export interface Execution {
   /** AmiBroker Stops (single instrument, both sides): ExitAtStop per stop (absent = 1), "Activate stops immediately" (absent = true, today's),
    *  N-bar "Has priority", General › "Allow same bar exit / entry signal" (absent = true, today's). */
   exit_at_stop?: Partial<Record<StopKey, ExitAtStop>>; activate_stops_immediately?: boolean; nbar_has_priority?: boolean; allow_same_bar_exit?: boolean; reenter_on_exit_bar?: boolean;
+  /** rules.rs execution.fresh_reentry_exits: a Running re-entry gets fresh exits from the re-entry bar (ST_Sell_Short ATR, ROC AFLs). */
+  fresh_reentry_exits?: boolean;
+  /** rules.rs execution.restart_virtual_on_signal: each new signal restarts the background (paper) trade (ROC AFL 04-11). */
+  restart_virtual_on_signal?: boolean;
   /** rules.rs execution.defer_exit_on_circuit: a close exit on a lower-circuit bar (short: upper) waits for the next unlocked close. */
   defer_exit_on_circuit?: boolean;
   /** rules.rs execution.skip_entry_on_circuit: no entry signal on an upper-circuit close (short: lower), the AFLs' UC. */

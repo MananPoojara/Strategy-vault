@@ -29,7 +29,7 @@ import { Workbench } from "../features/lab/Workbench";
 import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
 import { DateFilterPanel } from "../features/lab/DateFilterPanel";
 import { withBlackouts, withCurrentDateSet } from "../features/lab/date-sets";
-import { loadRegimeSets, type RegimeSet } from "../features/lab/master5dp";
+import { loadRegimeSets, regimeSets, type RegimeSet } from "../features/lab/master5dp";
 import { ShortWindowsPanel } from "../features/lab/ShortWindowsPanel";
 import { RunResults, RunTables, tradeTable } from "../features/lab/RunResults";
 import { NoTradesHelp } from "../features/lab/NoTrades";
@@ -121,8 +121,15 @@ function IndicatorsLab() {
   // A strategy that uses a saved date filter picks up the set's current dates (re-uploads, renames) once the sets load.
   useEffect(() => { if (dateSetList) { const next = withCurrentDateSet(state.spec, dateSetList); if (next !== state.spec) dispatch({ type: "spec", spec: next }); } }, [dateSetList, state.spec]);
   // Master 5DP and QTR (a short's no-trade windows), generated from India index bars (master5dp.ts); a strategy using one picks up newly settled windows.
-  const [generatedSets, setGeneratedSets] = useState<RegimeSet[]>([]);
-  useEffect(() => { if (market === "in") loadRegimeSets().then(setGeneratedSets, () => setGeneratedSets([])); }, [market]);
+  const [generatedSets, setGeneratedSets] = useState<RegimeSet[]>(() => regimeSets({ midcap: [] }));
+  useEffect(() => { // a failed midcap load (e.g. during a deploy) keeps Master 5DP and retries for QTR
+    if (market !== "in") return;
+    let live = true, timer: ReturnType<typeof setTimeout> | undefined;
+    const load = (left: number): void => void loadRegimeSets().then((s) => { if (live) setGeneratedSets(s); },
+      () => { if (live && left > 0) timer = setTimeout(() => load(left - 1), 5000); });
+    load(12);
+    return () => { live = false; clearTimeout(timer); };
+  }, [market]);
   useEffect(() => { const next = withBlackouts(state.spec, generatedSets); if (next !== state.spec) dispatch({ type: "spec", spec: next }); }, [generatedSets, state.spec]);
   const [mineError, setMineError] = useState<unknown>(null);
   const [myInds, setMyInds] = useState<Record<number, Indicator>>({});

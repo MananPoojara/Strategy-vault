@@ -165,11 +165,10 @@ function qtrWindows(dates: readonly string[], bars: readonly Bar[], systems: str
 /** The short-strategy AFLs' no-trade sets from their hard-punched dates: Master 5DP (Nifty) as typed, and QTR Midcap held from
  *  each date to the last session of the next month. `midcap` gives that last session (the NSE calendar of the bars). */
 export function regimeSets({ midcap }: { midcap: readonly Bar[] }): RegimeSet[] {
-  if (!midcap.length) return [];
-  return [
-    { name: "Master 5DP", windows: MASTER_5DP_NIFTY.map(([a, b]): [string, string] => [a, b]) },
-    { name: "QTR Midcap", windows: qtrWindows(QTR_MIDCAP, midcap, "QTR NIFTYMIDCAP100").map((x): [string, string] => [x.from, x.to]) },
-  ];
+  // Master 5DP is typed dates and needs no bars; QTR waits for the midcap calendar
+  const master: RegimeSet = { name: "Master 5DP", windows: MASTER_5DP_NIFTY.map(([a, b]): [string, string] => [a, b]) };
+  if (!midcap.length) return [master];
+  return [master, { name: "QTR Midcap", windows: qtrWindows(QTR_MIDCAP, midcap, "QTR NIFTYMIDCAP100").map((x): [string, string] => [x.from, x.to]) }];
 }
 
 const ohlc = async (ticker: string): Promise<Bar[]> => {

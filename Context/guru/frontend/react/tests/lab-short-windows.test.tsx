@@ -39,3 +39,23 @@ it("Master 5DP and QTR (Midcap) are each Off, Fresh or Running and stack, with n
   await click(byText("Master 5DP", "Off"));
   expect((onChange.mock.lastCall![0] as Spec).blackouts).toEqual([both.blackouts![1]]);
 });
+
+it("Running re-entry: keep the old stop, fresh stop, or fresh stop + restart on every signal (ROC AFL)", async () => {
+  const onChange = vi.fn();
+  await mount(<ShortWindowsPanel spec={short()} onChange={onChange} sets={sets} />);
+  expect(document.querySelector("[aria-label='Running re-entry']")).toBeNull();
+  await unmount();
+  const running = short({ blackouts: [{ name: "Master 5DP", windows: sets[0].windows, reentry: "running" }] });
+  await mount(<ShortWindowsPanel spec={running} onChange={onChange} sets={sets} />);
+  expect(active("Running re-entry")).toBe("Keep old stop");
+  await click(byText("Running re-entry", "Fresh stop + restart on signal"));
+  const roc = onChange.mock.lastCall![0] as Spec;
+  expect(roc.execution).toMatchObject({ fresh_reentry_exits: true, restart_virtual_on_signal: true });
+  await unmount();
+  await mount(<ShortWindowsPanel spec={roc} onChange={onChange} sets={sets} />);
+  expect(active("Running re-entry")).toBe("Fresh stop + restart on signal");
+  await click(byText("Running re-entry", "Keep old stop"));
+  const ex = (onChange.mock.lastCall![0] as Spec).execution ?? {};
+  expect(ex.fresh_reentry_exits).toBeUndefined();
+  expect(ex.restart_virtual_on_signal).toBeUndefined();
+});

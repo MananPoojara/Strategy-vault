@@ -316,7 +316,18 @@ fn clip_trades(c: &Compiled, b: &Bars, from: usize, to: usize, paper: Vec<Trade>
     for i in from..=to {
         if i > from { for (s, side) in sides.iter().enumerate() { side.step_setups(i - 1, |_| clear[s]); } }
         clear = [false; 2];
-        while paper.peek().is_some_and(|t| t.legs[0].i <= i) { virtual_trade = paper.next(); }
+        if c.exec.restart_virtual_on_signal {
+            // The ROC AFL's dp_running_trade: each signal outside every Fresh clip starts the virtual trade again, fresh exits.
+            let fresh_blocked = c.clip.iter().any(|clip| clip.blocked[i] && !clip.running);
+            if !fresh_blocked && sides.iter().any(|side| {
+                let holds = |j| side.entry.iter().all(|r| r.holds(j, None));
+                holds(i) && (!side.exec.edge || i == 0 || !holds(i - 1))
+            }) {
+                if let Some(t) = signal_events_from(c, b, i, to, None, None).0.into_iter().next() { virtual_trade = Some(t); }
+            }
+        } else {
+            while paper.peek().is_some_and(|t| t.legs[0].i <= i) { virtual_trade = paper.next(); }
+        }
         if virtual_trade.as_ref().is_some_and(|t| t.exit_i < i || (t.exit_i == i && !t.open)) { virtual_trade = None; }
         if pending_until.is_some_and(|until| i <= until) { continue; }
         pending_until = None;
@@ -2205,6 +2216,15 @@ mod clip_run_tests {
         let w = r#", "blackouts":[{"name":"Master","windows":[["2024-01-03","2024-01-04"]],"reentry":"running"}]"#;
         let t = fresh_signal_run(&[1, 3], w, r#""fill":"close""#);
         assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(1, 2), (3, 5)]);
+    }
+    #[test] fn restart_virtual_on_signal_lets_a_signal_inside_a_running_window_re_enter_at_its_end() {
+        // ROC AFL 04-11 dp_running_trade: paper 1 -> 5 is cut at 4; the signal at 5 (inside the window, paper still open)
+        // restarts the virtual trade 5 -> 9, so the window's end at 7 re-enters. Default ignores that signal: no re-entry.
+        let w = r#", "blackouts":[{"name":"Master","windows":[["2024-01-05","2024-01-08"]],"reentry":"running"}]"#;
+        let pairs = |t: Vec<Trade>| t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>();
+        assert_eq!(pairs(fresh_signal_run(&[1, 5], w, r#""fill":"close""#)), [(1, 4)]);
+        assert_eq!(pairs(fresh_signal_run(&[1, 5], w, r#""fill":"close","restart_virtual_on_signal":true"#)), [(1, 4), (7, 9)]);
+        assert_eq!(pairs(fresh_signal_run(&[1, 5], w, r#""fill":"close","restart_virtual_on_signal":true,"fresh_reentry_exits":true"#)), [(1, 4), (7, 11)]);
     }
     #[test] fn a_fresh_signal_does_not_reopen_on_an_actual_exit_bar() {
         let w = r#", "blackouts":[{"name":"Later","windows":[["2024-01-10","2024-01-11"]],"reentry":"fresh"}]"#;
