@@ -822,27 +822,52 @@ fn fc_abx(x: &Ctx, from: usize, to: usize, pn: usize, k: f64) -> Vec<Trade> {
 }
 
 fn raschke(x: &Ctx, from: usize, to: usize, o1: usize, o2: usize, nt: usize, vf: f64) -> Vec<Trade> {
-    let (h, l, c, n) = (&x.h, &x.l, &x.c, x.r.len());
+    let (c, n) = (&x.c, x.r.len());
+    // R4 #256 (K64): the oscillator SMA3 - SMA10 and its 16-day average are computed values, which connors::sma cannot read
+    // as printed decimals; on printed prices they are compared in exact integers (as #253): fast = (o2*S1 - o1*S2) /
+    // (o1*o2*10^k), trend = sum of nt fasts / nt, so fast vs trend = nt*num(fast) vs num(trend) (IWM 2003-03-27: fast of
+    // the 26th = trend of the 27th exactly). Floats only when a close cannot be read exactly.
+    if let Some((fk, tr, den)) = raschke_exact(c, o1, o2, nt) {
+        return raschke_core(x, from, to, &fk, &tr, 0, |m: i128| m as f64 / den > vf);
+    }
     let (m1, m2) = (sma(c, o1), sma(c, o2));
     let fast: Vec<f64> = (0..n).map(|i| m1[i] - m2[i]).collect();
-    let tr = sma(&fast, nt);
+    let tr: Vec<Option<f64>> = sma(&fast, nt).into_iter().map(|v| v.is_finite().then_some(v)).collect();
+    let fast: Vec<Option<f64>> = fast.into_iter().map(Some).collect();
+    raschke_core(x, from, to, &fast, &tr, 0., |m: f64| m > vf)
+}
+
+/// Exact Raschke oscillator on printed closes: (nt * num(fast), num(trend), the common denominator), or None.
+fn raschke_exact(c: &[f64], o1: usize, o2: usize, nt: usize) -> Option<(Vec<Option<i128>>, Vec<Option<i128>>, f64)> {
+    let e = crate::connors::ExactSeries::new(&[c])?;
+    let (s1, s2) = (e.sums(0, o1), e.sums(0, o2));
+    let f: Vec<Option<i128>> = (0..c.len()).map(|i| Some(o2 as i128 * s1[i]? - o1 as i128 * s2[i]?)).collect();
+    let tr = (0..c.len()).map(|i| if i + 1 < nt { None } else { f[i + 1 - nt..=i].iter().try_fold(0i128, |a, v| v.map(|v| a + v)) }).collect();
+    Some((f.iter().map(|v| v.map(|v| v * nt as i128)).collect(), tr, (nt * o1 * o2) as f64 * 10f64.powi(e.scale as i32)))
+}
+
+/// Raschke's first cross on an oscillator `fast` and its average `tr` (same units; None = not yet defined).
+fn raschke_core<T: Copy + PartialOrd + std::ops::Neg<Output = T>>(x: &Ctx, from: usize, to: usize, fast: &[Option<T>], tr: &[Option<T>], zero: T, above_vf: impl Fn(T) -> bool) -> Vec<Trade> {
+    let (h, l, c) = (&x.h, &x.l, &x.c);
     let mut b = Bk::new(x, from, to);
-    let (mut twait, mut owait, mut trmax, mut stage) = (0i8, 0i8, 0f64, 0i8);
+    let (mut twait, mut owait, mut trmax, mut stage) = (0i8, 0i8, zero, 0i8);
     for i in 1..=to {
-        if !tr[i - 1].is_finite() || !tr[i].is_finite() { continue; }
+        let (Some(t0), Some(t1)) = (tr[i - 1], tr[i]) else { continue };
+        // fast exists wherever its average does
+        let (f0, f1) = (fast[i - 1].unwrap(), fast[i].unwrap());
         let mp = b.pos();
-        if tr[i - 1] <= 0. && tr[i] > 0. { twait = -1; owait = 0; trmax = tr[i]; }
-        if tr[i - 1] >= 0. && tr[i] < 0. { twait = 1; owait = 0; trmax = -tr[i]; }
-        if tr[i] > 0. && tr[i - 1] > 0. && tr[i] > trmax { trmax = tr[i]; }
-        if tr[i] < 0. && tr[i - 1] < 0. && -tr[i] > trmax { trmax = -tr[i]; }
+        if t0 <= zero && t1 > zero { twait = -1; owait = 0; trmax = t1; }
+        if t0 >= zero && t1 < zero { twait = 1; owait = 0; trmax = -t1; }
+        if t1 > zero && t0 > zero && t1 > trmax { trmax = t1; }
+        if t1 < zero && t0 < zero && -t1 > trmax { trmax = -t1; }
         let mut order: Option<i8> = None;
-        if trmax > vf {
+        if above_vf(trmax) {
             if mp != 1 && twait < 0 {
-                if owait == 0 && fast[i - 1] > tr[i] && fast[i] <= tr[i] { owait = -1; }
+                if owait == 0 && f0 > t1 && f1 <= t1 { owait = -1; }
                 if owait == -1 && l[i] > l[i - 1] { order = Some(1); stage = 0; }
             }
             if mp != -1 && twait > 0 {
-                if owait == 0 && fast[i - 1] < tr[i] && fast[i] >= tr[i] { owait = 1; }
+                if owait == 0 && f0 < t1 && f1 >= t1 { owait = 1; }
                 if owait == 1 && h[i] < h[i - 1] { order = Some(-1); stage = 0; }
             }
         }
@@ -1140,6 +1165,17 @@ fn first_hour(x: &Ctx, from: usize, to: usize, len: usize, off: f64) -> Vec<Trad
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// R4 #256 (K64): IWM closes 2003-02-19..03-27. The oscillator of the 26th equals the trend (16-day average of
+    /// SMA3 - SMA10) of the 27th exactly (0.2198333...), so "fast[t-1] > trend[t]" is false and no pullback is armed.
+    #[test]
+    fn raschke_iwm_2003_03_27_exact_tie() {
+        let c = [35.925, 35.85, 36.16, 35.605, 35.93, 35.75, 35.945, 36.005, 35.895, 35.43, 35.5, 35.21, 35.225, 34.62, 34.375, 34.45, 35.38,
+                 35.425, 36.245, 36.72, 36.63, 36.87, 37.385, 36.585, 36.975, 36.52, 36.765];
+        let (fk, tr, _) = super::raschke_exact(&c, 3, 10, 16).unwrap();
+        assert!(tr[23].is_none() && tr[24].is_some());
+        assert_eq!(fk[25], tr[26]);
+        assert!(!(fk[25] > tr[26]));
+    }
     use crate::Row;
     fn rows(n: usize) -> Vec<Row> {
         (0..n).map(|i| Row { ticker: "T".into(), date: format!("{}", days_to(i as i64 + 10957)), open: 100., high: 101., low: 99., close: 100., volume: None }).collect()
