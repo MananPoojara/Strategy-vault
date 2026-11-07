@@ -19,28 +19,57 @@ use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------- indicators
 
-/// Simple moving average. A missing value (NaN) blanks only the windows that contain it: the running sum is
-/// rebuilt once the gap leaves the window. Without NaNs the arithmetic is exactly the plain running sum.
+/// Simple moving average: each window summed directly, left to right (R4 #249). A window that contains a missing value
+/// (NaN) is NaN. A running sum (add the new bar, subtract the leaving one) carries floating-point drift from the first bar
+/// of history (about 1e-11), which flips EXACT ties between averages (IBM 1980-06-25: SMA5 = SMA12 = 14.6875); the
+/// direct sum is what every independent reference computes. Cost O(n) per bar.
 pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
-    let mut out = vec![f64::NAN; v.len()];
-    let (mut sum, mut gaps) = (0.0, 0usize);
-    for i in 0..v.len() {
-        if v[i].is_nan() { gaps += 1 } else { sum += v[i] }
-        if i >= n {
-            if v[i - n].is_nan() {
-                gaps -= 1;
-                if gaps == 0 {
-                    sum = v[i + 1 - n..=i].iter().sum();
-                }
-            } else {
-                sum -= v[i - n];
+    (0..v.len())
+        .map(|i| {
+            if n == 0 || i + 1 < n {
+                return f64::NAN;
             }
-        }
-        if i + 1 >= n && gaps == 0 {
-            out[i] = sum / n as f64;
-        }
+            let w = &v[i + 1 - n..=i];
+            if w.iter().any(|x| x.is_nan()) { f64::NAN } else { w.iter().sum::<f64>() / n as f64 }
+        })
+        .collect()
+}
+
+/// Exact decimal arithmetic on printed prices (R4 #253): each value is read as the shortest decimal that round-trips to the
+/// stored f64 (the printed price), scaled to integers at one common scale for all the given series. Window sums are then
+/// exact, so an average can be compared with a price (n*P vs the sum) or with another average (m*S_n vs n*S_m) without
+/// rounding. `None` when a value has more than 15 decimals or is not finite: the caller keeps its float comparison.
+pub struct ExactSeries { pub v: Vec<Vec<Option<i128>>> }
+impl ExactSeries {
+    pub fn new(series: &[&[f64]]) -> Option<ExactSeries> {
+        let parse = |x: f64| -> Option<(i128, u32)> {
+            if !x.is_finite() { return None; }
+            let s = format!("{x}");
+            let (neg, s) = s.strip_prefix('-').map_or((false, s.as_str()), |r| (true, r));
+            let (ip, fp) = s.split_once('.').unwrap_or((s, ""));
+            if fp.len() > 15 || ip.len() > 18 { return None; }
+            let m: i128 = format!("{ip}{fp}").parse().ok()?;
+            Some((if neg { -m } else { m }, fp.len() as u32))
+        };
+        let raw: Vec<Vec<Option<(i128, u32)>>> = series.iter().map(|s| s.iter().map(|&x| if x.is_nan() { None } else { parse(x) }).collect()).collect();
+        // a finite value that cannot be read exactly makes the whole set fall back to floats
+        for (s, r) in series.iter().zip(&raw) { if s.iter().zip(r).any(|(x, p)| !x.is_nan() && p.is_none()) { return None; } }
+        let sc = raw.iter().flatten().flatten().map(|p| p.1).max().unwrap_or(0);
+        Some(ExactSeries { v: raw.into_iter().map(|r| r.into_iter().map(|p| p.map(|(m, k)| m * 10i128.pow(sc - k))).collect()).collect() })
     }
-    out
+    /// Exact window sums of series `k` (None in warm-up or when the window holds a missing value).
+    pub fn sums(&self, k: usize, n: usize) -> Vec<Option<i128>> {
+        let v = &self.v[k];
+        (0..v.len()).map(|i| if n == 0 || i + 1 < n { None } else { v[i + 1 - n..=i].iter().try_fold(0i128, |a, x| x.map(|x| a + x)) }).collect()
+    }
+}
+/// Sign of SMA_n(series k at bar i) - price (series j at bar i) in exact arithmetic: n*P vs the window sum.
+pub fn exact_avg_vs(e: &ExactSeries, sum: &[Option<i128>], n: usize, j: usize, i: usize) -> Option<std::cmp::Ordering> {
+    Some(sum[i]?.cmp(&(e.v[j][i]? * n as i128)))
+}
+/// Sign of SMA_a - SMA_b at bar i from exact window sums of lengths na and nb: nb*S_a vs na*S_b.
+pub fn exact_avg_vs_avg(sa: &[Option<i128>], na: usize, sb: &[Option<i128>], nb: usize, i: usize) -> Option<std::cmp::Ordering> {
+    Some((sa[i]? * nb as i128).cmp(&(sb[i]? * na as i128)))
 }
 
 /// Wilder smoothed moving average (SMMA, alpha = 1/n) seeded with the SMA of the
@@ -1337,5 +1366,20 @@ mod sma_gap_tests {
         assert_eq!((m[1], m[4], m[5], m[6]), (1.5, 4.5, 5.5, 6.5));
         let plain = [3.0, 1.0, 4.0, 1.0, 5.0];
         assert_eq!(sma(&plain, 3)[2..], [8.0 / 3.0, 2.0, 10.0 / 3.0]);
+    }
+
+    /// R4 #249 / M7: IBM closes 1980-06-09..06-25 (1/32 dollars). Summed per window, SMA5 = SMA12 = 14.6875 on 06-25,
+    /// a tie, so SMA5 does not cross below SMA12 (it was above on 06-24). A short non-dyadic prefix (like IBM's adjusted
+    /// 1950s prices) leaves rounding in a running sum, which then reports a false cross.
+    #[test]
+    fn ibm_1980_06_25_tie_is_not_a_cross() {
+        let mut v: Vec<f64> = (0..10).map(|k| 0.3083888 + 0.0137 * k as f64).collect();
+        v.extend([14.1875, 14.375, 14.5, 14.5, 14.71875, 15.09375, 14.71875, 14.90625, 14.46875, 14.46875, 14.71875, 14.84375, 14.9375]);
+        let (t, a, b) = (v.len() - 1, sma(&v, 5), sma(&v, 12));
+        assert_eq!((a[t], b[t]), (14.6875, 14.6875));
+        assert!(a[t - 1] > b[t - 1]);
+        assert!(!(a[t] < b[t]), "no 'crosses below' on a tie");
+        let running = |n: usize| { let mut s = 0.0; for i in 0..=t { s += v[i]; if i >= n { s -= v[i - n] } } s / n as f64 };
+        assert!(running(5) < running(12), "the old running sum flips this tie (the defect this guards)");
     }
 }

@@ -215,7 +215,8 @@ mod tests {
             for t in ["NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
             }
             let g = crate::gate::get(id).unwrap();
-            assert!(g.verdict == "unverified" && g.reason.contains("#177a") && g.ours.contains("SPX (withdrawn)"), "{id}");
+            // verified only on a #168 pass of the book's own table inside the minute history (rwmts_15m_5m_rsi, K61 #248 (3))
+            assert!((g.verdict == "unverified" || (g.verdict == "verified" && g.reason.contains("#168"))) && g.reason.contains("#177a") && g.ours.contains("SPX (withdrawn)"), "{id}");
         }
         for id in SPX_HELD { // #177b: the SPX-point rule's only ticker is withheld
             let d = find(&cat, id);
