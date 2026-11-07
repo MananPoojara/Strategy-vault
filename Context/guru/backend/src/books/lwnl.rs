@@ -392,6 +392,12 @@ fn hold(v: f64) -> ParamDef { p("hold", "Exit on the close N trading days after 
 fn bail(v: f64) -> ParamDef { p("bail_delay", "Bailout: first profitable opening after N days held", v, 0.0, 15.0, 1.0) }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     if let Some(s) = SEA.iter().find(|s| s.0 == id) {
         let mut v = vec![p("td", "Trading day of the month", s.2 as f64, 1.0, 23.0, 1.0),
             p("entry_pct", "Entry: open +/- x previous day's range (0 = at the open; + = stop in trade direction; - = limit)", s.4, -0.5, 0.5, 0.01),
@@ -444,13 +450,21 @@ pub(crate) struct Cfg {
     pub(crate) bail: Option<usize>, // exit at the first profitable opening of a bar > entry bar + k
     pub(crate) prof_close: bool,    // exit at the first profitable close after the entry bar
     pub(crate) hold: Option<usize>, // exit on the close `hold` bars after the entry bar (0 = same day)
+    pub(crate) order: bool,         // EP6 (#243): order-dependent days on the real 1-minute path
 }
 
-struct Pos { dir: f64, i: usize, px: f64, stop: f64, kind: &'static str }
+#[derive(Clone)]
+struct Pos { dir: f64, i: usize, px: f64, stop: f64, kind: &'static str, od: crate::intraday_ep6::Day }
+
+/// The intrabar state of one bar (EP6): position, 'exited this bar', and the stops filled inside the bar.
+#[derive(Clone)]
+struct Bar3 { pos: Option<Pos>, exited: bool, out: Vec<(Pos, f64)> }
 
 fn done(p: &Pos, i: usize, px: f64, why: &str) -> Trade {
-    Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px, reason: why.into(),
-        entry_kind: p.kind, signal_i: i, open: false, exits: vec![] }
+    let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px, reason: why.into(),
+        entry_kind: p.kind, signal_i: i, open: false, exits: vec![] };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    t
 }
 
 /// One position at a time. `sig(i)` gives bar i's entry orders as (dir, order), decided from bars before i and bar i's open.
@@ -462,7 +476,7 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(usize
     let mut out = vec![];
     let mut pos: Option<Pos> = None;
     let sd = if cfg.stop.is_finite() && cfg.stop > 0.0 { cfg.stop } else { f64::NAN };
-    let mk = |dir: f64, i: usize, px: f64, kind: &'static str| Pos { dir, i, px, stop: px - dir * sd, kind };
+    let mk = |dir: f64, i: usize, px: f64, kind: &'static str| Pos { dir, i, px, stop: px - dir * sd, kind, od: crate::intraday_ep6::Day::Plain };
     for i in from.max(1)..=to {
         let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
         let mut exited = false;
@@ -485,42 +499,52 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(usize
                 if at_open { pos = Some(mk(dir, i, o, if matches!(od, E::Open) { "open" } else { "stop" })); break; }
             }
         }
-        // 3. intrabar path
-        let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
-        for s in 0..3 {
-            let (mut cur, end) = (path[s], path[s + 1]);
-            let up = end > cur;
-            loop {
-                // candidate events: (level, Some(dir, kind)) = entry, (level, None) = protective stop
-                let mut best: Option<(f64, Option<(f64, &'static str)>)> = None;
-                let inside = |lv: f64| lv.is_finite() && if up { lv > cur && lv <= end } else { lv < cur && lv >= end };
-                let mut take = |lv: f64, ev: Option<(f64, &'static str)>| {
-                    if inside(lv) && best.map_or(true, |(b, _)| if up { lv < b } else { lv > b }) { best = Some((lv, ev)); }
-                };
-                match &pos {
-                    Some(p) => {
-                        let against = (p.dir > 0.0) != up;
-                        if against && (p.i < i || cfg.day0) { take(p.stop, None); }
-                    }
-                    None if !exited => {
-                        for &(dir, od) in &orders {
-                            match od {
-                                E::Stop(lv) if (dir > 0.0) == up => take(lv, Some((dir, "stop"))),
-                                E::Limit(lv) if (dir > 0.0) != up => take(lv, Some((dir, "limit"))),
-                                _ => {}
+        // 3. intrabar path; EP6: an order-dependent day of an EP6 id is walked on the real 1-minute path (intraday_ep6::resolve)
+        let walk = |st: &mut Bar3, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+            let mut evs = vec![];
+            for g in segs {
+                let (mut cur, end) = (g.a, g.b);
+                let up = end > cur;
+                loop {
+                    // candidate events: (level, Some(dir, kind)) = entry, (level, None) = protective stop
+                    let mut best: Option<(f64, Option<(f64, &'static str)>)> = None;
+                    let inside = |lv: f64| lv.is_finite() && if up { lv > cur && lv <= end } else { lv < cur && lv >= end };
+                    let mut take = |lv: f64, ev: Option<(f64, &'static str)>| {
+                        if inside(lv) && best.map_or(true, |(b, _)| if up { lv < b } else { lv > b }) { best = Some((lv, ev)); }
+                    };
+                    match &st.pos {
+                        Some(p) => {
+                            let against = (p.dir > 0.0) != up;
+                            if against && (p.i < i || cfg.day0) { take(p.stop, None); }
+                        }
+                        None if !st.exited => {
+                            for &(dir, od) in &orders {
+                                match od {
+                                    E::Stop(lv) if (dir > 0.0) == up => take(lv, Some((dir, "stop"))),
+                                    E::Limit(lv) if (dir > 0.0) != up => take(lv, Some((dir, "limit"))),
+                                    _ => {}
+                                }
                             }
                         }
+                        None => {}
                     }
-                    None => {}
+                    let Some((lv, ev)) = best else { break };
+                    let px = g.fill(lv);
+                    match ev {
+                        Some((dir, kind)) => { st.pos = Some(mk(dir, i, px, kind)); evs.push(crate::intraday_ep6::Ev { k: if dir > 0.0 { 0 } else { 1 }, px, up }); }
+                        None => { let p = st.pos.take().unwrap(); st.out.push((p, px)); st.exited = true; evs.push(crate::intraday_ep6::Ev { k: 2, px, up }); }
+                    }
+                    cur = lv;
                 }
-                let Some((lv, ev)) = best else { break };
-                match ev {
-                    Some((dir, kind)) => pos = Some(mk(dir, i, lv, kind)),
-                    None => { let p = pos.take().unwrap(); out.push(done(&p, i, lv, "stop")); exited = true; }
-                }
-                cur = lv;
             }
-        }
+            evs
+        };
+        let mut st = Bar3 { pos: pos.take(), exited, out: vec![] };
+        let day = crate::intraday_ep6::resolve(x, i, cfg.order, h - o <= o - l, &mut st,
+            |s, hf| walk(s, &crate::intraday_ep6::bar_segs(o, h, l, c, hf)), &walk);
+        for (mut p, px) in st.out { p.od = p.od.worst(day); out.push(done(&p, i, px, "stop")); }
+        (pos, exited) = (st.pos, st.exited);
+        if let Some(p) = pos.as_mut() { p.od = p.od.worst(day); }
         // 4. at the close
         if let Some(p) = &pos {
             let why = if cfg.hold.map_or(false, |n| i >= p.i + n) { Some("time exit on the close") }
@@ -558,11 +582,12 @@ fn rng_order(x: &Ctx, i: usize, dir: f64, pct: f64) -> E {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = getter(&schema, p);
     let has = |k: &str| schema.iter().any(|d| d.key == k);
     let opt = |k: &str| if has(k) && g(k) >= 0.0 { Some(g(k).round() as usize) } else { None };
     let cfg = Cfg { stop: g("stop_usd") / g("pt_usd"), day0: g("day0") >= 0.5, bail: opt("bail_delay"), hold: opt("hold"),
-        prof_close: has("prof_close") && g("prof_close") >= 0.5 };
+        prof_close: has("prof_close") && g("prof_close") >= 0.5, order: crate::intraday_ep6::on(id, p) };
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = x.r.len();
     let mon = |i: usize| -> u32 { x.r[i].date[5..7].parse().unwrap_or(0) };

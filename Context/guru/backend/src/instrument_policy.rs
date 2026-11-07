@@ -277,6 +277,7 @@ pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "
 /// The tradable-vs-cash refusals (#177 minutes, #179 daily). check() and readiness::check() decide this first, before any
 /// data-coverage check, so a withdrawn (rule, ticker) pair always shows this reason. Ticker routing only; no calculation.
 pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    if let Some(note)=crate::intraday_ep6::held_note(def.id,ticker) {return Some(Issue{status:"not_testable",note:note.into()});} // EP6 (K59, #243)
     if native_stock {return None;}
     if intraday_p1(def) && crate::intraday_w3::india_held(def.id,ticker) { // decision #231 (lane M4): India-only withdrawal
         return Some(Issue{status:"not_testable",note:crate::intraday_w3::INDIA_HELD_NOTE.into()});
@@ -1373,7 +1374,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
     match id {
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>return Some("Held: needs NYSE TICK data. Real 15-minute bars are now built from 1-minute data (SPY 2000-2025, SPX 2008-2026, NIFTY 50 2008-2026), but these day trades are taken only on days the course's 30-signal Market Timing count gives a buy bias, and one of the 30 signals is the NYSE TICK, which the vault does not have; counting only the other signals changes the strategy."),
         "ss_smart_money_index"=>return Some("Held: rules not fully defined. The first-hour and last-hour prices are now built from real 1-minute bars, but the book uses the Smart Money Index as an indicator reading and gives no entry price, exit or stop for it (Ch 21, p.173-175)."),
-        "cwin_vix_gap_window"=>return Some("Held: waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
+        "cwin_vix_gap_window"=>return Some("Held: needs data, not rules (decision #244; the rule is coded from the Connors Windows course, VIX Gap Window): waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
         _=>{}
     }
     Some(match id {
@@ -1427,7 +1428,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
         // "stad1_volex": admitted SPX only by lane K58 (decision #202, books::stad::ADMISSION_SPX)
         // "stad13_volex": admitted SPX only by lane K58 (decision #202, books::stad2::ADMISSION_SPX)
-        "stad13_tripleplay"=>"Held: rules not fully defined. The printed Triple Play code reads its WeakLow from Value1, a variable that is not defined anywhere in the code, so it does not do what the text explains (Vol 13 p.138-140; Vol 11 p.118-120 has the same line); choosing the intended value would be a new rule.",
+        // "stad13_tripleplay": admitted by lane K60 (decision #244 (1): the literal Value1 = 0 reading is the default)
+        "stad6_asi"=>"Held: the order inside the day decides too many trades (decision #240). The ASI system is coded from STAD Vol 6 p.19-20 on Wilder's Swing Index (decision #244 (2)), but its buy stop and its initial stop are live on the same bar: on 188 of 3,108 trades (6.05%) in the check contexts (SPY, QQQ, SPX, DJI, NIFTY 50, NIFTYBANK, IBM, AAPL, RELIANCE) a bar reached both a rising and a falling order level, so which came first is the daily-bar convention, not data. Above the 5% threshold the card waits for the real 1-minute order (the shared minute-order resolver, decision #243) (authors/titles-1030/K60w/checks.txt).",
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
         "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
@@ -1689,7 +1691,7 @@ mod tests {
             lwnl::REVIEWED,lwfc10::REVIEWED,lwic6::REVIEWED,lwinb::REVIEWED].concat();
         let mut admitted:Vec<&str>=all.iter().filter(|d|lwilliams_reviewed(d)).map(|d|d.id).collect();
         let mut w=want.clone();admitted.sort();w.sort();assert_eq!(admitted,w);
-        for d in all.iter().filter(|d|want.contains(&d.id)) {
+        for d in all.iter().filter(|d|want.contains(&d.id)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             assert!(reviewed_cash_rule(d),"{}",d.id);assert!(policy(d).market_adaptation,"{}",d.id);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             match crate::books::lw_admit::only_ticker(d.id) {
@@ -1699,8 +1701,8 @@ mod tests {
                 None if crate::books::lw_admit::us_only(d.id) => {
                     for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
                     for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);} }
-                None => { for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                    assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id); }
+                None => { for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K59 #243 (c): window-only ids are refused on tickers without minutes
+                    assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); } // K59 #243 (c)
             }
         }
         for id in ["lwnl_july4_sell","lwnl_keyrev_sell"/* lwlts_mon_vb, lwdg2_0105: intraday wave 1 admission */] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
@@ -1941,11 +1943,12 @@ mod tests {
     }
     // ---- end Jason Perl held ----
     // ---- STAD leftovers held (2026-10-26, lane B) ----
+    // stad1_volex, stad13_volex: admitted SPX only (K58 #202); stad13_tripleplay: admitted by lane K60 (#244 (1))
     #[test]
     fn stadb_held_rules_have_plain_card_reasons() {
         use crate::books::{stad, stad2};
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
-        for id in [/* stad1_volex, stad13_volex: admitted SPX only, K58 #202 */ "stad13_tripleplay"] {
+        for id in ["stad6_asi" /* lane K60: coded, held by #240 */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -2627,7 +2630,7 @@ mod tests {
         let mut want:Vec<&str>=dlost::REVIEWED.iter().chain(dl10b::REVIEWED).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
-        for d in all.iter().filter(|d|want.contains(&d.id)) {
+        for d in all.iter().filter(|d|want.contains(&d.id)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             let us_only=LANDRY_US_ONLY.contains(&d.id);
@@ -2955,7 +2958,7 @@ mod tests {
         use crate::books::{joe_ross,joe_ross_rules as jr};
         let cat=jr::catalogue();
         assert_eq!(cat.len(),jr::REVIEWED.len());
-        for d in &cat {
+        for d in &cat { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let p=policy(d);
             assert_eq!((p.requirement,p.allowed_types,p.market_adaptation),("index_etf_or_stock",&["index","etf","individual_stock"][..],true),"{}",d.id);
             assert!(p.source_basis.contains("declared application"),"{}",d.id);
@@ -3251,7 +3254,7 @@ mod tests {
         let cat=ws5::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         assert_eq!(admitted,ws5::REVIEWED_DAILY);
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let timing=ws5::TIMING.contains(&d.id);let p=policy(d);
             let held=timing && !open_all(d); // open-all 23 Oct 2026: both timing rules run everywhere
             assert_eq!(p.requirement,if held {"declared_index_timing"} else {"index_etf_or_stock"},"{}",d.id);assert!(p.market_adaptation);
@@ -3392,11 +3395,11 @@ mod tests {
         let cat=crate::books::btp::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!cbp_us(d)).map(|d|d.id).collect(); // intraday wave 1 ids: own test; CBP: connors-final
         assert_eq!(admitted,crate::books::btp::REVIEWED_DAILY);
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!cbp_us(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!cbp_us(d)) { if crate::intraday_ep6::held_note(d.id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let stock=crate::books::btp::STOCK_ADMITTED.contains(&d.id) || open_all(d); // open-all 23 Oct 2026
             let p=policy(d);assert_eq!(p.requirement,if stock {"index_etf_or_stock"} else {"index_or_etf"});assert!(p.market_adaptation);
-            for t in ["SPY","QQQ","MDY","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-            assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),stock,"{}",d.id);
+            for t in ["SPY","QQQ","MDY","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K59 #243 (c): window-only ids are refused on tickers without minutes
+            assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),stock && !crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K59 #243 (c)
             assert!(check(d,"NIFTY FUTURE",false).is_some());
             assert_eq!(metadata_json(d).contains("1/8-dollar ticks"),crate::books::btp::STOCK_ADMITTED.contains(&d.id),"{}",d.id);
             assert!(metadata_json(d).contains("\"declared_application\":\"Book tested or illustrated on futures and US stocks"));

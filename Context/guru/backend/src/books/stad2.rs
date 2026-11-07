@@ -25,7 +25,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad2";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri"];
+pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1); stad6_asi coded but held by #240 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -63,6 +63,25 @@ fn xunder_k(a: &[f64], k: f64, i: usize) -> bool { i > 0 && a[i] < k && a[i - 1]
 /// SwingHigh(1, v, s, s+1) on bar i: bar i-s is >= the s bars before it and > the s bars after it.
 fn swing_high(h: &[f64], s: usize, i: usize) -> bool { i >= 2 * s && (1..=s).all(|k| h[i - s] >= h[i - s - k] && h[i - s] > h[i - s + k]) }
 fn swing_low(l: &[f64], s: usize, i: usize) -> bool { i >= 2 * s && (1..=s).all(|k| l[i - s] <= l[i - s - k] && l[i - s] < l[i - s + k]) }
+/// SwingHighBar / SwingLowBar(inst, v, s, len) on bar i: bars ago of the inst-th most recent swing bar (strength s) at
+/// 0 <= bars ago < len (a swing bar needs its s later bars, so the nearest is s bars ago); None = not found (-1).
+fn swing_bar(v: &[f64], hi: bool, s: usize, len: usize, inst: usize, i: usize) -> Option<usize> {
+    let mut k = 0;
+    for off in s..len.min(i + 1) {
+        if if hi { swing_high(v, s, i - off + s) } else { swing_low(v, s, i - off + s) } { k += 1; if k == inst { return Some(off); } }
+    }
+    None
+}
+/// Wilder's Swing Index (New Concepts, Spanish ed. p.88-91) with the limit move L = 1: 50 x N / R x K; 0 on the first bar and
+/// where R = 0. N = C - C1 + 0.5(C - O) + 0.25(C1 - O1); K = max(|H - C1|, |L - C1|); R from the largest of |H - C1|, |L - C1|, |H - L|.
+fn swing_index(x: &Ctx) -> Vec<f64> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    (0..c.len()).map(|i| if i == 0 { 0.0 } else {
+        let (a, b, d, e) = ((h[i] - c[i - 1]).abs(), (l[i] - c[i - 1]).abs(), (h[i] - l[i]).abs(), (c[i - 1] - o[i - 1]).abs());
+        let r = if a >= b && a >= d { a - 0.5 * b + 0.25 * e } else if b >= d { b - 0.5 * a + 0.25 * e } else { d + 0.25 * e };
+        if r == 0.0 { 0.0 } else { 50.0 * (c[i] - c[i - 1] + 0.5 * (c[i] - o[i]) + 0.25 * (c[i - 1] - o[i - 1])) / r * a.max(b) }
+    }).collect()
+}
 fn stdev(v: &[f64], n: usize) -> Vec<f64> {
     let m = sma(v, n);
     (0..v.len()).map(|i| if i + 1 < n { f64::NAN } else { (v[i + 1 - n..=i].iter().map(|x| (x - m[i]).powi(2)).sum::<f64>() / n as f64).sqrt() }).collect()
@@ -577,12 +596,15 @@ fn defs_a() -> Vec<Def> {
         "F|[Reading, decision 217 / #57] '1 point' = one tick of the traded instrument (0.01 US, 0.05 NSE)",
         "X|HELD: the Chart 14 variants with a $500 money-management stop, $900 $ risk trailing stop and $500 breakeven floor are dollar amounts on D-Mark futures and are not run"],
       "Vol 6 ch.1 p.12-16. Book (Chart 14, p.16, D-Mark futures daily): stop and reverse $72,762 on 148 trades, 45% profitable, profit factor 1.88, average trade $491; with all the dollar stops $85,150 on 312 trades, 57% (not run). The book's test is on D-Mark futures; runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K47w/k47_ref.py.", ("stad6_tenbar", "Ten-Bar Channel Breakout", "Vol 6")),
-    d("stad6_asi", "Accumulation Swing Index", "Vol 6 · Trending", "Long/Short",
-      NotTestable("AccumSwingIndex is weighted by the symbol's DailyLimit (the futures limit move; TradeStation help, AccumSwingIndex/SwingIndex). Indices and stocks have no daily limit, so the indicator's value is undefined here, and the book does not give the formula."),
-      &["F|ASI = AccumSwingIndex; SH = SwingHighBar(1,High,2,3); SHAgo = SwingHighBar(2,High,2,40) (Vol 6 p.19-20 code)",
-        "E|SH <> -1 and ASI[SH] > ASI[SHAgo] and MP <> 1: BuyPrice = Highest(High,2); buy stop BuyPrice + 1 point for 5 bars (sell mirror)",
-        "X|ExitLong at Lowest(Low,2) - 1 point; trailing at the latest strength-1 swing low - 1 point"],
-      "Vol 6 ch.2 p.18-26. Book: weekly Sears 1/78-10/98: $2,173 on 23 trades, 57% profitable (no stops).", ("stad6_asi", "Accumulation Swing Index", "Vol 6")),
+    d("stad6_asi", "Accumulation Swing Index", "Vol 6 · Trending", "Long/Short", Live,
+      &["F|ASI = AccumSwingIndex = running sum of Wilder's Swing Index SI = 50 x [C2 - C1 + 0.5(C2 - O2) + 0.25(C1 - O1)] / R x K / L; K = the larger of |H2 - C1| and |L2 - C1|; R by the largest of |H2 - C1|, |L2 - C1|, |H2 - L2| (Wilder, New Concepts, Spanish ed. p.88-91)",
+        "F|[Declared reading, decision #244 (2)] L (the futures daily limit move) is a positive constant per market; the system only compares ASI on two swing-high (swing-low) bars, and that comparison has the same answer for every positive L, so L = 1 is used; SI = 0 on a bar where R = 0 (then K = 0 too)",
+        "F|SH = SwingHighBar(1,High,2,3); SHAgo = SwingHighBar(2,High,2,40); SL/SLAgo the same on lows; trailing levels SwingHigh(1,High,1,2) / SwingLow(1,Low,1,2), each kept until the next one (Vol 6 p.19-21 code)",
+        "E|SH <> -1 and ASI[SH] > ASI[SHAgo] and MarketPosition <> 1: BuyPrice = Highest(High,2), ILX = Lowest(Low,2); for 5 bars: Buy next bar at BuyPrice + 1 point stop and ExitLong next bar at ILX - 1 point stop (sell mirror on swing lows); an opposite entry reverses",
+        "X|While in a position: ExitLong next bar at the latest strength-1 swing low - 1 point stop; ExitShort at the latest strength-1 swing high + 1 point stop (p.20, 23)",
+        "F|[Declared reading] No second swing high (low) within 40 bars = no setup; '1 point' = one tick of the traded instrument (decision #57: 0.01 US, 0.05 NSE); the Format-dialog money-management, breakeven and $ trailing stops are off (the book's first result is 'without enabling any stops', p.23); the code runs from bar 42 on (SwingLen + Strength, TradeStation's MaxBarsBack), so swing levels before it are not kept; the swing tests are the module's (a swing high is >= the bars before it and > the bars after it)",
+        "F|Option side = 1: long side only (the book's Sears test, p.19)"],
+      "Vol 6 ch.2 p.18-26 (code p.19-20). Book: weekly Sears 1/78-10/98, long side only, no stops: $2,173 on 23 trades, 57% profitable (p.23). The book's test is a weekly stock chart; runs on daily indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K60w/k60_ref.py.", ("stad6_asi", "Accumulation Swing Index", "Vol 6")),
     d("stad6_adxmac", "ADX & Moving-Average Channel", "Vol 6 · Trending", "Long/Short", Live,
       &["F|UpperMA = XAverage(High,30)[1]; LowerMA = XAverage(Low,30)[1]; ChanSpread = (UpperMA-LowerMA)/2; ADX(12) (Vol 6 p.27-28 code)",
         "F|BuySetup = Close > UpperMA and ADX > ADX[1] -> BuyTarget = Close + ChanSpread; SellSetup = Close < LowerMA and ADX > ADX[1] -> SellTarget = Close - ChanSpread",
@@ -993,11 +1015,12 @@ fn defs_c() -> Vec<Def> {
       "Vol 13 ch.10 p.123-134. Needs volume. Book: GE long-only 4/96-4/00: 29 trades, 55%, PF 3.43.", ("stad13_add", "Advance-Decline Divergence", "Vol 13")) },
     d("stad13_tripleplay", "Triple Play (Vol 11 & 13)", "Vol 13 · Revisited", "Long/Short", Live,
       &["F|Bollinger Bands(11, 2); strong swing high (strength 7) above the upper band -> RecentLow = MRO(swing low, StrongLowBar - StrongHighBar, 1) (Vol 13 p.138-140 code; Vol 11 p.118-120 identical with fixed divisors)",
-        "F|WeakLow = SwingLow(1,Low,7,8)[Value1] - Value1 is never assigned in the printed code, so it reads the current bar (literal; option weak_src=1 uses RecentLow as the explanation says)",
+        "F|WeakLow = SwingLow(1,Low,7,8)[Value1] - Value1 is never assigned in the printed code; EasyLanguage starts it at 0, so it reads the current bar (SwingLow returns -1 when that bar is no swing low). [Declared reading, decisions #218 and #244 (1)] the literal platform behaviour is the default; option weak_src = 1 uses RecentLow as the explanation says",
         "E|Long formation within PatternLength(25)+7 bars: LongEntryPrice = (StrongHigh - StrongLow)/4 + WeakLow; while flat for BarsToEnter(10) bars: Buy 2 units next bar at LongEntryPrice stop (short mirror)",
         "X|2 units: ExitLong at WeakLow - 1 point stop; exit 1 unit at LongTarget1 = (WeakLow + LongTarget2)/2 limit, LongTarget2 = WeakLow + (StrongHigh - StrongLow)",
-        "X|1 unit left: ExitLong at EntryPrice stop; after a close above StrongHigh trail at highest close - (StrongHigh - WeakLow)/4; ExitLong at LongTarget2 limit"],
-      "Vol 13 ch.11 p.135-151 (after Charles Lindsay's Trident). Book (optimised): IBM long-only 6 trades 50%; BP 12 trades 75%.", ("stad13_tripleplay", "Triple Play", "Vol 13")),
+        "X|1 unit left: ExitLong at EntryPrice stop; after a close above StrongHigh trail at highest close - (StrongHigh - WeakLow)/4; ExitLong at LongTarget2 limit",
+        "F|[Declared reading] '1 point' = one tick of the traded instrument (decision #57: 0.01 US, 0.05 NSE); the two units are one position scaled out in halves; option side = 1: long side only (the book's IBM test, p.148)"],
+      "Vol 13 ch.11 p.135-151 (after Charles Lindsay's Trident). Book (optimised, the defaults are the IBM inputs): IBM daily 6/92-4/00 long only, per 100 shares: $12,187 on 6 trades, 50% profitable; British Pound futures: 12 trades, 75% (p.148-150). Runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K60w/k60_ref.py.", ("stad13_tripleplay", "Triple Play", "Vol 13")),
     d("stad13_volex", "VolEx (revisited)", "Vol 13 · Revisited", "Long/Short", Live,
       &["E|Buy next bar at Open of next bar + 1.2*Average(Range,4) stop; Sell next bar at Open of next bar - 1.8*Average(Range,4) stop (Vol 13 p.156 code)",
         "X|Price Trailing Exit: ExitLong next bar at Lowest(Low,4) stop; ExitShort at Highest(High,4) stop",
@@ -1030,6 +1053,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let usd = |key, label, def: f64| ParamDef { key, label, def, min: 0.0, max: def.max(1.0) * 5.0, step: (def / 4.0).max(1.0) };
     let bpv = |def: f64, qty: f64| vec![ParamDef { key: "bpv", label: "BigPointValue of the book's test instrument ($ per point)", def, min: 1.0, max: 250000.0, step: 1.0 },
         ParamDef { key: "qty", label: "Shares/contracts in the book's test (dollar stops -> points)", def: qty, min: 1.0, max: 1000.0, step: 1.0 }];
+    // lane K60 (#57): N ticks of the traded instrument; one side only
+    let tick = || p("tick", "Offset '1 point' in ticks of the traded instrument (0.01 US, 0.05 NSE)", 1., 0., 10., 1.);
+    let side = || p("side", "Sides: 0 = long and short (the code), 1 = long only (the book's test)", 0., 0., 1., 1.);
     let atrx = |prot: f64, be: f64, trail: f64, volat: f64, bp: f64, bpn: f64, pt: f64, len: f64| {
         let mut v = vec![];
         if prot > 0.0 { v.push(p("prot", "ATR Protective stop (ATRs)", prot, 0., 10., 0.5)); }
@@ -1055,6 +1081,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             usd("mm_usd", "Money-management stop ($)", 1000.), usd("be_usd", "Breakeven floor ($)", 200.)], bpv(1000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_dsdb" => vec![p("avglen", "Average length", 3., 1., 10., 1.), p("disp", "Displacement", 16., 0., 30., 1.), p("sdlen", "StdDev length", 12., 5., 30., 1.), p("sdev", "StdDevs", 2., 0.5, 4., 0.25)],
         "stad6_tenbar" => vec![p("length", "Channel length (bars, including today)", 10., 2., 60., 1.), p("tick", "Offset beyond the channel, ticks of the traded instrument", 1., 0., 10., 1.)],
+        "stad6_asi" => vec![p("strength", "Swing strength", 2., 1., 6., 1.), p("swinglen", "Bars for the two swings", 40., 10., 100., 1.), p("setuplen", "Bars the setup stays live", 5., 1., 15., 1.), tick(), side()],
         "stad6_adxmac" => vec![p("avglen", "Channel XAverage length", 30., 5., 60., 1.), p("adxlen", "ADX length", 12., 5., 30., 1.), p("entrybar", "Entry window bars", 2., 1., 10., 1.)],
         "stad6_dmachan" => [vec![p("avglen", "Average length", 20., 5., 50., 1.), p("disp", "Displacement", 5., 0., 15., 1.), p("exitbar", "ExitAvg stop bars", 5., 1., 20., 1.),
             usd("mm_usd", "Money-management stop ($)", 200.), usd("be_usd", "Breakeven floor ($)", 100.), usd("dtr_usd", "$ Risk trailing ($)", 600.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
@@ -1141,7 +1168,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad13_tripleplay" => vec![p("patlen", "Pattern length", 25., 10., 60., 1.), p("strength", "Swing strength", 7., 2., 12., 1.), p("bte", "Bars to enter", 10., 1., 30., 1.), p("len", "Bollinger length", 11., 5., 30., 1.),
             p("dev", "Bollinger deviations", 2., 1., 3., 0.25), p("epd", "Entry price divisor", 4., 1., 10., 1.), p("t1d", "Target 1 divisor", 2., 1., 4., 1.), p("tsd", "Trailing stop divisor", 4., 1., 10., 1.),
-            p("weak_src", "WeakLow source: 0 = printed (Value1 never set -> current bar), 1 = RecentLow (explanation)", 0., 0., 1., 1.)],
+            p("weak_src", "WeakLow source: 0 = printed (Value1 never set -> current bar), 1 = RecentLow (explanation)", 0., 0., 1., 1.), tick(), side()],
         "stad13_volex" => [vec![p("lf", "Long factor", 1.2, 0.25, 3., 0.05), p("sf", "Short factor", 1.8, 0.25, 3., 0.05), usd("sl_usd", "Stop loss ($)", 1000.), p("stale_t", "Stale position bars", 0., 0., 20., 1.),
             usd("stale_usd", "Stale minimum profit ($)", 0.), p("trail", "Trailing exit bars", 4., 1., 10., 1.), usd("go_usd", "First good open base profit ($)", 200.), p("delay", "Good open delay bars", 0., 0., 10., 1.),
             p("path", "Intrabar order: 1 = real SPX 1-minute bars (#240; a day without minutes makes no entry), 0 = daily bar path with 10% bounce [Vol 5 ch.1 assumption]", 1., 0., 1., 1.)], bpv(250., 1.)].into_iter().flatten().collect::<Vec<_>>(),
@@ -1149,7 +1176,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         _ => return None,
     };
-    if id != "stad6_tenbar" { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
+    if !matches!(id, "stad6_tenbar" | "stad6_asi" | "stad13_tripleplay") { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
     Some(v)
 }
 
@@ -1302,6 +1329,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             run_ts(x, from, to, len, cfg(), |i, _st, _now, nx| {
                 nx.push(o(A::Buy, P::Stop(highest(h, len, i) + off), "Channel Brk LE"));
                 nx.push(o(A::Sell, P::Stop(lowest(l, len, i) - off), "Channel Brk SE"));
+            })
+        }
+        "stad6_asi" => {
+            // lane K60 (decision #244 (2)): Vol 6 p.19-20 code on Wilder's Swing Index with L = 1 (cancels in the only ASI test)
+            let (s, swl_, sul, long_only) = (u("strength"), u("swinglen"), g("setuplen"), g("side") >= 0.5);
+            let off = g("tick").max(0.0) * x.market_tick();
+            let mut acc = 0.0;
+            let asi: Vec<f64> = swing_index(x).into_iter().map(|v| { acc += v; acc }).collect();
+            let (mut bsu, mut ssu, mut bp, mut sp, mut ilx, mut isx, mut lex, mut sex) = (sul, sul, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            run_ts(x, from, to, swl_ + s, cfg(), |i, st, _now, nx| {
+                let (sh, sha) = (swing_bar(h, true, s, s + 1, 1, i), swing_bar(h, true, s, swl_, 2, i));
+                let (sl, sla) = (swing_bar(l, false, s, s + 1, 1, i), swing_bar(l, false, s, swl_, 2, i));
+                if swing_high(h, 1, i) { sex = h[i - 1]; }
+                if swing_low(l, 1, i) { lex = l[i - 1]; }
+                if let (Some(a), Some(b)) = (sh, sha) { if asi[i - a] > asi[i - b] && st.pos != 1 { bsu = 0.0; bp = highest(h, 2, i); ilx = lowest(l, 2, i); } }
+                if let (Some(a), Some(b)) = (sl, sla) { if asi[i - a] < asi[i - b] && st.pos != -1 { ssu = 0.0; sp = lowest(l, 2, i); isx = highest(h, 2, i); } }
+                bsu += 1.0; ssu += 1.0;
+                if bsu <= sul { nx.push(o(A::Buy, P::Stop(bp + off), "ASI Buy")); nx.push(o(A::Xl, P::Stop(ilx - off), "ASI initial stop")); }
+                if ssu <= sul && !long_only { nx.push(o(A::Sell, P::Stop(sp - off), "ASI Sell")); nx.push(o(A::Xs, P::Stop(isx + off), "ASI initial stop")); }
+                if st.pos == 1 { bsu = sul; }
+                if st.pos == -1 { ssu = sul; }
+                if st.pos != 0 { nx.push(o(A::Xl, P::Stop(lex - off), "ASI trailing swing low")); nx.push(o(A::Xs, P::Stop(sex + off), "ASI trailing swing high")); }
             })
         }
         "stad6_adxmac" => {
@@ -2267,6 +2316,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "stad13_tripleplay" => {
             let (pl, s, bte, epd, t1d, tsd) = (g("patlen"), u("strength"), g("bte"), g("epd"), g("t1d"), g("tsd"));
             let weak_rl = g("weak_src") >= 0.5;
+            let (pt, long_only) = (g("tick").max(0.0) * x.market_tick(), g("side") >= 0.5); // lane K60: #57 ticks; book's long-only test
             let (ub, lbd) = (bband(c, u("len"), g("dev")), bband(c, u("len"), -g("dev")));
             let swh = bv(n, |k| swing_high(h, s, k)); let swl = bv(n, |k| swing_low(l, s, k));
             let lim = pl + s as f64;
@@ -2300,7 +2350,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     if bc < bte { bc += 1.0; } else { mlt = false; }
                     if sc < bte { sc += 1.0; } else { mst = false; }
                     if mlt { nx.push(o(A::Buy, P::Stop(lep), "Buy 2")); }
-                    if mst { nx.push(o(A::Sell, P::Stop(sep), "Sell 2")); }
+                    if mst && !long_only { nx.push(o(A::Sell, P::Stop(sep), "Sell 2")); }
                 }
                 let full = (st.units - 1.0).abs() < 1e-9;
                 if st.pos == 1 {
@@ -2397,6 +2447,22 @@ mod tests {
         assert_eq!(w.map, vec![-1, -1, -1, -1, 0, 0, 0, 0, 0, 1]);
         assert_eq!(w.h[0], 6.0);
     }
+    /// Lane K60: Wilder's worked example (New Concepts p.91: day 1 O 50.50 H 52.00 L 50.00 C 51.50; day 2 O 51.80 H 53.00
+    /// L 51.30 C 52.80): N = 2.05, the largest is H2 - L2 = 1.70 so R = 1.70 + 0.25 x 1.00 = 1.95, K = 1.50; with L = 3: 26.28.
+    #[test]
+    fn swing_index_follows_wilders_worked_example_and_swing_bars_count_instances() {
+        let r = rows(&[(50.50, 52.00, 50.00, 51.50), (51.80, 53.00, 51.30, 52.80)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let si = swing_index(&x);
+        assert_eq!(si[0], 0.0);
+        assert!((si[1] / 3.0 - 50.0 * 2.05 / 1.95 * 1.5 / 3.0).abs() < 1e-9 && (si[1] / 3.0 - 26.28).abs() < 0.01, "{}", si[1] / 3.0);
+        // highs with strength-1 swing highs at bars 1 and 4 (seen from bar 6): first instance 2 bars ago, second 5 bars ago
+        let h = [1., 3., 2., 2.5, 4., 3., 3.5];
+        assert_eq!(swing_bar(&h, true, 1, 7, 1, 6), Some(2));
+        assert_eq!(swing_bar(&h, true, 1, 7, 2, 6), Some(5));
+        assert_eq!(swing_bar(&h, true, 1, 5, 2, 6), None);
+        assert_eq!(swing_bar(&h, true, 1, 2, 1, 6), None); // 2 bars ago is outside a length of 2
+    }
     #[test]
     fn ids_unique_prefixed_and_every_live_strategy_runs() {
         let cat = catalogue();
@@ -2420,7 +2486,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 65); // + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 66); // + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 

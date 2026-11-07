@@ -657,7 +657,7 @@ mod tests {
     fn joe_ross_rules_refuse_stale_us_index_opens() {
         let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
         for (t,y,refused) in [("SPX","2013",true),("SPX","2014",false),("NDX","2000",true),("DJI","2015",true),("NIFTY 50","1995",false),("SPY","1994",false)] {
-            for id in books::joe_ross_rules::REVIEWED {
+            for id in books::joe_ross_rules::REVIEWED { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
                 let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
                 assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::instrument_policy::m3_withdrawn(id,t),"{id} {t} {y}"); // #179
             }
@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn btp_open_reading_rules_refuse_stale_index_opens() {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
-        for &id in books::btp::REVIEWED_DAILY {
+        for &id in books::btp::REVIEWED_DAILY { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=definition(id);
             let clamped=crate::gate::get(id).is_some_and(|g|g.clamp_open);
             let guarded=books::btp::reads_open(id) && !clamped;
@@ -766,7 +766,7 @@ mod tests {
     #[test]
     fn ws5_rules_refuse_stale_index_opens_and_close_only_vix() {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
-        for &id in books::ws5::REVIEWED_DAILY {
+        for &id in books::ws5::REVIEWED_DAILY { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=definition(id);
             let guarded=!crate::gate::get(id).is_some_and(|g|g.clamp_open);
             let (old,new,spy)=(mk("SPX","2013"),mk("SPX","2014"),mk("SPY","1991"));
@@ -1075,7 +1075,7 @@ mod vix_india_tests { // VIX India block (24 Oct 2026)
     fn vix_rules_run_on_indian_and_us_instruments_except_held_ties() {
         use crate::instrument_policy::{check as pol,check_native,vix_india,VIX_INDIA_RULES};
         let all=crate::connors::catalogue();
-        for (book,id) in VIX_INDIA_RULES {
+        for (book,id) in VIX_INDIA_RULES { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=all.iter().find(|d|d.id==*id&&d.book==*book).unwrap_or_else(||panic!("{book}:{id}"));
             assert!(vix_india(d) && (d.needs_vix || !d.needs_series.is_empty()));
             let held_in=matches!(*id,"vixr_cvr11"|"vixr_all"); // vixr_all contains CVR 11 (lane K43)

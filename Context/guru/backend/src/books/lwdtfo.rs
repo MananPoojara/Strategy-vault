@@ -63,6 +63,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let (b, s) = match id {
         "lwdtfo_vb_close" => (1.0, 1.9),
@@ -80,7 +86,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (bm, sm) = (g("buy_mult"), g("sell_mult"));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
-    let cfg = Cfg { stop: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: None, bailout: false, reverse: true };
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let cfg = Cfg { stop: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: None, bailout: false, reverse: true, order: crate::intraday_ep6::on(id, p) };
     Some(simulate(x, from, to, &cfg, |i| {
         let s = i - 1;
         let r = h[s] - l[s];
