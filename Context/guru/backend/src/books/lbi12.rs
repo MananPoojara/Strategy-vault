@@ -188,10 +188,8 @@ fn roll(v: &[f64], w0: usize, e: usize, n: usize, max: bool) -> Vec<f64> {
     out
 }
 fn sma_local(v: &[f64], w0: usize, e: usize, n: usize) -> Vec<f64> {
-    let mut out = vec![f64::NAN; e + 1 - w0];
-    let mut s = 0.;
-    for i in w0..=e { s += v[i]; if i >= w0 + n { s -= v[i - n]; } if i + 1 >= w0 + n { out[i - w0] = s / n as f64; } }
-    out
+    // each window summed directly (R4 #249): a running sum drifts and flips exact ties
+    (w0..=e).map(|i| if i + 1 >= w0 + n { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 } else { f64::NAN }).collect()
 }
 /// Lukac DM: N-day sums of PDM/NDM/TR; returns (PDI, NDI) over the local window.
 fn dm_local(x: &Ctx, w0: usize, e: usize, n: usize) -> (Vec<f64>, Vec<f64>) {
@@ -206,12 +204,13 @@ fn dm_local(x: &Ctx, w0: usize, e: usize, n: usize) -> (Vec<f64>, Vec<f64>) {
         tr[i - w0] = (x.h[i] - x.l[i]).max((x.h[i] - x.c[i - 1]).abs()).max((x.l[i] - x.c[i - 1]).abs());
     }
     let (mut pdi, mut ndi) = (vec![f64::NAN; len], vec![f64::NAN; len]);
-    let (mut sp, mut sm, mut st) = (0., 0., 0.);
     let first = if w0 == 0 { 1 } else { 0 }; // local index of the first bar with a true range
+    let ws = |v: &[f64], k: usize| v[k + 1 - n..=k].iter().sum::<f64>(); // window summed directly (R4 #249)
     for k in 0..len {
-        sp += p[k]; sm += m[k]; st += tr[k];
-        if k >= first + n { sp -= p[k - n]; sm -= m[k - n]; st -= tr[k - n]; }
-        if k + 1 >= first + n && st > 0. { pdi[k] = sp / st; ndi[k] = sm / st; }
+        if k + 1 >= first + n {
+            let st = ws(&tr, k);
+            if st > 0. { pdi[k] = ws(&p, k) / st; ndi[k] = ws(&m, k) / st; }
+        }
     }
     (pdi, ndi)
 }
@@ -332,9 +331,9 @@ fn sim(id: &str, x: &Ctx, p: &[f64], s: usize, e: usize, opt: &Opt) -> Vec<Trade
             match id {
                 "lbi12_dri" => {
                     let n = p[0] as usize;
-                    let mut sabs = 0.;
-                    for i in w0 + 1..=e { sabs += (c[i] - c[i - 1]).abs(); if i >= w0 + 1 + n { sabs -= (c[i - n] - c[i - n - 1]).abs(); }
-                        if i >= w0 + n && sabs > 0. { ind[k(i)] = 100. * (c[i] - c[i - n]) / sabs; } }
+                    for i in w0 + n..=e { // |change| over the last n bars summed directly (R4 #249)
+                        let sabs: f64 = (i + 1 - n..=i).map(|j| (c[j] - c[j - 1]).abs()).sum();
+                        if sabs > 0. { ind[k(i)] = 100. * (c[i] - c[i - n]) / sabs; } }
                 }
                 "lbi12_rnq" => {
                     let n = p[0] as usize;
@@ -355,11 +354,13 @@ fn sim(id: &str, x: &Ctx, p: &[f64], s: usize, e: usize, opt: &Opt) -> Vec<Trade
                     let n = p[0] as usize;
                     let ma = sma_local(c, w0, e, n);
                     let drd: Vec<f64> = (0..len).map(|j| c[w0 + j] - ma[j]).collect();
-                    let (mut sn, mut sa, mut cnt) = (0., 0., 0usize);
+                    let mut cnt = 0usize;
                     for j in 0..len {
-                        if drd[j].is_finite() { sn += drd[j]; sa += drd[j].abs(); cnt += 1;
-                            if cnt > n { sn -= drd[j - n]; sa -= drd[j - n].abs(); }
-                            if cnt >= n && sa > 0. { ind[j] = 100. * sn / sa; } }
+                        if drd[j].is_finite() { cnt += 1;
+                            if cnt >= n { // the last n deviations summed directly (R4 #249)
+                                let w = &drd[j + 1 - n..=j];
+                                let (sn, sa) = (w.iter().sum::<f64>(), w.iter().map(|d| d.abs()).sum::<f64>());
+                                if sa > 0. { ind[j] = 100. * sn / sa; } } }
                     }
                 }
                 "lbi12_mab" => {

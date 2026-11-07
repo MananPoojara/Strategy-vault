@@ -275,9 +275,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Printed pp.140-144, Table 4.22. S&P-500: $28,040, 22 winners of 58 trades (38%), PF 1.27. Buy stop = 20-day high (incl. signal day) + tick; short: 7-SMA < 0.97 x 50-SMA, sell stop 20-day low - tick. Opposite stop entry reverses."),
         d("ch_bta2_xopp_trail", "Extraordinary opportunity (1% band, 20-day trailing stop)", "Ch 4 · Extraordinary opportunities", "Long/Short", Live, &[
             "E|Same entries with a 1 percent band (Table 4.23 title, p.144)",
+            "X|\"the results of adding a trailing stop and narrowing the bands are shown in Table 4.23\" (p.142): the Table 4.22 system's exit \"on the close of the twentieth day\" (p.142) is kept [hold default 20; decision #251]",
             "X|\"trailing 20-day stop\" (Table 4.23, p.144) = exit at the 20-day low (long) / high (short) on a stop",
-            "X|$3,000 initial stop (Table 4.23) = 6 S&P points at $500 a point (p.134) [stop_pts default 6]"],
-            "Printed p.143-144, Table 4.23. S&P-500: -$25,955, 25 winners of 105 trades (23%), PF 0.73. No time exit in this variant (the trailing stop replaces it)."),
+            "X|$3,000 initial stop of the Table 4.22 test, carried into Table 4.23 (the text adds a trailing stop and does not remove it) = 6 S&P points at $500 a point (p.134) [stop_pts default 6]",
+            "A|Read [decision #251, lane K61]: 'adding' keeps the 20th-day close exit; option p.hold=0 = the trailing stop replaces the time exit (the earlier K58 reading, consistent with Table 4.23's higher win/loss ratio, which the book does not state)."],
+            "Printed p.142-144, Table 4.23. S&P-500: -$25,955, 25 winners of 105 trades (23%), PF 0.73."),
         d("ch_bta2_cbo_trail5", "20-bar breakout on close, 5-day trailing exit", "Ch 5 · Channel breakout variations", "Long/Short", Live, &[
             "E|\"1. If today's close is higher than the highest high of the last 20 days, then buy on the close. 2. If today's close is lower than the lowest low of the last 20 days, then sell on the close.\" (p.149)",
             "X|\"3. Exit the long trade at the lowest low of the last 5 days on a stop. 4. Exit the short trade at the highest high of the last 5 days on a stop.\" (p.149)",
@@ -422,7 +424,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ch_bta2_xopp" => vec![p("band", "Band around 50-day SMA (%)", 3., 0.5, 5., 0.5), p("slow", "Slow SMA", 50., 20., 100., 10.), p("fast", "Fast SMA", 7., 3., 15., 1.),
             p("chan", "Entry channel days", 20., 10., 40., 5.), p("hold", "Exit on close of day N", 20., 5., 40., 5.), tick(), stop(6.), path()],
         "ch_bta2_xopp_trail" => vec![p("band", "Band around 50-day SMA (%)", 1., 0.5, 5., 0.5), p("slow", "Slow SMA", 50., 20., 100., 10.), p("fast", "Fast SMA", 7., 3., 15., 1.),
-            p("chan", "Entry channel days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.), tick(), stop(6.), path()],
+            p("chan", "Entry channel days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.),
+            p("hold", "Exit on close of day N, kept with the trailing stop (decision #251); 0 = the trailing stop replaces it (option)", 20., 0., 40., 5.), tick(), stop(6.), path()],
         "ch_bta2_cbo_trail5" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("trail_n", "Trailing stop days", 5., 2., 20., 1.), stop(0.)],
         "ch_bta2_cbo_volexit" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Range multiple", 3., 1., 5., 0.5), stop(0.)],
         "ch_bta2_cbo_inside" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Exit range multiple", 3., 1., 5., 0.5), stop(0.)],
@@ -579,9 +582,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let he = hold_exit(u("hold"));
                 sys!(&entry, &he, &none_exit, &no_trail, false)
             } else {
-                let m = u("trail_n");
+                let (m, h) = (u("trail_n"), g("hold").round().max(0.) as usize); // not u(): hold = 0 must switch the time exit off
                 let tr = |i: usize, q: &Pos| if q.dir > 0. { ll(x, i, m) } else { hh(x, i, m) };
-                sys!(&entry, &none_exit, &none_exit, &tr, false)
+                // decision #251: "adding a trailing stop" (p.142) keeps Table 4.22's 20th-day close exit; hold = 0 drops it
+                let he = hold_exit(h);
+                if h > 0 { sys!(&entry, &he, &none_exit, &tr, false) } else { sys!(&entry, &none_exit, &none_exit, &tr, false) }
             }
         }
         "ch_bta2_cbo_trail5" | "ch_bta2_cbo_volexit" | "ch_bta2_cbo_ref" | "ch_bta2_cbo_inside" => {

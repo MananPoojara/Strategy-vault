@@ -22,8 +22,9 @@ pub const RISING: &[&str] = &["SPY", "IWM", "QQQ", "EFA", "EEM", "VNQ", "LQD", "
 pub const TREASURY: &[&str] = &["IEI", "IEF", "TLH", "TLT"];
 /// Fontanills, The Index Trading Course p.251 Table 11.8 "ETFs by Country": all 20, every one in the US price file (lane K54).
 pub const COUNTRIES: &[&str] = &["EWA", "EWC", "EWD", "EWG", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWN", "EWO", "EWP", "EWQ", "EWS", "EWT", "EWU", "EWW", "EWY", "EWZ"];
-/// Vivanti & Kaufman ch.7: the United States, Japan and Germany in US dollars; their US-listed funds SPY, EWJ, EWG (labelled, #229 (5)).
-pub const GEI: &[&str] = &["SPY", "EWJ", "EWG"];
+/// Vivanti & Kaufman ch.7: the United States, Japan and Germany in US dollars; their US-listed funds DIA, EWJ, EWG (labelled, #229 (5)).
+/// The chapter's US market is the Dow (p.220), so the Dow fund DIA, not SPY (R4 #248 (4), lane K61); SPY stays the calendar.
+pub const GEI: &[&str] = &["DIA", "EWJ", "EWG"];
 
 pub const MODEL: &str = "rotation_multi_etf_v1";
 pub const BASIS: &str = "Rotation account (lane K28). The rule ranks or weights several actual ETFs from the vault's US price file (price-only daily closes and opens, no dividends). SPY supplies only the trading calendar and the buy-and-hold benchmark; the chart's price line is SPY's, while each trade's prices are those of the ETF named in its reason. Positions are valued every day at their own ETF's close; no price is filled in or carried. Rules that keep a holding until it leaves the selection pass a sold holding's proceeds to its replacement; rules that set weights at every rebalance close each position and reopen it at the new weight, so a continuing holding is one trade per rebalance period. Costs: the vault fee and slippage setting is charged per side on each position (0 by default). No rotation is run before every ETF of the universe has the history the ranking needs.";
@@ -186,7 +187,7 @@ fn events(id: &str, x: &Ctx, u: &U, from: usize, to: usize, p: &Params) -> (Vec<
         }
         s if s.starts_with("kfgei_alloc_") => {
             // Vivanti & Kaufman ch.7 (lane K54): at each year's last close, from the last three calendar-year returns (price only, USD
-            // funds), set next year's weights; u = [SPY, EWJ, EWG]
+            // funds), set next year's weights; u = [DIA, EWJ, EWG]
             let monthly = p.get("corr").copied().unwrap_or(0.) >= 0.5;
             let ye: Vec<usize> = (0..n).filter(|&k| year_end(x, k)).collect();
             for j in 3..ye.len() {
@@ -803,22 +804,23 @@ mod tests {
     }
     #[test]
     fn gei_allocations_follow_the_three_yearly_returns() {
-        // lane K54: prices constant inside each year; yearly returns SPY 10/10/5%, EWJ +30/-20/+30%, EWG -20/+30/-20%
+        // lane K54 / K61: prices constant inside each year; yearly returns DIA 10/10/5%, EWJ +30/-20/+30%, EWG -20/+30/-20%;
+        // SPY is only the calendar (flat), so a US weight on SPY instead of DIA would fail here
         let year = 12 * 28; let n = 5 * year;
         let px = |p: [f64; 5]| (0..n).map(|k| p[k / year]).collect::<Vec<f64>>();
-        let spy = rows("SPY", &px([100., 110., 121., 127.05, 127.05]));
-        let data = BTreeMap::from([("SPY".to_string(), spy.clone()), ("EWJ".to_string(), rows("EWJ", &px([100., 130., 104., 135.2, 135.2]))),
-            ("EWG".to_string(), rows("EWG", &px([100., 80., 104., 83.2, 83.2])))]);
+        let spy = rows("SPY", &vec![50.; n]);
+        let data = BTreeMap::from([("SPY".to_string(), spy.clone()), ("DIA".to_string(), rows("DIA", &px([100., 110., 121., 127.05, 127.05]))),
+            ("EWJ".to_string(), rows("EWJ", &px([100., 130., 104., 135.2, 135.2]))), ("EWG".to_string(), rows("EWG", &px([100., 80., 104., 83.2, 83.2])))]);
         let x = Ctx::new(&spy, &spy, &[]);
         let w = |id: &str| { let a = account(id, &x, 0, n - 1, 0., &Params::new(), Some(&data)).unwrap().unwrap();
             let k = 4 * year - 1; // the 4th year-end: the first with three yearly returns behind it
             let mut v: Vec<(String, f64)> = a.trades.iter().zip(&a.alloc).filter(|(t, _)| t.legs[0].i == k).map(|(t, &al)| (t.reason.split(':').next().unwrap().to_string(), al)).collect();
             v.sort_by(|p, q| p.0.cmp(&q.0)); v };
         let near = |v: Vec<(String, f64)>, want: &[(&str, f64)]| v.len() == want.len() && v.iter().zip(want).all(|(a, b)| a.0 == b.0 && (a.1 - b.1).abs() < 1e-9);
-        assert!(near(w("kfgei_alloc_vol"), &[("EWG", 1. / 6.), ("EWJ", 1. / 6.), ("SPY", 2. / 3.)])); // SPY: the lowest SD
-        assert!(near(w("kfgei_alloc_rar"), &[("EWG", 1. / 6.), ("EWJ", 1. / 6.), ("SPY", 2. / 3.)])); // SPY: the best return / SD
-        assert!(near(w("kfgei_alloc_corr"), &[("EWJ", 0.3), ("SPY", 0.7)])); // EWJ moves against SPY, EWG with it
-        assert!(near(w("kfgei_alloc_combined"), &[("EWG", 1. / 9.), ("EWJ", 0.6333333333333333 / 3.), ("SPY", (4. / 3. + 0.7) / 3.)]));
+        assert!(near(w("kfgei_alloc_vol"), &[("DIA", 2. / 3.), ("EWG", 1. / 6.), ("EWJ", 1. / 6.)])); // DIA: the lowest SD
+        assert!(near(w("kfgei_alloc_rar"), &[("DIA", 2. / 3.), ("EWG", 1. / 6.), ("EWJ", 1. / 6.)])); // DIA: the best return / SD
+        assert!(near(w("kfgei_alloc_corr"), &[("DIA", 0.7), ("EWJ", 0.3)])); // EWJ moves against DIA, EWG with it
+        assert!(near(w("kfgei_alloc_combined"), &[("DIA", (4. / 3. + 0.7) / 3.), ("EWG", 1. / 9.), ("EWJ", 0.6333333333333333 / 3.)]));
     }
     #[test]
     fn faber_reweights_every_month_end_and_bull_someplace_keeps_its_three_holders() {

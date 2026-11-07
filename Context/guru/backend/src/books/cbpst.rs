@@ -101,10 +101,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 fn tr(x: &Ctx, i: usize) -> f64 { if i == 0 { x.h[0] - x.l[0] } else { x.h[i].max(x.c[i - 1]) - x.l[i].min(x.c[i - 1]) } }
 fn rng(x: &Ctx, i: usize) -> f64 { x.h[i] - x.l[i] }
 fn sma(v: &[f64], n: usize) -> Vec<f64> {
-    let mut out = vec![f64::NAN; v.len()];
-    let mut s = 0.;
-    for i in 0..v.len() { s += v[i]; if i >= n { s -= v[i - n]; } if i + 1 >= n { out[i] = s / n as f64; } }
-    out
+    // each window summed directly (R4 #249): a running sum drifts and flips exact ties
+    (0..v.len()).map(|i| if i + 1 >= n { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 } else { f64::NAN }).collect()
 }
 /// TradeStation Volatility(n): Wilder-smoothed true range seeded with the n-bar average true range.
 fn ts_vol(x: &Ctx, n: usize) -> Vec<f64> {
