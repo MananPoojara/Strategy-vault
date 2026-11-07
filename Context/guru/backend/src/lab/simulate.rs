@@ -289,57 +289,114 @@ pub fn simulate(c: &Compiled, b: &Bars, from: usize, to: usize) -> Vec<Trade> { 
 pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) {
     let (trades, events) = signal_events(c, b, from, to);
     let trades = match &c.shadow { Some((s, ok, filter_exit)) => shadow_trades(s, ok, *filter_exit, b, trades), None => trades };
-    (if c.clip.is_empty() { trades } else { clip_trades(c, b, to, trades) }, events)
+    if c.clip.iter().any(|clip| clip.blocked[from..=to].contains(&true)) {
+        clip_trades(c, b, from, to, trades)
+    } else { (trades, events) }
 }
 /// date_filter.reentry and spec.blackouts, as the AFLs' virtual trade: each trade the rules take with no date filter runs on
 /// paper, and the real position is that trade on the bars every clip allows. A position is covered at the close of the
-/// first blocked bar. Once the bars clear, Running opens a new short at that bar's close while the paper trade lasts (AFL
-/// `days >= 0`) with fresh exits from that bar: Dual ATR lines, N-candle counts and stops start again (the 05-11-2026 AFLs
-/// dropped continueOldATR), and it closes by its own exits, which may outlast the paper trade. Fresh takes no more of the
-/// paper trade (AFL `days == 0`: only a new trade's entry bar). A clear bar after a blocked one is re-entered only when every
-/// clip that blocked that bar is Running.
-fn clip_trades(c: &Compiled, b: &Bars, to: usize, paper: Vec<Trade>) -> Vec<Trade> {
-    let clips = &c.clip;
-    let blocked = |i: usize| clips.iter().any(|c| c.blocked[i]);
+/// first blocked bar. Once the bars clear, Running shorts again at that bar's close while the paper trade lasts (AFL
+/// `days >= 0`): by default it keeps the paper trade's exits and ends with it (continueOldATR: StochD, RSI, UltimateOscillator,
+/// EMA_MeanReversion AFLs); with execution.fresh_reentry_exits it is a new position with fresh exits from that bar (Dual ATR,
+/// N-candle counts, stops; ST_Sell_Short_With_QDP ATR) that closes by its own exits and may outlast the paper trade. Fresh
+/// waits for a new entry signal (AFL `days == 0 OR freshSig`). A clear bar resumes the virtual trade only when every clip
+/// that blocked the previous bar is Running; a fresh signal may start its own exits while the real position is flat.
+fn clip_trades(c: &Compiled, b: &Bars, from: usize, to: usize, paper: Vec<Trade>) -> (Vec<Trade>, Vec<String>) {
+    let blocked = |i: usize| c.clip.iter().any(|clip| clip.blocked[i]);
     let sides: Vec<&Compiled> = std::iter::once(c).chain(c.other.as_deref()).collect();
-    let mut out = vec![];
-    let mut paper: std::collections::VecDeque<Trade> = paper.into();
-    while let Some(t) = paper.pop_front() {
-        let (e, x) = (t.legs[0].i, t.exit_i);
-        if (e..x.max(e + 1)).all(|i| !blocked(i)) { out.push(t); continue; } // never cut (a block on the exit bar comes after the exit)
-        // a re-entered position that outlives its paper trade: no new trade while it is open (AFL ShortPosition == 0, and no
-        // new virtual trade either); once it closes at z the rules run again from z + 1
-        let mut busy: Option<usize> = None;
-        // a re-entry: a fresh position at bar k's close, run by the trade loop on its own exits to its own exit (or `to`)
-        let fresh = |k: usize| -> Trade {
-            let s = sides.iter().position(|x| x.exec.short == (t.dir < 0.)).unwrap_or(0);
-            let p = Pos::open(sides[s], k, b.close[k], k, "close", t.dir);
-            let mut f = signal_events_from(c, b, k + 1, to, Some((s, p))).0.into_iter().next().expect("a held position always ends as a trade");
-            f.legs[0].w = t.legs[0].w;
-            f
-        };
-        let cut = |p: &Trade, j: usize| Trade { exit_i: j, exit_px: b.close[j], reason: clips.iter().find(|c| c.blocked[j]).map_or(String::new(), |c| c.why.clone()),
-            signal_i: j, open: false, exits: vec![], ..p.clone() };
-        let mut cur = (!blocked(e)).then(|| t.clone());
-        let mut j = e + 1;
-        while j <= to && (cur.is_some() || j < x) {
-            match cur.take() {
-                Some(p) if p.exit_i == j => { if p.exit_i > x { busy = Some(p.exit_i); } out.push(p); }
-                Some(p) if blocked(j) => out.push(cut(&p, j)),
-                Some(p) => cur = Some(p),
-                None if !blocked(j) && blocked(j - 1) => {
-                    if !clips.iter().all(|c| !c.blocked[j - 1] || c.running) { break; }
-                    cur = Some(fresh(j));
+    let mut paper = paper.into_iter().peekable();
+    let (mut virtual_trade, mut actual): (Option<Trade>, Option<Trade>) = (None, None);
+    let (mut out, mut risk_events, mut risk) = (vec![], vec![], RiskState::new());
+    let mut clear = [false; 2];
+    let mut pending_until = None;
+    let market = |side: &Compiled| side.exec.market.unwrap_or([side.exec.fill, side.exec.exit_fill].map(|fill|
+        if fill == Fill::Close { (Px::Close, 0) } else { (Px::Open, side.exec.delay) }));
+    let shares_open = sides.iter().all(|side| !side.has_order() && market(side)[0].1 > 0);
+    for side in &sides { side.reset_setups(); }
+    for i in from..=to {
+        if i > from { for (s, side) in sides.iter().enumerate() { side.step_setups(i - 1, |_| clear[s]); } }
+        clear = [false; 2];
+        while paper.peek().is_some_and(|t| t.legs[0].i <= i) { virtual_trade = paper.next(); }
+        if virtual_trade.as_ref().is_some_and(|t| t.exit_i < i || (t.exit_i == i && !t.open)) { virtual_trade = None; }
+        if pending_until.is_some_and(|until| i <= until) { continue; }
+        pending_until = None;
+        let mut exited = false;
+        let mut exited_side = None;
+        let mut queued = None;
+        match actual.take() {
+            Some(t) if i < t.legs[0].i => { actual = Some(t); continue; }
+            Some(t) if i == t.legs[0].i && blocked(i) => {} // cancelled before its delayed fill
+            Some(t) if t.exit_i == i && !t.open => {
+                exited_side = Some(t.dir);
+                if shares_open && t.signal_i < i {
+                    let side = usize::from(t.dir < 0. && sides.len() == 2);
+                    let held = Some((side, Pos::open(sides[side], t.legs[0].i, t.legs[0].px, t.legs[0].i, t.entry_kind, t.dir)));
+                    for signal in t.signal_i.max(t.legs[0].i)..i {
+                        if blocked(signal) || risk.blocked(c, b, &out, &held, signal) { continue; }
+                        let (trades, _, _) = signal_events_from(c, b, signal, to, None, Some(&out));
+                        if let Some(next) = trades.into_iter().next().filter(|next|
+                            next.legs[0].i > i || (next.legs[0].i == i && (next.entry_kind != "next_open" || market(sides[side])[1].0 == Px::Open))) {
+                            queued = Some(next); break;
+                        }
+                    }
                 }
-                None => {}
+                clear[usize::from(t.dir < 0. && sides.len() == 2)] = true;
+                let side = usize::from(t.dir < 0. && sides.len() == 2);
+                exited = t.signal_i == i || market(sides[side])[1].0 != Px::Open;
+                out.push(t);
             }
-            j += 1;
+            Some(t) if blocked(i) => {
+                exited_side = Some(t.dir);
+                clear[usize::from(t.dir < 0. && sides.len() == 2)] = true;
+                out.push(Trade { exit_i: i, exit_px: b.close[i], signal_i: i, open: false, exits: vec![],
+                    reason: c.clip.iter().find(|clip| clip.blocked[i]).unwrap().why.clone(), ..t });
+                exited = true;
+            }
+            Some(t) => {
+                clear[usize::from(t.dir < 0. && sides.len() == 2)] = !t.open && t.signal_i == i;
+                actual = Some(t); continue;
+            }
+            None => {}
         }
-        // a position still open at `to` (its exit bar is `to`, reached above unless the loop ended first)
-        if let Some(p) = cur { if p.exit_i > x { busy = Some(p.exit_i); } out.push(p); }
-        if let Some(z) = busy { paper = if z < to { signal_events(c, b, z + 1, to).0.into() } else { Default::default() }; }
+        risk.record(c, b, &out, &mut risk_events);
+        if blocked(i) { continue; }
+        if let Some(next) = queued {
+            if next.legs[0].i == i || !risk.blocked(c, b, &out, &None, i) {
+                clear[usize::from(next.dir < 0. && sides.len() == 2)] = true;
+                actual = Some(next);
+            }
+            continue;
+        }
+        if (exited && !c.exec.reenter_on_exit_bar && !shares_open && sides.len() == 1) || risk.blocked(c, b, &out, &None, i) { continue; }
+        // Running inherits the live virtual trade, even if a new raw signal coincides.
+        let resumes = i > 0 && blocked(i - 1) && c.clip.iter().all(|clip| !clip.blocked[i - 1] || clip.running);
+        if let Some(t) = virtual_trade.as_ref().filter(|t| resumes && (!exited || c.exec.reenter_on_exit_bar || exited_side != Some(t.dir))) {
+            let side = sides.iter().position(|s| s.exec.short == (t.dir < 0.)).unwrap_or(0);
+            clear[side] = true;
+            actual = if c.exec.fresh_reentry_exits {
+                for (s, compiled) in sides.iter().enumerate() { compiled.step_setups(i, |_| clear[s]); }
+                let p = Pos::open(sides[side], i, b.close[i], i, "close", t.dir);
+                let mut fresh = signal_events_from(c, b, i + 1, to, Some((side, p)), None).0.into_iter().next()
+                    .expect("a held position always ends as a trade");
+                fresh.legs[0].w = t.legs[0].w;
+                Some(fresh)
+            } else {
+                Some(Trade { legs: vec![Leg { i, px: b.close[i], w: t.legs[0].w }], entry_kind: "close", exits: vec![], ..t.clone() })
+            };
+        } else if sides.iter().any(|side| {
+            let holds = |j| side.entry.iter().all(|r| r.holds(j, None));
+            holds(i) && (!side.exec.edge || i == 0 || !holds(i - 1))
+        }) {
+            // A fresh signal owns its exits and normal fills; blocked virtual positions do not consume it.
+            let (trades, events, attempt) = signal_events_from(c, b, i, to, None, Some(&out));
+            actual = trades.into_iter().next();
+            clear = attempt.accepted;
+            if actual.is_none() && clear.iter().any(|&accepted| accepted) { pending_until = Some(attempt.until); }
+            for event in events { if !risk_events.contains(&event) { risk_events.push(event); } }
+        }
     }
-    out
+    if let Some(t) = actual { out.push(t); }
+    (out, risk_events)
 }
 /// execution.shadow over the signal trades (the rules without the filter rows, every one taken): paper trades add their %
 /// returns and their bars in position; a positive sum resets both; a paper trade that leaves the sum below −loss_pct after
@@ -375,11 +432,19 @@ fn shadow_trades(s: &super::rules::Shadow, ok: &[bool], filter_exit: bool, b: &B
     }
     out
 }
-fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) { signal_events_from(c, b, from, to, None) }
+fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) {
+    let (trades, events, _) = signal_events_from(c, b, from, to, None, None);
+    (trades, events)
+}
+#[derive(Default)]
+struct EntryAttempt { accepted: [bool; 2], until: usize }
 /// The trade loop; `held`: start with that position open (a clip_trades re-entry) and take no entry of its own, so the result
 /// is that one position's trade, closed by its exits or open at `to`.
-fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Option<(usize, Pos)>) -> (Vec<Trade>, Vec<String>) {
+fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Option<(usize, Pos)>, history: Option<&[Trade]>) -> (Vec<Trade>, Vec<String>, EntryAttempt) {
     let reentry = held.is_some();
+    let single_entry = history.is_some();
+    let previous = history.map_or(0, <[Trade]>::len);
+    let mut attempt = EntryAttempt { until: from, ..EntryAttempt::default() };
     let sides: Vec<&Compiled> = std::iter::once(c).chain(c.other.as_deref()).collect();
     let dir = |s: usize| if sides[s].exec.short { -1. } else { 1. };
     let x = &c.exec; // fill, exit_fill, opposite, delay and edge are shared by both sides
@@ -423,7 +488,7 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
         (limit.map_or(true, f64::is_finite) && stop.map_or(true, f64::is_finite))
             .then_some(Order { side: s, sig: i, limit: side.round_at(i, limit.unwrap_or(f64::NAN)), stop: side.round_at(i, stop.unwrap_or(f64::NAN)), until: i + side.exec.valid_bars })
     };
-    let mut trades: Vec<Trade> = Vec::new();
+    let mut trades: Vec<Trade> = history.unwrap_or(&[]).to_vec();
     let mut pos: Option<(usize, Pos)> = held; // (side, position)
     let mut pending_entry: Option<(usize, usize, usize, &'static str, Px)> = None; // (side, signal bar, fill bar, entry kind, field)
     let mut pending_exit: Option<(usize, usize, String, Px)> = None; // (signal bar, fill bar, reason, field); cleared when its position closes
@@ -438,9 +503,11 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
     let mut add_signal = [None; 2];
     // equity-level state from closed trades (spec §6.5): loss streak, compounded closed equity and its peak, pause, stop
     let (mut events, mut risk) = (Vec::new(), RiskState::new());
-    for s in &sides { s.reset_setups(); }
+    if !reentry && !single_entry { for s in &sides { s.reset_setups(); } }
     for i in from..=to {
         if reentry && pos.is_none() { break; } // the held position has closed
+        if single_entry && i > from && (trades.len() > previous || (pos.is_none() && pending_entry.is_none() && orders.iter().all(Option::is_none))) { break; }
+        attempt.until = i;
         // setup nodes step past bar i - 1 here, before bar i changes the state: a side disarms on its entry or exit signal
         // bar (the AFL loop's own bar, not a later fill), whether the order fills or not
         if i > from {
@@ -503,7 +570,10 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
                 pos = sized(o.side, p, &mut events, &b.date[i]);
             }
         }
-        let mut exited = false; // after the open: blocks a same-bar order under book rules
+        let mut exited = single_entry && i == from && trades.last().is_some_and(|t| {
+            let s = usize::from(t.dir < 0. && sides.len() == 2);
+            t.exit_i == i && (t.signal_i == i || market(s)[1].0 != Px::Open)
+        }); // after the open: blocks a same-bar order under book rules
         if let Some((s, p)) = pos.as_mut() {
             let (s, d) = (*s, dir(*s));
             // the other side's resting order is a reversal order under `opposite: reverse` only; a limit fills on the
@@ -575,7 +645,7 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
             if !(p.limit_bar && p.e == i) { p.best = if d > 0. { p.best.max(b.high[i]) } else { p.best.min(b.low[i]) }; }
         }
         if fill_due!(true) { exited = true; }
-        risk.record(c, b, &trades, &mut events);
+        risk.record(c, b, if single_entry { &trades[..previous] } else { &trades }, &mut events);
         if last { break; } // final-bar realized exits still update risk; no new signal is taken
         if expiry { continue; } // expiry cannot reopen or retain a future entry
         // New positions are gated by trades already closed on this bar; closing is always allowed.
@@ -589,7 +659,8 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
             if let Some(e) = pending_exit.as_mut() { e.2 = "opposite entry".into(); }
         }
         if risk_block { pending_add = None; }
-        let want: Vec<usize> = (0..sides.len()).filter(|&s| !reentry && fires(s, i)).collect();
+        let want: Vec<usize> = (0..sides.len()).filter(|&s| !reentry
+            && (!single_entry || i == from || pos.as_ref().is_some_and(|(held, _)| s != *held)) && fires(s, i)).collect();
         // The other side's entry while a position is still open (direction both): reverse, exit, or ignore.
         if let Some(&(s, _)) = pos.as_ref().filter(|_| pending_exit.is_none()) {
             let o = 1 - s.min(1);
@@ -602,7 +673,7 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
                     // a reversal is one fill: exit and new entry at the same price, exempt from the same-bar re-entry rule
                     (Opposite::Reverse, (_, 0), false) => {
                         trades.push(pos.take().unwrap().1.trade(i, b.close[i], why, i, dir(s)));
-                        risk.record(c, b, &trades, &mut events);
+                        risk.record(c, b, if single_entry { &trades[..previous] } else { &trades }, &mut events);
                         if !risk.blocked(c, b, &trades, &pos, i) {
                             pos = sized(o, Pos::open(sides[o], i, b.close[i], i, "reverse", dir(o)), &mut events, &b.date[i]);
                         }
@@ -616,7 +687,7 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
                         (px, delay) => if i + delay <= to { pending_exit = Some((i, i + delay, why, px)); },
                     },
                 }
-                risk.record(c, b, &trades, &mut events);
+                risk.record(c, b, if single_entry { &trades[..previous] } else { &trades }, &mut events);
                 continue;
             }
         }
@@ -661,6 +732,18 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
                 _ => {}
             }
         }
+        if single_entry && i == from {
+            for (s, accepted) in attempt.accepted.iter_mut().enumerate().take(sides.len()) {
+                *accepted = pos.as_ref().is_some_and(|(side, p)| *side == s && p.sig == i)
+                    || pending_entry.is_some_and(|e| e.0 == s && e.1 == i)
+                    || orders[s].as_ref().is_some_and(|order| order.sig == i);
+            }
+        }
+        if single_entry && attempt.accepted.iter().any(|&accepted| accepted) && trades.len() == previous
+            && pos.is_none() && pending_entry.is_none() && orders.iter().all(Option::is_none) {
+            attempt.until = i.saturating_sub(1);
+            break;
+        }
     }
     if let Some((s, p)) = pos {
         // AFL DEAD STOCK BACKTEST YES: the symbol's last bar sells at its close (a delisted stock exits), not an open mark
@@ -668,7 +751,7 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
         let t = p.trade(to, b.close[to], if dead { "execution.dead_stock: last bar" } else { "open" }.into(), to, dir(s));
         trades.push(Trade { open: !dead, ..t });
     }
-    (trades, events)
+    (trades.into_iter().skip(previous).collect(), events, attempt)
 }
 
 #[cfg(test)]
@@ -1504,6 +1587,16 @@ mod tests {
             if c.exec.cooldown.is_none() { assert_eq!(events.len(), 1); }
         }
     }
+    #[test] fn a_projected_reversal_cannot_publish_a_future_risk_event() {
+        let mut b = bars();
+        (b.close[4], b.low[4]) = (90., 89.);
+        let c = both(&[1], &[4], Exec {
+            risk: Risk { losses: None, max_dd_pct: Some(3.) }, ..close_fill()
+        });
+        let (trades, events, _) = signal_events_from(&c, &b, 1, 9, None, Some(&[]));
+        assert_eq!(trades[0].exit_i, 4);
+        assert!(events.is_empty(), "only the actual execution loop may publish projected losses: {events:?}");
+    }
     #[test] fn a_final_bar_realized_loss_reports_its_risk_event() {
         let c = with(&[1], &[9], Exec {
             short: true,
@@ -2073,23 +2166,166 @@ mod clip_run_tests {
     use crate::lab::testdata::from_ohlc;
     /// A short that is always signalled and holds 6 bars over 2024-01-01 .. 2024-01-12 (weekends skipped): on paper 1st → 9th,
     /// then 10th → open at the end.
-    fn run(extra: &str) -> Vec<(String, String, String)> { run_exit(extra, r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}}"#) }
-    fn run_exit(extra: &str, exit: &str) -> Vec<(String, String, String)> {
+    const HELD6: &str = r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}}"#;
+    const FRESH: &str = r#","fresh_reentry_exits":true"#;
+    fn run(extra: &str) -> Vec<(String, String, String)> { run_x(extra, HELD6, "") }
+    fn run_exit(extra: &str, exit: &str) -> Vec<(String, String, String)> { run_x(extra, exit, FRESH) }
+    fn run_x(extra: &str, exit: &str, exec: &str) -> Vec<(String, String, String)> {
         let mut b = from_ohlc(&(0..10).map(|i| { let c = 100. + i as f64; (c, c + 1., c - 1., c) }).collect::<Vec<_>>());
         b.date = ["01", "02", "03", "04", "05", "08", "09", "10", "11", "12"].iter().map(|d| format!("2024-01-{d}")).collect();
-        let s = parse_spec(&format!(r#"{{"v":1,"direction":"short","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{exit}]}},"execution":{{"fill":"close"}}{extra}}}"#)).unwrap();
+        let s = parse_spec(&format!(r#"{{"v":1,"direction":"short","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{exit}]}},"execution":{{"fill":"close"{exec}}}{extra}}}"#)).unwrap();
         let fr = Frames::new(b);
         simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 9).into_iter().map(|t| (fr.d.date[t.legs[0].i][8..].to_string(), fr.d.date[t.exit_i][8..].to_string(), t.reason)).collect()
     }
     const M5: &str = r#"{"name":"Master 5DP","windows":[["2024-01-03","2024-01-05"]],"reentry":"#;
     fn days(t: &[(String, String, String)]) -> Vec<(&str, &str)> { t.iter().map(|(a, b, _)| (a.as_str(), b.as_str())).collect() }
-    #[test] fn fresh_covers_on_the_window_start_and_waits_for_the_next_paper_trade() {
+    fn fresh_signal_run(signals: &[usize], extra: &str, exec: &str) -> Vec<Trade> {
+        let mut b = from_ohlc(&(0..16).map(|i| {
+            let close = if signals.contains(&i) { 50. } else { 60. };
+            (close, close + 1., close - 1., close)
+        }).collect::<Vec<_>>());
+        b.date = (1..=16).map(|d| format!("2024-01-{d:02}")).collect();
+        let s = parse_spec(&format!(r#"{{"v":1,"direction":"short","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"crosses_below","rhs":{{"value":55}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":4}}}}]}},"execution":{{{exec}}}{extra}}}"#)).unwrap();
+        let fr = Frames::new(b);
+        simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 15)
+    }
+    #[test] fn fresh_signal_during_a_blocked_paper_trade_starts_its_own_exits() {
+        let base = r#", "date_filter":{"windows":[["2024-01-04","2024-01-20"]],"reentry":"fresh"}"#;
+        let t = fresh_signal_run(&[1, 3, 5], base, r#""fill":"close""#);
+        // The blocked paper short runs 1 -> 5. A new signal at 3 opens a real short 3 -> 7;
+        // the signal at 5 cannot open another position while that real short is held.
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(3, 7)]);
+    }
+    #[test] fn fresh_signal_on_a_virtual_exit_bar_can_enter_while_the_actual_position_is_flat() {
+        let base = r#", "date_filter":{"windows":[["2024-01-06","2024-01-20"]],"reentry":"fresh"}"#;
+        let t = fresh_signal_run(&[1, 5], base, r#""fill":"close""#);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(5, 9)]);
+    }
+    #[test] fn a_running_unblock_keeps_the_virtual_exit_even_when_a_fresh_signal_coincides() {
+        let w = r#", "blackouts":[{"name":"Master","windows":[["2024-01-03","2024-01-04"]],"reentry":"running"}]"#;
+        let t = fresh_signal_run(&[1, 3], w, r#""fill":"close""#);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(1, 2), (3, 5)]);
+    }
+    #[test] fn a_fresh_signal_does_not_reopen_on_an_actual_exit_bar() {
+        let w = r#", "blackouts":[{"name":"Later","windows":[["2024-01-10","2024-01-11"]],"reentry":"fresh"}]"#;
+        let t = fresh_signal_run(&[1, 5], w, r#""fill":"close""#);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(1, 5)]);
+    }
+    #[test] fn a_delayed_fresh_entry_uses_its_fill_date_and_price() {
+        let w = r#", "date_filter":{"windows":[["2024-01-07","2024-01-20"]],"reentry":"fresh"},"blackouts":[{"name":"QTR","windows":[["2024-01-08","2024-01-10"]],"reentry":"fresh"}]"#;
+        let t = fresh_signal_run(&[1, 6], w, r#""prices":{"short":"open","cover":"close"},"delays":{"short":3,"cover":0}"#);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i)).collect::<Vec<_>>(), [(9, 60., 13)]);
+    }
+    #[test] fn a_fresh_entry_whose_delayed_fill_is_blocked_never_creates_a_trade() {
+        let w = r#", "date_filter":{"windows":[["2024-01-04","2024-01-20"]],"reentry":"fresh"},"blackouts":[{"name":"QTR","windows":[["2024-01-05","2024-01-07"]],"reentry":"fresh"}]"#;
+        assert!(fresh_signal_run(&[1, 3], w, r#""exit_fill":"close""#).is_empty());
+    }
+    #[test] fn a_virtual_trade_started_during_real_occupancy_can_later_resume_its_own_exits() {
+        let w = r#", "date_filter":{"windows":[["2024-01-04","2024-01-20"]],"reentry":"fresh"},"blackouts":[{"name":"Master","windows":[["2024-01-09","2024-01-10"]],"reentry":"running"}]"#;
+        let t = fresh_signal_run(&[1, 3, 7], w, r#""fill":"close""#);
+        // Real 3 -> 7 outlives virtual 1 -> 5. The next virtual trade starts at 7 while
+        // the real position exits; Running at 9 must retain that virtual trade's exit at 11.
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(3, 7), (9, 11)]);
+    }
+    #[test] fn fresh_signals_honor_actual_cooldown_including_after_the_virtual_trade_ends() {
+        let w = r#", "blackouts":[{"name":"QTR","windows":[["2024-01-03","2024-01-04"]],"reentry":"fresh"}]"#;
+        let t = fresh_signal_run(&[1, 4, 6], w, r#""fill":"close","cooldown":{"bars":4}"#);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(1, 2), (6, 10)]);
+    }
+    #[test] fn fresh_signals_do_not_bypass_trade_limits_or_a_closed_trade_risk_halt() {
+        let w = r#", "blackouts":[{"name":"QTR","windows":[["2024-01-03","2024-01-04"]],"reentry":"fresh"}]"#;
+        for limit in [r#""max_trades":{"count":1,"per":"M"}"#, r#""risk":{"max_drawdown_pct":1}"#] {
+            let t = fresh_signal_run(&[1, 4, 6], w, &format!(r#""fill":"close",{limit}"#));
+            assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(1, 2)]);
+        }
+    }
+    #[test] fn a_fresh_filter_without_a_new_signal_does_not_resume_the_virtual_trade() {
+        let w = r#", "blackouts":[{"name":"QTR","windows":[["2024-01-03","2024-01-05"]],"reentry":"fresh"}]"#;
+        let t = fresh_signal_run(&[1, 7], w, r#""fill":"close""#);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(1, 2), (7, 11)]);
+    }
+    #[test] fn a_setup_armed_while_blocked_can_take_its_fresh_trigger() {
+        let mut b = from_ohlc(&(0..12).map(|i| {
+            let c = if [1, 3].contains(&i) { 50. } else { 60. };
+            (c, c + 1., c - 1., c)
+        }).collect::<Vec<_>>());
+        b.date = (1..=12).map(|d| format!("2024-01-{d:02}")).collect();
+        let s = parse_spec(r#"{"v":1,"direction":"short","entry":{"all":[{"setup":{"lhs":{"s":"close"},"op":">","rhs":{"value":55}},"trigger":{"lhs":{"s":"close"},"op":"crosses_below","rhs":{"value":55}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":4}}]},"execution":{"fill":"close"},"date_filter":{"windows":[["2024-01-04","2024-01-20"]],"reentry":"fresh"}}"#).unwrap();
+        let fr = Frames::new(b);
+        let t = simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 11);
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), [(3, 7)]);
+    }
+    #[test] fn unfilled_orders_keep_their_lifetime_and_disarm_setups_on_the_signal() {
+        let mut b = from_ohlc(&(0..16).map(|i| {
+            let c = if i == 1 { 400. } else if [3, 8].contains(&i) { 250. } else { 60. };
+            let h = if [4, 9].contains(&i) { 270. } else { c + 1. };
+            (c, h, if i == 0 { 1. } else { c - 1. }, c)
+        }).collect::<Vec<_>>());
+        b.date = (1..=16).map(|d| format!("2024-01-{d:02}")).collect();
+        let trigger = r#"{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"value":200}}"#;
+        for armed in [false, true] {
+            let entry = if armed { format!(r#"{{"setup":{{"lhs":{{"s":"low"}},"op":"<","rhs":{{"value":5}}}},"trigger":{trigger}}}"#) } else { trigger.into() };
+            let s = parse_spec(&format!(r#"{{"v":1,"direction":"short","entry":{{"all":[{entry}],"limit":{{"points":10}},"valid_bars":5}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":4}}}}]}},"execution":{{"exit_fill":"close"}},"blackouts":[{{"name":"Later","windows":[["2024-01-16","2024-01-20"]],"reentry":"fresh"}}]}}"#)).unwrap();
+            let fr = Frames::new(b.clone());
+            let t = simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 15);
+            let spans: Vec<_> = t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect();
+            assert_eq!(spans, if armed { vec![] } else { vec![(9, 13)] });
+        }
+    }
+    #[test] fn next_open_sharing_is_preserved_with_an_actual_cut_and_with_an_unused_window() {
+        let mut b = from_ohlc(&(0..16).map(|i| { let p = 100. + i as f64; (p, p + 1., p - 1., p) }).collect::<Vec<_>>());
+        b.date = (1..=16).map(|d| format!("2024-01-{d:02}")).collect();
+        let run = |windows: &str, exec: &str| {
+            let extra = if windows.is_empty() { String::new() } else { format!(r#", "blackouts":[{{"name":"QTR","windows":{windows},"reentry":"fresh"}}]"#) };
+            let s = parse_spec(&format!(r#"{{"v":1,"direction":"short","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":2}}}}]}},"execution":{{{exec}}}{extra}}}"#)).unwrap();
+            let fr = Frames::new(b.clone());
+            simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 15).into_iter()
+                .map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>()
+        };
+        assert_eq!(run(r#"[["2025-01-01","2025-01-02"]]"#, ""), run("", ""));
+        assert_eq!(run(r#"[["2024-01-12","2024-01-13"]]"#, ""), [(1, 4), (4, 7), (7, 10), (10, 11), (13, 15)]);
+        assert_eq!(run(r#"[["2024-01-02","2024-01-03"]]"#, r#""cooldown":{"bars":4,"after":"loss"}"#), [(3, 6), (6, 9), (14, 15)]);
+        let close_exit = r#""prices":{"cover":"close"},"delays":{"cover":1}"#;
+        assert_eq!(run(r#"[["2024-01-12","2024-01-13"]]"#, close_exit), [(1, 4), (5, 8), (9, 11), (13, 15)]);
+    }
+    #[test] fn a_date_filter_preserves_same_close_reversals_to_the_other_side() {
+        let mut b = from_ohlc(&[100., 100., 110., 112., 90., 88., 110., 112.].map(|c| (c, c + 1., c - 1., c)));
+        b.date = (1..=8).map(|d| format!("2024-01-{d:02}")).collect();
+        for rule_exits in [false, true] {
+            let exit = if rule_exits { r#"{"lhs":{"s":"close"},"op":"<","rhs":{"value":95}}"# } else { HELD6 };
+            let s = parse_spec(&format!(r#"{{"v":1,"direction":"both","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"crosses_above","rhs":{{"value":105}}}}]}},"exit":{{"any":[{exit}]}},"short_side":{{"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"crosses_below","rhs":{{"value":95}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":105}}}}]}}}},"execution":{{"fill":"close"}},"date_filter":{{"windows":[["2024-01-02","2024-01-20"]],"reentry":"fresh"}}}}"#)).unwrap();
+            let fr = Frames::new(b.clone());
+            let t = simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 7);
+            assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i, t.dir)).collect::<Vec<_>>(), [(2, 4, 1.), (4, 6, -1.), (6, 7, 1.)]);
+        }
+    }
+    #[test] fn a_future_order_fill_cannot_change_an_earlier_entry_decision() {
+        let mut b = from_ohlc(&(0..16).map(|i| {
+            let c = if i == 1 { 400. } else if i == 5 { 250. } else { 60. };
+            (c, if i == 6 { 270. } else { c + 1. }, c - 1., c)
+        }).collect::<Vec<_>>());
+        b.date = (1..=16).map(|d| format!("2024-01-{d:02}")).collect();
+        let s = parse_spec(r#"{"v":1,"direction":"short","entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"value":150}}],"limit":{"points":10},"valid_bars":8},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":4}}]},"execution":{"exit_fill":"close"},"blackouts":[{"name":"QTR","windows":[["2024-01-04","2024-01-05"]],"reentry":"fresh"}]}"#).unwrap();
+        for future_high in [61., 420.] {
+            b.high[8] = future_high;
+            let fr = Frames::new(b.clone());
+            let t = simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 15);
+            assert!(t.iter().all(|t| t.legs[0].i > 7), "the order at 1 must stay pending through bar 7: {future_high}");
+        }
+    }
+    #[test] fn fresh_accepts_a_new_level_signal_with_its_own_exits() {
         let t = run(&format!(r#","blackouts":[{M5}"fresh"}}]"#));
-        assert_eq!(days(&t), vec![("01", "03"), ("10", "12")]);
+        assert_eq!(days(&t), vec![("01", "03"), ("05", "12")]);
         assert_eq!(t[0].2, "Master 5DP: window started");
     }
-    #[test] fn running_re_enters_on_the_exit_day_with_fresh_exits() {
+    #[test] fn running_re_enters_on_the_exit_day_and_keeps_the_paper_trades_exit() {
+        // default, the AFLs' continueOldATR (StochD, RSI, UltimateOscillator): the re-entered short ends with the paper trade
         let t = run(&format!(r#","blackouts":[{M5}"running"}}]"#));
+        assert_eq!(days(&t), vec![("01", "03"), ("05", "09"), ("10", "12")]);
+        assert_eq!(t[1].2, run("")[0].2); // the paper trade's own exit (bars_held from the 1st)
+    }
+    #[test] fn running_re_enters_on_the_exit_day_with_fresh_exits() {
+        let t = run_x(&format!(r#","blackouts":[{M5}"running"}}]"#), HELD6, FRESH);
         // the re-entered short counts its 6 bars from the 5th (AFL Exitcount1 = 0 at the entry): still open on the 12th, so
         // the paper trade that starts on the 10th is not taken (no new short while one is open)
         assert_eq!(days(&t), vec![("01", "03"), ("05", "12")]);
@@ -2097,13 +2333,15 @@ mod clip_run_tests {
     }
     #[test] fn a_clear_bar_is_re_entered_only_when_every_window_that_blocked_the_bar_before_is_running() {
         let qtr = |r: &str| format!(r#","blackouts":[{M5}"running"}},{{"name":"QTR Midcap","windows":[["2024-01-05","2024-01-08"]],"reentry":"{r}"}}]"#);
-        assert_eq!(days(&run(&qtr("fresh"))), vec![("01", "03"), ("10", "12")]); // the 5th: QTR (Fresh) blocks, so the 8th is not taken
-        assert_eq!(days(&run(&qtr("running"))), vec![("01", "03"), ("08", "12")]);
+        assert_eq!(days(&run(&qtr("fresh"))), vec![("01", "03"), ("08", "12")]); // level mode fires a fresh signal on the clear 8th
+        assert_eq!(days(&run(&qtr("running"))), vec![("01", "03"), ("08", "09"), ("10", "12")]);
+        assert_eq!(days(&run_x(&qtr("running"), HELD6, FRESH)), vec![("01", "03"), ("08", "12")]);
     }
     #[test] fn a_base_period_with_reentry_cuts_at_its_end_and_running_rejoins_the_paper_trade_in_the_next() {
         let base = |r: &str| format!(r#","date_filter":{{"windows":[["2024-01-01","2024-01-04"],["2024-01-08","2024-01-20"]],"reentry":"{r}"}}"#);
-        assert_eq!(days(&run(&base("fresh"))), vec![("01", "04"), ("10", "12")]);
-        assert_eq!(days(&run(&base("running"))), vec![("01", "04"), ("08", "12")]);
+        assert_eq!(days(&run(&base("fresh"))), vec![("01", "04"), ("08", "12")]);
+        assert_eq!(days(&run(&base("running"))), vec![("01", "04"), ("08", "09"), ("10", "12")]);
+        assert_eq!(days(&run_x(&base("running"), HELD6, FRESH)), vec![("01", "04"), ("08", "12")]);
         assert_eq!(run(&base("fresh"))[0].2, "date_filter: window ended");
     }
     #[test] fn a_re_entry_that_closes_by_its_own_exit_frees_the_next_paper_trade() {
@@ -2113,6 +2351,22 @@ mod clip_run_tests {
         let held2 = r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":2}}"#;
         assert_eq!(days(&run_exit("", held2)), vec![("01", "03"), ("04", "08"), ("09", "11")]);
         assert_eq!(days(&run_exit(&format!(r#","blackouts":[{M5}"running"}}]"#), held2)), vec![("01", "03"), ("05", "09"), ("10", "12")]);
+    }
+    #[test] fn a_re_entry_cut_by_a_later_window_keeps_the_next_trade_out_until_it_closes() {
+        // exit after 5 bars: paper 1st → 8th, 9th → open. The window [2nd, 4th) cuts the first short; Running re-enters on the
+        // 4th (fresh, its own exit would be the 11th); the window [10th, 11th) cuts it on the 10th. The paper trade of the 9th
+        // started while that short was open: no overlap (Ritik's "Trade4: positions overlap"), the rules run again from the 11th
+        let held5 = r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}"#;
+        let w = r#","blackouts":[{"name":"Master 5DP","windows":[["2024-01-02","2024-01-04"],["2024-01-10","2024-01-11"]],"reentry":"running"}]"#;
+        let t = run_exit(w, held5);
+        assert_eq!(days(&t), vec![("01", "02"), ("04", "10"), ("11", "12")]);
+        assert!(t.windows(2).all(|p| p[0].1 < p[1].0), "{t:?}");
+    }
+    #[test] fn a_fresh_block_skips_its_bar_but_a_later_running_window_still_re_enters_the_paper_trade() {
+        // paper 1st → 9th. The date filter (Fresh) starts on the 3rd, so the 1st is not taken; Master 5DP (Running) blocks the
+        // 5th; on the 8th, its exit day, the paper trade still runs: short again (AmiBroker 05-03-2018, Nandini "TS STOCH D")
+        let w = r#","date_filter":{"windows":[["2024-01-03","2024-01-20"]],"reentry":"fresh"},"blackouts":[{"name":"Master 5DP","windows":[["2024-01-05","2024-01-08"]],"reentry":"running"}]"#;
+        assert_eq!(days(&run(w)), vec![("03", "05"), ("08", "09"), ("10", "12")]);
     }
     #[test] fn blackouts_are_for_short_strategies_with_their_own_exits() {
         let spec = |dir: &str, extra: &str| parse_spec(&format!(r#"{{"v":1,"direction":"{dir}","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":6}}}}]}}{extra}}}"#));

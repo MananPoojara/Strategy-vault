@@ -107,12 +107,18 @@ export function chosenPhase(windows: readonly [string, string][], set: readonly 
   const [bull, bear] = [count("Bull"), count("Bear")];
   return !bull && !bear ? undefined : bear > bull ? "Bear" : "Bull";
 }
-/** Every period of a set as bull or bear: an untagged period is a bull one, and a set without bear periods gets the gaps
- *  between its bull periods (as the Base 2 Bear sheet is the gaps between its Bull sheet). */
+/** Every period of a set as bull or bear: an untagged period is a bull one, and a set without bear periods gets every day that
+ *  is not bull: the gaps between its bull periods (as the Base 2 Bear sheet is the gaps between its Bull sheet), plus before
+ *  the first and after the last bull period, as the AFLs' `NOT BASE1Sig` (05-11-2026: a short on 05-10-2026, after Base 1's
+ *  last bull period ended 25-09-2026, was refused; Nandini "TS STOCH D"). */
+/** The open ends of a bear phase before the first and after the last bull period (no data falls outside them). */
+export const OPEN_FROM = "1900-01-01", OPEN_TO = "2099-12-31";
 export function withBear(set: readonly DateWindow[]): DateWindow[] {
   const bull = set.filter((w) => phaseOf(w) !== "Bear").map((w) => ({ ...w, label: "Bull" })).sort((a, b) => (a.from < b.from ? -1 : 1));
   const bear = set.filter((w) => phaseOf(w) === "Bear");
-  const gaps = bear.length ? bear : bull.slice(1).flatMap((w, i) => (bull[i].to < w.from ? [{ from: bull[i].to, to: w.from, label: "Bear" }] : []));
+  const gaps = bear.length || !bull.length ? bear : [{ from: OPEN_FROM, to: bull[0].from, label: "Bear" },
+    ...bull.slice(1).flatMap((w, i) => (bull[i].to < w.from ? [{ from: bull[i].to, to: w.from, label: "Bear" }] : [])),
+    { from: bull[bull.length - 1].to, to: OPEN_TO, label: "Bear" }];
   return [...bull, ...gaps].sort((a, b) => (a.from < b.from ? -1 : 1));
 }
 /** The windows a strategy trades from a set: its bull or its bear periods (withBear). */
