@@ -44,11 +44,13 @@ fn put(v: &mut Vec<O>, a: A, t: T, tag: &'static str) {
 }
 fn day_exit(v: &mut Vec<O>) { v.push(o(A::Sell, T::Close, "exit on close")); v.push(o(A::Cover, T::Close, "exit on close")); }
 
-struct Eng<'a, 'b> { x: &'a Ctx<'b>, pos: Pos, cur: Option<Trade>, out: Vec<Trade> }
+#[derive(Clone)]
+struct Eng<'a, 'b> { x: &'a Ctx<'b>, pos: Pos, cur: Option<Trade>, out: Vec<Trade>, on: bool, od: crate::intraday_ep6::Day, day: crate::intraday_ep6::Day } // on/od/day: EP6 (#243, lane K63): the position's mark, how the current bar was decided
 impl<'a, 'b> Eng<'a, 'b> {
     fn close(&mut self, px: f64, j: usize, sig: usize, tag: &str) {
         let mut t = self.cur.take().unwrap();
         t.exit_i = j; t.exit_px = px; t.signal_i = sig; t.reason = tag.to_string();
+        crate::intraday_ep6::mark(&mut t, self.od);
         self.out.push(t); self.pos.mp = 0;
     }
     /// Try to execute `od` at `px` on bar j; false when the order does not apply to the current position.
@@ -62,6 +64,7 @@ impl<'a, 'b> Eng<'a, 'b> {
                 self.cur = Some(Trade { dir: d as f64, legs: vec![Leg { i: j, px, w: 1.0 }], exit_i: j, exit_px: px,
                     reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] });
                 self.pos = Pos { mp: d, ei: j, ep: px };
+                self.od = self.day; // a position opened at the close of a decided bar carries that bar's mark
                 true
             }
             A::Sell => { if self.pos.mp != 1 { return false; } self.close(px, j, sig, od.tag); true }
@@ -74,10 +77,50 @@ impl<'a, 'b> Eng<'a, 'b> {
             pend.push(o(a, T::Lim(p), "profit target")); tried.push(false);
         }
     }
+    /// The orders along a price path (the daily bar's, or a minute's; EP6): on each segment the nearest untried live level
+    /// fills next, at its level (or, on a gap segment, at the gap's end). Returns the fills (EP6 events).
+    fn walk(&mut self, j: usize, pend: &mut Vec<O>, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+        let sig = j.saturating_sub(1);
+        let mut ev = vec![];
+        for g in segs {
+            let (a, b) = (g.a, g.b);
+            if a == b { continue; }
+            let up = b > a;
+            let mut tried = vec![false; pend.len()];
+            let mut cur = a;
+            loop {
+                let mut best: Option<(usize, f64)> = None;
+                for (idx, od) in pend.iter().enumerate() {
+                    if tried[idx] { continue; }
+                    let p = match od.t {
+                        T::Stop(p) if up == buy_side(od.a) => p,
+                        T::Lim(p) if up != buy_side(od.a) => p,
+                        _ => continue,
+                    };
+                    let inside = if up { p > a && p >= cur && p <= b } else { p < a && p <= cur && p >= b };
+                    if !inside { continue; }
+                    let better = match best { None => true, Some((_, bp)) => if up { p < bp } else { p > bp } };
+                    if better { best = Some((idx, p)); }
+                }
+                let Some((idx, p)) = best else { break };
+                tried[idx] = true;
+                let od = pend[idx];
+                let px = g.fill(p);
+                if self.act(&od, px, j, sig) {
+                    pend.remove(idx); tried.remove(idx);
+                    self.after_fill(&od, px, pend, &mut tried);
+                    ev.push(crate::intraday_ep6::Ev { k: od.a as u8, px, up });
+                }
+                cur = p;
+            }
+        }
+        ev
+    }
     fn bar(&mut self, j: usize, mut pend: Vec<O>) {
         let x = self.x;
         let (op, hi, lo, cl) = (x.o[j], x.h[j], x.l[j], x.c[j]);
         let sig = j.saturating_sub(1);
+        self.day = crate::intraday_ep6::Day::Plain;
         let mut tried = vec![false; pend.len()];
         // at the open
         let mut k = 0;
@@ -98,36 +141,23 @@ impl<'a, 'b> Eng<'a, 'b> {
             k += 1;
         }
         // along the bar path
-        let pts = if hi - op <= op - lo { [op, hi, lo, cl] } else { [op, lo, hi, cl] };
-        for s in 0..3 {
-            let (a, b) = (pts[s], pts[s + 1]);
-            if a == b { continue; }
-            let up = b > a;
-            for t in tried.iter_mut() { *t = false; }
-            let mut cur = a;
-            loop {
-                let mut best: Option<(usize, f64)> = None;
-                for (idx, od) in pend.iter().enumerate() {
-                    if tried[idx] { continue; }
-                    let p = match od.t {
-                        T::Stop(p) if up == buy_side(od.a) => p,
-                        T::Lim(p) if up != buy_side(od.a) => p,
-                        _ => continue,
-                    };
-                    let inside = if up { p > a && p >= cur && p <= b } else { p < a && p <= cur && p >= b };
-                    if !inside { continue; }
-                    let better = match best { None => true, Some((_, bp)) => if up { p < bp } else { p > bp } };
-                    if better { best = Some((idx, p)); }
-                }
-                let Some((idx, p)) = best else { break };
-                tried[idx] = true;
-                let od = pend[idx];
-                if self.act(&od, p, j, sig) {
-                    pend.remove(idx); tried.remove(idx);
-                    self.after_fill(&od, p, &mut pend, &mut tried);
-                }
-                cur = p;
-            }
+        let seg = |a: f64, b: f64| crate::intraday_ep6::Seg { a, b, gap: false };
+        if self.on {
+            // EP6 (#243, lane K63): an order-dependent bar is walked on its real 1-minute path where minutes exist
+            use crate::intraday_ep6::{bar_segs, remark, resolve};
+            let keep = std::mem::take(&mut self.out);
+            let mut st = (self.clone(), std::mem::take(&mut pend));
+            let day = resolve(x, j, true, hi - op <= op - lo, &mut st, |s: &mut (Eng, Vec<O>), hf: bool| s.0.walk(j, &mut s.1, &bar_segs(op, hi, lo, cl, hf)), |s: &mut (Eng, Vec<O>), g: &[crate::intraday_ep6::Seg]| s.0.walk(j, &mut s.1, g));
+            let (e, p) = st;
+            pend = p;
+            self.pos = e.pos; self.cur = e.cur;
+            self.od = if self.cur.is_some() { e.od.worst(day) } else { e.od };
+            self.out = keep;
+            self.out.extend(e.out.into_iter().map(|mut t| { remark(&mut t, day); t }));
+            self.day = day;
+        } else {
+            let pts = if hi - op <= op - lo { [op, hi, lo, cl] } else { [op, lo, hi, cl] };
+            self.walk(j, &mut pend, &[seg(pts[0], pts[1]), seg(pts[1], pts[2]), seg(pts[2], pts[3])]);
         }
         // at the close
         for od in pend.iter().filter(|od| matches!(od.t, T::Close)) {
@@ -139,8 +169,11 @@ impl<'a, 'b> Eng<'a, 'b> {
 
 /// Run a strategy script. `s(i, pos, next, this_close)` is called at the close of bar i (position as of the
 /// script run); `next` holds orders for bar i+1, `this_close` orders fill at bar i's close.
-fn engine<F: FnMut(usize, &Pos, &mut Vec<O>, &mut Vec<O>)>(x: &Ctx, from: usize, to: usize, mut s: F) -> Vec<Trade> {
-    let mut e = Eng { x, pos: Pos::default(), cur: None, out: vec![] };
+fn engine<F: FnMut(usize, &Pos, &mut Vec<O>, &mut Vec<O>)>(x: &Ctx, from: usize, to: usize, s: F) -> Vec<Trade> { engine_ep6(x, from, to, false, s) }
+
+/// `engine` with EP6 (#243, lane K63): with `on`, an order-dependent bar is decided on its real 1-minute path (intraday_ep6).
+fn engine_ep6<F: FnMut(usize, &Pos, &mut Vec<O>, &mut Vec<O>)>(x: &Ctx, from: usize, to: usize, on: bool, mut s: F) -> Vec<Trade> {
+    let mut e = Eng { x, pos: Pos::default(), cur: None, out: vec![], on, od: crate::intraday_ep6::Day::Plain, day: crate::intraday_ep6::Day::Plain };
     let mut pend: Vec<O> = vec![];
     if from > 0 {
         let (mut nx, mut tc) = (vec![], vec![]);
@@ -158,7 +191,9 @@ fn engine<F: FnMut(usize, &Pos, &mut Vec<O>, &mut Vec<O>)>(x: &Ctx, from: usize,
         }
     }
     if let Some(mut t) = e.cur.take() {
-        t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; e.out.push(t);
+        t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true;
+        crate::intraday_ep6::mark(&mut t, e.od);
+        e.out.push(t);
     }
     e.out
 }
@@ -627,6 +662,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "acbff_5c1_perp" | "acbff_5c1_day" => vec![p("swap", "Sides: 0 = book (Table 36.3: buy when c[1] < c[2] after five up closes c[2]..c[7]), 1 = [Not from the book] old swapped sides", 0., 0., 1., 1.)], // D1-16
         _ => vec![],
     };
+    let mut v = v;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
     Some(v)
 }
 
@@ -683,6 +720,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let d = defs.iter().find(|d| d.id == id)?;
     if d.status != Status::Live || from > to || to >= x.r.len() { return None; }
     if id == "acbff_mega_1min" { return Some(mega_minutes(x, from, to)); } // lane K38: real 1-minute bars
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(0.0));
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -756,7 +795,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "acbff_cup_3day" => {
             let k = cupcap(x); let (h3, l3) = (hiw(h, 3), low(l, 3));
-            engine(x, from, to, |i, ps, nx, tc| {
+            engine_ep6(x, from, to, on, |i, ps, nx, tc| {
                 if k[i] > 0.0 { put(tc, Buy, T::Close, "buy on close"); }
                 if ps.mp == 1 && ps.bse(i) == 1 { put(nx, Sell, T::Mkt, "day 3 open"); }
                 put(nx, Sell, T::Lim(h3[i] + 0.25 * ar3[i]), "target");
@@ -934,7 +973,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "acbff_5c_perp" => { let sw = g("swap") >= 0.5; perp(&|i| (run_rev(c, i, 0, 5, sw), run_rev(c, i, 0, 5, !sw))) }
         "acbff_5c1_perp" => { let sw = g("swap") >= 0.5; perp(&|i| (run_rev(c, i, 1, 5, sw), run_rev(c, i, 1, 5, !sw))) }
         "acbff_5c1_day" => { let sw = g("swap") >= 0.5; day(&|i| (run_rev(c, i, 1, 5, sw), run_rev(c, i, 1, 5, !sw))) }
-        "acbff_3rd_fade" => engine(x, from, to, |i, ps, nx, _| {
+        "acbff_3rd_fade" => engine_ep6(x, from, to, on, |i, ps, nx, _| {
             let o1 = op[i + 1];
             if ps.mp < 1 && i >= 2 && c[i] < l[i - 1] && c[i - 1] < l[i - 2] { put(nx, Buy, T::Lim(o1 - 0.33 * ar3[i]), "buy limit"); }
             if ps.mp == 1 { put(nx, Sell, T::Lim(h[i]), "target"); put(nx, Sell, T::Stop(l[i] - tick), "stop"); put(nx, Sell, T::Close, "exit on close"); }
@@ -971,7 +1010,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "acbff_fade_rev" => {
             let code = g("stop_ref") >= 0.5;
             let (mut hh, mut ll, mut lo_e, mut hi_e) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
-            engine(x, from, to, move |i, ps, nx, _| {
+            engine_ep6(x, from, to, on, move |i, ps, nx, _| {
                 if ps.mp == 1 && ps.bse(i) == 0 { hh = h[i]; lo_e = l[i]; }
                 if ps.mp == -1 && ps.bse(i) == 0 { ll = l[i]; hi_e = h[i]; }
                 let (h1, l1) = (at(h, i, 1), at(l, i, 1));
@@ -1009,7 +1048,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "acbff_contract" => {
             let (a10, a25, a5, c10, c25) = (mean(&r, 10), mean(&r, 25), mean(c, 5), mean(c, 10), mean(c, 25));
-            engine(x, from, to, |i, ps, nx, _| {
+            engine_ep6(x, from, to, on, |i, ps, nx, _| {
                 let o1 = op[i + 1]; let d = 0.2 * r[i];
                 if a10[i] < a25[i] && c[i] < c1(i) && c[i] < a5[i] { put(nx, Buy, T::Stop(o1 + d), "buy stop"); }
                 if c[i] > c10[i] && c[i] > c25[i] { put(nx, Sell, T::Stop(o1 - d), "conditional stop"); }
@@ -1161,7 +1200,7 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1.0, 3, 8.0, 3, 11.0));
         // engine: buy stop above the open and sell stop below on the same bar, open nearer the low -> low first
-        let mut e = Eng { x: &x, pos: Pos::default(), cur: None, out: vec![] };
+        let mut e = Eng { x: &x, pos: Pos::default(), cur: None, out: vec![], on: false, od: crate::intraday_ep6::Day::Plain, day: crate::intraday_ep6::Day::Plain };
         e.bar(3, vec![o(A::Buy, T::Stop(9.0), "b"), o(A::Sell, T::Stop(7.8), "s")]);
         assert_eq!(e.pos.mp, 1); // low touched first while flat (sell ignored), then the buy stop fills
         assert_eq!(e.cur.as_ref().unwrap().legs[0].px, 9.0);

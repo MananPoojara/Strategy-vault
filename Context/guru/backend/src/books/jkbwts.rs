@@ -51,17 +51,21 @@ pub(crate) fn avg(v: &[f64], n: usize) -> Vec<f64> {
     out
 }
 
-struct St<'a> { x: &'a Ctx<'a>, pos: Option<Pos>, out: Vec<Trade>, stop: f64, ids: u64, entries_on_bar: usize }
+#[derive(Clone)]
+struct St<'a> { x: &'a Ctx<'a>, pos: Option<Pos>, out: Vec<Trade>, stop: f64, ids: u64, entries_on_bar: usize, od: crate::intraday_ep6::Day } // od: EP6 (#243, lane K63) mark of the open position
 impl St<'_> {
     fn close(&mut self, i: usize, px: f64, reason: &str, sig: usize) {
         if let Some(p) = self.pos.take() {
-            self.out.push(Trade { dir: p.dir as f64, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px,
-                reason: reason.into(), entry_kind: p.kind, signal_i: sig, open: false, exits: vec![] });
+            let mut t = Trade { dir: p.dir as f64, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px,
+                reason: reason.into(), entry_kind: p.kind, signal_i: sig, open: false, exits: vec![] };
+            crate::intraday_ep6::mark(&mut t, self.od);
+            self.out.push(t);
         }
     }
     fn open(&mut self, i: usize, dir: i8, px: f64, kind: &'static str) {
         self.ids += 1; self.entries_on_bar += 1;
         self.pos = Some(Pos { dir, i, px, id: self.ids, kind });
+        self.od = crate::intraday_ep6::Day::Plain;
     }
     /// Fill order `o` at `px` on bar i. Returns false if it does not apply (no matching position / same-side entry).
     fn fill(&mut self, i: usize, o: &Ord, px: f64) -> bool {
@@ -90,6 +94,44 @@ impl St<'_> {
             if q.ty == Ty::Mkt { self.fill(i, &q, o); } else { live.push(q); }
         }
         self.walk(i, o, h, l, &mut live);
+    }
+    /// EP6 (#243, lane K63): the same order walk on explicit segments. No segments = the open (orders already through it
+    /// fill at the open); on a segment the nearest level on the way fills at its level, on a gap segment at the gap's end.
+    fn walk_segs(&mut self, i: usize, live: &mut Vec<Ord>, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+        let mut ev = vec![];
+        let open = [crate::intraday_ep6::Seg { a: self.x.o[i], b: self.x.o[i], gap: false }];
+        let first = segs.is_empty();
+        for g in if first { &open[..] } else { segs } {
+            let (mut at, to) = (g.a, g.b);
+            loop {
+                let up = to > at;
+                let mut best: Option<(f64, f64, usize, bool)> = None; // (level, fill, index or MAX for the MM stop, rising)
+                let mut consider = |px: f64, k: usize, buy_side: bool, is_stop: bool| {
+                    let trig_up = buy_side == is_stop;
+                    let hit = if first { ((trig_up && px <= at) || (!trig_up && px >= at)).then_some(at) }
+                        else if trig_up && up && px > at && px <= to { Some(px) }
+                        else if !trig_up && !up && px < at && px >= to { Some(px) } else { None };
+                    if let Some(f) = hit {
+                        if best.map_or(true, |(b, _, _, _)| (f - at).abs() < (b - at).abs()) { best = Some((f, if g.gap && !first { to } else { f }, k, trig_up)); }
+                    }
+                };
+                for (k, q) in live.iter().enumerate() {
+                    // only orders that apply to the position now (an exit of the position held at the prior close, an entry
+                    // not on the side already held): the others neither fill nor take a turn
+                    let applies = if q.entry { self.pos.as_ref().map_or(true, |p| p.dir != q.dir) } else { self.pos.as_ref().is_some_and(|p| p.dir == q.dir && p.id == q.pid) };
+                    if !applies { continue; }
+                    let buy_side = if q.entry { q.dir > 0 } else { q.dir < 0 };
+                    consider(q.px, k, buy_side, q.ty == Ty::Stop);
+                }
+                if let Some((d, px, _)) = self.prot() { consider(px, usize::MAX, d < 0, true); }
+                let Some((lv, px, k, rising)) = best else { break };
+                ev.push(crate::intraday_ep6::Ev { k: if k == usize::MAX { u8::MAX } else { k as u8 }, px, up: rising });
+                if k == usize::MAX { self.close(i, px, "Money management stop", i); }
+                else { let q = live.remove(k); self.fill(i, &q, px); }
+                at = lv;
+            }
+        }
+        ev
     }
     /// 2. walk the path of one bar (or one minute: intraday wave 2b); at the open itself a stop/limit already through fills at the open
     fn walk(&mut self, i: usize, o: f64, h: f64, l: f64, live: &mut Vec<Ord>) {
@@ -140,11 +182,45 @@ pub(crate) fn sim(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool,
 /// other extreme path) instead of the daily bar; a day without minute data fills no order. Only stop/limit orders and the
 /// money-management stop (market orders are not used by the minute-path rules).
 pub(crate) fn sim_path(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool, minutes: bool,
+                  rule: impl FnMut(usize, Option<&Pos>, usize) -> Vec<Ord>) -> Vec<Trade> {
+    sim_ep6(x, from, to, stop, eod, minutes, false, rule)
+}
+
+/// `sim_path` with EP6 (#243, lane K63): with `on` (daily path), a bar whose fills differ between its two extreme orders is
+/// walked on its real 1-minute path where minutes exist (intraday_ep6::resolve); the market orders at the open come first.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sim_ep6(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool, minutes: bool, on: bool,
                   mut rule: impl FnMut(usize, Option<&Pos>, usize) -> Vec<Ord>) -> Vec<Trade> {
-    let mut st = St { x, pos: None, out: vec![], stop, ids: 0, entries_on_bar: 0 };
+    use crate::intraday_ep6::{remark, resolve_conv, Seg};
+    let mut st = St { x, pos: None, out: vec![], stop, ids: 0, entries_on_bar: 0, od: crate::intraday_ep6::Day::Plain };
     let mut pending: Vec<Ord> = vec![];
     for i in from..=to {
-        if i > from && minutes {
+        if i > from && on && !minutes {
+            let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            st.entries_on_bar = 0;
+            // 1. market orders at the open: exits first, then entries (as `bar`)
+            let mut ords = std::mem::take(&mut pending);
+            ords.sort_by_key(|q| (q.ty != Ty::Mkt, q.entry));
+            let mut live = vec![];
+            for q in ords { if q.ty == Ty::Mkt { st.fill(i, &q, o); } else { live.push(q); } }
+            // 2. the path: the module's daily path (open, nearer extreme (tie: low), other extreme), or the minutes
+            let keep = std::mem::take(&mut st.out);
+            let mut s2 = (st.clone(), live);
+            let daily = |s: &mut (St, Vec<Ord>), hf: bool| -> Vec<crate::intraday_ep6::Ev> {
+                let segs = if hf { [Seg { a: o, b: h, gap: false }, Seg { a: h, b: l, gap: false }] } else { [Seg { a: o, b: l, gap: false }, Seg { a: l, b: h, gap: false }] };
+                let mut e = s.0.walk_segs(i, &mut s.1, &[]);
+                e.extend(s.0.walk_segs(i, &mut s.1, &segs));
+                e
+            };
+            let walk = |s: &mut (St, Vec<Ord>), g: &[Seg]| s.0.walk_segs(i, &mut s.1, g);
+            let _ = c;
+            // the daily convention itself is the module's own walk (unchanged); `daily` only probes the two orders
+            let day = resolve_conv(x, i, true, &mut s2, |s: &mut (St, Vec<Ord>)| s.0.walk(i, o, h, l, &mut s.1), &daily, &walk);
+            st = s2.0;
+            let today = std::mem::replace(&mut st.out, keep);
+            st.out.extend(today.into_iter().map(|mut t| { remark(&mut t, day); t }));
+            if st.pos.is_some() { st.od = st.od.worst(day); }
+        } else if i > from && minutes {
             st.entries_on_bar = 0;
             let mut live: Vec<Ord> = std::mem::take(&mut pending).into_iter().filter(|q| q.ty != Ty::Mkt).collect();
             for m in crate::intraday_w2b::day(x, i).unwrap_or_default() { st.walk(i, m.o, m.h, m.l, &mut live); }
@@ -159,8 +235,10 @@ pub(crate) fn sim_path(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool, mi
         }
     }
     if let Some(p) = st.pos.take() {
-        st.out.push(Trade { dir: p.dir as f64, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: to, exit_px: x.c[to],
-            reason: "open".into(), entry_kind: p.kind, signal_i: to, open: true, exits: vec![] });
+        let mut t = Trade { dir: p.dir as f64, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: to, exit_px: x.c[to],
+            reason: "open".into(), entry_kind: p.kind, signal_i: to, open: true, exits: vec![] };
+        crate::intraday_ep6::mark(&mut t, st.od);
+        st.out.push(t);
     }
     st.out
 }

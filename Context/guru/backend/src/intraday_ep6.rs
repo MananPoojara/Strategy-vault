@@ -140,7 +140,23 @@ pub const IDS: &[&str] = &[
     // Burns inside-day breakout (books::jbid: both day-2 stops; stop and target 1 on one day)
     "jbid_inside_day",
     // wave 4 (lane K62): a position's stop and target on one bar (intraday_ep6::stop_target)
-    "rwtlc_adx_hivol_ct", "rwmts_bb_fade", "jcmtt_propulsion"];
+    "rwtlc_adx_hivol_ct", "rwmts_bb_fade", "jcmtt_propulsion",
+    // wave 5 (lane K63): Collins's TradeStation order engine (books::acbff engine_ep6)
+    "acbff_3rd_fade", "acbff_contract", "acbff_cup_3day", "acbff_fade_rev",
+    // Bierovic's path-ordered simulator (books::tbabc sim_ep6)
+    "tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long",
+    // Rensink's weekly breakout (books::jrfsp St::walk)
+    "jrfsp_weekly_breakout",
+    // Wilder's Trend Balance Point (stop_target) and Reaction Trend (books::wwnc rt_system_ep6)
+    "wwnc_tbp", "wwnc_rt",
+    // Gettess TT30 on the Krutsinger order walk (books::jkbwts sim_ep6)
+    "lgtt30_tt30",
+    // Pruitt & Hill's pattern breakout on the pbwts order simulator (books::pbwts sim_ep6)
+    "putg_pattern_vbo",
+    // Pierce's NR4 stop entries (books::sprfs nr4_trades_ep6: the entry bar's two stops and the protective stop)
+    "sprfs_nr4ib", "sprfs_hvr_nr4ib", "sprfs_hvr_nr4",
+    // Chong's pyramid (books::rcmm day_walk), Lien's CCI trade (books::kllien cci_walk)
+    "rcmm_20", "rcmm_55", "klhpt_cci_right"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -148,7 +164,16 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "lwicw_oops_tdom_buy", "lwlts_oops_buy", "lwlts_oops_buy_ma9", "lwlts_vb_sp_40_200", "lwnl_aug97_td7_sell_bail", "lwnl_mar_short",
     "lwnl_proj_contra", "lwnl_pullback",
     // wave 3 (lane K62)
-    "dlost_simple_pb", "dlost_tko", "ltcoat_coat_tails", "scluisi_nr", "stad2_adxdiff", "stad5_stochob", "tsvega_stoch"];
+    "dlost_simple_pb", "dlost_tko", "ltcoat_coat_tails", "scluisi_nr", "stad2_adxdiff", "stad5_stochob", "tsvega_stoch",
+    // wave 5 (lane K63)
+    "acbff_3rd_fade", "lgtt30_tt30", "rcmm_55", "wwnc_tbp"];
+
+/// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
+/// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
+/// above +100% when SPY's is not positive): those India results are withdrawn (K63w/india231.tsv).
+pub const INDIA231: &[(&str, &str)] = &[("ltcoat_coat_tails", "NIFTY 50"), ("ltcoat_coat_tails", "NIFTYBANK"), ("stad2_adxdiff", "NIFTY 50"), ("wwnc_tbp", "NIFTY 50"),
+    ("lgtt30_tt30", "NIFTY 50"), ("lgtt30_tt30", "NIFTYBANK")];
+const INDIA231_NOTE: &str = "The India minute-window result is withdrawn (decisions #231, #234, #255, lane K63): NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates.";
 
 /// #243: ids HELD. The five thin ids (M6: over 5% order-dependent, fewer than 10 trades inside the minute window), and EP6 ids
 /// whose resolved path has more than 5% ambiguous-minute trades (#175).
@@ -175,6 +200,8 @@ const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane
 /// The hold or minute-window refusal for (id, ticker), if any (instrument_policy::tradable_check_issue).
 pub fn held_note(id: &str, ticker: &str) -> Option<&'static str> {
     if let Some(&(_, n)) = HELD.iter().find(|h| h.0 == id) { return Some(n); }
+    let nse = if ticker == "NIFTY BANK" { "NIFTYBANK" } else { ticker };
+    if INDIA231.contains(&(id, nse)) { return Some(INDIA231_NOTE); }
     if SPX179.contains(&id) {
         if ticker == "SPX" { return Some(SPX179_NOTE); }
         if matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTY BANK") { return Some(SPX179_INDIA); }

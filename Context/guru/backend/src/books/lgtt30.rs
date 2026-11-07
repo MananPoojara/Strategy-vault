@@ -7,7 +7,7 @@
 //! fills at the open; intrabar path open -> nearer extreme -> other extreme (tie: low first). Buy and sell entry stops
 //! are both working every day, so an opposite entry reverses the position (System Writer behaviour). Non-re-entry rule
 //! (p.5, p.56): no entry in the direction the position had coming into the day.
-use crate::books::jkbwts::{entry, exit, sim, Ty};
+use crate::books::jkbwts::{entry, exit, sim, sim_ep6, Ty};
 use crate::books::lg3k::roundup;
 use crate::books::jkbwts::Ord;
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -67,6 +67,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "lgtt30_tt30" => vec![p("days", "Kris-Kross days", 3., 2., 10., 1.), p("mult", "Multiplier of the Kris-Kross figure", 0.5, 0.1, 2.0, 0.05),
@@ -122,13 +128,15 @@ fn sp_table(day: usize, cl: usize, op: usize) -> (Option<f64>, Option<f64>) {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.c.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     Some(match id {
         "lgtt30_tt30" => {
             let n = g("days").max(1.0).round() as usize;
             let (mult, tick, sref) = (g("mult"), if g("tick") > 0.0 { g("tick") } else { x.market_tick() }, g("stop_ref") >= 0.5);
-            sim(x, from, to, 0.0, false, |i, pos, _| {
+            sim_ep6(x, from, to, 0.0, false, false, on, |i, pos, _| {
                 if i + 1 < n { return vec![]; }
                 let w = i + 1 - n..=i;
                 let hh = w.clone().map(|j| h[j]).fold(f64::MIN, f64::max); let ll = w.clone().map(|j| l[j]).fold(f64::MAX, f64::min);

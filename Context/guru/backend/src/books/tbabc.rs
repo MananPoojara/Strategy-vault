@@ -130,6 +130,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let stops = || vec![p("ips", "Initial stop (ATRs)", 3., 2., 4., 1.), p("bes", "Breakeven trigger (ATRs)", 3., 2., 4., 1.),
         p("ts", "Trailing stop (ATRs)", 4., 3., 5., 1.), p("vs", "Volatility stop (ATRs)", 3., 2., 4., 1.),
@@ -197,46 +203,134 @@ fn close_trade(ps: &Pos, b: usize, px: f64, why: &str) -> Trade {
 /// `gen(t, pos)` = orders resting through bar t+1, built at bar t's close. If `immediate`,
 /// `on_entry(pos)` adds the exit orders of a position the moment it fills.
 fn sim(x: &Ctx, from: usize, to: usize, immediate: bool, gen: &dyn Fn(usize, Option<&Pos>) -> Vec<Ord>,
-       on_entry: &dyn Fn(&Pos) -> Vec<Ord>) -> Vec<Trade> {
-    let mut out = vec![];
-    let mut pos: Option<Pos> = None;
-    for t in from..to {
-        let b = t + 1;
-        let mut ords = gen(t, pos.as_ref());
+       on_entry: &dyn Fn(&Pos) -> Vec<Ord>) -> Vec<Trade> { sim_ep6(x, from, to, immediate, gen, on_entry, false) }
+
+/// The simulator's state during one bar (EP6, lane K63): the position, the orders still working, the trades closed on
+/// this bar, the position's same-day-order mark.
+#[derive(Clone)]
+struct St { pos: Option<Pos>, ords: Vec<Ord>, out: Vec<Trade>, od: crate::intraday_ep6::Day }
+
+impl St {
+    fn fill(&mut self, b: usize, t: usize, o: Ord, px: f64, immediate: bool, on_entry: &dyn Fn(&Pos) -> Vec<Ord>) {
+        if let Some(ps) = self.pos.take() {
+            let mut tr = close_trade(&ps, b, px, if o.entry { "reversed by opposite entry" } else { o.tag });
+            crate::intraday_ep6::mark(&mut tr, self.od);
+            self.out.push(tr);
+            self.ords.retain(|q| q.entry);
+        }
+        if o.entry {
+            let kind = if o.k == K::Open { "open" } else { "stop" };
+            let ps = Pos { dir: o.dir, px, i: b, sig: t, ext: f64::NAN, aux: o.aux, kind };
+            if immediate { self.ords.extend(on_entry(&ps)); }
+            self.pos = Some(ps);
+            self.od = crate::intraday_ep6::Day::Plain;
+        }
+    }
+    fn live(&self, o: &Ord) -> bool { match &self.pos { None => o.entry, Some(ps) => !o.entry || o.dir != ps.dir } }
+    /// The daily bar b on the TradeStation path (the simulator's own convention, unchanged).
+    fn bar(&mut self, x: &Ctx, b: usize, t: usize, immediate: bool, on_entry: &dyn Fn(&Pos) -> Vec<Ord>) {
         let p = path(x.o[b], x.h[b], x.l[b], x.c[b]);
         let mut now = 0.;
         loop {
             let mut best: Option<(f64, u8, usize, f64)> = None;
-            for (j, o) in ords.iter().enumerate() {
+            for (j, o) in self.ords.iter().enumerate() {
                 if !o.px.is_finite() && o.k != K::Open { continue; }
-                let live = match &pos { None => o.entry, Some(ps) => !o.entry || o.dir != ps.dir };
-                if !live { continue; }
+                if !self.live(o) { continue; }
                 let Some((tm, px)) = when(&p, now, o) else { continue };
                 let rank = if o.entry { 2 } else if o.k == K::Stop { 0 } else { 1 };
                 if best.map_or(true, |(bt, br, _, _)| tm < bt || (tm == bt && rank < br)) { best = Some((tm, rank, j, px)); }
             }
             let Some((tm, _, j, px)) = best else { break };
-            let o = ords.remove(j);
+            let o = self.ords.remove(j);
             now = tm;
-            if let Some(ps) = pos.take() {
-                out.push(close_trade(&ps, b, px, if o.entry { "reversed by opposite entry" } else { o.tag }));
-                ords.retain(|q| q.entry);
+            self.fill(b, t, o, px, immediate, on_entry);
+        }
+    }
+    /// EP6 walk of bar b along `segs` (no segments = the open: market-on-open orders and levels the open is through, at the
+    /// open). On each segment the earliest level fills next (at its level; on a gap segment at the gap's end); a level an
+    /// order is already through when it is placed fills at once at the current price; at equal times stops, then limits,
+    /// then entries (the simulator's ranking).
+    fn walk(&mut self, x: &Ctx, b: usize, t: usize, segs: &[crate::intraday_ep6::Seg], immediate: bool, on_entry: &dyn Fn(&Pos) -> Vec<Ord>) -> Vec<crate::intraday_ep6::Ev> {
+        let mut ev = vec![];
+        let rank = |o: &Ord| if o.entry { 2u8 } else if o.k == K::Stop { 0 } else { 1 };
+        let rising = |o: &Ord| if o.k == K::Limit { o.dir < 0. } else { o.dir > 0. };
+        let code = |o: &Ord| rank(o) * 2 + u8::from(o.dir > 0.);
+        if segs.is_empty() {
+            let op = x.o[b];
+            loop {
+                let mut best: Option<(u8, usize)> = None;
+                for (j, o) in self.ords.iter().enumerate() {
+                    if !self.live(o) { continue; }
+                    let at = match o.k { K::Open => true, _ => o.px.is_finite() && if rising(o) { op >= o.px } else { op <= o.px } };
+                    if at && best.map_or(true, |(br, _)| rank(o) < br) { best = Some((rank(o), j)); }
+                }
+                let Some((_, j)) = best else { break };
+                let o = self.ords.remove(j);
+                ev.push(crate::intraday_ep6::Ev { k: code(&o), px: op, up: rising(&o) });
+                self.fill(b, t, o, op, immediate, on_entry);
             }
-            if o.entry {
-                let kind = if o.k == K::Open { "open" } else { "stop" };
-                let ps = Pos { dir: o.dir, px, i: b, sig: t, ext: f64::NAN, aux: o.aux, kind };
-                if immediate { ords.extend(on_entry(&ps)); }
-                pos = Some(ps);
+            return ev;
+        }
+        self.ords.retain(|o| o.k != K::Open); // market-on-open orders live only at the open
+        for g in segs {
+            if g.a == g.b { continue; }
+            let (mut now, mut cur) = (0f64, g.a);
+            loop {
+                let mut best: Option<(f64, u8, usize, f64)> = None;
+                for (j, o) in self.ords.iter().enumerate() {
+                    if !o.px.is_finite() || !self.live(o) { continue; }
+                    let up = rising(o);
+                    let through = |v: f64| if up { v >= o.px } else { v <= o.px };
+                    let hit = if through(cur) { Some((now, if g.gap { g.b } else { cur })) }
+                        else if through(g.b) { Some(((o.px - g.a) / (g.b - g.a), g.fill(o.px))) } else { None };
+                    let Some((tm, px)) = hit else { continue };
+                    let r = rank(o);
+                    if best.map_or(true, |(bt, br, _, _)| tm < bt || (tm == bt && r < br)) { best = Some((tm, r, j, px)); }
+                }
+                let Some((tm, _, j, px)) = best else { break };
+                let o = self.ords.remove(j);
+                (now, cur) = (tm, if through_now(&o, cur) { cur } else { o.px });
+                ev.push(crate::intraday_ep6::Ev { k: code(&o), px, up: rising(&o) });
+                self.fill(b, t, o, px, immediate, on_entry);
             }
         }
-        if let Some(ps) = pos.as_mut() {
+        ev
+    }
+}
+
+/// The order was already through `cur` (filled at once at the current price).
+fn through_now(o: &Ord, cur: f64) -> bool { if (o.k == K::Limit) == (o.dir < 0.) { cur >= o.px } else { cur <= o.px } }
+
+/// `sim` with EP6 (#243, lane K63): with `on`, a bar whose fills differ between the two extreme orders is walked on its
+/// real 1-minute path where minutes exist (intraday_ep6::resolve_conv); every other bar is the simulator's own path.
+fn sim_ep6(x: &Ctx, from: usize, to: usize, immediate: bool, gen: &dyn Fn(usize, Option<&Pos>) -> Vec<Ord>,
+       on_entry: &dyn Fn(&Pos) -> Vec<Ord>, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, remark, resolve_conv, Day};
+    let mut out = vec![];
+    let mut st = St { pos: None, ords: vec![], out: vec![], od: Day::Plain };
+    for t in from..to {
+        let b = t + 1;
+        st.ords = gen(t, st.pos.as_ref());
+        if on {
+            let (o, h, l, c) = (x.o[b], x.h[b], x.l[b], x.c[b]);
+            let day = resolve_conv(x, b, true, &mut st, |s: &mut St| s.bar(x, b, t, immediate, on_entry),
+                |s: &mut St, hf: bool| { let mut e = s.walk(x, b, t, &[], immediate, on_entry); e.extend(s.walk(x, b, t, &bar_segs(o, h, l, c, hf), immediate, on_entry)); e },
+                |s: &mut St, g: &[crate::intraday_ep6::Seg]| s.walk(x, b, t, g, immediate, on_entry));
+            for mut tr in st.out.drain(..) { remark(&mut tr, day); out.push(tr); }
+            if st.pos.is_some() { st.od = st.od.worst(day); }
+        } else {
+            st.bar(x, b, t, immediate, on_entry);
+            out.append(&mut st.out);
+        }
+        if let Some(ps) = st.pos.as_mut() {
             let c = x.c[b];
             ps.ext = if ps.ext.is_nan() { c } else if ps.dir > 0. { ps.ext.max(c) } else { ps.ext.min(c) };
         }
     }
-    if let Some(ps) = pos {
+    if let Some(ps) = st.pos {
         let mut t = close_trade(&ps, to, x.c[to], "open");
         t.open = true;
+        crate::intraday_ep6::mark(&mut t, st.od);
         out.push(t);
     }
     out
@@ -282,6 +376,8 @@ fn prev_extreme_bar(x: &Ctx, i: usize, n: usize, hi: bool) -> Option<usize> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let defs = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| defs.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let tk = tick_of(x);
     let none = |_: &Pos| vec![];
@@ -311,7 +407,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     Ord { aux: stop, ..ord(d, lvl_of(j), K::Stop, true, "") }
                 }).into_iter().collect()
             };
-            sim(x, from, to, true, &gen, &exits)
+            sim_ep6(x, from, to, true, &gen, &exits, on)
         }
         "tbabc_six_long" | "tbabc_six_short" => {
             let d = if id == "tbabc_six_long" { 1. } else { -1. };
@@ -344,7 +440,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 vec![Ord { aux: if d > 0. { x.l[t] - tk } else { x.h[t] + tk }, ..ord(d, f64::NAN, K::Open, true, "") }]
             };
             let on_entry = |ps: &Pos| exits_at(ps.sig, ps);
-            sim(x, from, to, true, &gen, &on_entry)
+            sim_ep6(x, from, to, true, &gen, &on_entry, on)
         }
         "tbabc_stampede_long" | "tbabc_stampede_short" => {
             let d = if id == "tbabc_stampede_long" { 1. } else { -1. };

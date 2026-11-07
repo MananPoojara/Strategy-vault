@@ -80,6 +80,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "wwnc_vol" => vec![p("atr_n", "ATR days", 7., 3., 30., 1.), p("c", "Constant C (ARC = ATR x C)", 3.0, 2.8, 3.1, 0.05),
@@ -96,13 +102,15 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.) as usize;
     Some(match id {
         "wwnc_vol" => vol_system(x, from, to, u("atr_n"), g("c"), if g("init") > 0. { 1. } else { -1. }),
         "wwnc_dmi" => dmi_system(x, from, to, u("n"), g("int_di") >= 0.5),
-        "wwnc_tbp" => tbp_system(x, from, to, u("mf_lag")),
-        "wwnc_rt" => rt_system(x, from, to, u("trail_n"), g("margin"), g("trail_day0") >= 0.5, None),
+        "wwnc_tbp" => tbp_system_ep6(x, from, to, u("mf_lag"), on),
+        "wwnc_rt" => rt_system_ep6(x, from, to, u("trail_n"), g("margin"), g("trail_day0") >= 0.5, None, on),
         _ => return None,
     })
 }
@@ -192,26 +200,39 @@ fn dmi_system(x: &Ctx, from: usize, to: usize, n: usize, int_di: bool) -> Vec<Tr
 
 // ---------------------------------------------------------------- Sec V Trend Balance Point System
 
-fn tbp_system(x: &Ctx, from: usize, to: usize, lag: usize) -> Vec<Trade> {
+fn tbp_system(x: &Ctx, from: usize, to: usize, lag: usize) -> Vec<Trade> { tbp_system_ep6(x, from, to, lag, false) }
+
+/// `tbp_system` with EP6 (#243, lane K63): with `on`, a day on which the stop and the target are both inside the range (the
+/// open through neither) is decided on the real 1-minute path (intraday_ep6::stop_target); the stop first otherwise.
+fn tbp_system_ep6(x: &Ctx, from: usize, to: usize, lag: usize, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{mark, Day};
     let tr = true_range(x.r);
     let mf = |i: usize| x.c[i] - x.c[i - lag];
     let (mut out, mut cur) = (vec![], None);
+    let mut od = Day::Plain; // EP6 mark of the open position
     let mut pos = 0f64;
     let mut entered = 0usize;
     for i in lag + 2..=to {
         let mut exited = 0f64;
+        let mut today = Day::Plain; // how this bar's stop/target was decided (a position opened at its close carries it)
         if pos != 0. && i > entered {
             let k = i - 1;
             let xb = (x.h[k] + x.l[k] + x.c[k]) / 3.;
-            let hit = if pos > 0. {
+            let (hit, day) = if pos > 0. {
                 let (stop, tgt) = (xb - tr[k], 2. * xb - x.l[k]);
-                if x.l[i] <= stop { Some((x.o[i].min(stop), "Stop X̄ - TR")) } else if x.h[i] >= tgt { Some((x.o[i].max(tgt), "Target 2X̄ - L")) } else { None }
+                crate::intraday_ep6::stop_target(x, i, pos, stop, tgt, on, ("Stop X̄ - TR", "Target 2X̄ - L"),
+                    || if x.l[i] <= stop { Some((x.o[i].min(stop), "Stop X̄ - TR")) } else if x.h[i] >= tgt { Some((x.o[i].max(tgt), "Target 2X̄ - L")) } else { None })
             } else {
                 let (stop, tgt) = (xb + tr[k], 2. * xb - x.h[k]);
-                if x.h[i] >= stop { Some((x.o[i].max(stop), "Stop X̄ + TR")) } else if x.l[i] <= tgt { Some((x.o[i].min(tgt), "Target 2X̄ - H")) } else { None }
+                crate::intraday_ep6::stop_target(x, i, pos, stop, tgt, on, ("Stop X̄ + TR", "Target 2X̄ - H"),
+                    || if x.h[i] >= stop { Some((x.o[i].max(stop), "Stop X̄ + TR")) } else if x.l[i] <= tgt { Some((x.o[i].min(tgt), "Target 2X̄ - H")) } else { None })
             };
+            od = od.worst(day);
+            today = day;
             if let Some((px, why)) = hit {
+                let n = out.len();
                 close_t(&mut cur, &mut out, i, px, why);
+                if out.len() > n { mark(out.last_mut().unwrap(), od); }
                 exited = pos;
                 pos = 0.;
             }
@@ -221,13 +242,20 @@ fn tbp_system(x: &Ctx, from: usize, to: usize, lag: usize) -> Vec<Trade> {
         let side = if exited != 0. { exited } else { pos };
         let want = if side > 0. { if dn { -1. } else { 1. } } else if side < 0. { if up { 1. } else { -1. } } else if up { 1. } else if dn { -1. } else { 0. };
         if want != 0. && want != pos {
-            if pos != 0. { close_t(&mut cur, &mut out, i, x.c[i], "Close through TBP · reverse"); }
+            if pos != 0. {
+                let n = out.len();
+                close_t(&mut cur, &mut out, i, x.c[i], "Close through TBP · reverse");
+                if out.len() > n { mark(out.last_mut().unwrap(), od); }
+            }
             pos = want;
             entered = i;
+            od = today;
             if i >= from { cur = Some(open_t(want, i, x.c[i], "close", i)); }
         }
     }
+    let n = out.len();
     finish(cur, &mut out, x, to);
+    if out.len() > n { mark(out.last_mut().unwrap(), od); }
     out
 }
 
@@ -238,13 +266,23 @@ enum Mode { Wait, React, Trend }
 #[derive(Clone, Copy, PartialEq)]
 enum Act { TrendLong, TrendShort, ReactLong, ReactShort, LongTarget, LongRev, ShortRev, Trail }
 
+#[derive(Clone, Copy)]
 struct Rt { pos: f64, mode: Mode, entry: usize, anchor: (usize, usize), ext: usize }
 
 /// B=0, O=1, S=2.
 fn phase(a: (usize, usize), i: usize) -> usize { (a.1 + i - a.0) % 3 }
 
 fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, day0: bool, anchor: Option<(usize, usize)>) -> Vec<Trade> {
+    rt_system_ep6(x, from, to, trail_n, margin, day0, anchor, false)
+}
+
+/// `rt_system` with EP6 (#243, lane K63): with `on`, a day whose fills differ between the two extreme orders is walked on its
+/// real 1-minute path where minutes exist (intraday_ep6::resolve on the module's own order walk); other days unchanged.
+#[allow(clippy::too_many_arguments)]
+fn rt_system_ep6(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, day0: bool, anchor: Option<(usize, usize)>, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, mark, remark, resolve, Day, Ev, Seg};
     let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
+    let mut od = Day::Plain; // EP6 mark of the open trade
     let mut s = Rt { pos: 0., mode: if anchor.is_some() { Mode::React } else { Mode::Wait }, entry: 0, anchor: anchor.unwrap_or((0, 0)), ext: 0 };
     for i in 1..=to {
         let k = i - 1;
@@ -314,31 +352,50 @@ fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, day0:
                 }
             }
         };
-        // TradeStation bar path: open, nearer extreme, farther extreme, close
+        // TradeStation bar path: open, nearer extreme, farther extreme, close. One walk serves the daily bar and (EP6) the
+        // day's minutes: no segments = the open (orders the open is through); on each segment an order already through at
+        // the current price fills there (stops first), else the nearest level on the way (on a gap segment: at its end).
         let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
-        let path = if h - o < o - l { [o, h, l, c] } else { [o, l, h, c] };
-        let mut a = o;
-        for &b in &path {
-            for _ in 0..12 {
-                let ords = orders(&s, done);
-                // already through at the current price (gap / new order): stops first
-                let now = ords.iter().filter(|q| crossed(q, a)).min_by_key(|q| !q.2);
-                let next = if b < a {
-                    ords.iter().filter(|q| ((q.1 && !q.2) || (!q.1 && q.2)) && q.0 < a && q.0 >= b).max_by(|p, q| p.0.total_cmp(&q.0))
-                } else {
-                    ords.iter().filter(|q| ((!q.1 && !q.2) || (q.1 && q.2)) && q.0 > a && q.0 <= b).min_by(|p, q| p.0.total_cmp(&q.0))
-                };
-                let (q, px) = match (now, next) { (Some(q), _) => (*q, a), (None, Some(q)) => (*q, q.0), _ => break };
-                fire(&mut s, q.3, px, &mut done, &mut cur, &mut out);
-                a = px;
+        let walk = |st: &mut (Rt, bool, Option<Trade>, Vec<Trade>), segs: &[Seg]| -> Vec<Ev> {
+            let (s, done, cur, out) = (&mut st.0, &mut st.1, &mut st.2, &mut st.3);
+            let mut ev = vec![];
+            let pts: Vec<(f64, f64, bool)> = if segs.is_empty() { vec![(o, o, false)] } else { segs.iter().map(|g| (g.a, g.b, g.gap)).collect() };
+            for (mut a, b, gap) in pts {
+                for _ in 0..12 {
+                    let ords = orders(s, *done);
+                    // already through at the current price (gap / new order): stops first
+                    let now = ords.iter().filter(|q| crossed(q, a)).min_by_key(|q| !q.2);
+                    let next = if b < a {
+                        ords.iter().filter(|q| ((q.1 && !q.2) || (!q.1 && q.2)) && q.0 < a && q.0 >= b).max_by(|p, q| p.0.total_cmp(&q.0))
+                    } else {
+                        ords.iter().filter(|q| ((!q.1 && !q.2) || (q.1 && q.2)) && q.0 > a && q.0 <= b).min_by(|p, q| p.0.total_cmp(&q.0))
+                    };
+                    let (q, px, na) = match (now, next) { (Some(q), _) => (*q, if gap { b } else { a }, a), (None, Some(q)) => (*q, if gap { b } else { q.0 }, q.0), _ => break };
+                    ev.push(Ev { k: q.3 as u8, px, up: q.1 == q.2 });
+                    fire(s, q.3, px, done, cur, out);
+                    a = na;
+                }
             }
-            a = b;
+            ev
+        };
+        let daily = |st: &mut (Rt, bool, Option<Trade>, Vec<Trade>), hf: bool| { let mut e = walk(st, &[]); e.extend(walk(st, &bar_segs(o, h, l, c, hf))); e };
+        let before = cur.as_ref().map(|t| t.legs[0].i);
+        let mut st = (s, done, cur.take(), vec![]);
+        let day = resolve(x, i, on, h - o < o - l, &mut st, &daily, &walk);
+        (s, done, cur) = (st.0, st.1, st.2);
+        for mut t in st.3 {
+            if Some(t.legs[0].i) == before { mark(&mut t, od); }
+            remark(&mut t, day);
+            out.push(t);
         }
+        if let Some(t) = cur.as_ref() { od = if Some(t.legs[0].i) == before { od.worst(day) } else { day }; }
         // end of day: reaction-mode exits at the close
         if s.mode == Mode::React && s.pos != 0. && i > s.entry {
             let ph = phase(s.anchor, i);
             if (s.pos > 0. && ph == 2) || (s.pos < 0. && ph == 0) {
+                let n = out.len();
                 close_t(&mut cur, &mut out, i, c, if s.pos > 0. { "Close on an S day (S1 not reached)" } else { "Close on a B day (B1 not reached)" });
+                if out.len() > n { mark(out.last_mut().unwrap(), od); }
                 s.pos = 0.;
             }
         }
@@ -346,7 +403,9 @@ fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, day0:
             if (s.pos > 0. && x.h[i] >= x.h[s.ext]) || (s.pos < 0. && x.l[i] <= x.l[s.ext]) { s.ext = i; }
         }
     }
+    let n = out.len();
     finish(cur, &mut out, x, to);
+    if out.len() > n { mark(out.last_mut().unwrap(), od); }
     out
 }
 

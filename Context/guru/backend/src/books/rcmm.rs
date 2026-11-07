@@ -72,7 +72,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("risk", "Unit size: % of equity risked per 2 ATR", 1.0, 0.5, 5.0, 0.5),
         p("tick", "One tick / point in index points (NSE 0.05)", 0.05, 0.0, 1.0, 0.05),
         p("atr_wilder", "ATR: 0 = simple average (p.33), 1 = Wilder ATR(14) of the charting services (p.34) [Not from the book's formula]", 0.0, 0.0, 1.0, 1.0),
-    ])
+    ]).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243, lane K63)
 }
 
 pub fn validate(id: &str, p: &Params) -> Option<String> {
@@ -113,6 +113,7 @@ pub(crate) fn path_entry(pts: &[f64; 4], up: f64, dn: f64) -> Option<(f64, f64, 
 
 struct Cfg { entry: usize, exit: usize, es: f64, trail: f64, add: f64, units: usize, risk: f64, tick: f64 }
 
+#[derive(Clone)]
 struct Pos {
     dir: f64, a: f64, x0: f64,
     legs: Vec<Leg>,
@@ -163,6 +164,35 @@ impl Pos {
             a = b;
         }
     }
+    /// EP6 (#243, lane K63): `walk` on one segment from `a` to `b` (`gap`: a jump, levels inside it fill at `b`). Returns the
+    /// fills (unit adds k = 10 + unit, stops k = 20 + unit).
+    fn walk_seg(&mut self, c: &Cfg, i: usize, a: f64, b: f64, gap: bool) -> Vec<crate::intraday_ep6::Ev> {
+        let d = self.dir;
+        let mut ev = vec![];
+        if self.live() == 0 { return ev; }
+        if d * (b - a) > 0.0 {
+            while self.adding && self.legs.len() < c.units {
+                let p = self.price(self.legs.len(), c.add);
+                if d * (b - p) < 0.0 { break; }
+                let px = if gap { b } else if d * (p - a) >= 0.0 { p } else { a };
+                ev.push(crate::intraday_ep6::Ev { k: 10 + self.legs.len() as u8, px, up: d > 0.0 });
+                self.fill(c, i, px);
+            }
+        } else if d * (b - a) < 0.0 {
+            for k in 0..self.legs.len() {
+                if self.out[k].is_some() { continue; }
+                let today = self.legs[k].i == i;
+                let lvl = if today { self.price(k, c.add) - d * c.es * self.a } else { self.stop };
+                if d * (b - lvl) <= 0.0 {
+                    let px = if gap { b } else if d * (a - lvl) <= 0.0 { a } else { lvl };
+                    ev.push(crate::intraday_ep6::Ev { k: 20 + k as u8, px, up: d < 0.0 });
+                    self.out[k] = Some((i, px, if today { "1/2 ATR entry stop" } else { self.why }));
+                    if today && k > 0 { self.adding = false; }
+                }
+            }
+        }
+        ev
+    }
     /// At the close: all surviving units take the trailing stop of the highest surviving unit; once pyramiding is
     /// over, the n-day range stop replaces it when it is beyond (p.46-47).
     fn close_update(&mut self, x: &Ctx, c: &Cfg, i: usize) {
@@ -190,34 +220,94 @@ impl Pos {
     }
 }
 
-fn mm(x: &Ctx, a: &[f64], c: &Cfg, from: usize, to: usize) -> Vec<Trade> {
+/// One bar for EP6 (lane K63): the position (or none) and whether a new entry may fill on this bar (flat at the open).
+#[derive(Clone)]
+struct Bar6 { cur: Option<Pos>, may_enter: bool }
+
+/// The module's daily step for bar i on `b.cur` (unchanged rules): a held position's open gap and path; or, flat, the first
+/// breakout on the path, its fill, open-gap adds and the rest of the path.
+fn day_conv(x: &Ctx, c: &Cfg, i: usize, av: f64, up: f64, dn: f64, b: &mut Bar6) {
+    let pts = ts_path(x, i);
+    if let Some(p) = b.cur.as_mut() {
+        p.open_gap(c, i, pts[0]);
+        p.walk(c, i, &pts, 0, pts[0]);
+        return;
+    }
+    if !b.may_enter { return; }
+    let Some((dir, fill, s)) = path_entry(&pts, up, dn) else { return };
+    let mut p = Pos { dir, a: av, x0: if dir > 0.0 { up } else { dn }, legs: vec![], out: vec![], stop: f64::NAN, why: "", adding: true };
+    p.fill(c, i, fill);
+    p.open_gap(c, i, pts[0]);
+    p.walk(c, i, &pts, s, fill);
+    b.cur = Some(p);
+}
+
+/// EP6 walk of bar i: no segments = the open (a held position's open gap; flat: a breakout the open is through, at the
+/// open); segments: the position's units and stops along each, or, flat, the first breakout level reached and the rest of
+/// that segment.
+fn day_walk(x: &Ctx, c: &Cfg, i: usize, av: f64, up: f64, dn: f64, b: &mut Bar6, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    use crate::intraday_ep6::Ev;
+    let o = x.o[i];
+    let mut ev = vec![];
+    let new = |dir: f64| Pos { dir, a: av, x0: if dir > 0.0 { up } else { dn }, legs: vec![], out: vec![], stop: f64::NAN, why: "", adding: true };
+    if segs.is_empty() {
+        if let Some(p) = b.cur.as_mut() {
+            let (n, live) = (p.legs.len(), p.live());
+            p.open_gap(c, i, o);
+            if p.legs.len() != n || p.live() != live { ev.push(Ev { k: 30, px: o, up: true }); }
+        } else if b.may_enter && (o >= up || o <= dn) {
+            let dir = if o >= up { 1.0 } else { -1.0 };
+            let mut p = new(dir);
+            p.fill(c, i, o);
+            p.open_gap(c, i, o);
+            ev.push(Ev { k: if dir > 0.0 { 0 } else { 1 }, px: o, up: dir > 0.0 });
+            b.cur = Some(p);
+        }
+        return ev;
+    }
+    for g in segs {
+        if let Some(p) = b.cur.as_mut() { ev.extend(p.walk_seg(c, i, g.a, g.b, g.gap)); continue; }
+        if !b.may_enter { continue; }
+        let hit = if g.up() && g.inside(up) { Some((1.0, up)) } else if !g.up() && g.inside(dn) { Some((-1.0, dn)) } else { None };
+        let Some((dir, lv)) = hit else { continue };
+        let px = g.fill(lv);
+        let mut p = new(dir);
+        p.fill(c, i, px);
+        ev.push(Ev { k: if dir > 0.0 { 0 } else { 1 }, px, up: dir > 0.0 });
+        ev.extend(if g.gap { p.walk_seg(c, i, g.a, g.b, true) } else { p.walk_seg(c, i, px, g.b, false) }); // a jump also fills the units it passes, at its end
+        b.cur = Some(p);
+    }
+    ev
+}
+
+fn mm(x: &Ctx, a: &[f64], c: &Cfg, from: usize, to: usize, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, Day, Seg};
     let mut out = vec![];
     let mut cur: Option<Pos> = None;
+    let mut od = Day::Plain; // EP6 mark of the held position
     for i in from.max(c.entry.max(c.exit))..=to {
-        let pts = ts_path(x, i);
-        if let Some(mut p) = cur.take() {
-            p.open_gap(c, i, pts[0]);
-            p.walk(c, i, &pts, 0, pts[0]);
-            if p.live() == 0 { out.push(p.trade(false)); continue; } // no re-entry on an exit bar
-            p.close_update(x, c, i);
-            cur = Some(p);
-            continue;
-        }
+        let flat = cur.is_none();
         let av = a[i - 1];
-        if !av.is_finite() || av <= 0.0 { continue; }
-        let (up, dn) = (hh(x, i, c.entry) + c.tick, ll(x, i, c.entry) - c.tick);
-        let Some((dir, fill, s)) = path_entry(&pts, up, dn) else { continue };
-        let mut p = Pos { dir, a: av, x0: if dir > 0.0 { up } else { dn }, legs: vec![], out: vec![], stop: f64::NAN, why: "", adding: true };
-        p.fill(c, i, fill);
-        p.open_gap(c, i, pts[0]);
-        p.walk(c, i, &pts, s, fill);
-        if p.live() == 0 { out.push(p.trade(false)); continue; }
+        if flat && (!av.is_finite() || av <= 0.0) { continue; }
+        let (up, dn) = if flat { (hh(x, i, c.entry) + c.tick, ll(x, i, c.entry) - c.tick) } else { (f64::NAN, f64::NAN) };
+        let mut b = Bar6 { cur: cur.take(), may_enter: flat };
+        let day = if on {
+            let (o, h, l, cl) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            resolve_conv(x, i, true, &mut b, |z: &mut Bar6| day_conv(x, c, i, av, up, dn, z),
+                |z: &mut Bar6, hf: bool| { let mut v = day_walk(x, c, i, av, up, dn, z, &[]); v.extend(day_walk(x, c, i, av, up, dn, z, &bar_segs(o, h, l, cl, hf))); v },
+                |z: &mut Bar6, g: &[Seg]| day_walk(x, c, i, av, up, dn, z, g))
+        } else { day_conv(x, c, i, av, up, dn, &mut b); Day::Plain };
+        let Some(mut p) = b.cur else { continue };
+        od = if flat { day } else { od.worst(day) };
+        if p.live() == 0 { let mut t = p.trade(false); mark(&mut t, od); out.push(t); continue; } // no re-entry on an exit bar
         p.close_update(x, c, i);
         cur = Some(p);
     }
     if let Some(mut p) = cur {
         for o in p.out.iter_mut().filter(|o| o.is_none()) { *o = Some((to, x.c[to], "open")); }
-        out.push(p.trade(true));
+        let mut t = p.trade(true);
+        mark(&mut t, od);
+        out.push(t);
     }
     out
 }
@@ -229,7 +319,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| g(k) as usize;
     let c = Cfg { entry: u("entry"), exit: u("exit"), es: g("entry_stop"), trail: g("trail"), add: g("add"), units: u("units"), risk: g("risk"), tick: g("tick") };
     let a = atr_series(x, u("atr_n"), g("atr_wilder") == 1.0);
-    Some(mm(x, &a, &c, from, to))
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    Some(mm(x, &a, &c, from, to, crate::intraday_ep6::on(id, p))) // EP6 (#243, lane K63)
 }
 
 #[cfg(test)]

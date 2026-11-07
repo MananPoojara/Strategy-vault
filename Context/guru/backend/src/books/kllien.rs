@@ -53,6 +53,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "klhpt_cci_right" => vec![p("len", "CCI length", 20., 5., 50., 1.), p("level", "CCI zone level", 100., 50., 200., 10.)],
@@ -76,33 +82,80 @@ fn cci(x: &Ctx, n: usize) -> Vec<f64> {
     }).collect()
 }
 
-fn run_cci(x: &Ctx, from: usize, to: usize, n: usize, lv: f64) -> Vec<Trade> {
+/// One bar of a held CCI trade (EP6 state, lane K63): first target taken (`done` at the bar start keeps its breakeven stop;
+/// a first target taken on this bar leaves the signal-candle stop for the rest of the bar, the module's reading), the
+/// scale-out pieces, and the close (price, reason) if the trade ended on this bar.
+#[derive(Clone)]
+struct Cci { done: bool, ex: Vec<(usize, f64, f64)>, closed: Option<(f64, &'static str)> }
+
+/// EP6 walk of bar i for a held trade (dir d, entry e, signal-candle stop, risk r, `done0` = first target taken before the
+/// bar): no segments = the open; on a segment the stop counts when the path goes strictly beyond it, a target when it reaches
+/// it (at the level; on a gap segment at the gap's end).
+fn cci_walk(i: usize, o: f64, d: f64, e: f64, stop: f64, r: f64, done0: bool, z: &mut Cci, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    use crate::intraday_ep6::Ev;
+    let s = if done0 { e } else { stop };
+    let why_s = if done0 { "breakeven stop after the first target" } else { "stop: signal candle" };
+    let (t1, t2) = (e + d * r, e + d * 2. * r);
+    let mut ev = vec![];
+    let open = [crate::intraday_ep6::Seg { a: o, b: o, gap: false }];
+    for (n, g) in if segs.is_empty() { &open[..] } else { segs }.iter().enumerate() {
+        if z.closed.is_some() { break; }
+        let first = segs.is_empty() && n == 0;
+        // stop: the open beyond it, or the path from at/inside it to strictly beyond it
+        let beyond = |p: f64| if d > 0. { p < s } else { p > s };
+        if first && beyond(o) { z.closed = Some((o, why_s)); ev.push(Ev { k: 0, px: o, up: d < 0. }); break; }
+        if !first && !beyond(g.a) && beyond(g.b) { let px = if g.gap { g.b } else { s }; z.closed = Some((px, why_s)); ev.push(Ev { k: 0, px, up: d < 0. }); break; }
+        let reach = |tg: f64| if first { if d > 0. { o >= tg } else { o <= tg } } else { (g.b - g.a) * d > 0. && (if d > 0. { g.b >= tg && g.a < tg } else { g.b <= tg && g.a > tg }) };
+        if !z.done && reach(t1) { let px = if first || g.gap { g.b } else { t1 }; z.ex.push((i, px, 0.5)); z.done = true; ev.push(Ev { k: 1, px, up: d > 0. }); }
+        if z.done && reach(t2) { let px = if first || g.gap { g.b } else { t2 }; z.closed = Some((px, "second target (2 x risk)")); ev.push(Ev { k: 2, px, up: d > 0. }); }
+    }
+    ev
+}
+
+fn run_cci(x: &Ctx, from: usize, to: usize, n: usize, lv: f64) -> Vec<Trade> { run_cci_ep6(x, from, to, n, lv, false) }
+
+/// `run_cci` with EP6 (#243, lane K63): with `on`, a bar of a held trade whose exits differ between its two extreme orders is
+/// walked on its real 1-minute path where minutes exist (intraday_ep6::resolve_conv); otherwise the module's daily rule
+/// (the stop first, then the targets).
+fn run_cci_ep6(x: &Ctx, from: usize, to: usize, n: usize, lv: f64, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, Day, Seg};
     let k = cci(x, n);
+    let mut od = Day::Plain;
     let (mut out, mut cur) = (vec![], None::<(Trade, f64, f64, bool, Vec<(usize, f64, f64)>)>); // trade, stop, R, first target done, exits
     // excursion state per side: (in excursion, running extreme, prior peak, entered this excursion)
     let mut st = [(false, f64::NAN, f64::NAN, false), (false, f64::NAN, f64::NAN, false)];
     for i in 1..=to {
+        let mut today = Day::Plain; // how this bar's exit was decided (a trade entered at its close carries it)
         // manage the open trade on bar i (entered on an earlier close)
         if i >= from {
-            if let Some((mut t, stop, r, done, mut ex)) = cur.take() {
+            if let Some((mut t, stop, r, done, ex)) = cur.take() {
                 let (d, e) = (t.dir, t.legs[0].px);
-                let (o, h, l) = (x.o[i], x.h[i], x.l[i]);
-                let s = if done { e } else { stop };
-                let beyond_stop = |p: f64| if d > 0. { p < s } else { p > s };
-                let reach = |tg: f64| if d > 0. { h >= tg } else { l <= tg };
-                let (t1, t2) = (e + d * r, e + d * 2. * r);
-                let mut closed = None::<(f64, &str)>;
-                let mut done2 = done;
-                if beyond_stop(o) { closed = Some((o, if done { "breakeven stop after the first target" } else { "stop: signal candle" })); }
-                else if beyond_stop(if d > 0. { l } else { h }) { closed = Some((s, if done { "breakeven stop after the first target" } else { "stop: signal candle" })); }
-                else {
-                    if !done && reach(t1) { ex.push((i, if (d > 0. && o >= t1) || (d < 0. && o <= t1) { o } else { t1 }, 0.5)); done2 = true; }
-                    if done2 && reach(t2) { closed = Some((if (d > 0. && o >= t2) || (d < 0. && o <= t2) { o } else { t2 }, "second target (2 x risk)")); }
-                }
+                let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+                let conv = |z: &mut Cci| {
+                    let s = if done { e } else { stop };
+                    let beyond_stop = |p: f64| if d > 0. { p < s } else { p > s };
+                    let reach = |tg: f64| if d > 0. { h >= tg } else { l <= tg };
+                    let (t1, t2) = (e + d * r, e + d * 2. * r);
+                    if beyond_stop(o) { z.closed = Some((o, if done { "breakeven stop after the first target" } else { "stop: signal candle" })); }
+                    else if beyond_stop(if d > 0. { l } else { h }) { z.closed = Some((s, if done { "breakeven stop after the first target" } else { "stop: signal candle" })); }
+                    else {
+                        if !done && reach(t1) { z.ex.push((i, if (d > 0. && o >= t1) || (d < 0. && o <= t1) { o } else { t1 }, 0.5)); z.done = true; }
+                        if z.done && reach(t2) { z.closed = Some((if (d > 0. && o >= t2) || (d < 0. && o <= t2) { o } else { t2 }, "second target (2 x risk)")); }
+                    }
+                };
+                let mut z = Cci { done, ex, closed: None };
+                let day = if on {
+                    resolve_conv(x, i, true, &mut z, conv,
+                        |w: &mut Cci, hf: bool| { let mut v = cci_walk(i, o, d, e, stop, r, done, w, &[]); v.extend(cci_walk(i, o, d, e, stop, r, done, w, &bar_segs(o, h, l, c, hf))); v },
+                        |w: &mut Cci, g: &[Seg]| cci_walk(i, o, d, e, stop, r, done, w, g))
+                } else { conv(&mut z); Day::Plain };
+                od = od.worst(day);
+                today = day;
+                let Cci { done: done2, mut ex, closed } = z;
                 match closed {
                     Some((px, why)) => {
                         if ex.is_empty() { t.exit_px = px; } else { ex.push((i, px, 0.5)); t.exit_px = ex.iter().map(|e| e.1 * e.2).sum::<f64>(); t.exits = ex; }
-                        t.exit_i = i; t.signal_i = i; t.reason = why.into(); out.push(t);
+                        t.exit_i = i; t.signal_i = i; t.reason = why.into(); mark(&mut t, od); out.push(t);
                     }
                     None => cur = Some((t, stop, r, done2, ex)),
                 }
@@ -121,6 +174,7 @@ fn run_cci(x: &Ctx, from: usize, to: usize, n: usize, lv: f64) -> Vec<Trade> {
                     let stop = if d > 0. { x.l[i] } else { x.h[i] };
                     let r = (x.c[i] - stop) * d;
                     if r > 0. {
+                        od = today;
                         cur = Some((Trade { dir: d, legs: vec![Leg { i, px: x.c[i], w: 1. }], exit_i: i, exit_px: x.c[i], reason: String::new(), entry_kind: "close", signal_i: i, open: false, exits: vec![] }, stop, r, false, vec![]));
                     }
                 } else if beyond { e.3 = true; }
@@ -129,7 +183,7 @@ fn run_cci(x: &Ctx, from: usize, to: usize, n: usize, lv: f64) -> Vec<Trade> {
     }
     if let Some((mut t, _, _, _, mut ex)) = cur {
         if ex.is_empty() { t.exit_px = x.c[to]; } else { ex.push((to, x.c[to], 0.5)); t.exit_px = ex.iter().map(|e| e.1 * e.2).sum::<f64>(); t.exits = ex; }
-        t.exit_i = to; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t);
+        t.exit_i = to; t.signal_i = to; t.reason = "open".into(); t.open = true; mark(&mut t, od); out.push(t);
     }
     out
 }
@@ -177,7 +231,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     Some(match id {
-        "klhpt_cci_right" => run_cci(x, from, to, g("len").round().max(2.) as usize, g("level")),
+        "klhpt_cci_right" => {
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+            run_cci_ep6(x, from, to, g("len").round().max(2.) as usize, g("level"), crate::intraday_ep6::on(id, p)) // EP6 (#243, lane K63)
+        }
         "kldst_perfect_order" => run_po(x, from, to, g("wait").round().max(1.) as usize),
         _ => return None,
     })

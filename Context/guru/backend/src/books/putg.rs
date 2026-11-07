@@ -11,7 +11,7 @@
 //! previous position (positions ago), EntriesToday(date) the entries filled on the current bar.
 //! The book tested 21-29 futures (one contract, $) and 12 stocks; here the rules run on an index or an NSE stock
 //! (instrument swap only, % returns, one unit per trade).
-use super::pbwts::{entry, exit, highest, lowest, sim, ts_avg_tr, Kind};
+use super::pbwts::{entry, exit, highest, lowest, sim, sim_ep6, ts_avg_tr, Kind};
 use crate::connors::{claim, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "putg";
@@ -171,6 +171,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let longs = || p("longs_only", "Longs only (stock version)", 0., 0., 1., 1.);
     Some(match id {
@@ -200,6 +206,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| { let v = g(k).round(); if v.is_finite() && v >= 1.0 { v as usize } else { 1 } };
     let n = x.r.len();
@@ -285,7 +293,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (hc, lc) = (highest(c, u("closes")), lowest(c, u("closes")));
             let tr = true_range(x.r);
             let (pct, pat) = (g("pct"), g("pattern") >= 0.5);
-            sim(x, from, to, |i, st| {
+            sim_ep6(x, from, to, on, |i, st| {
                 if i + 1 >= n { return vec![]; }
                 let can = !pat || hc[i] - lc[i] < atr[i];
                 let (stb, sts) = (o[i + 1] + pct * tr[i], o[i + 1] - pct * tr[i]);
