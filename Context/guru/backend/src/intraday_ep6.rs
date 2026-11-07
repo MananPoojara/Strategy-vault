@@ -138,7 +138,9 @@ pub const IDS: &[&str] = &[
     // Dave Landry's swing patterns (books::dlost manage_ep6: entry, stop and the 2-for-1 half-off target)
     "dlost_simple_pb", "dlost_tko", "dlost_dtko", "dlost_tpp", "dlost_bow_tie",
     // Burns inside-day breakout (books::jbid: both day-2 stops; stop and target 1 on one day)
-    "jbid_inside_day"];
+    "jbid_inside_day",
+    // wave 4 (lane K62): a position's stop and target on one bar (intraday_ep6::stop_target)
+    "rwtlc_adx_hivol_ct", "rwmts_bb_fade", "jcmtt_propulsion"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -155,7 +157,8 @@ pub const HELD: &[(&str, &str)] = &[
     ("lwlts_mon_gap_t1000", CASH177B), ("lwlts_oops_buy_ma9", CASH177B), ("lwlts_oops_sell_thu", CASH177B), ("lwlts_talon_sp", CASH177B), ("lwlts_hh5", CASH177B), ("lwlts_hh20", CASH177B), ("lwnl_aug97_td7_sell_bail", CASH177B), ("lwnl_nov97_td17_buy_7d", CASH177B),
     ("lwnl_aug97_td2_sell_7d", AMB), ("lwnl_jan_rally", AMB), ("lwnl_jul97_td17_buy", AMB), ("lwnl_jul97_td4_buy", AMB), ("lwnl_nov97_td18_buy_7d", AMB),
     // wave 3 (lane K62): Bernstein's S&P-point day-of-week stops (#246 (a): #177b on the resolved versions)
-    ("jb624_fri_mon", CASH177B_K62), ("jbcdt2_dbo_mon", CASH177B_K62), ("jbcdt2_dbo_thu", CASH177B_K62)];
+    ("jb624_fri_mon", CASH177B_K62), ("jbcdt2_dbo_mon", CASH177B_K62), ("jbcdt2_dbo_thu", CASH177B_K62),
+    ("jbeft_dow_fm97", CASH177B_K62), ("jbeft_dow_wt", CASH177B_K62)];
 const CASH177B_K62: &str = "Held (decisions #177b, #246, lane K62): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule loses over 2014-2025 while SPX gains (opposite sign, the cash-vs-tradable check), and SPX is this rule's only ticker, so no results are published.";
 /// #246 (a), lane K62: daily rules whose RESOLVED result fails #179 on SPX (SPX better than SPY in both check windows): the SPX
 /// result is withdrawn and, as #179 rules for SPX-flagged rules, the NIFTY 50 / NIFTYBANK results are held; SPY and the rest stay.
@@ -199,6 +202,27 @@ pub fn window(id: &str, x: &crate::connors::Ctx, from: usize, to: usize, p: &Par
     let (a, b) = (x.r.partition_point(|r| r.date.as_str() < m.first()), x.r.partition_point(|r| r.date.as_str() <= m.last() && !bad(r)));
     let (f, t) = (from.max(a), to.min(b.checked_sub(1)?));
     (f <= t).then_some((f, t))
+}
+
+/// A position's protective stop and profit target working on bar `t` (lane K62, wave 4): with `on`, a bar whose range holds
+/// both levels while the open is through neither is order-dependent and is walked on the real 1-minute path (the first level
+/// the minutes reach, at the level or a gapped minute's open, reasons `why`); every other bar, and days without minutes, keep
+/// the module's own daily rule `conv` (e.g. the stop first). Returns the exit (price, reason) and how the day was decided.
+pub fn stop_target(x: &crate::connors::Ctx, t: usize, dir: f64, stop: f64, tgt: f64, on: bool, why: (&'static str, &'static str),
+    conv: impl Fn() -> Option<(f64, &'static str)>) -> (Option<(f64, &'static str)>, Day) {
+    let gap = |lv: f64, with: bool| lv.is_finite() && if (dir > 0.0) == with { x.o[t] >= lv } else { x.o[t] <= lv };
+    if !on || !stop.is_finite() || !tgt.is_finite() || gap(stop, false) || gap(tgt, true) { return (conv(), Day::Plain); }
+    let walk = |s: &mut Option<(f64, &'static str)>, segs: &[Seg]| -> Vec<Ev> {
+        for g in segs {
+            if s.is_some() { break; }
+            let (lv, k, w) = if g.up() != (dir > 0.0) { (stop, 0u8, why.0) } else { (tgt, 1u8, why.1) };
+            if g.inside(lv) { let px = g.fill(lv); *s = Some((px, w)); return vec![Ev { k, px, up: g.up() }]; }
+        }
+        vec![]
+    };
+    let mut st = None;
+    let day = resolve_conv(x, t, true, &mut st, |z| *z = conv(), |z, hf| walk(z, &bar_segs(x.o[t], x.h[t], x.l[t], x.c[t], hf)), walk);
+    (st, day)
 }
 
 /// Append the day's mark to a trade's reason.

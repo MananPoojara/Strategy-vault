@@ -699,7 +699,7 @@ mod tests {
         for (t,y,id,refused) in [("SPX","2013","jbsmsw_mac_pullback",true),("SPX","2014","jbsmsw_mac_pullback",false),("DJI","2015","jbsmsw_mac_pullback",true),
             ("SPX","2013","jbsmsw_mom_ma",false),("SPX","2013","jbhsms_sp_0113",false),("SPX","2013","jbeft_dow_fm97",true),("SPX","2014","jbeft_dow_fm97",false),("SPX","2014","jbeft_dow_wt",false),("NDX","2000","jbtifm_2000st",true),("NDX","2001","jbtifm_2000st",false),("NDX","2000","jbtifm_ma_9_18",false),("SPX","2013","jbtywr_crude_outside",false)] {
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::intraday_ep6::held_note(id,t).is_some(),"{id} {t} {y}"); // K62 #246: jbeft_dow held
         }
     }
     #[test]

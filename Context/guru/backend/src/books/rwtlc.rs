@@ -63,20 +63,22 @@ fn lo_n(x: &Ctx, i: usize, n: usize) -> f64 { x.l[i + 1 - n..=i].iter().cloned()
 // ------------------------------------------------------------------ simulator (same engine as rwmts)
 
 #[derive(Clone, Copy)]
-struct Pos { dir: f64, ei: usize, epx: f64 }
+struct Pos { dir: f64, ei: usize, epx: f64, od: crate::intraday_ep6::Day } // od: EP6 (lane K62) mark of the position
 
 struct Book { out: Vec<Trade>, pos: Option<Pos> }
 impl Book {
     fn new() -> Self { Book { out: vec![], pos: None } }
-    fn enter(&mut self, dir: f64, i: usize, px: f64) { self.pos = Some(Pos { dir, ei: i, epx: px }); }
+    fn enter(&mut self, dir: f64, i: usize, px: f64) { self.pos = Some(Pos { dir, ei: i, epx: px, od: crate::intraday_ep6::Day::Plain }); }
     fn exit(&mut self, i: usize, px: f64, reason: &str, sig: usize) {
         if let Some(p) = self.pos.take() {
-            self.out.push(Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.epx, w: 1.0 }], exit_i: i, exit_px: px,
-                reason: reason.into(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] });
+            let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.epx, w: 1.0 }], exit_i: i, exit_px: px,
+                reason: reason.into(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] };
+            crate::intraday_ep6::mark(&mut t, p.od);
+            self.out.push(t);
         }
     }
     fn finish(mut self, x: &Ctx, to: usize) -> Vec<Trade> {
-        if self.pos.is_some() { self.exit(to, x.c[to], "open", to); self.out.last_mut().unwrap().open = true; }
+        if self.pos.is_some() { self.exit(to, x.c[to], "open", to); self.out.last_mut().unwrap().open = true; } // the mark: exit()
         self.out
     }
 }
@@ -98,7 +100,12 @@ fn level_fill(x: &Ctx, t: usize, dir: f64, stop: Option<f64>, tgt: Option<f64>) 
 /// CQG-style system: `ent(s)` signal on the close of s (+1/-1/0) filled at the next open (opposite = reverse);
 /// `cx(t, p)` = condition exit known before the open of t, filled at that open; `lv(t, p)` = (stop, target) on bar t.
 fn sim(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> i8, cx: &dyn Fn(usize, &Pos) -> Option<&'static str>,
-       lv: &dyn Fn(usize, &Pos) -> (Option<f64>, Option<f64>)) -> Vec<Trade> {
+       lv: &dyn Fn(usize, &Pos) -> (Option<f64>, Option<f64>)) -> Vec<Trade> { sim_ep6(x, from, to, ent, cx, lv, false) }
+
+/// `sim` with EP6 (#243, lane K62): with `on`, a bar on which the stop and the target are both inside the range (the open
+/// through neither) is decided on the real 1-minute path (intraday_ep6::stop_target); level_fill (stop first) otherwise.
+fn sim_ep6(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> i8, cx: &dyn Fn(usize, &Pos) -> Option<&'static str>,
+       lv: &dyn Fn(usize, &Pos) -> (Option<f64>, Option<f64>), on: bool) -> Vec<Trade> {
     let mut b = Book::new();
     for t in from + 1..=to {
         let s = t - 1;
@@ -114,7 +121,9 @@ fn sim(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> i8, cx: &dyn Fn(u
         }
         if let Some(p) = b.pos {
             let (st, tg) = lv(t, &p);
-            if let Some((px, why)) = level_fill(x, t, p.dir, st, tg) { b.exit(t, px, why, t); }
+            let (fill, day) = crate::intraday_ep6::stop_target(x, t, p.dir, st.unwrap_or(f64::NAN), tg.unwrap_or(f64::NAN), on, ("stop", "target"), || level_fill(x, t, p.dir, st, tg));
+            if let Some(q) = b.pos.as_mut() { q.od = q.od.worst(day); }
+            if let Some((px, why)) = fill { b.exit(t, px, why, t); }
         }
     }
     b.finish(x, to)
@@ -247,6 +256,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let rsi_t = |trail: f64| vec![p("rsi_n", "RSI period", 9., 2., 30., 1.), p("hi", "Long entry RSI above", 65., 50., 90., 1.),
         p("lo", "Short entry RSI below", 35., 10., 50., 1.), p("trail", "Trailing stop bars (LoLevel/HiLevel)", trail, 1., 30., 1.)];
@@ -276,6 +291,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("rwtlc_") { return None; }
     let schema = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K62)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let c = &x.c;
@@ -295,10 +312,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "rwtlc_adx_hivol_ct" => {
             let (a, r, m) = (adx(x, u("adx_n"), g("adx_wilder") >= 0.5), rsi(c, u("rsi_n")), sma(c, u("ma")));
             let (gt, lo, hi) = (g("adx_gt"), g("lo"), g("hi"));
-            sim(x, from, to, &|i| {
+            sim_ep6(x, from, to, &|i| {
                 if i < 1 || !(a[i] > gt) { return 0; }
                 if x.h[i] > x.h[i - 1] && r[i] < lo { 1 } else if x.l[i] < x.l[i - 1] && r[i] > hi { -1 } else { 0 }
-            }, &no_cx, &|t, q| (Some(if q.dir > 0.0 { x.l[t - 1] } else { x.h[t - 1] }), Some(m[t - 1])))
+            }, &no_cx, &|t, q| (Some(if q.dir > 0.0 { x.l[t - 1] } else { x.h[t - 1] }), Some(m[t - 1])), on)
         }
         "rwtlc_rsi_trend3" | "rwtlc_rsi_trend1" | "rwtlc_rsi_trend10" | "rwtlc_rsi_trend_ext" | "rwtlc_rsi_trend3_time" => {
             let r = rsi(c, u("rsi_n"));

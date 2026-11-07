@@ -3066,7 +3066,7 @@ mod tests {
         for d in cat.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)) { // the EP minute rule: intraday_ep::ep_admission_and_tickers
             let any=!jb_g3_gap(d) && d.book!=jbeft::BOOK;
             for t in ["SPY","QQQ","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_none(),any,"{} {t}",d.id);}
-            assert_eq!(check(d,"SPX",false).is_none(),!jb_g3_gap(d),"{} SPX",d.id);
+            assert_eq!(check(d,"SPX",false).is_none(),!jb_g3_gap(d) && crate::intraday_ep6::held_note(d.id,"SPX").is_none(),"{} SPX",d.id); // K62 #246: jbeft_dow held
             assert_eq!(check_native(d,"AAPL",&us).is_none(),d.book!=jbeft::BOOK,"{} AAPL",d.id);
             assert_eq!(check_native(d,"RELIANCE",&ind).is_none(),any,"{} RELIANCE",d.id);
             assert!(metadata_json(d).contains("\"declared_application\"")||jb_g3_gap(d),"{}",d.id);
