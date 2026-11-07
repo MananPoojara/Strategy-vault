@@ -137,7 +137,11 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
 /// whose resolved path has more than 5% ambiguous-minute trades (#175).
 pub const HELD: &[(&str, &str)] = &[
     ("btp2_gipsons_short", THIN), ("dl10b_rgs", THIN), ("jr_ledge_tbtb", THIN), ("ws5_gap_window_intraday", THIN), ("ws5_outside_window", THIN),
+    ("lwlts_mon_gap_t1000", CASH177B), ("lwlts_oops_buy_ma9", CASH177B), ("lwlts_oops_sell_thu", CASH177B), ("lwlts_talon_sp", CASH177B), ("lwlts_hh5", CASH177B), ("lwlts_hh20", CASH177B), ("lwnl_aug97_td7_sell_bail", CASH177B), ("lwnl_nov97_td17_buy_7d", CASH177B),
     ("lwnl_aug97_td2_sell_7d", AMB), ("lwnl_jan_rally", AMB), ("lwnl_jul97_td17_buy", AMB), ("lwnl_jul97_td4_buy", AMB), ("lwnl_nov97_td18_buy_7d", AMB)];
+/// #246 (a): SPX-point rules whose RESOLVED result fails #177b (SPX vs tradable SPY with the points scaled, 2014-2025); SPX is
+/// their only ticker, so nothing is published.
+const CASH177B: &str = "Held (decisions #177b, #246, lane K59): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule fails the cash-vs-tradable check over 2014-2025 (opposite sign, or SPX more than 3x SPY), and SPX is this rule's only ticker, so no results are published.";
 const AMB: &str = "Held (decision #243, lane K59): on SPX's real 1-minute bars one of its 11-12 trades in the minute window (8.3-9.1%) is decided inside a single minute that reaches two of its levels without opening through exactly one of them, above decision #175's 5% limit, so the same-day order cannot be resolved and no results are published.";
 const THIN: &str = "Held (decision #243, lane K59): more than 5% of its trades enter at a stop or limit level and reach an exit level the same day, so the daily bar cannot say which came first (#240), and fewer than 10 of its trades fall inside the 1-minute window, so the order cannot be resolved on real minutes. No results are published.";
 const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane K59): the daily-bar convention changes this rule's result materially against the real 1-minute order, so only the minute-resolved window of the 1-minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) is published.";
@@ -236,7 +240,7 @@ mod tests {
         for (id, _) in HELD {
             let d = all.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             for t in ["SPY", "SPX", "QQQ", "NIFTY 50"] {
-                assert!(crate::instrument_policy::check(d, t, false).is_some_and(|i| i.note.starts_with("Held (decision #243")), "{id} {t}");
+                assert!(crate::instrument_policy::check(d, t, false).is_some_and(|i| i.note.starts_with("Held (decision")), "{id} {t}");
             }
         }
     }
