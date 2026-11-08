@@ -9,6 +9,10 @@
 //! Independent reference: authors/titles-1030/K70w/k70_ref.py (written from the pages, not from this file).
 //! Lane K71 (8 Nov 2026, decision #271, audit-1108/E1.tsv): 4.4 needs the RSI M / W shape, 5.1's candle has no lower / upper
 //! wick, 4.2 enters on a stop at the green candle's high; reference authors/titles-1030/K71w/k71_ref.py.
+//! Lane K72 (8 Nov 2026, decision #273; authors/titles-1030/K72.tsv): the minute rules' next-bar orders expire after their bar
+//! (an unfilled order no longer blocks the next bar's signal); 4.2's initial stop, printed on the step card as 'the swing low'
+//! (undefined), placed at the example's level, the signal candle's Supertrend;
+//! reference authors/titles-1030/K72w/k72_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::intraday::{day_trade, Bar1};
 use crate::intraday_ep6::{self as ep6, Ev, Seg};
@@ -107,7 +111,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Chart labels 'Supertrend 10 3' and 'RSI 14 close' (p.231-233 [PDF 117-118]); \"When the RSI is above the 60 level indicates the market is bullish ... RSI below 40 level indicates that the market is bearish\" (p.233)",
               "E|\"Look for stocks where the RSI is moving towards the 60 level and the Supertrend is turning bullish. If the price stays above Supertrend and the RSI crosses the 60 level, the BUY entry is triggered.\" Sell: \"If the price stays below Supertrend and the RSI crosses the 40 level, the SELL entry is triggered\" (p.235-237 [PDF 119-120])",
               "X|\"Place STOPLOSS at the swing low, keep trailing it at the Supertrend level. TARGET is on a trailing basis - exit when the price closes below Supertrend\"; short: \"exit when the price closes above the Supertrend\" (p.235-237); example: \"the initial stoploss was at the Supertrend\" (p.235)",
-              "A|Read: daily bars; Supertrend = TradingView ta.supertrend(3, 10) on (H+L)/2 with Wilder's ATR; RSI(14) Wilder. Setup: a bar on which the Supertrend is bullish and the RSI crosses above 60 (above 60 now, at or below 60 on the bar before). Entry (decision #271(3)): the steps give no entry order and the only example enters 'at the high of the green candle' (p.235), so the setup bar must be green (close above open) and a buy stop at its high works on the next bar only (filled at the high, or at the open when the bar opens above it), then is cancelled; option stop_entry = 0: entry at the setup bar's close with no candle colour required (the K70 reading). Exit at the close of the bar on which the Supertrend turns bearish (the close below it), which is the trailed stop at the Supertrend; the initial 'swing low' is not modelled (the example uses the Supertrend). Exits are at closes only, so a stop entry and its exit never fall in an unknown order on one daily bar (#240). Short = mirror: RSI crossing below 40 on a red bar, a sell stop at its low. One position at a time [Declared readings]. NSE stock and index examples; daily indices, ETFs and stocks, US and India, are a declared application (the book shorts through F&O)."],
+              "A|Read: daily bars; Supertrend = TradingView ta.supertrend(3, 10) on (H+L)/2 with Wilder's ATR; RSI(14) Wilder. Setup: a bar on which the Supertrend is bullish and the RSI crosses above 60 (above 60 now, at or below 60 on the bar before). Entry (decision #271(3)): the steps give no entry order and the only example enters 'at the high of the green candle' (p.235), so the setup bar must be green (close above open) and a buy stop at its high works on the next bar only (filled at the high, or at the open when the bar opens above it), then is cancelled; option stop_entry = 0: entry at the setup bar's close with no candle colour required (the K70 reading). Initial stop (decision #273(2)): the step card prints it ('Place STOPLOSS at the swing low', p.235) but never defines the swing low, so its level is the example's: 'the initial stoploss was at the Supertrend' (p.235), the Supertrend line at the signal candle, a fixed working stop from the entry fill on (filled at the stop, or at the open when a later bar opens beyond it); a bar that fills the stop entry inside its range and also reaches the stop is read as stopped and counted (#240); option init_stop = 0: no initial stop (the K71 reading). Exit at the close of the bar on which the Supertrend turns bearish (the close below it), which is the trailed stop at the Supertrend ('We kept trailing it and exited when the price closed below the Supertrend', p.235). Short = mirror: RSI crossing below 40 on a red bar, a sell stop at its low, the initial stop at the Supertrend above. One position at a time [Declared readings]. NSE stock and index examples; daily indices, ETFs and stocks, US and India, are a declared application (the book shorts through F&O)."],
             NO_TABLE),
         held!("as51_sector_rs", "4.3 Sector relative strength vs NIFTY 50", "E|When a sector index's relative-strength line crosses above NIFTY 50, buy the sector's highest-weight stock (p.237-245 [PDF 120-124])",
             "Held (decision #268): no exit or stop rule; it also needs NSE sector index history and constituent weights (p.237-245)."),
@@ -184,7 +188,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             pd("rr", "Target: risk multiple (1:2)", 2., 0.5, 10., 0.5)],
         "as51_st_rsi" => vec![pd("atr", "Supertrend ATR length (10)", 10., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5),
             pd("hi", "RSI buy level (60)", 60., 50., 90., 1.), pd("lo", "RSI sell level (40)", 40., 10., 50., 1.),
-            pd("stop_entry", "Entry: 1 = stop at the green candle's high, the book's example (p.235); 0 = the signal bar's close", 1., 0., 1., 1.)],
+            pd("stop_entry", "Entry: 1 = stop at the green candle's high, the book's example (p.235); 0 = the signal bar's close", 1., 0., 1., 1.),
+            pd("init_stop", "Initial stop: 1 = at the Supertrend of the signal candle (step card p.235, the example's level); 0 = none (exits at closes only)", 1., 0., 1., 1.)],
         "as51_rsi_mw" => vec![pd("lo", "Oversold (30)", 30., 5., 50., 1.), pd("hi", "Overbought (70)", 70., 50., 95., 1.),
             pd("mw", "1 = the M / W shape, two re-crosses (figure p.249); 0 = every re-cross of 30 / 70", 1., 0., 1., 1.)],
         "as51_st_pivot" => vec![pd("atr", "Supertrend ATR length (7)", 7., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5)],
@@ -203,7 +208,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "as51_ichimoku" => ichimoku(x, from, to, g("rr")),
         "as51_fractal_sma" => fractal(x, from, to, n("sma"), g("rr")),
         "as51_donchian_pb" => donchian(x, from, to, n("len"), n("pb_max").max(3), g("rr")),
-        "as51_st_rsi" => st_rsi(x, from, to, n("atr"), g("fac"), g("hi"), g("lo"), g("stop_entry") >= 0.5),
+        "as51_st_rsi" => st_rsi(x, from, to, n("atr"), g("fac"), g("hi"), g("lo"), g("stop_entry") >= 0.5, g("init_stop") >= 0.5),
         "as51_rsi_mw" => rsi_mw(x, from, to, g("lo"), g("hi"), g("mw") >= 0.5),
         "as51_st_pivot" => st_pivot(x, from, to, n("atr"), g("fac")),
         "as51_double_rsi" => double_rsi(x, from, to, g("lo"), g("hi")),
@@ -402,38 +407,47 @@ fn donchian(x: &Ctx, from: usize, to: usize, n: usize, pb_max: usize, rr: f64) -
     daily(x, from, to, ep6::on("as51_donchian_pb", &Params::new()), &sig, &none_exit, &trail)
 }
 
-fn st_rsi(x: &Ctx, from: usize, to: usize, n: usize, fac: f64, hi: f64, lo: f64, stop_entry: bool) -> Vec<Trade> {
+fn st_rsi(x: &Ctx, from: usize, to: usize, n: usize, fac: f64, hi: f64, lo: f64, stop_entry: bool, init_stop: bool) -> Vec<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
-    let (_, dir) = supertrend(h, l, c, n, fac);
+    let (line, dir) = supertrend(h, l, c, n, fac);
     let r = rsi(c, 14);
-    let up = |t: usize| t > 0 && dir[t] == -1 && r[t] > hi && r[t - 1] <= hi;
-    let dn = |t: usize| t > 0 && dir[t] == 1 && r[t] < lo && r[t - 1] >= lo;
+    // no setup before the Supertrend exists (its direction reads 'down' during the ATR warm-up; matters only for atr > 14)
+    let up = |t: usize| t > 0 && line[t].is_finite() && dir[t] == -1 && r[t] > hi && r[t - 1] <= hi;
+    let dn = |t: usize| t > 0 && line[t].is_finite() && dir[t] == 1 && r[t] < lo && r[t - 1] >= lo;
     let exit = |t: usize, d: f64| -> Option<&'static str> {
         if d > 0.0 && dir[t] == 1 { Some("close below the Supertrend") } else if d < 0.0 && dir[t] == -1 { Some("close above the Supertrend") } else { None }
     };
+    // Decision #273(2): the printed step card places an initial stop ('Place STOPLOSS at the swing low', p.235); its level is the
+    // example's, the Supertrend at the signal candle (p.235 'the initial stoploss was at the Supertrend'), a fixed working stop.
+    let sl = |t: usize| if init_stop { line[t] } else { f64::NAN };
     if !stop_entry {
-        // the option: entry at the signal bar's close, no candle colour required
-        let sig = |t: usize| if up(t) { Some((1.0, f64::NAN, f64::NAN)) } else if dn(t) { Some((-1.0, f64::NAN, f64::NAN)) } else { None };
+        // the option: entry at the signal bar's close, no candle colour required; the initial stop works from the next bar
+        let sig = |t: usize| if up(t) { Some((1.0, sl(t), f64::NAN)) } else if dn(t) { Some((-1.0, sl(t), f64::NAN)) } else { None };
         return daily(x, from, to, false, &sig, &|t: usize, p: &DPos| exit(t, p.d), &no_trail);
     }
     // Decision #271(3), the default: a green signal bar places a buy stop at its high for the next bar only (a red one a sell
-    // stop at its low); an open through the level fills at the open. Exits stay at closes, so no same-day order arises (#240).
+    // stop at its low); an open through the level fills at the open. The initial stop works from the entry fill on: on the
+    // entry bar after the fill (a bar that fills the entry inside its range and reaches the stop is counted for #240 and
+    // read as stopped), on later bars at the stop or the open beyond it; then the exits at closes.
     let mut out = vec![];
-    let (mut pos, mut pend): (Option<(f64, usize, f64)>, Option<(f64, f64)>) = (None, None);
+    let (mut pos, mut pend): (Option<(f64, usize, f64, f64)>, Option<(f64, f64, f64)>) = (None, None);
     for t in from..=to {
-        if let Some((d, lv)) = pend.take() {
+        if let Some((d, lv, st)) = pend.take() {
             let px = if d > 0.0 { if o[t] >= lv { Some(o[t]) } else if h[t] >= lv { Some(lv) } else { None } }
                 else if o[t] <= lv { Some(o[t]) } else if l[t] <= lv { Some(lv) } else { None };
-            if let Some(px) = px { pos = Some((d, t, px)); }
+            if let Some(px) = px { pos = Some((d, t, px, st)); }
         }
-        if let Some((d, ei, ep)) = pos {
-            if let Some(why) = exit(t, d) { out.push(day_trade(d, ei, ep, t, c[t], why, "stop", false)); pos = None; }
+        if let Some((d, ei, ep, st)) = pos {
+            let gap = t > ei && if d > 0.0 { o[t] <= st } else { o[t] >= st };
+            let touch = if d > 0.0 { l[t] <= st } else { h[t] >= st };
+            if gap || touch { out.push(day_trade(d, ei, ep, t, if gap { o[t] } else { st }, "initial stop", "stop", false)); pos = None; }
+            else if let Some(why) = exit(t, d) { out.push(day_trade(d, ei, ep, t, c[t], why, "stop", false)); pos = None; }
         }
         if pos.is_none() {
-            if up(t) && c[t] > o[t] { pend = Some((1.0, h[t])); } else if dn(t) && c[t] < o[t] { pend = Some((-1.0, l[t])); }
+            if up(t) && c[t] > o[t] { pend = Some((1.0, h[t], sl(t))); } else if dn(t) && c[t] < o[t] { pend = Some((-1.0, l[t], sl(t))); }
         }
     }
-    if let Some((d, ei, ep)) = pos { out.push(day_trade(d, ei, ep, to, c[to], "open", "stop", true)); }
+    if let Some((d, ei, ep, _)) = pos { out.push(day_trade(d, ei, ep, to, c[to], "open", "stop", true)); }
     out
 }
 
@@ -551,7 +565,6 @@ fn drive(x: &Ctx, v: &[B], place: &dyn Fn(usize) -> Option<Pend>, stop_of: &dyn 
         out.push(z);
     };
     for (k, b) in v.iter().enumerate() {
-        if s.pend.is_some_and(|p| p.until < k) { s.pend = None; }
         if b.first { prev = b.o; }
         if let Some(q) = s.pos.as_mut() { let st = stop_of(k, q); q.stop = st; }
         if s.pend.is_some() || s.pos.is_some() {
@@ -566,6 +579,9 @@ fn drive(x: &Ctx, v: &[B], place: &dyn Fn(usize) -> Option<Pend>, stop_of: &dyn 
             if let Some(why) = why { push(&mut out, q, b.i, b.c, why, false); s.pos = None; }
         }
         if b.last || flat(k) { s.pend = None; continue; }
+        // Decision #273(1): an order expires after its last bar (`until`), so an unfilled next-bar order never blocks a fresh
+        // signal at this bar's close; every bar is evaluated (TradeStation semantics, #184/#218).
+        if s.pend.is_some_and(|p| p.until <= k) { s.pend = None; }
         if s.pos.is_none() && s.pend.is_none() { s.pend = place(k); }
     }
     if let Some(q) = s.pos {
@@ -753,6 +769,36 @@ mod tests {
         }
     }
     #[test]
+    fn k72_order_expiry_and_initial_stop() {
+        // #273(1): bar 0's next-bar order (buy stop 105) is not reached on bar 1; bar 1's own signal (buy stop 100.7) is still
+        // placed at its close and fills on bar 2 (before K72 the stale order blocked it and nothing traded)
+        let r = rows(900);
+        let x = Ctx::new(&r, &r, &[]);
+        let bar = |k: u16, o: f64, h: f64, l: f64, c: f64| B { i: 1, s: 570 + 5 * k, e: 575 + 5 * k, open: 570, close: 960, o, h, l, c,
+            m: vec![Bar1 { m: 570 + 5 * k, o, h, l, c }], first: k == 0, last: k == 3 };
+        let v = vec![bar(0, 100., 101., 99., 100.5), bar(1, 100.5, 100.8, 100., 100.6), bar(2, 100.6, 102., 100.5, 101.8), bar(3, 101.8, 102., 101., 101.5)];
+        let place = |k: usize| match k {
+            0 => Some(Pend { d: 1., lv: 105., stop: f64::NAN, rr: f64::NAN, until: 1 }),
+            1 => Some(Pend { d: 1., lv: 100.7, stop: f64::NAN, rr: f64::NAN, until: 2 }),
+            _ => None };
+        let t = drive(&x, &v, &place, &|_, q| q.stop, &|_, _| None, &|_| false, 4);
+        assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_px), (1, 100.7, 101.5));
+        // #273(2): an initial-stop exit is at the signal candle's Supertrend line (or the open beyond it); off = none
+        // a tight Supertrend (factor 0.5) so that the smooth test series reaches the initial stop
+        let mut p1 = Params::new();
+        p1.insert("fac".into(), 0.5);
+        let (line, _) = supertrend(&x.h, &x.l, &x.c, 10, 0.5);
+        let st = run("as51_st_rsi", &x, 0, r.len() - 1, &p1).unwrap();
+        assert!(st.iter().any(|z| z.reason == "initial stop" && z.dir > 0.) && st.iter().any(|z| z.reason == "initial stop" && z.dir < 0.));
+        for z in st.iter().filter(|z| z.reason == "initial stop") {
+            let (e, sl) = (z.legs[0].i, line[z.legs[0].i - 1]);
+            assert!(z.exit_px == sl || (z.exit_i > e && z.exit_px == x.o[z.exit_i]), "{e}");
+        }
+        let mut p0 = p1.clone();
+        p0.insert("init_stop".into(), 0.);
+        assert!(run("as51_st_rsi", &x, 0, r.len() - 1, &p0).unwrap().iter().all(|z| z.reason != "initial stop"));
+    }
+    #[test]
     fn supertrend_and_sar_by_hand() {
         // a straight rise: the Supertrend turns up once the ATR exists and stays up; the SAR stays below the lows
         let h: Vec<f64> = (0..40).map(|i| 101. + i as f64).collect();
@@ -808,7 +854,7 @@ mod tests {
             let minute = ["SPY", "SPX", "NIFTY 50", "NIFTYBANK"].contains(&t.as_str());
             if minute { x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(&std::env::var("VAULT_M1_DIR").unwrap(), t).unwrap()))); }
             let opts: &[(&str, &[(&str, f64)])] = &[("as51_ichimoku", &[]), ("as51_fractal_sma", &[]), ("as51_donchian_pb", &[]), ("as51_donchian_pb", &[("pb_max", 10.)]),
-                ("as51_st_rsi", &[]), ("as51_st_rsi", &[("stop_entry", 0.)]), ("as51_rsi_mw", &[]), ("as51_rsi_mw", &[("mw", 0.)]), ("as51_st_pivot", &[]), ("as51_double_rsi", &[]), ("as51_ha_psar", &[]), ("as51_ema_scalp", &[]), ("as51_ema_scalp", &[("ema", 7.)])];
+                ("as51_st_rsi", &[]), ("as51_st_rsi", &[("stop_entry", 0.)]), ("as51_st_rsi", &[("init_stop", 0.)]), ("as51_rsi_mw", &[]), ("as51_rsi_mw", &[("mw", 0.)]), ("as51_st_pivot", &[]), ("as51_double_rsi", &[]), ("as51_ha_psar", &[]), ("as51_ema_scalp", &[]), ("as51_ema_scalp", &[("ema", 7.)])];
             for (id, kv) in opts {
                 let intra = INTRA.contains(id);
                 if intra && !minute { continue; }
