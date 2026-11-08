@@ -254,10 +254,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v
 }
 
-/// The 15 cards whose printed course result passes the #168 check (gate verdict verified, SPY 9/9/97-11/30/06).
-pub const BOOK_MATCHED: [&str; 15] = ["spmt_dmi_1", "spmt_dmi_2", "spmt_dmi_3", "spmt_dmi_5", "spmt_eom_cc", "spmt_eom_co", "spmt_eom_rsi",
-    "spmt_pctb_1", "spmt_price", "spmt_rsi_2", "spmt_rsi_3", "spmt_rsi_div2", "spmt_rsi_div8", "spmt_short_4up", "spmt_short_strong"];
-const GROSS_NOTE: &str = "Book comparison: gross, SPY, no costs. The course's figures are E-mini trades after 1/2 point of slippage and commission per trade (p.3); ours are SPY closes with no costs, over the course's 9/9/97-11/30/06 window.";
+/// The 18 cards whose printed course result passes the #168 check (gate verdict verified, SPY 9/9/97-11/30/06), judged since R4 #260 (1)
+/// (lane BC2) with the course's own 1/2 point per trade deducted from our trades (like with like).
+pub const BOOK_MATCHED: [&str; 18] = ["spmt_dmi_1", "spmt_dmi_2", "spmt_dmi_3", "spmt_dmi_4", "spmt_dmi_5", "spmt_eom_cc", "spmt_eom_co", "spmt_eom_rsi",
+    "spmt_pctb_1", "spmt_pctb_2", "spmt_price", "spmt_rsi4_25", "spmt_rsi_2", "spmt_rsi_3", "spmt_rsi_div2", "spmt_rsi_div8", "spmt_short_4up", "spmt_short_strong"];
+const GROSS_NOTE: &str = "Book comparison: SPY over the course's 9/9/97-11/30/06 window, net of the course's 1/2 point per trade. The course's figures are E-mini trades after 1/2 point of slippage and commission per trade (p.3); for the check (R4 #260 (1)) the same 1/2 S&P point is deducted from each SPY trade (as 0.5 / the S&P 500 close at entry). The card's results themselves carry no costs.";
 
 // ---------------------------------------------------------------- params
 
@@ -957,11 +958,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 #[cfg(test)]
 mod tests {
     #[test]
-    fn book_matched_cards_are_the_verified_rows_and_say_gross_spy_no_costs() {
+    fn book_matched_cards_are_the_verified_rows_and_say_net_of_the_course_half_point() {
         let cat = catalogue();
         let verified: Vec<&str> = cat.iter().filter(|s| crate::gate::get(s.id).is_some_and(|g| g.verdict == "verified")).map(|s| s.id).collect();
         assert_eq!(verified, {let mut b = BOOK_MATCHED.to_vec(); b.sort_by_key(|id| cat.iter().position(|s| s.id == *id)); b});
-        for s in &cat { assert_eq!(s.notes.contains("gross, SPY, no costs"), BOOK_MATCHED.contains(&s.id), "{}", s.id); }
+        for s in &cat { assert_eq!(s.notes.contains("net of the course's 1/2 point per trade"), BOOK_MATCHED.contains(&s.id), "{}", s.id); }
         assert_eq!(catalogue().iter().find(|s| s.id == "spmt_dmi_1").unwrap().notes.as_ptr(), cat.iter().find(|s| s.id == "spmt_dmi_1").unwrap().notes.as_ptr());
     }
     use super::*;
