@@ -182,8 +182,12 @@ fn channel_sim(x: &Ctx, from: usize, to: usize, n: usize, stop_pct: Option<f64>)
     b.finish(x, to)
 }
 
-/// Wilder parabolic: returns per bar the flip (dir, price) if the SAR was hit on that bar.
-fn psar_flips(x: &Ctx, to: usize, af0: f64, afmax: f64) -> Vec<Option<(f64, f64)>> {
+/// Wilder parabolic: returns per bar the flip (dir, price) of that bar.
+/// `close` (lane K67, R4 #264 (1), the default): the parabolic flips only when a CLOSE crosses the SAR (long when the close
+/// is at or above it, short at or below); the new SAR is the prior extreme; the price is that close (the order fills at the
+/// next open). This reproduces the Fig 2.15 legend (31 Dec 2003 Para = 1095.28) on SPX. Otherwise (labelled option) it
+/// flips during the day when the low / high touches the SAR, filled at the SAR (the open when the bar opens beyond it).
+fn psar_flips(x: &Ctx, to: usize, af0: f64, afmax: f64, close: bool) -> Vec<Option<(f64, f64)>> {
     let n = to + 1;
     let mut out = vec![None; n];
     if n < 3 { return out; }
@@ -191,15 +195,19 @@ fn psar_flips(x: &Ctx, to: usize, af0: f64, afmax: f64) -> Vec<Option<(f64, f64)
     let mut af = af0;
     let (mut sar, mut ep) = if long { (x.l[0].min(x.l[1]), x.h[1].max(x.h[0])) } else { (x.h[0].max(x.h[1]), x.l[1].min(x.l[0])) };
     for i in 2..n {
+        if close {
+            if long && x.c[i] <= sar { out[i] = Some((-1.0, x.c[i])); long = false; sar = ep; ep = x.l[i]; af = af0; continue; }
+            if !long && x.c[i] >= sar { out[i] = Some((1.0, x.c[i])); long = true; sar = ep; ep = x.h[i]; af = af0; continue; }
+        }
         if long {
-            if x.l[i] <= sar {
+            if !close && x.l[i] <= sar {
                 out[i] = Some((-1.0, x.o[i].min(sar)));
                 long = false; sar = ep.max(x.h[i]).max(x.h[i - 1]); ep = x.l[i]; af = af0;
             } else {
                 if x.h[i] > ep { ep = x.h[i]; af = (af + af0).min(afmax); }
                 sar = (sar + af * (ep - sar)).min(x.l[i]).min(x.l[i - 1]);
             }
-        } else if x.h[i] >= sar {
+        } else if !close && x.h[i] >= sar {
             out[i] = Some((1.0, x.o[i].max(sar)));
             long = true; sar = ep.min(x.l[i]).min(x.l[i - 1]); ep = x.h[i]; af = af0;
         } else {
@@ -271,12 +279,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"Wilder's parabolic, or stop and reverse (SAR) ... always in the market and whose stop-and-reverse trigger points take on a parabolic shape\" (p.29)",
               "F|Acceleration factor 0.02 rising 0.02 per new extreme to 0.20 (Wilder's defaults; book p.15-16 uses the developer's defaults)",
               "X|Stop-and-reverse: the opposite entry signal closes the position at the same open and reverses it"],
-            "Stop-and-reverse at the SAR level during the day (gap = open). Book: spot GBP/USD 2003 (no index result).", None),
+            "Default (R4 #264 (1), lane K67): the parabolic flips only on a close across the SAR (new SAR = the prior extreme) and the reversal fills at the next open, the book's convention (p.42-43) and the reading that reproduces the Fig 2.15 legend (31 Dec 2003 Para = 1095.28 on the cash S&P 500). Option p.flip = 1: stop-and-reverse at the SAR level during the day (gap = open). Book: spot GBP/USD 2003 (no index result).", None),
         def!("rwmts_psar_fade", "Fade of the parabolic with 2.5 SD fail-safe (Fig 2.15)", C1, "Long/Short", Live,
             &["E|\"fade its stop and reverse signals\": when the parabolic turns long, go short at its stop level, and vice versa (p.29)",
               "F|\"all entries required the market to be trading at less than 2.5 standard deviations from the 20-day moving average\" (p.30)",
               "X|\"fail-safe stop loss 2.5 standard deviations from the 20-day moving average\" (p.30); otherwise the next parabolic flip reverses the faded position"],
-            "Fig 2.15 (cash S&P 500 x 250, 12/31/2002-12/31/2003): 24 trades, 70.83% winners, average duration 11 days, closed net $55,220. Bands use yesterday's 20-day SMA and population SD (CQG [-1] convention).",
+            "Fig 2.15 (cash S&P 500 x 250, 12/31/2002-12/31/2003): 24 trades, 70.83% winners, average duration 11 days, closed net $55,220. Default (R4 #264 (1), lane K67): the parabolic flips only on a close across the SAR (new SAR = the prior extreme; the Fig 2.15 legend's 31 Dec 2003 Para = 1095.28 is reproduced exactly, and the book's open short of 28 Nov 2003 at 1057.89, open loss -$13,608, to the dollar); the fade entry needs the flip day's close within 2.5 population SD of its 20-day SMA; the fail-safe is a close beyond SMA20 +/- 2.5 SD; every order fills at the next open (p.42-43). Option p.flip = 1 (the earlier reading): flips when the low / high touches the SAR, faded at the SAR level during the day, with the bands of the day before as a price stop.",
             Some(Claim { trades: "24", win: "70.83%", avg: "$1,734 avg profit (x250)", hold: "11 days", period: "Cash S&P 500, 2003" })),
         def!("rwmts_stoch_ext", "14-day slow stochastics extremes (Fig 2.17)", C1, "Long/Short", Live,
             &["F|Slow %K = 3-day moving average of Fast %K(14); Slow %D = 3-day moving average of Slow %K (p.32)",
@@ -449,6 +457,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some((fam.0, fam.1, d.name))
 }
 
+/// Lane K67 (R4 #264 (1)): the parabolic's flip reading.
+const PSAR_FLIP: &str = "Parabolic flip: 0 = on the close, orders at the next open (Fig 2.15 legend; default), 1 = intraday touch of the SAR (option)";
+
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let mut v = params_base(id)?;
     crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
@@ -469,9 +480,9 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "rwmts_macd_pt" | "rwmts_macd_pt_sl" => vec![p("fast", "Fast EMA", 13., 5., 30., 1.), p("slow", "Slow EMA", 26., 15., 60., 1.), p("sig", "Signal EMA", 9., 3., 20., 1.),
             p("pts", "Profit (and stop) in index points ($2,500 / $50 ES)", 50., 10., 400., 10.)],
         "rwmts_dmi_sar" => vec![p("n", "DMI period", 14., 5., 30., 1.)],
-        "rwmts_psar" => vec![p("af", "Acceleration step", 0.02, 0.01, 0.05, 0.01), p("afmax", "Maximum acceleration", 0.2, 0.1, 0.5, 0.05)],
+        "rwmts_psar" => vec![p("af", "Acceleration step", 0.02, 0.01, 0.05, 0.01), p("afmax", "Maximum acceleration", 0.2, 0.1, 0.5, 0.05), p("flip", PSAR_FLIP, 0., 0., 1., 1.)],
         "rwmts_psar_fade" => vec![p("af", "Acceleration step", 0.02, 0.01, 0.05, 0.01), p("afmax", "Maximum acceleration", 0.2, 0.1, 0.5, 0.05),
-            p("n", "Band MA days", 20., 10., 50., 1.), p("k", "Standard deviations", 2.5, 1., 4., 0.25)],
+            p("n", "Band MA days", 20., 10., 50., 1.), p("k", "Standard deviations", 2.5, 1., 4., 0.25), p("flip", PSAR_FLIP, 0., 0., 1., 1.)],
         "rwmts_stoch_ext" => vec![p("n", "Stochastic days", 14., 5., 30., 1.), p("lo", "Buy below SD", 15., 5., 30., 1.), p("hi", "Sell above SD", 85., 70., 95., 1.),
             p("xl", "Long exit SD above", 30., 20., 50., 1.), p("xs", "Short exit SD below", 70., 50., 80., 1.), p("stop", "Fail-safe stop %", 2.5, 0.5, 6., 0.5)],
         "rwmts_rsi_ext" => vec![p("n", "RSI days", 14., 5., 30., 1.), p("lo", "Buy below", 30., 10., 40., 1.), p("hi", "Sell above", 70., 60., 90., 1.),
@@ -574,8 +585,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (pd, md) = di(x, u("n"));
             sim(x, from, to, &|s| lvl(&pd, &md, s), &no_cx, &no_lv)
         }
+        "rwmts_psar" | "rwmts_psar_fade" if g("flip").round() < 0.5 => {
+            // R4 #264 (1), lane K67: close flips; every order (reversal, fade entry, fail-safe exit) at the next open (p.42-43)
+            let flips = psar_flips(x, to, g("af"), g("afmax"), true);
+            let fd = |s: usize| flips[s].map_or(0, |(d, _)| d as i8);
+            if id == "rwmts_psar" { sim(x, from, to, &fd, &no_cx, &no_lv) } else {
+                let (n, k) = (u("n"), g("k"));
+                let (m, sdv) = (sma(c, n), sd(c, n));
+                sim(x, from, to, &|s| if fd(s) != 0 && (c[s] - m[s]).abs() < k * sdv[s] { -fd(s) } else { 0 },
+                    &|s, q| if (q.dir > 0.0 && c[s] <= m[s] - k * sdv[s]) || (q.dir < 0.0 && c[s] >= m[s] + k * sdv[s]) { Some("2.5 SD fail-safe (close beyond the band)") }
+                        else if fd(s) != 0 { Some("parabolic flip (fade reverses)") } else { None }, &no_lv)
+            }
+        }
         "rwmts_psar" | "rwmts_psar_fade" => {
-            let flips = psar_flips(x, to, g("af"), g("afmax"));
+            let flips = psar_flips(x, to, g("af"), g("afmax"), false);
             let mut b = Book::new();
             if id == "rwmts_psar" {
                 for t in from + 1..=to {
@@ -766,6 +789,19 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let t = run("rwmts_cb20", &x, 21, 29, &Params::new()).unwrap();
         assert_eq!(t.len(), 1); assert_eq!(t[0].legs[0].i, 25); assert!((t[0].legs[0].px - 101.95).abs() < 1e-9); assert_eq!(t[0].dir, 1.0);
+    }
+    #[test]
+    fn k67_parabolic_flips_on_the_close_and_fills_next_open() {
+        // R4 #264 (1): bar 12 dips through the SAR but closes above it (an intraday flip only); bar 20 closes below it
+        let mut v: Vec<f64> = (0..12).map(|i| 100.0 + i as f64).collect();
+        v.extend([111.0; 8]); v.push(105.0); v.extend([105.0; 5]);
+        let mut r = rows(&v); r[12].low = 100.0;
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("rwmts_psar", &x, 0, 25, &Params::new()).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px), (-1.0, 21, x.o[21]));
+        let mut p = Params::new(); p.insert("flip".into(), 1.0);
+        let t = run("rwmts_psar", &x, 0, 25, &p).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i), (-1.0, 12));
     }
     #[test]
     fn k66_spx_points_are_the_books_2500_at_50_a_point() {

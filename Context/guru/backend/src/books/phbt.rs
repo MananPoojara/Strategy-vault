@@ -52,7 +52,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Long Exit: BarsSinceEntry = 10 (p.55).",
               "E|Short Entry: Volume of Data2[2] > BollingerBand(Volume of Data2,21,-2)[2] and Volume of Data2[3] [?] BollingerBand(Volume of Data2,21,-2)[3] or Volume of Data2[4] < BollingerBand(Volume of Data2,21,-2)[4] (p.55). Read as: volume 2 days ago above its lower band AND (3 or 4 days ago below its lower band).",
               "X|Short Exit: BarsSinceEntry = 2 (p.55).",
-              "F|Orders: the code gives no 'on Close'; this book's sentiment systems fill \"on the following morning's opening price\" (p.10), = TradeStation's default next-bar market order. Signals on the close, entries and time exits at the next open; opposite signal reverses; same-direction signal while in position ignored. Data2 = the traded ETF's own volume."],
+              "F|Orders (R4 #264 (2), lane K67): the p.55 code states no fill. Default: entries, reversals and the 10-bar / 2-bar time exits fill at the close of the signal bar, the reading that reproduces both printed summaries (Figs 4.5 and 4.6b). Option p.fill = 1: the next morning's open (the earlier reading, taken from the put/call system of p.10). Opposite signal reverses; same-direction signal while in position ignored. Data2 = the traded ETF's own volume."],
             "Book: Fig 4.5 QQQ 03/10/1999-09/24/2001 24 trades 67% net 32.38 points; Fig 4.6b SPY 02/03/1993-09/24/2001 84 trades 71% net 67.95 points (p.52-53). Fig 4.8 (QQQ traded on combined QQQ+SPY volume) is not coded. India: NIFTY 50 index volume (where the vault has volume).",
             claim("84", "71%", "0.81 SPY points (net 67.95)", "9 bars winners / 9 bars losers", "SPY daily 02/03/1993-09/24/2001, Fig 4.6b p.53")) },
         mk("phbt_pc_bb_long", "CBOE equity put/call Bollinger buy (15-day hold)", "Ch. 1 · The CBOE Equity Put/Call Ratio", "Long",
@@ -140,6 +140,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("bb_n", "Volume Bollinger length", 21., 10., 40., 1.), p("bb_k", "Volume Bollinger standard deviations", 2., 1., 3., 0.25),
             p("hold_long", "Long exit: BarsSinceEntry", 10., 2., 20., 1.), p("hold_short", "Short exit: BarsSinceEntry", 2., 1., 10., 1.),
             p("side", "0 long and short (book), 1 long only, -1 short only", 0., -1., 1., 1.),
+            p("fill", "Fills: 0 = at the signal bar's close (fits Figs 4.5/4.6b; default), 1 = at the next open (option)", 0., 0., 1., 1.),
         ]),
         _ => None,
     }
@@ -311,23 +312,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let side = g("side").round();
             let (up, lo) = bands(&v, bn, g("bb_k"));
             let mut cur: Option<Trade> = None;
-            for i in from.max(4)..to {
-                // decisions on the close of i, fills at the open of i + 1
+            // decisions on the close of i; R4 #264 (2), lane K67: filled at that close (default) or at the open of i + 1 (option)
+            let nxt = g("fill").round() >= 1.;
+            let at = |i: usize| if nxt { (i + 1, x.o[i + 1]) } else { (i, x.c[i]) };
+            for i in from.max(4)..if nxt { to } else { to + 1 } {
                 if let Some(t) = cur.as_ref() {
                     let hold = if t.dir > 0. { hl } else { hsh };
                     if i - t.legs[0].i == hold {
-                        out.push(close_t(cur.take().unwrap(), i + 1, x.o[i + 1], i, "BarsSinceEntry exit"));
+                        let (j, px) = at(i);
+                        out.push(close_t(cur.take().unwrap(), j, px, i, "BarsSinceEntry exit"));
                     }
                 }
                 let long = v[i] > up[i] && (v[i - 1] < up[i - 1] || v[i - 2] < up[i - 2] || v[i - 3] < up[i - 3]);
                 let short = v[i - 2] > lo[i - 2] && (v[i - 3] < lo[i - 3] || v[i - 4] < lo[i - 4]);
                 let dir = match (long, short) { (true, false) => 1., (false, true) => -1., _ => continue };
                 if cur.as_ref().is_some_and(|t| t.dir == dir) { continue; }
+                let (j, px) = at(i);
                 if let Some(t) = cur.take() {
-                    out.push(close_t(t, i + 1, x.o[i + 1], i, "reversed by an opposite volume signal"));
+                    out.push(close_t(t, j, px, i, "reversed by an opposite volume signal"));
                 }
                 if side == 0. || side == dir {
-                    let mut t = open_t(dir, i + 1, x.o[i + 1], "open");
+                    let mut t = open_t(dir, j, px, if nxt { "open" } else { "close" });
                     t.signal_i = i;
                     cur = Some(t);
                 }

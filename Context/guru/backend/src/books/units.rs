@@ -44,6 +44,9 @@ const RULES: &[(&str, W, bool, bool)] = &[
     ("atm00_fourplay", W::Qty, false, false),
     // lane K55: STAD Vol 2 Opening Gap p.74, "Maximum number of entries per position" 4, one contract per entry
     ("stad2_opengap", W::Qty, false, false),
+    // lane K67 (R4 #264 (3)): Active Trader Nov 2003 Table 3 takes every spike-reversal signal, overlapping ones too (one
+    // contract each, entered and exited on the close)
+    ("atm03_spike", W::Qty, false, false),
 ];
 pub fn is_units(id: &str) -> bool { RULES.iter().any(|r| r.0 == id) }
 

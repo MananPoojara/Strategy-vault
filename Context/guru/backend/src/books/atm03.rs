@@ -284,7 +284,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|High bar: high at least 1.5% above the previous high and close in the lower half of the bar; low bar: low at least 1.5% below the previous low and close in the upper half (text p.53; the printed formulas carry sign typos)",
             "E|\"buying or selling the S&P 500 E-Mini on the close of a spike-reversal bar\"",
             "X|\"exiting long trades three days later and short trades five days later\" (on the close)"],
-          "Prose definitions win over the mistyped formulas. One position at a time: a signal during an open trade is ignored [B]. Book: continuous E-Mini Aug 1998-Aug 2003, Table 3.",
+          "Prose definitions win over the mistyped formulas. Every spike-reversal bar is its own position, also while another is open (R4 #264 (3), lane K67: the article's trade list, Table 3 p.56, takes overlapping signals such as 9/1/98 and 9/3/98, 9/11/02 and 9/17/02); one unit per signal on the multi-unit account (books::units), each sized at the account value at its fill. Book: continuous E-Mini Aug 1998-Aug 2003, Table 3.",
           c("43", "67.44%", "+1.51% (17.52 pts)", "3 / 5 days", "S&P 500 E-Mini 8/1998-8/2003")),
         d("atm03_memorial", "Memorial Day trade · buy the day before, sell 4 days after", "Market History Jun 2003 (Bukey)", "Long", Live, false,
           &["E|\"go long one day before\" Memorial Day (close of the last session before the holiday)", "X|\"sell four days after the holiday\" (close of the 4th session after)"],
@@ -567,18 +567,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "atm03_spike" => {
             let (pc, xl, xs) = (g("pct") / 100., u("xl"), u("xs"));
+            // R4 #264 (3), lane K67: every spike-reversal bar is its own position (Table 3 trades signals that overlap open
+            // ones), one unit each on the multi-unit account (books::units)
             let mut out = vec![];
-            let mut i = from.max(1);
-            while i <= to {
+            for i in from.max(1)..=to {
                 let rng = h[i] - l[i];
                 let dir = if rng > 0. && (h[i] - h[i - 1]) / h[i - 1] >= pc && (h[i] - c[i]) / rng > 0.5 { -1. }
                     else if rng > 0. && (l[i - 1] - l[i]) / l[i - 1] >= pc && (h[i] - c[i]) / rng < 0.5 { 1. } else { 0. };
-                if dir == 0. { i += 1; continue; }
+                if dir == 0. { continue; }
                 let xi = i + if dir > 0. { xl } else { xs };
                 let t = new_trade(dir, i, c[i], "close");
-                if xi > to { finish(&mut out, Some(t), x, to); break; }
-                out.push(done(t, xi, c[xi], xi, "time exit at the close"));
-                i = xi; // a new spike on the exit day is taken at that close
+                if xi > to { finish(&mut out, Some(t), x, to); } else { out.push(done(t, xi, c[xi], xi, "time exit at the close")); }
             }
             out
         }
@@ -632,6 +631,18 @@ mod tests {
         let avg: f64 = t[0].exits.iter().map(|e| e.1 * e.2).sum();
         assert!((avg - t[0].exit_px).abs() < 1e-12 && (t[0].exits.iter().map(|e| e.2).sum::<f64>() - 1.).abs() < 1e-12);
         assert!(crate::trade_validation::check(&t, 0, 8, 0.).is_ok());
+    }
+    #[test]
+    fn k67_overlapping_spikes_are_each_a_position() {
+        // R4 #264 (3): spike-reversal low bars on bars 2 and 3 (lows -2.0% and -2.1%, closes in the upper half): two longs,
+        // out at the closes of bars 5 and 6, although the first is still open when the second signal comes
+        let b = [(100., 101., 99., 100.), (100., 101., 99., 100.), (99., 100., 97., 99.5), (97., 98., 95., 97.5), (97., 99., 96., 98.),
+                 (98., 99.5, 97., 99.), (99., 100., 98., 99.5), (99.5, 100.5, 98.5, 100.)];
+        let r: Vec<Row> = b.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2001-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("atm03_spike", &x, 0, 7, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i, t.exit_px)).collect::<Vec<_>>(), vec![(1., 2, 5, 99.), (1., 3, 6, 99.5)]);
+        assert!(crate::books::units::is_units("atm03_spike") && !crate::books::units::is_units("atm03_gap_closer"));
     }
     #[test]
     fn pullback_limit_hand_checked() {

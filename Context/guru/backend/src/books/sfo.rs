@@ -45,7 +45,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|Barchart.com 20-day Bollinger Bands, two standard deviations",
             "E|\"buy on close above 20-day Bollinger Band, sell [short] on close below\" (Table 1 note)",
             "X|\"close out the position once the close is back within the bands\" (cover / sell on the next close within the bands)"],
-          "Fills at the close. Population SD (Bollinger) [B]. A close from above the upper band straight to below the lower band reverses [B].",
+          "Fills at the close. Population SD (Bollinger) [B]. A close from above the upper band straight to below the lower band reverses [B]. Option p.src = 1 (R4 #264 (5), lane K67): bands on the typical price (H+L+C)/3, the reading that reproduces all four ETF rows of Table 1; the default stays on the close, as the article's text describes.",
           c("DIA 55, MDY 44, SPY 48, QQQ 43", "DIA 31%, MDY 23%, SPY 33%, QQQ 23%", "DIA -8.90, MDY -13.15, SPY -25.85, QQQ -21.25 points (total)", "", "3/2001-4/2003")),
         d("sfo_needs_data", "SFO seasonal / intraday systems needing data the vault lacks", "V2#6, V2#10, V2#11, V3#3, V3#4", "Long/Short",
           NeedsData("CBOT 10-yr T-note futures (Toepke V2#6 p.64 rows 1-4), NYMEX unleaded gasoline and natural gas futures (Toepke V3#3 p.128), TSX/TSE 300 index (Vialoux V3#4 p.73-75), sector indices XNG, MSH, XTC, BTK, XAL, FPP, XOI, UT, CYC, CMR, DRG, BKX, XAU, XBD, XCI, COMP, PSE (Brown Table 2), 5-minute YM bars (Carter V2#11 p.36-40)"),
@@ -92,7 +92,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     if let Some((_, s, e)) = sector(id) { return Some(vec![p("start", "Start month (held from the prior month's last close)", s, 1., 12., 1.), p("end", "End month (sold at its last close)", e, 1., 12., 1.)]); }
     Some(match id {
         "sfo_toepke_sp" => vec![p("row", "Window (0 = all six, 1-6 = one row of Figure 4)", 0., 0., 6., 1.)],
-        "sfo_bb20_breakout" => vec![p("n", "Band length", 20., 5., 100., 1.), p("k", "Standard deviations", 2., 0.5, 4., 0.1)],
+        "sfo_bb20_breakout" => vec![p("n", "Band length", 20., 5., 100., 1.), p("k", "Standard deviations", 2., 0.5, 4., 0.1),
+            p("src", "Bands on: 0 = the close (the article's text; default), 1 = the typical price (H+L+C)/3 (option; fits Table 1)", 0., 0., 1., 1.)],
         "sfo_needs_data" | "sfo_not_testable" => vec![],
         _ => return None,
     })
@@ -146,7 +147,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "sfo_bb20_breakout" => {
             let nn = g("n").max(2.) as usize;
-            let (m, sd, k) = (sma(c, nn), stdev(c, nn), g("k"));
+            // R4 #264 (5), lane K67: option src = 1 builds the bands on the typical price; entries and exits still compare the close
+            let tp: Vec<f64> = (0..c.len()).map(|i| (x.h[i] + x.l[i] + c[i]) / 3.).collect();
+            let b = if g("src").round() >= 1. { &tp } else { c };
+            let (m, sd, k) = (sma(b, nn), stdev(b, nn), g("k"));
             let (mut out, mut cur) = (vec![], None::<Trade>);
             for i in from..=to {
                 if m[i].is_nan() { continue; }
