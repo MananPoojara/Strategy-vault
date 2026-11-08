@@ -120,7 +120,8 @@ mod tests {
             assert_eq!(crate::gate::get(id).unwrap().verdict, "unverified", "{id}");
         }
         assert_eq!(crate::gate::get("jkbwts_buymon1400").unwrap().allowed, Some(&["SPX"][..]));
-        for id in ["atm04_qqq_crash", "radge_oc_long_stop" /* tdperl_tdline_short: intraday wave 3; jchr1_lizard_short: lane K53 */] { assert_eq!(crate::gate::get(id).unwrap().verdict, "withheld", "{id}"); }
+        for id in ["radge_oc_long_stop" /* tdperl_tdline_short: intraday wave 3; jchr1_lizard_short: lane K53 */] { assert_eq!(crate::gate::get(id).unwrap().verdict, "withheld", "{id}"); }
+        assert_eq!(crate::gate::get("atm04_qqq_crash").unwrap().verdict, "verified"); // R4 #260 (1), lane BC2: passes with the column's 1 cent a share
     }
 
 }

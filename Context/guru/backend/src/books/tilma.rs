@@ -8,7 +8,7 @@ use crate::connors::*;
 
 pub const BOOK: &str = "tilma";
 /// Admitted ids (authors/tillson/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["tilma_t3", "tilma_dema", "tilma_ema", "tilma_ilrs"];
+pub const REVIEWED: &[&str] = &["tilma_t3", "tilma_dema", "tilma_ema", "tilma_sma", "tilma_ilrs"]; // tilma_sma: R4 #260, lane BC2
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const ENTRY: &str = "E|\"res:=Mov(C,opt1,E); d1:=ROC(res,1,points); d1 > Ref(d1,-1) AND Ref(d1,-1) < Ref(d1,-2)\" (enter long; the EMA code printed in 'Trading Results'; the other averages replace res) = d1 turns up from a bottom";
