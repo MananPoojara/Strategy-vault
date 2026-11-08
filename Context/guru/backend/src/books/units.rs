@@ -21,7 +21,8 @@
 //!   open = close = price, a close entry counts as the close and an exit as the open, e.g. a stop gapped through at
 //!   an open that is also the close). So a position opened at the open is sized before an exit later that day is
 //!   booked: that exit's unit is still open at the entry and is marked at the entry price. Two fills at intraday
-//!   levels keep exits first (a daily bar does not order them);
+//!   levels keep exits first (a daily bar does not order them); a unit added on the bar its position opens fills after
+//!   the position's first unit;
 //! * a unit's P&L = allocation x direction x (price / its fill - 1); costs = the vault's side rate on each unit's
 //!   allocation at entry and at exit (0 by default); no financing, margin or borrowing cost is modelled.
 //! Equity is marked at every close. If it reaches 0 the account is wiped out: open units end that day at the close and
@@ -87,6 +88,8 @@ pub fn units(trades: &[Trade], w: W, per_leg: bool, one: bool, open: &[f64], clo
             let reason = if n > 1 { format!("unit {} of {} · {}", k + 1, n, t.reason) } else { t.reason.clone() };
             let at = |v: &[f64], i: usize| v.get(i).copied().unwrap_or(f64::NAN);
             let te = when(l.px, at(open, l.i), at(close, l.i), t.entry_kind == "close");
+            // a unit added to a position on the bar the position opens fills after its first unit (the module's leg order)
+            let te = if k > 0 && l.i == t.legs[0].i { te.max(when(t.legs[0].px, at(open, l.i), at(close, l.i), t.entry_kind == "close")) } else { te };
             let tx = when(exit_px, at(open, exit_i), at(close, exit_i), false);
             let tx = if exit_i == l.i { tx.max(te) } else { tx }; // a unit cannot leave before it fills
             out.push(Unit { g, w: mw, te, tx, t: Trade { dir: t.dir, legs: vec![Leg { i: l.i, px: l.px, w: 1.0 }], exit_i, exit_px, reason,
@@ -289,6 +292,9 @@ mod tests {
         let g = units(&gap, W::Money, false, false, &o, &c).unwrap();
         assert_eq!((g[0].tx, g[1].te), (0, 0));
         assert!((account(&c, &g, 0, 3, 0.0).alloc[1] - 0.52).abs() < 1e-12);
+        // an add listed on the bar its position opens on the close fills after that first unit, not at its own level
+        let mut p = tr(-1., &[(2, 110., 1.), (2, 109., 1.)], 3, 105.); p.entry_kind = "close";
+        assert_eq!(units(&[p], W::Qty, false, false, &o, &c).unwrap().iter().map(|u| u.te).collect::<Vec<_>>(), vec![2, 2]);
     }
 
     #[test]
