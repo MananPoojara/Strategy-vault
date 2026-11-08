@@ -37,7 +37,10 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "rwmts_60m_rsi200h" /* lane K53 (60-minute bars, 2014-2025): SPY avg -0.0166% vs SPX +0.0321% (test a) */,
     "rwmts_60m_seven" /* lane K53 (60-minute bars, 2014-2025): SPY avg +0.0247% vs SPX -0.0152% (test a) */,
     "rwmts_30m_rsi_cross" /* lane K53 (30-minute bars, 2014-2025): SPY avg +0.0027% vs SPX -0.0152% (test a) */,
-    "rwmts_15m_5m_rsi" /* lane K53 (15-minute bars, 2014-2025): SPY avg -0.0029% vs SPX +0.0228% (test a) */];
+    "rwmts_15m_5m_rsi" /* lane K53 (15-minute bars, 2014-2025): SPY avg -0.0029% vs SPX +0.0228% (test a) */,
+    "as51_double_rsi" /* lane K70 (5-minute, 2014-2025): SPX avg +0.0311% vs SPY +0.0053% (test b, floor 0.003 pp per #234) */,
+    "as51_ha_psar" /* lane K70 (3-minute Heikin Ashi, 2014-2025): SPY avg -0.0005% vs SPX +0.0174% (test a) */,
+    "as51_ema_scalp" /* lane K70 (5-minute, 2014-2025): SPY avg -0.0039% vs SPX +0.0163% (test a) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #232 (1): the SPY-only rules whose #177a flag has the tradable SPY as the BETTER series (gate `ours` numbers);
 /// their withdrawal note says the cash index understates the rule. Every other SPY id was flagged with SPX better.
@@ -70,7 +73,9 @@ pub const INDIA_HELD: &[(&str, &str)] = &[
     ("acbff_open_rel", "NIFTYBANK") /* avg +0.0312% vs SPY +0.0030%, compounded +165.3% vs +1.8% */,
     ("acbff_9oc", "NIFTYBANK") /* avg +0.0056% vs SPY +0.0008%, compounded +689.5% vs +21.7% */,
     ("mlhpt_ma3", "NIFTYBANK") /* avg +0.0753% vs SPY +0.0116%, compounded +28227.8% vs +124.0% */,
-    ("atm04_60min", "NIFTYBANK") /* avg +0.0686% vs SPY +0.0066%, compounded +768.4% vs +18.2% */];
+    ("atm04_60min", "NIFTYBANK") /* avg +0.0686% vs SPY +0.0066%, compounded +768.4% vs +18.2% */,
+    ("as51_st_pivot", "NIFTY 50") /* lane K70: avg +0.0708% vs SPY +0.0217%, compounded +2323.0% vs +147.7% (2008-2025) */,
+    ("as51_st_pivot", "NIFTYBANK") /* lane K70: avg +0.0856% vs SPY +0.0161%, compounded +2301.6% vs +82.3% (2010-2025) */];
 pub fn india_held(id: &str, ticker: &str) -> bool { INDIA_HELD.iter().any(|&(i, t)| i == id && (t == ticker || (t == "NIFTYBANK" && ticker == "NIFTY BANK"))) }
 pub const INDIA_HELD_NOTE: &str = "NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates (decision #231, 5 Nov 2026).";
 
@@ -201,7 +206,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (21, 38)); // + tdperl_rebo, rwmts_60m_rsi200h, rwmts_60m_seven, rwmts_30m_rsi_cross, rwmts_15m_5m_rsi (K53); + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
+        assert_eq!((SPY.len(), SPX_HELD.len()), (24, 38)); // + as51_double_rsi, as51_ha_psar, as51_ema_scalp (K70); // + tdperl_rebo, rwmts_60m_rsi200h, rwmts_60m_seven, rwmts_30m_rsi_cross, rwmts_15m_5m_rsi (K53); + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
         assert!(SPY_BETTER.iter().all(|id| SPY.contains(id))); // #232 (1)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
