@@ -18,9 +18,10 @@
 //! * same-bar order (R4 #265, lane K68): a bar's fills are taken in time order: fills at the open first, then fills at
 //!   an intraday stop or limit level, then fills at the close; at the same moment exits come before entries (a reversal
 //!   at the exit price). A fill's moment is read from its price: the bar's open, its close, or a level in between (when
-//!   open = close = price, a close entry or an exit signalled on that bar counts as the close). So a position opened at
-//!   the open is sized before an exit later that day is booked: that exit's unit is still open at the entry and is
-//!   marked at the entry price. Two fills at intraday levels keep exits first (a daily bar does not order them);
+//!   open = close = price, a close entry counts as the close and an exit as the open, e.g. a stop gapped through at
+//!   an open that is also the close). So a position opened at the open is sized before an exit later that day is
+//!   booked: that exit's unit is still open at the entry and is marked at the entry price. Two fills at intraday
+//!   levels keep exits first (a daily bar does not order them);
 //! * a unit's P&L = allocation x direction x (price / its fill - 1); costs = the vault's side rate on each unit's
 //!   allocation at entry and at exit (0 by default); no financing, margin or borrowing cost is modelled.
 //! Equity is marked at every close. If it reaches 0 the account is wiped out: open units end that day at the close and
@@ -86,7 +87,7 @@ pub fn units(trades: &[Trade], w: W, per_leg: bool, one: bool, open: &[f64], clo
             let reason = if n > 1 { format!("unit {} of {} · {}", k + 1, n, t.reason) } else { t.reason.clone() };
             let at = |v: &[f64], i: usize| v.get(i).copied().unwrap_or(f64::NAN);
             let te = when(l.px, at(open, l.i), at(close, l.i), t.entry_kind == "close");
-            let tx = when(exit_px, at(open, exit_i), at(close, exit_i), t.signal_i >= exit_i);
+            let tx = when(exit_px, at(open, exit_i), at(close, exit_i), false);
             let tx = if exit_i == l.i { tx.max(te) } else { tx }; // a unit cannot leave before it fills
             out.push(Unit { g, w: mw, te, tx, t: Trade { dir: t.dir, legs: vec![Leg { i: l.i, px: l.px, w: 1.0 }], exit_i, exit_px, reason,
                 entry_kind: t.entry_kind, signal_i: if last { t.signal_i } else { exit_i }, open: t.open && last, exits: vec![] } });
