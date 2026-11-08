@@ -7,6 +7,8 @@
 //! Supertrend + pivot R1/S1 (5-minute), 2.6 double RSI (5-minute + 1-hour), 5.1 Heikin Ashi + Parabolic SAR + RSI (3-minute),
 //! 5.5 first-hour EMA scalp (5-minute). Indicators follow TradingView's built-ins (the book's charts are TradingView's).
 //! Independent reference: authors/titles-1030/K70w/k70_ref.py (written from the pages, not from this file).
+//! Lane K71 (8 Nov 2026, decision #271, audit-1108/E1.tsv): 4.4 needs the RSI M / W shape, 5.1's candle has no lower / upper
+//! wick, 4.2 enters on a stop at the green candle's high; reference authors/titles-1030/K71w/k71_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::intraday::{day_trade, Bar1};
 use crate::intraday_ep6::{self as ep6, Ev, Seg};
@@ -63,8 +65,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"STOPLOSS may be placed below the Supertrend. The TARGET is at the trader's discretion or exit when the price closes below Supertrend\"; \"Since we are using Supertrend, it acts like the stoploss and the trade is exited at the closing of the candle below the Supertrend\" (p.95); \"since this was an intraday trade we needed to close the trade at 3:15 PM\" (p.97)",
               "A|Read: session-aligned 5-minute bars from the 1-minute file, one continuous series (TradingView); Supertrend = TradingView ta.supertrend(3, 7) on (H+L)/2 with Wilder's ATR; pivots = Traditional from the previous daily bar: P = (H+L+C)/3, R1 = 2P - L, S1 = 2P - H. Setup at a bar's close: close above R1, Supertrend bullish, close above open; then a buy stop at that close for the next bar only (short: the mirror below S1); exit at the close of a bar on which the Supertrend turns bearish (the close below it); square-off at the close of the bar ending 15 minutes before the session close (15:15 NSE, 15:45 US); no new order from that bar on [Declared readings]. The 'discretionary' target is not modelled. NIFTY 50 examples; SPY, SPX and NIFTYBANK are a declared application.", MIN],
             NO_TABLE),
-        held!("as51_vwap_sd", "2.3 VWAP + 2-standard-deviation band reversal (5-minute)", "E|Bearish close below the lower 2-SD VWAP band, next candle bullish: buy above its high; stop its low; targets VWAP and the upper band (p.97-107 [PDF 50-55])",
-            "Held (decision #268 (3)): the rule needs real traded volume for the session VWAP, and the vault's minute files carry no volume (p.97-107)."),
+        data!("as51_vwap_sd", "2.3 VWAP + 2-standard-deviation band reversal (5-minute)", "E|Bearish close below the lower 2-SD VWAP band, next candle bullish: buy above its high; stop its low; targets VWAP and the upper band (p.97-107 [PDF 50-55])",
+            "Held (decisions #268 (3), #271(5)): the rule needs real traded volume for the session VWAP, and the vault's minute files carry no volume (p.97-107)."),
         data!("as51_rsi_vo", "2.4 RSI + Volume Oscillator (5-minute)", "E|Volume Oscillator(5,10) near -30% with RSI(14) at 30 in an uptrend dip: buy; stop the swing low; target RSI overbought (p.107-115 [PDF 55-59])",
             "Held (decision #268): needs volume (none in the minute files), and 'near -30%', 'in tandem', the trend and the swing low are undefined (p.107-115)."),
         held!("as51_pivot_pullback", "2.5 Pivot-point pullback (5-minute)", "E|Pullback without breaking a pivot = reversal trade, after breaking it = continuation; bullish candle after the pullback; stop its low; target the next pivot (p.115-125 [PDF 59-64])",
@@ -87,7 +89,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"I prefer the 4/4 setting, meaning 4 candles on each side of the fractal\"; a fractal high: \"4 candles are preceding it and 4 are following it. All of which have failed to surpass the price level marked by the fractal\"; a fractal low the mirror (p.185 [PDF 94]); \"apply a 50-Day Simple Moving Average\" (p.187 [PDF 95])",
               "E|\"When the price is above the 50-period SMA, we look for buy trades, and when it's below, we focus on sell trades ... Buy when the previous fractal high is broken with a green candle for the entry\" (p.189 [PDF 96]); \"BUY when the price breaks the previous fractal high\"; sell: \"Wait for the price to fall below the 50-day Simple Moving Average ... SELL when the price breaks the previous fractal low\" (p.191-193 [PDF 97-98])",
               "X|\"you can place the stoploss either at the fractal level or, if the fractal is too distant, at the nearest significant swing high or low\" (p.189); \"The ideal Risk to Reward ratio is 1:2\" (p.191-193)",
-              "A|Read: daily bars; a fractal bar's high is >= the highs of the 4 bars on each side ('failed to surpass'; low mirror), known once the 4th later bar has closed. Long: at a close above the SMA(50), above the open (green) and above the last confirmed fractal high, entered at that close; each fractal level is broken once (its first close beyond it). The book's 'Look for an uptrend' step is read as the chapter's own direction filter, the SMA (p.189: 'The SMA acts as a directional filter'). Stop = the last confirmed fractal low (the 'fractal level'; the alternative swing level is a judgement), target = entry + 2 x (entry - stop); no trade when the stop is not below the entry. Short = mirror. A bar that reaches both stop and target takes the stop first (daily-bar convention) [Declared readings]. NIFTY 50 1-hour / 5-minute examples; daily indices, ETFs and stocks, US and India, are a declared application."],
+              "A|Read: daily bars; a fractal bar's high is >= the highs of the 4 bars on each side ('failed to surpass'; low mirror), known once the 4th later bar has closed. Long: at a close above the SMA(50), above the open (green) and above the last confirmed fractal high, entered at that close; each fractal level is broken once (its first close beyond it). The step card's 'Look for an uptrend and points where the bear run has exhausted' (p.191; sell card p.193 the mirror) is read as the chapter's own direction filter, the SMA (p.189: 'The SMA acts as a directional filter'), and the 'bear run has exhausted' as the fractal reversal itself, the close through the last fractal high (decision #271(4)). Stop = the last confirmed fractal low (the 'fractal level'; the alternative swing level is a judgement), target = entry + 2 x (entry - stop); no trade when the stop is not below the entry. Short = mirror. A bar that reaches both stop and target takes the stop first (daily-bar convention) [Declared readings]. NIFTY 50 1-hour / 5-minute examples; daily indices, ETFs and stocks, US and India, are a declared application."],
             NO_TABLE),
         held!("as51_renko", "3.5 Renko (ATR 14) + RSI + Stochastic RSI (15-minute)", "E|Sell at a marked long-term resistance on a red brick with RSI and Stoch RSI overbought; 1:3 (p.195-201 [PDF 99-102])",
             "Held (decision #268): the support and resistance levels are marked by eye (p.195-201)."),
@@ -101,28 +103,28 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Held (decision #268): the price leg is chosen by eye (p.211-217)."),
         held!("as51_monthly_pivots", "4.1 Moving with macro trends: pivot support + confirming candle (daily)", "E|\"Look for an uptrend. Wait for the price to take support on P, S1 or S2. Wait for a bullish candle to form. BUY above the high of the confirming candle\"; stop below the support area; target the next pivot (p.227-229 [PDF 115-116])",
             "Held (lane K70, 8 Nov 2026): the printed step card includes 'Look for an uptrend' (p.227 [PDF 115], read on the page image; the sell card 'Look for a downtrend', p.229) and the chapter never defines the trend; decision #268 (2) holds 1.1 for the same undefined 'uptrend'. 'Takes support' and 'below the support area' are also undefined."),
-        def!("as51_st_rsi", "4.2 Supertrend (10, 3) + RSI (14) crossing 60 / 40 (daily); exit on a close through the Supertrend", "Long/Short", Status::Live,
+        def!("as51_st_rsi", "4.2 Supertrend (10, 3) + RSI (14) crossing 60 / 40 (daily): buy stop at the green candle's high; exit on a close through the Supertrend", "Long/Short", Status::Live,
             &["F|Chart labels 'Supertrend 10 3' and 'RSI 14 close' (p.231-233 [PDF 117-118]); \"When the RSI is above the 60 level indicates the market is bullish ... RSI below 40 level indicates that the market is bearish\" (p.233)",
               "E|\"Look for stocks where the RSI is moving towards the 60 level and the Supertrend is turning bullish. If the price stays above Supertrend and the RSI crosses the 60 level, the BUY entry is triggered.\" Sell: \"If the price stays below Supertrend and the RSI crosses the 40 level, the SELL entry is triggered\" (p.235-237 [PDF 119-120])",
               "X|\"Place STOPLOSS at the swing low, keep trailing it at the Supertrend level. TARGET is on a trailing basis - exit when the price closes below Supertrend\"; short: \"exit when the price closes above the Supertrend\" (p.235-237); example: \"the initial stoploss was at the Supertrend\" (p.235)",
-              "A|Read: daily bars; Supertrend = TradingView ta.supertrend(3, 10) on (H+L)/2 with Wilder's ATR; RSI(14) Wilder. Long: at the close of a bar on which the Supertrend is bullish and the RSI crosses above 60 (above 60 now, at or below 60 on the bar before), entered at that close; exit at the close of the bar on which the Supertrend turns bearish (the close below it), which is the trailed stop at the Supertrend; the initial 'swing low' is not modelled (the example uses the Supertrend). Short = mirror with the RSI crossing below 40. One position at a time [Declared readings]. NSE stock and index examples; daily indices, ETFs and stocks, US and India, are a declared application (the book shorts through F&O)."],
+              "A|Read: daily bars; Supertrend = TradingView ta.supertrend(3, 10) on (H+L)/2 with Wilder's ATR; RSI(14) Wilder. Setup: a bar on which the Supertrend is bullish and the RSI crosses above 60 (above 60 now, at or below 60 on the bar before). Entry (decision #271(3)): the steps give no entry order and the only example enters 'at the high of the green candle' (p.235), so the setup bar must be green (close above open) and a buy stop at its high works on the next bar only (filled at the high, or at the open when the bar opens above it), then is cancelled; option stop_entry = 0: entry at the setup bar's close with no candle colour required (the K70 reading). Exit at the close of the bar on which the Supertrend turns bearish (the close below it), which is the trailed stop at the Supertrend; the initial 'swing low' is not modelled (the example uses the Supertrend). Exits are at closes only, so a stop entry and its exit never fall in an unknown order on one daily bar (#240). Short = mirror: RSI crossing below 40 on a red bar, a sell stop at its low. One position at a time [Declared readings]. NSE stock and index examples; daily indices, ETFs and stocks, US and India, are a declared application (the book shorts through F&O)."],
             NO_TABLE),
         held!("as51_sector_rs", "4.3 Sector relative strength vs NIFTY 50", "E|When a sector index's relative-strength line crosses above NIFTY 50, buy the sector's highest-weight stock (p.237-245 [PDF 120-124])",
             "Held (decision #268): no exit or stop rule; it also needs NSE sector index history and constituent weights (p.237-245)."),
-        def!("as51_rsi_mw", "4.4 RSI (14) M & W: buy the re-entry above 30, sell the re-entry below 70; exit at the opposite level", "Long/Short", Status::Live,
+        def!("as51_rsi_mw", "4.4 RSI (14) M & W: buy the W's second re-entry above 30, sell the M's second re-entry below 70; exit at the opposite level", "Long/Short", Status::Live,
             &["F|\"I am using the 14-period RSI and looking for RSI to give overbought (above 70) or oversold levels (below 30)\" (p.247 [PDF 125])",
               "E|\"I am going to sell the stock when the RSI goes above the 70 levels and comes back (below the 70) while forming an M type structure. Conversely, I am going to buy the stock when the RSI goes below the 30 levels and bounce back (above the 30) while forming a W type structure\" (p.247-249 [PDF 125-126]); \"I will buy the stock when the RSI makes the W like structure and re-enters above the 30 level\" (p.251 [PDF 127])",
               "X|\"The stoploss will be close to the nearest price swing near the entry point. I am going to book profits when the RSI reaches the opposite overbought/oversold levels. 30 in the case of a bearish trade and 70 in the case of a bullish trade\" (p.249)",
-              "A|Read: daily bars; RSI(14) Wilder. Long at the close of the bar on which the RSI crosses back above 30 (at or below 30 on the bar before); the W is the dip and the re-entry itself (no second trough is required); stop = the lowest low from the first bar of that RSI dip through the entry bar (the 'nearest price swing'), a working stop on later bars (filled at the stop, or the open when it gaps through); exit at the close of the first bar with RSI at or above 70. Short = mirror (RSI back below 70; stop the highest high of the overbought run; exit RSI at or below 30). One position at a time [Declared readings]. NSE stock examples; daily indices, ETFs and stocks, US and India, are a declared application."],
+              "A|Read (decision #271(1), the shape the p.249 figure draws: two RSI peaks above 70 with the SELL at the second fall): daily bars; RSI(14) Wilder. Short at the close of the bar on which the RSI crosses back below 70 (at or above 70 on the bar before) for the second time: the first re-cross below 70 arms the M, the second fires it and the count starts again; no bar limit between the two peaks (the book sets none) and no other reset. Long = the mirror W around 30 (dip below 30, back above, below again, back above: buy at that close). The count runs on the RSI whether or not a position is open; a signal while in a position is ignored. Option mw = 0: every re-cross is a signal (the K70 reading). Long stop = the lowest low from the first bar of the second RSI dip through the entry bar (the 'nearest price swing'), a working stop on later bars (filled at the stop, or the open when it gaps through); exit at the close of the first bar with RSI at or above 70. Short stop: the highest high of the second overbought run through the entry bar; short exit at the close of the first bar with RSI at or below 30. One position at a time [Declared readings]. NSE stock examples; daily indices, ETFs and stocks, US and India, are a declared application."],
             NO_TABLE),
-        def!("as51_ha_psar", "5.1 Heikin Ashi + Parabolic SAR + RSI 50 (3-minute scalp): buy above the bullish candle's high; stop the SAR, target 1:2", "Long/Short", Status::Live,
+        def!("as51_ha_psar", "5.1 Heikin Ashi + Parabolic SAR + RSI 50 (3-minute scalp): buy above the high of a bullish candle with no lower wick; stop the SAR, target 1:2", "Long/Short", Status::Live,
             &["F|\"SAR 0.02 0.02 0.2\", \"RSI 14 close\", chart 'NIFTY BANK · 3 · NSE · Heikin Ashi' (p.255-259 [PDF 129-131]); \"A Heiken Ashi candlestick with no lower body is a bullish candle\" (p.255)",
               "E|\"Wait for the candles to turn bullish and Parabolic SAR below the candlestick. With the above two confluences, wait for the RSI to move above the 50 level. Once all these confirmations hold true, the buy signal is triggered. BUY above the high of the bullish candle\"; sell the mirror (p.259-261 [PDF 131-132])",
               "X|\"Place STOPLOSS at the Parabolic SAR. TARGET is 1:2. If trading in multiple quantities, close half the position at 1:1\" (p.259); \"the idea was to exit from the trade when the price met the Parabolic SAR\" (p.259)",
-              "A|Read: session-aligned 3-minute bars, one continuous series. The book's chart is a Heikin Ashi chart, on which TradingView computes the RSI and the SAR from the Heikin Ashi candles and shows the Heikin Ashi high, so they are used here: HA close = (O+H+L+C)/4, HA open = (previous HA open + previous HA close)/2, HA high/low include them; SAR = TradingView ta.sar(0.02, 0.02, 0.2). Setup at a bar's close: HA close above HA open, SAR below the candle, RSI crossing above 50 (above now, at or below on the bar before); a buy stop at the HA high for the next bar only, placed when the SAR level for that bar is below it; the stop is the SAR level of each bar (trailing; when the SAR has flipped above, the next bar's open), the target = entry + 2 x (entry - the SAR at the entry bar); orders fill on the real 1-minute path; one quantity (the half-off at 1:1 applies to several lots only); flat at the session close [Declared readings]. Short = mirror. BANKNIFTY examples; SPY, SPX and NIFTY 50 are a declared application.", MIN],
+              "A|Read: session-aligned 3-minute bars, one continuous series. The book's chart is a Heikin Ashi chart, on which TradingView computes the RSI and the SAR from the Heikin Ashi candles and shows the Heikin Ashi high, so they are used here: HA close = (O+H+L+C)/4, HA open = (previous HA open + previous HA close)/2, HA high/low include them; SAR = TradingView ta.sar(0.02, 0.02, 0.2). Setup at a bar's close: HA close above HA open and no lower wick, the book's bullish candle ('A Heiken Ashi candlestick with no lower body is a bullish candle', p.255; decision #271(2)): HA low = HA open, tested within 1e-9 x the HA open because the HA open is a running average held in binary floating point (the independent reference tests it in exact 50-digit decimals; a bearish candle has no upper wick, HA high = HA open); SAR below the candle, RSI crossing above 50 (above now, at or below on the bar before); a buy stop at the HA high for the next bar only, placed when the SAR level for that bar is below it; the stop is the SAR level of each bar (trailing; when the SAR has flipped above, the next bar's open), the target = entry + 2 x (entry - the SAR at the entry bar); orders fill on the real 1-minute path; one quantity (the half-off at 1:1 applies to several lots only); flat at the session close [Declared readings]. Short = mirror. BANKNIFTY examples; SPY, SPX and NIFTY 50 are a declared application.", MIN],
             NO_TABLE),
         held!("as51_rsi_div_bb", "5.2 RSI divergence + Bollinger Bands scalp (1-minute)", "E|Bullish RSI divergence at the lower band, buy at the green candle; stop below it; target the upper band (p.261-271 [PDF 132-137])",
-            "Held (decision #268): divergence is not defined (p.261-271)."),
+            "Held (decisions #268, #271(5)): divergence itself is defined ('Price is making higher highs and the oscillator is failing to make higher highs ... and vice versa', p.265-266), but which swing highs or lows it compares is not ('form lower lows near the lower Bollinger Band', p.269), so the signal is not mechanical (p.261-271)."),
         data!("as51_rsi_vwap", "5.3 RSI + VWAP scalp (1-minute)", "E|Overbought and rejected at VWAP: sell; stop above VWAP; target the lower VWAP band (p.271-279 [PDF 137-141])",
             "Held (decision #268): 'rejection' is undefined and the session VWAP needs volume, which the minute files do not have (p.271-279)."),
         held!("as51_1m_consol", "5.4 1-minute consolidation breakout scalp", "E|After a trend, 4-5 small candles form a range: buy the break of its high; stop beyond the breakout candle; 1:3; close after 10 minutes (p.279-287 [PDF 141-145])",
@@ -181,8 +183,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "as51_donchian_pb" => vec![pd("len", "Donchian length (TradingView default 20)", 20., 5., 100., 1.), pd("pb_max", "Pullback: at most this many bars (3 to 4 printed)", 4., 3., 50., 1.),
             pd("rr", "Target: risk multiple (1:2)", 2., 0.5, 10., 0.5)],
         "as51_st_rsi" => vec![pd("atr", "Supertrend ATR length (10)", 10., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5),
-            pd("hi", "RSI buy level (60)", 60., 50., 90., 1.), pd("lo", "RSI sell level (40)", 40., 10., 50., 1.)],
-        "as51_rsi_mw" => vec![pd("lo", "Oversold (30)", 30., 5., 50., 1.), pd("hi", "Overbought (70)", 70., 50., 95., 1.)],
+            pd("hi", "RSI buy level (60)", 60., 50., 90., 1.), pd("lo", "RSI sell level (40)", 40., 10., 50., 1.),
+            pd("stop_entry", "Entry: 1 = stop at the green candle's high, the book's example (p.235); 0 = the signal bar's close", 1., 0., 1., 1.)],
+        "as51_rsi_mw" => vec![pd("lo", "Oversold (30)", 30., 5., 50., 1.), pd("hi", "Overbought (70)", 70., 50., 95., 1.),
+            pd("mw", "1 = the M / W shape, two re-crosses (figure p.249); 0 = every re-cross of 30 / 70", 1., 0., 1., 1.)],
         "as51_st_pivot" => vec![pd("atr", "Supertrend ATR length (7)", 7., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5)],
         "as51_double_rsi" => vec![pd("lo", "5-minute oversold (30)", 30., 5., 50., 1.), pd("hi", "5-minute overbought (70)", 70., 50., 95., 1.)],
         "as51_ha_psar" => vec![pd("rr", "Target: risk multiple (1:2)", 2., 0.5, 10., 0.5)],
@@ -199,8 +203,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "as51_ichimoku" => ichimoku(x, from, to, g("rr")),
         "as51_fractal_sma" => fractal(x, from, to, n("sma"), g("rr")),
         "as51_donchian_pb" => donchian(x, from, to, n("len"), n("pb_max").max(3), g("rr")),
-        "as51_st_rsi" => st_rsi(x, from, to, n("atr"), g("fac"), g("hi"), g("lo")),
-        "as51_rsi_mw" => rsi_mw(x, from, to, g("lo"), g("hi")),
+        "as51_st_rsi" => st_rsi(x, from, to, n("atr"), g("fac"), g("hi"), g("lo"), g("stop_entry") >= 0.5),
+        "as51_rsi_mw" => rsi_mw(x, from, to, g("lo"), g("hi"), g("mw") >= 0.5),
         "as51_st_pivot" => st_pivot(x, from, to, n("atr"), g("fac")),
         "as51_double_rsi" => double_rsi(x, from, to, g("lo"), g("hi")),
         "as51_ha_psar" => ha_psar(x, from, to, g("rr")),
@@ -398,32 +402,62 @@ fn donchian(x: &Ctx, from: usize, to: usize, n: usize, pb_max: usize, rr: f64) -
     daily(x, from, to, ep6::on("as51_donchian_pb", &Params::new()), &sig, &none_exit, &trail)
 }
 
-fn st_rsi(x: &Ctx, from: usize, to: usize, n: usize, fac: f64, hi: f64, lo: f64) -> Vec<Trade> {
-    let (_, dir) = supertrend(&x.h, &x.l, &x.c, n, fac);
-    let r = rsi(&x.c, 14);
-    let sig = |t: usize| -> Option<(f64, f64, f64)> {
-        if t == 0 { return None; }
-        if dir[t] == -1 && r[t] > hi && r[t - 1] <= hi { return Some((1.0, f64::NAN, f64::NAN)); }
-        if dir[t] == 1 && r[t] < lo && r[t - 1] >= lo { return Some((-1.0, f64::NAN, f64::NAN)); }
-        None
+fn st_rsi(x: &Ctx, from: usize, to: usize, n: usize, fac: f64, hi: f64, lo: f64, stop_entry: bool) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let (_, dir) = supertrend(h, l, c, n, fac);
+    let r = rsi(c, 14);
+    let up = |t: usize| t > 0 && dir[t] == -1 && r[t] > hi && r[t - 1] <= hi;
+    let dn = |t: usize| t > 0 && dir[t] == 1 && r[t] < lo && r[t - 1] >= lo;
+    let exit = |t: usize, d: f64| -> Option<&'static str> {
+        if d > 0.0 && dir[t] == 1 { Some("close below the Supertrend") } else if d < 0.0 && dir[t] == -1 { Some("close above the Supertrend") } else { None }
     };
-    let ex = |t: usize, p: &DPos| -> Option<&'static str> {
-        if p.d > 0.0 && dir[t] == 1 { Some("close below the Supertrend") } else if p.d < 0.0 && dir[t] == -1 { Some("close above the Supertrend") } else { None }
-    };
-    daily(x, from, to, false, &sig, &ex, &no_trail)
+    if !stop_entry {
+        // the option: entry at the signal bar's close, no candle colour required
+        let sig = |t: usize| if up(t) { Some((1.0, f64::NAN, f64::NAN)) } else if dn(t) { Some((-1.0, f64::NAN, f64::NAN)) } else { None };
+        return daily(x, from, to, false, &sig, &|t: usize, p: &DPos| exit(t, p.d), &no_trail);
+    }
+    // Decision #271(3), the default: a green signal bar places a buy stop at its high for the next bar only (a red one a sell
+    // stop at its low); an open through the level fills at the open. Exits stay at closes, so no same-day order arises (#240).
+    let mut out = vec![];
+    let (mut pos, mut pend): (Option<(f64, usize, f64)>, Option<(f64, f64)>) = (None, None);
+    for t in from..=to {
+        if let Some((d, lv)) = pend.take() {
+            let px = if d > 0.0 { if o[t] >= lv { Some(o[t]) } else if h[t] >= lv { Some(lv) } else { None } }
+                else if o[t] <= lv { Some(o[t]) } else if l[t] <= lv { Some(lv) } else { None };
+            if let Some(px) = px { pos = Some((d, t, px)); }
+        }
+        if let Some((d, ei, ep)) = pos {
+            if let Some(why) = exit(t, d) { out.push(day_trade(d, ei, ep, t, c[t], why, "stop", false)); pos = None; }
+        }
+        if pos.is_none() {
+            if up(t) && c[t] > o[t] { pend = Some((1.0, h[t])); } else if dn(t) && c[t] < o[t] { pend = Some((-1.0, l[t])); }
+        }
+    }
+    if let Some((d, ei, ep)) = pos { out.push(day_trade(d, ei, ep, to, c[to], "open", "stop", true)); }
+    out
 }
 
-fn rsi_mw(x: &Ctx, from: usize, to: usize, lo: f64, hi: f64) -> Vec<Trade> {
+fn rsi_mw(x: &Ctx, from: usize, to: usize, lo: f64, hi: f64, shape: bool) -> Vec<Trade> {
     let (h, l) = (&x.h, &x.l);
     let r = rsi(&x.c, 14);
+    // Decision #271(1): the M / W shape. A re-cross of 30 (70) is a signal only when it is the second one: the first re-cross
+    // arms the W (M), the second fires and disarms. The count runs on the RSI alone, in or out of a position, with no bar limit.
+    let (mut w, mut mm) = (vec![!shape; r.len()], vec![!shape; r.len()]);
+    if shape {
+        let (mut aw, mut am) = (false, false);
+        for t in 1..r.len() {
+            if r[t - 1] <= lo && r[t] > lo { w[t] = aw; aw = !aw; }
+            if r[t - 1] >= hi && r[t] < hi { mm[t] = am; am = !am; }
+        }
+    }
     let sig = |t: usize| -> Option<(f64, f64, f64)> {
         if t == 0 { return None; }
-        if r[t - 1] <= lo && r[t] > lo {
+        if r[t - 1] <= lo && r[t] > lo && w[t] {
             let mut k = t - 1;
             while k > 0 && r[k - 1] <= lo { k -= 1; }
             return Some((1.0, (k..=t).map(|j| l[j]).fold(f64::MAX, f64::min), f64::NAN));
         }
-        if r[t - 1] >= hi && r[t] < hi {
+        if r[t - 1] >= hi && r[t] < hi && mm[t] {
             let mut k = t - 1;
             while k > 0 && r[k - 1] >= hi { k -= 1; }
             return Some((-1.0, (k..=t).map(|j| h[j]).fold(f64::MIN, f64::max), f64::NAN));
@@ -634,11 +668,15 @@ fn ha_psar(x: &Ctx, from: usize, to: usize, rr: f64) -> Vec<Trade> {
     }
     let r = rsi(&hc, 14);
     let (_, below, nxt) = psar(&hh, &hl, &hc, 0.02, 0.02, 0.2);
+    // Decision #271(2): the book's bullish candle has no lower wick (HA low = HA open), the bearish one no upper wick (HA high =
+    // HA open), p.255. The HA open is a running average, so equality is tested within 1e-9 x the HA open (float rounding only).
+    let flat = |a: f64, b: f64, k: usize| (a - b).abs() <= 1e-9 * ho[k].abs();
     let place = |k: usize| -> Option<Pend> {
         if k == 0 || k + 1 >= m { return None; }
         let stop = nxt[k];
-        if hc[k] > ho[k] && below[k] && r[k - 1] <= 50.0 && r[k] > 50.0 && stop < hh[k] { return Some(Pend { d: 1.0, lv: hh[k], stop, rr, until: k + 1 }); }
-        if hc[k] < ho[k] && !below[k] && r[k - 1] >= 50.0 && r[k] < 50.0 && stop > hl[k] { return Some(Pend { d: -1.0, lv: hl[k], stop, rr, until: k + 1 }); }
+        let (bull, bear) = (flat(hl[k], ho[k], k), flat(hh[k], ho[k], k));
+        if hc[k] > ho[k] && bull && below[k] && r[k - 1] <= 50.0 && r[k] > 50.0 && stop < hh[k] { return Some(Pend { d: 1.0, lv: hh[k], stop, rr, until: k + 1 }); }
+        if hc[k] < ho[k] && bear && !below[k] && r[k - 1] >= 50.0 && r[k] < 50.0 && stop > hl[k] { return Some(Pend { d: -1.0, lv: hl[k], stop, rr, until: k + 1 }); }
         None
     };
     // the stop working on bar k is the SAR level for bar k (from bar k-1's close)
@@ -691,6 +729,27 @@ mod tests {
             let t = run(id, &x, 0, r.len() - 1, &p).unwrap();
             assert!(t.len() >= 3, "{id} {}", t.len());
             for z in &t { assert!(z.exit_i >= z.legs[0].i && (z.exit_i > z.legs[0].i || z.open)); }
+        }
+    }
+    #[test]
+    fn k71_mw_shape_and_stop_entry() {
+        let r = rows(900);
+        let x = Ctx::new(&r, &r, &[]);
+        let rs = rsi(&x.c, 14);
+        // #271(1): every M / W entry is an even-numbered re-cross (2nd, 4th, ...) of 30 (long) or 70 (short)
+        let ord = |t: usize, lv: f64, up: bool| (1..=t).filter(|&j| if up { rs[j - 1] <= lv && rs[j] > lv } else { rs[j - 1] >= lv && rs[j] < lv }).count();
+        let mw = run("as51_rsi_mw", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        let mut p0 = Params::new();
+        p0.insert("mw".into(), 0.);
+        assert!(!mw.is_empty() && mw.len() < run("as51_rsi_mw", &x, 0, r.len() - 1, &p0).unwrap().len());
+        for z in &mw { let t = z.legs[0].i; assert_eq!(ord(t, if z.dir > 0. { 30. } else { 70. }, z.dir > 0.) % 2, 0, "entry {t}"); }
+        // #271(3): a stop entry on the bar after a green (long) / red (short) signal bar, at its high / low or the open beyond it
+        let st = run("as51_st_rsi", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(!st.is_empty());
+        for z in &st {
+            let (t, px) = (z.legs[0].i, z.legs[0].px);
+            if z.dir > 0. { assert!(x.c[t - 1] > x.o[t - 1] && px == x.o[t].max(x.h[t - 1]) && x.h[t] >= x.h[t - 1]); }
+            else { assert!(x.c[t - 1] < x.o[t - 1] && px == x.o[t].min(x.l[t - 1]) && x.l[t] <= x.l[t - 1]); }
         }
     }
     #[test]
@@ -749,7 +808,7 @@ mod tests {
             let minute = ["SPY", "SPX", "NIFTY 50", "NIFTYBANK"].contains(&t.as_str());
             if minute { x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(&std::env::var("VAULT_M1_DIR").unwrap(), t).unwrap()))); }
             let opts: &[(&str, &[(&str, f64)])] = &[("as51_ichimoku", &[]), ("as51_fractal_sma", &[]), ("as51_donchian_pb", &[]), ("as51_donchian_pb", &[("pb_max", 10.)]),
-                ("as51_st_rsi", &[]), ("as51_rsi_mw", &[]), ("as51_st_pivot", &[]), ("as51_double_rsi", &[]), ("as51_ha_psar", &[]), ("as51_ema_scalp", &[]), ("as51_ema_scalp", &[("ema", 7.)])];
+                ("as51_st_rsi", &[]), ("as51_st_rsi", &[("stop_entry", 0.)]), ("as51_rsi_mw", &[]), ("as51_rsi_mw", &[("mw", 0.)]), ("as51_st_pivot", &[]), ("as51_double_rsi", &[]), ("as51_ha_psar", &[]), ("as51_ema_scalp", &[]), ("as51_ema_scalp", &[("ema", 7.)])];
             for (id, kv) in opts {
                 let intra = INTRA.contains(id);
                 if intra && !minute { continue; }

@@ -39,7 +39,7 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "rwmts_30m_rsi_cross" /* lane K53 (30-minute bars, 2014-2025): SPY avg +0.0027% vs SPX -0.0152% (test a) */,
     "rwmts_15m_5m_rsi" /* lane K53 (15-minute bars, 2014-2025): SPY avg -0.0029% vs SPX +0.0228% (test a) */,
     "as51_double_rsi" /* lane K70 (5-minute, 2014-2025): SPX avg +0.0311% vs SPY +0.0053% (test b, floor 0.003 pp per #234) */,
-    "as51_ha_psar" /* lane K70 (3-minute Heikin Ashi, 2014-2025): SPY avg -0.0005% vs SPX +0.0174% (test a) */,
+    "as51_ha_psar" /* lane K70 (3-minute Heikin Ashi, 2014-2025): SPY avg -0.0005% vs SPX +0.0174% (test a); lane K71 (#271(2) no-wick candle): SPY +0.0011% vs SPX +0.0170%, comp +6.6% vs +351.9% (tests b, c) */,
     "as51_ema_scalp" /* lane K70 (5-minute, 2014-2025): SPY avg -0.0039% vs SPX +0.0163% (test a) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #232 (1): the SPY-only rules whose #177a flag has the tradable SPY as the BETTER series (gate `ours` numbers);
