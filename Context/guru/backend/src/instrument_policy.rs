@@ -2599,6 +2599,7 @@ mod tests {
         use crate::books::{rwmts,rwtlc};
         let all:Vec<StrategyDef>=rwmts::catalogue().into_iter().chain(rwtlc::catalogue()).collect();
         let mut want:Vec<&str>=rwmts::REVIEWED.iter().chain(rwtlc::REVIEWED).copied().collect();
+        want.extend(rwmts::SPX_PTS); // lane K66 (#262): ADMISSION_SPX, SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // the ch.5 minute rules: intraday EP block (lane K53)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

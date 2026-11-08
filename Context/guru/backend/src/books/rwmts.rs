@@ -12,10 +12,14 @@
 use crate::connors::{dmi, rsi, sma, true_range, wilder, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rwmts";
-/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: the three futures-dollar rules (macd_pt,
-/// macd_pt_sl, rsi200_usd: $2,500 per E-mini contract), the figure with an unstated ADX filter and the intraday systems.
+/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: macd_pt_sl ($2,500 per E-mini contract; fails the
+/// #168 book check), the figure with an unstated ADX filter and the intraday systems. macd_pt and rsi200_usd: SPX_PTS.
 pub const REVIEWED: &[&str] = &["rwmts_sma200_sar", "rwmts_sma26_sar", "rwmts_sma26_wait3", "rwmts_env_trend", "rwmts_env_fade", "rwmts_macd_sar", "rwmts_dmi_sar", "rwmts_psar", "rwmts_psar_fade", "rwmts_stoch_ext", "rwmts_rsi_ext", "rwmts_mom10_sar", "rwmts_bb_fade", "rwmts_cci_trend", "rwmts_cci_fade", "rwmts_ma2x", "rwmts_ichi2", "rwmts_ma3x", "rwmts_ichi3", "rwmts_macd", "rwmts_dmi", "rwmts_dmi_adx", "rwmts_cb20", "rwmts_bb_break", "rwmts_cb20_stop3", "rwmts_rsi200", "rwmts_bb200", "rwmts_bb_adx", "rwmts_stoch_cci", "rwmts_stoch_cci_time"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Lane K66 (R4 #262 / #196(2)): the book's $2,500 per contract on the NAMED CME E-mini S&P 500 (Table 3.1 p.44, note b
+/// "Cash S&P 500 Index x 50"; Table 4.3 p.78 contract size 50) = 50 S&P index points, exact. SPX only (gate list), from
+/// 2014 (real opens, clamp_open), admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["rwmts_macd_pt", "rwmts_rsi200_usd"];
 
 // ------------------------------------------------------------------ indicators
 
@@ -359,7 +363,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "After the 3% stop the system waits flat for the next channel touch. Book: spot USD/JPY 1993-2002 (no index result). Stop checked from the entry bar on (book p.73-74: ambiguous same-day cases count as losses).", None),
         def!("rwmts_macd_pt", "MACD with $2,500 profit exit (Table 3.12)", C3, "Long/Short", Live,
             &["E|MACD system of Table 3.6 (p.55)", "X|\"MACD with the addition of a profit exit set to $2,500\" (p.66) = 50 index points for the book's ES row (cash S&P 500 x 50)"],
-            "After the profit exit the system is flat until the next MACD signal. Points param `pts` default 50 (= $2,500 / $50 per point, Table 3.1 note b).",
+            "After the profit exit the system is flat until the next MACD signal. Points param `pts` default 50 (= $2,500 / $50 per point, Table 3.1 note b). SPX only: the book names the CME E-mini S&P 500 and simulated it as the cash S&P 500 x 50 (Table 3.1 p.44), so 50 points is the book's own amount on the S&P 500 index; other instruments would need a conversion the book does not give. Results from 2014 (real SPX opens).",
             es("41", "68.29%", "$19,829 total", "46 days")),
         def!("rwmts_macd_pt_sl", "MACD with $2,500 profit and stop exit (Table 3.13)", C3, "Long/Short", Live,
             &["E|MACD system of Table 3.6 (p.55)", "X|\"profit exit and a stop loss set to $2,500\" (p.67) = 50 index points each for the ES row"],
@@ -373,7 +377,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NEXT_OPEN, Some(Claim { trades: "50", win: "48.00%", avg: "$8,711 total", hold: "16 days", period: "ES row of the mean-reversion portfolio (Table 4.4), 1993-2002" })),
         def!("rwmts_rsi200_usd", "RSI extremes with 200-day MA filter, $2,500 stop (Table 4.2)", C4, "Long/Short", Live,
             &["E|Entries and RSI exits as rwmts_rsi200 (p.75)", "X|Fixed $2,500 stop for ES (Table 4.1, p.76) = 50 index points: OpenPositionAverageEntryPrice - Dollar2Price(@,2500)"],
-            "Points param `pts` default 50 (ES conversion).", es("39", "66.67%", "$10,441 total", "22 days")),
+            "Points param `pts` default 50 (ES conversion). SPX only: the book names the CME E-mini S&P 500 and simulated it as the cash S&P 500 x 50 (Table 3.1 p.44), so 50 points is the book's own amount on the S&P 500 index; other instruments would need a conversion the book does not give. Results from 2014 (real SPX opens).", es("39", "66.67%", "$10,441 total", "22 days")),
         def!("rwmts_bb200", "Bollinger band fade with 200-day MA filter (Table 4.5)", C4, "Long/Short", Live,
             &["E|Long Entry: Close(@)[-1] XBELOW BLO(@,Sim,20,2)[-1] AND Close(@)[-1] > MA(@,Sim,200)[-1] (p.79)",
               "X|Long Exit #1 Price field: BMA(@,Sim,20)[-1]; #2: EntryPrice - .025*EntryPrice (p.79-80)",
@@ -764,6 +768,16 @@ mod tests {
         assert_eq!(t.len(), 1); assert_eq!(t[0].legs[0].i, 25); assert!((t[0].legs[0].px - 101.95).abs() < 1e-9); assert_eq!(t[0].dir, 1.0);
     }
     #[test]
+    fn k66_spx_points_are_the_books_2500_at_50_a_point() {
+        // Table 3.1 note b (p.44): cash S&P 500 x 50 simulates the E-mini; Table 4.1 (p.76) ES stop $2,500; Table 3.12 (p.67) $2,500 target
+        for id in SPX_PTS {
+            assert_eq!(params(id).unwrap().iter().find(|d| d.key == "pts").unwrap().def, 50.0, "{id}");
+            assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
+            assert!(!reviewed(id), "{id}");
+        }
+        assert!(crate::gate::get("rwmts_macd_pt_sl").is_some_and(|g| g.allowed == Some(&[][..]))); // fails #168: held
+    }
+    #[test]
     fn catalogue_ids_unique_and_live_have_params() {
         let c = catalogue(); let mut ids: Vec<_> = c.iter().map(|d| d.id).collect(); ids.sort(); ids.dedup();
         assert_eq!(ids.len(), c.len());
@@ -778,4 +792,10 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"rwmts"|"rwtlc") && (crate::books::rwmts::reviewed(def.id) || crate::books::rwtlc::reviewed(def.id)),
     label: "Richard Weissman tested these systems on futures, spot currencies and the cash S&P 500; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
     basis: "Richard L. Weissman: Mechanical Trading Systems (2004) indicator, trend-following and mean-reversion systems with printed CQG code (p.4-84); Trade Like a Casino (2011) volatility, RSI Trend and Ichimoku systems (p.57-154). Signals on the close, orders at the next open. Reviewed in authors/weissman/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};
+// Lane K66 (8 Nov 2026, R4 #262 / #196(2)): the two $2,500 E-mini rules, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Richard Weissman tested these systems on the CME E-mini S&P 500, which he simulated as the cash S&P 500 index x 50 (Table 3.1 note b), with a fixed $2,500 profit exit (MACD) or stop (RSI extremes) per contract = 50 index points. They run on the S&P 500 index (SPX) only, the 50 points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
+    basis: "Richard L. Weissman: Mechanical Trading Systems (2004) Table 3.1 p.44 (ES = cash S&P 500 x 50), Table 3.12 p.66-67 (MACD with $2,500 profit exit), p.75-77 and Tables 4.1-4.2 (RSI extremes, 200-day filter, $2,500 ES stop), Table 4.3 p.78 (ES contract size 50); decisions #196(2), #262; independent check authors/titles-1030/K65w/rw_ext.py, #179 two-window check and #168 book check with the book's $100 round turn authors/titles-1030/K66w/k66_check.txt.",
 };
