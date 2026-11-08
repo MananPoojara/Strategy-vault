@@ -4,7 +4,7 @@
 //! put/call, Rydex or survey data are NeedsData; judgement material is NotTestable. Sources: library/phbt/.
 use crate::connors::{sma, claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/headley/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly", "phbt_rs_lines"];
+pub const REVIEWED: &[&str] = &["phbt_volume_bb" /* R4 #265 (1), lane K68 */, "phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly", "phbt_rs_lines"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "phbt";

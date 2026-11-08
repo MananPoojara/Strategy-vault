@@ -15,9 +15,12 @@
 //!   (rcmm's unit = 1% of equity at risk over 2 ATR, which already makes every unit the same quantity);
 //! * vixr_all is one position for the whole run ("one S&P for each signal ... no further leverage or increased account
 //!   size", p.82): every signal adds the same quantity, sized once from the starting value, never compounded;
-//! * same-bar order: the bar's exits of units held from earlier bars are settled before the bar's new positions are sized
-//!   (no rule here opens a new position earlier in a bar than another position's exit on that bar: the overlapping rules
-//!   enter on the close, the others hold one position at a time and reverse at the exit price);
+//! * same-bar order (R4 #265, lane K68): a bar's fills are taken in time order: fills at the open first, then fills at
+//!   an intraday stop or limit level, then fills at the close; at the same moment exits come before entries (a reversal
+//!   at the exit price). A fill's moment is read from its price: the bar's open, its close, or a level in between (when
+//!   open = close = price, a close entry or an exit signalled on that bar counts as the close). So a position opened at
+//!   the open is sized before an exit later that day is booked: that exit's unit is still open at the entry and is
+//!   marked at the entry price. Two fills at intraday levels keep exits first (a daily bar does not order them);
 //! * a unit's P&L = allocation x direction x (price / its fill - 1); costs = the vault's side rate on each unit's
 //!   allocation at entry and at exit (0 by default); no financing, margin or borrowing cost is modelled.
 //! Equity is marked at every close. If it reaches 0 the account is wiped out: open units end that day at the close and
@@ -47,17 +50,26 @@ const RULES: &[(&str, W, bool, bool)] = &[
     // lane K67 (R4 #264 (3)): Active Trader Nov 2003 Table 3 takes every spike-reversal signal, overlapping ones too (one
     // contract each, entered and exited on the close)
     ("atm03_spike", W::Qty, false, false),
+    // lane K68 (R4 #265): Active Trader May 2003 p.54, gap closer: "The system will maintain multiple open long positions",
+    // "Risk 9 percent of account equity per trade" (each gap its own position, p.w of the account value at its open fill)
+    ("atm03_gap_closer", W::Money, false, false),
 ];
 pub fn is_units(id: &str) -> bool { RULES.iter().any(|r| r.0 == id) }
 
 /// One unit: the position (group) it belongs to, its money weight of the group's starting value, and its own trade
 /// (one leg, its own exit).
 #[derive(Clone, Debug)]
-pub struct Unit { pub g: usize, pub w: f64, pub t: Trade }
+pub struct Unit { pub g: usize, pub w: f64, pub t: Trade, pub te: u8, pub tx: u8 }
+
+/// The moment of a fill in its bar: 0 at the open, 1 at an intraday level, 2 at the close (`close_first`: open = close).
+fn when(px: f64, o: f64, c: f64, close_first: bool) -> u8 {
+    match (px == o, px == c) { (true, true) => if close_first { 2 } else { 0 }, (true, false) => 0, (false, true) => 2, _ => 1 }
+}
 
 /// Split the module's positions into units. `one`: the whole run is one position (every unit the same quantity as the
-/// run's first unit, sized once from the starting value). `close` tells a unit stopped on the last bar from one still open.
-pub fn units(trades: &[Trade], w: W, per_leg: bool, one: bool, close: &[f64]) -> Result<Vec<Unit>, String> {
+/// run's first unit, sized once from the starting value). `close` tells a unit stopped on the last bar from one still open;
+/// `open` and `close` give each fill its moment in the bar (`when`).
+pub fn units(trades: &[Trade], w: W, per_leg: bool, one: bool, open: &[f64], close: &[f64]) -> Result<Vec<Unit>, String> {
     let mut out = Vec::new();
     let first = trades.iter().filter_map(|t| t.legs.first()).min_by_key(|l| l.i).map(|l| l.px);
     for (g, t) in trades.iter().enumerate() {
@@ -72,7 +84,11 @@ pub fn units(trades: &[Trade], w: W, per_leg: bool, one: bool, close: &[f64]) ->
             let (exit_i, exit_px) = if t.exits.is_empty() { (t.exit_i, t.exit_px) } else { (t.exits[k].0, t.exits[k].1) };
             let last = exit_i == t.exit_i && (t.exits.is_empty() || close.get(exit_i) == Some(&exit_px));
             let reason = if n > 1 { format!("unit {} of {} · {}", k + 1, n, t.reason) } else { t.reason.clone() };
-            out.push(Unit { g, w: mw, t: Trade { dir: t.dir, legs: vec![Leg { i: l.i, px: l.px, w: 1.0 }], exit_i, exit_px, reason,
+            let at = |v: &[f64], i: usize| v.get(i).copied().unwrap_or(f64::NAN);
+            let te = when(l.px, at(open, l.i), at(close, l.i), t.entry_kind == "close");
+            let tx = when(exit_px, at(open, exit_i), at(close, exit_i), t.signal_i >= exit_i);
+            let tx = if exit_i == l.i { tx.max(te) } else { tx }; // a unit cannot leave before it fills
+            out.push(Unit { g, w: mw, te, tx, t: Trade { dir: t.dir, legs: vec![Leg { i: l.i, px: l.px, w: 1.0 }], exit_i, exit_px, reason,
                 entry_kind: t.entry_kind, signal_i: if last { t.signal_i } else { exit_i }, open: t.open && last, exits: vec![] } });
         }
     }
@@ -89,24 +105,34 @@ pub fn account(close: &[f64], units: &[Unit], from: usize, to: usize, cost: f64)
         let pnl = |j: usize, a: f64, px: f64| a * u[j].t.dir * (px / u[j].t.legs[0].px - 1.0);
         let mut cash = 1.0;
         let mut ruin = None;
+        let mut live = vec![false; u.len()];
+        // a fill's place in its bar: (moment, exits before entries, unit order)
+        let key = |j: usize, exit: bool| if exit { (u[j].tx, 0u8, j) } else { (u[j].te, 1u8, j) };
         for k in from..=to {
-            // 1. exits of units entered before this bar
-            for j in 0..u.len() {
-                if alloc[j] > 0.0 && u[j].t.legs[0].i < k && u[j].t.exit_i == k { cash += pnl(j, alloc[j], u[j].t.exit_px) - alloc[j] * cost; }
-            }
-            // 2. entries (a new position is sized at the value at its first fill), then exits on the entry bar
-            for j in 0..u.len() {
-                let (i, px) = (u[j].t.legs[0].i, u[j].t.legs[0].px);
-                if i != k { continue; }
+            // exits of units held from earlier bars wait until every fill earlier in the bar is done
+            let mut wait: Vec<usize> = (0..u.len()).filter(|&j| alloc[j] > 0.0 && u[j].t.legs[0].i < k && u[j].t.exit_i == k).collect();
+            let mut ins: Vec<usize> = (0..u.len()).filter(|&j| u[j].t.legs[0].i == k).collect();
+            ins.sort_by_key(|&j| key(j, false));
+            for (n, &j) in ins.iter().enumerate() {
+                let kj = key(j, false);
+                wait.retain(|&q| if key(q, true) < kj { cash += pnl(q, alloc[q], u[q].t.exit_px) - alloc[q] * cost; live[q] = false; false } else { true });
+                // a new position is sized at the value at its first fill: cash plus every unit still open, marked at this price
+                let px = u[j].t.legs[0].px;
                 let v0 = *e0.entry(u[j].g).or_insert_with(|| cash + (0..u.len())
-                    .filter(|&q| alloc[q] > 0.0 && u[q].t.legs[0].i < k && u[q].t.exit_i > k).map(|q| pnl(q, alloc[q], px)).sum::<f64>()
-                    + (0..j).filter(|&q| alloc[q] > 0.0 && u[q].t.legs[0].i == k && u[q].t.exit_i > k).map(|q| pnl(q, alloc[q], px)).sum::<f64>());
+                    .filter(|&q| live[q] && u[q].t.legs[0].i < k).map(|q| pnl(q, alloc[q], px)).sum::<f64>()
+                    + (0..u.len()).filter(|&q| live[q] && u[q].t.legs[0].i == k).map(|q| pnl(q, alloc[q], px)).sum::<f64>());
                 if v0 <= 0.0 { continue; }
                 alloc[j] = u[j].w * v0;
                 cash -= alloc[j] * cost;
-                if u[j].t.exit_i == k { cash += pnl(j, alloc[j], u[j].t.exit_px) - alloc[j] * cost; }
+                live[j] = true;
+                if u[j].t.exit_i == k {
+                    // out on its entry bar: now, unless a later entry of this bar comes before its exit
+                    if ins.get(n + 1).is_some_and(|&q| key(q, false) < key(j, true)) { wait.push(j); }
+                    else { cash += pnl(j, alloc[j], u[j].t.exit_px) - alloc[j] * cost; live[j] = false; }
+                }
             }
-            let e = cash + (0..u.len()).filter(|&j| alloc[j] > 0.0 && u[j].t.legs[0].i <= k && u[j].t.exit_i > k).map(|j| pnl(j, alloc[j], close[k])).sum::<f64>();
+            for q in wait { cash += pnl(q, alloc[q], u[q].t.exit_px) - alloc[q] * cost; live[q] = false; }
+            let e = cash + (0..u.len()).filter(|&j| live[j]).map(|j| pnl(j, alloc[j], close[k])).sum::<f64>();
             eq[k - from] = e;
             if e <= 0.0 { ruin = Some(k); eq[k - from..].fill(0.0); break; }
         }
@@ -130,7 +156,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params) -> 
     let &(_, w, per_leg, one) = RULES.iter().find(|r| r.0 == id)?;
     Some((|| {
         let trades = crate::connors::run(id, x, from, to, p).ok_or("Strategy implementation unavailable")?;
-        let u = units(&trades, w, per_leg, one, &x.c)?;
+        let u = units(&trades, w, per_leg, one, &x.o, &x.c)?;
         if let Some(j) = u.iter().position(|u| { let (l, t) = (&u.t.legs[0], &u.t);
             l.i < from || t.exit_i > to || t.exit_i < l.i || ![-1.0, 1.0].contains(&t.dir) || !(l.px.is_finite() && l.px > 0.0 && t.exit_px.is_finite() && t.exit_px > 0.0 && u.w.is_finite() && u.w > 0.0) }) {
             return Err(format!("calculation_unavailable: Unit{}: invalid prices, weight, direction or dates. No performance is published.", j + 1));
@@ -155,6 +181,8 @@ mod tests {
             signal_i: exit_i, open: false, exits: vec![] }
     }
     fn close(v: &[f64]) -> Vec<f64> { v.to_vec() }
+    /// no opens: every fill off the close counts as an intraday level
+    fn nan(c: &[f64]) -> Vec<f64> { vec![f64::NAN; c.len()] }
 
     /// One position at a time, one unit each: exactly the single-position engine (main.rs equity_curve), costs included.
     #[test]
@@ -162,7 +190,7 @@ mod tests {
         let c = close(&[100., 102., 101., 105., 104., 103., 108., 110.]);
         let t = vec![tr(1., &[(1, 101.5, 1.)], 3, 104.), tr(-1., &[(3, 104., 1.)], 5, 102.5), tr(1., &[(6, 107., 1.)], 7, 110.)];
         for cost in [0.0, 0.001] {
-            let a = account(&c, &units(&t, W::Qty, false, false, &c).unwrap(), 0, 7, cost);
+            let a = account(&c, &units(&t, W::Qty, false, false, &nan(&c), &c).unwrap(), 0, 7, cost);
             let want = crate::equity_curve(&c, &t, 0, 7, cost);
             assert!(a.equity.iter().zip(&want).all(|(x, y)| (x - y).abs() < 1e-12), "{:?} {:?}", a.equity, want);
         }
@@ -173,7 +201,7 @@ mod tests {
     fn pyramid_units_are_sized_in_quantity_from_the_first_fill() {
         let c = close(&[100., 100., 110., 120., 115.]);
         let t = vec![tr(1., &[(1, 100., 1.), (2, 110., 1.), (3, 120., 2.)], 4, 115.)];
-        let a = account(&c, &units(&t, W::Qty, false, false, &c).unwrap(), 0, 4, 0.0);
+        let a = account(&c, &units(&t, W::Qty, false, false, &nan(&c), &c).unwrap(), 0, 4, 0.0);
         // allocations: 1.0, 1.1, 2.4 (2 contracts at 120 vs 1 at 100); P&L at 115 = +0.15 +0.0455 -0.1 (per allocation)
         assert!(a.alloc.iter().zip([1.0, 1.1, 2.4]).all(|(x, y)| (x - y).abs() < 1e-12), "{:?}", a.alloc);
         let want = [1.0, 1.0, 1.1, 1.3, 1.1];
@@ -181,7 +209,7 @@ mod tests {
         assert_eq!(a.trades.len(), 3);
         assert!(a.trades[2].reason.starts_with("unit 3 of 3"));
         // the same position in Money weights holds 1/1/2 of the starting value instead
-        let m = account(&c, &units(&t, W::Money, false, false, &c).unwrap(), 0, 4, 0.0);
+        let m = account(&c, &units(&t, W::Money, false, false, &nan(&c), &c).unwrap(), 0, 4, 0.0);
         assert!(m.alloc.iter().zip([1.0, 1.0, 2.0]).all(|(x, y)| (x - y).abs() < 1e-12));
     }
 
@@ -191,7 +219,7 @@ mod tests {
     fn overlapping_positions_are_sized_at_the_value_at_their_fill_and_marked_together() {
         let c = close(&[100., 104., 106., 103., 101.]);
         let t = vec![tr(-1., &[(1, 104., 1.)], 4, 101.), tr(-1., &[(2, 106., 1.)], 3, 103.)];
-        let a = account(&c, &units(&t, W::Qty, false, false, &c).unwrap(), 0, 4, 0.0);
+        let a = account(&c, &units(&t, W::Qty, false, false, &nan(&c), &c).unwrap(), 0, 4, 0.0);
         let v0 = 1.0 - (106. / 104. - 1.); // first short marked at 106
         assert!((a.alloc[1] - v0).abs() < 1e-12);
         let want = [1.0, 1.0, 1.0 - (106. / 104. - 1.), 1.0 - (103. / 104. - 1.) - v0 * (103. / 106. - 1.), 1.0 - (101. / 104. - 1.) - v0 * (103. / 106. - 1.)];
@@ -205,7 +233,7 @@ mod tests {
         let mut t0 = tr(1., &[(1, 101., 0.5), (2, 102., 0.5)], 4, 100.75);
         t0.exits = vec![(4, 100., 0.5), (3, 101.5, 0.5)];
         let t1 = tr(-1., &[(4, 100., 1.)], 5, 98.);
-        let u = units(&[t0, t1], W::Money, true, false, &c).unwrap();
+        let u = units(&[t0, t1], W::Money, true, false, &nan(&c), &c).unwrap();
         assert_eq!((u[1].t.exit_i, u[1].t.exit_px), (3, 101.5));
         let a = account(&c, &u, 0, 5, 0.0);
         let e2 = 1.0 + 0.5 * (103. / 101. - 1.) + 0.5 * (103. / 102. - 1.);
@@ -221,7 +249,7 @@ mod tests {
     fn a_leveraged_loss_wipes_the_account_out() {
         let c = close(&[100., 100., 70., 60., 80.]);
         let t = vec![tr(1., &[(1, 100., 2.), (1, 100., 2.)], 3, 60.), tr(1., &[(4, 80., 1.)], 4, 80.)];
-        let a = account(&c, &units(&t, W::Qty, false, false, &c).unwrap(), 0, 4, 0.0);
+        let a = account(&c, &units(&t, W::Qty, false, false, &nan(&c), &c).unwrap(), 0, 4, 0.0);
         assert_eq!(a.ruin, Some(2));
         assert_eq!(a.trades.len(), 2);
         assert!(a.trades.iter().all(|t| t.exit_i == 2 && t.exit_px == 70.));
@@ -233,16 +261,39 @@ mod tests {
     fn one_position_runs_keep_a_fixed_quantity_per_signal() {
         let c = close(&[100., 110., 120., 120., 125.]);
         let t = vec![tr(1., &[(1, 110., 1.)], 3, 120.), tr(-1., &[(2, 120., 1.)], 4, 125.)];
-        let a = account(&c, &units(&t, W::Qty, false, true, &c).unwrap(), 0, 4, 0.0);
+        let a = account(&c, &units(&t, W::Qty, false, true, &nan(&c), &c).unwrap(), 0, 4, 0.0);
         assert!((a.alloc[1] - 120. / 110.).abs() < 1e-12, "{:?}", a.alloc); // same quantity as the first signal
         let want = [1.0, 1.0, 1.0 + 10. / 110., 1.0 + 10. / 110., 1.0 + 10. / 110. - 5. / 110.];
         assert!(a.equity.iter().zip(want).all(|(x, y)| (x - y).abs() < 1e-12), "{:?}", a.equity);
+    }
+
+    /// R4 #265 (lane K68): a position opened at the open is sized before another position's exit later that day is
+    /// booked (that unit is marked at the entry price); a position opened on the close is sized after it, as before.
+    #[test]
+    fn open_entries_are_sized_before_later_exits_of_the_same_day() {
+        let (o, c) = (vec![100., 100., 108., 104.], close(&[100., 100., 110., 105.]));
+        let a_pos = { let mut t = tr(1., &[(1, 100., 0.5)], 2, 112.); t.entry_kind = "close"; t }; // out at a 112 limit on bar 2
+        let at_open = vec![a_pos.clone(), { let mut t = tr(1., &[(2, 108., 0.5)], 3, 105.); t.entry_kind = "open"; t }];
+        let a = account(&c, &units(&at_open, W::Money, false, false, &o, &c).unwrap(), 0, 3, 0.0);
+        assert_eq!(a.alloc.len(), 2);
+        assert!((a.alloc[1] - 0.5 * (1.0 + 0.5 * (108. / 100. - 1.))).abs() < 1e-12, "{:?}", a.alloc); // 0.52: A marked at 108
+        let want = [1.0, 1.0, 1.06 + 0.52 * (110. / 108. - 1.), 1.06 + 0.52 * (105. / 108. - 1.)];
+        assert!(a.equity.iter().zip(want).all(|(x, y)| (x - y).abs() < 1e-12), "{:?}", a.equity);
+        // the same second position entered on bar 2's close: A's exit is booked first (0.53)
+        let at_close = vec![a_pos, { let mut t = tr(1., &[(2, 110., 0.5)], 3, 105.); t.entry_kind = "close"; t }];
+        let b = account(&c, &units(&at_close, W::Money, false, false, &o, &c).unwrap(), 0, 3, 0.0);
+        assert!((b.alloc[1] - 0.53).abs() < 1e-12, "{:?}", b.alloc);
+        // an exit AT the open (a gap through the limit) is booked before an entry at that open
+        let gap = vec![tr(1., &[(1, 100., 0.5)], 2, 108.), { let mut t = tr(1., &[(2, 108., 0.5)], 3, 105.); t.entry_kind = "open"; t }];
+        let g = units(&gap, W::Money, false, false, &o, &c).unwrap();
+        assert_eq!((g[0].tx, g[1].te), (0, 0));
+        assert!((account(&c, &g, 0, 3, 0.0).alloc[1] - 0.52).abs() < 1e-12);
     }
 
     #[test]
     fn unmapped_partial_exits_are_refused() {
         let mut t = tr(1., &[(1, 100., 1.), (2, 101., 1.)], 4, 102.);
         t.exits = vec![(3, 101., 0.5), (4, 103., 0.5)];
-        assert!(units(&[t], W::Qty, false, false, &[100.; 5]).is_err());
+        assert!(units(&[t], W::Qty, false, false, &[100.; 5], &[100.; 5]).is_err());
     }
 }

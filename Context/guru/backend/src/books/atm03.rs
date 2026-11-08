@@ -222,7 +222,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|\"1. Enter long on the open the day after a down gap greater than the 20-bar average true range (ATR) is completed.\"",
             "X|\"2. Place a limit order to sell the position at the low price of the bar that immediately preceded the gap.\"",
             "F|\"3. The system will maintain multiple open long positions. 4. Hold the position indefinitely until the gap is closed and the limit sell is triggered.\" No protective stop (\"no protective stops are included\")"],
-          "Gap = low of the prior bar - high of the gap bar (\"a price bar's high is lower than the previous low\"); compared with Wilder ATR(20) on the gap bar [B]. Each gap is its own position (weight p.w = 9% of equity, the book's size); overlapping positions are folded into one trade (legs = entries, scale-out pieces = individual exits; return exact). Limit works from the bar after entry [B].",
+          "Gap = low of the prior bar - high of the gap bar (\"a price bar's high is lower than the previous low\"); compared with Wilder ATR(20) on the gap bar [B]. Each gap is its own position (weight p.w = 9% of equity, the book's size), sized at the account value at its open fill on the multi-unit account (books::units; R4 #265: fills of a day in time order, so an entry at the open is sized before another gap's limit exit later that day). Limit works from the bar after entry [B].",
           c("62 gaps", "50 closed (80%)", "closed +~11%, open -32%", "~100 days to close", "AT 18-stock portfolio 1/1993-1/2003: +11.94%")),
         d("atm03_ch100_20", "100-20 channel breakout", "TSL Jun 2003 (stocks; futures)", "Long/Short", Live, false,
           &["E|\"1. Enter long on the next bar at the highest 100-day high. 3. Enter short on the next bar at the lowest 100-day low.\"",
@@ -429,16 +429,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             out
         }
         "atm03_gap_closer" => {
+            // R4 #265 (lane K68): each gap is its own position on the multi-unit account (books::units, W::Money: p.w of the
+            // account value at its open fill, "Risk 9 percent of account equity per trade"; "maintain multiple open long positions")
             let (a, w) = (atr(x.r, u("atr_n")), g("w"));
-            let mut ps = vec![];
+            let mut out = vec![];
             for i in from.max(1)..to {
                 if !(h[i] < l[i - 1] && l[i - 1] - h[i] > a[i]) { continue; }
                 let (e, tgt) = (i + 1, l[i - 1]);
-                let mut pos = Pos { dir: 1., i: e, px: o[e], w, xi: to, xpx: c[to], why: "open".into(), open: true };
-                for j in e + 1..=to { if let Some(px) = lim_up(x, j, tgt) { pos.xi = j; pos.xpx = px; pos.why = "gap closed (limit)".into(); pos.open = false; break; } }
-                ps.push(pos);
+                let mut t = Trade { dir: 1., legs: vec![Leg { i: e, px: o[e], w }], exit_i: to, exit_px: c[to], reason: "open".into(), entry_kind: "open", signal_i: to, open: true, exits: vec![] };
+                for j in e + 1..=to { if let Some(px) = lim_up(x, j, tgt) { (t.exit_i, t.exit_px, t.signal_i, t.open) = (j, px, j, false); t.reason = "gap closed (limit)".into(); break; } }
+                out.push(t);
             }
-            fold(ps)
+            out
         }
         "atm03_ch100_20" => {
             let (ne, nx) = (u("entry"), u("exit"));
@@ -642,7 +644,7 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let t = run("atm03_spike", &x, 0, 7, &Params::new()).unwrap();
         assert_eq!(t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i, t.exit_px)).collect::<Vec<_>>(), vec![(1., 2, 5, 99.), (1., 3, 6, 99.5)]);
-        assert!(crate::books::units::is_units("atm03_spike") && !crate::books::units::is_units("atm03_gap_closer"));
+        assert!(crate::books::units::is_units("atm03_spike") && crate::books::units::is_units("atm03_gap_closer"));
     }
     #[test]
     fn pullback_limit_hand_checked() {
