@@ -52,6 +52,10 @@ const AMIBROKER_FULL: [&str; 4] = ["ytath_entry_and_pctswing_exit_with_pct_hard_
 /// moment, which falls with every entry of the bar (`PortfolioParams::current_equity_sizing`). Supertrend long only: the team's
 /// 2020-2021 sheet buys MARICO 143 / GOKEX 654 on 01-01-2020 where the previous bar's equity gives 144 / 655.
 const CURRENT_EQUITY_SIZING: [&str; 1] = ["ytath_supertrend_long_only_buy_st_5_2_up"];
+/// Of the full-set variants, those sized with the stored float32 price (`PortfolioParams::size_f32_price`): the Tulsi 'Fund Issue' sheet of
+/// ATHC Entry & %Swing Exit with % Hard SL or ATR Hard SL (HAVELLS 2012-01-30, GREENPLY 2013-04-09). The other full-set variants keep the
+/// 2-decimal price (MARICO 2020-12-07 of ytath_running_pctswing_after_2_pctswing).
+const SIZE_F32_PRICE: [&str; 1] = ["ytath_entry_and_pctswing_exit_with_pct_hard_2"];
 // 2026-11-07: ATHC Entry & %Swing Exit with % Hard SL or ATR Hard SL (Tulsi 'Fund Issue' sheet): sized with the 2-decimal price, cash as AmiBroker debits it.
 // 2026-11-05: the two green "AFL ATH checking" variants with ranking (all-Supertrend, 19 % swing probability) take the full set too (no team sheet of their own to verify it against).
 /// A run holds every bar of its universe in memory (about 120 MB for the 1,301 symbols of NSE 500 C&P) next to the engine's own arrays; the container has 1 GB.
@@ -423,7 +427,7 @@ fn signals_of(variant: &VariantDef, s: &Setup, g: crate::ath_core::G) -> Result<
 }
 
 fn portfolio_of(variant: &VariantDef, s: &Setup, k: &Knobs, costs: crate::accounting::Costs) -> PortfolioParams {
-    PortfolioParams { initial_equity: k.equity0, pct_of_equity: k.pct, fixed_amount: k.alloc, max_positions: k.max_positions as usize, commission_pct: costs.side_rate() * 100.0, start: s.from, end: s.to, amibroker_profit: AMIBROKER_PROFIT.contains(&variant.id), amibroker_full: AMIBROKER_FULL.contains(&variant.id), current_equity_sizing: CURRENT_EQUITY_SIZING.contains(&variant.id) }
+    PortfolioParams { initial_equity: k.equity0, pct_of_equity: k.pct, fixed_amount: k.alloc, max_positions: k.max_positions as usize, commission_pct: costs.side_rate() * 100.0, start: s.from, end: s.to, amibroker_profit: AMIBROKER_PROFIT.contains(&variant.id), amibroker_full: AMIBROKER_FULL.contains(&variant.id), current_equity_sizing: CURRENT_EQUITY_SIZING.contains(&variant.id), size_f32_price: SIZE_F32_PRICE.contains(&variant.id) }
 }
 
 /// `GET guru/yt/ath-run`: one portfolio backtest of an ATH sub-variant on the watchlist of its database.

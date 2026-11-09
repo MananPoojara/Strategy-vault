@@ -2106,7 +2106,7 @@ mod tests {
         assert!((sg.scale_out[0].price - (1.0f32 + 10.0f32 * 0.01) * 101.0).abs() < 1e-3);
         assert!(sg.sell[4]);
         // the portfolio: two rows, the shares add up
-        let pp = PortfolioParams { initial_equity: 100_000.0, pct_of_equity: 50.0, fixed_amount: None, max_positions: 2, commission_pct: 0.0, start: 20200101, end: 20201231, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false };
+        let pp = PortfolioParams { initial_equity: 100_000.0, pct_of_equity: 50.0, fixed_amount: None, max_positions: 2, commission_pct: 0.0, start: 20200101, end: 20201231, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false };
         let t = backtest(&[(&s, &sg)], &[0], &pp);
         assert_eq!(t.len(), 2);
         let (a, b) = (&t[0], &t[1]);

@@ -256,6 +256,10 @@ pub struct PortfolioParams {
     /// positions at the current close less the commission to close them, so it falls with every entry of the bar; off = the previous
     /// bar's equity; on only for the variants in `ath_run::CURRENT_EQUITY_SIZING`
     pub current_equity_sizing: bool,
+    /// in the full set, size with the stored float32 price (174.39999) instead of its 2-decimal / 7-digit value (174.40); on only for the
+    /// variants in `ath_run::SIZE_F32_PRICE` (Fund Issue sheet: HAVELLS 2012-01-30 190,133 shares, GREENPLY 2013-04-09 250,135) -- the
+    /// MARICO 2020-12-07 case of `ytath_running_pctswing_after_2_pctswing` needs the 2-decimal price, so it stays per variant
+    pub size_f32_price: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -310,9 +314,15 @@ fn price_ab(x: f64) -> f64 {
 }
 
 fn ab_profit_with(sh: f64, entry: f64, exit: f64, comm: f64, price: fn(f64) -> f64) -> f64 {
+    ab_profit_raw(sh, entry, exit, comm, price) as f32 as f64
+}
+
+/// The profit before AmiBroker stores it as a float32: the full set credits this unrounded value to cash at an exit (Fund Issue sheet:
+/// 297 of 305 single-exit days exact, the float32 profit 156); the reported profit stays the float32 value.
+fn ab_profit_raw(sh: f64, entry: f64, exit: f64, comm: f64, price: fn(f64) -> f64) -> f64 {
     let ev = (sh as f32 * entry as f32) as f64;
     let xv = (sh as f32 * exit as f32) as f64;
-    (sh * (price(exit) - price(entry)) - (ev + xv) * comm) as f32 as f64
+    sh * (price(exit) - price(entry)) - (ev + xv) * comm
 }
 
 /// AmiBroker's share count for a % of equity entry in the full set: the unrounded previous-bar equity x % / `price_ab`, floored
@@ -344,8 +354,11 @@ fn mark(o: &Open, px: f64) -> f64 {
 /// price arithmetic for long positions, just as it does when calculating equity for the next bar.
 fn liquidation_mark(o: &Open, px: f64, comm: f64, amibroker_full: bool) -> f64 {
     if amibroker_full && !o.short {
-        let value = o.shares * price_ab(px);
-        value - value * comm
+        // AmiBroker values a long position as its float32 entry value plus the unrealised profit on 2-decimal prices, less the closing
+        // commission on the float32 current value (Fund Issue sheet: the Market Value of the daily log to the paisa, equity before each
+        // entry 817 of 823 float32 values; the plain shares x price gave up to Rs 0.9 off)
+        let (x, e) = (price_ab(px), price_ab(o.price));
+        ab_value(o.shares, o.price) + o.shares * (x - e) - comm * ((o.shares * x) as f32 as f64)
     } else if o.short {
         mark(o, px) - o.shares * px * comm
     } else {
@@ -533,8 +546,10 @@ pub fn backtest_full_with_detail_log(syms: &[(&Series, &Signals)], rank: &[usize
     // profit of a closed long trade and the cash it returns (entry cost back + profit)
     let close_long = |sh: f64, entry: f64, xp: f64| -> (f64, f64) {
         if pp.amibroker_profit {
-            let p = ab_profit_with(sh, entry, xp, comm, if pp.amibroker_full { price_ab } else { price7 });
-            (p, ab_cost(sh, entry, comm) + p)
+            let f: fn(f64) -> f64 = if pp.amibroker_full { price_ab } else { price7 };
+            let p = ab_profit_with(sh, entry, xp, comm, f);
+            let credit = if pp.amibroker_full { ab_profit_raw(sh, entry, xp, comm, f) } else { p };
+            (p, ab_cost(sh, entry, comm) + credit)
         } else {
             (sh * (xp - entry) - comm * (sh * entry + sh * xp), sh * xp * (1.0 - comm))
         }
@@ -816,6 +831,7 @@ pub fn backtest_full_with_detail_log(syms: &[(&Series, &Signals)], rank: &[usize
                             (Some(a), _) => (a * sg.entry_size as f64 * em / price).floor(),
                             (None, Some(x)) => (size_eq * x as f64 / 100.0 / price).floor(),
                             // AmiBroker floors the float32 quotient (ATGL 2018-11-06: 18,601.9999 -> 18,602 shares)
+                            (None, None) if pp.amibroker_full && pp.size_f32_price => (size_raw * (pp.pct_of_equity * sg.entry_size as f64 * em) / 100.0 / (price as f32 as f64)).floor(),
                             (None, None) if pp.amibroker_full => ab_shares(size_raw, pp.pct_of_equity * sg.entry_size as f64 * em, price),
                             (None, None) => (((size_eq * pp.pct_of_equity * sg.entry_size as f64 * em / 100.0 / price) as f32) as f64).floor(),
                         };
@@ -985,9 +1001,10 @@ mod tests {
         let px = 407.239990234375;
         let comm = (0.65_f32 as f64) / 100.0;
         let pos = Open { sym: 0, entry_i: 0, shares, price: px, weight: 0.02, high_water: 0.0, short: false };
-        let value = shares * 407.24;
+        // marked at the entry price: the float32 entry value, less the commission on the float32 current value
+        let entry_value = (shares as f32 * px as f32) as f64;
         let got = liquidation_mark(&pos, px, comm, true);
-        assert!((got - (value - value * comm)).abs() < 1e-8);
+        assert!((got - (entry_value - comm * ((shares * 407.24) as f32 as f64))).abs() < 1e-8);
     }
 
     #[test]
@@ -1039,7 +1056,7 @@ mod tests {
         let symbols: Vec<_> = series.iter().zip(signals.iter()).collect();
         let pp = PortfolioParams {
             initial_equity: 10_000_000.0, pct_of_equity: 2.0, fixed_amount: None, max_positions: 50,
-            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: true, amibroker_full: true, current_equity_sizing: false,
+            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: true, amibroker_full: true, current_equity_sizing: false, size_f32_price: false,
         };
         let run = backtest_full_with_detail_log(&symbols, &[0, 1, 2], &pp, true);
         let log = run.detail_log.unwrap();
@@ -1103,7 +1120,7 @@ mod tests {
         let symbols = vec![(&a, &sa), (&b, &sb), (&c, &sc)];
         let pp = PortfolioParams {
             initial_equity: 1_000_000.0, pct_of_equity: 10.0, fixed_amount: None, max_positions: 1,
-            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false,
+            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false,
         };
         let run = backtest_full_with_detail_log(&symbols, &[0, 1, 2], &pp, true);
         let log = run.detail_log.unwrap();
@@ -1115,5 +1132,35 @@ mod tests {
         assert!(day2.iter().any(|x| *x == "Exit signals:A=Sell, B=Sell, "), "{day2:?}");
         // cash 1,000,000 - 1,000 x 100 x 1.0065 = 899,350 plus A at the Open 105 x 1,000 x (1 - 0.0065) = 104,317.5
         assert!(day2.iter().any(|x| x.starts_with("Exit Long, A,") && x.contains("Entry rank:1,") && x.contains("Equity: 1003668,")), "{day2:?}");
+    }
+
+    #[test]
+    fn ath_amibroker_full_set_values_a_position_as_entry_value_plus_unrealised_profit() {
+        // Fund Issue sheet 2000-01-03: SYNDIBANK 34,129 @ 14.65, REGENCERAM 22,675 @ 22.05, CENTBOP 19,607 @ 25.5, all marked at the entry
+        // close: Market Value 1,490,202.37 (the plain shares x price x (1 - commission) gives 1,490,202.41)
+        let comm = (0.65_f32 as f64) / 100.0;
+        let mut mv = 0.0;
+        for (sh, px) in [(34129.0, 14.65_f32), (22675.0, 22.05_f32), (19607.0, 25.5_f32)] {
+            let o = Open { sym: 0, entry_i: 0, shares: sh, price: px as f64, weight: 0.05, high_water: px, short: false };
+            mv += liquidation_mark(&o, px as f64, comm, true);
+        }
+        assert!((mv - 1_490_202.37).abs() < 0.006, "market value {mv}");
+    }
+
+    #[test]
+    fn ath_amibroker_full_set_credits_the_unrounded_profit_but_reports_the_float32_one() {
+        // Fund Issue sheet 2007-08-02 style: profit 11,111,527.0 is a float32 (step 1); the cash got the unrounded value
+        let (sh, e, x, c) = (43396.0, 100.0_f32 as f64, 327.81_f32 as f64, (0.65_f32 as f64) / 100.0);
+        let raw = ab_profit_raw(sh, e, x, c, price_ab);
+        assert_eq!(ab_profit_with(sh, e, x, c, price_ab), raw as f32 as f64);
+        assert!(raw != raw as f32 as f64, "{raw}");
+    }
+
+    #[test]
+    fn ath_amibroker_float32_price_sizing_gives_the_fund_issue_share_counts() {
+        // HAVELLS 2012-01-30: equity 337,448,042.1 x 5 % / 88.74 -> 190,132 with the 2-decimal price, AmiBroker 190,133 (stored float32 price)
+        let eq = 337_448_042.1_f64;
+        assert_eq!(ab_shares(eq, 5.0, 88.74_f32 as f64), 190132.0);
+        assert_eq!((eq * 5.0 / 100.0 / (88.74_f32 as f64)).floor(), 190133.0);
     }
 }

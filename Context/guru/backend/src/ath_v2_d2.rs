@@ -1883,7 +1883,7 @@ mod tests {
         series(&c.iter().map(|&x| (x, x + 1.0, x - 1.0, x)).collect::<Vec<_>>())
     }
     fn pp(max: usize) -> PortfolioParams {
-        PortfolioParams { initial_equity: 100_000.0, pct_of_equity: 100.0 / max as f64, fixed_amount: None, max_positions: max, commission_pct: 0.0, start: 20000101, end: 20300101, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false }
+        PortfolioParams { initial_equity: 100_000.0, pct_of_equity: 100.0 / max as f64, fixed_amount: None, max_positions: max, commission_pct: 0.0, start: 20000101, end: 20300101, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false }
     }
     fn run(s: &Series, sg: &Signals, max: usize) -> Backtest {
         backtest_full(&[(s, sg)], &[0], &pp(max))
