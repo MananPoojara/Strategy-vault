@@ -8,10 +8,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_volume: false, needs_vix: false, needs_series: &[], book, rules, notes: "Held after the 2026-10-24 reading (authors/augen/agents).", claim: None };
     vec![
         nt("jaoth_structures", "Option structures (covered, complex and ratio trades)", "The Option Trader's Handbook · Ch.2-5", "jaoth",
-           "rules not fully defined: position structures and adjustments are chosen by the trader from option prices, with no entry or exit rule on the underlying (The Option Trader's Handbook Ch.2-5)",
+           "rules not fully defined: position structures and adjustments are chosen by the trader from quoted prices; entry and exit rules on the underlying are not specified (Augen's trader's handbook, Ch.2-5)",
            &[]),
         nt("javeo_price_spikes", "Price-spike volatility analysis and volatility trades", "The Volatility Edge in Options Trading", "javeo",
-           "rules not fully defined: price changes in standard deviations are an analysis tool, and the trades are option structures on selected stocks with no entry or exit rule (The Volatility Edge in Options Trading Ch.1, Ch.3)",
+           "rules not fully defined: price changes in standard deviations are an analysis tool, and the trades are call and put structures on selected stocks; entry and exit rules are not specified (Augen, The Volatility Edge, Ch.1, Ch.3)",
            &["F|daily price change measured in standard deviations of recent volatility"]),
         nt("jatoe_expiration", "Expiration-day strike pinning and day trades", "Trading Options at Expiration · Ch.1-3", "jatoe",
            "single-stock candidates are selected from statistics and traded on expiration Thursday/Friday with minute-level option prices; the vault has daily index/ETF option chains and minute bars for four indices only",

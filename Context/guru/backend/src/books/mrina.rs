@@ -32,7 +32,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           NotTestable("the adaptive Slow K is 'tuned to 50% of the dominant cycle' found with MESA/TradeCycles; the cycle method is not given"),
           &["E|Same flags and exits with \"our adaptive Slow K\" (p.5)"], "", crate::connors::claim("35", "80%", "$978.57", "", "T-bond futures 1/1/86-11/10/96, PF 7.97")),
         d("mrina_pullback_adaptive", "Buy pullbacks in a trend with adaptive Slow K", "Oct 1996 · Trading stochastics mechanically", "Long",
-          NotTestable("uses the undefined adaptive (dominant-cycle) Slow K; the $1,750 variant is a futures dollar stop"),
+          NotTestable("rules not fully defined: uses the undefined adaptive (dominant-cycle) Slow K; the 1,750-dollar variant is a futures money stop"),
           &["E|\"If Slow K<30 and Average(Close,10)>Average(Close,20) then buy at open\" (p.6)", "X|\"If Slow K>80 then exitlong at open\""], "",
           crate::connors::claim("62", "74%", "$677.82", "", "T-bonds 1/1/86-11/19/96 (no stop)")),
         d("mrina_im_groups", "S&P 500 stock groups predicting T-bonds and crude (weekly)", "May 1998 · Special Intermarket Classic Issue", "Long/Short",

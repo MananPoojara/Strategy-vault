@@ -29,7 +29,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"A second investor buys stocks at the time Investor 1 closes out his positions (inaugural day)\" (p.212): buy at the close of the last trading day of the election year.",
               "X|\"and holds positions through September 30 of the second year of the presidential term (Strategy 2)\" (p.212): sell at the close of the last trading day on or before September 30 of the midterm year."],
             "Book: profitable in 7 of 13 periods, $1,000 -> $643 (p.212-213)."),
-        d("apoi_hy_125_050", "1.25/0.50 timing model for high-yield bond funds", "Ch 5 · Securing junk bond yields", NeedsData("needs weekly total-return prices (NAV with distributions) of high-yield bond mutual funds; the vault holds equity indices only"),
+        d("apoi_hy_125_050", "1.25/0.50 timing model for high-yield bond funds", "Ch 5 · Securing junk bond yields", NeedsData("needs weekly total-return prices (NAV with distributions) of high-yield fixed-income mutual funds; not in the vault (it holds equity indices only)"),
             &["F|\"Trades are made on the first trading day of each week, based on the price levels of the last day of the preceding week.\" (Rule 1, p.139)",
               "E|\"You buy when the total return level of the fund(s) you are tracking rises by 1.25% from the lowest low that has existed since the most recent sell signal.\" (Rule 2, p.139)",
               "X|\"You sell when the total return level ... declines by 0.50% from the most recent high since the onset of the most recent buy signal. There are no other buy/sell rules in this model.\" (p.139-140)"],

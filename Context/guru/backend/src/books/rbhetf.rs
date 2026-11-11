@@ -10,7 +10,7 @@ use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rbhetf";
 
-const GAP: &str = "needs daily closes of all eight indices of p.14 (S&P 500, Russell 2000, Nasdaq 100, DJIA, PHLX Semiconductor SOX, AMEX Pharmaceutical DRG, AMEX Biotechnology BTK, S&P 400 Midcap; 1995-) to rank ReIS each day, plus a multi-leg spread engine; the vault has SPX/NDX/DJI only (IWM/SMH/MDY ETFs start 1993-2000, no DRG/BTK) and runs one instrument at a time. VXO OHLC itself is available (extra_data/us/VXO_OHLC, 1986-2021)";
+const GAP: &str = "needs daily closes of all eight indices of p.14 (S&P 500, Russell 2000, Nasdaq 100, DJIA, PHLX Semiconductor SOX, AMEX Pharmaceutical DRG, AMEX Biotechnology BTK, S&P 400 Midcap; 1995-) to rank ReIS each day, plus a multi-leg long/short engine; the vault has SPX/NDX/DJI only (IWM/SMH/MDY ETFs start 1993-2000; SOX, DRG and BTK are not in the vault) and runs one instrument at a time. VXO OHLC itself is available (extra_data/us/VXO_OHLC, 1986-2021)";
 const NOTE: &str = "ReIS (p.16-17): Measured Period starts at 3 on the day the S&P 500's close vs its close 3 days earlier changes sign (upleg/downleg) and grows by 1 each day the leg continues; ReIS = % change of each index over the Measured Period. Scale-in: 1/3 of the portfolio per valid VXO trigger, up to three (p.24-25). Book test: indices (not ETFs), 1/1/1996-6/14/2004: 349 triggers, 65.9% profitable, average +1.24%, max drawdown -8.9%, 17.8% compound annual gain 1/1/95-6/14/04 (p.4, 47-50).";
 
 macro_rules! nd {

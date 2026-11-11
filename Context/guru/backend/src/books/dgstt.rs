@@ -28,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("dgstt_oversold16", "Oversold 16-day (T < -0.5581, D < -1.185) event study", "How to Win part 4", "Long", Status::NotTestable("an event study: the holding period N = 1..9 days is the study variable, no exit rule is fixed (p.44)"),
           &["E|Oversold within 16 days: T < -0.5581 and D < -1.185 (p.44)"],
           ""),
-        d("dgstt_upgrades", "Analyst upgrade pullback", "STTA ch.11.3", "Long", Status::NotTestable("discretionary (\"buy this stock when pullback is over\") and needs intraday upgrade news"),
+        d("dgstt_upgrades", "Analyst upgrade pullback", "STTA ch.11.3", "Long", Status::NotTestable("discretionary (\"buy this stock when pullback is over\") and needs a dated feed of analyst-upgrade news"),
           &[],
           ""),
     ]

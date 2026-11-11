@@ -23,7 +23,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
     vec![
         def!("ecqt_gld_gdx_pair", "GLD/GDX pair trade, z-score 2 / 1 (Example 3.6)", "Ch.3 · Backtesting examples", "Long/Short",
-            NeedsData("GLD and GDX daily adjusted closes traded as one two-leg spread (neither ETF is in the vault; the engine runs one ticker per run). An NSE swap would need a pair the book does not name - Chan picks GLD/GDX by its own cointegration study (Ex 7.2-7.3)"),
+            NeedsData("GLD and GDX daily adjusted closes traded as one two-leg position (GDX is not in the vault, GLD is; the engine runs one ticker per run). An NSE swap would need a pair the book does not name - Chan picks GLD/GDX by its own cointegration study (Ex 7.2-7.3)"),
             &["F|trainset = first 252 common days; hedgeRatio = ols(GLD, GDX) on the trainset; spread = GLD - hedgeRatio*GDX (p.57)",
               "F|zscore = (spread - mean(spread(trainset))) / std(spread(trainset)) (p.57)",
               "E|\"buy spread when its value drops below 2 standard deviations\": zscore <= -2 -> +1 GLD, -1 GDX; zscore >= 2 -> -1 GLD, +1 GDX (p.57-58)",

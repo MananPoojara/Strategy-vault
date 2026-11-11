@@ -66,7 +66,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "divergences have 'no specific entry and exit rules' (p.76); overbought/oversold and %K/%D crossover rules are described as money-losing and not recommended",
            &["F|\"There are no specific entry and exit rules but I'll show you how to use stochastic divergences\" (p.76)"]),
         StrategyDef { book: "csops", ..nt("csops_spreads", "Option strategies (spreads, straddles, ratio and calendar spreads, covered writes)", "Option Strategies (2nd ed., 1996) · Parts One-Two",
-           "rules not fully defined: the strategies are picked to fit an expected market view and priced from option quotes, with no entry or exit rule on the underlying (Option Strategies, 2nd ed., Parts One-Two; scanned copy read by its contents)",
+           "rules not fully defined: the strategies are picked to fit an expected market view and priced from quotes; entry and exit rules on the underlying are not specified (the book's Parts One-Two, 2nd ed.; scanned copy read by its contents)",
            &["F|Bull/bear, butterfly, calendar and ratio spreads, straddles and strangles (contents)"]) },
         StrategyDef { book: "csscf", ..nt("csscf_seasonals", "Seasonal price tendencies of commodity futures", "Seasonal Charts for Futures Traders (1987)",
            "a sourcebook of futures seasonal charts and statistics; 'It should not be followed slavishly' (Preface) and it needs futures prices (read by preface and contents, scanned copy)",

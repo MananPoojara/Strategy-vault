@@ -26,7 +26,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("acatr_filter_05", "Filter rule 0.5% (Chang & Osler)", "Ch.9 Filter rules", "Long/Short", Status::Live, FILTER, FNOTE),
         d("acatr_filter_1", "Filter rule 1% (Chang & Osler)", "Ch.9 Filter rules", "Long/Short", Status::Live, FILTER, FNOTE),
         d("acatr_filter_2", "Filter rule 2% (Chang & Osler)", "Ch.9 Filter rules", "Long/Short", Status::Live, FILTER, FNOTE),
-        d("acatr_hs", "Head-and-shoulders zigzag rule (Chang & Osler)", "Ch.9 Head-and-shoulders", "Long/Short", Status::NotTestable("zigzag cutoffs are multiples of 'one standard deviation of daily exchange rate changes' without a defined estimation window (full-sample = look-ahead), and the handling of duplicate patterns across the 10 cutoffs is not specified (p.267, fn 3/5)"),
+        d("acatr_hs", "Head-and-shoulders zigzag rule (Chang & Osler)", "Ch.9 Head-and-shoulders", "Long/Short", Status::NotTestable("zigzag cutoffs are multiples of 'one standard deviation of daily exchange rate changes' without a defined estimation window (full-sample = look-ahead), and the handling of repeated patterns across the 10 cutoffs is not specified (p.267, fn 3/5)"),
           &["E|Zigzag peaks/troughs at 10 cutoffs (1, 1.25 ... 4.5 x std of daily changes); 5 geometric criteria (p.267-268); enter on neckline cross",
             "X|Exit on the next zigzag trough/peak; stop-loss 1% of entry; 25% 'bounce' allowance (p.270-271)"], "FX only in the book."),
         d("acatr_lebaron_ma", "Price vs 30-period moving average, weekly, with interest carry (LeBaron)", "Ch.1 FX regime shifts", "Long/Short", Status::NeedsData(FX),

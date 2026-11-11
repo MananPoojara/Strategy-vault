@@ -8,8 +8,8 @@ use crate::connors::{ParamDef, Params, Status, StrategyDef, Ctx, Trade};
 
 pub const BOOK: &str = "gadm";
 
-const TB_AGG: &str = "Needs monthly total returns of 90-day US Treasury bills and the Barclays US Aggregate Bond Index (plus S&P 500 total return); the vault has only price OHLC for SPX/SPY and no T-bill or bond series.";
-const ACWI: &str = "Needs monthly total returns of MSCI ACWI ex-U.S. (MSCI World ex-US before 1988), S&P 500, 90-day US Treasury bills and the Barclays US Aggregate Bond Index; the vault has none of these except S&P price OHLC.";
+const TB_AGG: &str = "Needs monthly total returns of 90-day US Treasury bills and the Barclays US Aggregate index (investment-grade fixed income) (plus S&P 500 total return); not in the vault (it has only price OHLC for SPX/SPY and no T-bill or fixed-income series).";
+const ACWI: &str = "Needs monthly total returns of MSCI ACWI ex-U.S. (MSCI World ex-US before 1988), S&P 500, 90-day US Treasury bills and the Barclays US Aggregate index (investment-grade fixed income); these series are not in the vault (it has S&P price OHLC only).";
 
 macro_rules! nd {
     ($id:expr, $name:expr, $group:expr, $status:expr, $rules:expr, $notes:expr) => {
@@ -41,15 +41,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"When not invested in stocks, all three strategies are in U.S. aggregate bonds\" (p.122)"],
             "Table 9.1 1974-2013: in stocks 74% of the time, 49 trades (1.2/yr) (p.122). The out-of-market leg is the bond index, which the vault lacks. The 12-month MA variant of Table 9.1 has the same data gap."),
         nd!("gadm_abs_r1000", "Russell 1000 absolute momentum (Table 9.2)", "Ch. 9 · Relative momentum revisited", Status::NeedsData(
-            "Needs Russell 1000 total returns, 90-day T-bills and the Barclays US Aggregate Bond Index (1980-2013); none are in the vault."),
+            "Needs Russell 1000 total returns, 90-day T-bills and the Barclays US Aggregate index (investment-grade fixed income) (1980-2013); not in the vault."),
             &["E|\"12-month absolute momentum (with aggregate bonds as a safe harbor) applied to the Russell 1000 Index\" (p.124)"], ""),
         nd!("gadm_gbm", "Global Balanced Momentum (GBM)", "Ch. 9 · Global Balanced Momentum", Status::NotTestable(
-            "proprietary model: the dual-momentum selection among the four fixed-income alternatives (how many are held, how T-bills compare) is not specified; also needs bond index data the vault lacks"),
+            "proprietary model: the dual-momentum selection among the four fixed-income alternatives (how many are held, how T-bills compare) is not specified; also needs fixed-income index data that is not in the vault"),
             &["F|\"70% allocated to the same equities holdings as GEM, but its fixed-income holdings, including a permanent 30% allocation to fixed income, are selected from the previous list of fixed-income alternatives using dual momentum\" (p.129)",
               "F|Fixed-income alternatives: Barclays US Long Treasury, BofA ML Global Government, BofA ML US Cash Pay High Yield, 90-day T-bills (p.129)"],
             "Called proprietary by the author (p.129). Table 9.4 is an image."),
         nd!("gadm_dmsr", "Dual Momentum Sector Rotation (DMSR)", "Ch. 9 · Dual Momentum Sector Rotation", Status::NotTestable(
-            "the number of 'top-performing sectors' held is never stated (proprietary); also needs the 11 Morningstar US sector indices and the aggregate bond index"),
+            "the number of 'top-performing sectors' held is never stated (proprietary); also needs the 11 Morningstar US sector indices and the aggregate fixed-income index"),
             &["E|\"We can select an equally weighted basket of the top-performing sectors using relative strength momentum\" (p.131)",
               "X|\"When the U.S. stock market is in a downtrend, according to absolute momentum, DMSR moves all of its assets into the Barclays Capital U.S. Aggregate Bond Index\" (p.131)"],
             "1993-2013, Table 9.5 (image)."),
@@ -60,7 +60,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|\"We reevaluate and adjust positions monthly\"; 12-month formation period; 20 bp per switch (p.148-149)"],
             "Applied to MSCI US, MSCI EAFE, Barclays bond indices, REITs, GSCI, gold, 1974-2012 (Table B.2, image)."),
         nd!("gadm_appb_portfolios", "60/40 and parity portfolios with absolute momentum (Appendix B)", "Appendix B · Absolute momentum", Status::NeedsData(
-            "Needs MSCI US, US Treasury, credit bond, REIT and gold monthly total returns plus T-bills; none in the vault."),
+            "Needs MSCI US, US Treasury, credit (corporate debt), REIT and precious-metal monthly total returns plus T-bills; not in the vault."),
             &["F|60/40 MSCI US / US Treasury, or equal-weight MSCI US, long Treasury, REITs, credit bonds, gold (p.157-161)", "E|12-month absolute momentum applied to each asset (p.157-161)"], ""),
     ]
 }
