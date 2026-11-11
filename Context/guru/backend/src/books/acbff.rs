@@ -401,7 +401,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             MAP, cl("1,228", "50%", "$43.31/trade (net $53,187, n=40)", "day", SP)),
         sd!("acbff_forever_long", "Forever Long S&P (Table 6.1)", g4, "Long", Live,
             &["E|\"if c < lowest(c,p)[1] then buy next bar at l limit\" p=37 (App. p.205): close below the previous 37 closes, buy tomorrow at today's low on a limit", "X|\"setprofittarget (1250)\" = five S&P points (text p.19: \"a five point profit—$1,250 per contract\"); no stop, no short"],
-            "The book's own 'don't let this happen to you' demonstration (contract inception 1982-11-19-05). Target = 5 index points literal on every instrument. The built-in target is live from the fill onward, including the rest of the entry bar along the bar path.",
+            "The book's own 'don't let this happen to you' demonstration (contract inception 1982-11-19-05). The built-in target is live from the fill onward, including the rest of the entry bar along the bar path. SPX only (decisions #196(2), #202, #276): the five points are the book's S&P points ('a five point profit-$1,250 per contract', p.19), so they mean the same thing only on the S&P 500 index; results from 2014 (real SPX opens). The limit entry and the target often meet on the same day: such a day is decided on the real SPX 1-minute bars (EP6, decision #243), days without minutes by the TradeStation bar path.",
             cl("102", "100%", "$1,275.74 (13.18 bars)", "multi-day", "S&P full futures 1982 to 11-19-05")),
         sd!("acbff_2v5", "Two-day vs five-day average (Table 7.1)", g5, "Long/Short", Live,
             &["E|\"if average(c,2) < average(c,5) then buy next bar at market; if average(c,2) > average(c,5) then sell short next bar at market; setexitonclose\" (App. p.206; text p.25)", "X|setexitonclose: out at the close of the entry day"],
@@ -754,7 +754,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "acbff_c40" => { let a = mean(c, u("n")); day(&|i| (c[i] > a[i], c[i] < a[i])) }
         "acbff_forever_long" => {
             let pp = u("p"); let tp = g("target"); let lw = low(c, pp);
-            engine(x, from, to, |i, ps, nx, _| {
+            engine_ep6(x, from, to, on, |i, ps, nx, _| { // lane K73 (#276 (7)): the limit entry and the target on one day via EP6
                 if i >= 1 && c[i] < lw[i - 1] { nx.push(O { a: Buy, t: T::Lim(l[i]), tag: "buy", tp }); }
                 if ps.mp == 1 { put(nx, Sell, T::Lim(ps.ep + tp), "profit target"); }
             })
@@ -1223,6 +1223,31 @@ mod tests {
             for tr in &t { assert!(tr.exit_i >= tr.legs[0].i, "{}", d.id); }
         }
     }
+    #[test]
+    fn k73_forever_long_entry_and_target_day_on_minutes() {
+        // close 90 under the previous 37 closes (100): buy tomorrow at today's low 89 on a limit, target 89 + 5 = 94.
+        // Next day O 92 H 95 L 88 C 93: the daily bar (h-o 3 <= o-l 4: high first) touches 95 before the fill, so the
+        // convention fills at 89 and holds; the minutes go down first (fill 89), then up to 95 (target 94).
+        let mut v = vec![(100., 101., 99., 100.); 38];
+        v.push((95., 95., 89., 90.)); v.push((92., 95., 88., 93.)); v.push((93., 93.9, 92., 93.5));
+        let mut r = rows(&v);
+        for (i, row) in r.iter_mut().enumerate() { row.date = civil(days(2020, 1, 1) + i as i64); }
+        let mut x = Ctx::new(&r, &r, &[]);
+        let p0: Params = [("order".to_string(), 0.0)].into_iter().collect();
+        let c = run("acbff_forever_long", &x, 38, 40, &p0).unwrap();
+        assert!(c.len() == 1 && c[0].legs[0].px == 89. && c[0].open, "{c:?}");
+        let dir = std::env::temp_dir().join(format!("k73fl{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (d, body) = (r[39].date.clone(), "Date,Time,Open,High,Low,Close\n".to_string());
+        let lines = format!("{d},09:30,92,92,88,88.5\n{d},09:31,88.5,95,88.5,93\n");
+        std::fs::write(dir.join("T.m1.csv"), format!("{body}{lines}")).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), format!("Date,offset,bytes\n{d},{},{}\n", body.len(), lines.len())).unwrap();
+        x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap())));
+        let m = run("acbff_forever_long", &x, 38, 40, &Params::new()).unwrap();
+        assert!(m.len() == 1 && m[0].legs[0].px == 89. && m[0].exit_i == 39 && m[0].exit_px == 94. && m[0].reason.ends_with(crate::intraday_ep6::Day::Minutes.note()), "{m:?}");
+        assert!(crate::gate::get("acbff_forever_long").is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open));
+        assert!(!reviewed("acbff_forever_long") && SPX_PTS.contains(&"acbff_forever_long"));
+    }
     fn civil(z: i64) -> String {
         let z = z + 719468; let era = z.div_euclid(146097); let doe = z - era * 146097;
         let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; let y = yoe + era * 400;
@@ -1231,6 +1256,14 @@ mod tests {
         format!("{:04}-{:02}-{:02}", if m <= 2 { y + 1 } else { y }, m, d)
     }
 }
+
+/// Lane K73 (11 Nov 2026, R4 #276 (7)): the five-S&P-point rule, admitted on SPX only (gate allowed [SPX], clamp_open).
+pub const SPX_PTS: &[&str] = &["acbff_forever_long"];
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "acbff" && SPX_PTS.contains(&def.id),
+    label: "Art Collins tested Forever Long on full-size S&P 500 futures with a five-point profit target ($1,250 per contract, p.19). It runs on the S&P 500 index (SPX) only, the five points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index; the limit entry and the target on one day are decided on real SPX 1-minute bars. Other instruments would need a conversion the book does not give.",
+    basis: "Art Collins, Beating the Financial Futures Market (Wiley 2006) p.19 and Table 6.1, printed TradeStation code App. p.205; decisions #196(2), #202, #240, #243, #276; independent check authors/titles-1030/K73w/k73_ref.py (library/acbff/verify/oracle.py on K63's minute walk).",
+};
 
 // Instrument admission: Art Collins 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/collins/admission/SOURCE-CONTRACT.md); kept in one block to merge.

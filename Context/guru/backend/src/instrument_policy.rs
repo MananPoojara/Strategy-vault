@@ -1483,7 +1483,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
         // ---- Art Collins block (26 Oct 2026): held Live rules
-        "acbff_forever_long"=>"Held: needs the minute path. The book states the target in S&P points (\"a five point profit-$1,250 per contract\", p.19), so under decisions #196(2)/#202 it could run on the S&P 500 index (SPX) only, five points literal; but there the limit entry at the prior low and the five-point target meet on the same day in 45 of 66 trades since 2014 (real opens), and those trades carry 61% of the gain: daily bars cannot show which came first (the gate's same-day rule), so this needs a 1-minute version (lane K58).",
         // ---- end Art Collins block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
@@ -2104,7 +2103,8 @@ mod tests {
         use crate::books::{acbff};
         let all:Vec<StrategyDef>=acbff::catalogue().into_iter().collect();
         let mut want:Vec<&str>=acbff::REVIEWED.iter().copied().collect();
-        assert!(!want.contains(&"acbff_forever_long") && held_reason("acbff_forever_long").is_some_and(|r|r.starts_with("Held: ")));
+        assert!(!want.contains(&"acbff_forever_long") && held_reason("acbff_forever_long").is_none()); // lane K73 (#276): ADMISSION_SPX
+        want.extend(acbff::SPX_PTS); // SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // Ch 31-39 minute ids: intraday EP (K39), own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
