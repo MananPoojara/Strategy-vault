@@ -60,6 +60,7 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
+    if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
 fn minute_path(def:&StrategyDef,p:&Params)->bool {crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5)}

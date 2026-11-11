@@ -9,7 +9,7 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::books::mpts::sma;
 
-pub const REVIEWED: &[&str] = &["fgitc_volex", "fgitc_rocadx", "fgitc_qqqvol", "fgitc_ema1020", "fgitsm_revvolex", "fgitsm_volspike", "fgsmc_ma50_200", "fgtofd_ema20_50"];
+pub const REVIEWED: &[&str] = &["fgitc_volex", "fgitc_rocadx", "fgitc_qqqvol", "fgitc_ema1020", "fgitsm_revvolex", "fgitsm_volspike", "fgsmc_ma50_200", "fgtofd_ema20_50", "fgsmc_vix" /* lane K75, R4 #279 (3) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! note { ($s:expr) => { concat!($s, " [Declared conventions, not from the book] A run starts flat; history before the window builds the indicators; an open trade is marked at the window's last close; one unit, no commissions. Index, ETF and stock runs (US and India) are a declared application where the book used another market; cash-index shorts are hypothetical.") }; }
@@ -68,8 +68,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NotTestable("Duplicate of kpss_monthly10 and the Stock Trader's Almanac (hsta) rules already on the site (Kaeppel's Seasonal Stock Market Trends); the book's turn-of-month window is the last 1 + first 4 days (kpss: last 2 + first 4)"), &["E|Buy the year before the election"]),
         held("fgitcwb_dia_expiry", "DIA option-expiration Friday short", "Workbook (p.118-119)", "fgitc",
             NotTestable("has no exit: a classroom exercise 'created for this exercise (but not implemented)' from one week of data; DIA prices are held (us_data.csv), so the block is the missing exit"), &["E|Short DIA at the close before expiration Friday after a down close"]),
-        held("fgsmc_vix", "VIX above 30 buy, below 20 out", "p.292-294", "fgsmc",
-            NotTestable("not coded yet: the book's measure is the old S&P 100 (OEX) one, now VXO, and the vault holds VXO (extra_data/us/VXO_OHLC.csv, 1986-2021); the rule (buy above 30, 'time to go' below 20, p.293) waits for a coding lane"), &["E|\"When the VIX is high (>30), it's time to buy\" (p.293)"]),
+        StrategyDef { needs_series: &["VXO_OHLC.Close"], // lane K75 (R4 #279 (3))
+            ..live("fgsmc_vix", "VIX above 30 buy, below 20 out (the book's OEX VIX = VXO)", "Ch.10 · Sentiment analysis, CBOE Volatility Index (p.292-294)", "fgsmc", "Long", false,
+            &["F|\"The CBOE Volatility Index (ticker = VIX) computes implied volatility of four S&P 100 (OEX) option contracts in the two front months\" (p.293): the index the CBOE renamed VXO in 2003 when the new S&P 500 VIX took the name; the vault holds VXO 1986-01-02..2021-09-23 (extra_data VXO_OHLC, CBOE), so p.src = 0 (default) reads the VXO close",
+              "E|\"When the VIX is high (>30), it's time to buy.\" (p.293); \"Remember, 30+ is generally considered a good entry point!\" (p.294): flat and the VXO closes above 30 -> buy",
+              "X|\"When the VIX is low (<20), it's time to go.\" (p.293): long and the VXO closes below 20 -> sell",
+              "F|p.src = 1 (labelled option): the market's own volatility index instead of the book's VXO: today's CBOE VIX (S&P 500 options, 1990-) on US instruments, the India VIX on NSE instruments (declared application)"],
+            note!("Long only (the book names no short). The VXO close (4:15 pm ET) comes after the stock market's 4:00 close, so a signal fills at the next session's open [declared]; while flat every close above 30 is a buy signal (a level, not a cross); 30 and 20 exactly give no signal. Runs where the VXO exists (to 2021-09-23, when the CBOE stopped it): US indices, ETFs and US stocks; India has no VXO (the India VIX is another index).")) },
         StrategyDef { claim: crate::connors::claim("20", "70%", "n/a", "weeks to months", "Select Sector SPDRs, 3 Jan 2000 - 21 Sep 2007, two bullish periods: 4 trades (3 gains) $5,000 -> $5,135, and 16 trades (11 gains) $5,000 -> $14,080 (Table 13-5, p.233-234)"),
             ..live("fgtofd_sector_tilt", "Select Sector SPDR tilt: hold the top 3-month ETF while SPY's 50-day SMA is above its 200-day", "Ch.13 · Tilting your portfolio with sector ETFs (p.230-234)", "fgtofd", "Long", false,
             &["F|\"Using SPY and the nine major Select Sector SPDR ETFs\" (Table 13-4: XLB XLE XLF XLI XLK XLP XLU XLV XLY) (p.231-232)",
@@ -108,6 +113,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "fgitc_qqqvol" => vec![p("target", "Profit target % (book: 3.5)", 3.5, 0.5, 20., 0.5)],
         "fgitc_ema1020" => vec![p("s", "Short EMA (book: 10)", 10., 2., 100., 1.), p("l", "Long EMA (book: 20)", 20., 3., 250., 1.), p("stop", "Stop % (book: 15)", 15., 1., 50., 1.)],
         "fgitsm_volspike" => vec![p("mult", "Spike = volume above x times average (book: 3)", 3., 1.5, 10., 0.5), p("n", "Average volume days (book: 30)", 30., 5., 200., 1.)],
+        "fgsmc_vix" => vec![p("buy", "Buy above (book: 30)", 30., 10., 80., 1.), p("sell", "Sell below (book: 20)", 20., 5., 60., 1.), p("src", "0 = VXO, the book's OEX index (default); 1 = the market's volatility index (US VIX, India VIX)", 0., 0., 1., 1.)],
         "fgsmc_ma50_200" => vec![p("s", "Short average (book: 50)", 50., 2., 200., 1.), p("l", "Long average (book: 200)", 200., 3., 400., 1.)],
         "fgtofd_ema20_50" => vec![p("s", "Short EMA (book: 20)", 20., 2., 100., 1.), p("l", "Long EMA (book: 50)", 50., 3., 250., 1.)],
         "fgtofd_sector_tilt" => vec![], // lane K28: runs in books::rotation
@@ -256,6 +262,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 else if let Some(t) = cur.take() { close(t, fi, px, i, "short average crossed below the long", &mut out); }
             }
         }
+        "fgsmc_vix" => { // lane K75 (R4 #279 (3))
+            let Some(v) = x.series(if g("src", 0.) >= 0.5 { "VIX.Close" } else { "VXO_OHLC.Close" }) else { return Some(vec![]) };
+            let (buy, sell) = (g("buy", 30.), g("sell", 20.));
+            for i in from..to {
+                if cur.is_none() && v[i] > buy { cur = Some(trade(1., i + 1, o[i + 1], "open", i)); }
+                else if cur.is_some() && v[i] < sell { close(cur.take().unwrap(), i + 1, o[i + 1], i, "VIX closed below 20 · next open", &mut out); }
+            }
+        }
         _ => return None,
     }
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
@@ -269,6 +283,18 @@ mod tests {
     fn catalogue_admits_exactly_the_reviewed_ids() {
         let live: Vec<_> = catalogue().into_iter().filter(|d| d.status == Status::Live && !crate::books::rotation::is_rotation(d.id)).map(|d| d.id).collect();
         assert_eq!(live, REVIEWED);
+    }
+    #[test]
+    fn vix_30_buy_20_out_next_open() {
+        // lane K75: VXO closes 25, 31 (buy day 2 open), 35 (held), 19 (sell day 4 open), 32 on the window's last bar (no fill)
+        let r: Vec<crate::Row> = (0..6).map(|i| crate::Row { ticker: "SPY".into(), date: format!("2020-01-{:02}", i + 1), open: 100. + i as f64, high: 110., low: 90., close: 101. + i as f64, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("VXO_OHLC.Close".into(), vec![25., 31., 35., 19., 22., 32.]);
+        let t = run("fgsmc_vix", &x, 0, 5, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|z| (z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px, z.open)).collect::<Vec<_>>(), vec![(2, 102., 4, 104., false)]);
+        x.extra.insert("VIX.Close".into(), vec![31., 25., 25., 25., 25., 25.]);
+        let v = run("fgsmc_vix", &x, 0, 5, &[("src".to_string(), 1.)].into_iter().collect()).unwrap();
+        assert_eq!((v.len(), v[0].legs[0].i, v[0].open), (1, 1, true));
     }
 }
 
