@@ -5,6 +5,10 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "nfhp";
+/// Lane K74 (R4 #277 (3), #196(2)): the Fig. 44 header gives the test's contract value for the whole 1982-2000 run ($250 a point),
+/// so the $500 stops are exactly 2.0 S&P index points: SPX only (gate list), from 2014 (real opens, clamp_open). The countertrend
+/// mode fails #179 (held); the NSE twins have no exact conversion (held). Admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["nfhp_quadram_tf"];
 
 const FX: &str = "daily Swiss franc, D-mark, British pound and Japanese yen FUTURES with contract point values ($ stops); the vault has no currency futures (index points cannot stand in for a $2,000 currency-contract stop)";
 const METALS: &str = "Comex silver/gold futures, Swiss franc futures, US T-bill yield and CPI inflation (real T-bill rate); none in the vault";
@@ -30,7 +34,7 @@ const Q_ENTRY_TF: &[&str] = &[
     "X|Trailing stop as the author codes it (Channel 25 TradeStation code, Ground-Up p.20): once (highest close since entry - entry) >= $500, stop at that highest close - $500",
     "X|An opposite entry signal while in a trade reverses the position at the next open (TradeStation long/short entries)",
 ];
-const Q_NOTE: &str = "Book (Fig. 44, p.21): S&P 500 futures 1982-2000, 2 lots, $250/pt, $150 slippage+commission: 827 trades, 40% profitable, avg $357.32, avg bars in winners 1 / losers 0, PF 1.94 - the two modes together (max 2 contracts held). Here one mode per strategy, one unit. Bands = n-day SMA of CHAD +/- 0.8 x population standard deviation (TradeStation StdDev / Bollinger, Figs 42-43 'Bollinger Bands (4, 0.8)' / '(25, 0.8)'). 'Crosses above' = CHAD > band today and CHAD <= band yesterday. Stops in index points = $ / pt_usd (S&P futures $250; same points on SPX - instrument swap only; on NIFTY the same 2-point stop is used, as the vault's lwlts precedent). The $500 initial stop is armed on the entry day (book: losers average 0 bars = stopped on the entry bar); stops fill at the stop or at the open if it gaps through. Trailing-stop formula is the author's own Channel 25 code (the Quadram page gives only '$500 Trailing Stop').";
+const Q_NOTE: &str = "Book (Fig. 44, p.21): S&P 500 futures 1982-2000, 2 lots, $250/pt, $150 slippage+commission: 827 trades, 40% profitable, avg $357.32, avg bars in winners 1 / losers 0, PF 1.94 - the two modes together (max 2 contracts held). Here one mode per strategy, one unit. Bands = n-day SMA of CHAD +/- 0.8 x population standard deviation (TradeStation StdDev / Bollinger, Figs 42-43 'Bollinger Bands (4, 0.8)' / '(25, 0.8)'). 'Crosses above' = CHAD > band today and CHAD <= band yesterday. Stops in index points = $ / pt_usd (S&P futures $250 a point for the whole 1982-2000 test, Fig. 44 header) = 2.0 points, literal on the S&P 500 index: published on SPX only, from 2014 (real opens), new signals until the NYSE breadth file ends (2020-02-10) (lane K74, decision #277 (3)); the countertrend mode fails the cash-index check (#179) and the NSE twins have no exact conversion, so those are held. The $500 initial stop is armed on the entry day (book: losers average 0 bars = stopped on the entry bar); stops fill at the stop or at the open if it gaps through. Trailing-stop formula is the author's own Channel 25 code (the Quadram page gives only '$500 Trailing Stop').";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -235,3 +239,10 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px), (2, 98.));
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 (3)): Quadram trend-following mode with the 2.0-point stops, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Nelson Freeburg tested the Quadram system on S&P 500 futures (1982-2000, $250 a point) with $500 initial and trailing stops = 2.0 index points. The trend-following mode runs on the S&P 500 index (SPX) only, the 2 points literal, from 2014 (real opens) to the end of the NYSE breadth file (February 2020) for new signals, as a declared application of the futures rule to the cash index.",
+    basis: "Nelson Freeburg, Building High-Performance Trading Systems (TAG 2000 workshop) Fig. 44 p.21 ('S&P 500 Futures (2 Lots; $250/pt; $150 S&C) Performance: 1982 to 2000'), Fig. 46 p.22 (Quadram rules); Building a Mechanical Trading System from the Ground Up p.6 (next-day-open entries), p.20 (trailing-stop code); decisions #196(2), #240 (2), #277 (3); independent check authors/titles-1030/K74w/k74_spx.py.",
+};
