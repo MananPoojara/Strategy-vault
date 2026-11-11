@@ -158,6 +158,8 @@ pub const SESSION_SERIES: [&str; 4] = ["OPEN60_HIGH", "OPEN60_LOW", "OPEN60_CLOS
 pub fn session_series(m: &Minutes, ticker: &str, dates: &[&str]) -> [Vec<f64>; 4] {
     let mut out: [Vec<f64>; 4] = std::array::from_fn(|_| vec![f64::NAN; dates.len()]);
     for (i, d) in dates.iter().enumerate() {
+        // the rejected NIFTY 50 minutes (R4 #285; intraday_w2b::day applies the same rule to every other minute rule)
+        if ticker == "NIFTY 50" && *d >= crate::intraday_w2b::NIFTY_BAD_FROM { continue; }
         let Some(b) = m.day(d) else { continue };
         let Some(last) = b.last().map(|z| z.m) else { continue };
         if let Some(z) = b.iter().find(|z| z.m + 59 >= last) { out[3][i] = z.o; }
@@ -259,6 +261,26 @@ mod tests {
         let s = session_series(&m, "SPY", &["2019-12-31", "2020-01-02", "2020-01-03"]);
         assert_eq!((s[0][1], s[1][1], s[2][1], s[3][1]), (13., 8., 8.5, 9.)); // 10:30 is not in the first hour
         assert!(s.iter().all(|v| v[0].is_nan()) && s[0][2].is_nan() && s[2][2].is_nan() && s[3][2] == 5.);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn session_series_skips_rejected_nifty_days() {
+        // R4 #285: NIFTY 50 minutes from intraday_w2b::NIFTY_BAD_FROM are rejected, as in every other minute rule
+        let dir = std::env::temp_dir().join(format!("m1r285{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut body, mut idx) = (String::from("Date,Time,Open,High,Low,Close\n"), String::from("Date,offset,bytes\n"));
+        for d in ["2026-08-10", "2026-08-11"] {
+            let off = body.len();
+            body.push_str(&format!("{d},09:15,10,12,9,11\n{d},15:29,11,11,11,11\n"));
+            idx.push_str(&format!("{d},{off},{}\n", body.len() - off));
+        }
+        std::fs::write(dir.join("SPY.m1.csv"), body).unwrap();
+        std::fs::write(dir.join("SPY.m1idx.csv"), idx).unwrap();
+        let m = Minutes::load(dir.to_str().unwrap(), "SPY").unwrap();
+        let s = session_series(&m, "NIFTY 50", &["2026-08-10", "2026-08-11"]);
+        assert_eq!(s[0][0], 12.);
+        assert!(s.iter().all(|v| v[1].is_nan()));
         std::fs::remove_dir_all(dir).unwrap();
     }
     /// K75 check against the real files (by hand; K75w/series_cmp.py compares with library/intraday/build_session_series.py):

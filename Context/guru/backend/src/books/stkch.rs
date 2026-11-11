@@ -133,7 +133,7 @@ fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, after: u
 fn same_day(x: &Ctx, t: usize, dir: f64, stop: f64, lv: f64, after: u16) -> Option<Option<f64>> {
     use crate::intraday::{first_touch, session_open, touched, Level, Touch};
     let d = x.r[t].date.as_str();
-    let b = x.minutes?.day(d)?;
+    let b = crate::intraday_w2b::day(x, t)?; // R4 #285: skips the rejected NIFTY 50 minute days like every other minute rule
     let Touch::Hit { bar: e, .. } = first_touch(&b, 0, &[Level { up: dir < 0., px: stop }]) else { return None };
     let (live, en) = (session_open(&x.r[t].ticker, d) + after, Level { up: dir > 0., px: lv });
     if b[e].m >= live && touched(&b[e], en) { return None; }
