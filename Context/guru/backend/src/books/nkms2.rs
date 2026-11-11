@@ -24,7 +24,7 @@ pub const BOOK: &str = "nkms2";
 /// Admitted ids (authors/niksan-k2/admission/nkms2_ref.py (header)). Not admitted although Live: nkms2_rsi_trailing_exit
 /// (its trades depend on whether an opposite Enter signal closes the open position, a System Tester setting the record
 /// does not store; authors/niksan-k2/admission/alt-check.txt).
-pub const REVIEWED: &[&str] = &["nkms2_relative_momentum_index" /* lane K60, #244 (3) */, "nkms2_landis_reversal", "nkms2_linear_regression_crossover", "nkms2_long_sell_short_sale_5_day", "nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_meisels_overbought_oversold", "nkms2_modified_momentum", "nkms2_momentum", "nkms2_new_relative_volatility_index", "nkms2_oscillator_composite", "nkms2_pattern_trading_system_1", "nkms2_pattern_trading_system_2", "nkms2_pattern_trading_system_3", "nkms2_pattern_trading_system_4", "nkms2_pattern_trading_system_5", "nkms2_pattern_trading_system_6", "nkms2_percentage_crossover_3pct", "nkms2_short_term_range_rejection", "nkms2_small_triangle_breakout", "nkms2_starcband_system", "nkms2_stochastic_oscillator_system", "nkms2_stochrsi", "nkms2_ultimate_oscillator", "nkms2_volatility_breakout_standard", "nkms2_volatility_stop", "nkms2_volume_trading_system"];
+pub const REVIEWED: &[&str] = &["nkms2_swing_index" /* lane K74, #244 (2) / #277 */, "nkms2_relative_momentum_index" /* lane K60, #244 (3) */, "nkms2_landis_reversal", "nkms2_linear_regression_crossover", "nkms2_long_sell_short_sale_5_day", "nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_meisels_overbought_oversold", "nkms2_modified_momentum", "nkms2_momentum", "nkms2_new_relative_volatility_index", "nkms2_oscillator_composite", "nkms2_pattern_trading_system_1", "nkms2_pattern_trading_system_2", "nkms2_pattern_trading_system_3", "nkms2_pattern_trading_system_4", "nkms2_pattern_trading_system_5", "nkms2_pattern_trading_system_6", "nkms2_percentage_crossover_3pct", "nkms2_short_term_range_rejection", "nkms2_small_triangle_breakout", "nkms2_starcband_system", "nkms2_stochastic_oscillator_system", "nkms2_stochrsi", "nkms2_ultimate_oscillator", "nkms2_volatility_breakout_standard", "nkms2_volatility_stop", "nkms2_volume_trading_system"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const GROUP: &str = "NIKSAN MetaStock pack · Equis PS system tests (MS72PRFT.DTA, part 2)";
@@ -33,7 +33,7 @@ const FML: &[(&str, &str)] = &[("MO_100", "100")];
 const CONV: &str = "One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. The record has no stops (all-zero stop block) and no fill field: MetaStock defaults, trade at the close, no delay. Indicators: MetaStock definitions as in module msws. Runs on indices, ETFs and single stocks (US and India) are a declared application: the record names no market and prints no results.";
 static NK: Book = Book { id: BOOK, sys: SYS, fml: FML, conv: CONV, cat: OnceLock::new(), par: OnceLock::new() };
 /// Records run by hand-written code (ValueWhen / PREV); only the `side` parameter.
-const HAND: &[&str] = &["nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_percentage_crossover_3pct", "nkms2_volatility_stop"];
+const HAND: &[&str] = &["nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_percentage_crossover_3pct", "nkms2_volatility_stop", "nkms2_swing_index" /* lane K74 */];
 
 pub fn catalogue() -> Vec<StrategyDef> { NK.catalogue() }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { NK.family_of(id) }
@@ -138,6 +138,31 @@ fn hand(id: &str, eng: &mut Eng, x: &Ctx, side: i32) -> Result<msws::Sig, String
             let s: Vec<f64> = (0..n).map(|i| lt(bu[i], bd[i])).collect();
             (l.clone(), s.clone(), s, l)
         }
+        "nkms2_swing_index" => {
+            // Swing(3) > 0 / < 0 (lane K74, #244 (2)): sign(SI) = sign(N) where K > 0, else 0; undefined on the first bar.
+            // 4N = 6C - 3C1 - 2O - O1, exact on the printed decimals (connors::ExactSeries, #253); floats if a value is not exact.
+            let ex = crate::connors::ExactSeries::new(&[&x.o, &x.h, &x.l, &x.c]);
+            let sg: Vec<f64> = (0..n).map(|i| if i == 0 { NAN } else {
+                let (k, n4) = match &ex {
+                    Some(e) => {
+                        let v = |s: usize, j: usize| e.v[s][j];
+                        match (v(0, i), v(1, i), v(2, i), v(3, i), v(3, i - 1), v(0, i - 1)) {
+                            (Some(o), Some(h), Some(l), Some(c), Some(c1), Some(o1)) =>
+                                (((h - c1).abs().max((l - c1).abs()) > 0), (6 * c - 3 * c1 - 2 * o - o1).signum() as f64),
+                            _ => return NAN,
+                        }
+                    }
+                    None => { // f64::signum is +-1 on +-0.0 (Codex review): explicit tests
+                        let v = 6. * x.c[i] - 3. * x.c[i - 1] - 2. * x.o[i] - x.o[i - 1];
+                        (((x.h[i] - x.c[i - 1]).abs().max((x.l[i] - x.c[i - 1]).abs()) > 0.), if v > 0. { 1. } else if v < 0. { -1. } else { 0. })
+                    }
+                };
+                if !k { 0. } else if n4 == 0. { 0. } else { n4 }
+            }).collect();
+            let up: Vec<f64> = sg.iter().map(|v| if v.is_finite() { (*v > 0.) as u8 as f64 } else { NAN }).collect();
+            let dn: Vec<f64> = sg.iter().map(|v| if v.is_finite() { (*v < 0.) as u8 as f64 } else { NAN }).collect();
+            (up.clone(), dn.clone(), dn, up)
+        }
         _ => return Err("not hand-coded".into()),
     };
     let off = vec![false; n];
@@ -169,11 +194,26 @@ mod tests {
         let r2 = msws::rsi_m(&c2, 2, 2);
         assert!((r2[3] - 25.0).abs() < 1e-12); // up 0.5, down 1.5
     }
+    /// Lane K74: Swing(3) > 0 exactly when Wilder's N > 0 (K > 0); the limit move never flips the sign.
+    #[test]
+    fn swing_index_sign_is_the_sign_of_wilders_n() {
+        // bar 1: C 101 > C1 100, O 100.5, O1 99 -> 4N = 606 - 300 - 201 - 99 = 6 > 0: long; bar 2: C 100, O 101.5 -> 4N = 600 - 303 - 203 - 100.5 < 0: short
+        // bar 3: H = L = C1 (K = 0): SI = 0, no signal either way
+        let r: Vec<Row> = [(99., 100.5, 98.5, 100.), (100.5, 101.5, 100., 101.), (101.5, 101.8, 99.5, 100.), (100., 100., 100., 100.)].iter().enumerate()
+            .map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("D{i}"), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let fl: &dyn Fn(&str) -> Option<String> = &lookup;
+        let mut eng = Eng::new(&x, fl);
+        let g = hand("nkms2_swing_index", &mut eng, &x, 0).unwrap();
+        assert_eq!((g.el.clone(), g.es.clone()), (vec![false, true, false, false], vec![false, false, true, false]));
+        assert_eq!((g.xs, g.xl), (g.el, g.es));
+        assert!(reviewed("nkms2_swing_index"));
+    }
     #[test]
     fn every_live_record_parses_runs_and_trades() {
         let r = rows(); let x = Ctx::new(&r, &r, &[]);
         let live: Vec<&Sys> = SYS.iter().filter(|s| s.status == Status::Live).collect();
-        assert_eq!(live.len(), 28); // + nkms2_relative_momentum_index (lane K60)
+        assert_eq!(live.len(), 29); // + nkms2_relative_momentum_index (lane K60), nkms2_swing_index (lane K74)
         let mut trading = 0;
         for s in &live {
             let t = run(s.id, &x, 50, r.len() - 1, &Params::new()).unwrap_or_else(|| panic!("{} did not run", s.id));
