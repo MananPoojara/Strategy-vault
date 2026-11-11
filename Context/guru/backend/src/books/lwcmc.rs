@@ -53,7 +53,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"If the Market has a Bullish Set up\" (p.7.12)", "E|\"Buy at the Highest High of the Last 14 Days\" (p.7.12); or the first daily close above the volatility stop: 7-day average true range x 2 added to the lowest close (p.7.16, 7.20)",
               "X|14-day low trailing stop (p.7.12) or a close below the volatility stop or a price target (p.7.20)"]),
         off!("lwcmc_sp_patterns", "Special bonus: 9 S&P sell patterns and 4 buy patterns (Genesis printouts)", "Ch 12 · Short-term trading patterns", "Long/Short",
-            NotTestable("Each pattern gives only the entry order (e.g. 'THEN BUY at Next Bar Open + Range * 0.20 Stop'); the manual never states the exit or stop used for the printouts (p.12.4-12.11). 11 of the 13 also need T-bond futures (Bonds < Bonds.4 etc.)."),
+            NotTestable("Each pattern gives only the entry order (e.g. 'THEN BUY at Next Bar Open + Range * 0.20 Stop'); no exit is given: the manual never states the exit or stop used for the printouts (p.12.4-12.11). 11 of the 13 also need T-bond futures (Bonds < Bonds.4 etc.)."),
             &["E|e.g. Buy #1: \"IF Outside Bar And Close < Close.1 And Close > Close.2 Or Close > Close.12 Or Close > Close.19 THEN BUY at Next Bar Open + Range * 0.20 Stop\" (p.12.9): 128 trades, 91.4%",
               "E|Sell #3: \"IF DayOfWeek = 4 And Close > Close.1 And Down Range And Close > Close.6 Or Close > Close.11 Or Close > Close.17 THEN SELL at Low.1 Stop\" (p.12.5): 18 trades, 88.9%",
               "X|Not stated. Combined 800 trades 82.5% $668.56, 05/06/1982-07/29/2002 (p.12.11)"]),

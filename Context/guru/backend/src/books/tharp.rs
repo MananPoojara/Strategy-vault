@@ -54,7 +54,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             Status::NotTestable("rules not fully defined: the 1-2-3 pattern points and the consolidation trailing stop are chart judgement (TYW p.229, p.252)"),
             &["F|9-month high or low, then a 1-2-3 reversal (TYW p.229)", "E|Enter when price passes point 2 (TYW p.229, 252)", "X|Stop just beyond point 1; trail below new consolidations (TYW p.252, 269)"], "Not mechanical as described."),
         make("tharp_false_breakout", "False breakout entry (Workbook)", "Workbook 2-2 · Entry techniques", "Long/Short",
-            Status::NotTestable("rules not fully defined: no profit exit (\"some trades will last 2 to 3 hours, others will last days\", Systems Development Workbook p.75); the entry idea runs in the vault as ss_turtle_soup"),
+            Status::NotTestable("duplicate of ss_turtle_soup (decision #277, lane K74: the same 20-day-low false breakout, live from Street Smarts); rules not fully defined: no profit exit (\"some trades will last 2 to 3 hours, others will last days\", Systems Development Workbook p.75); the entry idea runs in the vault as ss_turtle_soup"),
             &["E|Today makes a 20-day low; the previous low was not within the last 5 days; buy stop 8 ticks above the previous 20-day low, good today only (Workbook p.75)", "X|If filled, GTC sell stop just under today's low (Workbook p.75)"], "Exit rule missing."),
         make("tharp_110day_breakout", "110-day breakout, weekly-volatility stop", "Super Trader ch. 13 · Simple system idea", "Long",
             Status::NotTestable("multiple of weekly volatility for the stop is not given (\"something as simple as\")"),

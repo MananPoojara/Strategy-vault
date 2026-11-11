@@ -28,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("svmws_10w30w_long", "10-week / 30-week MA cross · buys", "Long", Live, LONG, NOTE),
         d("svmws_10w30w_short", "10-week / 30-week MA cross · sells", "Short", Live, SHORT, NOTE),
         d("svmws_200d_gordon", "Gordon 200-day moving average rule", "Long/Short",
-          NotTestable("rules not fully defined: 'flattens out' is not quantified: \"If the 200-day moving average line flattens out following a previous decline or is advancing, and prices penetrate the moving average line on the upside\" (Methods of a Wall Street Master p. 90)"),
+          NotTestable("rules not fully defined: 'flattens out' is not quantified (Granville's 200-day rule, Methods of a Wall Street Master p. 90: buy when the average flattens out after a fall, or is rising, and prices cross it upward; the quote is in the rules)"),
           &["E|\"If the 200-day moving average line flattens out following a previous decline or is advancing, and prices penetrate the moving average line on the upside, this comprises a major buying signal\" (p. 90)",
             "X|\"If the 200-day moving average line flattens out following a previous rise or is declining, and prices penetrate the moving average line on the downside, this comprises a major selling signal\" (p. 90)"],
           "Book cites W. Gordon: Dow stocks 1917-1967, 18.5% average simple yearly return (p. 90). Dropping 'flattens out' would change the rule, so not coded."),
