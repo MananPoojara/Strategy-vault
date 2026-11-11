@@ -60,6 +60,7 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
+    if def.id=="arebta_d_br" && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
     if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
@@ -83,7 +84,6 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
         if let Some(v)=ctx.series(name) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("{name} data")));}
     }
     if def.needs_volume {ends.push(((0..=to).rev().find(|&i|ctx.r[i].volume.is_some_and(|v|v.is_finite()&&v>0.)),format!("daily volume figures for {ticker}")));}
-    if def.book=="arebta" && books::arebta::breadth(def.id) {ends.push((books::arebta::window_end(ctx),"Aronson's case-study rules (test period 1 Nov 1980 - 1 Jul 2005, p.393; R4 #287)".into()));} // lane K78
     // same condition as the ccl08 Liquidity Filter check in `check` (instrument and benchmark close x volume)
     if def.book==books::ccl08::BOOK && books::ccl08::reviewed_daily(def.id) && books::ccl08::params(def.id).is_some_and(|ps|ps.iter().any(|d|d.key=="lf")) && to<ctx.lf.len() {
         ends.push(((0..=to).rev().find(|&i|ctx.lf[i].is_finite()),format!("the Liquidity Filter inputs (close x volume of {ticker} and its benchmark)")));
@@ -516,10 +516,6 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
         return issue("needs_data",format!("Required market data is missing: {}. No chart, statistics, trades or optimization are available for this instrument.",missing.join(", ")));
-    }
-    // lane K78 (R4 #287): Aronson's breadth rules run only inside the case study's test period
-    if def.book=="arebta" && books::arebta::breadth(def.id) && books::arebta::window_end(ctx).map_or(true,|e|e<=from) {
-        return issue("not_testable","Aronson's rules on NYSE breadth run only inside his case study's test period, 1 Nov 1980 - 1 Jul 2005 (p.389, 393; R4 #287). The selected period starts after it; choose a start before 1 Jul 2005.");
     }
     // A series existing somewhere in history does not mean it covers the requested dates.
     for &name in &required {
