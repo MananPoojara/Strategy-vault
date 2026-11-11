@@ -90,7 +90,7 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
     "acbff_rsi_5min", "atm04_60min", "jmls_bar_breakout", "jmls_ma_cross_30m"];
 /// Rules whose time filter is a US Eastern clock time the book gives no NSE equivalent for: SPY and SPX only.
 pub const US: &[&str] = &["jmls_ls_model"];
-pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) }
+pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) }
 pub fn us_id(id: &str) -> bool { US.contains(&id) }
 pub fn book(b: &str) -> bool { matches!(b, "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts") }
 // ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
@@ -157,6 +157,11 @@ pub fn spy_only(id: &str) -> bool { K53_SPY.contains(&id) }
 /// Heikin Ashi + SAR + RSI (3-minute) and first-hour EMA scalp (5-minute).
 pub const K70: &[&str] = crate::books::as51ts::INTRA;
 // ---- end lane K70 block
+// ---- lane K75 block (11 Nov 2026, R4 #279 (2); authors/titles-1030/K75.tsv)
+/// Daily rules that read the first-hour / last-hour series built from the real 1-minute bars (intraday::session_series):
+/// they run only on the minute tickers, over the minute years; a day without minutes makes no trade. No fixed amount.
+pub const K75: &[&str] = &["ss_smart_money_index"];
+// ---- end lane K75 block
 // Decision #177a for these rules (flagged on the SPY/SPX overlap: SPY only) goes into intraday_w3::SPY, the one #177a list.
 
 #[cfg(test)]
@@ -274,7 +279,7 @@ mod tests {
     fn ep_admission_and_tickers() {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
-        for id in IDS.iter().chain(US).chain(K42).chain(K42_SPX).chain(K44_SPX).chain(K45_SPX).chain(K46).chain(K46_SPX).chain(K48).chain(K48_SPX).chain(K55).chain(K53).chain(K53_SPY).chain(K70) {
+        for id in IDS.iter().chain(US).chain(K42).chain(K42_SPX).chain(K44_SPX).chain(K45_SPX).chain(K46).chain(K46_SPX).chain(K48).chain(K48_SPX).chain(K55).chain(K53).chain(K53_SPY).chain(K70).chain(K75) {
             let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             assert!(d.status == crate::connors::Status::Live && ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
@@ -282,7 +287,7 @@ mod tests {
             for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t) && !crate::intraday_w3::india_held(id, t), "{id} {t}"); } // #231/#234: India pairs withdrawn
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             let g = crate::gate::get(id).unwrap_or_else(|| panic!("gate {id}"));
-            assert!((matches!(g.verdict, "unverified" | "verified") || (crate::intraday_w3::spx_held(id) && g.verdict == "withheld")) && (g.reason.contains("K39") || g.reason.contains("K42") || g.reason.contains("K44") || g.reason.contains("K45") || g.reason.contains("K46") || g.reason.contains("K48") || g.reason.contains("K55") || g.reason.contains("K53") || g.reason.contains("K70")) && (g.reason.contains("p.") || g.reason.contains(".txt")), "{id}");
+            assert!((matches!(g.verdict, "unverified" | "verified") || (crate::intraday_w3::spx_held(id) && g.verdict == "withheld")) && (g.reason.contains("K39") || g.reason.contains("K42") || g.reason.contains("K44") || g.reason.contains("K45") || g.reason.contains("K46") || g.reason.contains("K48") || g.reason.contains("K55") || g.reason.contains("K53") || g.reason.contains("K70") || g.reason.contains("K75")) && (g.reason.contains("p.") || g.reason.contains(".txt")), "{id}");
         }
         assert!(ip::check(cat.iter().find(|d| d.id == "jmls_ls_model").unwrap(), "NIFTY 50", false).unwrap().note.contains("US Eastern clock time"));
     }

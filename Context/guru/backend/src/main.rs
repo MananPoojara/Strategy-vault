@@ -2212,6 +2212,12 @@ fn main() {
                     c.extra.insert(key.clone(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
                 }
             }
+            // lane K75 (R4 #279 (2)): first-hour / last-hour series from this ticker's real 1-minute bars; an extra_data file
+            // of the same name takes precedence
+            if let Some(m) = c.minutes {
+                let dates: Vec<&str> = rows.iter().map(|r| r.date.as_str()).collect();
+                for (k, v) in intraday::SESSION_SERIES.iter().zip(intraday::session_series(m, t, &dates)) { c.extra.entry(k.to_string()).or_insert(v); }
+            }
             // EP4 (K51, #223): second series aligned by date from this file (hfm NDX-SPX unchanged: exact, NaN holes).
             // An extra_data file of the same name takes precedence.
             second::inject(&mut c, data);

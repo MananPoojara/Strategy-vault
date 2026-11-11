@@ -867,7 +867,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ss_id_nr4", "ID/NR4", "Ch 19 · Range Contraction", "Long/Short", Live, &[], NR4, INDEX, None),
         d("ss_hist_vol_crabel", "Historical Volatility Meets Toby Crabel", "Ch 20 · Historical Volatility", "Long/Short", Live, &[], HVC, INDEX, None),
         d("ss_smart_money_index", "Smart Money Index", "Ch 21 · Smart Money Indicators", "Long/Short", Live, &["OPEN60_CLOSE", "LAST60_OPEN"], SMI,
-          "Needs per-ticker series OPEN60_CLOSE = price at the end of the first 60 minutes and LAST60_OPEN = price 60 minutes before the close (book uses the Dow; any index works). Threshold in % of price (20 Dow points at Dow 5,000).",
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years only. OPEN60_CLOSE (the close of the session's first 60 minutes: US 9:30-10:30 ET, NSE 9:15-10:15 IST) and LAST60_OPEN (the open of the minute 60 minutes before the close) are built in the engine from the real 1-minute bars (intraday::session_series, the definition of library/intraday/build_session_series.py); a day without minutes gives no reading. The book reads the Dow (no Dow minutes are held): index/ETF as a declared application. Threshold in % of yesterday's close: the book's 20 Dow points at its example's Dow 4,980 (p.174) = 0.40%. Entry at the next open and exit at that day's close are labelled readings [Not from the book]: the book says only 'look to be a buyer (seller) the next day' (p.174).",
           claim("4-5 signals / month", "-", "-", "next day", "1995, Dow")),
         d("ss_tick_divergence", "Tick divergence", "Ch 21 · Smart Money Indicators", "Long/Short", NeedsData("5-minute S&P bars + NYSE TICK"), &[],
           &["F|\"The S&P must make a morning low where the ticks give a reading of less than -350.\"", "F|\"The S&P then must make an equal or lower low in price at least 90 minutes later. The tick must make a higher low\"", "E|\"If the ticks improve from this second low point by 100 ticks, we will enter at-the-market.\"", "X|\"A protective sell-stop is then entered at the low of the day.\" \"protect at least 50 percent of any equity gained\""],
@@ -1595,6 +1595,20 @@ mod tests {
 #[cfg(test)]
 mod intraday_p1_tests {
     use super::*;
+    #[test]
+    fn smart_money_index_k75_next_open_to_close() {
+        // book p.174 example: yesterday 4980, 10:30 at 4985 (first hour +5 -> -5), 3:00 at 4990, close 4984 (-6): -11
+        let r: Vec<Row> = [(4970., 4980.), (4982., 4984.), (4990., 5010.), (5000., 4995.), (4990., 4970.)].iter().enumerate()
+            .map(|(i, &(o, c))| Row { ticker: "SPY".into(), date: format!("2020-01-{:02}", i + 1), open: o, high: o.max(c) + 5., low: o.min(c) - 5., close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("OPEN60_CLOSE".into(), vec![f64::NAN, 4985., 4986., 4990., f64::NAN]);
+        x.extra.insert("LAST60_OPEN".into(), vec![f64::NAN, 4990., 4970., 5020., f64::NAN]);
+        // day 1: -11 pts = -0.22% (no signal); day 2: -(4986-4984) + (5010-4970) = +38 = +0.76% -> buy day 3 open, out day 3 close;
+        // day 3: -(4990-5010) + (4995-5020) = -5 (no signal); day 4: no minutes (NaN)
+        let t = run("ss_smart_money_index", &x, 0, 4, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px)).collect::<Vec<_>>(), vec![(1., 3, 5000., 3, 4995.)]);
+        assert!(crate::intraday_ep::id("ss_smart_money_index"));
+    }
     #[test]
     fn pinball_minute_path_fills_carries_and_takes_the_day3_limit() {
         let closes = [100.0, 99.0, 97.0, 94.0, 90.0, 85.0, 87.0, 87.2];

@@ -149,6 +149,29 @@ pub fn day_trade(dir: f64, i: usize, px: f64, xi: usize, xp: f64, why: &str, kin
 pub fn rejected_day(ticker: &str, date: &str) -> bool { ticker == "NIFTY 50" && date >= "2026-08-11" }
 // ---- end intraday wave 2a block ----
 
+// ---- lane K75 block (11 Nov 2026, R4 #279 (2)): first-hour / last-hour daily series from the real 1-minute bars
+/// Same definition as library/intraday/build_session_series.py: OPEN60 = the minutes [open, open + 60) from the session's
+/// opening minute (no value when the day lacks that minute); OPEN60_CLOSE = the close of the last minute in it (the price
+/// at the end of the first hour); LAST60_OPEN = the open of the first minute at or after the day's last minute - 59 (the
+/// price 60 minutes before the close). NaN on days without minutes (before / after the file, excluded days).
+pub const SESSION_SERIES: [&str; 4] = ["OPEN60_HIGH", "OPEN60_LOW", "OPEN60_CLOSE", "LAST60_OPEN"];
+pub fn session_series(m: &Minutes, ticker: &str, dates: &[&str]) -> [Vec<f64>; 4] {
+    let mut out: [Vec<f64>; 4] = std::array::from_fn(|_| vec![f64::NAN; dates.len()]);
+    for (i, d) in dates.iter().enumerate() {
+        let Some(b) = m.day(d) else { continue };
+        let Some(last) = b.last().map(|z| z.m) else { continue };
+        if let Some(z) = b.iter().find(|z| z.m + 59 >= last) { out[3][i] = z.o; }
+        let so = session_open(ticker, d);
+        if !b.iter().any(|z| z.m == so) { continue; }
+        let w: Vec<&Bar1> = b.iter().filter(|z| z.m < so + 60).collect();
+        out[0][i] = w.iter().map(|z| z.h).fold(f64::NEG_INFINITY, f64::max);
+        out[1][i] = w.iter().map(|z| z.l).fold(f64::INFINITY, f64::min);
+        out[2][i] = w[w.len() - 1].c;
+    }
+    out
+}
+// ---- end lane K75 block
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,5 +238,42 @@ mod tests {
         assert!(m.day("2020-01-06").is_none());
         assert_eq!((m.first(), m.last()), ("2020-01-02", "2020-01-03"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn session_series_first_and_last_hour() {
+        // lane K75: 09:30..09:31 then 10:29, 10:30, 15:00, 15:59; day 2 lacks its 09:30 minute (no OPEN60, LAST60 still)
+        let dir = std::env::temp_dir().join(format!("m1k75{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rows = ["2020-01-02,09:30,10,12,9,11", "2020-01-02,09:31,11,13,10.5,12", "2020-01-02,10:29,12,12.5,8,8.5", "2020-01-02,10:30,8.5,20,1,9",
+            "2020-01-02,15:00,9,9,9,9", "2020-01-02,15:59,9,10,8,9.5", "2020-01-03,09:31,5,6,4,5", "2020-01-03,15:59,5,5,5,5"];
+        let mut body = String::from("Date,Time,Open,High,Low,Close\n");
+        let mut idx = String::from("Date,offset,bytes\n");
+        for d in ["2020-01-02", "2020-01-03"] {
+            let off = body.len();
+            for r in rows.iter().filter(|r| r.starts_with(d)) { body.push_str(r); body.push('\n'); }
+            idx.push_str(&format!("{d},{off},{}\n", body.len() - off));
+        }
+        std::fs::write(dir.join("SPY.m1.csv"), body).unwrap();
+        std::fs::write(dir.join("SPY.m1idx.csv"), idx).unwrap();
+        let m = Minutes::load(dir.to_str().unwrap(), "SPY").unwrap();
+        let s = session_series(&m, "SPY", &["2019-12-31", "2020-01-02", "2020-01-03"]);
+        assert_eq!((s[0][1], s[1][1], s[2][1], s[3][1]), (13., 8., 8.5, 9.)); // 10:30 is not in the first hour
+        assert!(s.iter().all(|v| v[0].is_nan()) && s[0][2].is_nan() && s[2][2].is_nan() && s[3][2] == 5.);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    /// K75 check against the real files (by hand; K75w/series_cmp.py compares with library/intraday/build_session_series.py):
+    /// VAULT_M1_DIR=<data/intraday> K75_OUT=<dir> cargo test --release k75_series_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn k75_series_dump() {
+        let (dir, out) = (std::env::var("VAULT_M1_DIR").unwrap(), std::env::var("K75_OUT").unwrap());
+        for t in ["SPY", "SPX", "NIFTY 50", "NIFTYBANK"] {
+            let m = Minutes::load(&dir, t).unwrap();
+            let text = std::fs::read_to_string(format!("{dir}/{}.m1idx.csv", t.replace(' ', "_"))).unwrap();
+            let dates: Vec<&str> = text.lines().skip(1).filter_map(|l| l.split(',').next()).collect();
+            let s = session_series(&m, t, &dates);
+            let body: String = dates.iter().enumerate().map(|(i, d)| format!("{d},{:?},{:?},{:?},{:?}\n", s[0][i], s[1][i], s[2][i], s[3][i])).collect();
+            std::fs::write(format!("{out}/{}.rust.csv", t.replace(' ', "_")), body).unwrap();
+        }
     }
 }

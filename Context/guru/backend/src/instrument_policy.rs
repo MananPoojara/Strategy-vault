@@ -1377,7 +1377,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
     // intraday phase 1: minute data now exists for these, so the hold says what still blocks them
     match id {
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>return Some("Held: needs NYSE TICK data. Real 15-minute bars are now built from 1-minute data (SPY 2000-2025, SPX 2008-2026, NIFTY 50 2008-2026), but these day trades are taken only on days the course's 30-signal Market Timing count gives a buy bias, and one of the 30 signals is the NYSE TICK, which the vault does not have; counting only the other signals changes the strategy."),
-        "ss_smart_money_index"=>return Some("Held: rules not fully defined. The first-hour and last-hour prices are now built from real 1-minute bars, but the book uses the Smart Money Index as an indicator reading and gives no entry price, exit or stop for it (Ch 21, p.173-175)."),
         "cwin_vix_gap_window"=>return Some("Held: needs data, not rules (decision #244; the rule is coded from the Connors Windows course, VIX Gap Window): waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
         _=>{}
     }
@@ -1507,7 +1506,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "btp_momentum_gap"=>"Held: rules not fully defined. The book does not say what counts as a gap (open above yesterday's close, or above yesterday's high) and gives no stop or trailing-stop level, so both the entry and the exit would be the vault's choice.",
         // connors-leftovers (22 Oct 2026): plain card reasons for the remaining held Connors rules
         "ss_momentum_pinball"=>"Held: needs intraday data. Momentum Pinball buys or sells a break of the first trading hour's high or low; the vault holds daily bars only, so the first-hour range of each day is unknown.",
-        "ss_smart_money_index"=>"Held: needs intraday data. The Smart Money Index is built from the first and the last hour of each trading day, and the book does not give an entry price or exit for it; the vault holds daily bars only.",
         "ss_arms_index_5ma"|"ss_arms_index_5ma_nse"=>"Held: rules not fully defined. The book shows the 5-day average of the Arms reading as an indicator reading and leaves the trade to the reader (\"determine for yourself\", pp.181-182); there is no exit or entry to test. The series it reads are held: the block is the missing rule, not data.",
         "oiss_plus_three_put"|"oiss_plus_three_call"=>"Held: needs option prices. OISS Plus Three sells index options; the vault has no US option prices, and for India the engine cannot yet value open option positions, so the result would not be the option trade the book describes.",
         "spmt_tick"=>"Held: needs NYSE TICK data. This rule reads the NYSE TICK at the close each day; the vault has no TICK history for the US or India.",
@@ -3166,7 +3164,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
         }
         // Held: gate-withheld, data-missing, discretionary or no trade rule in the book.
-        for id in ["ss_turtle_soup","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal","ss_smart_money_index","ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse","ss_study_fresh_adx_buy","ss_study_fresh_adx_sell"] {
+        for id in ["ss_turtle_soup","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal",/* ss_smart_money_index: lane K75 minute admission */"ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse","ss_study_fresh_adx_buy","ss_study_fresh_adx_sell"] {
             let d=def(id,"ss");
             assert!(!reviewed_cash_rule(&d),"{id}");
             assert_eq!(policy(&d).requirement,"source_review_required");
@@ -3371,7 +3369,7 @@ mod tests {
         }
         assert!(open_instrument_label(&def("s12345","stc9")).unwrap().contains("leveraged"));
         assert!(open_instrument_label(&def("s12345","other")).is_none());
-        for id in ["ss_smart_money_index", /* ss_momentum_pinball: intraday phase 1 admission */"ss_arms_index_5ma","ss_arms_index_5ma_nse",/* oiss_plus_three_*: options phase 2 admission */"spmt_tick","spmt_multi5","spmt_multi9","spmt_mts","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","cwin_vix_gap_window","hfm_hv",/* hfm_und: options phase 2 (lane K34) */"btp_bottom_reversal_long","btp_momentum_gap"] {
+        for id in [/* ss_smart_money_index: lane K75 */ /* ss_momentum_pinball: intraday phase 1 admission */"ss_arms_index_5ma","ss_arms_index_5ma_nse",/* oiss_plus_three_*: options phase 2 admission */"spmt_tick","spmt_multi5","spmt_multi9","spmt_mts","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","cwin_vix_gap_window","hfm_hv",/* hfm_und: options phase 2 (lane K34) */"btp_bottom_reversal_long","btp_momentum_gap"] {
             assert!(held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
         for id in ["hfm_ndxspx","s12345","price","ststw_cum_rsi_35","ststw_cum_rsi_50","ststw_vix_stretch"] {assert!(held_reason(id).is_none(),"{id}");}
