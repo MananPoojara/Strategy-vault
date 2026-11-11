@@ -21,7 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"Place the initial stop at the moving average line or 1 tick on the other side.\"",
             "X|\"the exit will be a trailing stop using the exact same moving average ... in an uptrend, place the trailing stop exit 1 tick back below the moving average. In a downtrend, place the stop 1 tick above the moving average.\"",
             "X|[Book silent, neutral] Stop level for a bar = prior close's SMA -/+ 1 tick (orders are known before the open; the course's EMA stop uses \"the closing price of the day prior\"). Gap through a stop fills at the open; a stop touched on the entry bar counts as hit (conservative). Entry stops are re-issued each bar while the last two lows (highs) are above (below) the SMA; one position at a time, entries only when flat."],
-          "Course text p. 'Moving Average Breakout' (Examples 40-50). Tick: the book's '10 ticks' uses the instrument's minimum move; here tick = 0.05 for NSE indices (NSE tick), 0.01 otherwise (index quote step); 'tick' param overrides. The book's only result is TradeStation 'Mov Avg X 2/20' on CL 63/00 crude-oil futures, Oct 1998-Mar 2000, 1 contract: 51 trades, 49.02% win, net $6,000, PF 1.40, avg win/loss 1.45 (Example 50) - a futures contract the vault does not have, so it is not reproduced. The course's 'From My Experience' note mentions a 20-day EMA; the rule text says simple, which is the default. Run on the cash index (vault convention); shorting a cash index is hypothetical."),
+          "Course text p. 'Moving Average Breakout' (Examples 40-50). Tick: the book's '10 ticks' uses the instrument's minimum move (#57): 0.05 on NSE indices and stocks, 0.01 on US instruments; 'tick' param overrides. The book's only result is TradeStation 'Mov Avg X 2/20' on CL 63/00 crude-oil futures, Oct 1998-Mar 2000, 1 contract: 51 trades, 49.02% win, net $6,000, PF 1.40, avg win/loss 1.45 (Example 50) - a futures contract the vault does not have, so it is not reproduced. The course's 'From My Experience' note mentions a 20-day EMA; the rule text says simple, which is the default. Runs on indices, ETFs and stocks, US and India, as a declared application (lane K74, decision #277 (2): the crude-oil example is an illustration, not the rule); shorting a cash index is hypothetical. Same-day order: an entry stop filled inside the bar whose bar also reaches the stop counts as stopped (1.0-3.8% of trades on the checked instruments, under the 5% limit of #240)."),
         d("radge_oc_long", "Buy every open, sell the close", "Successful Stock Trading · Ch.1", "Long", Status::Live,
           &["E|\"I then told the computer to buy at the open of every single day - all 1353 of them -\"",
             "X|\"and sell on the close each night.\""],
@@ -82,7 +82,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "radge_ma220" => vec![p("ma", "Simple moving average (days)", 20., 10., 60., 5.), p("days", "Lows/highs beyond the MA (days)", 2., 1., 4., 1.),
                               p("ticks", "Entry ticks beyond the 2-day high/low", 10., 0., 20., 1.),
-                              p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 other)", 0., 0., 1., 0.01)],
+                              p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 US)", 0., 0., 1., 0.01)],
         "radge_oc_long" => vec![],
         "radge_oc_long_stop" | "radge_oc_short_stop" => vec![p("stop_pts", "Protective stop (index points; book table 1-50)", 1., 1., 50., 1.)],
         _ => return None,
@@ -114,7 +114,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "radge_ma220" => {
             let ma = x.sma_n(g("ma") as usize);
             let days = (g("days") as usize).max(1);
-            let tick = if g("tick") > 0. { g("tick") } else if x.r[0].ticker.to_uppercase().contains("NIFTY") { 0.05 } else { 0.01 };
+            // lane K74 (#57, #277 (2)): the instrument's own tick (NSE 0.05 indices and stocks, US 0.01); was 0.01 on NSE stocks
+            let tick = if g("tick") > 0. { g("tick") } else { x.market_tick() };
             let off = g("ticks") * tick;
             let mut cur: Option<Trade> = None;
             // pending entry order for bar i: (dir, stop level)
@@ -199,3 +200,11 @@ mod tests {
         assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 4);
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 (2)): the 2/20 moving-average breakout is a generic course rule (no fixed money amount; its
+// offsets are instrument ticks, #57); the CL crude example is an illustration, so the routing rule applies.
+pub const ADMISSION_MA220: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "radge_ma220",
+    label: "Nick Radge's course teaches this breakout as a general rule; its only worked result is on CL crude-oil futures (Example 50). Runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test; the 10-tick and 1-tick offsets use each instrument's own tick. Cash-index shorts are hypothetical exposure.",
+    basis: "Nick Radge's Trading Course (c.2000), Moving Average Breakout (The Setup, Filters 1-2, initial and trailing stops; Examples 40-50); decision #277 (2), #57; #240 same-day order 1.0-3.8% of trades on the checked instruments (under 5%); independent check authors/titles-1030/K74w (k74_daily.py).",
+};
