@@ -308,6 +308,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
           NeedsData("one/five/ten-minute bars and intraday NYSE up/down volume"), false,
           &["E|Babcock MGR (May 2003): fade the opening gap 9:30-9:42 a.m.; Shirley (Jun 2003): 10-minute SPY breakout; Hartle (May 2003): five-minute up/down volume slope difference"],
           "Intraday data not in the vault.", None),
+        d("atm03_shirley", "Shirley's 10-minute SPY breakout after McNutt, basic system (Jun 2003)", "Risk Control & Money Management Jun 2003", "Long/Short", Live, false,
+          &["F|\"an intraday breakout system back-tested on 10-minute price bars of the S&P index-tracking stock (SPY)\"; \"the basic system, which goes long or short on a breakout to a new high or low, respectively, after the first 30 minutes of trading. In this basic system, long trades are forbidden after four consecutive up days and short trades are forbidden after three consecutive down days\" (ACTIVE TRADER Jun 2003 p.83)",
+            "E|Figure 1 code (p.79): Condition3 = (Time > 1000 and Time < 1200) or (Time > 1345 and Time < 1600); Condition4 = no trade closed today; \"Sell Short ... Next Bar LowD(0) - .02 stop\" if NotThreeDown; \"Buy ... Next Bar HighD(0) + .02 stop\" if NotFourUp (NotFourUp = CloseD(1) < CloseD(2) or ... or CloseD(4) < CloseD(5); NotThreeDown = CloseD(1) > CloseD(2) or ... or CloseD(3) > CloseD(4)); an opposite entry reverses",
+            "X|\"Condition5 = MaxPositionProfit > FloorAmt; If Condition5 and MarketPosition = 1 and PositionProfit <= 0 then ... Sell ... next bar (High + Low)/2 Limit\" (shorts: Buy to cover); \"setstopposition; SetstopLoss(TrueRisk)\" with TrueRisk = BailLimit = $350 (p.79)",
+            "X|\"Exits occurred either at the end of the trading day or by triggering a stop-loss\" (p.83): out at the day's last 10-minute close",
+            "F|Basic column of Table 1: 200 shares fixed, so the $350 stop loss and the $350 floor are $1.75 a share; SPY only (a literal dollar amount on a share price; SPY has never split)"],
+          "Lane K75 (R4 #279 (5)): the printed code without its dynamic-sizing layer (the 'Dynamic' column needs intraday NYSE up/down volume, data2/data3, not in the vault). Run on SPY's real 1-minute bars as session-aligned 10-minute bars (time stamp = bar end); orders placed at a bar's close work in the next bar, minute by minute: the protective stop and the bail limit before entries; a minute that reaches two working levels keeps the stop first / no entry (counted, #175). MaxPositionProfit from the minutes after the fill (the fill minute's close) [declared].",
+          c("323", "58.5%", "", "", "SPY 10-minute bars, 360 trading days to 11 Mar 2003, basic system (Table 1)")),
         d("atm03_chart_patterns", "Chart-pattern columns (rectangles, H&S, broadening tops, Gartley 222, horn/pipe/3RV, W-bottom, RSI trendlines)", "Bierovic, Bulkowski, Conway, Hartle 2003", "Long/Short",
           NotTestable("pattern boundaries, pivots and trendlines are drawn by eye; no objective definition is given"), false,
           &["E|e.g. Bierovic Jan 2003: \"buy on the first day that reaches the previous day's high\" after a rectangle chosen on the chart"],
@@ -331,6 +339,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "atm03_or_rev" | "atm03_ob_cont" | "atm03_ob_cont_stops" => ("atm03_outside", "Outside bars (Andrews)", v),
         "atm03_memorial" | "atm03_july4" => ("atm03_seasonal", "Market History holidays", v),
         "atm03_meyers" | "atm03_intraday_misc" | "atm03_chart_patterns" => ("atm03_other", "Active Trader 2003 · not testable", v),
+        "atm03_shirley" => ("atm03_shirley", "Shirley 10-minute SPY breakout (Active Trader)", v),
         _ => return None,
     })
 }
@@ -357,6 +366,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm03_july4" => vec![p("before", "Entry: sessions before the holiday", 6., 2., 10., 1.)],
         "atm03_harris_delay" => vec![p("target", "Profit target %", 7., 1., 20., 0.5), p("stop", "Stop-loss %", 7., 1., 20., 0.5), p("delay", "Delay (bars after the pattern bar before the entry bar)", 1., 0., 3., 1.)],
         "atm03_dyn_breakout" | "atm03_ob_cont_stops" | "atm03_meyers" | "atm03_intraday_misc" | "atm03_chart_patterns" | "atm03_bodri" => vec![],
+        "atm03_shirley" => vec![p("stop", "Stop loss per share (Table 1: $350 on 200 shares)", 1.75, 0.1, 10., 0.05), p("floor", "Floor: bail at break-even once the open profit per share exceeds (book: $350 / 200)", 1.75, 0.1, 10., 0.05),
+                                p("off", "Entry offset beyond the day's high / low ($, book .02)", 0.02, 0., 1., 0.01),
+                                p("once", "1 = one entry a day (no reversal or re-entry after the first fill; the reading Table 1 fits); 0 = the printed code (default)", 0., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -371,6 +383,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| g(k).max(1.) as usize;
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     Some(match id {
+        "atm03_shirley" => shirley(x, from, to, g("stop"), g("floor"), g("off"), g("once") >= 0.5).0, // lane K75
         "atm03_bb60" => {
             let (m, sd, k) = (sma(c, u("n")), stdev(c, u("n")), g("k"));
             by_open(x, from, to, |i, _, _| {
@@ -665,3 +678,86 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Active Trader tested these columns on an 18-stock portfolio, Nasdaq-100 stocks, QQQ/SPY or futures portfolios with their own position sizing; runs on one index, ETF or single stock (US and India) are a declared application, one unit per position (scale-in legs at the column's equity fraction).",
     basis: "Active Trader Magazine 2003-2006 Trading System Lab and strategy columns (DjVu/PDF copies in Books/Active Trader Magazine)",
 };
+
+// ---- lane K75 block (11 Nov 2026, R4 #279 (5)): Shirley's 10-minute SPY breakout after McNutt, basic system (Jun 2003)
+/// One day at a time on the real 1-minute bars, as session-aligned 10-minute bars (stamp = bar end, TradeStation Time). Orders
+/// set at a bar's close work through the next bar: protective stop (entry -/+ `stop`) and the bail limit first, then the entry
+/// stops (an opposite fill reverses). Returns the trades and the number of minutes that reached two working levels (#175):
+/// stop and bail -> stop; long and short entry -> no entry; a fill whose minute also reaches its stop -> filled, then stopped.
+pub fn shirley(x: &Ctx, from: usize, to: usize, stop: f64, floor: f64, off: f64, once: bool) -> (Vec<Trade>, usize) {
+    use crate::intraday::{fill_px, touched, Bar1, Level};
+    let c = &x.c;
+    let (mut out, mut amb) = (vec![], 0usize);
+    for i in from.max(5)..=to {
+        let Some((_, _, m, bars)) = crate::intraday_ep::day_bars(x, i, 10) else { continue };
+        let (c1, c2, c3, c4, c5) = (c[i - 1], c[i - 2], c[i - 3], c[i - 4], c[i - 5]);
+        let not4up = c1 < c2 || c2 < c3 || c3 < c4 || c4 < c5;
+        let not3dn = c1 > c2 || c2 > c3 || c3 > c4;
+        let mut pos: Option<(f64, f64, f64)> = None; // dir, fill, best open profit per share
+        let (mut closed, mut hd, mut ld, mut entered) = (false, f64::NEG_INFINITY, f64::INFINITY, false);
+        let (mut long_lv, mut short_lv, mut bail): (Option<f64>, Option<f64>, Option<f64>) = (None, None, None);
+        let mut close_pos = |out: &mut Vec<Trade>, p: (f64, f64, f64), px: f64, why: &str| { out.push(crate::intraday::day_trade(p.0, i, p.1, i, px, why, "stop", false)); };
+        for b in &bars {
+            for z in &m[b.a..b.b] {
+                let z: &Bar1 = z;
+                if let Some(p) = pos {
+                    let sl = Level { up: p.0 < 0., px: p.1 - p.0 * stop };
+                    let bl = bail.map(|v| Level { up: p.0 > 0., px: v });
+                    let (hs, hb) = (touched(z, sl), bl.is_some_and(|l| touched(z, l)));
+                    if hs && hb { amb += 1; }
+                    if hs { close_pos(&mut out, p, fill_px(z, sl), "stop loss"); pos = None; closed = true; }
+                    else if hb { close_pos(&mut out, p, fill_px(z, bl.unwrap()), "break-even bail (limit at the bar midpoint)"); pos = None; closed = true; }
+                    else { pos = Some((p.0, p.1, p.2.max(p.0 * (if p.0 > 0. { z.h } else { z.l } - p.1)))); }
+                }
+                if once && entered { continue; }
+                let dir_now = pos.map_or(0., |p| p.0);
+                let lg = long_lv.filter(|_| dir_now <= 0.).map(|v| Level { up: true, px: v }).filter(|l| touched(z, *l));
+                let sh = short_lv.filter(|_| dir_now >= 0.).map(|v| Level { up: false, px: v }).filter(|l| touched(z, *l));
+                let (d, lv) = match (lg, sh) { (Some(_), Some(_)) => { amb += 1; continue; } (Some(l), None) => (1., l), (None, Some(l)) => (-1., l), _ => continue };
+                let px = fill_px(z, lv);
+                entered = true;
+                if let Some(p) = pos.take() { close_pos(&mut out, p, px, "reversed"); closed = true; }
+                if d > 0. { long_lv = None; } else { short_lv = None; }
+                let sl = Level { up: d < 0., px: px - d * stop };
+                if touched(z, sl) { amb += 1; close_pos(&mut out, (d, px, 0.), sl.px, "stop loss"); closed = true; continue; }
+                pos = Some((d, px, (d * (z.c - px)).max(0.)));
+            }
+            hd = hd.max(b.h); ld = ld.min(b.l);
+            let live = ((b.e > 600 && b.e < 720) || (b.e > 825 && b.e < 960)) && !closed;
+            long_lv = (live && not4up).then_some(hd + off);
+            short_lv = (live && not3dn).then_some(ld - off);
+            bail = pos.filter(|p| p.2 > floor && p.0 * (b.c - p.1) <= 0.).map(|_| (b.h + b.l) / 2.);
+        }
+        if let (Some(p), Some(b)) = (pos, bars.last()) { close_pos(&mut out, p, b.c, "end of day"); }
+    }
+    (out, amb)
+}
+// ---- end lane K75 block
+
+#[cfg(test)]
+mod k75_tests {
+    use super::*;
+    #[test]
+    fn shirley_breakout_fills_after_the_window_opens_and_stops_out() {
+        // lane K75: first 40 minutes high 101 / low 99; the bar ending 10:10 sets a buy stop 101.02 for 10:10-10:20; filled at
+        // 10:12, stopped at 101.02 - 1.75 = 99.27 at 10:13; a closed trade blocks later orders that day
+        let r: Vec<crate::Row> = [100., 101., 100., 101., 100., 99.5].iter().enumerate().map(|(i, &c)| crate::Row { ticker: "SPY".into(),
+            date: format!("2001-01-{:02}", i + 2), open: 100., high: 101.5, low: 99., close: c, volume: None }).collect();
+        let mut body = String::from("Date,Time,Open,High,Low,Close\n");
+        for k in 0..43u16 {
+            let (h, l, o, c) = match k { 5 => (101., 100., 100., 100.), 6 => (100., 99., 100., 100.), 42 => (100.5, 100.5, 100.5, 100.5), _ => (100., 100., 100., 100.) };
+            body.push_str(&format!("2001-01-07,{:02}:{:02},{o},{h},{l},{c}\n", (570 + k) / 60, (570 + k) % 60));
+        }
+        body.push_str("2001-01-07,10:13,100.5,101.5,100.4,101.4\n2001-01-07,10:14,101.4,101.4,99.2,99.5\n2001-01-07,15:59,99.5,99.5,99.5,99.5\n");
+        let dir = std::env::temp_dir().join(format!("shirley{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SPY.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("SPY.m1idx.csv"), format!("Date,offset,bytes\n2001-01-07,30,{}\n", body.len() - 30)).unwrap();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.minutes = crate::intraday::Minutes::load(dir.to_str().unwrap(), "SPY").map(|m| &*Box::leak(Box::new(m)));
+        let (t, amb) = shirley(&x, 0, 5, 1.75, 1.75, 0.02, false);
+        assert_eq!(amb, 0);
+        assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, (z.legs[0].px * 100.).round(), (z.exit_px * 100.).round())).collect::<Vec<_>>(), vec![(1., 5, 10102., 9927.)]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
