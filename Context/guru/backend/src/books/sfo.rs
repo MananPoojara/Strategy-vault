@@ -7,7 +7,7 @@ use Status::*;
 
 pub const BOOK: &str = "sfo";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["sfo_toepke_sp", "sfo_sec_sox_jan", "sfo_sec_sox_may", "sfo_sec_sox_sep", "sfo_sec_sox_oct_apr", "sfo_sec_ndx_nov_jan", "sfo_sec_rut_jul_oct", "sfo_sec_rut_dec_may"];
+pub const REVIEWED: &[&str] = &["sfo_toepke_sp", "sfo_sec_sox_jan", "sfo_sec_sox_may", "sfo_sec_sox_sep", "sfo_sec_sox_oct_apr", "sfo_sec_ndx_nov_jan", "sfo_sec_rut_jul_oct", "sfo_sec_rut_dec_may", "sfo_bb20_breakout" /* lane K73, R4 #276 (7): the default UNVERIFIED (#260 (2), #265) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// Toepke / MRCI S&P 500 seasonal windows (V2#6 p.64 Figure 4): (direction, entry month, day, exit month, day).
