@@ -27,7 +27,7 @@ pub const NDX_POINTS: &[&str] = &["lwnl_ndx_vb_oops"];
 pub const US_ONLY: &[&str] = &["lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail", "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy"];
 
 /// Lead decision 197 (K37, 4 Nov 2026): the outside-day cards cite the April 1991 letter, which is not in the research share.
-const OD_HELD: &str = "the cited source issue is not in the research share: these rules cite the April 1991 Commodity Timing letter (p.1-3), and the share's only copy of the letters (Trading Knowledge II/@NewsLetters-Mags/Larry Williams Newsletters (1994-1997)/Larry Williams Newsletters 1994-1997.zip) has no April 1991 issue (no volume 25 issue 4); the share scan and the title census list no other copy (lead decision 197, share-only rule)";
+const OD_HELD: &str = "the cited source issue is not on the drive: these rules cite the April 1991 issue of Larry Williams's newsletter (p.1-3), and the share's only copy of the letters (Trading Knowledge II/@NewsLetters-Mags/Larry Williams Newsletters (1994-1997)/Larry Williams Newsletters 1994-1997.zip) has no April 1991 issue (no volume 25 issue 4); the share scan and the title census list no other copy (lead decision 197, share-only rule)";
 
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $rules:expr, $notes:expr, $claim:expr) => {

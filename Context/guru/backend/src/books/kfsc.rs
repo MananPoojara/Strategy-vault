@@ -121,7 +121,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Once the second price peak has been made in the bearish divergence, we look for the MACD line crossing the signal line heading down. We can now sell.\" (p.208)",
             "X|\"that happens when the value of the MACD reaches zero\" (p.209)",
         ], "Kaufman's mechanical divergence code (TSM Divergence) is coded in kfbpm_divergence."),
-        d("kfsc_high_momentum", "High-momentum threshold trading", "Ch 14 · Momentum", "Long/Short", NotTestable("±15 threshold fitted to one AOL chart; exit 'a few minutes ... two or three days' (p.210-211)"), &[
+        d("kfsc_high_momentum", "High-momentum threshold trading", "Ch 14 · Momentum", "Long/Short", NotTestable("rules not defined: the ±15 threshold is fitted to one AOL chart and the exit is vague (from part of a day to 'two or three days', p.210-211)"), &[
             "E|\"trading in the direction of the trend only when momentum exceeds a high threshold level (for example, +15)\" (p.211)",
         ], ""),
         d("kfsc_dow_theory", "Dow Theory bull/bear signals", "Ch 18 · Dow Theory", "Long/Short", NotTestable("swing size 'perhaps 10 percent' and confirmation by two of DJIA/DJT/DJU (transport and utility averages not in the vault) (p.262-273)"), &[

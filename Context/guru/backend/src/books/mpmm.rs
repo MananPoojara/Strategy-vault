@@ -134,7 +134,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "the daily short-term KST has no stated signal-line span and its zero-crossover rule says 'take no action if the price has already moved a great deal' (p.170); combining the three weekly KSTs into stages is judgement (p.163). The weekly KST crossovers themselves run as mpmm_kst_wk",
             &["E|Short-term KST zero / MA crossovers with price confirmation (p.157-170)"]),
         nt!("mpmm_wilder_dmi", "Wilder directional movement rules and Elder's DMI version", "Ch.8 · Volatility and the Directional Movement System",
-            "restatement of Wilder (New Concepts, 1978) and Elder (Trading for a Living, 1993) with unquantified filters; convert from the primary sources",
+            "duplicate of wwnc_dmi (decision #277, lane K74: the same Wilder DMI rule, live from New Concepts itself; wwnc_dmi adds Wilder's extreme-point rule): a restatement of Wilder (New Concepts, 1978) and Elder (Trading for a Living, 1993) with unquantified filters; convert from the primary sources",
             &["E|\"Use crossovers of the +DI14 and -DI14 as timing points for entering and exiting the markets\""]),
         nt!("mpmm_wilder_parabolic_dps_asi", "Parabolic SAR, Directional Parabolic System, Accumulation Swing Index system, Commodity Selection Index", "Ch.9-10",
             "secondary restatement of Wilder's systems; ASI needs 'significant' swing points; CSI needs margin and commission data",

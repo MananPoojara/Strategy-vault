@@ -9,6 +9,9 @@ use crate::books::mpts::sma;
 pub const BOOK: &str = "skdab";
 pub const REVIEWED: &[&str] = &["skdab_trend3ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Lane K74 (R4 #277 (2)): Kroll on Futures Trading Strategy p.97, the 19-day close cross (not a duplicate of kftsm_ma, which
+/// trades the average's direction).
+pub const REVIEWED_SKFTS: &[&str] = &["skfts_ma19_close"];
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -28,8 +31,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "the 9/18/50 signals are given as entry and exit signals but the exit (opposite signal, or loss of the buy condition) and the 'get back aboard on the close of the next two days' re-entry are not defined exactly",
            &["E|\"Buy: close > 9-SMA > 18-SMA > 50-SMA. Sell: close < 9-SMA < 18-SMA < 50 SMA.\" (p.32)"]),
         nt("skdab_strategy", "Pyramiding, margin, news and trader-discipline chapters", "Dragons and Bulls", BOOK, "money management and judgement, no complete rule", &[]),
-        nt("skfts_ma_examples", "Moving average examples (19-day close cross, 5/20, 4-9-18) and Hochheimer's best averages", "Kroll on Futures Trading Strategy · Ch.12 (p.95-100)", "skfts",
-           "illustrations of common systems already in the vault (e.g. kftsm_4_9_18, kftsm_ma); Hochheimer's lengths are 1970-76 optimisations per futures market",
+        StrategyDef { id: "skfts_ma19_close", name: "19-day moving average close cross (Ch.12 example)", group: "Kroll on Futures Trading Strategy · Ch.12 (p.95-100)",
+            session: 0, dir: "Long", status: Live, needs_volume: false, needs_vix: false, needs_series: &[], book: "skfts",
+            rules: &["E|\"For example, using a 19-day m.a., you would buy when the price closes above the 19-day m.a. ...\" (p.97)",
+                     "X|\"... and sell (possibly reversing as well) when the price closes below\" (p.97)",
+                     "F|Read [lane K74, R4 #277 (2)]: a simple average of closes; the order fills at the close of the signal day; flat at the start, the first close above the average buys; 'possibly reversing' is the labelled option reverse = 1 (long and short, a close below also sells short and a close above covers and buys); a close equal to the average changes nothing"],
+            notes: "Kroll gives this as an example of how a moving-average system is used ('you would buy ... and sell'), with the length, the entry and the exit printed; the book's examples are futures charts with no results, so there is no book comparison. Indices, ETFs and stocks, US and India, are a declared application. Not a duplicate of kftsm_ma, which trades the direction of the average (Kaufman Table 8.2).",
+            claim: None },
+        nt("skfts_ma_examples", "Moving average examples (5/20, 4-9-18) and Hochheimer's best averages", "Kroll on Futures Trading Strategy · Ch.12 (p.95-100)", "skfts",
+           "illustrations of common systems already in the vault (e.g. kftsm_4_9_18); Hochheimer's lengths are 1970-76 optimisations per futures market. The 19-day close cross is coded as skfts_ma19_close (lane K74)",
            &["E|\"you would buy when the price closes above the 19-day m.a. and sell (possibly reversing as well) when the price closes below\" (p.97)"]),
         nt("skfts_strategy", "Long-term trend trading, pyramiding and money management", "Kroll on Futures Trading Strategy", "skfts",
            "discretionary strategy and tactics around unspecified long-term computer systems", &[]),
@@ -39,6 +49,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "skdab_trend3ma" => ("skdab_trend3ma", "Kroll trend strategy", "10/20/50 + 4/9/18"),
+        "skfts_ma19_close" => ("skfts_ma19_close", "Kroll 19-day close cross", "19-day MA"),
         _ if id.starts_with("skdab_") || id.starts_with("skfts_") => ("skdab_nt", "Kroll (held)", "-"),
         _ => return None,
     })
@@ -47,12 +58,15 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "skdab_trend3ma" => vec![],
+        "skfts_ma19_close" => vec![ParamDef { key: "n", label: "Moving average days (book example 19)", def: 19., min: 2., max: 100., step: 1. },
+            ParamDef { key: "reverse", label: "'possibly reversing as well': 0 = long/flat (default), 1 = long and short", def: 0., min: 0., max: 1., step: 1. }],
         _ if id.starts_with("skdab_") || id.starts_with("skfts_") => vec![],
         _ => return None,
     })
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec<Trade>> {
+    if id == "skfts_ma19_close" { return ma_close_cross(x, from, to, _p); }
     if id != "skdab_trend3ma" || from > to || to >= x.r.len() { return None; }
     let c = &x.c;
     let (m4, m9, m18, m10, m20, m50) = (sma(c, 4), sma(c, 9), sma(c, 18), sma(c, 10), sma(c, 20), sma(c, 50));
@@ -86,6 +100,67 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
     if let Some(mut tr) = cur { tr.exit_i = to; tr.exit_px = c[to]; tr.signal_i = to; tr.reason = "open".into(); tr.open = true; out.push(tr); }
     Some(out)
 }
+
+/// Kroll p.97: buy when the close is above the n-day simple average, sell when it is below (reverse = 1: also short). Fills at
+/// the signal day's close. Close vs average compared exactly on the printed decimals (n x close vs the window sum) where the
+/// series is decimal-exact, as connors::exact_avg_vs; floats otherwise.
+fn ma_close_cross(x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+    let (n, rev) = (g("n", 19.), g("reverse", 0.));
+    if from > to || to >= x.r.len() || !(2.0..=100.0).contains(&n) || n.fract() != 0.0 || !(rev == 0.0 || rev == 1.0) { return None; }
+    if p.keys().any(|k| k != "n" && k != "reverse") { return None; }
+    let (n, c) = (n as usize, &x.c);
+    let m = crate::connors::sma(c, n);
+    let ex = crate::connors::ExactSeries::new(&[c]);
+    let sums = ex.as_ref().map(|e| e.sums(0, n));
+    // +1 close above, -1 below, 0 equal or no average yet
+    let side = |i: usize| -> i8 {
+        let o = match (&ex, &sums) { (Some(e), Some(s)) => crate::connors::exact_avg_vs(e, s, n, 0, i).map(|o| o.reverse()), _ => c[i].partial_cmp(&m[i]).filter(|_| m[i].is_finite()) };
+        match o { Some(std::cmp::Ordering::Greater) => 1, Some(std::cmp::Ordering::Less) => -1, _ => 0 }
+    };
+    let (mut out, mut cur) = (vec![], None::<Trade>);
+    for i in from..=to {
+        let s = side(i) as f64;
+        if s == 0.0 { continue; }
+        if let Some(mut t) = cur.take() {
+            if t.dir == s { cur = Some(t); continue; }
+            t.exit_i = i; t.exit_px = c[i]; t.signal_i = i; t.reason = if s > 0.0 { "close above the average".into() } else { "close below the average".into() };
+            out.push(t);
+        }
+        if s > 0.0 || rev == 1.0 {
+            cur = Some(Trade { dir: s, legs: vec![Leg { i, px: c[i], w: 1. }], exit_i: i, exit_px: c[i], reason: String::new(), entry_kind: "close", signal_i: i, open: false, exits: vec![] });
+        }
+    }
+    if let Some(mut t) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+    Some(out)
+}
+
+#[cfg(test)]
+mod k74_tests {
+    use super::*;
+    use crate::Row;
+    #[test]
+    fn kroll_19_day_close_cross_long_flat_and_reversing() {
+        // 3-day average for a short check: closes 10,10,10 (avg 10, equal: nothing), 11 (avg 10.33: buy), 9 (avg 10: sell), 12 (buy)
+        let c = [10., 10., 10., 11., 9., 12.];
+        let r: Vec<Row> = c.iter().enumerate().map(|(i, &v)| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: v, high: v, low: v, close: v, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let p: Params = [("n".to_string(), 3.0)].into_iter().collect();
+        let t = run("skfts_ma19_close", &x, 0, 5, &p).unwrap();
+        assert_eq!(t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1., 3, 4, false), (1., 5, 5, true)]);
+        let mut p2 = p.clone(); p2.insert("reverse".into(), 1.0);
+        let t = run("skfts_ma19_close", &x, 0, 5, &p2).unwrap();
+        assert_eq!(t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), vec![(1., 3, 4), (-1., 4, 5), (1., 5, 5)]);
+        assert_eq!(params("skfts_ma19_close").unwrap()[0].def, 19.0);
+    }
+}
+
+// Lane K74 (11 Nov 2026, R4 #277 (2)): Kroll on Futures Trading Strategy p.97, the 19-day close cross.
+pub const ADMISSION_SKFTS: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "skfts" && REVIEWED_SKFTS.contains(&def.id),
+    label: "Stanley Kroll gave this 19-day moving-average close cross as an example for futures, with no test or results; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Stanley Kroll, Kroll on Futures Trading Strategy (Dow Jones-Irwin 1988), Ch.12 p.97: 'using a 19-day m.a., you would buy when the price closes above the 19-day m.a. and sell (possibly reversing as well) when the price closes below'; fills at the close (declared); decision #277 (2); independent check authors/titles-1030/K74w (k74_daily.py).",
+};
 
 // Instrument admission: Kroll 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/kroll/admission/SOURCE-CONTRACT.md); kept in one block to merge.

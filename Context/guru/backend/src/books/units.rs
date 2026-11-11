@@ -55,6 +55,9 @@ const RULES: &[(&str, W, bool, bool)] = &[
     // lane K68 (R4 #265): Active Trader May 2003 p.54, gap closer: "The system will maintain multiple open long positions",
     // "Risk 9 percent of account equity per trade" (each gap its own position, p.w of the account value at its open fill)
     ("atm03_gap_closer", W::Money, false, false),
+    // lane K74 (R4 #277): Original Turtle Rules p.14-15, "Unit = 1% of Account / (N x Dollars per Point)" (books::covel weight
+    // = 1% x fill / N), up to 4 units (p.17); a gapped unit can leave alone (one exit piece per leg)
+    ("cov_turtle_s1", W::Money, true, false), ("cov_turtle_s2", W::Money, true, false),
 ];
 pub fn is_units(id: &str) -> bool { RULES.iter().any(|r| r.0 == id) }
 

@@ -30,7 +30,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|Same SS-TDA entry (p.5)", "X|\"a trade was taken off when the market opened profitably basis the position ... my 'first profitable open' exit\" (p.10)"],
           "Printed results (ATRBO test 6): S&P INDEX 976 trades 73%, net $204,225 (p.13); T-Bonds 926 trades 74%; D-Mark 808 trades 71%; Crude 936 trades 68%."),
         d("lgsc_intraday_123", "Intraday Market Mapping (1-2-3 patterns, 3-bar filter)", "Trading in the Trenches · Intraday (p.15-30)",
-          NotTestable("rules not fully defined: 1-2-3 swings 'of some degree' on 15-30 minute charts chosen by the trader (Trading in the Trenches / Scorpion S&P p.17); price bars at that size now exist, the judgement remains"),
+          NotTestable("rules not fully defined: 1-2-3 swings 'of some degree' on 15- to 30-min charts, judged by eye by the trader (Trading in the Trenches / Scorpion S&P p.17); price bars at that size now exist, the judgement remains"),
           &["F|\"A 1-2-3 ... is formed when the market has made a low of some degree, swung up in the next few bars to make a high, then fallen back down to a low that is higher than the previous low\" (p.17)"], ""),
         d("lgsc_scorpion", "Scorpion S&P methodology (25/175 oscillator, Fibonacci retracements)", "Scorpion S&P (p.1-32 of part 2)",
           NotTestable("the author calls it 'a methodology, rather than a system': swing selection, divergences and stop placement are left to the trader"),

@@ -57,7 +57,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|T-Bonds columns of the same day-type tables (p.51-54); BndPlan Hi/In/Lo/Out code (p.41-44)", "X|Profitable open; target max(high of entry day, entry + 2 ticks); $625 money stop from the day after entry"],
           "Book 'Bond Plan 93' 1993: 57 trades, 75%, avg $92 (p.57).", claim("57", "75%", "$92.00", "1 bar", "T-Bond futures 1993 (p.57)")),
         d("lgtt30_intraday", "Intraday Market Mapping (1-2-3 patterns, 3-bar filter)", "Intraday Market Mapping (p.23-36)",
-          NotTestable("rules not fully defined: the 1-2-3 swings 'of some degree' are recognised by eye on 15-30 minute charts (TT30 with Market Mapping p.23-36); price bars at that size now exist, the judgement remains"),
+          NotTestable("rules not fully defined: the 1-2-3 swings 'of some degree' are recognised by eye on 15- to 30-min charts (TT30 with Market Mapping p.23-36); price bars at that size now exist, the judgement remains"),
           &["F|1-2-3 swing patterns and a 3-bar average filter used to fine-tune system entries (p.23-36)"], "", None),
     ]
 }

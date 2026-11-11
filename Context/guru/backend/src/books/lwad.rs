@@ -16,11 +16,11 @@ macro_rules! off {
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::{NeedsData, NotTestable};
     vec![
-        off!("lwad_sp_open_close", "S&P: down close above the open, buy tomorrow at today's high", NotTestable("No exit or stop is stated (printout 5: 64 trades, 81%, $35,700, S&P 06/93 test); the bond version needs T-bond futures."),
+        off!("lwad_sp_open_close", "S&P: down close above the open, buy tomorrow at today's high", NotTestable("No exit or stop is stated (printout 5: 64 trades, 81% winners, 35,700 dollars net, S&P 06/93 test); the bond version needs T-bond futures."),
             &["E|\"If today's close is lower than yesterday's close, yet today's close is higher than today's open, we should buy the S&P 500 tomorrow (unless tomorrow is a Friday) at the value of today's high\"", "X|Not stated"]),
-        off!("lwad_pctr_patterns", "%R < 20 + down close: buy at its high; %R > 80 + up close: sell Fridays at its low", NotTestable("No exit or stop is stated (printouts 7-8: 35 trades 97% $31,925; 19 trades 84% $10,200)."),
+        off!("lwad_pctr_patterns", "%R < 20 + down close: buy at its high; %R > 80 + up close: sell Fridays at its low", NotTestable("No exit or stop is stated (printouts 7-8: 35 trades 97% winners, 31,925 dollars net; 19 trades 84%, 10,200 dollars)."),
             &["E|\"demand that a 10-day %R be less than 20 ... a close that is lower than the previous day's low. Should that take place, buy the following day at the high of the down close day\" (any day but a Friday)", "X|Not stated"]),
-        off!("lwad_bonds_monday", "Buy the S&P on Monday's open if the 18-day MA of bonds is rising", NeedsData("Needs T-bond futures; the exit is also not stated (printout 11: 313 trades 83% $151,225)."),
+        off!("lwad_bonds_monday", "Buy the S&P on Monday's open if the 18-day MA of bonds is rising", NeedsData("Needs T-bond futures; the exit is also not stated (printout 11: 313 trades 83% winners, 151,225 dollars net)."),
             &["F|\"If the 18-day moving average of Bonds is >/= to the previous day\"", "E|\"buy the S&P on Monday's opening\"", "X|Not stated"]),
         off!("lwad_day_of_month", "Days-of-the-month count: range-based entries on calendar days", NotTestable("Exit not stated and the order direction of the calendar-day-1 example is ambiguous (printouts 12-15)."),
             &["E|\"taking 50% of the range of day 1 (... calendar day 1) and subtracting that from the next day's opening makes $14,275\"; day 2 sell at 15%, day 3 at 45%", "X|Not stated"]),

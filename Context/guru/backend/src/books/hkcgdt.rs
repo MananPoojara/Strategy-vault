@@ -15,7 +15,7 @@ macro_rules! nt {
     };
 }
 
-const NO_EXIT: &str = "entry signal only: 'You still need to apply profit targets and stop losses' (p.139); parameters are examples ('e.g.'); intraday charts";
+const NO_EXIT: &str = "entry signal only: 'You still need to apply profit targets and stop losses' (p.139); parameters are examples ('e.g.'), and no exit is given; shown on short-period charts";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
@@ -33,7 +33,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"A sell signal is generated when the RSI crosses the 70-line ... from above. A buy signal is generated when the RSI crosses the 30-line ... from below.\" (p.144)"]),
         nt!("hkcgdt_bollinger", "Bollinger band fade (21, 2)", NO_EXIT,
             &["E|\"A buy signal is generated when prices move below the lower Bollinger Band. A sell signal is generated when prices move above the upper Bollinger Band.\" (p.145)"]),
-        nt!("hkcgdt_exits", "Stop-loss, profit-target, trailing and time-stop menu", "a menu of exit types with example values ($ amount, 1% of price, 50% of ATR, support/resistance, 3x the bar interval), not tied to an entry (p.151-170)",
+        nt!("hkcgdt_exits", "Stop-loss, profit-target, trailing and time-stop menu", "a menu of exit types with example values ($ amount, 1% of price, 50% of ATR, support/resistance, 3x the bar interval), not tied to an entry, so there is no trade rule (p.151-170)",
             &["X|\"Stop loss and profit-taking exit rules can be expressed in four ways\" (p.151)"]),
         nt!("hkcgdt_300_200", "$300 target / $200 stop strategy", "the entry rules of the strategy are not given in this book (p.12-14)",
             &["X|\"a profit target of $300 per contract and a stop loss of $200 per contract\" (p.12)"]),

@@ -4,6 +4,10 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mhstp";
+/// Lane K74 (R4 #277, #196(2)/#202/#240/#243): the S&P patterns' 10-point target and stop are literal S&P index points, so they
+/// run on SPX only (gate list), from 2014 (real opens, clamp_open), with the same-day order of the two levels taken from SPX's
+/// 1-minute bars (EP6). Admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"];
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };
@@ -64,13 +68,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Needs IMM Swiss franc futures daily OHLC (1983-1999). Targets/stops are in franc points (1 point = $1,250); no equity-index equivalent without inventing a conversion. Code is in place (same engine as the live S&P patterns) and runs on a ticker of that futures market when its data is added.", None),
         d("mhs_sp830825_1", "SP830825-1 · Exact long · 10/10 pts · next open", "Pattern Library · CME S&P 500 Index", "Long", Status::Live,
             &["F|Pattern SP830825-1 (CME S&P 500 Index), type Exact, position Long STTPP p.180", "E|\"Logic: H(0) > L(1) and L(2) > H(0) and H(1) > L(2) and H(2) > L(3) and L(1) > L(0) and L(3) > H(1) and H(3) > H(2)\" p.180", "E|\"Order Entry: Open of Tomorrow, O\" ; \"Order delay: 0\" (bar labels already include the delay, Ch.8 p.77 / Ch.14 p.132) p.180", "X|\"Profit Target: 10 points\" and \"Protective Stop: 10 points\" from the entry price, good-til-cancelled (p.63: \"a profit target and a stop loss order are also put in place as a good 'til cancelled order\")"],
-            "S&P 500 futures pattern run on the cash index / ETF (instrument swap; NIFTY 50 for India). Book defaults are literal S&P index POINTS (10 = $2,500 on the 1983-99 contract); on today's index levels 10 points is a tiny move, so the [Not from the book] pct_target/pct_stop options express them as % of entry instead (0 = book points). Open entry: target/stop work on the entry day (GTC with the entry, p.63). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. One position per pattern; signals while in a position are ignored (p.65). SPX/DJI/NDX opens before ~1999 in the vault data equal the prior close, so SPX trades before then fill at the prior close, not the real open.", claim("27","70%","$1,021.35 per contract","22 bars winners / 6 losers","2/15/83-1/7/99 S&P futures")),
+            "S&P 500 futures pattern run on the S&P 500 index (SPX) only: the target and stop are the book's literal 10 S&P index points (decisions #196(2), #202, #277), so no other instrument is published. Results start 2014 (real SPX opens; the entry is at the open). Open entry: target/stop work on the entry day (GTC with the entry, p.63). Opened through a level: fill at the open. When one day's range holds both the target and the stop, the order is taken from SPX's real 1-minute bars (decisions #240, #243; lane K74); a day without minutes keeps the daily convention (stop first, book silent). One position per pattern; signals while in a position are ignored (p.65). The [Not from the book] pct_target/pct_stop options express the levels as % of entry instead (0 = book points).", claim("27","70%","$1,021.35 per contract","22 bars winners / 6 losers","2/15/83-1/7/99 S&P futures")),
         d("mhs_sp830120_1", "SP830120-1 · Exact long · 10/10 pts · next open", "Pattern Library · CME S&P 500 Index", "Long", Status::Live,
             &["F|Pattern SP830120-1 (CME S&P 500 Index), type Exact, position Long STTPP p.182", "E|\"Logic: H(0) > C(0) and L(2) > L(0) and H(1) > H(0) and H(2) > H(1) and L(0) > L(1) and C(0) > L(2)\" p.182", "E|\"Order Entry: Open of Tomorrow, O\" ; \"Order delay: 0\" (bar labels already include the delay, Ch.8 p.77 / Ch.14 p.132) p.182", "X|\"Profit Target: 10 points\" and \"Protective Stop: 10 points\" from the entry price, good-til-cancelled (p.63: \"a profit target and a stop loss order are also put in place as a good 'til cancelled order\")"],
-            "S&P 500 futures pattern run on the cash index / ETF (instrument swap; NIFTY 50 for India). Book defaults are literal S&P index POINTS (10 = $2,500 on the 1983-99 contract); on today's index levels 10 points is a tiny move, so the [Not from the book] pct_target/pct_stop options express them as % of entry instead (0 = book points). Open entry: target/stop work on the entry day (GTC with the entry, p.63). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. One position per pattern; signals while in a position are ignored (p.65). SPX/DJI/NDX opens before ~1999 in the vault data equal the prior close, so SPX trades before then fill at the prior close, not the real open.", claim("50","64%","$687.75 per contract","16 bars winners / 10 losers","2/15/83-1/7/99 S&P futures")),
+            "S&P 500 futures pattern run on the S&P 500 index (SPX) only: the target and stop are the book's literal 10 S&P index points (decisions #196(2), #202, #277), so no other instrument is published. Results start 2014 (real SPX opens; the entry is at the open). Open entry: target/stop work on the entry day (GTC with the entry, p.63). Opened through a level: fill at the open. When one day's range holds both the target and the stop, the order is taken from SPX's real 1-minute bars (decisions #240, #243; lane K74); a day without minutes keeps the daily convention (stop first, book silent). One position per pattern; signals while in a position are ignored (p.65). The [Not from the book] pct_target/pct_stop options express the levels as % of entry instead (0 = book points).", claim("50","64%","$687.75 per contract","16 bars winners / 10 losers","2/15/83-1/7/99 S&P futures")),
         d("mhs_sp830330_1", "SP830330-1 · Exact long · 10/10 pts · next open", "Pattern Library · CME S&P 500 Index", "Long", Status::Live,
             &["F|Pattern SP830330-1 (CME S&P 500 Index), type Exact, position Long STTPP p.184", "E|\"Logic: H(0) > C(0) and L(2) > L(1) and H(1) > H(2) and H(2) > L(0) and C(0) > H(1) and L(0) > L(2)\" p.184", "E|\"Order Entry: Open of Tomorrow, O\" ; \"Order delay: 0\" (bar labels already include the delay, Ch.8 p.77 / Ch.14 p.132) p.184", "X|\"Profit Target: 10 points\" and \"Protective Stop: 10 points\" from the entry price, good-til-cancelled (p.63: \"a profit target and a stop loss order are also put in place as a good 'til cancelled order\")"],
-            "S&P 500 futures pattern run on the cash index / ETF (instrument swap; NIFTY 50 for India). Book defaults are literal S&P index POINTS (10 = $2,500 on the 1983-99 contract); on today's index levels 10 points is a tiny move, so the [Not from the book] pct_target/pct_stop options express them as % of entry instead (0 = book points). Open entry: target/stop work on the entry day (GTC with the entry, p.63). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. One position per pattern; signals while in a position are ignored (p.65). SPX/DJI/NDX opens before ~1999 in the vault data equal the prior close, so SPX trades before then fill at the prior close, not the real open.", claim("37","70%","$991.46 per contract","11 bars winners / 15 losers","2/15/83-1/7/99 S&P futures")),
+            "S&P 500 futures pattern run on the S&P 500 index (SPX) only: the target and stop are the book's literal 10 S&P index points (decisions #196(2), #202, #277), so no other instrument is published. Results start 2014 (real SPX opens; the entry is at the open). Open entry: target/stop work on the entry day (GTC with the entry, p.63). Opened through a level: fill at the open. When one day's range holds both the target and the stop, the order is taken from SPX's real 1-minute bars (decisions #240, #243; lane K74); a day without minutes keeps the daily convention (stop first, book silent). One position per pattern; signals while in a position are ignored (p.65). The [Not from the book] pct_target/pct_stop options express the levels as % of entry instead (0 = book points).", claim("37","70%","$991.46 per contract","11 bars winners / 15 losers","2/15/83-1/7/99 S&P futures")),
         d("mhs_si830520_1", "SI830520-1 · Exact short · 40/40 pts · next open", "Pattern Library · COMEX Silver", "Short", Status::NeedsData("Needs COMEX silver futures daily OHLC (1983-1999). Targets/stops are in silver points (cents; 20 points = $1,000); no equity-index equivalent without inventing a conversion."),
             &["F|Pattern SI830520-1 (COMEX Silver), type Exact, position Short STTPP p.188", "E|\"Logic: H(0) > C(1) and L(2) > H(0) and H(1) > C(2) and C(2) > L(2) and L(1) > C(0) and C(0) > L(0) and H(2) > H(1) and C(1) > L(1)\" p.188", "E|\"Order Entry: Open of Tomorrow, O\" ; \"Order delay: 0\" (bar labels already include the delay, Ch.8 p.77 / Ch.14 p.132) p.188", "X|\"Profit Target: 40 points\" and \"Protective Stop: 40 points\" from the entry price, good-til-cancelled (p.63: \"a profit target and a stop loss order are also put in place as a good 'til cancelled order\")"],
             "Needs COMEX silver futures daily OHLC (1983-1999). Targets/stops are in silver points (cents; 20 points = $1,000); no equity-index equivalent without inventing a conversion. Code is in place (same engine as the live S&P patterns) and runs on a ticker of that futures market when its data is added.", None),
@@ -177,7 +181,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "mhs_si830630_1" => vec![p("target","Profit target (points)",20.0,5.0,100.0,5.0), p("stop","Protective stop (points)",20.0,5.0,100.0,5.0)],
         "mhs_hd_rt_long" => vec![p("target","Profit target (points)",1.0,0.25,5.0,0.25), p("stop","Protective stop (points)",1.0,0.25,5.0,0.25)],
         _ => return None,
-    })
+    }).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243): the S&P patterns (lane K74, #277)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -214,7 +218,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (pt, ps) = (g("pct_target"), g("pct_stop"));
     let (target, stop, pct) = if pt > 0. && ps > 0. { (pt, ps, true) } else { (g("target"), g("stop"), false) };
     // open entries: GTC target/stop placed with the order (p.63) -> active on the entry bar
-    Some(simulate(x, from, to, logic, dir, at_open, true, level_fn(dir, target, stop, pct)))
+    Some(simulate_ep6(x, from, to, logic, dir, at_open, true, level_fn(dir, target, stop, pct), crate::intraday_ep6::on(id, p)))
 }
 
 // ---- pattern engine (one position per pattern; same code in mhstp/mhpst/mhart so each module stands alone) ----
@@ -244,16 +248,23 @@ fn exit_on(x: &Ctx, i: usize, dir: f64, tp: f64, sp: f64) -> Option<(f64, &'stat
 }
 /// at_open: signal on bar i's close, fill at bar i+1's open; else fill at bar i's close.
 /// entry_bar_exits: target/stop already working on the open-entry bar (otherwise from the next bar).
+#[cfg(test)]
 fn simulate(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
-            levels: impl Fn(f64) -> (f64, f64)) -> Vec<Trade> {
+            levels: impl Fn(f64) -> (f64, f64)) -> Vec<Trade> { simulate_ep6(x, from, to, logic, dir, at_open, entry_bar_exits, levels, false) }
+/// `ep6` (lane K74, decisions #240/#243/#277): a bar whose range holds both the target and the stop while the open is through
+/// neither is walked on the real 1-minute path (intraday_ep6::stop_target); otherwise, and without minutes, exit_on.
+fn simulate_ep6(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
+            levels: impl Fn(f64) -> (f64, f64), ep6: bool) -> Vec<Trade> {
     let dnf = parse(logic);
     let mut out = vec![];
     let mut cur: Option<(Trade, f64, f64, usize)> = None;
     for i in from..=to {
         if let Some((t, tp, sp, active)) = cur.as_mut() {
             if i >= *active {
-                if let Some((p, why)) = exit_on(x, i, dir, *tp, *sp) {
+                let (fill, day) = crate::intraday_ep6::stop_target(x, i, dir, *sp, *tp, ep6, ("stop", "target"), || exit_on(x, i, dir, *tp, *sp));
+                if let Some((p, why)) = fill {
                     t.exit_i = i; t.exit_px = p; t.signal_i = i; t.reason = why.into();
+                    crate::intraday_ep6::mark(t, day);
                     out.push(cur.take().unwrap().0);
                 }
             }
@@ -321,6 +332,33 @@ mod tests {
         assert!(t[0].open);
     }
     #[test]
+    fn k74_both_levels_in_one_day_are_ordered_by_the_minutes() {
+        // signal C0>C1 on bar 1, fill bar 2 open 100; bar 2 reaches the target 110 and the stop 90 (open through neither)
+        let r: Vec<Row> = [(10., 11., 9., 10.), (10., 12., 9., 11.), (100., 111., 89., 100.)].iter().enumerate()
+            .map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2020-01-0{}", i + 2), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        // no minutes: the daily convention, stop first, marked
+        let t = simulate_ep6(&x, 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), true);
+        assert!(t[0].exit_px == 90. && t[0].reason.ends_with(crate::intraday_ep6::Day::Convention.note()), "{t:?}");
+        // minutes: the high comes first -> target
+        let dir = std::env::temp_dir().join(format!("k74mhs{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let body = "Date,Time,Open,High,Low,Close\n2020-01-04,09:30,100,111,99,105\n2020-01-04,09:31,105,106,89,100\n";
+        std::fs::write(dir.join("T.m1.csv"), body).unwrap();
+        let h = body.find('\n').unwrap() + 1;
+        std::fs::write(dir.join("T.m1idx.csv"), format!("Date,offset,bytes\n2020-01-04,{},{}\n", h, body.len() - h)).unwrap();
+        x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap())));
+        let t = simulate_ep6(&x, 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), true);
+        assert!(t[0].exit_px == 110. && t[0].reason == format!("target{}", crate::intraday_ep6::Day::Minutes.note()), "{t:?}");
+        // off (order = 0): unchanged daily rule
+        let t = simulate_ep6(&x, 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), false);
+        assert!(t[0].exit_px == 90. && t[0].reason == "stop", "{t:?}");
+        for id in SPX_PTS {
+            assert!(crate::intraday_ep6::IDS.contains(id) && params(id).unwrap().iter().any(|d| d.key == "order"), "{id}");
+            assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
+        }
+    }
+    #[test]
     fn catalogue_ids_unique_and_params_default_to_book() {
         let cat = catalogue();
         let mut ids: Vec<_> = cat.iter().map(|d| d.id).collect(); ids.sort(); ids.dedup();
@@ -332,3 +370,10 @@ mod tests {
         }
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277): the three S&P patterns, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Michael Harris found these patterns on CME S&P 500 futures (1983-1999) with a fixed 10-point profit target and stop. They run on the S&P 500 index (SPX) only, the 10 points literal, from 2014 (real opens), with the order of the target and the stop on days that reach both taken from SPX's real 1-minute bars; a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
+    basis: "Michael Harris: Short-Term Trading with Price Patterns (Traders Press 1998/2000) p.180-185 (SP830825-1, SP830120-1, SP830330-1: logic, open-of-tomorrow entry, 10-point target and stop), p.63-65 (good-til-cancelled orders, one position per pattern); decisions #196(2), #202, #240, #243, #277; EP6 minute resolver (intraday_ep6); independent check authors/titles-1030/K74w (mhs_ref.py).",
+};
