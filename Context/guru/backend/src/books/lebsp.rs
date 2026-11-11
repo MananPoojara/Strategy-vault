@@ -602,6 +602,24 @@ mod tests {
         let ts = sim(&x, 0, 1, Some(6.), 0., |_, _| vec![o(K::Buy, Ty::Stop, 101., "t")]);
         assert_eq!((ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (101., 1, 95.));
     }
+    /// Lane K73 engine-vs-reference dump of the held lebsp_piranha2 (the gate publishes nothing, so the run API refuses it; run by hand,
+    /// K73w/cmp_piranha.py compares with k73_ref.piranha2): VAULT_US=<data/us_data.csv> K73_OUT=<file> cargo test --release k73_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn k73_dump() {
+        use std::io::Write;
+        let mut all = crate::load_csv(&std::env::var("VAULT_US").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("K73_OUT").unwrap()).unwrap());
+        for t in ["SPX", "SPY"] {
+            let rows = all.remove(t).unwrap();
+            let x = Ctx::new(&rows, &rows, &[]);
+            for a in [0, rows.partition_point(|r| r.date.as_str() < "2014-01-02")] {
+                for z in run("lebsp_piranha2", &x, a, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{t},{},{},{},{},{},{},{}", rows[a].date, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
+    }
 }
 
 // Instrument admission: Mack the NYFE re-opened 2026-11-02 (titles lane K20, lead decision 138).
