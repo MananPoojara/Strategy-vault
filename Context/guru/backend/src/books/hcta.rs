@@ -13,7 +13,7 @@ pub const REVIEWED: &[&str] = &["hcta_sp_jan_long", "hcta_sp_apr_long", "hcta_sp
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 /// Lane K74 (R4 #277 (5)): the April-gold seasonal on GLD as a labelled application (the vault's only gold series, as
 /// scblack_gold, #207(2)); published on GLD only (home()).
-pub const GOLD_GLD: &[&str] = &["hcta_gold_jan_short"];
+pub const GOLD_GLD: &[&str] = &["hcta_gold_jan_short", "hcta_gold_aug_long", "hcta_gold_oct_short", "hcta_gold_nov_long"]; // + R4 #278 (3)
 pub const GLD: &str = "GLD";
 /// The GLD-only card is not published on any other instrument.
 pub fn home(id: &str, ticker: &str) -> Option<String> {
@@ -212,10 +212,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Exit at the close 24 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
             "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Cocoa December contract history is added.",
             claim("36", "66.7% (24 gains / 12 losses)", "total $24,830 (best $5,470, worst -$2,090)", "24 trading days", "1973-2008, December contract, one contract")),
-        d("hcta_gold_aug_long", "August long Gold (Z), TD 18 hold 25", "CTA 2010 p.126-127 · Gold seasonal trades", "Long", NeedsData(FUT),
+        d("hcta_gold_aug_long", "August long Gold (Z), TD 18 hold 25", "CTA 2010 p.126-127 · Gold seasonal trades", "Long", Live,
             &["E|Buy the December (Z) contract at the close of the 18th trading day of August (Top Percentage Plays table, p.126-127: \"Trading Day 18\")",
               "X|Exit at the close 25 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Gold December contract history is added.",
+            "Published on GLD only (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX December (Z) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar.",
             claim("34", "58.8% (20 gains / 14 losses)", "total $35,670 (best $10,380, worst -$4,280)", "25 trading days", "1975-2008, December contract, one contract")),
         d("hcta_euro_sep_long", "September long Euro (Z), TD 5 hold 16", "CTA 2010 p.126-127 · Euro seasonal trades", "Long", NeedsData(FUT),
             &["E|Buy the December (Z) contract at the close of the 5th trading day of September (Top Percentage Plays table, p.126-127: \"Trading Day 5\")",
@@ -237,10 +237,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Exit at the close 33 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
             "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the British Pound December contract history is added.",
             claim("34", "67.6% (23 gains / 11 losses)", "total $53,563 (best $14,000, worst -$28,288)", "33 trading days", "1975-2008, December contract, one contract")),
-        d("hcta_gold_oct_short", "October short Gold (Z), TD 2 hold 25", "CTA 2010 p.126-127 · Gold seasonal trades", "Short", NeedsData(FUT),
+        d("hcta_gold_oct_short", "October short Gold (Z), TD 2 hold 25", "CTA 2010 p.126-127 · Gold seasonal trades", "Short", Live,
             &["E|Sell short the December (Z) contract at the close of the 2nd trading day of October (Top Percentage Plays table, p.126-127: \"Trading Day 2\")",
               "X|Exit at the close 25 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Gold December contract history is added.",
+            "Published on GLD only (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX December (Z) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar. Shorting GLD is hypothetical exposure (no borrow cost).",
             claim("34", "64.7% (22 gains / 12 losses)", "total $15,710 (best $11,210, worst -$8,710)", "25 trading days", "1975-2008, December contract, one contract")),
         d("hcta_silver_oct_short", "October short Silver (Z), TD 4 hold 17", "CTA 2010 p.126-127 · Silver seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the December (Z) contract at the close of the 4th trading day of October (Top Percentage Plays table, p.126-127: \"Trading Day 4\")",
@@ -277,10 +277,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Exit at the close 34 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
             "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Cocoa March contract history is added.",
             claim("37", "54.1% (20 gains / 17 losses)", "total $18,680 (best $6,920, worst -$4,060)", "34 trading days", "1972-2008, March contract, one contract")),
-        d("hcta_gold_nov_long", "November long Gold (G), TD 13 hold 10", "CTA 2010 p.126-127 · Gold seasonal trades", "Long", NeedsData(FUT),
+        d("hcta_gold_nov_long", "November long Gold (G), TD 13 hold 10", "CTA 2010 p.126-127 · Gold seasonal trades", "Long", Live,
             &["E|Buy the February (G) contract at the close of the 13th trading day of November (Top Percentage Plays table, p.126-127: \"Trading Day 13\")",
               "X|Exit at the close 10 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Gold February contract history is added.",
+            "Published on GLD only (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX February (G) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar.",
             claim("34", "52.9% (18 gains / 16 losses)", "total $16,060 (best $3,950, worst -$2,710)", "10 trading days", "1975-2008, February contract, one contract")),
         d("hcta_30_year_bond_nov_short", "November short 30-Year Bond (M), TD 14 hold 107", "CTA 2010 p.126-127 · 30-Year Bond seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the June (M) contract at the close of the 14th trading day of November (Top Percentage Plays table, p.126-127: \"Trading Day 14\")",
@@ -508,13 +508,14 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!((x.r[t[0].legs[0].i].date.as_str(), x.r[t[0].exit_i].date.as_str()), ("1983-01-21", "1983-02-01"));
         // lane K74: the gold trade is published on GLD only
-        assert!(home("hcta_gold_jan_short", "SPY").is_some() && home("hcta_gold_jan_short", "GLD").is_none() && home("hcta_sp_jan_long", "SPY").is_none());
+        for id in GOLD_GLD { assert!(home(id, "SPY").is_some() && home(id, "GLD").is_none(), "{id}"); }
+        assert!(home("hcta_sp_jan_long", "SPY").is_none());
     }
 }
 
 // Lane K74 (11 Nov 2026, R4 #277 (5)): the April-gold seasonal on GLD only (home()).
 pub const ADMISSION_GLD: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && GOLD_GLD.contains(&def.id),
-    label: "The Commodity Trader's Almanac trades this seasonal on COMEX April gold futures (1975-2009). It runs on GLD, the vault's only gold series (bullion, so it follows spot gold, not the April contract), a declared adaptation; other instruments are not published.",
-    basis: "Hirsch & Person, Commodity Trader's Almanac 2010 p.126-127 (Top Percentage Plays: gold, April contract, sell trading day 14 of January, hold 38 trading days; hold counted from the day after the entry, close fills); decisions #207 (2), #277 (5); independent check authors/titles-1030/K74w (k74_daily.py).",
+    label: "The Commodity Trader's Almanac trades these seasonals on COMEX gold futures (April, December and February contracts, 1975-2009). They run on GLD, the vault's only gold series (bullion, so it follows spot gold, not the April contract), a declared adaptation; other instruments are not published.",
+    basis: "Hirsch & Person, Commodity Trader's Almanac 2010 p.126-127 (Top Percentage Plays, gold: sell trading day 14 of January hold 38 (April), buy trading day 18 of August hold 25 and sell trading day 2 of October hold 25 (December), buy trading day 13 of November hold 10 (February); hold counted from the day after the entry, close fills); decisions #207 (2), #277 (5), #278 (3); independent check authors/titles-1030/K74w (k74_daily.py).",
 };
