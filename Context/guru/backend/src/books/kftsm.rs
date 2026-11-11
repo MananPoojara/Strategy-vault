@@ -281,7 +281,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_lrs" => vec![p("period", "Regression period", 20., 2., 250., 1.), p("filter", "Slope filter", 0., 0., 10., 0.1), p("lag", "Entry lag (bars)", 0., 0., 5., 1.)],
         "kftsm_ndb" => vec![p("period", "Breakout period N", 20., 1., 250., 1.), p("printed", "Window: 0 CD code (N bars), 1 printed Table 8.2 (N-1 bars)", 0., 0., 1., 1.)],
         "kftsm_swg" | "kftsm_swing" => vec![p("swing", "Minimum swing (%)", 2.5, 0.25, 10., 0.25)],
-        "kftsm_pf" => vec![p("mode", "Box: 0 = percent of price (default, R4 #277 (1)); 1 = the book's literal index points (SPX/NDX only)", 0., 0., 1., 1.),
+        "kftsm_pf" => vec![p("mode", "Box: 0 = percent of price (default, R4 #277 (1)); 1 = the book's literal index points (literal 5 points: meaningful on SPX/NDX only)", 0., 0., 1., 1.),
             p("pct", "Percent box (0 = auto: 0.518% = 5 S&P points at the 2003 average 965; 0.410% on NDX/QQQ = 5 NQ points at 1,220)", 0., 0., 5., 0.01),
             p("box", "Literal box size (points, mode 1; Table 5.2: 5)", 5., 0.05, 500., 0.05), p("rev", "Reversal boxes", 3., 1., 5., 1.)],
         "kftsm_bb_ma" => vec![p("period", "MA / std-dev period", 20., 5., 100., 1.), p("nsd", "Band std devs", 2., 0.5, 4., 0.1)],

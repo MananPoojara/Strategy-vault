@@ -74,9 +74,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         def!("jbcdt2_inside_day", "Inside day (ID) breakout, exit first profitable opening", "Ch.7 · Power of the Inside Day", "Long/Short", NotTestable("the x ticks and the stop loss behind the S&P record (Figure 7-5) are not given: \"The optimum number of ticks ... is a function of the market\""),
             &["E|\"After an ID, buy on a stop above the high of the ID plus x ticks\"; \"go short on a stop below the low of the ID minus x ticks\" (p.83)",
               "X|\"Use a risk management stop loss\"; \"Exit on the first profitable opening or at the stop loss, whichever comes first\" (p.83-86)"], "Book: 430 trades, 69%, $219.78 per trade, S&P 1982-1998 (p.85)."),
-        def!("jbcdt2_cor", "COR open/close relationship method", "Ch.11 · Closings and Openings", "Long/Short", NeedsData("20- and 30-minute bars (entries on the next bar's open, exits MOC or nth profitable open)"),
-            &["E|\"Following x consecutive price bars where the close is greater than the open, a buy signal is triggered and a long position initiated on the opening of the next price bar\" (p.123)",
-              "X|Initial stop, floor amount, percent trail, nth profitable opening or MOC (p.124); inputs per test in Figures 11-9 to 11-13"], ""),
+        def!("jbcdt2_cor", "COR open/close relationship method (20-minute S&P, Fig 11-10)", "Ch.11 · Closings and Openings", "Long/Short", NotTestable("Coded on real SPX 1-minute bars as 20-minute bars (lane K77, R4 #284 (4)), but 911 of 3,254 SPX trades (28.0%, 2008-2026; 803 of 2,500 = 32.1% from 2014) reach the stop in a minute whose order inside the minute decides the exit (the 2.2-point floor and the 40% trail sit within one minute's range), above the 5% limit set before results (decision 175), so no result is published. The #177b scaled-SPY check passed."),
+            &["E|\"Following x consecutive price bars where the close is greater than the open, a buy signal is triggered and a long position initiated on the opening of the next price bar. Following x consecutive price bars where the close is less than the open, a sell signal is triggered and a short position initiated on the opening of the next price bar. If there is a current position based on a previous signal, it is reversed\" (p.123)",
+              "X|\"An initial stop loss (money management stop) is used. When a given profit amount has been reached (floor amount), then a trailing stop loss is used. The trailing stop loss is a given percentage of the open profit as measured from an open profit peak\"; \"If the stop is hit ... no new position is entered until the next signal\"; \"A profit is taken either by being stopped out or by exit on the nth profitable opening. If neither of these conditions is met, then you exit on the close of the same day (MOC)\" (p.124)",
+              "F|Figure 11-10 (S&P, 20-minute, 1/11/96-11/27/96): \"Long entry-5 bars close > open. Short entry-6 bars close < open. Initial stop loss is $1200. Floor amount is $1100. Trailing stop is 40%. Exit tenth profitable open or MOC\" = 2.4 / 2.2 S&P points at the 1996 contract's $500 a point (constant over the test, decision 196(2)): SPX only. Figures 11-9 and 11-11 span the Nov 1997 change to $250 a point (no exact conversion, decision 240(2)): not coded"],
+            concat!("[Declared reading] Session-aligned 20-minute bars built from the 1-minute file (09:30-16:00 ET), one continuous series: the run of closes above (below) opens carries across days, a close equal to the open breaks it; a bar that ends such a run of 5 up (6 down) signals, and a later bar that again ends one is the 'next signal' after a stop-out; a signal in the held direction is ignored. ",
+              "At a bar's open: a stop the open is through fills there, then the nth profitable opening (bar opens after the entry bar showing a profit) exits, then the pending entry or reversal. Stops walked minute by minute: money stop 2.4 points, then once the peak open profit (minute extremes) reaches 2.2, entry + 60% of the peak; inside a minute open, nearer extreme, farther extreme, close (a tie: the extreme against the position first) [convention, counted as ambiguous]. Out at the day's last close (MOC). ",
+              "Book: 80 trades, 66% winners, net $34,250 (Fig 11-10, 1996 S&P futures), before the SPX minute history (2008-): not re-runnable. Engine and the independent reference K77w/k77_ref.py: 0 mismatches on 26,211 SPX trades (defaults and one other input set, three windows). #177b (2014-2025): scaled SPY avg +0.0056% vs SPX +0.0127%, compounded +14.6% vs +34.0%: no flag. Cash-index shorts are hypothetical. No costs.")),
         def!("jbcdt2_gap", "Basic gap (oops) day trade", "Ch.12 · Gap Methods for Day Trading", "Long/Short", NotTestable("duplicate: the vault already has it (jbcdt_gap_go, jbudt_gap_*, ss_study_oops); the 10/12-tick optimum has no stated stop"),
             &["E|\"A gap buy signal is generated once the market has opened on a gap lower and then comes back up to penetrate the previous daily low by a given number of ticks\" (p.142)"], ""),
         def!("jbcdt2_multigap", "Multiple-day gap (multigap)", "Ch.12 · Gap Methods for Day Trading", "Long/Short", NotTestable("only the windows are given (9 days buy, 2 days sell); the penetration ticks and stop loss are \"a few more parameters\" not printed (p.148)"),
@@ -119,6 +123,9 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "jbcdt2_dates_oc" | "jbcdt2_mon_cc" => vec![],
         "jbcdt2_or30" => vec![p("pen", "Closing penetration beyond the first 30-minute bar (S&P points; 12 ticks)", 0.6, 0.05, 5., 0.05), p("stop", "Initial stop (S&P points; $2,050)", 4.1, 0.5, 20., 0.1),
             p("floor", "Floor open profit before the trail (S&P points; $1,000)", 2.0, 0.1, 20., 0.1), p("trail", "Trail: percent of the open-profit peak kept", 50., 10., 90., 5.), p("maxn", "Trades a day", 5., 1., 10., 1.)], // intraday EP block (K42)
+        "jbcdt2_cor" => vec![p("long_bars", "Long entry: consecutive bars closing above their open (Fig 11-10: 5)", 5., 1., 20., 1.), p("short_bars", "Short entry: consecutive bars closing below their open (Fig 11-10: 6)", 6., 1., 20., 1.),
+            p("stop", "Initial stop (S&P points; $1,200 at $500)", 2.4, 0.2, 20., 0.1), p("floor", "Floor open profit before the trail (S&P points; $1,100 at $500)", 2.2, 0.1, 20., 0.1),
+            p("trail", "Trailing stop: percent of the peak open profit the market may give back", 40., 5., 95., 5.), p("nprof", "Exit at the nth profitable opening (Fig 11-10: tenth)", 10., 1., 30., 1.)], // lane K77
         _ => return None,
     })
 }
@@ -263,6 +270,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| getp(id, p, k);
     let mut out = Vec::new();
     match id {
+        "jbcdt2_cor" => return Some(cor(x, from, to, g("long_bars").round().max(1.0) as usize, g("short_bars").round().max(1.0) as usize, g("stop"), g("floor"), 1.0 - g("trail") / 100.0, g("nprof").round().max(1.0) as usize)), // lane K77
         "jbcdt2_or30" => return Some(or30(x, from, to, g("pen"), g("stop"), g("floor"), g("trail") / 100.0, g("maxn").round() as usize)), // intraday EP block (K42)
         "jbcdt2_dbo_mon" | "jbcdt2_dbo_thu" => {
             let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
@@ -359,10 +367,89 @@ fn or30(x: &Ctx, from: usize, to: usize, pen: f64, stop: f64, floor: f64, keep: 
 }
 // ---- end intraday EP block
 
+// ---- lane K77 block (12 Nov 2026, R4 #279 (5), #284 (4)): COR (Ch.11 p.123-126), Figure 11-10's 20-minute S&P test, on
+// session-aligned 20-minute bars from the 1-minute file as ONE continuous series (the run of closes above / below opens carries
+// across days; positions do not: MOC). Amounts in S&P points at the 1996 $500 contract (SPX only).
+/// At a bar's close, `lb` bars in a row closing above their opens -> long at the next bar's open (`sb` below -> short); a signal
+/// in the held direction is ignored, an opposite one reverses. At a bar's open: a stop it opens through fills there, then the
+/// `nprof`th profitable opening exits, then the pending entry. Built-in stops walked minute by minute (open, nearer extreme,
+/// farther extreme, close; a tie: the extreme against the position first): money stop `stop`, then once the peak open profit
+/// reaches `floor`, entry + `keep` x peak. Out at the day's last close (MOC).
+fn cor(x: &Ctx, from: usize, to: usize, lb: usize, sb: usize, stop: f64, floor: f64, keep: f64, nprof: usize) -> Vec<Trade> {
+    use crate::intraday::day_trade;
+    // (dir, entry px, entry day, peak open profit, profitable opens)
+    struct P { d: f64, ep: f64, ei: usize, pk: f64, n: usize }
+    let st = |p: &P| if p.pk >= floor { (p.ep + p.d * keep * p.pk, "trailing stop") } else { (p.ep - p.d * stop, "money stop") };
+    let (mut out, mut pos, mut pend, mut nu, mut nd) = (vec![], None::<P>, 0.0, 0usize, 0usize);
+    for i in from..=to {
+        let Some((_, _, m, b)) = crate::intraday_ep::day_bars(x, i, 20) else { continue };
+        for (j, z) in b.iter().enumerate() {
+            if let Some(mut p) = pos.take() {
+                let (s, why) = st(&p);
+                if p.d * (z.o - s) <= 0.0 { out.push(day_trade(p.d, p.ei, p.ep, i, z.o, why, "open", false)); }
+                else {
+                    if p.d * (z.o - p.ep) > 0.0 { p.n += 1; }
+                    if p.n >= nprof { out.push(day_trade(p.d, p.ei, p.ep, i, z.o, "profitable open", "open", false)); } else { pos = Some(p); }
+                }
+            }
+            if pend != 0.0 {
+                if let Some(p) = pos.take_if(|p| p.d != pend) { out.push(day_trade(p.d, p.ei, p.ep, i, z.o, "reverse", "open", false)); }
+                if pos.is_none() { pos = Some(P { d: pend, ep: z.o, ei: i, pk: 0.0, n: 0 }); }
+                pend = 0.0;
+            }
+            for q in &m[z.a..z.b] {
+                let Some(p) = pos.as_mut() else { break };
+                let hi_first = if q.h - q.o != q.o - q.l { q.h - q.o < q.o - q.l } else { p.d < 0.0 };
+                let path = if hi_first { [q.o, q.h, q.l, q.c] } else { [q.o, q.l, q.h, q.c] };
+                let mut hit = None;
+                for k in 0..4 {
+                    let (s, why) = st(p);
+                    let t = path[k];
+                    if (k == 0 && p.d * (t - s) <= 0.0) || (k > 0 && p.d * (t - path[k - 1]) < 0.0 && p.d * (t - s) <= 0.0 && p.d * (path[k - 1] - s) >= 0.0) {
+                        hit = Some((if k == 0 { t } else { s }, why)); break;
+                    }
+                    p.pk = p.pk.max(p.d * (t - p.ep));
+                }
+                if let Some((px, why)) = hit { out.push(day_trade(p.d, p.ei, p.ep, i, px, why, "open", false)); pos = None; }
+            }
+            if j + 1 == b.len() {
+                if let Some(p) = pos.take() { out.push(day_trade(p.d, p.ei, p.ep, i, z.c, "MOC", "open", false)); }
+            }
+            (nu, nd) = (if z.c > z.o { nu + 1 } else { 0 }, if z.c < z.o { nd + 1 } else { 0 });
+            let want = if nu >= lb { 1.0 } else if nd >= sb { -1.0 } else { 0.0 };
+            if want != 0.0 && pos.as_ref().map_or(true, |p| p.d != want) { pend = want; }
+        }
+    }
+    out
+}
+// ---- end lane K77 block
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Row;
+    #[test]
+    fn cor_trail_stop_then_moc_by_hand() {
+        // lane K77: one-minute 20-minute bars 09:30..11:30; bars 1-5 close above their opens -> long at bar 6's open 100; bar 6
+        // (low first) peaks at 103, trail 100 + 0.6 x 3 = 101.8 hit on the way to the close; bar 6 closes up again (the next
+        // signal) -> long at bar 7's open 101, out at the day's last close 101.2 (MOC)
+        let r = vec![row("2001-01-02", 99., 103., 98., 101.2)];
+        let mut body = String::from("Date,Time,Open,High,Low,Close\n");
+        for k in 0..7u16 {
+            let (o, h, l, c) = match k { 5 => (100., 103., 99.9, 101.), 6 => (101., 101.5, 100.9, 101.2), _ => (99., 99.6, 98.9, 99.5) };
+            body.push_str(&format!("2001-01-02,{:02}:{:02},{o},{h},{l},{c}\n", (570 + 20 * k) / 60, (570 + 20 * k) % 60));
+        }
+        let dir = std::env::temp_dir().join(format!("cor{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), format!("Date,offset,bytes\n2001-01-02,30,{}\n", body.len() - 30)).unwrap();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.minutes = crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").map(|m| &*Box::leak(Box::new(m)));
+        let t = run("jbcdt2_cor", &x, 0, 0, &Params::new()).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(t.iter().map(|z| (z.dir, (z.legs[0].px * 100.).round(), (z.exit_px * 100.).round(), z.reason.as_str())).collect::<Vec<_>>(),
+            vec![(1., 10000., 10180., "trailing stop"), (1., 10100., 10120., "MOC")]);
+    }
     fn row(d: &str, o: f64, h: f64, l: f64, c: f64) -> Row {
         Row { ticker: "T".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None }
     }

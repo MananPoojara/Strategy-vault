@@ -28,7 +28,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("bout", "Breakout average of the last bars (code 2)", 2., 1., 10., 1.)])
 }
 
-fn avg(v: &[f64], n: usize, back: usize, t: usize) -> f64 { if t < back + n - 1 { f64::NAN } else { v[t - back - n + 1..=t - back].iter().sum::<f64>() / n as f64 } }
+fn avg(v: &[f64], n: usize, back: usize, t: usize) -> f64 { if t < back + n - 1 { f64::NAN } else { v[t + 1 - n - back..=t - back].iter().sum::<f64>() / n as f64 } }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
@@ -68,6 +68,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn avg_first_allowed_bar_no_underflow() {
+        // lane K77 (R4 #284): t = back + n - 1 is the first defined bar; the slice starts at 0 (no debug-build overflow)
+        let v = [1., 2., 3., 4., 5.];
+        assert_eq!(avg(&v, 4, 1, 4), 2.5);
+        assert!(avg(&v, 4, 1, 3).is_nan());
+    }
     #[test]
     fn damping_entries_at_next_open_and_stops_from_the_signal_bar() {
         let r = super::super::sctraub::tests::bars(3000);
