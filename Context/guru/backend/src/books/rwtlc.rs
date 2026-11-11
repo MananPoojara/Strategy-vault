@@ -14,10 +14,14 @@
 use crate::connors::{rsi, sma, true_range, wilder, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rwtlc";
-/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: RSI Extremes with the $7,500
-/// per-contract stop (rsix, rsix_vol) and the judgement / intraday models.
+/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: RSI Extremes with volume filter (rsix_vol: fails the
+/// #168 book check) and the judgement / intraday models. RSI Extremes (rsix): SPX_PTS.
 pub const REVIEWED: &[&str] = &["rwtlc_adx_lowvol_bb", "rwtlc_adx_hivol_ct", "rwtlc_rsi_trend3", "rwtlc_rsi_trend1", "rwtlc_rsi_trend10", "rwtlc_rsi_trend_ext", "rwtlc_rsi_trend3_time", "rwtlc_ichi_x", "rwtlc_ichi_cloud"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Lane K74 (R4 #277 / #196(2)): the book's $7,500 per contract on the NAMED CME E-mini S&P 500 (Fig 8.9 p.158, $50 per point
+/// for the whole 2000-2009 test) = 150 S&P index points, exact. SPX only (gate list), from 2014 (real opens, clamp_open),
+/// admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["rwtlc_rsix"];
 
 // ------------------------------------------------------------------ indicators
 
@@ -208,8 +212,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Long Exit: RSI(@,9)[-1] > 65 OR OpenPositionAverageEntryPrice(@,ThisTradeOnly) - Dollar2Price(@,7500) / OpenPositionSize(@,ThisTradeOnly) (p.159)",
               "E|Short Entry: RSI(@,9)[-1] > 65 AND Close(@)[-1] < MA(@,Sim,200)[-1] (p.159)",
               "X|Short Exit: RSI(@,9)[-1] < 35 OR the same $7,500 stop (p.159) - \"a fail-safe stop loss exit of $7,500 per contract\" (p.157)",
-              "X|$7,500 on one ES contract ($50 per S&P point) = 150 index points (param pts; instrument swap keeps the points)."],
-            FUT, es("32", "81.25%", "$25,980 total (ES, $50/pt)", "31 days", "ES row of Table 8.8, 2000-2009")),
+              "X|$7,500 on one ES contract ($50 per S&P point) = 150 index points (param pts)."],
+            "SPX only (lane K74, decisions #196(2), #277): the book tested the CME E-mini S&P 500 (Fig 8.9 p.158), $50 per index point for the whole 2000-2009 test, so the $7,500 stop is exactly 150 points of the S&P 500 index; other instruments would need a conversion the book does not give. Results from 2014 (real SPX opens). Book: one-lot futures, equalized active daily continuation, 1/1/2000-12/31/2009, $10 round turn (Tables 8.2-8.9 note); shorting a cash index is hypothetical.", es("32", "81.25%", "$25,980 total (ES, $50/pt)", "31 days", "ES row of Table 8.8, 2000-2009")),
         def!("rwtlc_rsix_vol", "RSI Extremes with volume filter", C8, "Long/Short", Live, true,
             &["E|Long Entry: RSI(@,9)[-1] < 35 AND Close(@)[-1] > MA(@,Sim,200)[-1] AND Vol(@)[-2] > Vol(@)[-1] (p.159)",
               "E|Short Entry: RSI(@,9)[-1] > 65 AND Close(@)[-1] < MA(@,Sim,200)[-1] AND Vol(@)[-2] > Vol(@)[-1] (p.160)",
@@ -401,3 +405,10 @@ mod tests {
         assert!(first.reason.starts_with("stop"));
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 / #196(2)): RSI Extremes with the $7,500 E-mini stop, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Richard Weissman tested RSI Extremes on the CME E-mini S&P 500 (2000-2009, $50 per index point throughout) with a fail-safe stop of $7,500 per contract = 150 index points. It runs on the S&P 500 index (SPX) only, the 150 points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
+    basis: "Richard L. Weissman: Trade Like a Casino (Wiley 2011) p.157-159 (RSI Extremes prose and CQG code, the $7,500 fail-safe stop), Fig 8.9 p.158 (CME Group E-mini S&P 500, $10 round turn), Table 8.8 ES row; decisions #196(2), #263, #277; independent check authors/titles-1030/K74w (k74_spx.py, from the K61 Weissman reference rw_ref.py).",
+};

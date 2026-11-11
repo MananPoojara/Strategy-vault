@@ -1447,7 +1447,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // "ch_bta2_xopp"|"ch_bta2_xopp_trail": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         "ch_ntt_to_buy"|"ch_ntt_to_buy_nse"=>"Held: not a trade with an exit. The New Technical Trader gives only the thrust-oscillator buy signal and reports the market's gain 3, 6, 12 and 24 months after each signal (Table 6.2, p.157); these are observation horizons, not a trade exit, and no stop or sell rule is printed.",
         "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
-        "ch_pbs_cbpb_trail3"=>"Held: no exit before a new high. This workshop chart (S&P Sep-95 futures) sets a 3-day-low trailing stop only after the trade makes a new 20-day high; until then the only protection is the workshop's $1,500 stop per contract (p.23), which has no equivalent on an index, ETF or stock. Chande's complete CB-PB rule is already live as a separate strategy.",
+        // ch_pbs_cbpb_trail3: admitted on SPX only with the workshop's $1,500 / $500 = 3.00-point initial stop (lane K74, R4 #277; chpbs::ADMISSION_SPX)
         // ---- end Chande block
         // ---- Joe Krutsinger block (26 Oct 2026, lane B): held Live rules
         "jkbwts_gettess30"=>"Held: no exact conversion. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop (p.12-13) over 01/05/87-12/26/97, a test that spans the contract's change from $500 to $250 a point (Nov 1997): $4,000 is 8 points before and 16 after, so no single exact point amount exists (decisions #196(2), #240 (2)).",
@@ -1474,7 +1474,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "lpgap_fade"=>"Held: needs intraday data. The Opening Gap Strategy trades E-mini futures on 1-minute bars: it enters at the 9:30 open and exits the same day at a target, a stop or the close (Gap Strategy documents); daily bars cannot show whether the target or the stop came first, and the gap is measured on the futures' own prior close.",
         // ---- end Leslie Payne held
         // ---- Richard L. Weissman block (26 Oct 2026, lane B): held Live rules
-        "rwtlc_rsix"=>"Held: fixed dollar stop on futures. RSI Extremes uses 'a fail-safe stop loss exit of $7,500 per contract' (Trade Like a Casino p.157-159), tested on one-lot futures 2000-2009; a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving it out would not be the tested system.",
+        // rwtlc_rsix: admitted on SPX only, $7,500 / $50 = 150 E-mini points (lane K74, R4 #277; rwtlc::ADMISSION_SPX)
         // ---- end Richard L. Weissman held
         // ---- Bruce Babcock block (26 Oct 2026, lane B): held Live rules
         "bab80_novapr_stop10k"|"bab80_novapr_stop5k"=>"Held: fixed dollar stop on the S&P futures contract. These pages of the calendar test add a $10,000 or $5,000 stop per S&P contract, 20 or 10 S&P points at $500 a point (p.16-19); a fixed point amount has no equivalent on other indices, ETFs or stocks. The rule without a stop is live; running the stops on SPX with the book's points is a decision for the user.",
@@ -1657,7 +1657,7 @@ mod tests {
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
             // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
-            const SHARED:&[&str]=&["as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts"]; // as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            const SHARED:&[&str]=&["as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc"]; // rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1965,7 +1965,7 @@ mod tests {
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
         for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
                    /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
-                   "ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo","ch_pbs_cbpb_trail3"] {
+                   "ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -2065,9 +2065,10 @@ mod tests {
     fn weissmanb_held_rules_have_plain_card_reasons() {
         use crate::books::{rwtlc};
         let all:Vec<StrategyDef>=rwtlc::catalogue().into_iter().collect();
-        for id in ["rwtlc_rsix"] {
+        for id in ["rwtlc_rsix"] { // lane K74 (R4 #277): admitted on SPX only
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
+            assert!(crate::gate::get(id).is_some_and(|g|g.allowed==Some(&["SPX"][..]) && g.clamp_open),"{id}");
         }
     }
     // ---- end Richard L. Weissman held ----
@@ -2602,6 +2603,7 @@ mod tests {
         let all:Vec<StrategyDef>=rwmts::catalogue().into_iter().chain(rwtlc::catalogue()).collect();
         let mut want:Vec<&str>=rwmts::REVIEWED.iter().chain(rwtlc::REVIEWED).copied().collect();
         want.extend(rwmts::SPX_PTS); // lane K66 (#262): ADMISSION_SPX, SPX only through the gate list
+        want.extend(rwtlc::SPX_PTS); // lane K74 (#277): rwtlc::ADMISSION_SPX, SPX only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // the ch.5 minute rules: intraday EP block (lane K53)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
