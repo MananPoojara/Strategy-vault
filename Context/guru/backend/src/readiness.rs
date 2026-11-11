@@ -584,7 +584,7 @@ mod tests {
         }
         // other `allowed` rules keep the fixed-amount message
         let mut r=rows();for x in r.iter_mut(){x.ticker="SPY".into();}
-        assert!(check(&Ctx::new(&r,&r,&r),&definition("kftsm_pf"),0,4,&Params::new()).unwrap().note.contains("fixed point or dollar"));
+        assert!(check(&Ctx::new(&r,&r,&r),&definition("rwtlc_rsix"),0,4,&Params::new()).unwrap().note.contains("fixed point or dollar")); // kftsm_pf: percent box since lane K75
     }
     #[test]
     fn reviewed_burns_only_accepts_default_long_cash_lengths_and_exact_fill_modes() {

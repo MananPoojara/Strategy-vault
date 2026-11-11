@@ -92,7 +92,7 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
 pub const US: &[&str] = &["jmls_ls_model"];
 pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) }
 pub fn us_id(id: &str) -> bool { US.contains(&id) }
-pub fn book(b: &str) -> bool { matches!(b, "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts") }
+pub fn book(b: &str) -> bool { matches!(b, "stkch" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts") }
 // ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
 /// No fixed amount: all four minute tickers. Ford's three NinjaTrader systems on 60-minute bars (EP2) and the STAD Vol 3
 /// inside-day breakout failure on 30-minute bars with a daily Data2 (EP1).
@@ -160,7 +160,7 @@ pub const K70: &[&str] = crate::books::as51ts::INTRA;
 // ---- lane K75 block (11 Nov 2026, R4 #279 (2); authors/titles-1030/K75.tsv)
 /// Daily rules that read the first-hour / last-hour series built from the real 1-minute bars (intraday::session_series):
 /// they run only on the minute tickers, over the minute years; a day without minutes makes no trade. No fixed amount.
-pub const K75: &[&str] = &["ss_smart_money_index"];
+pub const K75: &[&str] = &["ss_smart_money_index", "stkch_gap_fgu_long", "stkch_gap_fgu_short", "stkch_gap_fgd_short"];
 // ---- end lane K75 block
 // Decision #177a for these rules (flagged on the SPY/SPX overlap: SPY only) goes into intraday_w3::SPY, the one #177a list.
 

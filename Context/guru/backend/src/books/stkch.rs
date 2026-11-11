@@ -90,15 +90,18 @@ fn prev_week_closes(x: &Ctx, cal: bool) -> (Vec<f64>, Vec<f64>) {
 /// -1 = full gap down (open < prior low). dir = trade direction. lvl(t) = the stop-entry price on the gap day
 /// (None = data missing). One position at a time; entry stop is a day order on the gap day. Trailing stop from the
 /// closes after entry, checked from the next bar (open beyond the stop fills at the open).
-fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, lvl: impl Fn(usize) -> Option<f64>) -> Vec<Trade> {
+/// `after` = minutes past the session open from which the entry stop is live (0: from the open; 60: after the first hour).
+fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, after: u16, order: bool, lvl: impl Fn(usize) -> Option<f64>) -> Vec<Trade> {
     let mut out = vec![];
     let mut cur: Option<(Trade, f64)> = None; // trade, best close (or entry) so far
     for t in from.max(1)..=to {
+        let mut cut = None; // lane K75 (#240, R4 #281 (3)): the trailing stop level when it was hit inside this bar (not at the open)
         if let Some((tr, best)) = cur.take() {
             let stop = if dir > 0. { best * (1. - trail) } else { best * (1. + trail) };
             let hit = if dir > 0. { x.l[t] <= stop } else { x.h[t] >= stop };
             if hit {
                 let px = if dir > 0. { x.o[t].min(stop) } else { x.o[t].max(stop) };
+                if if dir > 0. { x.o[t] > stop } else { x.o[t] < stop } { cut = Some(stop); }
                 out.push(fin(tr, t, px, t, if dir > 0. { "8% trailing stop" } else { "4% trailing stop" }));
             } else {
                 let b = if dir > 0. { best.max(x.c[t]) } else { best.min(x.c[t]) };
@@ -112,12 +115,30 @@ fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, lvl: imp
         if !lv.is_finite() { continue; }
         let fill = if dir > 0. { x.h[t] >= lv } else { x.l[t] <= lv };
         if !fill { continue; }
-        let tr = mk(dir, t, lv, t, "stop");
-        let best = if dir > 0. { lv.max(x.c[t]) } else { lv.min(x.c[t]) };
+        let mut px = lv;
+        if let Some(sp) = cut.filter(|_| order) { match same_day(x, t, dir, sp, lv, after) { Some(Some(p)) => px = p, Some(None) => continue, None => {} } }
+        let tr = mk(dir, t, px, t, "stop");
+        let best = if dir > 0. { px.max(x.c[t]) } else { px.min(x.c[t]) };
         cur = Some((tr, best));
     }
     mark_open(&mut out, cur.map(|c| c.0), x, to);
     out
+}
+
+/// Lane K75 (#240, R4 #281 (3)): on a bar where the trailing stop is hit inside the day and a new gap entry also triggers, the
+/// daily bar does not say which came first. With this ticker's 1-minute bars for the day: the stop's first minute, then the entry
+/// stop from the next minute (and not before `after` minutes past the open), filled at its level or at the minute's open when it
+/// opened through it: Some(Some(fill)) = re-entered, Some(None) = no re-entry that day. None = no minutes, or the stop and the
+/// entry fall in one minute (unknown order): the daily convention stands (out at the stop, then in at the entry level).
+fn same_day(x: &Ctx, t: usize, dir: f64, stop: f64, lv: f64, after: u16) -> Option<Option<f64>> {
+    use crate::intraday::{first_touch, session_open, touched, Level, Touch};
+    let d = x.r[t].date.as_str();
+    let b = x.minutes?.day(d)?;
+    let Touch::Hit { bar: e, .. } = first_touch(&b, 0, &[Level { up: dir < 0., px: stop }]) else { return None };
+    let (live, en) = (session_open(&x.r[t].ticker, d) + after, Level { up: dir > 0., px: lv });
+    if b[e].m >= live && touched(&b[e], en) { return None; }
+    let k = b.iter().position(|z| z.m >= live).unwrap_or(b.len()).max(e + 1);
+    Some(match first_touch(&b, k, &[en]) { Touch::Hit { px, .. } => Some(px), _ => None })
 }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -151,22 +172,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"If a stock's opening price is less than yesterday's low, set a long stop equal to two ticks more than yesterday's low.\" (p.3); filled on the gap day when the high reaches the stop (the open is below it)",
             GAP_TRAIL, GAP_TICK,
             "X|Stop is 8% under the entry price, then 8% under the highest close since entry; checked from the day after entry; an open under the stop fills at the open [book silent on gaps through the stop]"],
-          "Entry order lives for the gap day only [book silent]. The TWTC example's 'immediate entry ... at open as long as it has been preceded by another gap signal' (p.3) is not a stated rule and is not coded. 'one would normally reduce the sell stop to 5% or less to protect profit' (p.2) has no trigger: not coded. No statistics printed.", ),
+          "Entry order lives for the gap day only [book silent]. The TWTC example's 'immediate entry ... at open as long as it has been preceded by another gap signal' (p.3) is not a stated rule and is not coded. 'one would normally reduce the sell stop to 5% or less to protect profit' (p.2) has no trigger: not coded. No statistics printed. Lane K75 (#240, R4 #281 (3)): a bar where the trailing stop is hit inside the day and a new gap entry also triggers (25% of SPY entries) is ordered on that day's real 1-minute bars; because the daily convention changed the result materially (#243 (c)), results are published only over the minute windows of SPY, SPX, NIFTY 50 and NIFTYBANK. p.order = 0: the daily convention (out, then in).", ),
         d("stkch_gap_fgu_long", "Full Gap Up: Long (buy stop 2 ticks over the first-hour high)", "Trading Strategies · Gap Trading Strategies", "Long", Live, &["OPEN60_HIGH"],
           &["F|\"A Full Gap Up occurs when the opening price is greater than yesterday's high.\" (gapStrategies1.pdf p.1)",
             "E|\"If a stock's opening price is greater than yesterday's high, revisit the 1-minute chart after 10:30 am and set a long (buy) stop two ticks above the high achieved in the first hour of trading.\" (p.2)",
             GAP_TRAIL, GAP_TICK,
             "F|OPEN60_HIGH = high of the first 60 minutes of the session (US 9:30-10:30 ET; NSE 9:15-10:15 IST), per ticker. A day high above stop level means the break came after the first hour; fill at the stop"],
-          "Needs first-hour intraday data (OPEN60_HIGH); runs where the series exists. Day order on the gap day [book silent].", ),
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years; OPEN60_HIGH is built from the real 1-minute bars (intraday::session_series). Day order on the gap day [book silent]. A bar where the trailing stop is hit inside the day and a new gap entry also triggers is ordered on that day's 1-minute bars (p.order = 0: the daily convention, out then in).", ),
         d("stkch_gap_fgu_short", "Full Gap Up: Short (sell stop 2 ticks under the first-hour low)", "Trading Strategies · Gap Trading Strategies", "Short", Live, &["OPEN60_LOW"],
           &["E|\"If a stock's opening price is greater than yesterday's high, revisit the 1-minute chart after 10:30 am and set a short stop equal to two ticks below the low achieved in the first hour of trading.\" (gapStrategies1.pdf p.2)",
             GAP_TRAIL, GAP_TICK,
             "F|OPEN60_LOW = low of the first 60 minutes of the session, per ticker"],
-          "Needs first-hour intraday data (OPEN60_LOW). Day order on the gap day [book silent].", ),
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years; OPEN60_LOW is built from the real 1-minute bars (intraday::session_series). Day order on the gap day [book silent]. A bar where the trailing stop is hit inside the day and a new gap entry also triggers is ordered on that day's 1-minute bars (p.order = 0: the daily convention, out then in).", ),
         d("stkch_gap_fgd_short", "Full Gap Down: Short (sell stop 2 ticks under the first-hour low)", "Trading Strategies · Gap Trading Strategies", "Short", Live, &["OPEN60_LOW"],
           &["E|\"If a stock's opening price is less than yesterday's low, revisit the 1-minute chart after 10:30 am and set a short stop equal to two ticks below the low achieved in the first hour of trading.\" (gapStrategies1.pdf p.3)",
             GAP_TRAIL, GAP_TICK, "F|OPEN60_LOW = low of the first 60 minutes of the session, per ticker"],
-          "Needs first-hour intraday data (OPEN60_LOW). Day order on the gap day [book silent].", ),
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years; OPEN60_LOW is built from the real 1-minute bars (intraday::session_series). Day order on the gap day [book silent]. A bar where the trailing stop is hit inside the day and a new gap entry also triggers is ordered on that day's 1-minute bars (p.order = 0: the daily convention, out then in).", ),
         d("stkch_gap_partial", "Partial Gap Up / Down, long and short (first-hour breakouts)", "Trading Strategies · Gap Trading Strategies", "Long/Short",
           NotTestable("the partial-gap entries depend on a 'volume requirement' that Part 1 never defines ('If the volume requirement is not met, the safest way to play a partial gap is to wait until the price breaks the previous high'); Part 2's only volume rule is a 'projected daily volume' of 2x the 5-day average, which needs an intraday projection; the article also suggests 'closer trailing stops of 5-6%' without fixing one"), &[],
           &["E|Partial Gap Up (open > yesterday's close, not > yesterday's high): buy stop two ticks above / short stop two ticks below the first-hour range (gapStrategies1.pdf p.3-4)",
@@ -220,7 +241,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let gap = |trail: f64| vec![p("ticks", "Entry offset in ticks of the traded instrument (US 0.01, NSE 0.05): 2 = the article's two ticks; 0 = no offset", 2., 0., 10., 1.),
-                                p("trail", "Trailing stop %", trail, 1., 20., 0.5)];
+                                p("trail", "Trailing stop %", trail, 1., 20., 0.5),
+                                p("order", "A day with a trailing-stop exit inside the bar and a new gap entry: 1 = ordered on the real 1-minute bars where they exist (default, lane K75, #240); 0 = daily convention (out, then in)", 1., 0., 1., 1.)];
     Some(match id {
         "stkch_ema_30_100" => vec![p("fast", "Fast EMA", 30., 5., 60., 1.), p("slow", "Slow EMA", 100., 20., 250., 5.),
                                    p("rev", "0 = long/flat (book); 1 = also short on the sell signal", 0., 0., 1., 1.)],
@@ -270,12 +292,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             states(x, from, to, &st, g("mode") < 0.5, "K below the sell level and close under last week's low close · close")
         }
-        "stkch_gap_fgd_long" => { let tk = g("ticks").round().max(0.) * x.market_tick(); gap(x, from, to, -1, 1., g("trail") / 100., |t| Some(x.l[t - 1] + tk)) }
+        "stkch_gap_fgd_long" => {
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // K75: #243 (c) minute window
+            let tk = g("ticks").round().max(0.) * x.market_tick(); gap(x, from, to, -1, 1., g("trail") / 100., 0, g("order") >= 0.5, |t| Some(x.l[t - 1] + tk)) }
         "stkch_gap_fgu_long" | "stkch_gap_fgu_short" | "stkch_gap_fgd_short" => {
             let tk = g("ticks").round().max(0.) * x.market_tick();
             let (kind, dir, name) = match id { "stkch_gap_fgu_long" => (1, 1., "OPEN60_HIGH"), "stkch_gap_fgu_short" => (1, -1., "OPEN60_LOW"), _ => (-1, -1., "OPEN60_LOW") };
             let Some(s) = x.series(name) else { return Some(vec![]) };
-            gap(x, from, to, kind, dir, g("trail") / 100., |t| Some(if dir > 0. { s[t] + tk } else { s[t] - tk }))
+            gap(x, from, to, kind, dir, g("trail") / 100., 60, g("order") >= 0.5, |t| Some(if dir > 0. { s[t] + tk } else { s[t] - tk }))
         }
         _ => return None,
     })
@@ -305,6 +329,28 @@ mod tests {
         let n = run("stkch_gap_fgd_long", &Ctx::new(&r2, &r2, &[]), 0, 3, &Params::new()).unwrap();
         assert!((n[0].legs[0].px - 99.10).abs() < 1e-9); // NSE: 2 x 0.05
         assert!(reviewed("stkch_gap_fgd_long") && !reviewed("stkch_gap_fgu_long"));
+    }
+
+    #[test]
+    fn same_day_stop_exit_and_new_gap_entry_ordered_on_minutes() {
+        // lane K75 (#240, R4 #281 (3)): day 3 is a full gap down whose trailing stop (95.68) is hit inside the bar and whose
+        // entry stop (103.52) also triggers; its minutes show the entry level first (still long), then the stop: no re-entry
+        let mk = |d: &str, o: f64, h: f64, l: f64, c: f64| Row { ticker: "SPY".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None };
+        let r = vec![mk("2001-01-02", 100., 101., 99., 100.), mk("2001-01-03", 98., 103., 97., 103.), mk("2001-01-04", 104., 104.5, 103.5, 104.),
+                     mk("2001-01-05", 103., 104., 95., 95.5)];
+        let mut x = Ctx::new(&r, &r, &[]);
+        let conv = run("stkch_gap_fgd_long", &x, 0, 3, &[("order".to_string(), 0.)].into_iter().collect()).unwrap();
+        assert_eq!(conv.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1, 3, false), (3, 3, true)]);
+        let dir = std::env::temp_dir().join(format!("stkchk75{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let body = "Date,Time,Open,High,Low,Close\n2001-01-02,09:30,100,101,99,100\n2001-01-05,09:30,103,104,102,103.4\n2001-01-05,09:31,103.4,103.4,95,95.5\n";
+        std::fs::write(dir.join("SPY.m1.csv"), body).unwrap();
+        std::fs::write(dir.join("SPY.m1idx.csv"), format!("Date,offset,bytes\n2001-01-02,30,32\n2001-01-05,62,{}\n", body.len() - 62)).unwrap(); // minute window 01-02..01-05
+        x.minutes = crate::intraday::Minutes::load(dir.to_str().unwrap(), "SPY").map(|m| &*Box::leak(Box::new(m)));
+        let res = run("stkch_gap_fgd_long", &x, 0, 3, &Params::new()).unwrap();
+        assert_eq!(res.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1, 3, false)]);
+        assert!((res[0].exit_px - 104. * 0.92).abs() < 1e-9);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

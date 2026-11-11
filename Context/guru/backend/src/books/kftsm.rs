@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Boxes = intportion(price/box); reversal = revboxes (3) boxes (CD code; p.155-175)",
             "F|Box size: Table 5.2 (p.160) 'Point-and-Figure Box Sizes—Futures 2003': e-mini SP 5, e-mini NQ 5, 3-box reversal",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Default box = 5 index points (Table 5.2 value for the S&P and Nasdaq e-minis); the book gives no box for Indian indices, so NIFTY runs use the same 5 points unless changed. The CD code's quirks are kept literally (initial column from close >= (high-low)/2; 'if mod(xlow,box)=0 then boxlow = boxlow - 1')."),
+        ], "Lane K75 (R4 #277 (1)): the box defines the signal, so the default is its percent equivalent at the book's own period, on a log scale (box k = prices from (1+p)^k up to (1+p)^(k+1)): Table 5.2's 5 points were 0.518% of the 2003 S&P average (965.23, vault SPX closes) and 0.410% of the 2003 Nasdaq-100 average (1,220.37; used on NDX and QQQ); every other index, ETF and stock (US and India) uses the S&P figure (declared application). p.mode = 1 (labelled option): the literal 5 points, meaningful on SPX and NDX only. The CD code's quirks are kept literally (initial column from close >= (high-low)/2; 'if mod(xlow,box)=0 then boxlow = boxlow - 1')."),
         // ------------------------------------------------ Ch 8: bands and other single-trend systems (CD Ch08)
         d("kftsm_bb_ma", "Moving average with Bollinger bands", "Ch 8 · Bands and channels", "Long/Short", Live, &[
             "E|\"if close crosses above bandup then buy next bar market; if close crosses below banddn then sell next bar market\" bandup = BollingerBand(close,20,2) (TSM MA BBands, CD Ch08; rules p.269)",
@@ -281,7 +281,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_lrs" => vec![p("period", "Regression period", 20., 2., 250., 1.), p("filter", "Slope filter", 0., 0., 10., 0.1), p("lag", "Entry lag (bars)", 0., 0., 5., 1.)],
         "kftsm_ndb" => vec![p("period", "Breakout period N", 20., 1., 250., 1.), p("printed", "Window: 0 CD code (N bars), 1 printed Table 8.2 (N-1 bars)", 0., 0., 1., 1.)],
         "kftsm_swg" | "kftsm_swing" => vec![p("swing", "Minimum swing (%)", 2.5, 0.25, 10., 0.25)],
-        "kftsm_pf" => vec![p("box", "Box size (points)", 5., 0.05, 500., 0.05), p("rev", "Reversal boxes", 3., 1., 5., 1.)],
+        "kftsm_pf" => vec![p("mode", "Box: 0 = percent of price (default, R4 #277 (1)); 1 = the book's literal index points (SPX/NDX only)", 0., 0., 1., 1.),
+            p("pct", "Percent box (0 = auto: 0.518% = 5 S&P points at the 2003 average 965; 0.410% on NDX/QQQ = 5 NQ points at 1,220)", 0., 0., 5., 0.01),
+            p("box", "Literal box size (points, mode 1; Table 5.2: 5)", 5., 0.05, 500., 0.05), p("rev", "Reversal boxes", 3., 1., 5., 1.)],
         "kftsm_bb_ma" => vec![p("period", "MA / std-dev period", 20., 5., 100., 1.), p("nsd", "Band std devs", 2., 0.5, 4., 0.1)],
         "kftsm_fc_bb_abx" => vec![p("period", "MA / std-dev period", 21., 5., 100., 1.), p("nsd", "Outer band std devs (inner = half)", 2., 0.5, 4., 0.1)],
         "kftsm_ma_pct_band" => vec![p("period", "MA period", 20., 2., 250., 1.), p("pcband", "Band (% of MA)", 2., 0.1, 10., 0.1)],
@@ -603,8 +605,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "kftsm_pf" => {
             let (bx, rev) = (g("box").max(1e-9), g("rev"));
-            let ip = |v: f64| (v / bx).trunc();
-            let md0 = |v: f64| (v % bx).abs() < 1e-9;
+            // lane K75 (R4 #277 (1)): default = a percent box on a log scale (box k spans [(1+p)^k, (1+p)^(k+1))), p = the
+            // 5 points' share of the 2003 price (Table 5.2 'Futures 2003'): S&P average 965.23 -> 0.518%; NDX/QQQ 1,220.37 -> 0.410%
+            let pct = match g("pct") { v if v > 0. => v, _ if matches!(x.r[0].ticker.as_str(), "NDX" | "QQQ") => 500. / 1220.37, _ => 500. / 965.23 };
+            let (lit, k) = (g("mode") >= 0.5, (1. + pct / 100.).ln());
+            let ip = |v: f64| if lit { (v / bx).trunc() } else { (v.ln() / k).trunc() };
+            let md0 = |v: f64| if lit { (v % bx).abs() < 1e-9 } else { let q = v.ln() / k; (q - q.round()).abs() < 1e-9 };
             let mut b = Bk::new(x, from, to);
             let mut bh = ip(c[0]);
             let mut bl = ip(c[0]) + 1.;

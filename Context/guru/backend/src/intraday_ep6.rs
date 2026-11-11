@@ -191,7 +191,9 @@ pub const IDS: &[&str] = &[
     // lane K74 (R4 #277): Harris's S&P patterns (books::mhstp simulate_ep6: the 10-point target and stop via stop_target), SPX only
     "mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1",
     // lane K74 (R4 #277 wave 3): the Original Turtle Rules (books::covel breakout_ep6: entry, adds and unit exits along the path)
-    "cov_turtle_s1", "cov_turtle_s2"];
+    "cov_turtle_s1", "cov_turtle_s2",
+    // lane K75 (R4 #281 (3)): StockCharts full-gap-down long (books::stkch same_day: a trailing-stop exit and a new gap entry on one bar)
+    "stkch_gap_fgd_long"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -206,7 +208,9 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "cwin_single_window", "cwin_double_window", "cwin_first_window", "ss_three_day_unfilled_gap", "ss_holy_grail",
     "ss_hist_vol_crabel", "ats_8day_hl_reversal", "strtw_meander1_long", "strtw_meander1_short",
     // lane K74 (R4 #277): the Turtle systems (S1 flags the sign test on SPX, S2 the 3x average test on NIFTYBANK; K74w/t243.tsv)
-    "cov_turtle_s1", "cov_turtle_s2"];
+    "cov_turtle_s1", "cov_turtle_s2",
+    // lane K75 (R4 #281 (3)): SPY 2000-2025 compounded +84.9% resolved vs +5.9% convention (test c; K75w/t243.out)
+    "stkch_gap_fgd_long"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or

@@ -357,7 +357,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
     if options_p2(def) {return true;} // options phase 2
     if cbp_us(def) {return true;} // connors-final block: CBP on US data with the literal $20
     ((def.book=="hbqts" && member(def.id,&["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily","hbqts_cmo"])) ||
-    (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))) || reviewed_adaptive_rule(def)
+    (def.book=="kftsm" && member(def.id,&["kftsm_pf" /* lane K75, R4 #277 (1) */,"kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))) || reviewed_adaptive_rule(def)
         || (def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id))
         || (def.book=="vixr" && crate::books::vixr::reviewed_daily(def.id))
         || (def.book=="ptjmt" && crate::books::ptjmt::reviewed_daily(def.id))
@@ -1463,7 +1463,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // "strmm_rs1"|"strmm_rsbands"|"strmm_rotation": admitted by lane K51 (EP4 second series, decision #223)
         // ---- end Thomas Stridsman held
         // ---- Perry Kaufman block (26 Oct 2026, lane B): held Live rules
-        "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
         // ---- end Perry Kaufman held
         // ---- Michael Harris block (26 Oct 2026, lane B): held Live rules
         // mhs_sp830825_1 / _830120_1 / _830330_1: admitted on SPX only, resolved on 1-minute bars (lane K74, R4 #277; mhstp::ADMISSION_SPX)
@@ -1656,7 +1655,8 @@ mod tests {
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
             // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
-            const SHARED:&[&str]=&["as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            // stkch: the intraday block admits the three first-hour gap cards (intraday_ep::K75, lane K75, 11 Nov 2026).
+            const SHARED:&[&str]=&["stkch","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1849,7 +1849,7 @@ mod tests {
         use crate::books::{sfo, stkch, wmny, ctcn};
         let all:Vec<StrategyDef>=sfo::catalogue().into_iter().chain(stkch::catalogue()).chain(wmny::catalogue()).chain(ctcn::catalogue()).collect();
         let mut want:Vec<&str>=sfo::REVIEWED.iter().chain(stkch::REVIEWED.iter()).chain(wmny::REVIEWED.iter()).chain(ctcn::REVIEWED.iter()).copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // stkch first-hour cards: intraday EP block (K75), own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -2019,9 +2019,9 @@ mod tests {
     fn kaufmanb_held_rules_have_plain_card_reasons() {
         use crate::books::{kftsm, kfst};
         let all:Vec<StrategyDef>=kftsm::catalogue().into_iter().chain(kfst::catalogue()).collect();
-        for id in ["kftsm_pf"] { // kfst_ama admitted (D1-05, decision 186)
+        for id in ["kftsm_pf"] { // kfst_ama admitted (D1-05, decision 186); kftsm_pf admitted by lane K75 (R4 #277 (1): percent box)
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end Perry Kaufman held ----
@@ -3454,7 +3454,7 @@ mod tests {
         assert!(check(&reviewed,"RELIANCE",true).is_none());
         assert!(metadata_json(&reviewed).contains("\"source_rule_reviewed\":true"));
         assert!(metadata_json(&reviewed).contains("\"source_performance_reproduced\":false"));
-        assert_eq!(policy(&def("kftsm_pf","kftsm")).requirement,"source_review_required"); // kftsm_parabolic admitted 2026-10-24 (Kaufman block)
+        assert_eq!(policy(&def("kftsm_new_adaptive_method","kftsm")).requirement,"source_review_required"); // kftsm_parabolic admitted 2026-10-24 (Kaufman block); kftsm_pf: lane K75
         assert_eq!(policy(&def("kftsm_ma","another_book")).requirement,"source_review_required");
     }
     #[test]
@@ -3476,7 +3476,7 @@ mod tests {
             }
         }
         // kftsm_parabolic, _donchian_4wk, _moon, _multi_tf admitted 2026-10-24 (Kaufman block test)
-        for id in ["kftsm_pf","kftsm_new_adaptive_method"] {
+        for id in [/* kftsm_pf: lane K75 */"kftsm_new_adaptive_method"] {
             let d=def(id,"kftsm");
             assert_eq!(policy(&d).requirement,"source_review_required");
             assert!(metadata_json(&d).contains("\"source_rule_reviewed\":false"));
