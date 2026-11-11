@@ -185,7 +185,9 @@ pub const IDS: &[&str] = &[
     // Stridsman's Meander I (books::strtw meander_walk: the entry limit, the risk stop and the VS exit on one day)
     "strtw_meander1_long", "strtw_meander1_short",
     // Connors's 5-week seminar Windows (books::ws5 M3: the 3-day exit procedure walked point by point; a held day on minutes)
-    "ws5_single_window", "ws5_double_window", "ws5_momentum_windows_any"];
+    "ws5_single_window", "ws5_double_window", "ws5_momentum_windows_any",
+    // lane K74 (R4 #277): Harris's S&P patterns (books::mhstp simulate_ep6: the 10-point target and stop via stop_target), SPX only
+    "mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.

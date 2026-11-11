@@ -1465,7 +1465,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
         // ---- end Perry Kaufman held
         // ---- Michael Harris block (26 Oct 2026, lane B): held Live rules
-        "mhs_sp830825_1"|"mhs_sp830120_1"|"mhs_sp830330_1"=>"Held: needs the minute path. Harris prints these targets and stops as 10 S&P index points (Short-Term Trading with Price Patterns p.180-206), so under decisions #196(2)/#202 they could run on the S&P 500 index (SPX) only, literal; but 10 points is 0.2-0.5% of SPX since 2014 (real opens) and the entry day already reaches the target or the stop on 86-94% of the signals, so daily bars cannot decide which came first; a 1-minute version is needed (lane K58).",
+        // mhs_sp830825_1 / _830120_1 / _830330_1: admitted on SPX only, resolved on 1-minute bars (lane K74, R4 #277; mhstp::ADMISSION_SPX)
         // ---- end Michael Harris held
         // ---- Charles LeBeau block (26 Oct 2026, lane B): held Live rules
         "lebsp_prudent"|"lebsp_remarkable"=>"Held: fixed amounts set for the S&P futures contract. The Prudent and Remarkable S&P systems exit with dollar stops per S&P contract ($1,500 and $4,500 loss stops, $1,000 and $500 break-even stops, i.e. fixed S&P index points at $250 a point) (traderclub manuals, TradeStation code); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running them on SPX with those points is a decision for the user.",
@@ -2031,9 +2031,10 @@ mod tests {
     fn harrisb_held_rules_have_plain_card_reasons() {
         use crate::books::{mhstp};
         let all:Vec<StrategyDef>=mhstp::catalogue().into_iter().collect();
-        for id in ["mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"] {
+        for id in ["mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"] { // lane K74 (R4 #277): admitted on SPX only, same-day order on minutes
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
+            assert!(crate::gate::get(id).is_some_and(|g|g.allowed==Some(&["SPX"][..]) && g.clamp_open),"{id}");
         }
     }
     // ---- end Michael Harris held ----
