@@ -1418,7 +1418,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "bfm2c_es"=>"Held: the code itself is reproduced exactly (0 differences on every US and India window), but run on SPY for the guide's own test period 1/1/98-6/25/02 it does not come near the User's Guide result for the E-mini S&P (MiniMaxIIv2UG.pdf, Fig. 1, printed p.13): 246 trades, 38.2% winners, net -$6,524 after $75 per trade, profit factor 0.93, against the printed 242 trades, 47.93% winners, net +$42,450, profit factor 1.58. Same situation as the Nasdaq version, which is already Not testable.",
         // ---- end Lane A vendor2 held
         // ---- Lane A elmtrader block (26 Oct 2026, lane B): held Live rules
-        "elmts4_first_day"=>"Held: the rule's only protection is a fixed 150-point stop set for the Dow (Dow TS4 guide p.15), placed by a spread-bet firm that guarantees the exit level even on a gap. On every other instrument 150 points means something different, and on the Dow itself our daily bars cannot reproduce a guaranteed fill, so the vault's accuracy gate keeps it off every market; publishing needs your decision on how to scale the 150 points.",
         "mstt_kaeppel_ma_9_50_80"=>"Held: not yet re-checked. The Kaeppel 9/50/80 system (Trading Tech. Systems and Indicators for MetaStock, p.25, Equis Traders' Tips) prints Close Long as the 9/50 down-cross with the close still above the 80-day average, so a short entry below the 80-day average comes while the long is open. MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single), and the engine now does that, but this card is not in the reviewed list of its book and has no independent check under that rule yet.",
         "bcsts_a2"|"bcsts_a4"|"bcsts_a11"=>"Held: every buy and sell in the course (Aula 2 p.6-7, Aula 4 p.17-18, Aula 11 p.42-43) comes from ExtFml(\"ForumDll.Latch\",LE,LX,SE,SX), a free add-in whose behaviour is not printed. When a buy condition and a sell condition fall on the same bar, the trades depend on which one the add-in obeys, and the readings give different trades on both US and India data (Aula 11 in every window, Aula 2 and 4 in a few windows). The engine's reading (sell wins when long, buy wins when flat) matches the reference exactly, but the source cannot confirm it.",
         // ---- end Lane A elmtrader held
@@ -2363,10 +2362,13 @@ mod tests {
     fn la_elmtrader_held_rules_have_plain_card_reasons() {
         use crate::books::{bcsts, elmts4, mstt};
         let all:Vec<StrategyDef>=bcsts::catalogue().into_iter().chain(elmts4::catalogue()).chain(mstt::catalogue()).collect();
-        for id in ["elmts4_first_day", "mstt_kaeppel_ma_9_50_80", "bcsts_a2", "bcsts_a4", "bcsts_a11"] {
+        for id in ["mstt_kaeppel_ma_9_50_80", "bcsts_a2", "bcsts_a4", "bcsts_a11"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
+        // lane K73 (R4 #276 (1), #71): elmts4_first_day admitted on DJI only (elmts4::ADMISSION_DJI + gate allowed [DJI])
+        let d=all.iter().find(|d|d.id=="elmts4_first_day").unwrap();
+        assert!(reviewed_cash_rule(d) && held_reason(d.id).is_none() && crate::gate::get(d.id).is_some_and(|g|g.allowed==Some(&["DJI"][..])));
     }
     // ---- end Lane A elmtrader held ----
     // ---- Lane A elmtrader block (2026-10-26, lane B) ----
