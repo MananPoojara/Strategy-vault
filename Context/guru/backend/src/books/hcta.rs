@@ -11,6 +11,14 @@ pub const BOOK: &str = "hcta";
 /// stocks (US and India) as a declared application; independent ledgers, 0 mismatches. Futures trades stay NeedsData.
 pub const REVIEWED: &[&str] = &["hcta_sp_jan_long", "hcta_sp_apr_long", "hcta_sp_jul_short", "hcta_sp_oct_long"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Lane K74 (R4 #277 (5)): the April-gold seasonal on GLD as a labelled application (the vault's only gold series, as
+/// scblack_gold, #207(2)); published on GLD only (home()).
+pub const GOLD_GLD: &[&str] = &["hcta_gold_jan_short"];
+pub const GLD: &str = "GLD";
+/// The GLD-only card is not published on any other instrument.
+pub fn home(id: &str, ticker: &str) -> Option<String> {
+    (GOLD_GLD.contains(&id) && ticker != GLD).then(|| format!("Not published on {ticker}: this seasonal trade is for gold; the vault's only gold series is GLD (open the card on GLD). A gold season on another instrument would change the asset class."))
+}
 const FUT: &str = "the named futures contract's daily history (continuously linked, non-adjusted front/next-month contracts as in the book); the vault has no futures data";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -49,10 +57,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Exit at the close 85 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
             "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Wheat July contract history is added.",
             claim("40", "67.5% (27 gains / 13 losses)", "total $15,907 (best $5,775, worst -$5,775)", "85 trading days", "1970-2009, July contract, one contract")),
-        d("hcta_gold_jan_short", "January short Gold (J), TD 14 hold 38", "CTA 2010 p.126-127 · Gold seasonal trades", "Short", NeedsData(FUT),
+        d("hcta_gold_jan_short", "January short Gold (J), TD 14 hold 38", "CTA 2010 p.126-127 · Gold seasonal trades", "Short", Live,
             &["E|Sell short the April (J) contract at the close of the 14th trading day of January (Top Percentage Plays table, p.126-127: \"Trading Day 14\")",
               "X|Exit at the close 38 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Coded rule is identical to the S&P trades (Nth trading day, fixed hold); runs once the Gold April contract history is added.",
+            "Published on GLD only (lane K74, decision #277 (5)): a labelled application. The book traded the COMEX April gold futures contract (1975-2009); GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the April contract (no basis, roll or contract expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades: sell short at the close of January's 14th trading day on GLD's own calendar, cover at the close 38 trading days later. Shorting GLD is hypothetical exposure (no borrow cost).",
             claim("35", "65.7% (23 gains / 12 losses)", "total $53,750 (best $33,100, worst -$10,680)", "38 trading days", "1975-2009, April contract, one contract")),
         d("hcta_30_year_bond_feb_short", "February short 30-Year Bond (M), TD 3 hold 44", "CTA 2010 p.126-127 · 30-Year Bond seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the June (M) contract at the close of the 3rd trading day of February (Top Percentage Plays table, p.126-127: \"Trading Day 3\")",
@@ -499,5 +507,14 @@ mod tests {
         let t = run("hcta_sp_jan_long", &x, 0, r.len() - 1, &Params::new()).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((x.r[t[0].legs[0].i].date.as_str(), x.r[t[0].exit_i].date.as_str()), ("1983-01-21", "1983-02-01"));
+        // lane K74: the gold trade is published on GLD only
+        assert!(home("hcta_gold_jan_short", "SPY").is_some() && home("hcta_gold_jan_short", "GLD").is_none() && home("hcta_sp_jan_long", "SPY").is_none());
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 (5)): the April-gold seasonal on GLD only (home()).
+pub const ADMISSION_GLD: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && GOLD_GLD.contains(&def.id),
+    label: "The Commodity Trader's Almanac trades this seasonal on COMEX April gold futures (1975-2009). It runs on GLD, the vault's only gold series (bullion, so it follows spot gold, not the April contract), a declared adaptation; other instruments are not published.",
+    basis: "Hirsch & Person, Commodity Trader's Almanac 2010 p.126-127 (Top Percentage Plays: gold, April contract, sell trading day 14 of January, hold 38 trading days; hold counted from the day after the entry, close fills); decisions #207 (2), #277 (5); independent check authors/titles-1030/K74w (k74_daily.py).",
+};
