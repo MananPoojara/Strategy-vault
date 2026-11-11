@@ -1491,7 +1491,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "jb30d_gap_tick"|"jb30d_gap_pct"|"jbcdt_gap_go"=>"Held: needs intraday data. The trade enters on a stop and is stopped out or closed on the same day; daily bars cannot show whether the stop or the entry came first, and the accuracy check found all of its gain comes from such same-day trades.",
         // ---- end Bernstein g2
         // ---- Faith block (25 Oct 2026): held Live rules
-        "cov_turtle_s1"|"cov_turtle_s2"=>"Held: needs leverage. The Original Turtle Rules size each unit at 1% of the account per N and add up to 4 units every 1/2 N; on one index, ETF or stock a unit is about half to almost all of the account (N is 1-2% of the price), so the second or third unit takes the position above 100% of the account, which the vault does not model (the Turtles traded futures on margin across many markets).",
+        // cov_turtle_s1 / _s2: admitted on the multi-unit account with the same-day order on 1-minute bars (lane K74, R4 #277; covel::ADMISSION_TURTLE)
         // ---- end Faith block
         // ---- Dunnigan block (25 Oct 2026): held Live rules
         "wdowf_plan"=>"Held: the engine cannot hold the plan's four lots together. The One-Way Formula Operating Plan buys up to four separate lots (Fund L and Fund S) at different prices, each with its own stop, and sizes the stops from a dollar square-root table that stops at a $150 stock price; index levels are far outside that table.",

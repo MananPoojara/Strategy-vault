@@ -187,7 +187,9 @@ pub const IDS: &[&str] = &[
     // Connors's 5-week seminar Windows (books::ws5 M3: the 3-day exit procedure walked point by point; a held day on minutes)
     "ws5_single_window", "ws5_double_window", "ws5_momentum_windows_any",
     // lane K74 (R4 #277): Harris's S&P patterns (books::mhstp simulate_ep6: the 10-point target and stop via stop_target), SPX only
-    "mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"];
+    "mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1",
+    // lane K74 (R4 #277 wave 3): the Original Turtle Rules (books::covel breakout_ep6: entry, adds and unit exits along the path)
+    "cov_turtle_s1", "cov_turtle_s2"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -200,13 +202,17 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "acbff_3rd_fade", "lgtt30_tt30", "rcmm_55", "wwnc_tbp",
     "dbnotp_abc_index", "strmm_meander", "atm00_gold_digger", "jr_zulu",
     "cwin_single_window", "cwin_double_window", "cwin_first_window", "ss_three_day_unfilled_gap", "ss_holy_grail",
-    "ss_hist_vol_crabel", "ats_8day_hl_reversal", "strtw_meander1_long", "strtw_meander1_short"];
+    "ss_hist_vol_crabel", "ats_8day_hl_reversal", "strtw_meander1_long", "strtw_meander1_short",
+    // lane K74 (R4 #277): the Turtle systems (S1 flags the sign test on SPX, S2 the 3x average test on NIFTYBANK; K74w/t243.tsv)
+    "cov_turtle_s1", "cov_turtle_s2"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
 /// above +100% when SPY's is not positive): those India results are withdrawn (K63w/india231.tsv).
 pub const INDIA231: &[(&str, &str)] = &[("ltcoat_coat_tails", "NIFTY 50"), ("ltcoat_coat_tails", "NIFTYBANK"), ("stad2_adxdiff", "NIFTY 50"), ("wwnc_tbp", "NIFTY 50"),
-    ("lgtt30_tt30", "NIFTY 50"), ("lgtt30_tt30", "NIFTYBANK"), ("ss_hist_vol_crabel", "NIFTY 50")];
+    ("lgtt30_tt30", "NIFTY 50"), ("lgtt30_tt30", "NIFTYBANK"), ("ss_hist_vol_crabel", "NIFTY 50"),
+    // lane K74 (K74w/t179.tsv): Turtle System 1 on NSE minutes vs SPY over the same dates (+0.75% vs -0.23% a unit, +1,786% vs -77%)
+    ("cov_turtle_s1", "NIFTY 50"), ("cov_turtle_s1", "NIFTYBANK")];
 const INDIA231_NOTE: &str = "The India minute-window result is withdrawn (decisions #231, #234, #255, lane K63): NSE cash-index minutes are dominated by stale component prices; there is no tradable India minute series and this result is more than 10x the tradable SPY result over the same dates.";
 
 /// #243: ids HELD. The five thin ids (M6: over 5% order-dependent, fewer than 10 trades inside the minute window), and EP6 ids
