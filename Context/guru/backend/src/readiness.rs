@@ -60,6 +60,7 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
+    if def.id=="arebta_d_br" && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
     if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
