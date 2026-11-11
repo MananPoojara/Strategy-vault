@@ -8,13 +8,13 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stkch";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39"];
+pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39", "stkch_gap_fgd_long" /* lane K73, R4 #276 (2) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const EOD: &str = "E|Fill: the article gives no order type for these end-of-day chart signals; the signal is acted on at the close of the signal day [book silent]";
 const EMA_DEF: &str = "F|EMA: \"The 10-period simple moving average is used for the first calculation only. After that the previous period's EMA is used\" (indic_movingAvg.pdf p.4), weight 2/(n+1)";
 const GAP_TRAIL: &str = "X|\"Once a position is entered, you calculate and set an 8% trailing stop to exit a long position, and a 4% trailing stop to exit a short position\"; examples trail from the close: \"8% below the final close of $58.50\", \"trailing stop would be set at $80 (8% less than the $87 close)\" (gapStrategies1.pdf p.2-3)";
-const GAP_TICK: &str = "F|\"A 'tick' is defined as the bid/ask spread, usually 1/8 to 1/4 point\" (gapStrategies1.pdf p.2); index tick here = p.tick (0.05, the NSE tick)";
+const GAP_TICK: &str = "F|\"A 'tick' is defined as the bid/ask spread, usually 1/8 to 1/4 point\" (gapStrategies1.pdf p.2); here (decisions #57, #203, #276 (2)) 'two ticks' = 2 ticks of the traded instrument (US 0.01, NSE 0.05), labelled; option p.ticks = 0 places the stop at the level itself";
 
 fn mk(dir: f64, i: usize, px: f64, sig: usize, kind: &'static str) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] }
@@ -219,7 +219,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let gap = |trail: f64| vec![p("tick", "Tick added to the stop (2 ticks)", 0.05, 0.01, 1., 0.01),
+    let gap = |trail: f64| vec![p("ticks", "Entry offset in ticks of the traded instrument (US 0.01, NSE 0.05): 2 = the article's two ticks; 0 = no offset", 2., 0., 10., 1.),
                                 p("trail", "Trailing stop %", trail, 1., 20., 0.5)];
     Some(match id {
         "stkch_ema_30_100" => vec![p("fast", "Fast EMA", 30., 5., 60., 1.), p("slow", "Slow EMA", 100., 20., 250., 5.),
@@ -270,9 +270,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             states(x, from, to, &st, g("mode") < 0.5, "K below the sell level and close under last week's low close · close")
         }
-        "stkch_gap_fgd_long" => { let tk = 2. * g("tick"); gap(x, from, to, -1, 1., g("trail") / 100., |t| Some(x.l[t - 1] + tk)) }
+        "stkch_gap_fgd_long" => { let tk = g("ticks").round().max(0.) * x.market_tick(); gap(x, from, to, -1, 1., g("trail") / 100., |t| Some(x.l[t - 1] + tk)) }
         "stkch_gap_fgu_long" | "stkch_gap_fgu_short" | "stkch_gap_fgd_short" => {
-            let tk = 2. * g("tick");
+            let tk = g("ticks").round().max(0.) * x.market_tick();
             let (kind, dir, name) = match id { "stkch_gap_fgu_long" => (1, 1., "OPEN60_HIGH"), "stkch_gap_fgu_short" => (1, -1., "OPEN60_LOW"), _ => (-1, -1., "OPEN60_LOW") };
             let Some(s) = x.series(name) else { return Some(vec![]) };
             gap(x, from, to, kind, dir, g("trail") / 100., |t| Some(if dir > 0. { s[t] + tk } else { s[t] - tk }))
@@ -295,10 +295,16 @@ mod tests {
         let ts = run("stkch_gap_fgd_long", &x, 0, 3, &Params::new()).unwrap();
         assert_eq!(ts.len(), 1);
         assert_eq!(ts[0].legs[0].i, 1);
-        assert!((ts[0].legs[0].px - 99.10).abs() < 1e-9); // yesterday's low 99 + 2 x 0.05
+        assert!((ts[0].legs[0].px - 99.02).abs() < 1e-9); // yesterday's low 99 + 2 ticks of 0.01 (US; #276 (2))
         // best close 110 -> stop 101.2 hit on day 3 (low 100), open 109 above it -> fill 101.2
         assert_eq!(ts[0].exit_i, 3);
         assert!((ts[0].exit_px - 101.2).abs() < 1e-9);
+        let z = run("stkch_gap_fgd_long", &x, 0, 3, &[("ticks".to_string(), 0.)].into_iter().collect()).unwrap();
+        assert!((z[0].legs[0].px - 99.).abs() < 1e-9); // the 0-offset option
+        let r2: Vec<Row> = r.iter().map(|w| Row { ticker: "NIFTY 50".into(), ..w.clone() }).collect();
+        let n = run("stkch_gap_fgd_long", &Ctx::new(&r2, &r2, &[]), 0, 3, &Params::new()).unwrap();
+        assert!((n[0].legs[0].px - 99.10).abs() < 1e-9); // NSE: 2 x 0.05
+        assert!(reviewed("stkch_gap_fgd_long") && !reviewed("stkch_gap_fgu_long"));
     }
 
     #[test]
@@ -309,9 +315,9 @@ mod tests {
         x.extra.insert("OPEN60_LOW".into(), vec![f64::NAN, 101.8, f64::NAN]);
         let l = run("stkch_gap_fgu_long", &x, 0, 2, &Params::new()).unwrap();
         assert_eq!((l[0].legs[0].i, l[0].exit_i), (1, 2));
-        assert!((l[0].legs[0].px - 104.1).abs() < 1e-9 && (l[0].exit_px - 96.6).abs() < 1e-9);
+        assert!((l[0].legs[0].px - 104.02).abs() < 1e-9 && (l[0].exit_px - 96.6).abs() < 1e-9);
         let s = run("stkch_gap_fgu_short", &x, 0, 2, &Params::new()).unwrap();
-        assert!((s[0].legs[0].px - 101.7).abs() < 1e-9 && (s[0].exit_px - 101.7 * 1.04).abs() < 1e-9);
+        assert!((s[0].legs[0].px - 101.78).abs() < 1e-9 && (s[0].exit_px - 101.78 * 1.04).abs() < 1e-9);
     }
 
     #[test]
