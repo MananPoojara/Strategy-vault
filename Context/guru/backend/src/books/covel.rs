@@ -439,7 +439,9 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
                         if p.out[k].is_none() { let (tk, why) = lvl(p, k); if tk == t { p.out[k] = Some((i, f, why)); ev.push(Ev { k: 2 + k as u8, px: f, up: sg.up() }); } }
                     }
                     if p.live() == 0 { s.done = s.pos.take(); s.closed = true; break; }
-                    a = if g.gap { g.b } else { t };
+                    // lane K79 (#290 (1)): keep scanning the rest of a gap too (the units whose levels lie further inside it fill at the
+                    // gap end via Seg::fill); jumping to the gap end skipped them
+                    a = t;
                 }
             }
             ev
@@ -725,6 +727,41 @@ mod tests {
         let p: Params = [("close".to_string(), 1.0)].into();
         let t = run("cov_tfm_hh75_ll25", &x, 45, r.len() - 1, &p).unwrap();
         assert!(t.is_empty());
+    }
+
+    fn minutes(name: &str, days: &[(&str, &[&str])]) -> &'static crate::intraday::Minutes {
+        let dir = std::env::temp_dir().join(format!("covel{name}{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut body, mut idx) = (String::from("Date,Time,Open,High,Low,Close\n"), String::from("Date,offset,bytes\n"));
+        for (d, lines) in days {
+            let start = body.len();
+            for l in *lines { body.push_str(&format!("{d},{l}\n")); }
+            idx.push_str(&format!("{d},{start},{}\n", body.len() - start));
+        }
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), &idx).unwrap();
+        Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap()))
+    }
+
+    /// Lane K79 (#290 (1)): two long units with stops 97 and 99 (the second added on a gap open); a minute closes at 103 and the
+    /// next one opens at 96 and stays under 97: both units leave at that minute's open, 96 (the walk used to stop at the first one).
+    #[test]
+    fn gap_minute_exits_every_unit_inside_the_gap() {
+        let d = |k: usize| format!("2000-{:02}-{:02}", 1 + k / 28, 1 + k % 28);
+        let mk = |k: usize, o: f64, h: f64, l: f64, c: f64| Row { ticker: "T".into(), date: d(k), open: o, high: h, low: l, close: c, volume: None };
+        // N = 4 (range 4), 55-day high 100, 20-day low 96; stop 1 N, add every 1/4 N
+        let mut r: Vec<Row> = (0..60).map(|k| mk(k, 98.0, 100.0, 96.0, 98.0)).collect();
+        r.push(mk(60, 99.0, 100.5, 98.8, 100.2)); // entry at 100, stop 96, next add 101
+        r.push(mk(61, 103.0, 103.5, 102.5, 103.0)); // gapped add at 103: stops 97 and 99, next add 104
+        r.push(mk(62, 103.0, 104.2, 95.0, 103.5)); // order-dependent (add at 104 vs the stops): the minutes decide
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.minutes = Some(minutes("gap", &[(d(60).as_str(), &["09:30,99,100.5,98.8,100.2"]), (d(61).as_str(), &["09:30,103,103.5,102.5,103"]),
+            (d(62).as_str(), &["09:30,103,103.4,102.8,103", "09:31,96,96.5,95.5,96", "09:32,96,96.8,95,95.5", "09:33,95.5,104.2,95.5,103.5"])]));
+        let p: Params = [("ticks".to_string(), 0.0), ("stop_n".to_string(), 1.0), ("add_n".to_string(), 0.25)].into();
+        let t = run("cov_turtle_s2", &x, 55, r.len() - 1, &p).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].legs.iter().map(|l| (l.i, l.px)).collect::<Vec<_>>(), vec![(60, 100.0), (61, 103.0)]);
+        assert!(!t[0].open && t[0].exit_i == 62 && t[0].exit_px == 96.0 && t[0].exits.is_empty(), "{:?} {} {:?}", t[0].exits, t[0].exit_px, t[0].reason);
     }
 
     #[test]
