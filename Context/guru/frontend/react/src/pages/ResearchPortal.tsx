@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
+import { VerificationView } from "./VerificationView";
 import {
   research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, csvCell, ago, dayKey, readHashParams, hashWith,
   type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareInventory, type ShareSource, type Site, type Strategy,
@@ -37,11 +38,20 @@ function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
 }
 
 export function ResearchPortal() {
-  const me = useLoad(research.me, []);
+  const me = useLoad(research.me, []), view = useHash().get("v");
   useEffect(() => { document.title = "Research · Strategy Vault"; }, []);
   if (me.error) return <div className="rp"><Problem error={me.error} retry={me.reload} /></div>;
   if (!me.data) return <div className="rp"><p className="rp-loading">Loading…</p></div>;
-  if (!me.data.employee && !me.data.admin) return <div className="rp"><Gate me={me.data} done={me.reload} /></div>;
+  // The verification tracker is read-only, so every signed-in user sees it without the reviewer PIN.
+  if (!me.data.employee && !me.data.admin) return (
+    <div className="rp">
+      {view === "verify" ? <>
+        <header className="rp-bar"><a className="rp-brand" href="#/research">Research</a><nav><a href={hashWith({ v: "verify" }, "#/research")} aria-current="page">Verification</a></nav>
+          <span className="rp-who"><a href="#/research">Enter as a reviewer</a></span></header>
+        <VerificationView />
+      </> : <Gate me={me.data} done={me.reload} />}
+    </div>
+  );
   return <div className="rp"><Signed me={me.data} reload={me.reload} /></div>;
 }
 
@@ -65,6 +75,7 @@ function Gate({ me, done }: { me: Me; done: () => void }) {
       {error && <p className="rp-problem" role="alert">{error}</p>}
       <button className="rp-primary" type="submit" disabled={busy}>{busy ? "Checking…" : "Enter"}</button>
       <button type="button" className="rp-link" onClick={() => { setAdmin(!admin); setPin(""); setError(""); }}>{admin ? "Back to employee entry" : "I am the admin"}</button>
+      <a className="rp-small" href={hashWith({ v: "verify" }, "#/research")}>Only looking? Open the verification tracker</a>
     </form>
   );
 }
@@ -81,6 +92,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
   else if (v === "team" && me.admin) body = <TeamView />;
   else if (v === "share" && me.admin) body = <ShareView />;
   else if (v === "claude") body = <ClaudeView />;
+  else if (v === "verify") body = <VerificationView />;
   else if (v === "emp" && me.admin && p.get("emp")) body = <WorkView person={p.get("emp")!} title={`${p.get("emp")}'s work`} admin />;
   else if (p.get("book")) body = <BookView author={p.get("author") || ""} book={p.get("book")!} />;
   else if (p.get("author")) body = <AuthorView author={p.get("author")!} />;
@@ -92,6 +104,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
         <nav>
           <a href="#/research" aria-current={!v && !p.get("author") && !p.get("s") ? "page" : undefined}>Authors</a>
           {who && <a href={hashWith({ v: "mine" }, "#/research")} aria-current={v === "mine" ? "page" : undefined}>My work</a>}
+          <a href={hashWith({ v: "verify" }, "#/research")} aria-current={v === "verify" ? "page" : undefined}>Verification</a>
           <a href={hashWith({ v: "claude" }, "#/research")} aria-current={v === "claude" ? "page" : undefined}>Claude's work</a>
           {me.admin && <a href={hashWith({ v: "team" }, "#/research")} aria-current={v === "team" || v === "emp" ? "page" : undefined}>Employees</a>}
           {me.admin && <a href={hashWith({ v: "share" }, "#/research")} aria-current={v === "share" ? "page" : undefined}>Research share</a>}
