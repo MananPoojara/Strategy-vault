@@ -69,7 +69,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if params(id).is_none() || to >= x.c.len() || from > to || x.minutes.is_none() { return None; }
+    if params(id).is_none() || to >= x.c.len() || from > to { return None; }
+    if x.minutes.is_none() { return Some(vec![]); } // no minute bars: no trades (as every other minute module), not "no runner"
     let g = |k: &str| super::jb624::getp(id, p, k);
     let n = g("bar").round().clamp(1., 60.) as u16;
     Some(day_trades(x, from, to, n, if id == "jr_tbtm_3day" { Some(g("level") >= 0.5) } else { None }))
