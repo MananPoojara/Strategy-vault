@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod jobs;
 mod connors;
 mod readiness;
@@ -324,8 +325,10 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
 /// Shared ordinary percentage account finalization, also exercised with frozen
 /// event fixtures. Source-account and fixed-unit report models remain separate.
 fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f64) -> Result<Run,String> {
+    // lane F1 (R4 #293 (2)): on a futures context each trade is priced in the contract held at entry (unadjusted)
+    let (trades,futures_close)=if futures::ctx_market(ctx).is_some() {let (t,c)=futures::raw_basis(ctx,trades)?;(t,Some(c))} else {(trades,None)};
     trade_validation::check_structure(&trades,from,to)?;
-    let mut equity = equity_curve(&ctx.c, &trades, from, to, cost);
+    let mut equity = equity_curve(futures_close.as_deref().unwrap_or(&ctx.c), &trades, from, to, cost);
     if equity.iter().any(|v|!v.is_finite()) {return Err("calculation_unavailable: Unsupported nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
     // Ruin (user request 2026-10-24): the account is wiped out on the first day equity reaches 0. The run stops at the
     // end of the trade that did it: later trades are dropped, equity stays 0, nothing is borrowed or refunded.
@@ -335,7 +338,7 @@ fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f
         trades.truncate(n+1);to=trades[n].exit_i;equity.truncate(to-from+1);
         trade_validation::check(&trades[..n],from,to,cost)?;
     } else {trade_validation::check(&trades,from,to,cost)?;}
-    let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
+    let bh = futures::buy_hold(ctx,from,to).unwrap_or_else(|| (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect());
     Ok(Run { trades, from, to, equity, bh,source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None })
 }
 
@@ -2172,12 +2175,15 @@ fn main() {
         (Some(a), Some(b)) => println!("Volatility source {}: {} daily bars {} → {} ({:.1?}); market admission checks preserve the actual source identity",a.ticker, vix.len(), a.date, b.date, t0.elapsed()),
         _ => eprintln!("warning: no consistent volatility-index data in {vix_dir}; VIX strategies will be blocked"),
     }
-    let data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
+    let mut data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
+    // lane F1 (R4 #293): the US engine also serves Norgate continuous futures from futures/norgate-20200908 next to its price file
+    let futures_raw = if data.contains_key("SPX") { futures::load(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908"), &mut data) } else { BTreeMap::new() };
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let mut extra = load_extra(&extra_dir);
+    extra.extend(futures_raw); // lane F1: the unadjusted futures series (RAW.*), per futures ticker
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
     if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}

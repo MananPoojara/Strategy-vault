@@ -409,6 +409,7 @@ impl<'a> Ctx<'a> {
     /// One real tick of the traded instrument: a native stock's market tick, else 0.05 on the vault's NSE indices
     /// (tickers start "NIFTY") and 0.01 on US indices/ETFs (decimal quotes). Adaptation: the Connors books used 1/8-dollar ticks.
     pub fn market_tick(&self) -> f64 {
+        if let Some(m) = crate::futures::ctx_market(self) { return m.tick; } // lane F1 (R4 #293, #57): the contract's tick
         self.stock_tick().unwrap_or(if self.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 })
     }
     /// An external series by name, if it has any data for this ticker.
