@@ -401,8 +401,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 /// Lane F1: a weekly-bar system on the daily context. Monday-Sunday weeks (the week's last trading day closes it; open =
 /// its first open, high/low = its extremes); only weeks that start on/after `from` and end by `to` are traded. The rule runs
-/// on the weekly bars; each fill is dated on the last trading day of its week (the weekly bar does not say which day), and
-/// a trade still open is marked at `to`.
+/// on the weekly bars; each fill is dated on the first trading day of its week whose range holds the fill price (the open
+/// of the week's first day for a gap fill), so the trade takes that day's roll offset (R4 #301); an exit in the entry week
+/// is dated no earlier than the entry. A trade still open is marked at `to`.
 fn weekly_run(x: &Ctx, from: usize, to: usize, f: impl Fn(&Ctx, usize, usize) -> Vec<Trade>) -> Vec<Trade> {
     let wk = |i: usize| (crate::day_number(&x.r[i].date) + 3).div_euclid(7);
     let (mut rows, mut start, mut end): (Vec<crate::Row>, Vec<usize>, Vec<usize>) = (vec![], vec![], vec![]);
@@ -419,11 +420,19 @@ fn weekly_run(x: &Ctx, from: usize, to: usize, f: impl Fn(&Ctx, usize, usize) ->
     let wt = end.len() - 1;
     if wf >= wt { return vec![]; }
     let wx = Ctx::new(&rows, &[], &[]);
+    let day = |w: usize, px: f64, lo: usize| (start[w].max(lo)..=end[w]).find(|&k| x.l[k] <= px && px <= x.h[k]).unwrap_or(start[w].max(lo));
+    let mut last = 0usize; // a fill is never dated before the previous trade's exit
     f(&wx, wf, wt).into_iter().map(|mut t| {
-        for l in &mut t.legs { l.i = end[l.i]; }
-        for e in &mut t.exits { e.0 = end[e.0]; }
-        t.signal_i = end[t.signal_i];
-        if t.open { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; } else { t.exit_i = end[t.exit_i]; }
+        let we = t.legs[0].i;
+        for l in &mut t.legs { l.i = day(l.i, l.px, last); }
+        let e = t.legs[0].i;
+        for p in &mut t.exits { p.0 = day(p.0, p.1, e); }
+        if t.open { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; } else {
+            let wx_ = t.exit_i;
+            t.exit_i = day(wx_, t.exit_px, if wx_ == we { e } else { 0 });
+            t.signal_i = t.exit_i;
+        }
+        last = t.exit_i;
         t
     }).collect()
 }
