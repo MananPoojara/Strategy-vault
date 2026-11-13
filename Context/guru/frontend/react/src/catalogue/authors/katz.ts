@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 170,
-  author: { id: 'katz', name: 'Katz & McCormick', tagline: 'Systematic tests of entry and exit models with one standard exit', books: [{ id: 'kets', title: 'The Encyclopedia of Trading Strategies', year: 2000, blurb: 'Katz & McCormick, 2000 · breakouts, oscillators, seasonality, lunar and cycle entries with the book’s ATR stop/target exit' }, { id: "sckzlun", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V15/C06/LUNARCY.pdf"], title: "Lunar Cycles And Trading (Katz, S&C V.15:6)", year: 1997, blurb: "Katz & McCormick · buy 1 bar after a full moon, short 1 bar after a new moon" }, { id: "sckzcyc", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V17/C02/010TRAD.pdf"], title: "Trading Stocks With A Cyclical System (Katz, S&C V.17:2)", year: 1999, blurb: "Katz & McCormick · follow a 3-day thrust of one quarter ago beyond 4 SDs, 10-bar exit" }] },
+  author: { id: 'katz', name: 'Katz & McCormick', tagline: 'Systematic tests of entry and exit models with one standard exit', books: [{ id: 'kets', title: 'The Encyclopedia of Trading Strategies', year: 2000, blurb: 'Katz & McCormick, 2000 · breakouts, oscillators, seasonality, lunar and cycle entries with the book’s ATR stop/target exit' }, { id: "sckzlun", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V15/C06/LUNARCY.pdf"], title: "Lunar Cycles And Trading (Katz, S&C V.15:6)", year: 1997, blurb: "Katz & McCormick · buy 1 bar after a full moon, short 1 bar after a new moon" }, { id: "sckzcyc", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V17/C02/010TRAD.pdf"], title: "Trading Stocks With A Cyclical System (Katz, S&C V.17:2)", year: 1999, blurb: "Katz & McCormick · follow a 3-day thrust of one quarter ago beyond 4 SDs, 10-bar exit" }, { id: "sckzthr", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V14/C12/ARULEBA.pdf"], title: "A Rule-Based Approach To Trading (Katz & McCormick, S&C V.14:12)", year: 1996, blurb: "Katz · thrust retracement limit entries on 15-minute S&P bars (30-minute option), half-thrust target, $350 stop (SPX)" }] },
   identities: [],
   profile: {
     "kind": "person",
@@ -25,5 +25,6 @@ export default {
     "kets": {"type":"book","people":["Donna L. McCormick","Jeffrey Owen Katz"]},
     "sckzlun": {"type":"article","people":["Jeffrey Owen Katz", "Donna L. McCormick"]},
     "sckzcyc": {"type":"article","people":["Jeffrey Owen Katz", "Donna L. McCormick"]},
+    "sckzthr": {"type":"article","people":["Jeffrey Owen Katz", "Donna L. McCormick"]},
   },
 } satisfies AuthorFile;
