@@ -231,7 +231,9 @@ const CHANDE_LB: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.173-17
 const CHANDE_IM: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.126-129, Tables 4.15 and 4.17: the gold-bond intermarket systems (gold, and soybeans or copper, signal the U.S. bond futures trade; continuous contracts 8/21/77-7/10/95, $5,000 initial stop, $100 slippage and commission); run on the Norgate T-bond continuous contract with the Norgate gold / soybean / copper contracts as Data2 joined by date (R4 #293 (1)), the $5,000 = 5.00 bond points, lane F1B.";
 const LEB_25: &str = "LeBeau & Tan, 25 x 25 Bond System v2.0 manual (System Traders Club 1998): +DI(14) > -DI(14), ADX(14) > 20, RSI(4) < 50, buy stop 18/32 above the close, $2,500 money stop (2.5 points), 25-day-low stop that becomes the 2-day low after 25 days or once open profit exceeds 5 x the 45-day ATR (the module reproduces the manual's own Us.txt trade list exactly); run on the Norgate T-bond continuous contract (R4 #293 (1)); Norgate does not say which session its T-bond series is (the manual used day-session bonds), lane F1B.";
 const LEB_CB: &str = "LeBeau & Elden, Crossbow Swiss Franc System v1.0 manual (System Traders Club 1999): ADX/ATR setups, buy stop at the 2-day high / sell stop at the prior low, ATR trailing stops, $2,500 money stop, stop and reverse (the module reproduces the manual's own SF.LNG trade list, 67/67); run on the Norgate Swiss franc continuous contract with the $2,500 at $125,000 per 1.00 (= 0.02) and the contract tick 0.0001 (R4 #293 (1), (3)), lane F1B.";
+const STAD5: &str = "Omega Research, System/Strategy Trading and Development Club (STAD) Vol 5 (1998): the printed TradeStation code with the Format dialog stops in the book's contract dollars (T-bonds $1,000 per point: $1,000 money stop = 1.0, $200 breakeven = 0.2 for Channel Breakout with Pullback, ch.4 p.77-84; gold $100 per point: $200 money stop = 2.0, $400 $ risk trailing = 4.0 for Fibonacci .382, ch.3 p.34-41); run on the Norgate continuous contract of the book's test market (R4 #293 (1), (3)), lane F1B.";
 const CARDS_F1B: &[(&str, &str, &str)] = &[
+    ("stad5_chbopb", "&ZB", STAD5), ("stad5_fib382", "&GC", STAD5),
     ("lebtc_25x25", "&ZB", LEB_25), ("lebtc_crossbow", "&6S", LEB_CB),
     ("ch_bta2_goldbond_ma", "&ZB", CHANDE_IM), ("ch_bta2_goldbond_adx", "&ZB", CHANDE_IM), ("ch_bta2_intermarket_trio", "&ZB", CHANDE_IM),
     ("ch_bta2_cbo_trail5", "&6B", CHANDE5), ("ch_bta2_cbo_trail5", "&KC", CHANDE5), ("ch_bta2_cbo_trail5", "&CT", CHANDE5), ("ch_bta2_cbo_trail5", "&CL", CHANDE5), ("ch_bta2_cbo_trail5", "&GE", CHANDE5), ("ch_bta2_cbo_trail5", "&GC", CHANDE5), ("ch_bta2_cbo_trail5", "&6J", CHANDE5), ("ch_bta2_cbo_trail5", "&ZB", CHANDE5), ("ch_bta2_cbo_trail5", "&ZW", CHANDE5),
@@ -312,5 +314,17 @@ mod tests {
         assert!((close[1] - 80.8).abs() < 1e-9);
         assert!((buy_hold(&x, 0, 2).unwrap()[2] - (1. + 2. / 79.8)).abs() < 1e-12);
         assert!(!invalid_bar(&x, 0) || x.series("RAW.Open").is_none());
+    }
+    #[test]
+    fn f1b_cards_run_only_on_their_contracts() {
+        // lane F1B (R4 #293): each card on the book's contract(s) only; $ amounts at the contract's $ per point
+        for (id, t) in [("lebtc_25x25", "US T-Bond (Norgate &ZB)"), ("lebtc_crossbow", "Swiss Franc (Norgate &6S)"), ("stad5_chbopb", "US T-Bond (Norgate &ZB)"),
+                        ("stad5_fib382", "Gold (Norgate &GC)"), ("ch_bta2_goldbond_ma", "US T-Bond (Norgate &ZB)"), ("ch_bta2_long_bomb", "Soybeans (Norgate &ZS)")] {
+            assert!(home(id, t).is_none(), "{id} on {t}");
+            assert!(home(id, "SPX").is_some() && home(id, "Silver (Norgate &SI)").is_some(), "{id}");
+        }
+        let sf = MARKETS.iter().find(|m| m.sym == "&6S").unwrap();
+        assert!((2500. / usd_per_point(sf, "1990-01-02").unwrap() - 0.02).abs() < 1e-12); // Crossbow $2,500 money stop
+        for s in ["&KC", "&CT", "&GE", "&ZW", "&HO", "&HG", "&ZS"] { assert!(MARKETS.iter().any(|m| m.sym == s && !m.source.is_empty())); }
     }
 }
