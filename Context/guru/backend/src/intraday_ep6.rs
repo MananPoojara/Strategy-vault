@@ -249,8 +249,14 @@ const AMB: &str = "Held (decision #243, lane K59): on SPX's real 1-minute bars o
 const THIN: &str = "Held (decision #243, lane K59): more than 5% of its trades enter at a stop or limit level and reach an exit level the same day, so the daily bar cannot say which came first (#240), and fewer than 10 of its trades fall inside the 1-minute window, so the order cannot be resolved on real minutes. No results are published.";
 const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane K59): the daily-bar convention changes this rule's result materially against the real 1-minute order, so only the minute-resolved window of the 1-minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) is published.";
 
+/// R4 #308 (lane R2D): daily-convention tickers (no minute files) where more than 5% of the rule's trades depend on the
+/// order inside the entry day: refused per ticker (#175 limit applied per ticker).
+pub const TICKER308: &[(&str, &str)] = &[("tbpk_first_prize", "DIA"), ("tbpk_first_prize", "IWM"), ("tbpk_first_prize", "DJI")];
+const TICKER308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane R2D): more than 5% of this rule's trades here enter at a stop and reach the initial stop on the same day (DIA 3 of 21, IWM 4 of 29, DJI 6 of 58), and this ticker has no 1-minute file to settle which came first.";
+
 /// The hold or minute-window refusal for (id, ticker), if any (instrument_policy::tradable_check_issue).
 pub fn held_note(id: &str, ticker: &str) -> Option<&'static str> {
+    if TICKER308.contains(&(id, ticker)) { return Some(TICKER308_NOTE); }
     if let Some(&(_, n)) = HELD.iter().find(|h| h.0 == id) { return Some(n); }
     let nse = if ticker == "NIFTY BANK" { "NIFTYBANK" } else { ticker };
     if INDIA231.contains(&(id, nse)) { return Some(INDIA231_NOTE); }

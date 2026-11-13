@@ -168,6 +168,8 @@ mod tests {
         // lane R2D (R4 #304): First Prize live with labelled readings; R2D2 and Triple Play held
         assert!(c.iter().all(|d| matches!(d.status, crate::connors::Status::NotTestable(_)) != (d.id == "tbpk_first_prize")));
         assert!(super::reviewed("tbpk_first_prize") && super::params("tbpk_r2d2").is_none());
+        for t in ["DIA", "IWM", "DJI"] { assert!(crate::intraday_ep6::held_note("tbpk_first_prize", t).is_some(), "{t}"); } // R4 #308
+        for t in ["SPY", "QQQ", "SPX", "NDX", "NIFTY 50"] { assert!(crate::intraday_ep6::held_note("tbpk_first_prize", t).is_none(), "{t}"); }
     }
 }
 
