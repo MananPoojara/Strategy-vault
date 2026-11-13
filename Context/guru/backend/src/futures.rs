@@ -291,7 +291,7 @@ const CARDS_PB: &[(&str, &str, &str)] = &[
     ("konwv_bond", "&ZB", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the T-bond parameters (20/10/30 weeks) on the Norgate continuous T-bond contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
 ];
 /// Lane PG (13 Nov 2026): Sweeney's and Saitta's S&C T-bond tests (books::scswrl, books::scsarf), on the contract they name.
-const CARDS_PG: &[(&str, &str, &str)] = &[("scswrl_underlying", "&ZB", SWRL), ("scswrl_reverse", "&ZB", SWRL), ("scsarf_hs", "&ZB", SARF), ("scsarf_dt", "&ZB", SARF),
+const CARDS_PG: &[(&str, &str, &str)] = &[("scswrl_underlying", "&ZB", SWRL), ("scswrl_reverse", "&ZB", SWRL), ("scsarf_hs", "&ZB", SARF), /* scsarf_dt held (REV-PG B1, R4 #297 (5)): no home, so instrument_policy refuses it with its held reason */
     ("scpged_weekly", "&GE", PGED), ("scnbps_cross", "&GE", NBPS), ("scnbps_cross", "&6S", NBPS), ("scnbps_cross", "&SP", NBPS), ("scnbps_cross", "&LE", NBPS), ("scnbps_cross", "&CL", NBPS)];
 const PGED: &str = "George Panagakis, 'Trading The Eurodollar', Technical Analysis of Stocks & Commodities V.13:3 (1995) p.102-106 (Figure 5: June/December Eurodollar contracts, fiscal years 1982-1993): run on the Norgate Eurodollar continuous contract only (R4 #293 (1))";
 const NBPS: &str = "Nauzer Balsara, 'Using Probability Stops In Trading', Technical Analysis of Stocks & Commodities V.10:5 (1992) p.225-228 (Figures 1-5: Eurodollar, Swiss franc, S&P 500, live cattle and crude oil futures, 1988-1991, closing prices): run on those five Norgate continuous contracts only (R4 #293 (1))";
