@@ -272,6 +272,8 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
 /// not held: its E-mini, which the article names, stands in).
 const ABEL: &str = "Phil Abel, Diversification And Your Portfolio, S&C V21:10 p.20-31 (Figure 3: 16 US futures, 1995-2002): the printed SMA 25/50/100 system with the 4-standard-deviation hard stop on this Norgate continuous contract (R4 #293 (1)), lane PF.";
 const CARDS_PF: &[(&str, &str, &str)] = &[
+    ("scbrower_long", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the buy patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("scbrower_short", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the sell patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scabeldiv_sma", "&6J", ABEL),
     ("scabeldiv_sma", "&6S", ABEL),
