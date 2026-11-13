@@ -3148,7 +3148,7 @@ mod tests {
         use crate::books::ss;
         let cat=ss::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday phase 1 ids: own test
-        assert_eq!(admitted.len(),32); // lane R2D (R4 #297): + ss_study_fresh_adx_buy/_sell
+        assert_eq!(admitted.len(),30); // Fresh ADX: withheld (R4 #303)
         assert!(admitted.iter().all(|id|ss::REVIEWED_DAILY.contains(id)));
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)) {
             let stock=ss::STOCK_SHOWN.contains(&d.id);let also=ss::STOCK_ALSO.contains(&d.id);
@@ -3166,7 +3166,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
         }
         // Held: gate-withheld, data-missing, discretionary or no trade rule in the book.
-        for id in ["ss_turtle_soup","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal",/* ss_smart_money_index: lane K75 minute admission */"ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse"/* ss_study_fresh_adx_buy/_sell: lane R2D, R4 #297 */] {
+        for id in ["ss_turtle_soup","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal",/* ss_smart_money_index: lane K75 minute admission */"ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse","ss_study_fresh_adx_buy","ss_study_fresh_adx_sell"/* withheld, R4 #303 */] {
             let d=def(id,"ss");
             assert!(!reviewed_cash_rule(&d),"{id}");
             assert_eq!(policy(&d).requirement,"source_review_required");

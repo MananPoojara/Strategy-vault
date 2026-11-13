@@ -307,7 +307,7 @@ mod tests {
         let lit = run("jbudt_gap_fpo", &x, 0, 4, &p).unwrap();
         assert!(lit.len() == 1 && lit[0].open); // literal: no stop, still open at the end
         assert!(reviewed_daily("jbudt_gap_fpo") && reviewed_daily("jbudt_gap_split"));
-        assert!(crate::books::ss::reviewed_daily("ss_study_fresh_adx_buy") && !crate::books::ss::reads_open("ss_study_fresh_adx_sell"));
+        assert!(!crate::books::ss::reviewed_daily("ss_study_fresh_adx_buy")); // R4 #303: Fresh ADX withheld
     }
 }
 
