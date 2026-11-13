@@ -21,10 +21,10 @@ const MAC_RULES: [&str; 2] = [
 ];
 
 /// Daily rules admitted after the 2026-10-22 full reading (authors/bernstein/agents/jbudt) and an independent
-/// chronological Python ledger check (authors/bernstein/g2-admission). The gap trades are held (no stop: one short
-/// stays open for decades and loses more than the account). The rest are intraday, chart judgement or
-/// left to per-market optimisation (held with the reason on the card).
-pub const REVIEWED_DAILY: &[&str] = &["jbudt_mac_ad57", "jbudt_tb16", "jbudt_tb16_mom"];
+/// chronological Python ledger check (authors/bernstein/g2-admission). The gap trades were held (no stop: one short
+/// stayed open for decades); lane R2D (13 Nov 2026, R4 #297) admits them UNVERIFIED with the labelled stop reading
+/// (p.stop). The rest are intraday, chart judgement or left to per-market optimisation (held with the reason on the card).
+pub const REVIEWED_DAILY: &[&str] = &["jbudt_mac_ad57", "jbudt_tb16", "jbudt_tb16_mom", "jbudt_gap_fpo", "jbudt_gap_split"];
 pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// The MAC / Williams A/D rule trades on the close only; the others read the open (gap setup, FPO, stop gaps).
 pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "jbudt_mac_ad57" }
@@ -36,13 +36,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"Buy Set-Up: A gap buy setup occurs when the opening price today is lower than the low price yesterday. Sell Set-Up: ... the opening price today is higher than the high price yesterday\" (ch.5, Gap Set-Ups)",
               "E|\"A gap buy Trigger occurs when the price, after an opening drop, rises above the low of the previous day\"; \"a gap sell Trigger when the market price opens above the high of the previous day and then falls below the high of the previous day\" (ch.5, Gap Triggers): stop order at yesterday's low (high)",
               "X|\"Another method for exit is to hold the trade overnight and to exit on the first profitable opening (FPO). An FPO is simply an opening that is profitable based on your entry price\" (ch.5, First Profitable Opening Follow-Through)",
-              "X|No stop is given for the FPO exit (\"Stops should be based on market behavior\", no level printed)"],
+              "X|Unstated in the book: the stop (\"Stops should be based on market behavior such as indicators, volatility, price ranges\", ch.5 Stop Loss Exit, PDF p.77; no level printed); vault reading: a price-range stop at the entry day's low (buys) / high (sells), working from the next day: filled at that level, or at the open when the market opens through it; p.stop = 0 = no stop (the literal text: a position can stay open for decades)",
+              "X|Unstated in the book: the order inside a day when the stop is hit after the open and a new gap trigger trades the same day; vault reading: no new entry on that day (an exit at the open, by FPO or a gapped stop, still allows one)",
+              "X|Adapted: 2 unstated details (R4 #297); published UNVERIFIED (the book prints no results for a held instrument)"],
             "The end-of-day exit version of the same trade is already in the vault (ss_study_oops_buy / ss_study_oops_sell with p.exit=0), so only the FPO exit is added here. Book examples are stocks and futures; run on the indices (instrument swap). SPX opens before about 1999 often equal the prior close, so few gaps there."),
         def!("jbudt_gap_split", "Gap trade · losers out at the close, winners half at the close and half on the FPO", "Ch.5 · Gap Day Trading", "Long/Short", Live,
             &["F|Gap buy / sell setup as jbudt_gap_fpo (ch.5, Gap Set-Ups)",
               "E|Stop order at yesterday's low (buy) / high (sell) after the gap opening (ch.5, Gap Triggers)",
-              "X|\"you would exit all shares if the trade is not profitable at the end of the day (EOD). On the other hand, if the trade is profitable you could exit half the position at the end of the day and keep the remainder of the position for an FPO exit\" (ch.5, First Profitable Opening Follow-Through)"],
-            "Book example: 400 shares, half = 200. The half kept overnight has no printed stop; it leaves on the first opening beyond the entry price."),
+              "X|\"you would exit all shares if the trade is not profitable at the end of the day (EOD). On the other hand, if the trade is profitable you could exit half the position at the end of the day and keep the remainder of the position for an FPO exit\" (ch.5, First Profitable Opening Follow-Through)",
+              "X|Unstated in the book: the stop (\"Stops should be based on market behavior such as indicators, volatility, price ranges\", ch.5 Stop Loss Exit, PDF p.77; no level printed); vault reading: a price-range stop at the entry day's low (buys) / high (sells), working from the next day: filled at that level, or at the open when the market opens through it; p.stop = 0 = no stop (the literal text: a position can stay open for decades)",
+              "X|Unstated in the book: the order inside a day when the stop is hit after the open and a new gap trigger trades the same day; vault reading: no new entry on that day (an exit at the open, by FPO or a gapped stop, still allows one)",
+              "X|Adapted: 2 unstated details (R4 #297); published UNVERIFIED (the book prints no results for a held instrument)"],
+            "Book example: 400 shares, half = 200. The half kept overnight has no printed stop; it leaves on the first opening beyond the entry price, or at the labelled stop reading (p.stop)."),
         def!("jbudt_mac_ad57", "MAC with Williams A/D 57 confirmation (daily)", "Ch.6 · Moving Average Channel", "Long/Short", Live,
             &[MAC_RULES[0], MAC_RULES[1],
               "F|\"Some readers may be familiar with my MAC application on daily charts. In such cases I prefer to use ... Williams Accumulation/ Distribution (AD) with its 57 period moving average\" (ch.6)",
@@ -119,7 +124,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
-        "jbudt_gap_fpo" | "jbudt_gap_split" => vec![],
+        "jbudt_gap_fpo" | "jbudt_gap_split" => vec![p("stop", "Stop [unstated in the book, R4 #297 reading]: 1 = the entry day's low (buys) / high (sells) from the next day, 0 = no stop (literal)", 1., 0., 1., 1.)], // lane R2D
         "jbudt_pop" => vec![p("bar", "Bar size (minutes; 5 default; 10, 15, 30 the chapter's other figures)", 5., 5., 30., 5.), p("k", "Stochastic length (bars)", 9., 2., 50., 1.),
             p("smooth", "%K smoothing (bars)", 3., 1., 10., 1.), p("upper", "Buy above (%K)", 70., 50., 95., 5.), p("lower", "Sell below (%K)", 30., 5., 50., 5.)], // intraday EP block (K55)
         "jbudt_mac_ad57" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars", 2., 1., 4., 1.), p("ad_ma", "MA of Williams A/D (bars)", 57., 20., 80., 1.)],
@@ -142,20 +147,35 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     match id {
         "jbudt_gap_fpo" | "jbudt_gap_split" => {
             let split = id == "jbudt_gap_split";
+            let use_stop = g("stop").round() >= 1.0; // lane R2D (R4 #297): entry-day extreme stop from the next day
+            let mut sl = f64::NAN;
             for i in from.max(1)..=to {
+                let mut stopped_intraday = false;
                 if let Some(t) = cur.as_mut().filter(|t| t.legs[0].i < i) {
-                    if (x.o[i] - t.legs[0].px) * t.dir > 0.0 {
+                    let d = t.dir;
+                    let hit = if (x.o[i] - t.legs[0].px) * d > 0.0 {
+                        Some((x.o[i], "First profitable opening"))
+                    } else if use_stop && (x.o[i] - sl) * d <= 0.0 {
+                        Some((x.o[i], "Stop at the entry day's extreme (gapped open)"))
+                    } else if use_stop && (if d > 0.0 { x.l[i] <= sl } else { x.h[i] >= sl }) {
+                        stopped_intraday = true;
+                        Some((sl, "Stop at the entry day's extreme"))
+                    } else {
+                        None
+                    };
+                    if let Some((xp, why)) = hit {
                         let mut t = cur.take().unwrap();
-                        let px = if split { t.exits.push((i, x.o[i], 0.5)); t.exits.iter().map(|e| e.1 * e.2).sum() } else { x.o[i] };
-                        out.push(finish(t, i, px, i, "First profitable opening"));
+                        let px = if split { t.exits.push((i, xp, 0.5)); t.exits.iter().map(|e| e.1 * e.2).sum() } else { xp };
+                        out.push(finish(t, i, px, i, why));
                     }
                 }
-                if cur.is_some() || i == to {
+                if cur.is_some() || i == to || stopped_intraday {
                     continue;
                 }
                 let d = if x.o[i] < x.l[i - 1] && x.h[i] >= x.l[i - 1] { 1.0 } else if x.o[i] > x.h[i - 1] && x.l[i] <= x.h[i - 1] { -1.0 } else { continue };
                 let e = if d > 0.0 { x.l[i - 1] } else { x.h[i - 1] };
                 let mut t = new_trade(d, i, e, "stop", i - 1);
+                sl = if d > 0.0 { x.l[i] } else { x.h[i] };
                 if split {
                     if (x.c[i] - e) * d > 0.0 {
                         t.exits.push((i, x.c[i], 0.5));
@@ -267,6 +287,27 @@ mod tests {
         let ts = run("jbudt_gap_fpo", &x, 0, 3, &Params::new()).unwrap();
         assert_eq!(ts.len(), 1);
         assert_eq!((ts[0].legs[0].i, ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (1, 99., 3, 99.2));
+    }
+    #[test]
+    fn gap_stop_reading_r2d() {
+        // lane R2D (R4 #297): stop at the entry day's low from the next day; no new entry on an intraday stop day
+        let r = vec![
+            row("2009-01-05", 100., 102., 99., 101.),
+            row("2009-01-06", 98., 100., 97., 99.5), // long at 99, stop 97
+            row("2009-01-07", 98.5, 98.6, 96., 96.5), // open not profitable, low 96 <= 97 -> out at 97
+            row("2009-01-08", 95., 97., 94.5, 96.), // gap below 96 traded back: long at 96 (stop 94.5)
+            row("2009-01-09", 94., 95., 93., 94.5), // opens through the stop -> out at the open 94
+        ];
+        let x = Ctx::new(&r, &r, &[]);
+        let ts = run("jbudt_gap_fpo", &x, 0, 4, &Params::new()).unwrap();
+        let got: Vec<_> = ts.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px)).collect();
+        assert_eq!(got, vec![(1, 99., 2, 97.), (3, 96., 4, 94.)]);
+        let mut p = Params::new();
+        p.insert("stop".into(), 0.0);
+        let lit = run("jbudt_gap_fpo", &x, 0, 4, &p).unwrap();
+        assert!(lit.len() == 1 && lit[0].open); // literal: no stop, still open at the end
+        assert!(reviewed_daily("jbudt_gap_fpo") && reviewed_daily("jbudt_gap_split"));
+        assert!(!crate::books::ss::reviewed_daily("ss_study_fresh_adx_buy")); // R4 #303: Fresh ADX withheld
     }
 }
 

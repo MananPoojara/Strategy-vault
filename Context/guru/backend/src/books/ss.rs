@@ -23,7 +23,8 @@ pub const BOOK: &str = "ss";
 /// independent chronological Python ledger check. Declared application of futures/stock studies to actual
 /// index/ETF prices (and actual stocks for `STOCK_SHOWN`); no futures dollars or book performance claimed.
 /// Held (not listed): Turtle Soup, 80-20's, Momentum Pinball, ADX no-gap variant, chart patterns, news,
-/// Smart Money / TICK / Arms indicators and the gate-withheld Fresh ADX studies.
+/// Smart Money / TICK / Arms indicators and the Fresh ADX studies (two labelled readings, R4 #297; withheld by R4 #303:
+/// the book check misses Moore's trade counts by 31-44%, so the readings are not confirmed).
 pub const REVIEWED_DAILY: &[&str] = &[
     "ss_turtle_soup_plus_one", "ss_2_period_roc", "ss_anti", "ss_anti_3_10", "ss_anti_trigger", "ss_holy_grail",
     "ss_adx_gapper", "ss_whiplash", "ss_three_day_unfilled_gap", "ss_id_nr4", "ss_hist_vol_crabel",
@@ -53,7 +54,8 @@ pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     }
 }
 /// Every admitted rule except the close-only 2-period ROC fills or exits at the open (stop gaps, next-open orders).
-pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "ss_2_period_roc" }
+/// The Fresh ADX studies enter and exit at closes only (R4 #297 admission, lane R2D).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "ss_2_period_roc" && !id.starts_with("ss_study_fresh_adx") }
 
 // ---------------------------------------------------------------- indicators
 
@@ -918,9 +920,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
           claim("≈13", "69% / 62% / 54% / 46% (C / NO / NC / 2C)", "$237 / $525 / $310 / $485", "0-2 days", "89H-95U, S&P futures (A.14)")),
         m("ss_study_oops_adx_gapper_sell", "Oops (ADX Gapper) sell", "Short", vec!["F|\"Filters: Only ADX(12)>30 & w/ADX(28) trend\" (-DI(28) > +DI(28))", "F|opened above the previous day's high", "E|\"Enter at: PD High\"", "X|Exit 0 = close, 1 = next open (default), 2 = next close, 3 = 2nd close"],
           claim("≈16", "69% / 50% / 56% / 50% (C / NO / NC / 2C)", "$292 / $408 / $378 / $136", "0-2 days", "89H-95U, S&P futures (A.15)")),
-        m("ss_study_fresh_adx_buy", "Fresh ADX buy", "Long", vec!["F|\"periods in which the ADX is above 30 and rising. Trades are taken only in the direction of the trend.\" (ADX(14), +DI > -DI)", "E|\"buying a close that is less than the close of two days ago\" (fresh: yesterday was not such a close)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close. \"No protective stops\""],
+        m("ss_study_fresh_adx_buy", "Fresh ADX buy", "Long", vec!["F|\"periods in which the ADX is above 30 and rising. Trades are taken only in the direction of the trend.\" (ADX(14), +DI > -DI)", "E|\"buying a close that is less than the close of two days ago\" (fresh: yesterday was not such a close)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close. \"No protective stops\"", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table, so the readings are not confirmed (gate note)"],
           claim("≈61", "49% / 51% / 56% / 61% (NC / 2C / 3C / 4C)", "$110 / $48 / $119 / $354", "1-4 days", "86H-95U, S&P futures (A.16)")),
-        m("ss_study_fresh_adx_sell", "Fresh ADX sell", "Short", vec!["F|\"ADX is above 30 and rising\", downtrend (-DI > +DI)", "E|\"selling a close that is greater than the close of two days ago\" (fresh)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close"],
+        m("ss_study_fresh_adx_sell", "Fresh ADX sell", "Short", vec!["F|\"ADX is above 30 and rising\", downtrend (-DI > +DI)", "E|\"selling a close that is greater than the close of two days ago\" (fresh)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table, so the readings are not confirmed (gate note)"],
           claim("≈34", "44% / 50% / 41% / 29% (NC / 2C / 3C / 4C)", "$-51 / $10 / $-18 / $-252", "1-4 days", "86H-95U, S&P futures (A.17)")),
         m("ss_study_gap_failure_buy", "Gap failure buy (50%)", "Long", vec!["F|\"the market opens below the previous day's low and closes in the upper 50 percent of its range ... The gap does not necessarily have to be filled\"", "E|\"Enter on: Close\"", "X|\"Exit on Next Open\""],
           claim("≈113", "62%", "$96", "overnight", "86H-95U, S&P futures (A.18)")),
