@@ -1,8 +1,9 @@
-//! Lane PE (13 Nov 2026; released by lane PC, authors/pc/PC.tsv 'CODABLE-RELEASED'; R4 #297, #243, #319):
+//! Lane PE (13 Nov 2026; released by lane PC, authors/pc/PC.tsv 'CODABLE-RELEASED'; R4 #297, #240, #319, #325):
 //! Clifton Mitchell, "Position Trading The S&P", Technical Analysis of Stocks & Commodities V.19:10 (2001) pp.26-33
 //! (research share 'Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V19/C10/109POS.pdf').
 //! Book id `scmitch`. Coded: the linear-regression-of-lows setup with the close-stop entry and the three optimised exits
-//! (Figure 2 and 'Optimization', PDF p.3-4), on the real 1-minute path (EP6) of SPY/SPX only (#243 (c): minute window).
+//! (Figure 2 and 'Optimization', PDF p.3-4), on the real 1-minute path (EP6) of SPY/SPX only (minute window: lead decision R4 #325, #240 (3) + the 15-25% same-day share).
+//! scmitch_atr is HELD (R4 #325: 3 unstated details); its run code stays for a re-admission.
 //! Independent reference: authors/pe/w/pe_ref.py (from the article).
 use crate::connors::{true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::intraday_ep6::{bar_segs, remark, resolve, ts_high_first, Day, Ev, Seg};
@@ -10,10 +11,13 @@ use crate::intraday_ep6::{bar_segs, remark, resolve, ts_high_first, Day, Ev, Seg
 pub const IDS: &[&str] = &["scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 pub fn reviewed(id: &str) -> bool { IDS.contains(&id) }
 
-macro_rules! common { () => { " Linear regression value = the least-squares line through the last X lows, read at the current bar (the article's target 0; TradeStation LinearRegValue). Setup: today's low above yesterday's regression value of the last X lows. Entry: from the next day, a buy stop at the previous day's close, renewed each day until it fills (a gap open above it fills at the open). Exits are stop orders computed from yesterday's bar; a stop the open gaps through fills at the open, and a stop already at or above the entry fill on the entry day exits at the fill. Long only, one position. Unstated in the article (R4 #297): (1) a setup while a position is open does not carry over (vault reading: only a setup on a day that ends flat arms the close stop); (2) whether the exit works on the entry day (vault reading: yes, as TradeStation/SuperCharts exit orders on the entry bar; option p.same_day = 0: from the day after). Mitchell tested the S&P 500 index January 1995 - May 2001 with 0.5 point slippage and commission per trade. Published only on the real 1-minute window of SPY (2000-2025), and of SPX from 2014 for the ATR exit only (the low-stop SPX run has 5.66% ambiguous minutes, #175; the regression-exit SPX run fails #177a): the stop entry and the stop exit often trade the same day (#240); the daily convention is kept as p.order = 0 (book check). One unit per trade, no costs." } }
+macro_rules! common { () => { " Linear regression value = the least-squares line through the last X lows, read at the current bar (the article's target 0; TradeStation LinearRegValue). Setup: today's low above yesterday's regression value of the last X lows. Entry: from the next day, a buy stop at the previous day's close, renewed each day until it fills (a gap open above it fills at the open). Exits are stop orders computed from yesterday's bar; a stop the open gaps through fills at the open, and a stop already at or above the entry fill on the entry day exits at the fill. Long only, one position. Unstated in the article (R4 #297): (1) a setup while a position is open does not carry over (vault reading: only a setup on a day that ends flat arms the close stop); (2) whether the exit works on the entry day (vault reading: yes, as TradeStation/SuperCharts exit orders on the entry bar; option p.same_day = 0: from the day after). Mitchell tested the S&P 500 index January 1995 - May 2001 with 0.5 point slippage and commission per trade. Published only on the real 1-minute window of SPY (2000-2025) (the low-stop SPX run has 5.66% ambiguous minutes, #175; the regression-exit SPX run fails #177a; the ATR exit is held, R4 #325): SPX daily opens are stale before 2014 (#240 (3)) and the stop entry and the stop exit trade the same day on 15-25% of trades (lead decision R4 #325); the daily convention is kept as p.order = 0 (book check). One unit per trade, no costs." } }
+
+/// R4 #325: the ATR exit has a third unstated detail (its reference day), one more than #297 admits.
+const ATR_HELD: &str = "withheld (R4 #325, held under #297): the ATR exit has 3 unstated details, one more than #297 admits: (1) a setup while a position is open, (2) the exit on the entry day, and (3) the exit's reference day - the article says only 'exit if today's price < highest high of last X days - (ATR of last X days times multiplier)' (PDF p.3); the vault's intraday stop from yesterday's 4-day high and ATR(8) is a reading (yesterday vs today, a stop vs a close test). No results are published; the low-stop and regression-exit variants stay admitted.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    let d = |id, name, x: &'static str, note| StrategyDef { id, name, group: "S&C: Position Trading The S&P (Mitchell, V.19:10)", session: 0, dir: "Long", status: Status::Live,
+    let d = |id, name, x: &'static str, note| StrategyDef { id, name, group: "S&C: Position Trading The S&P (Mitchell, V.19:10)", session: 0, dir: "Long", status: if id == "scmitch_atr" { Status::NotTestable(ATR_HELD) } else { Status::Live },
         needs_volume: false, needs_vix: false, needs_series: &[], book: "scmitch", claim: None, notes: note,
         rules: match x {
             "low" => &["E|\"If today's low > yesterday's linear regression of last X lows (buy setup), then buy at subsequent close stop.\" (PDF p.3); \"the entry linear regression lookback period optimized at nine days\" (PDF p.3)",
@@ -29,7 +33,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         d("scmitch_lowstop", "Mitchell regression-of-lows entry (9 days), close-stop entry, exit at the previous day's low", "low", concat!("[Adapted: 2 unstated details, R4 #297; unverified] Exit: a stop at the previous day's low.", common!())),
         d("scmitch_lrexit", "Mitchell regression-of-lows entry (6 days), exit below yesterday's 3-day regression of lows", "lr", concat!("[Adapted: 2 unstated details, R4 #297; unverified] Exit: a stop at yesterday's regression value of the last 3 lows.", common!())),
-        d("scmitch_atr", "Mitchell regression-of-lows entry (6 days), exit below the 4-day high minus 1.2 x ATR(8)", "atr", concat!("[Adapted: 2 unstated details, R4 #297; unverified] Exit: a stop at yesterday's highest high of the last 4 days minus 1.2 x the 8-day average true range (simple average of true ranges, TradeStation AvgTrueRange).", common!())),
+        d("scmitch_atr", "Mitchell regression-of-lows entry (6 days), exit below the 4-day high minus 1.2 x ATR(8)", "atr", concat!("[Held: 3 unstated details, R4 #325] Exit (reading of the unstated reference day): a stop at yesterday's highest high of the last 4 days minus 1.2 x the 8-day average true range (simple average of true ranges, TradeStation AvgTrueRange).", common!())),
     ]
 }
 
@@ -159,11 +163,13 @@ mod tests {
         assert_eq!(t.iter().map(|z| (z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px)).collect::<Vec<_>>(), vec![(10, 95., 11, 94.)]);
         for tk in ["SPY", "SPX"] { assert!(crate::intraday_ep6::held_note("scmitch_atr", tk).is_none()); }
         assert!(crate::intraday_ep6::held_note("scmitch_atr", "QQQ").is_some());
+        // R4 #325: the ATR exit is held (3 unstated details); the other two exits stay live
+        for d in super::catalogue() { assert_eq!(matches!(d.status, crate::connors::Status::NotTestable(_)), d.id == "scmitch_atr", "{}", d.id); assert_eq!(crate::gate::get(d.id).unwrap().verdict == "withheld", d.id == "scmitch_atr"); }
     }
 }
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scmitch" && reviewed(def.id),
-    label: "Mitchell tested the S&P 500 index (1995-2001, points). SPY and SPX are a declared application with prices of the traded series, and the same-day order of the close-stop entry and the exit stop is settled on their real 1-minute bars; only the minute window is published (decision #243 (c)). Other instruments have no minute files and are refused.",
-    basis: "Technical Analysis of Stocks & Commodities V.19:10 pp.26-33, Figure 2 and 'Optimization' (PDF p.3-4); R4 #297, #243; independent check authors/pe/w/pe_ref.py",
+    label: "Mitchell tested the S&P 500 index (1995-2001, points). SPY and SPX are a declared application with prices of the traded series, and the same-day order of the close-stop entry and the exit stop is settled on their real 1-minute bars; only the minute window is published (lead decision R4 #325: #240 (3) and the 15-25% same-day share). Other instruments have no minute files and are refused.",
+    basis: "Technical Analysis of Stocks & Commodities V.19:10 pp.26-33, Figure 2 and 'Optimization' (PDF p.3-4); R4 #297, #240, #325; independent check authors/pe/w/pe_ref.py",
 };

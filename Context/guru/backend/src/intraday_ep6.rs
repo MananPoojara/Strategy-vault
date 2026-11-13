@@ -227,7 +227,8 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "radge_smash",
     // lane R2E (R4 #311): Nguyen Impact, minute window only (#243 (c))
     "jnits_impact",
-    // lane PE (R4 #319): Pezzutti and Mitchell, published on the SPY/SPX minute window only (gate allowed SPY, SPX)
+    // lane PE (R4 #319): Pezzutti (#243 (a) sign flip on SPY) and Mitchell (lead decision R4 #325: #240 (3) + the 15-25% same-day share,
+    // not a #177 failure; scmitch_atr held), published on the SPY/SPX minute window only (gate allowed SPY, SPX)
     "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
