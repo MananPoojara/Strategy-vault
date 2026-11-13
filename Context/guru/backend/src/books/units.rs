@@ -58,6 +58,9 @@ const RULES: &[(&str, W, bool, bool)] = &[
     // lane K74 (R4 #277): Original Turtle Rules p.14-15, "Unit = 1% of Account / (N x Dollars per Point)" (books::covel weight
     // = 1% x fill / N), up to 4 units (p.17); a gapped unit can leave alone (one exit piece per leg)
     ("cov_turtle_s1", W::Money, true, false), ("cov_turtle_s2", W::Money, true, false),
+    // lane K81: Cole, Graphs and Their Application to Speculation p.158, Plan No. 5: "every other day a unit is accumulated with
+    // the trend", one unit (5,000 bushels) each, the whole line reversed at once
+    ("gcgas_plan5", W::Qty, false, false),
 ];
 pub fn is_units(id: &str) -> bool { RULES.iter().any(|r| r.0 == id) }
 
