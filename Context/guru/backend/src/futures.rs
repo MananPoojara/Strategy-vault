@@ -163,6 +163,30 @@ pub fn load_tbond(dir: &std::path::Path) -> Option<BTreeMap<String, f64>> {
     Some(rows?.into_iter().map(|r| (r.date, r.close)).collect())
 }
 
+/// R4 #331 (audit authors/rev/ZB-OPEN.md, lane PF): the shared label for Norgate &ZB cards that read or fill at the open.
+/// Text only: appended to the card notes (main.rs catalogue); no calculation reads it. Lanes adding &ZB open-readers (e.g. F1D)
+/// add a row to ZB_OPEN_CARDS.
+pub const ZB_OPEN_NOTE: &str = "On Norgate &ZB, from 1999-12 to 2000-10 the open sits at the previous close (median gap at most 1 tick, a third of days exactly equal), so open fills and open-based levels in those 11 months are not true opening prices (R4 #331; the whole history is kept, as for the NIFTY opens).";
+/// (card id, trades affected in 1999-12..2000-10 = open fills, or trades held through a stop/target check or pattern that reads
+/// the open, per ZB-OPEN.md; extra sentence when the card's SIGNAL reads the open).
+pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    ("mhs_ua830406_1", 0, ""), ("mhs_ua830407_1", 2, ""), ("mhs_ua830826_1", 4, ""), ("mhs_ua830131_1", 3, ""), ("mhs_ua830304_1", 2, ""),
+    ("mhs_ua830125_1", 0, ""),
+    ("mhs_us800310_1", 3, " This pattern itself reads the open (O(0)-O(2)): 3 of its signals in those months are read from these opens."),
+    ("mhs_us801701_1", 3, ""), ("mhs_us810220_1", 2, ""), ("mhs_us800111_1", 3, ""),
+    ("mhs_hd_rt_long", 0, " This pattern itself reads the open (O(0)); none of its signals falls in those months."),
+    ("mhs_sp830128_2", 0, ""), ("mhs_sp830107_2", 0, ""), ("mhs_sp830825_2", 3, ""), ("mhs_sp830405_2", 5, ""),
+    ("jkbwts_ez_bonder", 11, ""), ("konwv_bond", 5, ""), ("mhptdi_tdi", 5, ""),
+    // PA1 (not on this base; enable at integration): ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""),
+];
+/// The card notes with the &ZB open label appended (unchanged for other cards).
+pub fn zb_open_notes(id: &str, notes: &str) -> String {
+    match ZB_OPEN_CARDS.iter().find(|c| c.0 == id) {
+        Some((_, n, extra)) => format!("{notes}{}{ZB_OPEN_NOTE} {n} of this card's &ZB trades are affected.{extra}", if notes.is_empty() { "" } else { " " }),
+        None => notes.to_string(),
+    }
+}
+
 /// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
 fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..])) }
 
@@ -355,6 +379,12 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test] fn zb_open_label() { // R4 #331: every listed id is a live card; the label is appended only to them
+        let ids: Vec<&str> = crate::books::catalogue().iter().map(|d| d.id).collect();
+        for c in super::ZB_OPEN_CARDS { assert!(ids.contains(&c.0), "{}", c.0); }
+        assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
+        assert_eq!(super::zb_open_notes("dmadr_daily", "x"), "x");
+    }
     #[test] fn market_symbols_unique() { let mut v: Vec<&str> = super::MARKETS.iter().map(|m| m.sym).collect(); let n = v.len(); v.sort(); v.dedup(); assert_eq!(v.len(), n, "duplicate MARKETS symbol (lane merge)"); } // lane PF (review PF2 M4)
     use super::*;
     /// Lane PE (R4 #319): $NYA loads as its own context from Norgate's compact dates (volume 0 = none); only Holt's cards run on it.
