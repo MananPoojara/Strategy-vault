@@ -536,7 +536,7 @@ fn dow_bit(date: &str) -> u32 {
 // ------------------------------------------------------------------ path simulator
 
 #[derive(Clone, Copy)]
-pub(crate) enum Ent { Open, Stop(f64), /** market on this bar's close, if flat after the bar (lane F1D) */ Close }
+pub(crate) enum Ent { Open, Stop(f64), /** market on this bar's close, if flat after the bar (lane F1D) */ Close, /** limit entry: a buy below / sell above the market (lane F1D) */ Limit(f64) }
 
 pub(crate) struct Cfg {
     pub(crate) stop: f64,        // protective stop distance in points (NaN = none)
@@ -600,7 +600,7 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
         let (le, se) = sig(i);
         let mut used = [false, false]; // one fill per direction per bar
         for (k, e, dir) in [(0usize, le, 1.0), (1, se, -1.0)] {
-            let at_open = match e { Some(Ent::Open) => true, Some(Ent::Stop(lv)) => dir * (o - lv) >= 0.0, Some(Ent::Close) | None => false };
+            let at_open = match e { Some(Ent::Open) => true, Some(Ent::Stop(lv)) => dir * (o - lv) >= 0.0, Some(Ent::Limit(lv)) => dir * (o - lv) <= 0.0, Some(Ent::Close) | None => false };
             if at_open { used[k] = true; enter(&mut pos, &mut out, dir, o); }
         }
         // 3. intrabar path O -> nearer extreme -> other extreme -> C (TradeStation default); EP6: an order-dependent day
@@ -624,6 +624,9 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
                     let free = |dir: f64| st.pos.as_ref().map_or(true, |p| cfg.reverse && p.dir != dir);
                     if up && !st.used[0] && free(1.0) { if let Some(Ent::Stop(lv)) = le { consider(lv, 0); } }
                     if !up && !st.used[1] && free(-1.0) { if let Some(Ent::Stop(lv)) = se { consider(lv, 1); } }
+                    // lane F1D: limit entries fill against the move (a buy limit on the way down, a sell limit on the way up)
+                    if !up && !st.used[0] && free(1.0) { if let Some(Ent::Limit(lv)) = le { consider(lv, 0); } }
+                    if up && !st.used[1] && free(-1.0) { if let Some(Ent::Limit(lv)) = se { consider(lv, 1); } }
                     let Some((lv, a)) = best else { break };
                     let px = g.fill(lv);
                     match a {
