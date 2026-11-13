@@ -12,7 +12,7 @@ use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, 
 
 pub const BOOK: &str = "kdta";
 /// Admitted ids (authors/kirkpatrick/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse"];
+pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
@@ -82,6 +82,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"26 buy signals were generated when the ratio of ten-day advances to ten-day declines exceeded 1.91\" (Ned Davis Research, 1947-2005, Figure 8.5, p.138): buy when the 10-day sum of advances / 10-day sum of declines crosses above 1.91",
               "X|\"These signals averaged a 17.6% return over the following year. In only one of the 26 instances did the signal fail, and the loss then was only 5.6%.\" -> sell 252 trading days later (a new crossing while held is ignored)"],
             if nse { concat!(breadth_note!(), "NSE twin.") } else { concat!(breadth_note!(), close_note!(), "Book: 26 signals 1947-2005, +17.6% average over the following year, 1 loss (-5.6%). Our NYSE breadth starts 1965. Fill: close. 'Year' = 252 bars (the book's count, p.143).") }));
+        v.push(d(id!("kdta_plurality", "kdta_plurality_nse"), if nse { "Colby plurality index: 324-day Bollinger breakout, 15-day time stop · NSE" } else { "Colby plurality index: 324-day Bollinger breakout, 15-day time stop · NYSE" },
+            "Ch 8 · Plurality index (p.137-138)", "Long", Live, false, ad,
+            &["F|\"This index is calculated by taking the 25-day sum of the absolute difference between advances and declines\" (p.137)",
+              "E|\"Colby uses a long-term (324-day) Bollinger Band (see Chapter 14) breakout of the upper two standard deviations for buys\" (p.137): buy when the index closes above the upper band after closing at or below it",
+              "X|\"... and below two standard deviations for a sell to close\" (p.137): sell when the index closes below the lower band",
+              "X|\"There are very few signals, and a 15- or 30-day time stop should be used for longs only\" (p.137): also sell after the time stop, whichever comes first",
+              "F|p.norm=1 (labelled option): the book's 'additional suggestion' (p.138), |A - D| / (A + D) summed over 25 days"],
+            if nse { concat!(breadth_note!(), "NSE twin (the band is relative to the index's own history, so no level changes).") } else { concat!("Adapted: 2 unstated details (R4 #297). Unstated in the book: which time stop (\"a 15- or 30-day time stop\"); vault reading: 15 trading days, the first value printed (p.hold = 30 is the other). Unstated: the order type; vault reading: the module's close of the signal day (", close_note!(), "). ",
+                breadth_note!(), "Bollinger band = 324-day simple average of the index +/- 2 population standard deviations (Bollinger's definition, ch.14). Book: 'admirable results' (Colby), no table.") }));
         v.push(d(id!("kdta_zweig_thrust", "kdta_zweig_thrust_nse"), if nse { "Zweig breadth thrust (0.659 / 0.366) · NSE" } else { "Zweig breadth thrust (0.659 / 0.366) · NYSE" },
             "Ch 8 · Breadth thrust (p.142)", "Long", Live, false, ad,
             &["F|\"calculating a ten-day simple moving average of advances divided by the sum of advances and declines\" (p.142)",
@@ -155,9 +164,6 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nt("kdta_arms11", "Colby 11-day Arms Index average crossing 0.800", "Ch 8 · Arms Index (p.145)", "Long/Short",
            "the direction of each crossing is not stated (\"buy and sell the market as the 11-day moving average of the Arms Index crosses 0.800\")",
            &["E|\"the method proposed by Colby (2003) is to buy and sell the market as the 11-day moving average of the Arms Index crosses 0.800\" (p.145)"]),
-        nt("kdta_plurality", "Colby plurality index Bollinger breakout", "Ch 8 · Plurality index (p.137)", "Long",
-           "the time stop is given as \"a 15- or 30-day time stop\" (two values, no default) and the band uses the plurality index whose levels the book calls obsolete",
-           &["E|\"Colby uses a long-term (324-day) Bollinger Band ... breakout of the upper two standard deviations for buys and below two standard deviations for a sell to close\" (p.137)"]),
         nt("kdta_absolute_breadth", "Absolute breadth index vs two-day EMA + 81%", "Ch 8 · Absolute breadth index (p.141)", "Long/Short",
            "the signal side and exit are not stated (\"a profitable signal was generated when this index crossed the previous day's two-day exponential moving average plus 81%\")",
            &["F|\"the absolute breadth index uses the absolute difference of the advances minus declines divided by the total issues traded\" (p.140-141)"]),
@@ -197,7 +203,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kdta_apple_v2" => ("kdta_apple", "K&D Apple-a-Day system", "22/20 long only, 2% stop"),
         "kdta_may_oct" => ("kdta_calendar", "K&D seasonal", "May-October"),
         "kdta_pullback6" => ("kdta_short_term", "K&D short-term patterns", "6% pullback"),
-        "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" => ("kdta_breadth", "K&D breadth systems", mkt),
+        "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" | "kdta_plurality" => ("kdta_breadth", "K&D breadth systems", mkt),
         "kdta_arms265" | "kdta_arms_ext" | "kdta_arms10ma" => ("kdta_arms", "K&D Arms Index systems", mkt),
         _ if id.starts_with("kdta_") => ("kdta_other", "K&D cited rules (not testable)", ""),
         _ => return None,
@@ -219,6 +225,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kdta_adline" => vec![p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_ad1018" => vec![p("level", "One-day advances/declines level", 1.018, 0.5, 2.0, 0.001), p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_adr191" => vec![p("days", "Sum length (days)", 10.0, 5.0, 20.0, 1.0), p("level", "10-day advances / 10-day declines level", 1.91, 1.2, 3.0, 0.01), p("hold", "Bars held (a year = 252)", 252.0, 20.0, 504.0, 1.0)],
+        "kdta_plurality" => vec![p("sum", "Days summed (book 25)", 25.0, 5.0, 60.0, 1.0), p("bb", "Bollinger length (book 324)", 324.0, 50.0, 500.0, 1.0),
+            p("sd", "Band width in standard deviations (book 2)", 2.0, 1.0, 3.0, 0.1), p("hold", "Time stop in bars (book: 15 or 30; 15 = vault reading)", 15.0, 1.0, 60.0, 1.0),
+            p("norm", "0 = raw |A - D| (book rule); 1 = |A - D| / (A + D) (book's suggestion p.138)", 0.0, 0.0, 1.0, 1.0)],
         "kdta_zweig_thrust" => vec![p("ma", "SMA of A/(A+D) (book 10; authors' 4-6 option)", 10.0, 3.0, 20.0, 1.0), p("buy", "Buy above", 0.659, 0.5, 0.8, 0.001), p("sell", "Sell below", 0.366, 0.2, 0.5, 0.001)],
         "kdta_haurlan20" => vec![p("ema", "EMA length of A-D", 20.0, 5.0, 60.0, 1.0), p("buy", "Buy below", -200.0, -1000.0, 0.0, 10.0), p("sell", "Sell above", 200.0, 0.0, 1000.0, 10.0), p("time_stop", "Time stop in bars (0 = none)", 0.0, 0.0, 200.0, 1.0)],
         "kdta_haurlan200" => vec![p("ema", "EMA length of A-D", 200.0, 50.0, 400.0, 10.0), p("buy", "Buy below", -550.0, -2000.0, 0.0, 10.0), p("sell", "Sell above", 550.0, 0.0, 2000.0, 10.0), p("time_stop", "Time stop in bars (0 = none; authors' test 50)", 0.0, 0.0, 200.0, 1.0)],
@@ -442,6 +451,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let sig: Vec<bool> = (0..n).map(|i| i > 0 && r[i] > lvl && r[i - 1].is_finite() && r[i - 1] <= lvl).collect();
             hold_bars(x, from, to, &sig, g("hold") as usize, false, "10-day A/D ratio crosses above 1.91")
         }
+        "kdta_plurality" => {
+            let Some((a, dcl)) = ad() else { return Some(vec![]) };
+            let (sum, bb, k, hold, norm) = (g("sum") as usize, g("bb") as usize, g("sd"), g("hold") as usize, g("norm") >= 0.5);
+            let one: Vec<f64> = (0..n).map(|i| { let v = (a[i] - dcl[i]).abs(); if norm { v / (a[i] + dcl[i]) } else { v } }).collect();
+            let pi: Vec<f64> = (0..n).map(|i| if i + 1 >= sum { one[i + 1 - sum..=i].iter().sum::<f64>() } else { f64::NAN }).collect();
+            let (mut up, mut lo) = (vec![f64::NAN; n], vec![f64::NAN; n]);
+            for i in 0..n {
+                if i + 1 < bb { continue; }
+                let w = &pi[i + 1 - bb..=i];
+                if !w.iter().all(|v| v.is_finite()) { continue; }
+                let m = w.iter().sum::<f64>() / bb as f64;
+                let sd = (w.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / bb as f64).sqrt();
+                up[i] = m + k * sd; lo[i] = m - k * sd;
+            }
+            drive(x, from, to, |i, d, e| {
+                if d == 1 {
+                    if pi[i] < lo[i] { return Some((0, "plurality index below the lower band".into())); }
+                    if i >= e + hold { return Some((0, format!("time stop {hold} bars"))); }
+                    None
+                } else if i > 0 && pi[i] > up[i] && up[i - 1].is_finite() && pi[i - 1] <= up[i - 1] { Some((1, "plurality index above the upper band".into())) } else { None }
+            })
+        }
         "kdta_zweig_thrust" => {
             let Some((a, dcl)) = ad() else { return Some(vec![]) };
             let ratio: Vec<f64> = (0..n).map(|i| if a[i] + dcl[i] > 0.0 { a[i] / (a[i] + dcl[i]) } else { f64::NAN }).collect();
@@ -514,6 +545,18 @@ mod tests {
         assert_eq!(dnum("1970-01-01"), 0);
         assert_eq!(civil(dnum("2001-12-31")), (2001, 12, 31));
     }
+    #[test]
+    fn plurality_band_breakout_and_time_stop_hand_checked() {
+        // lane R2A (R4 #297): sum 1, band 3 bars x 1 SD, time stop 2. |A-D| = 1,1,1,1,10,1,1,...: bar 4 closes above the band
+        // (mean 4, SD 4.24 -> upper 8.24) after bar 3 sat on it -> buy the close of 4; time stop -> sell the close of 6.
+        let r = ctx_rows(&[(100.0, 101.0, 99.0, 100.0); 10], dnum("2020-01-06"));
+        let mut x = Ctx::new(&r, &[], &[]);
+        x.extra.insert("NYSE_ADV_DEC.Advances".into(), vec![2.0, 2.0, 2.0, 2.0, 11.0, 2.0, 2.0, 2.0, 2.0, 2.0]);
+        x.extra.insert("NYSE_ADV_DEC.Declines".into(), vec![1.0; 10]);
+        let p: Params = [("sum", 1.0), ("bb", 3.0), ("sd", 1.0), ("hold", 2.0)].into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        let t = run("kdta_plurality", &x, 0, 9, &p).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(4, 6, false)]);
+    }
 }
 
 // Instrument admission: Kirkpatrick 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
@@ -522,5 +565,5 @@ mod tests {
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"kdta") && (crate::books::kdta::reviewed(def.id)),
     label: "Kirkpatrick and Dahlquist cite or test these rules on the DJIA, S&P 500, NYSE breadth, 18 or 19 futures/stocks and AAPL; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test. Breadth rules read NYSE breadth on US instruments and NSE breadth on Indian ones (thresholds unchanged).",
-    basis: "Kirkpatrick and Dahlquist, Technical Analysis (FT Press 2006): VIX 10-day EMA (Box 7.3 p.98), RSI is wrong (p.440), Apple-a-Day systems (Box 22.1-22.2 p.551-564), May-October (p.165), 6% pullback (p.387), one-day A/D line (p.133), 10-day A/D ratio 1.91 (p.138), Zweig breadth thrust (p.142), Haurlan 200-day (p.136), Arms Index rules (p.143-145). Reviewed in authors/kirkpatrick/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+    basis: "Kirkpatrick and Dahlquist, Technical Analysis (FT Press 2006): VIX 10-day EMA (Box 7.3 p.98), RSI is wrong (p.440), Apple-a-Day systems (Box 22.1-22.2 p.551-564), May-October (p.165), 6% pullback (p.387), one-day A/D line (p.133), 10-day A/D ratio 1.91 (p.138), Zweig breadth thrust (p.142), Haurlan 200-day (p.136), Arms Index rules (p.143-145), plurality index Bollinger breakout (p.137, lane R2A R4 #297). Reviewed in authors/kirkpatrick/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
 };
