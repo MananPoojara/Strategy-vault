@@ -11,6 +11,11 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const SWING_NOTE: &str = "1940-42 wheat research method (\"fitted ... to the 1930-1941 period\", p.112). Wheat futures rule run on the index (instrument swap; all its numbers are percentages). Swings from daily highs and lows: a Bottom is set when, at least 3 trading days after the lowest low since the last Top, the day's high is 2 1/2% or more above that low (or 6% or more in fewer days); Tops mirror. Signals use swings set by the previous day's close: buy stop 1% above the last Top, sell stop 1% below the last Bottom (\"open stop orders\", p.117-118), fill at the level or at the open if it gaps through; stop-and-reverse with no other exit, as in the book's own March 1954 Wheat test (\"buying on a Buy Signal and this was held, come what may, until a Sell Signal\", p.114). Book silent (assumptions): the 3 days are counted as trading days between the Bottom day and the confirming day; equal lows/highs keep the earliest; if both stops are hit on one day while flat, the one nearer the open is taken. Book result (March 1954 Wheat, 2 gains, 0 losses, 50 3/4c gross, 49 3/4c net per bushel) cannot be compared: no grain futures data.";
 
 const GRAIN_GAP: &str = "Needs daily Chicago grain futures (wheat/corn/oats/rye/soybeans), individual contracts with their delivery months: every threshold is in cents per bushel (e.g. TOB/TOT within 1c, Thrust between 1/2c and 1 1/2c, stops in cents). No percentage or index-point equivalent is given; the author says other markets need other figures he does not supply (\"some smaller figure should be used for oats and some larger figure for soybeans\", p.148).";
+// lane PH (14 Nov 2026, D1 RULE UNCHECKED row wdgig_other; R4 #293 (4), #297, #240): Norgate wheat (&ZW, cents per bushel, 1978-2020) now holds the grain data
+const PCT3_NOTE: &str = "[Adapted: 2 unstated details, R4 #297; R4 #293 (1), (4)] Runs only on the Norgate wheat continuous contract (back-adjusted daily bars, cents per bushel; the book's test is March 1954 wheat). Swings from daily highs and lows: a Bottom is set when the high has risen 3% or more above the lowest low since the last Top, a Top when the low has fallen 3% or more below the highest high since the last Bottom (equal extremes keep the earliest day); the 3% is of the contract's price at that extreme (the back-adjusted low or high plus that day's roll offset, R4 #293 (2): Norgate's back-adjusted wheat sits far above the traded price, e.g. about 2,260c against 418c in March 1980). Buy stop 1 1/4c above the last Top, sell stop 1 1/4c below the last Bottom (swings set by the previous day's close), filled at the level or at the open if it gaps through; stop-and-reverse only, as in the book's record. Unstated - vault readings: (1) 'movements within a single day were ignored' = a swing's Top and Bottom must fall on different days; (2) if both stops are hit on one day while flat, the one nearer the open is taken. The book's 'lines' and its Operating Plan are not described ('need not be discussed here', p.111), so they are not modelled. Order check (R4 #240): 2.7% of the 1978-2020 trades (15 of 554) meet a day on which both stops lie inside the range. The March 1954 wheat record (a figure) cannot be re-run: no 1950s wheat data. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
+const BREAKAWAY_240: &str = "Lane PH (14 Nov 2026, R4 #293 (4), #240): Norgate wheat (&ZW, cents, 1978-2020) now holds the data and the rule is complete as stop-and-reverse (the book's own March 1954 test), but with 5c swings and today's wheat ranges 12.4% of the 1978-2020 trades meet a day on which both the buy and the sell stop lie inside the daily range, which daily bars cannot order, and no wheat minute bars exist (limit 5%). Held";
+const S238_240: &str = "Lane PH (14 Nov 2026, R4 #293 (4), #240): Norgate wheat (&ZW, cents, 1978-2020; always above $1.10, so the 1 1/8c penetration applies) now holds the data and the rule is complete as stop-and-reverse (the book's own March 1954 test), but with 2 3/8c swings 10.2% of the 1978-2020 trades meet a day on which both stops lie inside the daily range, which daily bars cannot order, and no wheat minute bars exist (limit 5%). Held";
+const DOUBLE_GAP: &str = "Lane PH (14 Nov 2026, R4 #297 (2)): grain data is now held (Norgate wheat), but the by-product gives only the entry ('buy 1% above the highest of these two Tops', Tops within 2c, p.115-116); its exits were 'a definite Operating Plan which limited losses and protected profits' that the book does not state for it. No exit rule. Held";
 const COTTON_GAP: &str = "Needs daily cotton futures contracts (thresholds in cotton points: TOB/TOT 10 points, Thrust 15-25 points, stops 50 points, p.175).";
 const DB_RISE_GAP: &str = "Entry technique only: the book gives the double-bottom rise / double-top decline as how the 1940-41 second method \"sought to buy and sell at more favorable prices\" but does not say whether it is a stand-alone stop-and-reverse or combined with the 1% penetration signals, nor any exit (p.118-119).";
 const PLAN8_GAP: &str = "The signal source for Plan #8 is not stated (\"tried in the 1941-1942 studies\"), \"2% net profit\" depends on 1941 grain commissions, and what happens after a profit/loss exit (re-entry) is not given (p.161).";
@@ -28,18 +33,20 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Fig 4.3: \"BUY if rise goes 1% above this Top\"; \"SELL if decline goes 1% below this Bottom\" p.114",
             "X|\"buying on a Buy Signal and this was held, come what may, until a Sell Signal was later given, at which time he went short and held on until a new Buy Signal\" p.114-115",
         ], SWING_NOTE),
-        d("wdgig_breakaway", "Breakaway Method (5c swings, 1c penetration, 1934)", "Evolution of a trading barometer", "Long/Short", NeedsData(GRAIN_GAP), &[
+        d("wdgig_breakaway", "Breakaway Method (5c swings, 1c penetration, 1934)", "Evolution of a trading barometer", "Long/Short", NotTestable(BREAKAWAY_240), &[
             "E|\"plotted swings of 5c or more in prices and then proceeded to buy and sell in 1c penetrations of the Tops and Bottoms of those swings\" p.107",
             "X|Operating Plans #3 (2 1/2c profit / 5c loss), #4 (5c / 4 1/2c), #5 (trail 6c) p.157-158",
         ], GRAIN_GAP),
-        d("wdgig_238", "2 3/8c Swing Method (1939)", "Evolution of a trading barometer", "Long/Short", NeedsData(GRAIN_GAP), &[
+        d("wdgig_238", "2 3/8c Swing Method (1939)", "Evolution of a trading barometer", "Long/Short", NotTestable(S238_240), &[
             "E|Swings of 2 3/8c (2c below 50c wheat); buy 1 1/8c above the last Top, sell 1 1/8c below the last Bottom (above $1.10) p.108-110",
             "X|Plan #6 ride/quick-profit schedule in cents p.158-159",
         ], GRAIN_GAP),
-        d("wdgig_pct3", "Percentage Wheat Method (3% swings, 1940)", "Evolution of a trading barometer", "Long/Short", NeedsData(GRAIN_GAP), &[
+        d("wdgig_pct3", "Percentage Wheat Method (3% swings, 1940)", "Evolution of a trading barometer", "Long/Short", Live, &[
+            "F|\"'Swing Charts' were set up in the same manner as just observed for the 2 3/8c and 5c movements, only this time a movement had to progress 3% or more before it was considered to be an Upswing or a Downswing\"; \"Daily high and low prices were used in setting up the swings ... Movements within a single day were ignored\" p.108-111",
             "E|\"a Buy Signal was given when the last Top of one of these 3%-or-more swings was penetrated upward by 1 1/4c and a Sell Signal was given when the last Bottom was broken downward by 1 1/4c\" p.111",
-        ], GRAIN_GAP),
-        d("wdgig_double", "Double Top/Bottom by-products (2c)", "Evolution of a trading barometer", "Long/Short", NeedsData(GRAIN_GAP), &[
+            "X|\"The record of this method, using it without any Operating Plan other than to buy and sell only on Reversal Signals\" (March 1954 wheat) p.111: stop-and-reverse",
+        ], PCT3_NOTE),
+        d("wdgig_double", "Double Top/Bottom by-products (2c)", "Evolution of a trading barometer", "Long/Short", NotTestable(DOUBLE_GAP), &[
             "F|\"a Double Bottom pattern was present if the last Bottom was 2c or less, either above or below, the preceding Bottom\" p.115",
             "E|\"wait until a Double Top is set up, and then we buy 1% above the highest of these two Tops\" (Tops within 2c) p.116",
         ], GRAIN_GAP),
@@ -72,6 +79,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     match id {
         "wdgig_swing25" => Some(("wdgig_swing", "Dunnigan swing-penetration methods", "2 1/2%-3-day swings (book)")),
+        "wdgig_pct3" => Some(("wdgig_swing", "Dunnigan swing-penetration methods", "3% swings, 1 1/4c (wheat futures)")),
         _ if id.starts_with("wdgig_") && catalogue().iter().any(|s| s.id == id) => Some(("wdgig_other", "Dunnigan Gains in Grains · grain methods", "Not runnable here")),
         _ => None,
     }
@@ -86,8 +94,57 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("fast", "Swing % that counts in fewer days (0 = off)", 6., 0., 10., 1.),
             p("pen", "Penetration % beyond the last Top/Bottom", 1., 0., 3., 0.25),
         ]),
+        "wdgig_pct3" => Some(vec![p("swing", "Swing size %", 3., 1., 6., 0.5), p("pen", "Penetration beyond the last Top/Bottom (cents)", 1.25, 0., 5., 0.125)]),
         _ => None,
     }
+}
+
+/// Lane PH: the Percentage Wheat Method on Norgate wheat (cents). Swings as `swings` (1-day minimum, no fast rule), but the 3% is of
+/// the CONTRACT's price at the extreme (back-adjusted level + that day's roll offset RAW.Close - close, R4 #293 (2)): Norgate's
+/// back-adjusted wheat sits far above the traded price (about 1,900c vs 400c in 1980). The penetration is in cents.
+fn run_pct3(x: &Ctx, from: usize, to: usize, sw: f64, pen: f64) -> Vec<Trade> {
+    let (h, l) = (&x.h, &x.l);
+    let raw = crate::futures::raw_close(x);
+    let off = |i: usize| raw.and_then(|r| r.get(i)).map_or(0., |r| r - x.c[i]);
+    let ok_up = |b: usize, k: usize| k > b && h[k] - l[b] >= sw * (l[b] + off(b));
+    let ok_dn = |t: usize, k: usize| k > t && h[t] - l[k] >= sw * (h[t] + off(t));
+    let mut lv = Vec::with_capacity(to + 1);
+    let (mut top, mut bot, mut leg, mut ext, mut lo0, mut hi0) = (f64::NAN, f64::NAN, 0i8, 0usize, 0usize, 0usize);
+    let lowest = |a: usize, k: usize| (a..=k).fold(a, |m, j| if l[j] < l[m] { j } else { m });
+    let highest = |a: usize, k: usize| (a..=k).fold(a, |m, j| if h[j] > h[m] { j } else { m });
+    for k in 0..=to {
+        match leg {
+            1 => { if h[k] > h[ext] { ext = k; } if ok_dn(ext, k) { top = h[ext]; leg = -1; ext = lowest(ext, k); } }
+            -1 => { if l[k] < l[ext] { ext = k; } if ok_up(ext, k) { bot = l[ext]; leg = 1; ext = highest(ext, k); } }
+            _ => {
+                if l[k] < l[lo0] { lo0 = k; }
+                if h[k] > h[hi0] { hi0 = k; }
+                if ok_up(lo0, k) && (lo0 > hi0 || !ok_dn(hi0, k)) { bot = l[lo0]; leg = 1; ext = highest(lo0, k); }
+                else if ok_dn(hi0, k) { top = h[hi0]; leg = -1; ext = lowest(hi0, k); }
+            }
+        }
+        lv.push((top, bot));
+    }
+    let (mut out, mut cur) = (vec![], None::<Trade>);
+    for i in from.max(1)..=to {
+        let (top, bot) = lv[i - 1];
+        let (buy, sell) = (top + pen, bot - pen);
+        let dir = cur.as_ref().map_or(0.0, |t| t.dir);
+        let hit_b = dir <= 0.0 && top.is_finite() && x.h[i] >= buy;
+        let hit_s = dir >= 0.0 && bot.is_finite() && x.l[i] <= sell;
+        let sig = match (hit_b, hit_s) {
+            (true, true) => if (x.o[i] - buy).abs() <= (x.o[i] - sell).abs() { 1.0 } else { -1.0 },
+            (true, false) => 1.0,
+            (false, true) => -1.0,
+            _ => continue,
+        };
+        let px = if sig > 0.0 { x.o[i].max(buy) } else { x.o[i].min(sell) };
+        let why = if sig > 0.0 { "Buy stop 1 1/4c above the last Top" } else { "Sell stop 1 1/4c below the last Bottom" };
+        if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = px; t.signal_i = i; t.reason = format!("{} -> {}", t.reason, why); out.push(t); }
+        if i < to { cur = Some(Trade { dir: sig, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: px, reason: why.into(), entry_kind: "stop", signal_i: i, open: false, exits: vec![] }); }
+    }
+    if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = format!("{} -> open", t.reason); t.open = true; out.push(t); }
+    out
 }
 
 /// Swing levels known at the close of each day: (last Top, last Bottom), NaN until set.
@@ -124,6 +181,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
+    if id == "wdgig_pct3" { return Some(run_pct3(x, from, to, g("swing") / 100.0, g("pen"))); }
     let (sw, days, fast, pen) = (g("swing") / 100.0, g("days") as usize, g("fast") / 100.0, g("pen") / 100.0);
     let lv = swings(&x.h, &x.l, to, sw, days, fast);
     let mut out = vec![];
@@ -155,6 +213,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pct3_measures_three_percent_of_the_contract_price() {
+        // back-adjusted lows/highs around 1,000 with a roll offset of -900 (contract price about 100): a 3.5-point rise is 3.5% of
+        // the contract (a Bottom), though only 0.35% of the back-adjusted level; buy 1.25 above the Top that follows
+        let hl = [(1001., 1000.), (1003.5, 1002.), (1002., 999.), (1006.5, 1005.), (1007., 1006.)]; // no entry on the last bar (as swing25)
+        let r: Vec<crate::Row> = hl.iter().enumerate().map(|(i, &(h, l))| crate::Row { ticker: "Wheat (Norgate &ZW)".into(), date: format!("1990-01-{:02}", i + 2), open: l, high: h, low: l, close: l, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("RAW.Close".into(), r.iter().map(|b| b.close - 900.).collect());
+        let t = run_pct3(&x, 0, 4, 0.03, 1.25);
+        // day 1: high 1003.5 - low 1000 = 3.5 >= 3% of 100 -> Bottom 1000; day 2: low 999 is 4.5 below 1003.5 -> Top 1003.5;
+        // day 3: high 1006.5 >= 1003.5 + 1.25 -> long at 1004.75 (open 1005 -> gap: fills at the open 1005)
+        assert_eq!(t.len(), 1);
+        assert!(t[0].dir == 1.0 && t[0].legs[0].i == 3 && t[0].legs[0].px == 1005.0 && t[0].open, "{:?}", (t[0].legs[0].i, t[0].legs[0].px));
+    }
     #[test]
     fn swing_needs_three_days_unless_six_percent() {
         // low 100 on day 1; day 2 high +3% (too soon), day 4 high +2.6% -> Bottom set on day 4
