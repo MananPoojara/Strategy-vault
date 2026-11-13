@@ -30,6 +30,7 @@ mod intraday_w3; // intraday wave 3 (K24): TD Demand Line break on 1-minute bars
 mod intraday_ep; // intraday EP1/EP2 (K39): N-minute bars from the 1-minute file
 mod intraday_ep6; // EP6 (K59, #243): the shared minute-order resolver for daily-bar rules
 mod second; // EP4 (K51, decision #223): a second instrument aligned to the traded one
+mod optw1; // lane F2 (R4 #293): NIFTY weekly options on real 1-minute prices (Singhal's option rules)
 mod options; // options phase 2: real EOD option chains (one day at a time) + held-contract mark-to-market account
 
 // Source-prefix loading and exact account work are serialized for this owner.
@@ -1186,8 +1187,8 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
         _ => from,
     };
     // options phase 2: option rules start where the underlying's option prices start
-    let from = match ctx.options.filter(|_| instrument_policy::options_p2(d)) {
-        Some(ch) => from.max(ctx.r.partition_point(|r| r.date.as_str() < ch.first())),
+    let from = match options::coverage(d.id, ctx).filter(|_| instrument_policy::options_p2(d)) {
+        Some((first, _)) => from.max(ctx.r.partition_point(|r| r.date.as_str() < first.as_str())),
         None => from,
     };
     if !d.needs_vix {
@@ -2190,6 +2191,11 @@ fn main() {
     // options phase 2: optional arg 6 = folder of <TICKER>.opt.csv / .optidx.csv; missing = no option prices (option rules report a data gap)
     let options_dir = args.get(6).cloned();
     if let Some(d) = &options_dir { println!("option chains: {d}"); }
+    // lane F2 (R4 #293): the weekly 1-minute option store sits beside the option chains (<options>/../weekly1m); missing = data gap
+    if let Some(w) = options_dir.as_deref().and_then(|d| std::path::Path::new(d).parent()).map(|p| p.join("weekly1m")).filter(|p| p.is_dir()) {
+        println!("weekly 1-minute options: {}", w.display());
+        let _ = optw1::DIR.set(w.to_string_lossy().into_owned());
+    }
     let ctxs = data
         .iter()
         .map(|(t, rows)| {

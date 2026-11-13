@@ -79,7 +79,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     if let (end,Some(_))=vix_open_end(ctx,def,to) {ends.push((Some(end),"real India VIX opens (from 1-minute India VIX)".into()));}
     let minutes=minute_path(def,p);
     if let Some(m)=ctx.minutes.filter(|_|minutes) {ends.push((upto(m.last()),format!("1-minute bars for {ticker}")));}
-    if let Some(ch)=ctx.options.filter(|_|crate::instrument_policy::options_p2(def)) {ends.push((upto(ch.last()),format!("option prices for {ticker}")));}
+    if let Some((_,last))=crate::options::coverage(def.id,ctx).filter(|_|crate::instrument_policy::options_p2(def)) {ends.push((upto(&last),format!("option prices for {ticker}")));}
     for name in required_series(def,p,minutes).into_iter().filter(|n|!event_column(n)) {
         if let Some(v)=ctx.series(name) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("{name} data")));}
     }
@@ -507,9 +507,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     // ---- end intraday phase 1
     // ---- options phase 2: option rules need this underlying's real option prices over the whole window
     if crate::instrument_policy::options_p2(def) {
-        let Some(ch)=ctx.options else { return issue("needs_data","This rule trades real option contracts, and no traded option prices are loaded for this instrument. The underlying's own price cannot stand in for an option's, so no result is published.") };
-        if ctx.r[from].date.as_str()<ch.first() { return issue("needs_data",format!("Option prices for this instrument begin on {}. The selected period includes earlier days with no option prices; choose a fully covered period.",ch.first())); }
-        if ctx.r[to].date.as_str()>ch.last() { return issue("needs_data",format!("Option prices for this instrument end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",ch.last())); }
+        let Some((first,last))=crate::options::coverage(def.id,ctx) else { return issue("needs_data","This rule trades real option contracts, and no traded option prices are loaded for this instrument. The underlying's own price cannot stand in for an option's, so no result is published.") };
+        if ctx.r[from].date.as_str()<first.as_str() { return issue("needs_data",format!("Option prices for this instrument begin on {first}. The selected period includes earlier days with no option prices; choose a fully covered period.")); }
+        if ctx.r[to].date.as_str()>last.as_str() { return issue("needs_data",format!("Option prices for this instrument end on {last}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).")); }
     }
     let required=required_series(def,p,minute_path);
     if let Some(i)=crate::second::pair_issue(ctx,def.id,&required,p) {return Some(i);} // EP4 (#223 (7), #225): self-comparison, AccuTrack pair

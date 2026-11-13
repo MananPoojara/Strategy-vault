@@ -332,7 +332,7 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
 /// Option rules run on the real monthly-option chain of the underlying (src/options.rs): NSE index options from the
 /// F&O bhavcopy (NIFTY 2001-2026, BANKNIFTY 2005-2026) and SPY/QQQ/IWM options (2008/2011-2025). Each id runs only where
 /// its rule can be priced. Evidence: data-survey/PHASE2-REPORT.md.
-pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol"|"hfm")}
+pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol"|"hfm"|"as51ts")}
 pub fn options_tickers(id:&str)->&'static [&'static str] {
     match id {
         "otvt_cvr1_sell_puts"=>&["SPY"],
@@ -340,14 +340,18 @@ pub fn options_tickers(id:&str)->&'static [&'static str] {
             |"hfm_und"|"hfm_und_long"|"hfm_und_short"|"otvt_diz_short_strangle"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only; otvt_diz: lane K54
         "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
         "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
+        "as51_opt_multi_sell"|"as51_opt_oi_buy"|"as51_opt_theta"|"as51_opt_btst"|"as51_opt_3pm"=>&["NIFTY 50"], // lane F2 (R4 #293): NIFTY weekly options, the contract the book names
         _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
     }
 }
 const OPTIONS_P2_BASIS:&str="Options phase 2 (2026-10-24): the rule trades real option contracts. Prices come from the NSE F&O end-of-day bhavcopy (NIFTY and BANKNIFTY monthly index options) and the SPY/QQQ/IWM 16:00 ET option snapshot (2008-2025; QQQ from 2011), built by library/options/build_{india,us}.py; monthly expiries only. A fill needs a contract that traded that day (India Contracts > 0 at its close or open; US volume > 0 at the 16:00 mid (bid+ask)/2, labelled, no bid/ask edge). Open positions are valued every day at the held contract's own price (India settlement price / US two-sided mid on untraded days, labelled). The books traded OEX, S&P, QQQ, SPY or stock options in 1997-2009, so these runs are a declared application on our market and period. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
+const AS51_OPT_BASIS:&str="Lane F2 (13 Nov 2026, R4 #293): Singhal's NIFTY option rules trade the NIFTY weekly options the book names, on real 1-minute prices of the exact contracts (the user's StockMock store, #Data/stores/NIFTY_full, nearest expiry, from 2019-02-11 when NIFTY weekly options began; src/optw1.rs). A price at a clock time is that minute's open; fills need a traded minute; no option price is modelled or filled in. They run on NIFTY 50 only; BANKNIFTY weekly minutes are not extracted yet, and no other instrument has weekly option prices in the vault.";
 fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if !options_p2(def) || (!native_stock && options_tickers(def.id).contains(&ticker)) {return None;}
     let us=matches!(ticker,"SPY"|"QQQ"|"IWM");
-    let note=if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
+    let note=if def.book=="as51ts" {
+        format!("This rule trades NIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of NIFTY weekly options only (lane F2); {ticker} has none (BANKNIFTY weekly minutes are not extracted yet), and the underlying's own price cannot stand in for an option's, so no result is published.")
+    } else if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
         format!("This option rule needs the option's own intraday high or opening price (a 2x stop on the option's high, or a next-morning exit). The US option data hold only the 16:00 snapshot (bid, ask, last), so {ticker} cannot be priced as the book trades it; the rule runs on NIFTY 50 and NIFTY BANK index options. No result is published.")
     } else {
         format!("This rule trades real option contracts. The vault holds traded option prices only for NIFTY and BANKNIFTY index options (NSE) and SPY, QQQ and IWM options (US); this rule is admitted on {}. {ticker} has no option prices, and the underlying's own price cannot stand in for an option's, so no result is published.", options_tickers(def.id).join(", "))
@@ -991,6 +995,7 @@ const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; us
 fn base_policy(def:&StrategyDef)->Policy {
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
+    if options_p2(def) && def.book=="as51ts" {return requirement("options_underlying", &["index"], AS51_OPT_BASIS);} // lane F2: the book's own market (NIFTY weekly options)
     if options_p2(def) {let mut p=requirement("options_underlying", &["index","etf"], OPTIONS_P2_BASIS);p.market_adaptation=true;return p;} // options phase 2
     if let Some(p)=connors_final_policy(def) {return p;} // connors-final block
     if let Some(p)=lwilliams_policy(def) {return p;} // Larry Williams block
@@ -3096,7 +3101,7 @@ mod tests {
     }
     #[test]
     fn options_p2_admits_option_tickers_only() {
-        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs","foto"=>"fotol","hfm_"=>"hfm",_=>"spmt"};
+        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs","foto"=>"fotol","hfm_"=>"hfm","as51"=>"as51ts",_=>"spmt"};
         for &id in crate::options::RULES {
             let d=def(id,book(id));
             assert!(options_p2(&d)&&reviewed_cash_rule(&d)&&held_reason(id).is_none(),"{id}");
@@ -3108,6 +3113,8 @@ mod tests {
         assert!(check(&def("oiss_short_put","oiss"),"SPY",false).unwrap().note.contains("16:00 snapshot"));
         assert!(check(&def("spmt_eom_puts","spmt"),"SPY",false).is_some());
         assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_some());
+        // lane F2: Singhal's option rules run on NIFTY weekly 1-minute options only
+        for id in crate::books::as51ts::OPT_IDS {assert!(check(&def(id,"as51ts"),"NIFTYBANK",false).unwrap().note.contains("NIFTY weekly"),"{id}");}
     }
     #[test]
     fn intraday_p1_admits_minute_tickers_only() {
