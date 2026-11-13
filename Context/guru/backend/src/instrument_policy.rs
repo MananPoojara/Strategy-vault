@@ -1692,7 +1692,12 @@ mod tests {
             // stkch: the intraday block admits the three first-hour gap cards (intraday_ep::K75, lane K75, 11 Nov 2026).
             // kets, phbt: ADMISSION_I1 admits the Indian applications on NSE F&O data (lane I1, 13 Nov 2026) with their own label.
             const SHARED:&[&str]=&["kets","phbt","stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
-            for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
+            // R4 #309 (6): ids admitted by a second, newer entry in a book that already had other routes (lanes R2B/R2E, R4 #297):
+            // the newer entry must admit only these ids, and the book's other routes must not admit them.
+            const NEW_IDS:&[&str]=&["sbma_p73_rsi34","fejmma_barnes_5pct","kfsc_stoch"];
+            let new_entry=admitted.iter().all(|d|NEW_IDS.contains(&d.id));
+            for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)
+                && !(new_entry && !NEW_IDS.contains(&d.id)) && !(!new_entry && NEW_IDS.contains(&d.id))) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
                 let p=policy(d);assert_eq!(p.requirement,"index_etf_or_stock","{}",d.id);assert!(p.market_adaptation,"{}",d.id);
