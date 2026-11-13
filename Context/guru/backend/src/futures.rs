@@ -61,6 +61,20 @@ pub const MARKETS: &[Market] = &[
         source: "CBOT oats futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
     Market { sym: "&OJ", name: "Orange Juice", tick: 0.05, usd: &[("1978-08-08", 150.)],
         source: "ICE frozen concentrated orange juice futures: 15,000 lb per contract, quoted in US cents per lb (1.00 = US$150; 0.05 = US$7.50)" },
+    // lane PF (Abel, S&C V21:10 Figure 3 portfolio): contract sizes from the exchange specifications (reference data); the Abel
+    // system's stops are standard-deviation distances, so these multipliers only label the contract
+    Market { sym: "&NG", name: "Natural Gas", tick: 0.001, usd: &[("1990-04-03", 10_000.)],
+        source: "NYMEX Henry Hub natural gas futures: 10,000 MMBtu per contract, quoted in US$ per MMBtu (1.00 = US$10,000; 0.001 = US$10)" },
+    Market { sym: "&ZC", name: "Corn", tick: 0.25, usd: &[("1978-01-04", 50.)],
+        source: "CBOT corn futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
+    Market { sym: "&ZW", name: "Wheat", tick: 0.25, usd: &[("1978-01-05", 50.)],
+        source: "CBOT Chicago SRW wheat futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
+    Market { sym: "&CC", name: "Cocoa", tick: 1., usd: &[("1979-12-19", 10.)],
+        source: "ICE cocoa futures: 10 metric tonnes per contract, quoted in US$ per tonne (1.00 = US$10)" },
+    Market { sym: "&SB", name: "Sugar No. 11", tick: 0.01, usd: &[("1978-10-17", 1_120.)],
+        source: "ICE Sugar No. 11 futures: 112,000 lb per contract, quoted in US cents per lb (1.00 = US$1,120; 0.01 = US$11.20)" },
+    Market { sym: "&ZN", name: "10-Year T-Note", tick: 1. / 64., usd: &[("1982-05-03", 1_000.)],
+        source: "CBOT 10-year U.S. Treasury note futures: US$100,000 face value, quoted in points of par (1 point = US$1,000; 1/64 = US$15.625)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -254,6 +268,28 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
         if let Some(raw) = extra.get(&(tb, "RAW.Close".to_string())).cloned() { extra.insert((ta, format!("{b}.RAW.Close")), raw); }
     }
 }
+/// Lane PF: Saitta (S&C V14:3) on the T-bond; Abel (S&C V21:10) on each Figure 3 contract held (the regular Nasdaq-100 contract is
+/// not held: its E-mini, which the article names, stands in).
+const ABEL: &str = "Phil Abel, Diversification And Your Portfolio, S&C V21:10 p.20-31 (Figure 3: 16 US futures, 1995-2002): the printed SMA 25/50/100 system with the 4-standard-deviation hard stop on this Norgate continuous contract (R4 #293 (1)), lane PF.";
+const CARDS_PF: &[(&str, &str, &str)] = &[
+    ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("scabeldiv_sma", "&6J", ABEL),
+    ("scabeldiv_sma", "&6S", ABEL),
+    ("scabeldiv_sma", "&GC", ABEL),
+    ("scabeldiv_sma", "&SI", ABEL),
+    ("scabeldiv_sma", "&SP", ABEL),
+    ("scabeldiv_sma", "&NQ", ABEL),
+    // ("scabeldiv_sma", "&CL"): not run: the 2020-04-20 negative crude settlement leaves a trade without a % base (raw_basis refuses the whole run)
+    ("scabeldiv_sma", "&NG", ABEL),
+    ("scabeldiv_sma", "&ZC", ABEL),
+    ("scabeldiv_sma", "&ZW", ABEL),
+    ("scabeldiv_sma", "&CC", ABEL),
+    ("scabeldiv_sma", "&SB", ABEL),
+    ("scabeldiv_sma", "&CT", ABEL),
+    ("scabeldiv_sma", "&KC", ABEL),
+    ("scabeldiv_sma", "&ZN", ABEL),
+    ("scabeldiv_sma", "&GE", ABEL),
+];
 /// Lane PB: Konstenius wave 1 (S&C V14:12), each printed parameter set on its own contract.
 const CARDS_PB: &[(&str, &str, &str)] = &[
     ("mhptdi_tdi", "&ZB", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
@@ -273,13 +309,13 @@ const CARDS_PB: &[(&str, &str, &str)] = &[
     ("konwv_yen", "&6J", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the yen parameters (30/5/50 weeks) on the Norgate continuous Japanese yen contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
     ("konwv_bond", "&ZB", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the T-bond parameters (20/10/30 weeks) on the Norgate continuous T-bond contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
 ];
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).find(|c| c.0 == id) }
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PF).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
     let c = card(id)?;
     // lane PB: a card may list several contracts (one tuple each); any of them is home
-    let homes: Vec<&Market> = CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
+    let homes: Vec<&Market> = CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PF).filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
     let m = MARKETS.iter().find(|m| m.sym == c.1)?;
     let sym = of_ticker(t).map(|m| m.sym);
     if homes.iter().any(|h| Some(h.sym) == sym) { return None; }
