@@ -197,7 +197,9 @@ pub const IDS: &[&str] = &[
     // lane R2D (R4 #304): Gettess SS-TDA with the first-profitable-open exit (books::lgsc fpo: both stops and the reversal on one day)
     "lgsc_sstda_fpo",
     // lane R2D (R4 #304): Bierovic First Prize (books::tbpk: the entry stop and the initial stop on the entry day)
-    "tbpk_first_prize"];
+    "tbpk_first_prize",
+    // lane PE (R4 #319): Pezzutti (books::scpezz walk: entry stop, exit limit, reversing stop), Mitchell (books::scmitch walk: close stop, exit stop)
+    "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -216,7 +218,9 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     // lane K75 (R4 #281 (3)): SPY 2000-2025 compounded +84.9% resolved vs +5.9% convention (test c; K75w/t243.out)
     "stkch_gap_fgd_long",
     // lane R2D (R4 #304): SPY 2000-2025 resolved avg +0.016% vs convention -0.012% (test a, sign; R2Dw/lgsc_eval.out)
-    "lgsc_sstda_fpo"];
+    "lgsc_sstda_fpo",
+    // lane PE (R4 #319): Pezzutti and Mitchell, published on the SPY/SPX minute window only (gate allowed SPY, SPX)
+    "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
