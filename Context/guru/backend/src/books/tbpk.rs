@@ -24,6 +24,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"1. Place an initial protective stop below the low of the corrective wave\" (one tick below the lowest low since the 21-day high) \"2. As prices rise, trail a stop\" (p.69-70). Short setup mirror (p.70-71)",
             "F|Unstated in the book: where the impulse wave starts; vault reading: the lowest low (shorts: highest high) of the 21 bars ending at the 21-day high bar, the book's 'usually' (p.64-67)",
             "X|Unstated in the book: the trailing stop; vault reading: the first worked example's (Aflac, p.72-73): highest close of the trade minus 2 x ATR(21) of the day before entry, raised after each close (p.atr_mult)",
+            "X|Unstated in the book: a new setup on the day a trailing or initial stop is hit; vault reading: no new entry on a day the position was stopped out after the open (the daily bar cannot show whether the exit or the new entry stop came first); a stop gapped through at the open comes first and still allows one (lane X2)",
             "F|Adapted: 2 unstated details (R4 #297, #304). Entry-day order of the entry stop and the initial stop on the real 1-minute path where minutes exist (EP6, p.order)"],
           "Readings (declared): EMAs alpha 2/(n+1) seeded with the first close; DMI spread = +DI(13) - -DI(13), Wilder; MACD = EMA3 - EMA8, signal = EMA13 of the MACD, histogram = MACD - signal; ATR(21) = mean of 21 true ranges; a 21-day high = a high above the 20 before it; the setup holds on any close where every condition holds (the worked examples: the MACD cross first, the histogram turn later, p.72). One position at a time; long checked before short. The book's other examples choose exits after the fact (p.71) and print no statistics.") },
         d("tbpk_r2d2", "R2D2 (reverse divergence)", "Ch 5 · R2D2",
@@ -118,13 +119,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     // position: dir, entry bar, entry px, stop, best close, ATR(21) of the day before entry, entry-day mark
     let mut pos: Option<(f64, usize, f64, f64, f64, f64, Day)> = None;
     for k in from.max(1)..=to {
+        // lane X2: a stop hit after the open leaves its order against a new entry stop the same day unknown on a daily bar
+        // (held days are not walked on minutes), so no new entry that day; an exit at the open came first and allows one
+        let mut stopped = false;
         if let Some((d, e, px, stop, _, _, dm)) = pos {
             if k > e {
                 let hit = if d * (o[k] - stop) <= 0.0 { Some((o[k], "stop (gapped open)")) } else if (d > 0.0 && l[k] <= stop) || (d < 0.0 && h[k] >= stop) { Some((stop, "stop")) } else { None };
-                if let Some((xp, why)) = hit { let mut t = mk(d, e, px, k, xp, why, false); mark(&mut t, dm); out.push(t); pos = None; }
+                if let Some((xp, why)) = hit { let mut t = mk(d, e, px, k, xp, why, false); mark(&mut t, dm); out.push(t); pos = None; stopped = why == "stop"; }
             }
         }
-        if pos.is_none() && k > from.max(1) {
+        if pos.is_none() && !stopped && k > from.max(1) {
             for d in [1.0, -1.0] {
                 let Some((lv, st0)) = setup(k - 1, d) else { continue };
                 if !((d > 0.0 && h[k] >= lv) || (d < 0.0 && l[k] <= lv)) { continue; }
@@ -168,14 +172,36 @@ mod tests {
         // lane R2D (R4 #304): First Prize live with labelled readings; R2D2 and Triple Play held
         assert!(c.iter().all(|d| matches!(d.status, crate::connors::Status::NotTestable(_)) != (d.id == "tbpk_first_prize")));
         assert!(super::reviewed("tbpk_first_prize") && super::params("tbpk_r2d2").is_none());
-        for t in ["DIA", "IWM", "DJI"] { assert!(crate::intraday_ep6::held_note("tbpk_first_prize", t).is_some(), "{t}"); } // R4 #308
-        for t in ["SPY", "QQQ", "SPX", "NDX", "NIFTY 50"] { assert!(crate::intraday_ep6::held_note("tbpk_first_prize", t).is_none(), "{t}"); }
+        // R4 #308 / lane X2: refused above 5% order-dependent (X2w/tbpk_share.tsv), on any unmeasured ticker and on single stocks
+        for t in ["DIA", "IWM", "DJI", "XLF", "XLE", "MDY", "TLT", "AAPL", "MSFT", "RELIANCE", "UNKNOWN"] { assert!(crate::intraday_ep6::held_note("tbpk_first_prize", t).is_some(), "{t}"); }
+        for t in ["SPY", "QQQ", "SPX", "NDX", "NIFTY 50", "NIFTYBANK", "NIFTY BANK", "GLD", "XLY"] { assert!(crate::intraday_ep6::held_note("tbpk_first_prize", t).is_none(), "{t}"); }
+        let def = c.iter().find(|d| d.id == "tbpk_first_prize").unwrap();
+        assert!(crate::instrument_policy::tradable_check_issue(def, "AAPL", true).is_some_and(|i| i.status == "not_testable" && i.note.contains("single stock")));
+        assert!(crate::instrument_policy::tradable_check_issue(def, "SPY", false).is_none());
+    }
+
+    /// Lane X2: no new entry on a day the position was stopped out after the open. NIFTY 50 (VAULT_IDX, convention, no minutes):
+    /// the reference (R2Dw/tbpk_ref.py) found the old rule re-entering long on 2023-09-28 and 2024-01-23 after a stop that day.
+    #[test]
+    fn no_new_entry_on_a_stop_day() {
+        use crate::connors::{Ctx, Params};
+        let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
+        let data = crate::load_csv(&path).unwrap_or_else(|e| panic!("this test needs real data: set VAULT_IDX to idx_data.csv ({e})"));
+        let rows = &data["NIFTY 50"];
+        let x = Ctx::new(rows, rows, &[]);
+        let t = super::run("tbpk_first_prize", &x, 0, rows.len() - 1, &Params::from([("order".to_string(), 0.0)])).unwrap();
+        let stop_days: Vec<usize> = t.iter().filter(|z| !z.open && z.reason.starts_with("stop") && !z.reason.starts_with("stop (gapped")).map(|z| z.exit_i).collect();
+        for d in ["2023-09-28", "2024-01-23"] {
+            let i = rows.iter().position(|r| r.date == d).unwrap();
+            assert!(stop_days.contains(&i), "{d}: a stop exit that day");
+        }
+        for z in &t { assert!(!stop_days.contains(&z.legs[0].i), "entry on a stop day {}", rows[z.legs[0].i].date); }
     }
 }
 
 // Instrument admission (lane R2D, 13 Nov 2026, R4 #297/#304): First Prize only.
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "tbpk" && crate::books::tbpk::reviewed(def.id),
-    label: "Bierovic shows First Prize on stock and futures charts (Aflac, Southtrust and others); runs on indices, ETFs and single stocks are a declared application, one unit per trade, with the entry-day order of the entry stop and the initial stop on real 1-minute bars where the minute files exist.",
+    label: "Bierovic shows First Prize on stock and futures charts (Aflac, Southtrust and others); runs on indices and ETFs are a declared application, one unit per trade, with the entry-day order of the entry stop and the initial stop on real 1-minute bars where the minute files exist. Published only on the indices and ETFs where at most 5% of trades depend on that order (decisions #175, #240, #308); single stocks are refused: no stock has 1-minute files and the share is not measured per stock.",
     basis: "Tom Bierovic, Playing for Keeps in Stocks & Futures (Wiley, 2002), ch.4 First Prize p.64-73 (PDF p.41-45)",
 };

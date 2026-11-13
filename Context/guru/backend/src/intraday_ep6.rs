@@ -249,14 +249,20 @@ const AMB: &str = "Held (decision #243, lane K59): on SPX's real 1-minute bars o
 const THIN: &str = "Held (decision #243, lane K59): more than 5% of its trades enter at a stop or limit level and reach an exit level the same day, so the daily bar cannot say which came first (#240), and fewer than 10 of its trades fall inside the 1-minute window, so the order cannot be resolved on real minutes. No results are published.";
 const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane K59): the daily-bar convention changes this rule's result materially against the real 1-minute order, so only the minute-resolved window of the 1-minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) is published.";
 
-/// R4 #308 (lane R2D): daily-convention tickers (no minute files) where more than 5% of the rule's trades depend on the
-/// order inside the entry day: refused per ticker (#175 limit applied per ticker).
-pub const TICKER308: &[(&str, &str)] = &[("tbpk_first_prize", "DIA"), ("tbpk_first_prize", "IWM"), ("tbpk_first_prize", "DJI")];
-const TICKER308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane R2D): more than 5% of this rule's trades here enter at a stop and reach the initial stop on the same day (DIA 3 of 21, IWM 4 of 29, DJI 6 of 58), and this ticker has no 1-minute file to settle which came first.";
+/// R4 #175/#240/#308 (lanes R2D, X2): a daily-convention rule whose share of order-dependent same-day trades exceeds the 5%
+/// limit on some tickers is published ONLY on the tickers in its measured list: indices/ETFs with at most 5% such trades over the
+/// default window (authors/titles-1030/X2w/tbpk_share.tsv, every index/ETF in the vault; the 1-minute tickers count their
+/// convention days too). Every other ticker is refused: the 13 measured above 5%, any ticker not measured, and single stocks
+/// (no stock has 1-minute files and the share is not measured per stock).
+pub const TICKER308_OK: &[(&str, &[&str])] = &[("tbpk_first_prize", &["SPY", "SPX", "NIFTY 50", "NIFTYBANK", "NIFTY BANK", "QQQ", "NDX",
+    "NIFTYIT", "NIFTY IT", "NIFTYMIDCAP100", "NIFTY MIDCAP 100", "NIFTYMIDCAPSELECT", "NIFTY MIDCAP SELECT",
+    "AGG", "EEM", "EPP", "EWA", "EWC", "EWD", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWN", "EWO", "EWQ", "EWS", "EWT", "EWU", "EWW",
+    "EWY", "EWZ", "EZA", "EZU", "FXI", "GLD", "IEF", "IEI", "LQD", "SHY", "SMH", "TLH", "VNQ", "XLB", "XLP", "XLU", "XLY"])];
+const TICKER308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane X2): this rule enters at a stop and its initial stop can trade the same day, which a daily bar cannot order. It is published only on the indices and ETFs where at most 5% of its trades depend on that order (measured over the default history) or where 1-minute files settle it. On this ticker more than 5% do (DIA 3 of 21, DJI 2 of 12, IWM 4 of 29, XLF 4 of 26, XLE 3 of 35, MDY, EFA, EWG, EWP, TLT, XLI, XLK, XLV), or it is a single stock: no stock has 1-minute files and the share is not measured per stock, so stocks are refused.";
 
 /// The hold or minute-window refusal for (id, ticker), if any (instrument_policy::tradable_check_issue).
 pub fn held_note(id: &str, ticker: &str) -> Option<&'static str> {
-    if TICKER308.contains(&(id, ticker)) { return Some(TICKER308_NOTE); }
+    if TICKER308_OK.iter().any(|z| z.0 == id && !z.1.contains(&ticker)) { return Some(TICKER308_NOTE); }
     if let Some(&(_, n)) = HELD.iter().find(|h| h.0 == id) { return Some(n); }
     let nse = if ticker == "NIFTY BANK" { "NIFTYBANK" } else { ticker };
     if INDIA231.contains(&(id, nse)) { return Some(INDIA231_NOTE); }
