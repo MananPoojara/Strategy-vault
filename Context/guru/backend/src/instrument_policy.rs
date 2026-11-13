@@ -2279,7 +2279,7 @@ mod tests {
                 assert!(check(d,"RELIANCE",true).is_none(),"{}",d.id);
             }
         }
-        for id in ["cfwtab_rangeleader","astk3_outside","krgann_pro","tscb2_balloon"] {assert!(!all.iter().any(|d|d.id==id && lanec2_reviewed(d)),"{id}");}
+        for id in ["cfwtab_rangeleader","krgann_pro","tscb2_balloon"] /* astk3_outside admitted: lane R2A, R4 #297 */ {assert!(!all.iter().any(|d|d.id==id && lanec2_reviewed(d)),"{id}");}
     }
     // ---- end Lane C2 singles block ----
     // ---- Lane A newsletters held (2026-10-26, lane B) ----
