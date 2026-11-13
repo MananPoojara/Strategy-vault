@@ -355,10 +355,20 @@ fn catalogue_base() -> Vec<StrategyDef> {
               "X|Unstated in the letter: an opposite signal while in a trade; vault reading: it exits and reverses (Ch. 11 rule 3 of Long-Term Secrets)"],
             "Printout p.3 (Vol. 29 No. 9 = September 1995 by its volume number; archive folder '1996'; \"Bond data is from 1977 to 1994\"): 352 trades, 257 winners (73%), net about $71,500 (OCR reads $71,472.50; gross $144,842.25 - $73,269.75). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293). Adapted: 2 unstated details (R4 #297).",
             claim("352", "73%", "$203 ($71,472.50)", "1 day", "1977-1994")),
+        sd!("lwnl_bond_xmas_buy", "T-Bonds: buy 5 trading days before Christmas, out on the open after it", "Bonds · seasonal", "Long", Live,
+            &["E|\"Buying Bonds ... 5 trading days before Christmas\" (Commodity Timing Vol. 34 No. 12 = December 1997, p.4): the 5th trading day before Christmas (1st = the last bar before the holiday). Unstated in the letter: the order type; vault reading: market on the open",
+              "X|\"and selling on the opening after the holiday\" (p.4): the open of the first trading day after Christmas; no stop is stated, so none is used"],
+            "Letter: \"has been a big winner\" (no figures printed), so there is no #168 check. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review M34). Adapted: 1 unstated detail (R4 #297).",
+            claim("", "", "", "about 1 week", "no figures printed")),
+        sd!("lwnl_bond_newyear_sell", "T-Bonds: sell 5 trading days before New Year's, out on the first open of the year", "Bonds · seasonal", "Short", Live,
+            &["E|\"selling Bonds 5 trading days before New Years\" (Vol. 34 No. 12, p.4): the 5th trading day before 1 January. Unstated in the letter: the order type; vault reading: market on the open",
+              "X|\"and exiting on the open of next year\" (p.4): the open of the first trading day of the new year; no stop is stated, so none is used"],
+            "Letter: \"has been a big winner\" (no figures printed), so there is no #168 check. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review M34). Adapted: 1 unstated detail (R4 #297).",
+            claim("", "", "", "about 1 week", "no figures printed")),
         sd!("lwnl_bond_systems", "T-Bond systems and seasonals", "Needs data", "Long/Short", NeedsData(BOND),
             &["E|Close > close 8 days ago, $850 stop, ~3x target (Aug 1991 p.2) = lwlts_bonds_8day (live)",
               "E|CTI bond breakout: high + 60% range buy, low - 90% range sell, stops $3,250 / $750 (Jun 1992 p.2-3) = lwnl_cti_bonds (live, lane F1D)",
-              "E|Bond holiday, TDOM and day-of-month trades: Thanksgiving, Christmas, Memorial, July 4th, Labor Day, Jan TD18, Dec TD19, Oct 29th, Nov 3-8, May TD9, July TD12, Sep, Oct, Nov, Dec tables (1993-1997 letters). Coded (lane F1D): lwnl_bond_memorial_buy, lwnl_bond_labor_buy, lwnl_bond_sep_td9_sell, lwnl_bond_sep_td19_buy, lwnl_bond_jul_td12_sell, lwnl_bond_dec_td14_buy, lwnl_bond_dec_td22_buy, lwnl_bond_sep_td4_sell, lwnl_bond_sep_td20_buy; held: lwnl_bond_dec_td7_sell / _td8_sell (3 unstated details). Not coded yet: the Oct 1997 table (no stop or exit printed; the table is garbled) and the Christmas / New Year trades (Vol. 34 No. 12: exit on the open after the holiday)",
+              "E|Bond holiday, TDOM and day-of-month trades: Thanksgiving, Christmas, Memorial, July 4th, Labor Day, Jan TD18, Dec TD19, Oct 29th, Nov 3-8, May TD9, July TD12, Sep, Oct, Nov, Dec tables (1993-1997 letters). Coded (lane F1D): lwnl_bond_memorial_buy, lwnl_bond_labor_buy, lwnl_bond_sep_td9_sell, lwnl_bond_sep_td19_buy, lwnl_bond_jul_td12_sell, lwnl_bond_dec_td14_buy, lwnl_bond_dec_td22_buy, lwnl_bond_sep_td4_sell, lwnl_bond_sep_td20_buy; held: lwnl_bond_dec_td7_sell / _td8_sell (3 unstated details). Not coded yet: the Oct 1997 table (no stop or exit printed; the table is garbled) (the Christmas / New Year trades are lwnl_bond_xmas_buy / lwnl_bond_newyear_sell)",
               "E|Projected low/high contrarian on Bonds (Vol. 29 No. 9 p.3: 352 trades 73% $71,472.50) = lwnl_bond_projected (lane F1D); DOWM buys (May 1996 p.2)"],
             ""),
         sd!("lwnl_commodity_systems", "Commodity and currency systems and seasonals", "Needs data", "Long/Short", NeedsData(FUT),
@@ -407,6 +417,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     if !id.starts_with("lwnl_") { return None; }
     let f = |fam: &'static str, name: &'static str, v: &'static str| Some((fam, name, v));
     if SEA.iter().any(|s| s.0 == id) { return f("lwnl_seasonal", "Trading-day-of-month seasonals", "S&P"); }
+    // review M35: the holiday trades sit with the other holiday trades (lwicw_holidays)
+    if matches!(id, "lwnl_bond_memorial_buy" | "lwnl_bond_labor_buy" | "lwnl_bond_xmas_buy" | "lwnl_bond_newyear_sell") {
+        return f("lwicw_holidays", "Holiday trades", match id { "lwnl_bond_memorial_buy" => "T-Bonds, Memorial Day", "lwnl_bond_labor_buy" => "T-Bonds, Labor Day",
+            "lwnl_bond_xmas_buy" => "T-Bonds, Christmas", _ => "T-Bonds, New Year's" });
+    }
     if let Some(b) = BSEA.iter().find(|b| b.0 == id) { return f("lwnl_seasonal", "Trading-day-of-month seasonals", b.1); }
     if HOL.iter().any(|s| s.0 == id) { return f("lwnl_holiday", "Holiday trades", "S&P"); }
     match id {
@@ -448,6 +463,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     if let Some(b) = BSEA.iter().find(|b| b.0 == id) {
         return Some(vec![stop(b.7), day0(), pt(1000.0)]);
     }
+    if id == "lwnl_bond_xmas_buy" || id == "lwnl_bond_newyear_sell" { return Some(vec![pt(1000.0)]); }
     if id == "lwnl_bond_projected" {
         return Some(vec![day0(), stop(750.0), p("sell_dow", "Sell days bitmask (Mon=1 Tue=2 Wed=4 Thu=8 Fri=16; book Mon/Wed/Thu = 13)", 13.0, 0.0, 31.0, 1.0), pt(1000.0)]);
     }
@@ -857,6 +873,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             let e = if b.6 { crate::books::lwlts::Ent::Close } else { crate::books::lwlts::Ent::Open };
             crate::books::lwlts::simulate(x, from, to, &c2, |i| if on[i] { if b.5 > 0.0 { (Some(e), None) } else { (None, Some(e)) } } else { (None, None) })
+        }
+        "lwnl_bond_xmas_buy" | "lwnl_bond_newyear_sell" => {
+            // lane F1D (review M34): in at the open 5 trading days before the holiday, out at the first opening after it; no stop
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let xmas = id == "lwnl_bond_xmas_buy";
+            let (y0, y1): (i32, i32) = (x.r[0].date[..4].parse().ok()?, x.r[n - 1].date[..4].parse().ok()?);
+            let mut out = vec![];
+            for y in y0..=y1 + 1 {
+                let hd = if xmas { holiday(Hol::Christmas, y) } else { holiday(Hol::NewYear, y) };
+                let Some(j) = td_rel(x, &hd, 5) else { continue };
+                if j < from.max(1) || j > to { continue; }
+                let dir = if xmas { 1.0 } else { -1.0 };
+                let (k, open) = match td_rel(x, &hd, -1) { Some(k) if k <= to => (k, false), _ => (to, true) };
+                let px = if open { c[to] } else { o[k] };
+                out.push(Trade { dir, legs: vec![Leg { i: j, px: o[j], w: 1.0 }], exit_i: k, exit_px: px,
+                    reason: if open { "open".into() } else { "exit on the first opening after the holiday".into() }, entry_kind: "open", signal_i: j, open, exits: vec![] });
+            }
+            out
         }
         "lwnl_bond_projected" => {
             // lane F1D (R4 #293): only on the Norgate T-bond contract

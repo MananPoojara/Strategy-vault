@@ -117,7 +117,25 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("lwmdc_blast_off_wto", "Blast Off! indicator and Williams Trade Oscillator (\"Blue Line\") on tick bars", "Globex day trading", "Long/Short",
             NeedsData("Tick bars (400-900 ticks per bar, p.8) are not in the vault, and the WTO formula is withheld (\"The exact formula will not be given\", p.11)."),
             &["F|Blast Off! = MovingAvg(Abs(Close-Open),1) / MovingAvg(TrueHigh-TrueLow,1) * 100 (p.10)", "E|Index crosses zero: buy one tick above the bar's high / sell one tick below its low (p.10-11)", "X|Stop at the prior bar's high/low, then the 2-bar extreme (p.14); 10-tick targets 'up to you' (p.13)"], ""),
-        sd!("lwmdc_bond_rules", "Bond short-term rules (TDOM by month with Gold, JAWS of death, bond trailer, best first days, CRB filters, MDC bond system)", "Bonds", "Long/Short", NeedsData(BONDS),
+        sd!("lwmdc_bond_tdom20", "T-Bonds: buy after trading day 20 at the open + 30% of its range", "Bonds", "Long", Live,
+            &["E|\"buying if TDOM is 20, at 30% of that days range added to the next days opening\" (Million Dollar Challenge p.46): a buy stop on the next day at its open + 0.3 x the TDOM 20 bar's range; TDOM by decision 186",
+              "F|\"These results exclude March\" (p.46): no trade when TDOM 20 falls in March (excluding October too is an aside: not applied)",
+              "X|\"Use a $1,500 stop and exit after two days in the trade\" (p.46): 1.5 points from the day after entry (the manual's code); unstated in the manual: whether 'exit after two days' is a time exit or the delayed bailout; vault reading: the first profitable opening from the 2nd bar after entry (the printout's winners average 4 bars, so not a fixed 2-day exit)"],
+            "Printout p.46 (BONDS BEST TDOMS MONTH, DAY T-BONDS 10/17/88-09/30/99, $45 commission): 41 trades, 87%, $30,373.75, average $740.82. Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293), gold = the Norgate gold contract as Data2 (own bars, carried to the bond dates; refused when gold is not loaded). Signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. The manual's Genesis code arms the dollar stop from the day after entry and its bailout is the first profitable opening (module header).",
+            claim("41", "87%", "$740.82 (after $45)", "", "10/17/88-09/30/99")),
+        sd!("lwmdc_bond_gold30", "T-Bonds: buy the open when gold's 30-day average falls (not Wednesday)", "Bonds", "Long", Live,
+            &["F|\"buying any day but Wednesday if the 30-day average of gold was less than the previous 30-day average\" (Million Dollar Challenge p.47): gold's 30-bar average of closes (own bars) below its previous value on the signal day; the entry day is not a Wednesday", "E|\"buys on the open\" (p.47)", "X|Unstated in the manual: the exit; vault reading: the manual's bailout (first profitable opening, p.52-53); no stop is stated, so none is used"],
+            "Text p.47: 1989 through 1999, 421 trades, 77% profitable, $105 average, $44,336, drawdown $14,568. Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293), gold = the Norgate gold contract as Data2 (own bars, carried to the bond dates; refused when gold is not loaded). Signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. The manual's Genesis code arms the dollar stop from the day after entry and its bailout is the first profitable opening (module header).",
+            claim("421", "77%", "$105", "", "1989-1999")),
+        sd!("lwmdc_bond_gold30_vb", "T-Bonds: gold 30-day average falling, down close, buy 20% above the open", "Bonds", "Long", Live,
+            &["F|\"buying any day but Wednesday if the 30-day average of gold was less than the previous 30-day average\" (Million Dollar Challenge p.47): gold's 30-bar average of closes (own bars) below its previous value on the signal day; the entry day is not a Wednesday", "F|\"and today was a down close\" (p.47)", "E|\"required entry take place only if price rallies 20% of the previous days range above the next days opening\" (p.47): a buy stop", "X|Unstated in the manual: the exit; vault reading: the manual's bailout (first profitable opening, p.52-53); no stop is stated, so none is used"],
+            "Text p.47: 80% accuracy, $165 average, $63,073 (about 382 trades). Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293), gold = the Norgate gold contract as Data2 (own bars, carried to the bond dates; refused when gold is not loaded). Signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. The manual's Genesis code arms the dollar stop from the day after entry and its bailout is the first profitable opening (module header).",
+            claim("about 382 ($63,073 / $165)", "80%", "$165", "", "1989-1999")),
+        sd!("lwmdc_bond_gold30_vb_nr", "T-Bonds: gold 30-day average falling, down close, small range, buy 20% above the open", "Bonds", "Long", Live,
+            &["F|\"buying any day but Wednesday if the 30-day average of gold was less than the previous 30-day average\" (Million Dollar Challenge p.47): gold's 30-bar average of closes (own bars) below its previous value on the signal day; the entry day is not a Wednesday", "F|\"and today was a down close\" (p.47)", "F|\"a requirement that today's range be less than the average range of the last 5 days\" (p.47). Unstated in the manual: whether the 5 days include today; vault reading: they do", "E|A buy stop at the next open + 20% of today's range (p.47)", "X|Unstated in the manual: the exit; vault reading: the manual's bailout (first profitable opening, p.52-53); no stop is stated, so none is used"],
+            "Text p.47: 183 trades, $245 average, $44,952, drawdown $7,627. Adapted: 2 unstated details (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293), gold = the Norgate gold contract as Data2 (own bars, carried to the bond dates; refused when gold is not loaded). Signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. The manual's Genesis code arms the dollar stop from the day after entry and its bailout is the first profitable opening (module header).",
+            claim("183", "", "$245", "", "1989-1999")),
+        sd!("lwmdc_bond_rules", "Bond short-term rules (TDOM by month with Gold, JAWS of death, bond trailer, best first days, CRB filters, MDC bond system)", "Bonds", "Long/Short", NotTestable("Split (lane F1D, R4 #293): the complete T-bond rules are lwmdc_bond_tdom20 and lwmdc_bond_gold30 / _vb / _vb_nr on the Norgate T-bond contract. Not coded: the combined TDOM/month/gold system (p.46) gives alternative lookbacks ('6, 9 or 28 days', '14, 16 or 22 days') and a garbled exit; the CRB-filtered studies need the CRB index, which the vault does not hold; the best-first-trading-day table prints no exit; the MDC bond system's rules lost their operators in the OCR (p.75-92)."),
             &["E|e.g. TDOM 8 or 17, June/July/October/November, Gold below 6, 9 or 28 days ago, buy the next open (p.46)"], "Printouts p.46-61."),
         sd!("lwmdc_sp_bond_rules", "S&P rules using bonds: bond opening/trend studies, JAWS of death S&P, MDC 2004 S&P system, best month/TDOM with bonds, trade no one wants, lazy day trader", "S&P · Bond relationships", "Long/Short", NeedsData(BONDS),
             &["F|e.g. \"IF Close < Close.1 And Close.1 < Close.2 And MovingAvg(Bonds,6) > MovingAvg(Bonds,6).3 ...\" (p.39)", "X|MDC 2004 S&P system: bailout and $3,500 stop (p.75)"],
@@ -154,6 +172,10 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwmdc_best_tdom_months" => f("lwmdc_fdom", "First trading day of the month", "Best TDOMs (not testable)"),
         "lwmdc_thanksgiving" => f("lwmdc_holiday", "Holiday trades", "Thanksgiving"),
         "lwmdc_blast_off_wto" | "lwmdc_intraday" => f("lwmdc_intraday", "Day trading", "Needs intraday data"),
+        "lwmdc_bond_tdom20" => f("lwmdc_bond_tdom20", "T-Bond TDOM 20 breakout", "Open + 30% of the TDOM 20 range"),
+        "lwmdc_bond_gold30" => f("lwmdc_bond_gold30", "T-Bond buys with gold falling", "Buy the open"),
+        "lwmdc_bond_gold30_vb" => f("lwmdc_bond_gold30", "T-Bond buys with gold falling", "Down close, 20% breakout"),
+        "lwmdc_bond_gold30_vb_nr" => f("lwmdc_bond_gold30", "T-Bond buys with gold falling", "Down close, small range, 20% breakout"),
         "lwmdc_bond_rules" | "lwmdc_sp_bond_rules" => f("lwmdc_bonds", "Bond relationships", "Needs bond data"),
         "lwmdc_rnr" | "lwmdc_other" => f("lwmdc_other", "Other", "Not testable"),
         _ => None,
@@ -166,6 +188,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let stop = |d: f64| p("stop_usd", "Dollar stop (book $)", d, 0.0, 9000.0, 250.0);
     let day0 = || p("stop_day0", "Stop armed on the entry day (1) or from the next day (0, the book's code)", 0.0, 0.0, 1.0, 1.0);
     let n = |d: f64| p("n", "Consecutive closes", d, 1.0, 6.0, 1.0);
+    let zb = || p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0);
+    match id {
+        "lwmdc_bond_tdom20" => return Some(vec![stop(1500.0), day0(), zb()]),
+        "lwmdc_bond_gold30" | "lwmdc_bond_gold30_vb" | "lwmdc_bond_gold30_vb_nr" => return Some(vec![zb()]),
+        _ => {}
+    }
     Some(match id {
         "lwmdc_down_smaller" | "lwmdc_down_larger" | "lwmdc_up_larger" | "lwmdc_up_smaller" => vec![n(1.0), stop(4500.0), day0(), pt()],
         "lwmdc_up_sell_smaller" | "lwmdc_up_sell_larger" => vec![n(2.0), stop(4500.0), day0(), pt()],
@@ -210,6 +238,36 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut cfg = Cfg::new(g("stop_usd") / g("pt_usd"));
     cfg.day0 = g("stop_day0") == 1.0;
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    if id.starts_with("lwmdc_bond_") && id != "lwmdc_bond_rules" {
+        // lane F1D (R4 #293): the manual's T-bond rules, only on the Norgate T-bond contract (lwlts::simulate)
+        if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+        let wd = |i: usize| crate::books::lwlts::dow(&x.r[i].date);
+        let mut c2 = crate::books::lwlts::Cfg { stop: f64::NAN, stop_s: f64::NAN, stop_rng: f64::NAN, day0: false, target: f64::NAN,
+            hold: None, bailout: true, bail_after: 0, reverse: false, order: false };
+        use crate::books::lwlts::Ent;
+        if id == "lwmdc_bond_tdom20" {
+            c2.stop = g("stop_usd") / g("pt_usd"); c2.day0 = g("stop_day0") == 1.0; c2.bail_after = 2;
+            let td = crate::books::lwlts::tdm(x);
+            return Some(crate::books::lwlts::simulate(x, from, to, &c2, |i| {
+                let s = i - 1;
+                (td[s] == 20 && &x.r[s].date[5..7] != "03").then(|| Ent::Stop(o[i] + 0.3 * (h[s] - l[s]))).map_or((None, None), |e| (Some(e), None))
+            }));
+        }
+        let Some(rows) = crate::futures::rows("&GC") else { return Some(vec![]) }; // readiness refuses this case (data2_issue)
+        let gc = crate::second::align("&GC", x.r, rows);
+        let gdn = gc.own(|r| { let m = crate::connors::sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), 30);
+            (0..r.len()).map(|k| (k >= 30 && m[k] < m[k - 1]) as u8 as f64).collect() });
+        let (vb, nr) = (id != "lwmdc_bond_gold30", id == "lwmdc_bond_gold30_vb_nr");
+        return Some(crate::books::lwlts::simulate(x, from, to, &c2, |i| {
+            if i < 6 { return (None, None); }
+            let s = i - 1;
+            let mut ok = gdn[s] == 1.0 && wd(i) != 3;
+            if vb { ok = ok && c[s] < c[s - 1]; }
+            if nr { ok = ok && (h[s] - l[s]) < (s - 4..=s).map(|k| h[k] - l[k]).sum::<f64>() / 5.0; }
+            if !ok { return (None, None); }
+            (Some(if vb { Ent::Stop(o[i] + 0.2 * (h[s] - l[s])) } else { Ent::Open }), None)
+        }));
+    }
     let none = || vec![];
     let day = |sig: &dyn Fn(usize) -> Vec<(f64, Ord)>| {
         let mut d = Cfg::new(f64::NAN);
