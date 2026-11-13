@@ -512,7 +512,7 @@ pub fn dow(date: &str) -> u32 {
 /// Trading day of the month (1-based) for every bar; 0 = unknown. A series that starts mid-month cannot count that
 /// month's trading days, so its first month is 0 unless every earlier day of that month is a weekend day or 1 January
 /// (decision 186, FR-08).
-fn tdm(x: &Ctx) -> Vec<usize> {
+pub(crate) fn tdm(x: &Ctx) -> Vec<usize> {
     let mut out = vec![0; x.r.len()];
     let Some(first) = x.r.first() else { return out };
     let d0: u32 = first.date[8..10].parse().unwrap_or(1);
@@ -540,6 +540,7 @@ pub(crate) struct Cfg {
     pub(crate) target: f64,      // profit target distance in points (NaN = none)
     pub(crate) hold: Option<usize>, // exit on the close `hold` bars after the entry bar
     pub(crate) bailout: bool,    // exit on the first profitable opening after the entry bar
+    pub(crate) stop_s: f64,      // lane F1D: the short side's stop distance when it differs (NaN = `stop` for both sides)
     pub(crate) bail_after: usize, // lane F1D: the bailout only from the opening `bail_after` bars after entry (0/1 = the next bar)
     pub(crate) reverse: bool,    // an opposite entry signal exits and reverses
     pub(crate) order: bool,      // EP6 (#243): order-dependent days on the real 1-minute path (false = the bar path always)
@@ -571,7 +572,8 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
         let open_pos = |dir: f64, px: f64| {
             let rs = cfg.stop_rng * (x.h[i - 1] - x.l[i - 1]);
             // lane F1D: "$1,500 or 50 percent of the previous day's range" (p.61) = the nearer of the two when both are set
-            let sd = if cfg.stop_rng.is_finite() && cfg.stop.is_finite() { rs.min(cfg.stop) } else if cfg.stop_rng.is_finite() { rs } else { cfg.stop };
+            let st = if dir < 0.0 && cfg.stop_s.is_finite() { cfg.stop_s } else { cfg.stop };
+            let sd = if cfg.stop_rng.is_finite() && st.is_finite() { rs.min(st) } else if cfg.stop_rng.is_finite() { rs } else { st };
             Pos { dir, i, px, stop: if sd.is_finite() && sd > 0.0 { px - dir * sd } else { f64::NAN },
                 target: if cfg.target.is_finite() && cfg.target > 0.0 { px + dir * cfg.target } else { f64::NAN }, od: crate::intraday_ep6::Day::Plain, close: false }
         };
@@ -669,7 +671,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let pts = |k: &str| { let v = g(k); if v.is_finite() && v > 0.0 { v / g("pt_usd") } else { f64::NAN } };
     let hold = g("hold");
     let mut cfg = Cfg { stop: pts("stop_usd"), stop_rng: f64::NAN, day0: g("stop_day0") != 0.0, target: pts("target_usd"),
-        hold: hold.is_finite().then(|| hold.max(0.0) as usize), bailout: false, bail_after: 0, reverse: false, order: crate::intraday_ep6::on(id, p) };
+        hold: hold.is_finite().then(|| hold.max(0.0) as usize), bailout: false, bail_after: 0, stop_s: f64::NAN, reverse: false, order: crate::intraday_ep6::on(id, p) };
     let wd = |i: usize| dow(&x.r[i].date);
     let td = tdm(x);
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);

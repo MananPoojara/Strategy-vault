@@ -339,10 +339,9 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
 /// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
 const HELD: &[(&str, &str, &str)] = &[
     // lane F1D: Larry Williams bond stop-entry cards (no T-bond minute bars; limit 5%)
+    ("lwnl_cti_bonds", "&ZB", "held under R4 #240: 9.7% of its trades have two different fills on one daily bar (an entry and the $750 short stop, or a stop and the opposite entry), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 22.4% of its trades (27.7% in the book's 1990-98 window) have two fills on one daily bar (entry and stop, or stop and reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 16.8% of its trades (19.5% in the book's 1990-98 window) have two fills on one daily bar, which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
-    ("lwlts_gsv_sp", "&SP", "held under R4 #240: 5.1% of its trades on the published 1982-95 window have two fills on one daily bar (an entry and the reversal), which daily bars cannot order, and no S&P futures minute bars exist (limit 5%)"),
-    ("lwlts_gsv_bonds", "&ZB", "held under R4 #240: 16.1% of its trades (16.3% in the book's 1990-98 window) have two fills on one daily bar (an entry and the reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
     ("ch_bta2_long_bomb", "&KC", "held on coffee under R4 #240: 12.2% of its trades in the book's 1982-95 window (15.7% over 1978-2020) enter and hit the stop on the same day, which daily bars cannot order, and no coffee futures minute bars exist (limit 5%, R4 #314 (3))"),
 ];
 /// Why a card is held on a market its source tests (HELD), if it is.
@@ -361,6 +360,7 @@ const DATA2: &[(&str, &[&str])] = &[("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2
     ("nfgu_pathfinder", &["&ZB"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"]),
     ("lwlts_talon_bondfilter", &["&ZB"]), ("lwlts_gsv_sp", &["&ZB"]), ("lwlts_gsv_sp_monday", &["&ZB"]), ("lwlts_month_day1_sp_bonds", &["&ZB"]),
     ("lwlts_bonds_channel_bstop", &["&ZB"]), ("lwlts_bonds_channel_sstop", &["&ZB"]),
+    ("lwicw_bond_tdw_gold", &["&GC"]), ("lwicw_bond_tdom_gold", &["&GC"]),
     ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"])];
 /// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
 pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
@@ -398,6 +398,11 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_outside_down_bonds", "&ZB", LWB),
     ("lwlts_outside_down_bonds_xthu", "&ZB", LWB),
     ("lwlts_3up_thu_sell_bonds", "&ZB", LWB),
+    ("lwnl_cti_bonds", "&ZB", "Larry Williams, Commodity Timing letter Jun 1992 p.2-3, \"Building a bond system\": buy stop at the high + 60% of the day's range, sell stop at the low - 90%, always long or short, $3,250 / $750 stops, $50 per trade; run on the Norgate T-bond continuous contract (R4 #293 (1), (3)), lane F1D."),
+    ("lwicw_bond_tdw", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
+    ("lwicw_bond_tdw_gold", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
+    ("lwicw_bond_tdom", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
+    ("lwicw_bond_tdom_gold", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
     ("lwicw_bond_holidays", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.34-35: the T-bond holiday trades (open or close entries a set number of trading days before or after 8 US holidays, $1,400 stop, first profitable opening), DAY T-BONDS 01/10/78-07/06/99; run on the Norgate T-bond continuous contract ($1,400 = 1.4 points; R4 #293 (1), (3)), lane F1D."),
     ("lwlts_oops_buy_bonds", "&ZB", LWB),
     ("lwlts_oops_sell_bonds_wed", "&ZB", LWB),
@@ -651,6 +656,16 @@ mod tests {
         TEST_ROWS.with(|t| t.borrow_mut().clear());
     }
     #[test]
+    fn f1d_bond_tdom_skips_a_partial_first_month() {
+        // review B2: the series starts mid-month (1990-01-03 is the 2nd bar of January), so January's TDOM 1 is unknown; February's
+        // first bar (index 20) is TDOM 1 -> bought at its open, out at the first profitable opening (bar 21)
+        let mut r = f1c_rows("US T-Bond (Norgate &ZB)", &vec![(100., 100.5, 99.5, 100.); 24]);
+        for (k, b) in r.iter_mut().enumerate() { b.date = if k < 20 { format!("1990-01-{:02}", 3 + k) } else { format!("1990-02-{:02}", k - 19) }; }
+        r[21].open = 100.2;
+        let t = crate::books::lwicw::run("lwicw_bond_tdom", &Ctx::new(&r, &r, &[]), 0, 23, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i), (1, 20, 21), "{t:?}");
+    }
+    #[test]
     fn f1d_bond_holidays_on_the_contract_only() {
         // Thanksgiving 1990-11-22: "Sell Close Sixth TD Before" (bar of 1990-11-14) then "Buy Close Fourth TD Before" (11-16) reverses
         let d = ["1990-11-12", "1990-11-13", "1990-11-14", "1990-11-15", "1990-11-16", "1990-11-19", "1990-11-20", "1990-11-21", "1990-11-23", "1990-11-26"];
@@ -674,7 +689,7 @@ mod tests {
         let r = f1c_rows("US T-Bond (Norgate &ZB)", &[(100., 101., 100., 100.5), (100.5, 102., 100.4, 100.9)]);
         let t = crate::books::lwlts::run("lwlts_vb_bonds", &Ctx::new(&r, &r, &[]), 0, 1, &crate::connors::Params::new()).unwrap();
         assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 101.5, 1, 101.), "{t:?}");
-        assert!(held("lwlts_vb_bonds", "US T-Bond (Norgate &ZB)").is_some() && held("lwlts_oops_buy_bonds", "US T-Bond (Norgate &ZB)").is_none());
+        assert!(held("lwlts_vb_bonds", "US T-Bond (Norgate &ZB)").is_some() && held("lwlts_oops_buy_bonds", "US T-Bond (Norgate &ZB)").is_none() && held("lwlts_gsv_bonds", "US T-Bond (Norgate &ZB)").is_none());
     }
     #[test]
     fn f1d_bonds_8day_close_entry_stop_reentry_target() {

@@ -84,7 +84,26 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Unstated in the book: an opposite holiday entry while in a trade; vault reading: it exits and reverses (as lwicw_sp_holidays)"],
             "Printout p.35: DAY T-BONDS 01/10/78-07/06/99, 190 trades, 84%, $52,200, average $274.74. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price, $1,400 = 1.4 points at $1,000 per point. US exchange holidays from the calendar as lwicw_sp_holidays. Adapted: 2 unstated details (R4 #297).",
             claim("190", "84%", "$274.74 ($52,200)", "1 day", "01/10/78-07/06/99")),
-        sd!("lwicw_bond_shortterm", "Bond short-term rules (TDW, TDOM, holidays, Gold, price patterns, hidden Oops!)", "Bonds", "Long", NotTestable("Split (lane F1D, R4 #293): the holiday system is lwicw_bond_holidays on the Norgate T-bond contract. Not coded: the TDW, TDOM and gold-filtered TDW tables (p.33-35) are studies with no stop and no window, not trading rules; the price patterns (p.35-37: consecutive down closes, gap down closes, Friday set-ups, hidden Oops!) state no stop or exit for any pattern and use alternative lookbacks ('8, 10 or 12 days', '6 OR 25 days', '15 or 24 days'), more than two unstated details (R4 #297 (5))."),
+        sd!("lwicw_bond_tdw", "T-Bond buy the open of a weekday, first profitable opening", "Bonds · TDW", "Long", Live,
+            &["E|\"buying on the opening of each trading day of the week and exiting on the first profitable opening\" (p.33): p.day = the weekday (1 Monday .. 5 Friday; default Monday, the table's first row)",
+              "X|No stop is stated for the study, so none is used"],
+            "Table p.33 (window not printed): Mon $41,568 79% $83; Tue $32,951 76% $73; Wed -$18,615 73% -$37; Thu -$13,108 70% -$26; Fri $14,426 73% $30. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review B2): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. No test window is printed for the tables, so there is no #168 check: unverified.",
+            claim("about 501 ($41,568 / $83, Monday)", "79% (Monday)", "$83 (Monday)", "1 day", "T-bonds (window not printed)")),
+        sd!("lwicw_bond_tdw_gold", "T-Bond weekday open buy · gold below 25 days ago", "Bonds · TDW", "Long", Live,
+            &["E|\"this same study above\" (p.35): buy the open of weekday p.day (default Monday)", "X|As the study: exit on the first profitable opening, no stop", "F|\"require that the closing price of Gold be less than 25 days ago\" (p.35): the Norgate gold contract as Data2, its close on the bond's previous bar (gold's last bar on or before it) below its close 25 gold bars earlier"],
+            "Table p.35 (window not printed): Mon $25,883 84% $187; Tue $31,168 82% $222; Wed $1,037 74% $7; Thu $8,825 76% $53; Fri $22,075 81% $133. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review B2): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. No test window is printed for the tables, so there is no #168 check: unverified. The card is refused when gold is not loaded.",
+            claim("about 138 ($25,883 / $187, Monday)", "84% (Monday)", "$187 (Monday)", "1 day", "T-bonds (window not printed)")),
+        sd!("lwicw_bond_tdom", "T-Bond buy the open of trade day of month N", "Bonds · TDOM", "Long", Live,
+            &["E|\"buying on the opening of every TDOM\" (p.33): p.n = the trading day of the month (default 1, the table's first row); TDM = trading days so far this month",
+              "X|Unstated in the book: the exit of the TDOM study; vault reading: the TDW study's first profitable opening (p.33), no stop"],
+            "Table p.33 (window not printed), first column: e.g. TDOM 1 $18,827 68% $72; TDOM 8 $29,608 69% $114; TDOM 23 $3,902 73% $169. Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review B2): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. No test window is printed for the tables, so there is no #168 check: unverified.",
+            claim("about 261 ($18,827 / $72, TDOM 1)", "68% (TDOM 1)", "$72 (TDOM 1)", "", "T-bonds (window not printed)")),
+        sd!("lwicw_bond_tdom_gold", "T-Bond trade day of month N · gold below 25 days ago", "Bonds · TDOM", "Long", Live,
+            &["E|\"the seccnd only buying if Gold has closed lower than 25 days ago\" (p.33): buy the open of TDOM p.n (default 1)", "F|\"require that the closing price of Gold be less than 25 days ago\" (p.35): the Norgate gold contract as Data2, its close on the bond's previous bar (gold's last bar on or before it) below its close 25 gold bars earlier",
+              "X|Unstated in the book: the exit; vault reading: the first profitable opening (p.33), no stop"],
+            "Table p.33 (window not printed), second column: e.g. TDOM 1 $15,507 70% $100; TDOM 9 $18,603 71% $126; TDOM 23 $4,807 85% $343. Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review B2): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. No test window is printed for the tables, so there is no #168 check: unverified. The card is refused when gold is not loaded.",
+            claim("about 155 ($15,507 / $100, TDOM 1)", "70% (TDOM 1)", "$100 (TDOM 1)", "", "T-bonds (window not printed)")),
+        sd!("lwicw_bond_shortterm", "Bond short-term rules (TDW, TDOM, holidays, Gold, price patterns, hidden Oops!)", "Bonds", "Long", NotTestable("Split (lane F1D, R4 #293): the holiday system is lwicw_bond_holidays; the day-of-week and day-of-month studies are lwicw_bond_tdw, lwicw_bond_tdw_gold, lwicw_bond_tdom and lwicw_bond_tdom_gold, on the Norgate T-bond contract. Held: the price patterns (p.35-37: consecutive down closes, gap down closes, Friday set-ups, hidden Oops!) print no exit or stop for any pattern (R4 #297 (2)), and three use alternative lookbacks ('8, 10 or 12 days', '6 OR 25 days', '15 or 24 days'); filed in authors/verifier-questions.tsv."),
             &["E|TDW and TDOM buys on the open, bailout; holiday trades with a $1,400 stop and bailout (p.33-35)", "F|Gold below its close 25 days ago (p.35)",
               "E|Consecutive down closes, gap down closes, Friday set-ups for Monday, hidden Oops! with the projected high/low (H+L+C)/3*2-L/H (p.36-37)"],
             "Printouts: holidays 190 trades 84% $274.74 (01/10/78-07/06/99); patterns 285 trades 87% $254.56 (01/01/90-07/06/99)."),
@@ -120,6 +139,10 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwicw_sp_tdom" => f("lwicw_tdom", "S&P trade day of month", "Buy TDOM N"),
         "lwicw_sp_holidays" => f("lwicw_holidays", "Holiday trades", "S&P"),
         "lwicw_bond_holidays" => f("lwicw_holidays", "Holiday trades", "T-Bonds"),
+        "lwicw_bond_tdw" => f("lwicw_bond_tdw", "T-Bond trade day of week", "All days"),
+        "lwicw_bond_tdw_gold" => f("lwicw_bond_tdw", "T-Bond trade day of week", "Gold below 25 days ago"),
+        "lwicw_bond_tdom" => f("lwicw_bond_tdom", "T-Bond trade day of month", "All months"),
+        "lwicw_bond_tdom_gold" => f("lwicw_bond_tdom", "T-Bond trade day of month", "Gold below 25 days ago"),
         "lwicw_oops_tdom_buy" => f("lwicw_oops", "Oops! by TDOM", "Buys"),
         "lwicw_oops_tdom_sell" => f("lwicw_oops", "Oops! by TDOM", "Sells"),
         "lwicw_mon_gap_bail" => f("lwicw_mon_gap", "Monday gap-down buy", "Bailout, $1,750 stop"),
@@ -146,6 +169,8 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "lwicw_sp_tdw_mon" | "lwicw_sp_tdw_tue" | "lwicw_sp_tdw_wed" | "lwicw_sp_tdw_thu" | "lwicw_sp_tdw_fri" => vec![stop(3500.0), pt()],
         "lwicw_sp_tdom" => vec![p("tdom", "Trading day of the month", 1.0, 1.0, 23.0, 1.0), stop(3500.0), pt()],
+        "lwicw_bond_tdw" | "lwicw_bond_tdw_gold" => vec![p("day", "Weekday (1 Monday .. 5 Friday)", 1.0, 1.0, 5.0, 1.0)],
+        "lwicw_bond_tdom" | "lwicw_bond_tdom_gold" => vec![p("n", "Trading day of the month", 1.0, 1.0, 23.0, 1.0)],
         "lwicw_bond_holidays" => vec![stop(1400.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwicw_sp_holidays" => vec![stop(2500.0), p("bail_delay", "Bars held after entry before the bailout applies (book 1)", 1.0, 0.0, 5.0, 1.0), pt()],
         "lwicw_oops_tdom_buy" => vec![p("tdom", "Trading day of the month", 19.0, 1.0, 23.0, 1.0), stop(2750.0), pt()],
@@ -434,6 +459,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "lwicw_mon_gap_bail" => {
             cfg.bail = Some(0);
             sim(x, from, to, &cfg, |i| if wd(i) == 1 && x.o[i] < x.c[i - 1] { vec![(1.0, Ord::Open)] } else { vec![] })
+        }
+        "lwicw_bond_tdw" | "lwicw_bond_tdw_gold" | "lwicw_bond_tdom" | "lwicw_bond_tdom_gold" => {
+            // lane F1D (R4 #293, review B2): the bond studies, only on the Norgate T-bond contract; buy the open, first profitable
+            // opening, no stop; gold = Norgate &GC as Data2 (own bars, close below its close 25 gold bars earlier, read on bar i-1)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let gold = if id.ends_with("_gold") {
+                let Some(rows) = crate::futures::rows("&GC") else { return Some(vec![]) }; // readiness refuses this case (data2_issue)
+                let gc = crate::second::align("&GC", x.r, rows);
+                Some(gc.own(|r| (0..r.len()).map(|k| (k >= 25 && r[k].close < r[k - 25].close) as u8 as f64).collect()))
+            } else { None };
+            let mut cfg = Cfg::new(f64::NAN);
+            cfg.bail = Some(0);
+            let tdw = id.starts_with("lwicw_bond_tdw");
+            let td = crate::books::lwlts::tdm(x); // decision 186: a partial first month is not counted
+            let want = if tdw { g("day").round() as u32 } else { g("n").round() as u32 };
+            sim(x, from, to, &cfg, |i| {
+                let day = if tdw { wd(i) } else { td[i] as u32 };
+                let ok = day == want && gold.as_ref().map_or(true, |v| i > 0 && v[i - 1] == 1.0);
+                if ok { vec![(1.0, Ord::Open)] } else { vec![] }
+            })
         }
         "lwicw_sp_holidays" | "lwicw_bond_holidays" => {
             let bond = id == "lwicw_bond_holidays";

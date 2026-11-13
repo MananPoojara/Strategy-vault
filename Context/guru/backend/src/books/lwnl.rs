@@ -317,9 +317,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Weekly 14-bar Bond stochastic as an S&P timer (Feb 1992, Jul 1992, Nov 1992, Dec 1993): no exit given",
               "E|Hornbrook: British Pound, crude and gold closes as an S&P filter, buy open exit close (May 1996 p.3): needs BP, crude, gold futures"],
             "All need bond (or other) futures alongside the S&P."),
+        sd!("lwnl_cti_bonds", "CTI bond system: 60% of the range above the high / 90% below the low", "Bonds", "Long/Short", Live,
+            &["E|\"by adding 60% of today's range to today's high some very nice buy signals developed ... by subtracting 90% of today's range ... from today's low and selling there, on stop\" (Jun 1992 p.2): tomorrow's buy stop at H + 0.6 x (H - L), sell stop at L - 0.9 x (H - L) (\"chart range not true range\")",
+              "X|\"always long/short\" (p.2): an opposite stop exits and reverses",
+              "X|\"These results are with a $3250 stop for longs, $750 for shorts\" (p.3): 3.25 / 0.75 points at $1,000 per point, armed on the entry day (the letters' convention for entries during the day); no target (\"None made more money than the no target approach\")"],
+            "Printout Jun 1992 p.3 (TREASURY BONDS, window header illegible; the system was built on 1988 forward and checked on 'unknown' data from June of the previous year): 98 trades (41 won, 57 lost), 41%, $17,756.25, average $181.19 after $50 per trade. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price.",
+            claim("98", "41%", "$181.19 (after $50)", "", "window not legible (1988-1992?)")),
         sd!("lwnl_bond_systems", "T-Bond systems and seasonals", "Needs data", "Long/Short", NeedsData(BOND),
-            &["E|Close > close 8 days ago, $850 stop, ~3x target (Aug 1991 p.2) = lwlts_bonds_8day",
-              "E|CTI bond breakout: high + 60% range buy, low - 90% range sell, stops $3,250 / $750 (Jun 1993 p.2-3; Jul 1993 p.2)",
+            &["E|Close > close 8 days ago, $850 stop, ~3x target (Aug 1991 p.2) = lwlts_bonds_8day (live)",
+              "E|CTI bond breakout: high + 60% range buy, low - 90% range sell, stops $3,250 / $750 (Jun 1992 p.2-3) = lwnl_cti_bonds (live, lane F1D)",
               "E|Bond holiday, TDOM and day-of-month trades: Thanksgiving, Christmas, Memorial, July 4th, Labor Day, Jan TD18, Dec TD19, Oct 29th, Nov 3-8, May TD9, July TD12, Sep, Oct, Nov, Dec tables (1993-1997 letters)",
               "E|Projected low/high contrarian on Bonds (Sep 1995 p.3: 352 trades 73% $71,472.50), DOWM buys (May 1996 p.2)"],
             ""),
@@ -378,6 +384,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwnl_proj_contra" | "lwnl_proj_limit" => f("lwnl_proj", "Projected high/low", ""),
         s if s.starts_with("lwnl_engulf") => f("lwnl_engulf", "Engulfing candlestick test", ""),
         s if s.starts_with("lwnl_tdw_oc") => f("lwnl_tdw", "Day of week open-to-close", ""),
+        "lwnl_cti_bonds" => f("lwnl_cti", "CTI bond system", "60% / 90% range breakout"),
         "lwnl_bond_sp_systems" | "lwnl_bond_systems" | "lwnl_commodity_systems" => f("lwnl_needs_data", "Futures systems", "Needs data"),
         "lwnl_no_exit" | "lwnl_unquantified" | "lwnl_judgement" => f("lwnl_not_testable", "Not testable", ""),
         _ => f("lwnl_patterns", "Newsletter patterns", ""),
@@ -398,6 +405,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 fn params_base(id: &str) -> Option<Vec<ParamDef>> {
+    if id == "lwnl_cti_bonds" {
+        return Some(vec![p("buy_pct", "Buy stop: high + x today's range", 0.6, 0.0, 2.0, 0.05), p("sell_pct", "Sell stop: low - x today's range", 0.9, 0.0, 2.0, 0.05),
+            stop(3250.0), p("stop_s_usd", "Short-side dollar stop (book $750)", 750.0, 0.0, 6000.0, 250.0), pt(1000.0)]);
+    }
     if let Some(s) = SEA.iter().find(|s| s.0 == id) {
         let mut v = vec![p("td", "Trading day of the month", s.2 as f64, 1.0, 23.0, 1.0),
             p("entry_pct", "Entry: open +/- x previous day's range (0 = at the open; + = stop in trade direction; - = limit)", s.4, -0.5, 0.5, 0.01),
@@ -718,6 +729,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let mut v = vec![(1.0, E::Stop(o[i] + bp * tr)), (-1.0, E::Stop(o[i] - sp * tr))];
                 if oops && o[i] < l[s] { v.push((1.0, E::Stop(l[s]))); }
                 v
+            })
+        }
+        "lwnl_cti_bonds" => {
+            // lane F1D (R4 #293): only on the Norgate T-bond contract; lwlts::simulate for the stop-and-reverse with per-side stops
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let c2 = crate::books::lwlts::Cfg { stop: g("stop_usd") / g("pt_usd"), stop_s: g("stop_s_usd") / g("pt_usd"), stop_rng: f64::NAN, day0: true,
+                target: f64::NAN, hold: None, bailout: false, bail_after: 0, reverse: true, order: false };
+            let (bp, sp) = (g("buy_pct"), g("sell_pct"));
+            crate::books::lwlts::simulate(x, from, to, &c2, |i| {
+                let r = h[i - 1] - l[i - 1];
+                if !(r > 0.0) { return (None, None); }
+                (Some(crate::books::lwlts::Ent::Stop(h[i - 1] + bp * r)), Some(crate::books::lwlts::Ent::Stop(l[i - 1] - sp * r)))
             })
         }
         s if s.starts_with("lwnl_tdw_oc") => {
