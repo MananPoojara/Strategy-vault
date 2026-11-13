@@ -313,7 +313,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         // ---- Needs data
         sd!("lwnl_bond_sp_systems", "Bond-driven S&P systems", "Needs data", "Long", NeedsData(BOND),
             &["E|Buy the S&P on the close when Bonds close above their 14-day highest high; exit a 10-day lowest low in Bonds or $3,000 stop (Commodity Timing Vol. 28 No. 4, April 1994 by its volume number, archive folder '1995', p.1-3; 66 trades 50% $112,175), or the S&P 5-day low (94 trades 41% $96,600) = options p.exit_n=10 / 5 of lwlts_bonds_channel_bstop / _sstop (live, lane F1D)",
-              "E|9-day MA of Bonds rising + 1 or 2 S&P down closes: buy open + 20% of the last range, $2,500 stop or close 2 days later (Sep 1994 p.3-4; 308 trades 59% $116,900 / 145 trades 58% $43,875)",
+              "E|9-day MA of Bonds rising + 1 or 2 S&P down closes: buy open + 20% of the last range, $2,500 stop or close 2 days later (Sep 1994 p.3-4; 308 trades 59% $116,900 / 145 trades 58% $43,875) = lwnl_bond_sp_9ma_1down / _2down (coded, lane F1D; withheld under R4 #240: 7.5% / 6.4%)",
               "E|Weekly 14-bar Bond stochastic as an S&P timer (Feb 1992, Jul 1992, Nov 1992, Dec 1993): no exit given",
               "E|Hornbrook: British Pound, crude and gold closes as an S&P filter, buy open exit close (May 1996 p.3): needs BP, crude, gold futures"],
             "All need bond (or other) futures alongside the S&P."),
@@ -323,6 +323,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"These results are with a $3250 stop for longs, $750 for shorts\" (p.3): 3.25 / 0.75 points at $1,000 per point, armed on the entry day (the letters' convention for entries during the day); no target (\"None made more money than the no target approach\")"],
             "Printout Jun 1992 p.3 (TREASURY BONDS, window header illegible; the system was built on 1988 forward and checked on 'unknown' data from June of the previous year): 98 trades (41 won, 57 lost), 41%, $17,756.25, average $181.19 after $50 per trade. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price.",
             claim("98", "41%", "$181.19 (after $50)", "", "window not legible (1988-1992?)")),
+        sd!("lwnl_bond_sp_9ma_1down", "S&P buy after a down close in a bond uptrend (9-day MA)", "Bonds -> S&P", "Long", Live,
+            &["F|\"We will want Bonds to be in an uptrend, which means a 9 day moving average of Bonds is greater today than it was yesterday\" (Commodity Timing Vol. 28 No. 9 p.3): the bond's 9-bar average of closes (own bars) above yesterday's, on the signal day",
+              "F|\"Then we want the S&P 500 to have a pull back ... The first set of results below is based on one down close; the second set requires two consecutive down closes\" (p.3)",
+              "E|\"the computer bought at 20% of the last down day's range added to the following open\" (p.3): a buy stop at the open + 0.2 x the down day's range",
+              "X|\"we used a $2,500 stop loss, or exited on the close two days later\" (p.3): 5 points at the letters' $500 per point, armed on the entry day; out on the close of the second day after entry (reading of 'two days later')"],
+            "Printouts p.3-4 (S&P INDEX, 'from 1982 forward', issue of Vol. 28 No. 9 = September 1994 by its volume number; archive folder '1995'): one down close 308 trades, 59%, $116,900, average $379.55; two down closes 145 trades, 58%, $43,875, average $302.59. Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (lane F1D, R4 #293); published 1982-04-21..1995-07-31 (R4 #330). Adapted: 1 unstated detail (R4 #297).", claim("308", "59%", "$379.55", "2 days", "1982-1994 (Sep 1994 letter)")),
+        sd!("lwnl_bond_sp_9ma_2down", "S&P buy after two down closes in a bond uptrend (9-day MA)", "Bonds -> S&P", "Long", Live,
+            &["F|\"We will want Bonds to be in an uptrend, which means a 9 day moving average of Bonds is greater today than it was yesterday\" (Commodity Timing Vol. 28 No. 9 p.3): the bond's 9-bar average of closes (own bars) above yesterday's, on the signal day",
+              "F|\"Then we want the S&P 500 to have a pull back ... The first set of results below is based on one down close; the second set requires two consecutive down closes\" (p.3)",
+              "E|\"the computer bought at 20% of the last down day's range added to the following open\" (p.3): a buy stop at the open + 0.2 x the down day's range",
+              "X|\"we used a $2,500 stop loss, or exited on the close two days later\" (p.3): 5 points at the letters' $500 per point, armed on the entry day; out on the close of the second day after entry (reading of 'two days later')"],
+            "Printouts p.3-4 (S&P INDEX, 'from 1982 forward', issue of Vol. 28 No. 9 = September 1994 by its volume number; archive folder '1995'): one down close 308 trades, 59%, $116,900, average $379.55; two down closes 145 trades, 58%, $43,875, average $302.59. Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (lane F1D, R4 #293); published 1982-04-21..1995-07-31 (R4 #330). Adapted: 1 unstated detail (R4 #297).", claim("145", "58%", "$302.59", "2 days", "1982-1994 (Sep 1994 letter)")),
         sd!("lwnl_bond_systems", "T-Bond systems and seasonals", "Needs data", "Long/Short", NeedsData(BOND),
             &["E|Close > close 8 days ago, $850 stop, ~3x target (Aug 1991 p.2) = lwlts_bonds_8day (live)",
               "E|CTI bond breakout: high + 60% range buy, low - 90% range sell, stops $3,250 / $750 (Jun 1992 p.2-3) = lwnl_cti_bonds (live, lane F1D)",
@@ -385,6 +397,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         s if s.starts_with("lwnl_engulf") => f("lwnl_engulf", "Engulfing candlestick test", ""),
         s if s.starts_with("lwnl_tdw_oc") => f("lwnl_tdw", "Day of week open-to-close", ""),
         "lwnl_cti_bonds" => f("lwnl_cti", "CTI bond system", "60% / 90% range breakout"),
+        "lwnl_bond_sp_9ma_1down" => f("lwnl_bond_sp_9ma", "S&P pullback in a bond uptrend", "One down close"),
+        "lwnl_bond_sp_9ma_2down" => f("lwnl_bond_sp_9ma", "S&P pullback in a bond uptrend", "Two down closes"),
         "lwnl_bond_sp_systems" | "lwnl_bond_systems" | "lwnl_commodity_systems" => f("lwnl_needs_data", "Futures systems", "Needs data"),
         "lwnl_no_exit" | "lwnl_unquantified" | "lwnl_judgement" => f("lwnl_not_testable", "Not testable", ""),
         _ => f("lwnl_patterns", "Newsletter patterns", ""),
@@ -405,6 +419,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 fn params_base(id: &str) -> Option<Vec<ParamDef>> {
+    if id == "lwnl_bond_sp_9ma_1down" || id == "lwnl_bond_sp_9ma_2down" {
+        return Some(vec![p("entry_pct", "Buy stop: open + x the down day's range", 0.2, 0.0, 1.0, 0.05), stop(2500.0),
+            p("hold", "Exit on the close N days after entry", 2.0, 0.0, 10.0, 1.0), pt(500.0)]);
+    }
     if id == "lwnl_cti_bonds" {
         return Some(vec![p("buy_pct", "Buy stop: high + x today's range", 0.6, 0.0, 2.0, 0.05), p("sell_pct", "Sell stop: low - x today's range", 0.9, 0.0, 2.0, 0.05),
             stop(3250.0), p("stop_s_usd", "Short-side dollar stop (book $750)", 750.0, 0.0, 6000.0, 250.0), pt(1000.0)]);
@@ -729,6 +747,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let mut v = vec![(1.0, E::Stop(o[i] + bp * tr)), (-1.0, E::Stop(o[i] - sp * tr))];
                 if oops && o[i] < l[s] { v.push((1.0, E::Stop(l[s]))); }
                 v
+            })
+        }
+        "lwnl_bond_sp_9ma_1down" | "lwnl_bond_sp_9ma_2down" => {
+            // lane F1D (R4 #293): the S&P with the T-bond 9-bar average as Data2, only on the Norgate S&P contract
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) }; // readiness refuses this case (data2_issue)
+            let zb = crate::second::align("&ZB", x.r, rows);
+            let up9 = zb.own(|r| { let m = crate::connors::sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), 9);
+                (0..r.len()).map(|k| (k >= 1 && m[k] > m[k - 1]) as u8 as f64).collect() });
+            let two = id.ends_with("2down");
+            let c2 = crate::books::lwlts::Cfg { stop: g("stop_usd") / g("pt_usd"), stop_s: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN,
+                hold: Some(g("hold").max(0.0) as usize), bailout: false, bail_after: 0, reverse: false, order: false };
+            let ep = g("entry_pct");
+            crate::books::lwlts::simulate(x, from, to, &c2, |i| {
+                if i < 3 { return (None, None); }
+                let s = i - 1;
+                let ok = up9[s] == 1.0 && c[s] < c[s - 1] && (!two || c[s - 1] < c[s - 2]);
+                (ok.then(|| crate::books::lwlts::Ent::Stop(o[i] + ep * (h[s] - l[s]))), None)
             })
         }
         "lwnl_cti_bonds" => {

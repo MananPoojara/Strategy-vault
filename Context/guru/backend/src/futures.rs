@@ -340,6 +340,8 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
 const HELD: &[(&str, &str, &str)] = &[
     // lane F1D: Larry Williams bond stop-entry cards (no T-bond minute bars; limit 5%)
     ("lwnl_cti_bonds", "&ZB", "held under R4 #240: 49.4% of its trades give different fills in the two path orders of a daily bar (an entry and the $750 short stop, or both entries), and no T-bond minute bars exist (limit 5%)"),
+    ("lwnl_bond_sp_9ma_1down", "&SP", "held under R4 #240: 7.5% of its trades on the published 1982-95 window give different fills in the two path orders of a daily bar (the buy stop and its $2,500 stop), and no S&P futures minute bars exist (limit 5%)"),
+    ("lwnl_bond_sp_9ma_2down", "&SP", "held under R4 #240: 6.4% of its trades on the published 1982-95 window give different fills in the two path orders of a daily bar, and no S&P futures minute bars exist (limit 5%)"),
     ("lwlts_talon_bondfilter", "&SP", "held under R4 #240 (review B3): 7.1% of its trades on the published 1982-95 window give different fills in the two path orders of a daily bar (an entry and its $1,750 stop, or both entries), and no S&P futures minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 87.4% of its trades (87.8% in the book's 1990-98 window) give different fills when the daily bar is run in its two possible path orders, and no T-bond minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 86.9% of its trades (86.0% in the book's 1990-98 window) give different fills in the two path orders of a daily bar, and no T-bond minute bars exist (limit 5%)"),
@@ -361,7 +363,7 @@ const DATA2: &[(&str, &[&str])] = &[("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2
     ("nfgu_pathfinder", &["&ZB"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"]),
     ("lwlts_talon_bondfilter", &["&ZB"]), ("lwlts_gsv_sp", &["&ZB"]), ("lwlts_gsv_sp_monday", &["&ZB"]), ("lwlts_month_day1_sp_bonds", &["&ZB"]),
     ("lwlts_bonds_channel_bstop", &["&ZB"]), ("lwlts_bonds_channel_sstop", &["&ZB"]),
-    ("lwicw_bond_tdw_gold", &["&GC"]), ("lwicw_bond_tdom_gold", &["&GC"]),
+    ("lwnl_bond_sp_9ma_1down", &["&ZB"]), ("lwnl_bond_sp_9ma_2down", &["&ZB"]), ("lwicw_bond_tdw_gold", &["&GC"]), ("lwicw_bond_tdom_gold", &["&GC"]),
     ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"])];
 /// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
 pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
@@ -399,6 +401,8 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_outside_down_bonds", "&ZB", LWB),
     ("lwlts_outside_down_bonds_xthu", "&ZB", LWB),
     ("lwlts_3up_thu_sell_bonds", "&ZB", LWB),
+    ("lwnl_bond_sp_9ma_1down", "&SP", "Larry Williams, Commodity Timing Vol. 28 No. 9 (September 1994 by its volume number; archive folder '1995') p.3-4: the S&P bought at the open + 20% of the down day's range after one or two down closes while the T-bond 9-day average rises, $2,500 stop or the close two days later; run on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D."),
+    ("lwnl_bond_sp_9ma_2down", "&SP", "Larry Williams, Commodity Timing Vol. 28 No. 9 (September 1994 by its volume number; archive folder '1995') p.3-4: the S&P bought at the open + 20% of the down day's range after one or two down closes while the T-bond 9-day average rises, $2,500 stop or the close two days later; run on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D."),
     ("lwnl_cti_bonds", "&ZB", "Larry Williams, Commodity Timing letter Jun 1992 p.2-3, \"Building a bond system\": buy stop at the high + 60% of the day's range, sell stop at the low - 90%, always long or short, $3,250 / $750 stops, $50 per trade; run on the Norgate T-bond continuous contract (R4 #293 (1), (3)), lane F1D."),
     ("lwicw_bond_tdw", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
     ("lwicw_bond_tdw_gold", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
