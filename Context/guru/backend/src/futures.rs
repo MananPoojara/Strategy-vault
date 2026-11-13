@@ -338,6 +338,10 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
 ];
 /// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
 const HELD: &[(&str, &str, &str)] = &[
+    // lane F1D: Larry Williams bond stop-entry cards (no T-bond minute bars; limit 5%)
+    ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 22.4% of its trades (27.7% in the book's 1990-98 window) have two fills on one daily bar (entry and stop, or stop and reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
+    ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 16.8% of its trades (19.5% in the book's 1990-98 window) have two fills on one daily bar, which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
+    ("lwlts_gsv_bonds", "&ZB", "held under R4 #240: 16.1% of its trades (16.3% in the book's 1990-98 window) have two fills on one daily bar (an entry and the reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
     ("ch_bta2_long_bomb", "&KC", "held on coffee under R4 #240: 12.2% of its trades in the book's 1982-95 window (15.7% over 1978-2020) enter and hit the stop on the same day, which daily bars cannot order, and no coffee futures minute bars exist (limit 5%, R4 #314 (3))"),
 ];
 /// Why a card is held on a market its source tests (HELD), if it is.
@@ -374,10 +378,26 @@ pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String>
 }
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_F1D) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
+/// Lane F1D (continues F1B/F1C).
+/// Lane F1D: Larry Williams's printed T-bond rules (Long-Term Secrets to Short-Term Trading ch.4, 6, 7, 8).
+const LWB: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999): the T-bond rules of ch.4 (p.61-65), ch.6 (p.86-87), ch.7 (p.98, 116-118) and ch.8 (p.124-126), tested on CSI \"DAY T-BONDS\" back-adjusted data with System Writer/TradeStation; run on the Norgate T-bond continuous contract with the book's dollar stops at $1,000 per point (R4 #293 (1), (3)), lane F1D.";
+const CARDS_F1D: &[(&str, &str, &str)] = &[
+    ("lwlts_vb_bonds", "&ZB", LWB),
+    ("lwlts_vb_bonds_tdw", "&ZB", LWB),
+    ("lwlts_tdw_bonds", "&ZB", LWB),
+    ("lwlts_outside_down_bonds", "&ZB", LWB),
+    ("lwlts_outside_down_bonds_xthu", "&ZB", LWB),
+    ("lwlts_oops_buy_bonds", "&ZB", LWB),
+    ("lwlts_oops_sell_bonds_wed", "&ZB", LWB),
+    ("lwlts_oops_buy_bonds_ma9", "&ZB", LWB),
+    ("lwlts_oops_sell_bonds_ma9", "&ZB", LWB),
+    ("lwlts_gsv_bonds", "&ZB", LWB),
+    ("lwlts_bonds_8day", "&ZB", "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999) p.212-213, the August 1997 letter: buy the close when it is above the close 8 days ago, $850 stop, $3,500 target, T-bond futures since 1977 with $50 commission and slippage; run on the Norgate T-bond continuous contract ($850 = 0.85 point, $3,500 = 3.5 points at $1,000 per point; R4 #293 (1), (3)), lane F1D."),
+];
 /// Lane P1: two-leg spreads on two continuous contracts, run in the first contract's context.
 const CARDS_P1: &[(&str, &str, &str)] = &[("vvbats_spread", "&ES", "Benjamin Van Vliet, Building Automated Trading Systems (Academic Press 2007) ch.46 p.290-301 (Spreader_Example: spread = -1 x ES + 2 x NQ, z of the last 30 spread prices, |z| > 2 entry, target z = 0, stop 4 ES ticks): run on the Norgate E-mini S&P 500 continuous contract with the Norgate E-mini Nasdaq-100 contract as the second leg, joined by exact date, daily closes instead of bid/ask quotes (R4 #293 (1), #297), lane P1.")];
 /// (traded contract, second leg): the second leg's back-adjusted and unadjusted closes are attached to the traded contract's
@@ -582,6 +602,38 @@ mod tests {
         assert!(ta.len() == 1 && ta[0].legs[0].i == 45 && ta[0].dir > 0., "{ta:?}");
         assert!(run(&z).is_empty());
         TEST_ROWS.with(|t| t.borrow_mut().clear());
+    }
+    #[test]
+    fn f1d_bond_cards_bail_delay_and_nearer_stop() {
+        // 1990-01-03 is a Wednesday: it opens above Tuesday's high 101 and falls through it -> Oops! sell at 101; the "4-day
+        // bailout" waits for the opening 4 bars after entry although bar 3 already opens profitable
+        let mut b = vec![(100., 100.5, 99.5, 100.), (100., 101., 99.5, 100.5), (101.5, 101.5, 100.5, 100.7)];
+        b.extend([(100.8, 101.2, 100.6, 100.8); 5]);
+        let r = f1c_rows("US T-Bond (Norgate &ZB)", &b);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = crate::books::lwlts::run("lwlts_oops_sell_bonds_wed", &x, 0, 7, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 2, 101., 6, 100.8), "{t:?}");
+        // "$1,500 or 50 percent of the previous day's range": range 1.0 -> the nearer 0.5 stop (101.5 - 0.5 = 101) is hit on the
+        // way to the close 100.9 after the buy stop 101.5 fills (open 100.5 nearer the low: O -> L -> H -> C)
+        let r = f1c_rows("US T-Bond (Norgate &ZB)", &[(100., 101., 100., 100.5), (100.5, 102., 100.4, 100.9)]);
+        let t = crate::books::lwlts::run("lwlts_vb_bonds", &Ctx::new(&r, &r, &[]), 0, 1, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 101.5, 1, 101.), "{t:?}");
+        assert!(held("lwlts_vb_bonds", "US T-Bond (Norgate &ZB)").is_some() && held("lwlts_oops_buy_bonds", "US T-Bond (Norgate &ZB)").is_none());
+    }
+    #[test]
+    fn f1d_bonds_8day_close_entry_stop_reentry_target() {
+        // close 101 > close 8 bars ago -> long on that close; $850 = 0.85 stop hit on bar 11 at 100.15, the same close (100.2 >
+        // 100 eight bars back) re-enters; $3,500 = 3.5 target 103.7 hit on bar 12
+        let mut b = vec![(100., 100., 100., 100.); 9];
+        b.extend([(100., 101., 100., 101.), (101., 101., 100.5, 100.6), (100.6, 100.6, 100.1, 100.2), (100.3, 103.8, 100.3, 103.)]);
+        let r = f1c_rows("US T-Bond (Norgate &ZB)", &b);
+        let t = crate::books::lwlts::run("lwlts_bonds_8day", &Ctx::new(&r, &r, &[]), 0, 12, &crate::connors::Params::new()).unwrap();
+        let v: Vec<_> = t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, (t.exit_px * 100.).round() / 100., t.entry_kind)).collect();
+        assert_eq!(v, vec![(9, 101., 11, 100.15, "close"), (11, 100.2, 12, 103.7, "close"), (12, 103., 12, 103., "close")], "{t:?}");
+        assert!(t[2].open); // bar 12 closes above 8 bars back: re-entered on the target bar's close
+        let sp: Vec<Row> = r.iter().map(|b| Row { ticker: "SPX".into(), ..b.clone() }).collect();
+        assert!(crate::books::lwlts::run("lwlts_bonds_8day", &Ctx::new(&sp, &sp, &[]), 0, 12, &crate::connors::Params::new()).is_some_and(|t| t.is_empty()));
+        assert!(home("lwlts_bonds_8day", "US T-Bond (Norgate &ZB)").is_none() && home("lwlts_bonds_8day", "SPX").is_some());
     }
     #[test]
     fn f1c_tdm_bonds_on_the_contract_only() {

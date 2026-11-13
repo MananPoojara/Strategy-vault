@@ -65,6 +65,34 @@ const OOPS_S: &str = "E|\"an open greater than the prior day's high ... Our entr
 const HH_R: &[&str] = &["F|\"today's high is less than the highest high of the last X days\" (p.239): High < Highest(High, X) of the X bars before today",
     "E|\"and price makes a new high tomorrow, which puts us long buying a new X day high\": buy stop tomorrow at Highest(High, X) including today",
     "X|\"exit 13 days later $3,500 stop\" (Fig. 15.4 caption): close of the 13th bar after entry; $3,500 = 14 points"];
+/// Lane F1D (R4 #293, #297): the Aug 1997 letter's bond system (p.212-213) on the Norgate T-bond contract ($1,000 per point).
+const B8_R: &[&str] = &["E|\"Rule one was to buy today's close if it was greater than the close 8 days ago\" (p.212): Close > Close 8 bars ago, market on this close",
+    "X|\"I placed a stop of $850\" (p.212): 0.85 point below the entry",
+    "X|\"held until a profit of about three times the stop was tested. The best was a profit of $3,500\" (p.213): 3.5 points above the entry",
+    "X|Unstated in the book: where the stop and target are measured from; vault reading: the entry fill (this close)",
+    "E|Unstated in the book: re-entry after an exit; vault reading: a new entry on any close that meets rule one while flat, including the close of the bar that stopped or targeted the trade out"];
+const B8_N: &str = "Adapted: 2 unstated details (labelled on the rules; R4 #297). Book (p.213): \"one could have made $36,500 trading one Bond since they began trading ... the average profit per trade, after $50 commissions and slippage, was an attractive $160\" (about 228 trades); window 1977 to the August 1997 letter. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price. A later bar that reaches both the stop and the target follows the TradeStation bar path (open, the nearer extreme, the other extreme, close). On Norgate &ZB, from 1999-12 to 2000-10 the open sits at the previous close (median gap at most 1 tick, a third of days exactly equal), so open fills and open-based levels in those 11 months are not true opening prices (R4 #331; the whole history is kept, as for the NIFTY opens). 16 of this card's &ZB trades are affected (held through those months; none fills at an open there).";
+/// Lane F1D (R4 #293, #297): the book's T-bond rules on the Norgate T-bond contract ($1,000 per point; the printed reports read
+/// "DAY T-BONDS", $31.25 per 1/32).
+const ZB_N: &str = "Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price, book dollars at $1,000 per point. Daily bars follow the TradeStation bar path (open, the nearer extreme, the other extreme, close); an opposite signal exits and reverses (Ch. 11 rule 3). On Norgate &ZB, from 1999-12 to 2000-10 the open sits at the previous close (median gap at most 1 tick, a third of days exactly equal), so open fills and open-based levels in those 11 months are not true opening prices (R4 #331; the whole history is kept, as for the NIFTY opens).";
+const VBB_R: &[&str] = &["E|\"buying and selling bonds on the open every day at a distance of 100 percent of the previous day's range above the open for a buy and 100 percent below the open for a sell\" (p.61)",
+    "X|\"A protective stop of $1,500 or 50 percent of the previous day's range subtracted from our entry\" (p.61). Unstated in the book: which of the two; vault reading: the nearer one (the smaller distance), armed on the entry day",
+    "X|\"our exit is the Bail Out or the first profitable opening after entry technique\" (p.61)",
+    "X|Unstated in the book: an opposite signal while in a trade; vault reading: it exits and reverses (Ch. 11 rule 3, as the S&P volatility cards)"];
+const OUTB_R: &[&str] = &["F|Outside day with a down close below the previous day's low (the S&P pattern, p.95): \"taking all outside day down closes followed by a lower opening the next day in Bonds\" (p.98)",
+    "E|Buy on the next day's opening if it opens below the outside day's close",
+    "X|\"we will take a $1,500 loss or exit on the first profitable opening\" (p.98): 1.5 points, armed on the entry day"];
+const VBB_TDW_R: &[&str] = &[VBB_R[0], "F|\"the best days to buy have been Tuesdays and Thursdays, whereas the best sell days have been Wednesdays and Thursdays\" (p.65)", VBB_R[1], VBB_R[2], VBB_R[3]];
+const OUTB_X_R: &[&str] = &[OUTB_R[0], "F|\"If we take the trade on any day but Thursday\" (p.98): the entry day", OUTB_R[1], OUTB_R[2]];
+const OOPSB_N: &str = "Oops! (p.114): buy at a stop at yesterday's low on a day that opens below it; sell at a stop at yesterday's high on a day that opens above it.";
+const GSVB_R: &[&str] = &["F|Buy setup: \"today's close lower than the close 5 days ago\" and buy only on Tuesday, Wednesday and Friday (p.124)",
+    "E|\"the difference from open to the high for each of the past 4 days and divide that by 4 ... a buyer above the opening at an amount equal to 180 percent of the 4-day swing value average\" (p.124)",
+    "F|Sell setup: \"Bonds closing greater than the close 6 days ago\" (p.125); sells on any day (the book limits only the buys)",
+    "E|Sell: \"the distance from the open to the low for each of the last 4 days and divide by 4 ... multiplied by 180 percent and subtracted from the opening\" (p.125)",
+    "F|Option p.gold=1 (not the base rule): \"for even better performance, I would also like to see the price of Gold lower than the price of Gold 20 days ago\" (p.125), read on the Norgate gold contract's own bars as Data2",
+    "X|\"my stop is $1,600\" (p.125); \"my computer software does not allow us to bring into play a protective stop on the day of entry\" (p.126): from the day after entry",
+    "X|\"I will take profits on the first profitable opening after being in the trade for 2 days\" (p.125). Unstated in the book: the count; vault reading: from the opening of the 2nd bar after the entry bar",
+    "X|Unstated in the book: an opposite signal while in a trade; vault reading: it exits and reverses (Ch. 11 rule 3)"];
 const HH_N: &str = "Fig. 15.4 (p.239), S&P 500; test window not printed. Read: TradeStation Highest(High,X) on today's bar as the stop level, setup uses the X bars before today. Stop armed on the entry day.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -185,12 +213,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
         live!("lwlts_hh15", "Buy a new 15-day high, exit 13 days later", "Ch 15 · Buy new highs", "Long", HH_R, HH_N, claim("145", "56%", "$519", "13 days", "S&P (window not printed)")),
         live!("lwlts_hh20", "Buy a new 20-day high, exit 13 days later", "Ch 15 · Buy new highs", "Long", HH_R, HH_N, claim("136", "53%", "$406", "13 days", "S&P (window not printed)")),
         // ---- Needs data
-        off!("lwlts_vb_bonds", "Bond volatility breakout 100% (Fig. 4.1, 4.7 TDW)", "Ch 4 · Volatility breakouts", "Long/Short", NeedsData(BONDS),
-            &["E|Buy open + 100% of the previous day's range, sell open - 100% (p.61)", "X|\"$1,500 or 50 percent of the previous day's range\" stop, bailout (p.61)", "F|TDW: buys Tue/Thu, sells Wed/Thu (p.64)"], "T-Bonds 1990-08/1998: 651 trades 80% $112.86; TDW 84% $173."),
+        live!("lwlts_vb_bonds", "Bond volatility breakout 100% (Fig. 4.1)", "Ch 4 · Volatility breakouts", "Long/Short", VBB_R,
+            ZB_N, claim("651", "80%", "$112.86 ($0 commission)", "1 day", "01/01/90-08/25/98")),
+        live!("lwlts_vb_bonds_tdw", "Bond volatility breakout 100% · best days (Fig. 4.7)", "Ch 4 · Volatility breakouts", "Long/Short",
+            VBB_TDW_R,
+            ZB_N, claim("326", "84%", "$173.12 ($0 commission)", "1 day", "01/01/90-08/25/98")),
         off!("lwlts_talon_bondfilter", "S&P swing breakout with bond trend (Fig. 4.21, 'One step further')", "Ch 4 · Volatility breakouts", "Long/Short", NeedsData(BONDS),
             &["F|\"only take buy signals if the closing price of bonds is greater today than 5 days ago, and only take sells if bonds are lower than 35 days ago\" (p.72)", "E|Talon entries, $1,750 stop, bailout", "F|'One step further' adds the best TDWs (days not listed)"], "Avg $281, DD $5,250; with TDW 90%, $444/trade."),
-        off!("lwlts_tdw_bonds", "Bonds Tuesday open + 70% of Monday's range (Fig. 6.3)", "Ch 6 · TDW / TDM", "Long", NeedsData(BONDS),
-            &["E|\"Bonds make money buying on Tuesday opening plus 70 percent of Monday's range\" (p.87)"], "53%, $86/trade."),
+        live!("lwlts_tdw_bonds", "Bonds Tuesday open + 70% of Monday's range (Fig. 6.3)", "Ch 6 · TDW / TDM", "Long",
+            &["E|\"Bonds make money buying on Tuesday opening plus 70 percent of Monday's range\" (p.87): a buy stop on Tuesdays at the open + 0.7 x the previous bar's range. Unstated in the book: a Tuesday after a Monday holiday; vault reading: the previous bar's range",
+              "X|\"buy that day at an expansion off the opening price. Our exit is simple; we hold the trade to the close\" (p.86): no stop (Fig. 6.3's largest loss $1,750 is a one-day move)"],
+            ZB_N, claim("334", "53%", "$86.26 ($0 commission)", "same day", "12/02/77-08/26/98")),
         off!("lwlts_tdm_bonds", "Bonds best TDMs (Table 6.7)", "Ch 6 · TDW / TDM", "Long", NotTestable("Split into its printed rules, one per TDM of Table 6.7: lwlts_tdm8_bonds, lwlts_tdm18_bonds ... lwlts_tdm22_bonds (lane F1C, R4 #293), which run on the Norgate T-bond continuous contract."),
             &["E|Buy the open of TDM 8, 18, 19, 20, 21, 22", "X|$1,500 stop from entry day, close of the third day after entry (p.88-89)"], "T-Bonds 1977-1998."),
         live!("lwlts_tdm8_bonds", "T-Bond buy TDM 8", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("230", "55%", "$166", "3 days", "1977-1998")),
@@ -199,10 +232,33 @@ pub fn catalogue() -> Vec<StrategyDef> {
         live!("lwlts_tdm20_bonds", "T-Bond buy TDM 20", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("148", "56%", "$292", "3 days", "1977-1998")),
         live!("lwlts_tdm21_bonds", "T-Bond buy TDM 21", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("106", "55%", "$297", "3 days", "1977-1998")),
         live!("lwlts_tdm22_bonds", "T-Bond buy TDM 22", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("76", "64%", "$285", "3 days", "1977-1998")),
-        off!("lwlts_bond_patterns", "Bond outside-day, 3-up-day and Oops! patterns (Fig. 7.4, 7.5, 7.29, 7.30, 7.32, 7.33)", "Ch 7 · Patterns", "Long/Short", NeedsData(BONDS),
+        off!("lwlts_bond_patterns", "Bond outside-day, 3-up-day and Oops! patterns (Fig. 7.4, 7.5, 7.29, 7.30, 7.32, 7.33)", "Ch 7 · Patterns", "Long/Short", NotTestable("Split into its printed rules (lane F1D, R4 #293), which run on the Norgate T-bond continuous contract: lwlts_outside_down_bonds, lwlts_outside_down_bonds_xthu, lwlts_oops_buy_bonds, lwlts_oops_sell_bonds_wed, lwlts_oops_buy_bonds_ma9, lwlts_oops_sell_bonds_ma9. The book prints no 3-up-day bond rule."),
             &["E|Outside day down close + lower open, $1,500 stop, bailout (p.97)", "E|Oops! buys except Wednesday, $1,800 stop, bailout; Oops! sells Wednesday, $1,000 stop, 4-day bailout (p.116)", "E|Oops! with 9-day MA; exit \"the close on the first profitable opening after 3 days\" (p.118)"], "Bond futures results only."),
-        off!("lwlts_gsv_bonds", "Greatest Swing Value · bonds (Fig. 8.2)", "Ch 8 · Greatest swing value", "Long/Short", NeedsData(BONDS),
-            &["F|Buy: close < close 5 days ago, Tue/Wed/Fri; sell: close > close 6 days ago (p.123-124)", "F|Option, not the base rule: \"for even better performance, I would also like to see the price of Gold lower than the price of Gold 20 days ago\" (p.124)", "E|Open +/- 180% of the 4-day average swing", "X|$1,600 stop, first profitable opening after 2 days"], "Needs T-Bond and Gold futures."),
+        live!("lwlts_gsv_bonds", "Greatest Swing Value · bonds (Fig. 8.2)", "Ch 8 · Greatest swing value", "Long/Short", GSVB_R,
+            ZB_N, claim("161", "75%", "$328.03 ($0 commission)", "", "01/01/90-08/28/98")),
+        live!("lwlts_outside_down_bonds", "Bonds outside day down close, lower open (Fig. 7.4)", "Ch 7 · Patterns", "Long", OUTB_R,
+            ZB_N, claim("57", "82%", "$212.54 ($55 commission)", "", "06/10/90-08/27/98")),
+        live!("lwlts_outside_down_bonds_xthu", "Bonds outside day down close · not Thursday (Fig. 7.5)", "Ch 7 · Patterns", "Long",
+            OUTB_X_R,
+            ZB_N, claim("41", "90%", "$420.61 ($55 commission)", "", "06/10/90-08/27/98")),
+        live!("lwlts_oops_buy_bonds", "Bonds Oops! buy · not Wednesday (Fig. 7.29)", "Ch 7 · Oops!", "Long",
+            &[OOPS_B, "F|\"Here we will take long trades any day of the week except Wednesday\" (p.116)",
+              "X|\"a stop-loss of $1,800 from the point of entry\" (p.116): 1.8 points, armed on the entry day", "X|\"Our exit is the bailout technique\" (p.116): first profitable opening"],
+            OOPSB_N, claim("138", "86%", "$201.99 (after $50 commission)", "", "01/01/90-08/28/98")),
+        live!("lwlts_oops_sell_bonds_wed", "Bonds Oops! sell · Wednesdays (Fig. 7.30)", "Ch 7 · Oops!", "Short",
+            &[OOPS_S, "F|\"the rules are to sell on Wednesday if our Oops! opening gap and failure occur\" (p.116)",
+              "X|\"using a closer $1,000 stop\" (p.116): 1 point, armed on the entry day",
+              "X|\"and 4-day bailout exit\" (p.116-117). Unstated in the book: the count; vault reading: the first profitable opening from the 4th bar after the entry bar"],
+            OOPSB_N, claim("55", "56% (31 winners)", "$179.55", "", "01/01/90-08/28/98")),
+        live!("lwlts_oops_buy_bonds_ma9", "Bonds Oops! buy · 9-day MA falling, not Thursday (Fig. 7.32)", "Ch 7 · Oops!", "Long",
+            &[OOPS_B, "F|\"in the Bonds on any day but Thursday if Friday's 9-day moving average is less than Thursday's\" (p.118): the entry day is not a Thursday and yesterday's 9-day average of closes is below the day before's",
+              "X|\"The exit is the close on the first profitable opening after 3 days in the trade\" (p.118). Unstated in the book: the count and the fill; vault reading: the first profitable opening from the 3rd bar after the entry bar",
+              "X|Stop: \"using the same rules as above for stop\" (p.118): the bond Oops! buy's $1,800 (p.116) = 1.8 points, armed on the entry day. Unstated in the book which rule 'above' means; vault reading: $1,800"],
+            OOPSB_N, claim("66", "81%", "$373.11", "", "01/01/90-08/28/98")),
+        live!("lwlts_oops_sell_bonds_ma9", "Bonds Oops! sell · 9-day MA rising, Wednesdays (Fig. 7.33)", "Ch 7 · Oops!", "Short",
+            &[OOPS_S, "F|\"taking Oops! sell signals on Wednesday if the 9-day average is greater on Tuesday than Monday\" (p.118)",
+              "X|\"using the same rules as above for stop and exit as on the long trade\" (p.118): $1,800 = 1.8 points (reading, as the buy) and the first profitable opening from the 3rd bar after the entry bar (reading)"],
+            OOPSB_N, claim("34", "79%", "$394.30", "", "01/01/90-08/28/98")),
         off!("lwlts_gsv_sp", "Greatest Swing Value · S&P with bond filter (Fig. 8.3)", "Ch 8 · Greatest swing value", "Long/Short", NeedsData(BONDS),
             &["E|180% of the 4-day average buy swing (highs minus opens) / sell swing (p.124)", "F|\"demanding Bonds close higher than 15 days ago for a buy and lower than 15 days ago for a sell\"; buys Mon/Tue/Wed, sells not Monday; close below (above) 6 days ago", "X|$2,500 stop and bailout"], "247 trades 67% $427.83 (Fig. 8.3). The bond filter is part of the printed result, so the system cannot run without bond data."),
         off!("lwlts_gsv_sp_monday", "GSV Monday buy after a down Friday (Fig. 8.4)", "Ch 8 · Greatest swing value", "Long", NeedsData(BONDS),
@@ -213,8 +269,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|S&P first trading day only if Bonds closed higher than 30 days ago (p.149)", "E|Bonds: first TDM ($1,100 stop, bailout); TDM 18 and 22 ($1,500 stop, close 3 days after entry, Gold < 24 days ago); sell TDM 12 ($1,400, Gold > 10 days ago) (p.149-156)"], "Bond and gold futures."),
         off!("lwlts_bonds_channel", "S&P buys on bond channel breakouts (Fig. 15.1, 15.2)", "Ch 15 · Data A and data B", "Long", NeedsData(BONDS),
             &["E|Buy the S&P market on close when Bonds close above the highest high of the last 14 days (p.235)", "X|Lowest low of the last 17 days in Bonds, or a $3,000 stop; Fig. 15.2: lowest low of the last 12 days in the S&P"], "$141,792.50, avg $1,750."),
-        off!("lwlts_bonds_8day", "Bond system: close above 8 days ago (Ch. 14, Aug 1997 letter)", "Ch 14 · Letters", "Long", NeedsData(BONDS),
-            &["E|\"buy today's close if it was greater than the close 8 days ago\" (p.212)", "X|$850 stop; $3,500 profit target"], "$36,500, $160/trade."),
+        live!("lwlts_bonds_8day", "Bond system: close above 8 days ago (Ch. 14, Aug 1997 letter)", "Ch 14 · Letters", "Long", B8_R, B8_N,
+            claim("about 228 ($36,500 / $160)", "", "$160 (after $50 commission and slippage)", "", "1977-08/1997")),
         off!("lwlts_ma_cross_futures", "Moving-average crossover studies (Ch. 2)", "Ch 2 · Price and time", "Long/Short", NeedsData("Soybean and British Pound futures data"),
             &["E|Best-fit crossovers (5/25, 25/30 soybeans; 5/45, 20/40 pound), shown only to prove that time-based optimisation fails (p.24-27)"], "An illustration, not a recommended system."),
         // ---- Not testable
@@ -245,7 +301,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwlts_vb_sp_tdw" => f("lwlts_vb", "S&P volatility breakout", "50%, TDW"),
         "lwlts_vb_sp_40_200" => f("lwlts_vb", "S&P volatility breakout", "Buy 40% / sell 200%"),
         "lwlts_talon_sp" => f("lwlts_vb", "S&P volatility breakout", "Swing value (Talon)"),
-        "lwlts_vb_bonds" | "lwlts_talon_bondfilter" => f("lwlts_vb", "S&P volatility breakout", "Needs bond data"),
+        "lwlts_vb_bonds" => f("lwlts_vb", "S&P volatility breakout", "Bonds 100%"),
+        "lwlts_vb_bonds_tdw" => f("lwlts_vb", "S&P volatility breakout", "Bonds 100%, best days"),
+        "lwlts_talon_bondfilter" => f("lwlts_vb", "S&P volatility breakout", "Needs bond data"),
         "lwlts_mon_oc" => f("lwlts_tdw", "Trading day of week", "Monday open-to-close"),
         "lwlts_mon_3day" => f("lwlts_tdw", "Trading day of week", "Monday 3-day hold"),
         "lwlts_mon_vb" => f("lwlts_tdw", "Trading day of week", "Monday open + 5% range"),
@@ -277,7 +335,13 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwlts_oops_buy_ma9" => f("lwlts_oops", "Oops!", "Buy, 9-day MA"),
         "lwlts_oops_sell_ma9" => f("lwlts_oops", "Oops!", "Sell, 9-day MA"),
         "lwlts_oops_tdm18" => f("lwlts_oops", "Oops!", "After TDM 17"),
-        "lwlts_bond_patterns" => f("lwlts_oops", "Oops!", "Bonds"),
+        "lwlts_bond_patterns" => f("lwlts_oops", "Oops!", "Bonds (split)"),
+        "lwlts_oops_buy_bonds" => f("lwlts_oops", "Oops!", "Bonds buy, not Wed"),
+        "lwlts_oops_sell_bonds_wed" => f("lwlts_oops", "Oops!", "Bonds sell Wed"),
+        "lwlts_oops_buy_bonds_ma9" => f("lwlts_oops", "Oops!", "Bonds buy, 9-day MA"),
+        "lwlts_oops_sell_bonds_ma9" => f("lwlts_oops", "Oops!", "Bonds sell, 9-day MA"),
+        "lwlts_outside_down_bonds" => f("lwlts_outside", "Outside day down close", "Bonds"),
+        "lwlts_outside_down_bonds_xthu" => f("lwlts_outside", "Outside day down close", "Bonds, not Thursday"),
         "lwlts_month_day1" => f("lwlts_month", "Month-end trades", "S&P first trading day"),
         "lwlts_month_bonds" | "lwlts_eom_sp" => f("lwlts_month", "Month-end trades", "Bonds / end of month"),
         "lwlts_hh1" => f("lwlts_hh", "Buy new X-day highs", "X = 1"),
@@ -285,7 +349,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwlts_hh10" => f("lwlts_hh", "Buy new X-day highs", "X = 10"),
         "lwlts_hh15" => f("lwlts_hh", "Buy new X-day highs", "X = 15"),
         "lwlts_hh20" => f("lwlts_hh", "Buy new X-day highs", "X = 20"),
-        "lwlts_gsv_bonds" | "lwlts_gsv_sp" | "lwlts_gsv_sp_monday" => f("lwlts_gsv", "Greatest swing value", "Needs bond data"),
+        "lwlts_gsv_bonds" => f("lwlts_gsv", "Greatest swing value", "Bonds"),
+        "lwlts_gsv_sp" | "lwlts_gsv_sp_monday" => f("lwlts_gsv", "Greatest swing value", "Needs bond data"),
         "lwlts_willspread" => f("lwlts_willspread", "Will-Spread", ""),
         "lwlts_bonds_channel" | "lwlts_bonds_8day" | "lwlts_ma_cross_futures" => f("lwlts_other", "Other futures studies", "Needs futures data"),
         "lwlts_smash_day" | "lwlts_specialist_trap" | "lwlts_swing_points" => f("lwlts_patterns", "Chart patterns", "Not testable"),
@@ -306,6 +371,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let stop = |d: f64| p("stop_usd", "Dollar stop (book $)", d, 0.0, 6000.0, 250.0);
     let day0 = |d: f64| p("stop_day0", "Stop armed on the entry day (1) or from the next day (0)", d, 0.0, 1.0, 1.0);
     let dows = |k, l, d| p(k, l, d, 0.0, 31.0, 1.0);
+    let zb = || p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0);
     Some(match id {
         "lwlts_mon_gap_t500" => vec![p("target_usd", "Profit target (book $)", 500.0, 250.0, 2000.0, 250.0), stop(3000.0), day0(1.0), pt()],
         "lwlts_mon_gap_t1000" => vec![p("target_usd", "Profit target (book $)", 1000.0, 250.0, 2000.0, 250.0), stop(3000.0), day0(1.0), pt()],
@@ -327,6 +393,21 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
             p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0)],
         "lwlts_tdm8_bonds" | "lwlts_tdm18_bonds" | "lwlts_tdm19_bonds" | "lwlts_tdm20_bonds" | "lwlts_tdm21_bonds" | "lwlts_tdm22_bonds" =>
             vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(1500.0), day0(1.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
+        "lwlts_vb_bonds" | "lwlts_vb_bonds_tdw" => {
+            let (b, s) = if id == "lwlts_vb_bonds" { (31.0, 31.0) } else { (10.0, 12.0) };
+            vec![p("buy_mult", "Buy: open + x previous range", 1.0, 0.1, 3.0, 0.1), p("sell_mult", "Sell: open - x previous range", 1.0, 0.1, 3.0, 0.1),
+                 dows("buy_dow", "Buy days bitmask (Mon=1 Tue=2 Wed=4 Thu=8 Fri=16; 31 = every day)", b), dows("sell_dow", "Sell days bitmask", s),
+                 stop(1500.0), p("stop_rng", "Stop: x previous range from entry (the nearer of this and the $ stop)", 0.5, 0.0, 2.0, 0.1), day0(1.0), zb()]
+        }
+        "lwlts_tdw_bonds" => vec![p("buy_mult", "Buy: Tuesday open + x previous range", 0.7, 0.0, 2.0, 0.05), zb()],
+        "lwlts_outside_down_bonds" | "lwlts_outside_down_bonds_xthu" => vec![stop(1500.0), day0(1.0), zb()],
+        "lwlts_oops_buy_bonds" => vec![stop(1800.0), day0(1.0), zb()],
+        "lwlts_oops_sell_bonds_wed" => vec![stop(1000.0), day0(1.0), p("bail_after", "Bailout from the opening N bars after entry", 4.0, 1.0, 10.0, 1.0), zb()],
+        "lwlts_oops_buy_bonds_ma9" | "lwlts_oops_sell_bonds_ma9" => vec![stop(1800.0), day0(1.0), p("bail_after", "Bailout from the opening N bars after entry", 3.0, 1.0, 10.0, 1.0), zb()],
+        "lwlts_gsv_bonds" => vec![p("mult", "Entry: open +/- x the 4-day average swing", 1.8, 0.2, 4.0, 0.1), stop(1600.0), day0(0.0),
+            p("bail_after", "Bailout from the opening N bars after entry", 2.0, 1.0, 10.0, 1.0), p("gold", "Sell only if gold closed below its close 20 bars earlier (option, p.125)", 0.0, 0.0, 1.0, 1.0), zb()],
+        "lwlts_bonds_8day" => vec![p("lookback", "Close above the close N bars ago", 8.0, 1.0, 50.0, 1.0), stop(850.0),
+            p("target_usd", "Profit target (book $)", 3500.0, 0.0, 10000.0, 250.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" =>
             vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(2000.0), day0(0.0), pt()],
         "lwlts_study_all" | "lwlts_study_down1" | "lwlts_study_down3" | "lwlts_study_trend" | "lwlts_study_trend_mon" =>
@@ -379,7 +460,7 @@ fn dow_bit(date: &str) -> u32 {
 // ------------------------------------------------------------------ path simulator
 
 #[derive(Clone, Copy)]
-pub(crate) enum Ent { Open, Stop(f64) }
+pub(crate) enum Ent { Open, Stop(f64), /** market on this bar's close, if flat after the bar (lane F1D) */ Close }
 
 pub(crate) struct Cfg {
     pub(crate) stop: f64,        // protective stop distance in points (NaN = none)
@@ -388,15 +469,16 @@ pub(crate) struct Cfg {
     pub(crate) target: f64,      // profit target distance in points (NaN = none)
     pub(crate) hold: Option<usize>, // exit on the close `hold` bars after the entry bar
     pub(crate) bailout: bool,    // exit on the first profitable opening after the entry bar
+    pub(crate) bail_after: usize, // lane F1D: the bailout only from the opening `bail_after` bars after entry (0/1 = the next bar)
     pub(crate) reverse: bool,    // an opposite entry signal exits and reverses
     pub(crate) order: bool,      // EP6 (#243): order-dependent days on the real 1-minute path (false = the bar path always)
 }
 
 #[derive(Clone)]
-struct Pos { dir: f64, i: usize, px: f64, stop: f64, target: f64, od: crate::intraday_ep6::Day }
+struct Pos { dir: f64, i: usize, px: f64, stop: f64, target: f64, od: crate::intraday_ep6::Day, close: bool }
 
 fn close_trade(x: &Ctx, p: &Pos, i: usize, px: f64, why: &str) -> Trade {
-    let kind = if p.px == x.o[p.i] { "open" } else { "stop" };
+    let kind = if p.close { "close" } else if p.px == x.o[p.i] { "open" } else { "stop" };
     let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: i, exit_px: px, reason: why.into(),
         entry_kind: kind, signal_i: i, open: false, exits: vec![] };
     crate::intraday_ep6::mark(&mut t, p.od);
@@ -416,9 +498,11 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
     for i in from.max(1)..=to {
         let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
         let open_pos = |dir: f64, px: f64| {
-            let sd = if cfg.stop_rng.is_finite() { cfg.stop_rng * (x.h[i - 1] - x.l[i - 1]) } else { cfg.stop };
+            let rs = cfg.stop_rng * (x.h[i - 1] - x.l[i - 1]);
+            // lane F1D: "$1,500 or 50 percent of the previous day's range" (p.61) = the nearer of the two when both are set
+            let sd = if cfg.stop_rng.is_finite() && cfg.stop.is_finite() { rs.min(cfg.stop) } else if cfg.stop_rng.is_finite() { rs } else { cfg.stop };
             Pos { dir, i, px, stop: if sd.is_finite() && sd > 0.0 { px - dir * sd } else { f64::NAN },
-                target: if cfg.target.is_finite() && cfg.target > 0.0 { px + dir * cfg.target } else { f64::NAN }, od: crate::intraday_ep6::Day::Plain }
+                target: if cfg.target.is_finite() && cfg.target > 0.0 { px + dir * cfg.target } else { f64::NAN }, od: crate::intraday_ep6::Day::Plain, close: false }
         };
         // enter `dir` at `px`: flat -> open; opposite and reverse -> close and open; otherwise ignored
         let enter = |pos: &mut Option<Pos>, out: &mut Vec<Trade>, dir: f64, px: f64| match pos.take() {
@@ -428,7 +512,7 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
         };
         // 1. at the open: exits of positions from earlier bars
         if let Some(p) = &pos {
-            let why = if cfg.bailout && p.dir * (o - p.px) > 0.0 { Some("bailout: first profitable opening") }
+            let why = if cfg.bailout && i >= p.i + cfg.bail_after && p.dir * (o - p.px) > 0.0 { Some("bailout: first profitable opening") }
                 else if p.stop.is_finite() && p.dir * (o - p.stop) <= 0.0 { Some("stop (gap at the open)") }
                 else if p.target.is_finite() && p.dir * (o - p.target) >= 0.0 { Some("target (gap at the open)") }
                 else { None };
@@ -438,7 +522,7 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
         let (le, se) = sig(i);
         let mut used = [false, false]; // one fill per direction per bar
         for (k, e, dir) in [(0usize, le, 1.0), (1, se, -1.0)] {
-            let at_open = match e { Some(Ent::Open) => true, Some(Ent::Stop(lv)) => dir * (o - lv) >= 0.0, None => false };
+            let at_open = match e { Some(Ent::Open) => true, Some(Ent::Stop(lv)) => dir * (o - lv) >= 0.0, Some(Ent::Close) | None => false };
             if at_open { used[k] = true; enter(&mut pos, &mut out, dir, o); }
         }
         // 3. intrabar path O -> nearer extreme -> other extreme -> C (TradeStation default); EP6: an order-dependent day
@@ -493,6 +577,10 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
         if let Some(p) = &pos {
             if cfg.hold.map_or(false, |n| i >= p.i + n) { out.push(close_trade(x, p, i, c, "time exit on the close")); pos = None; }
         }
+        // 5. market-on-close entries (lane F1D): only when flat after the bar, so a bar that stopped a trade out can re-enter
+        for (e, dir) in [(le, 1.0), (se, -1.0)] {
+            if pos.is_none() && matches!(e, Some(Ent::Close)) { let mut p = open_pos(dir, c); p.close = true; pos = Some(p); }
+        }
     }
     if let Some(p) = pos {
         let mut t = close_trade(x, &p, to, x.c[to], "open");
@@ -510,7 +598,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let pts = |k: &str| { let v = g(k); if v.is_finite() && v > 0.0 { v / g("pt_usd") } else { f64::NAN } };
     let hold = g("hold");
     let mut cfg = Cfg { stop: pts("stop_usd"), stop_rng: f64::NAN, day0: g("stop_day0") != 0.0, target: pts("target_usd"),
-        hold: hold.is_finite().then(|| hold.max(0.0) as usize), bailout: false, reverse: false, order: crate::intraday_ep6::on(id, p) };
+        hold: hold.is_finite().then(|| hold.max(0.0) as usize), bailout: false, bail_after: 0, reverse: false, order: crate::intraday_ep6::on(id, p) };
     let wd = |i: usize| dow(&x.r[i].date);
     let td = tdm(x);
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
@@ -568,6 +656,79 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
             let n: usize = id["lwlts_tdm".len()..id.len() - "_bonds".len()].parse().ok()?;
             simulate(x, from, to, &cfg, |i| if td[i] == n { (Some(Ent::Open), None) } else { none })
+        }
+        "lwlts_vb_bonds" | "lwlts_vb_bonds_tdw" | "lwlts_tdw_bonds" | "lwlts_outside_down_bonds" | "lwlts_outside_down_bonds_xthu" | "lwlts_oops_buy_bonds"
+        | "lwlts_oops_sell_bonds_wed" | "lwlts_oops_buy_bonds_ma9" | "lwlts_oops_sell_bonds_ma9" | "lwlts_gsv_bonds" => {
+            // lane F1D (R4 #293): the book's T-bond rules, only on the Norgate T-bond contract (readiness refuses other tickers)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            cfg.hold = None; cfg.bailout = true;
+            let ba = g("bail_after");
+            if ba.is_finite() { cfg.bail_after = ba.max(1.0) as usize; }
+            let rng = |i: usize| h[i - 1] - l[i - 1];
+            match id {
+                "lwlts_vb_bonds" | "lwlts_vb_bonds_tdw" => {
+                    cfg.reverse = true; cfg.stop_rng = g("stop_rng");
+                    let (bm, sm, bd, sd) = (g("buy_mult"), g("sell_mult"), g("buy_dow") as u32, g("sell_dow") as u32);
+                    simulate(x, from, to, &cfg, |i| {
+                        let (bit, r) = (dow_bit(&x.r[i].date), rng(i));
+                        if !(r > 0.0) { return none; }
+                        let ok = |m: u32| m == 31 || m & bit != 0;
+                        (ok(bd).then(|| Ent::Stop(o[i] + bm * r)), ok(sd).then(|| Ent::Stop(o[i] - sm * r)))
+                    })
+                }
+                "lwlts_tdw_bonds" => {
+                    cfg.bailout = false; cfg.hold = Some(0);
+                    let m = g("buy_mult");
+                    simulate(x, from, to, &cfg, |i| if wd(i) == 2 { (Some(Ent::Stop(o[i] + m * rng(i))), None) } else { none })
+                }
+                "lwlts_outside_down_bonds" | "lwlts_outside_down_bonds_xthu" => {
+                    let xthu = id.ends_with("xthu");
+                    simulate(x, from, to, &cfg, |i| {
+                        if i < 2 { return none; }
+                        let s = i - 1;
+                        let pat = h[s] > h[s - 1] && l[s] < l[s - 1] && c[s] < l[s - 1] && o[i] < c[s];
+                        if pat && !(xthu && wd(i) == 4) { (Some(Ent::Open), None) } else { none }
+                    })
+                }
+                "lwlts_gsv_bonds" => {
+                    cfg.reverse = true;
+                    let m = g("mult");
+                    // option p.gold: gold's own closes (Data2, carried to the bond dates): close below the close 20 gold bars earlier
+                    let gold: Option<Vec<f64>> = if g("gold") >= 0.5 {
+                        let Some(rows) = crate::futures::rows("&GC") else { return Some(vec![]) }; // readiness refuses this case (data2_issue)
+                        let gc = crate::second::align("&GC", x.r, rows);
+                        Some(gc.own(|r| (0..r.len()).map(|k| if k >= 20 { (r[k].close < r[k - 20].close) as u8 as f64 } else { f64::NAN }).collect()))
+                    } else { None };
+                    simulate(x, from, to, &cfg, |i| {
+                        if i < 8 { return none; }
+                        let bs = (i - 4..i).map(|k| h[k] - o[k]).sum::<f64>() / 4.0;
+                        let ss = (i - 4..i).map(|k| o[k] - l[k]).sum::<f64>() / 4.0;
+                        let buy = c[i - 1] < c[i - 6] && matches!(wd(i), 2 | 3 | 5) && bs > 0.0;
+                        let sell = c[i - 1] > c[i - 7] && ss > 0.0 && gold.as_ref().map_or(true, |v| v[i - 1] == 1.0);
+                        (buy.then(|| Ent::Stop(o[i] + m * bs)), sell.then(|| Ent::Stop(o[i] - m * ss)))
+                    })
+                }
+                _ => {
+                    let ma = crate::connors::sma(c, 9);
+                    simulate(x, from, to, &cfg, |i| {
+                        if i < 2 { return none; }
+                        let d = wd(i);
+                        match id {
+                            "lwlts_oops_buy_bonds" if o[i] < l[i - 1] && d != 3 => (Some(Ent::Stop(l[i - 1])), None),
+                            "lwlts_oops_buy_bonds_ma9" if o[i] < l[i - 1] && d != 4 && ma[i - 1] < ma[i - 2] => (Some(Ent::Stop(l[i - 1])), None),
+                            "lwlts_oops_sell_bonds_wed" if o[i] > h[i - 1] && d == 3 => (None, Some(Ent::Stop(h[i - 1]))),
+                            "lwlts_oops_sell_bonds_ma9" if o[i] > h[i - 1] && d == 3 && ma[i - 1] > ma[i - 2] => (None, Some(Ent::Stop(h[i - 1]))),
+                            _ => none,
+                        }
+                    })
+                }
+            }
+        }
+        "lwlts_bonds_8day" => {
+            // lane F1D (R4 #293): only on the Norgate T-bond contract (readiness refuses other tickers with futures::home)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let n = g("lookback").max(1.0) as usize;
+            simulate(x, from, to, &cfg, |i| if i >= n && c[i] > c[i - n] { (Some(Ent::Close), None) } else { none })
         }
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" => {
             let n: usize = id["lwlts_tdm".len()..id.len() - 3].parse().ok()?;
