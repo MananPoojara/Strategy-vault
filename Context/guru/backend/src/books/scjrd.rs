@@ -54,13 +54,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| PG_BOOKS.contains(&def.book) && pg_reviewed(def.book, def.id),
-    label: "Stocks & Commodities articles read in lane PG (13 Nov 2026), tested by their authors on futures contracts; runs on daily bars of indices, ETFs and stocks, US and India, are a declared application, not the authors' tests (any unstated detail is a labelled reading on the card, R4 #297).",
+    label: "Stocks & Commodities articles read in lane PG (13 Nov 2026), tested by their authors on futures contracts or weekly index closes; runs on daily bars of indices, ETFs and stocks, US and India, are a declared application, not the authors' tests (any unstated detail is a labelled reading on the card, R4 #297).",
     basis: "Lane PG (handover rows of lanes PA1/PA2 and pool B of authors/a1/A1.tsv, R4 #297): each card cites its article pages; independent check authors/pg/w/pg_ref.py",
 };
 /// Books admitted by the entry above.
-pub const PG_BOOKS: &[&str] = &["scjrd"];
+pub const PG_BOOKS: &[&str] = &["scjrd", "scpmdm"];
 fn pg_reviewed(book: &str, id: &str) -> bool {
-    match book { "scjrd" => reviewed(id), _ => false }
+    match book { "scjrd" => reviewed(id), "scpmdm" => super::scpmdm::reviewed(id), _ => false }
 }
 
 #[cfg(test)]
