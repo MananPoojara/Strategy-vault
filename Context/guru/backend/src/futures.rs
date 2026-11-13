@@ -233,11 +233,18 @@ const LEB_25: &str = "LeBeau & Tan, 25 x 25 Bond System v2.0 manual (System Trad
 const LEB_CB: &str = "LeBeau & Elden, Crossbow Swiss Franc System v1.0 manual (System Traders Club 1999): ADX/ATR setups, buy stop at the 2-day high / sell stop at the prior low, ATR trailing stops, $2,500 money stop, stop and reverse (the module reproduces the manual's own SF.LNG trade list, 67/67); run on the Norgate Swiss franc continuous contract with the $2,500 at $125,000 per 1.00 (= 0.02) and the contract tick 0.0001 (R4 #293 (1), (3)), lane F1B.";
 const STAD5: &str = "Omega Research, System/Strategy Trading and Development Club (STAD) Vol 5 (1998): the printed TradeStation code with the Format dialog stops in the book's contract dollars (T-bonds $1,000 per point: $1,000 money stop = 1.0, $200 breakeven = 0.2 for Channel Breakout with Pullback, ch.4 p.77-84; gold $100 per point: $200 money stop = 2.0, $400 $ risk trailing = 4.0 for Fibonacci .382, ch.3 p.34-41); run on the Norgate continuous contract of the book's test market (R4 #293 (1), (3)), lane F1B.";
 const NFGU: &str = "Nelson Freeburg, Building a Mechanical Trading System from the Ground Up (TAG XVIII workbook, 1996): Pathfinder (formulas p.1, T-bond setup), Channel 25 (Fig. 27 TradeStation code) and CQIII (formulas p.4-5), tested on Deutsche mark, Swiss franc, British pound and Japanese yen futures 1/78-9/96 (10/96 for Pathfinder) with $2,000 stops; run on the Norgate continuous contract of each currency Norgate carries (no Deutsche mark series), the $2,000 at the contract's $ per point (R4 #293 (1), (3)); Pathfinder reads the Norgate T-bond contract as Data2, lane F1C.";
+const LWTDM: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999) p.88-89, Table 6.7: buy the open of the trading day of the month shown, $1,500 stop from the entry day, exit on the close of the third day after entry, T-bond futures 1977-1998; run on the Norgate T-bond continuous contract ($1,500 = 1.5 points at $1,000 per point; R4 #293 (1), (3)), lane F1C.";
 const CARDS_F1B: &[(&str, &str, &str)] = &[
     ("nfgu_channel25", "&6S", NFGU), ("nfgu_channel25", "&6B", NFGU), ("nfgu_channel25", "&6J", NFGU),
     ("nfgu_cqiii", "&6S", NFGU), ("nfgu_cqiii", "&6B", NFGU), ("nfgu_cqiii", "&6J", NFGU),
     ("nfgu_pathfinder", "&6S", NFGU), ("nfgu_pathfinder", "&6B", NFGU), ("nfgu_pathfinder", "&6J", NFGU),
     ("stad5_chbopb", "&ZB", STAD5), ("stad5_fib382", "&GC", STAD5),
+    ("lwlts_tdm8_bonds", "&ZB", LWTDM),
+    ("lwlts_tdm18_bonds", "&ZB", LWTDM),
+    ("lwlts_tdm19_bonds", "&ZB", LWTDM),
+    ("lwlts_tdm20_bonds", "&ZB", LWTDM),
+    ("lwlts_tdm21_bonds", "&ZB", LWTDM),
+    ("lwlts_tdm22_bonds", "&ZB", LWTDM),
     ("stad11_miser", "&SP", "Omega Research, STAD Vol 11 (2000) ch.3 p.45-56 and Appendix A, MISER: the printed TradeStation 2000i code (S&P 500 futures with T-bond futures as Data2, long side, ATR stops; test 2/92-11/99 with $50 per trade); run on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (R4 #293 (1)), lane F1C."),
     ("stad5_curbond", "&6S", "Omega Research, STAD Vol 5 (1998) ch.2 p.12-20, Currency/Bond System: the printed TradeStation code on the Swiss franc with T-bond futures as Data2 (book test 6/93-5/98, $1,000 StopAmt and $1,200 Format money-management stop, no costs); run on the Norgate Swiss franc continuous contract with the Norgate T-bond contract as Data2 (R4 #293 (1), (3)), $ amounts at $125,000 per 1.00, lane F1C."),
     ("lebtc_25x25", "&ZB", LEB_25), ("lebtc_crossbow", "&6S", LEB_CB),
