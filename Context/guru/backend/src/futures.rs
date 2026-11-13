@@ -65,10 +65,10 @@ pub const MARKETS: &[Market] = &[
     // system's stops are standard-deviation distances, so these multipliers only label the contract
     // lane PF (Gibbs SPI systems, Guppy newsletters): the SPI contract (A$ per point; % returns do not depend on the currency)
     Market { sym: "&YAP", name: "ASX SPI 200", tick: 1., usd: &[("1983-02-16", 25.)],
-        source: "SFE/ASX SPI 200 index futures: A$25 x the index (the article's own conversion: $1,500 = 60 points); the 1983-2000 All Ordinaries SPI is spliced in by Norgate; quoted in A$, not US$" },
+        source: "SFE/ASX SPI 200 index futures, quoted in A$ (NOT US$: futures::NON_USD, so usd_per_point refuses it): the article's own A$25 per point ($1,500 = 60 points); the historic contract size (the 1983 All Ordinaries SPI may have been larger) is not checked (review PF2 M21); the 1983-2000 All Ordinaries SPI is spliced in by Norgate" },
     // lane PF (Andromeda 8-market portfolio): the Dollar Index
     Market { sym: "&DX", name: "US Dollar Index", tick: 0.01, usd: &[("1985-11-20", 1_000.)],
-        source: "ICE (formerly FINEX/NYBOT) U.S. Dollar Index futures: US$1,000 x the index (1.00 = US$1,000; 0.01 = US$10, the tick of the 1985-2001 era)" },
+        source: "ICE (formerly FINEX/NYBOT) U.S. Dollar Index futures: US$1,000 x the index today (1.00 = US$1,000; 0.01 = US$10). The original FINEX multiplier is not confirmed from a source in the share (review PF2 M18: possibly US$500 at launch); used by andro_andromeda only, whose vendor code uses one constant BigPointValue" },
     Market { sym: "&NG", name: "Natural Gas", tick: 0.001, usd: &[("1990-04-03", 10_000.)],
         source: "NYMEX Henry Hub natural gas futures: 10,000 MMBtu per contract, quoted in US$ per MMBtu (1.00 = US$10,000; 0.001 = US$10)" },
     Market { sym: "&ZC", name: "Corn", tick: 0.25, usd: &[("1978-01-04", 50.)],
@@ -92,7 +92,9 @@ pub fn of_ticker(t: &str) -> Option<&'static Market> {
 pub fn is_futures(t: &str) -> bool { of_ticker(t).is_some() }
 pub fn ctx_market(x: &Ctx) -> Option<&'static Market> { x.r.first().and_then(|r| of_ticker(&r.ticker)) }
 /// US$ per 1.00 of the quote on `date` (the multiplier in force on the trade date, #293 (3)).
-pub fn usd_per_point(m: &Market, date: &str) -> Option<f64> { m.usd.iter().rev().find(|(d, _)| *d <= date).map(|(_, v)| *v) }
+/// Contracts whose `usd` row is NOT in US$ (review PF2 ca66231c M20): no US$ conversion is made for them.
+pub const NON_USD: &[&str] = &["&YAP"];
+pub fn usd_per_point(m: &Market, date: &str) -> Option<f64> { if NON_USD.contains(&m.sym) { return None; } m.usd.iter().rev().find(|(d, _)| *d <= date).map(|(_, v)| *v) }
 /// A fixed US$ amount per contract in quote points on bar `i` of a futures context (None elsewhere).
 pub fn usd_points(x: &Ctx, i: usize, usd: f64) -> Option<f64> { usd_per_point(ctx_market(x)?, &x.r[i].date).map(|v| usd / v) }
 
@@ -194,12 +196,23 @@ pub const ZN_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("scabeldiv_sma", 4, " They are held through those months; none of their exits fills at an open there."),
     ("andro_andromeda", 3, " Its orders all fill at the next open; signals read closes only."),
 ];
-/// The card notes with the &ZB / &ZN open label appended (unchanged for other cards).
+/// Review PF2 e41b28c8 M17: Norgate &ZC (corn) has a longer episode of the same kind, 1999-12 to about 2006-12 (most months 15-82% of days
+/// open exactly at the previous close and median gaps 0-12 bp, against 5-14% and 13-111 bp in 1999-06..11; mixed again from 2007).
+pub const ZC_OPEN_NOTE: &str = "On Norgate &ZC, from 1999-12 to about 2006-12 the open often sits at the previous close (in most months 15-82% of days exactly equal, against 5-14% before), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
+pub const ZC_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    ("andro_andromeda", 30, " Its orders all fill at the next open; 7 of them fall inside The Trading Plan's 1980-2001 window and #168 passes without them."),
+    ("scabeldiv_sma", 26, " They are held through those years; 2 of their exits fill at an open there."),
+];
+/// The card notes with every matching open-episode label appended (&ZB, &ZN, &ZC; unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
-    let sep = if notes.is_empty() { "" } else { " " };
-    if let Some((_, n, extra)) = ZB_OPEN_CARDS.iter().find(|c| c.0 == id) { return format!("{notes}{sep}{ZB_OPEN_NOTE} {n} of this card's &ZB trades are affected.{extra}"); }
-    if let Some((_, n, extra)) = ZN_OPEN_CARDS.iter().find(|c| c.0 == id) { return format!("{notes}{sep}{ZN_OPEN_NOTE} {n} of this card's &ZN trades are affected.{extra}"); }
-    notes.to_string()
+    let mut s = notes.to_string();
+    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC")] {
+        if let Some((_, n, extra)) = table.iter().find(|c| c.0 == id) {
+            if !s.is_empty() { s.push(' '); }
+            s += &format!("{note} {n} of this card's {sym} trades are affected.{extra}");
+        }
+    }
+    s
 }
 
 /// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
@@ -399,9 +412,12 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test] fn non_usd_contract_has_no_usd_value() { let m = super::MARKETS.iter().find(|m| m.sym == "&YAP").unwrap(); assert!(super::usd_per_point(m, "2000-01-03").is_none()); } // review PF2 M20
     #[test] fn zb_open_label() { // R4 #331: every listed id is a live card; the label is appended only to them
         let ids: Vec<&str> = crate::books::catalogue().iter().map(|d| d.id).collect();
-        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
+        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
+        let two = super::zb_open_notes("andro_andromeda", "x"); // a card on several contracts carries each label
+        assert!(two.contains("this card's &ZN trades") && two.contains("this card's &ZC trades"));
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
         assert_eq!(super::zb_open_notes("dmadr_daily", "x"), "x");
     }
