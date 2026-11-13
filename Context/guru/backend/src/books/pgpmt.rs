@@ -32,7 +32,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    if !reviewed(id) || from > to || to >= x.r.len() { return None; }
     let n = p.get("n").copied().unwrap_or(30.).round().max(1.) as usize;
     let pen = p.get("pen").copied().unwrap_or(0.).max(0.) / 100.;
     let ma = sma(&x.c, n);

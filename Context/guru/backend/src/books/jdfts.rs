@@ -4,7 +4,8 @@
 //! Book id `jdfts`. Coded: ch.15 'Basic Moving-Average Crosses' (EMA 5/13, p.263) as a daily declared application (R4 #67, #114).
 //! Held (judgement): the 50 EMA + RSI + MACD 'all elements in alignment' entry (p.262-263, early signals read by eye), the gap
 //! fade (waits for 'a consolidation pattern or a clear reversal signal', p.264), the daily high-low basket ('The entry will be
-//! mostly discretionary', p.266). Same calculation family as wwwts_ema5_13 (another author and source, its own card per R4 #48/#67).
+//! mostly discretionary', p.266). R4 #305 (1): the same calculation as the live wwwts_ema5_13, so the card is marked
+//! "Duplicate of wwwts_ema5_13" (NotTestable, no ADMISSION) and counted once; run() is kept for the record and its test.
 //! Independent reference: authors/titles-1030/R2Cw/r2c_ref.py (written from the pages, not from this file).
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::msws::ema;
@@ -13,11 +14,12 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["jdfts_ema5_13"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Adapted: 2 unstated details, R4 #297; unverified] EMA = exponential average of closes (alpha 2/(n+1), started at the first close of the data). A cross up = EMA 5 above EMA 13 at this close and at or below it at the previous close (cross down mirrored); the trade is opened at the next bar's open, as printed. Unstated in the book: (1) the bar size - the book uses it 'for scalping in smaller time frames, such as 1 or 5 minutes'; vault reading: daily bars of indices, ETFs and stocks, US and India, as a declared application of a forex rule (R4 #67, #114). (2) the exit - the book gives only the two entries ('I open a long position ... I open a short position at the open of the next candle') and says the trade 'has to be tightly monitored'; vault reading: each opposite cross closes the trade and opens the other side at the same next open (always in after the first cross). The same EMA 5/13 calculation is on the WWW Trading System card (wwwts_ema5_13, which also exits on an equal close); this card is James Dicks's own printed rule. No performance figures are printed.";
+const DUP: &str = "Duplicate of wwwts_ema5_13 (R4 #305 (1)): James Dicks' EMA 5/13 cross (p.263) is the same calculation as the live card wwwts_ema5_13 (EMA 5 crossing EMA 13, long or short at the next open, reversing on the opposite cross); counted once, not run as a separate strategy";
+const NOTE: &str = "Duplicate of wwwts_ema5_13 (R4 #305 (1)); not run twice. Readings kept for the record: [Adapted: 2 unstated details, R4 #297; unverified] EMA = exponential average of closes (alpha 2/(n+1), started at the first close of the data). A cross up = EMA 5 above EMA 13 at this close and at or below it at the previous close (cross down mirrored); the trade is opened at the next bar's open, as printed. Unstated in the book: (1) the bar size - the book uses it 'for scalping in smaller time frames, such as 1 or 5 minutes'; vault reading: daily bars of indices, ETFs and stocks, US and India, as a declared application of a forex rule (R4 #67, #114). (2) the exit - the book gives only the two entries ('I open a long position ... I open a short position at the open of the next candle') and says the trade 'has to be tightly monitored'; vault reading: each opposite cross closes the trade and opens the other side at the same next open (always in after the first cross). The same EMA 5/13 calculation is on the WWW Trading System card (wwwts_ema5_13, which also exits on an equal close); this card is James Dicks's own printed rule. No performance figures are printed.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "jdfts_ema5_13", name: "Dicks: EMA 5 crosses EMA 13, long or short at the next open, reversing on the opposite cross", group: "Basic Moving-Average Crosses (ch.15, p.263)",
-        session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: "jdfts",
+        session: 0, dir: "Long/Short", status: Status::NotTestable(DUP), needs_volume: false, needs_vix: false, needs_series: &[], book: "jdfts",
         rules: &["E|\"I just plot a 5-period and a 13-period EMA on a chart and wait for a cross of both to happen. When the 5 EMA crosses upward above the 13 EMA, I open a long position at the open of the next candle; when the 5 EMA crosses downward below the 13 EMA, I open a short position at the open of the next candle.\" (p.263)",
             "X|No exit is printed: \"This is a very short-term strategy that has to be tightly monitored because changes on those small time frames occur very fast.\" (p.263); vault reading: the opposite cross reverses",
             "F|\"The 5/13 EMA cross is a very simple strategy that can be used for scalping in smaller time frames, such as 1 or 5 minutes.\" (p.263)"],
@@ -25,7 +27,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    (id == "jdfts_ema5_13").then_some(("jdfts_ema5_13", "Dicks EMA 5/13 cross", "5/13"))
+    (id == "jdfts_ema5_13").then_some(("jdfts_ema5_13", "Dicks EMA 5/13 cross", "Duplicate of wwwts_ema5_13"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -34,7 +36,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    if !reviewed(id) || from > to || to >= x.r.len() { return None; }
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d).round().max(1.) as usize;
     let (f, s) = (ema(&x.c, g("fast", 5.)), ema(&x.c, g("slow", 13.)));
     let mut pos = Book::new();
@@ -61,10 +63,4 @@ mod tests {
         for w in t.windows(2) { assert_eq!(w[1].legs[0].i, w[0].exit_i); assert_eq!(w[1].dir, -w[0].dir); }
     }
 }
-
-// Instrument admission: Dicks EMA 5/13 daily application 2026-11-13 (lane R2C, R4 #297).
-pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == "jdfts" && reviewed(def.id),
-    label: "James Dicks scalps forex with the EMA 5/13 cross on 1- and 5-minute charts; daily bars of indices, ETFs and stocks, US and India, are a declared application, with two unstated details read as labelled on the card (R4 #297, #67, #114).",
-    basis: "Forex Trading Secrets (McGraw-Hill 2009) ch.15 p.263; R4 #297, #67, #114; independent check authors/titles-1030/R2Cw/r2c_ref.py",
-};
+// No ADMISSION: duplicate of wwwts_ema5_13 (R4 #305 (1)).

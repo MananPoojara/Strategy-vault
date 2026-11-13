@@ -33,7 +33,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    if !reviewed(id) || from > to || to >= x.r.len() { return None; }
     let n = p.get("n").copied().unwrap_or(10.).round().max(1.) as usize;
     let off = p.get("tick").copied().unwrap_or(1.).round().max(0.) * x.market_tick();
     let mut pos = Book::new();
