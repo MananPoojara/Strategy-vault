@@ -50,7 +50,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"When a stock's price curve penetrates its moving average line on the downside by at least 5 percent, this is a sell signal; when it penetrates its moving average line on the upside by at least 5 percent, this is a buy signal\" (p.319)",
               "E|Read: month-end close >= 1.05 x the 7-month simple average of month-end closes and not long -> buy (covering any short) at that close",
               "X|Read: month-end close <= .95 x the average and not short -> sell and sell short at that close (p.short = 0: sell to cash)", SEED],
-            "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated for this quoted rule (Barnes, quoted on p.319): (1) the moving-average length; vault reading: the paper's own unweighted length, 7 months of month-end closes (p.320; p.n sets any length); (2) whether a sell signal goes short or to cash; vault reading: short, as the paper's own long-and-short models (p.322; p.short = 0 = cash). Month-end closes, fills at that close, signals from the 7th month as the paper's unweighted models. A quoted recommendation with no results of its own.", None),
+            "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated for this quoted rule (Barnes, quoted on p.319): (1) the moving-average length; vault reading: the paper's own unweighted length, 7 months of month-end closes (p.320; p.n sets any length); (2) whether a sell signal goes short or to cash; vault reading: short, as the paper's own long-and-short models (p.322; p.short = 0 = cash). Month-end closes, fills at that close, signals from the 7th month as the paper's unweighted models. A quoted recommendation with no results of its own. Counted as a +-5% option of fejmma_sma7 (the same calculation with MAX 1.05 / MIN .95), not a method of its own (R4 #309 (2)).", None),
         d("fejmma_merritt_12m", "Merritt 12-month Dow average", "Long", NotTestable("a trend definition, not an order: no sell rule is stated (\"The trend of the market is assumed to be up when the Dow-Jones Industrials are above the 12-month moving average and the line is moving upward\")"),
             &["F|\"a 12-month moving average of the Dow-Jones Industrials, plotted monthly\" (p.318)"], "Quoted from Merritt (1957).", None),
     ]
@@ -63,7 +63,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "fejmma_es10_long" => ("fejmma_mma", "James monthly moving averages", "ES .1 +-5% long"),
         "fejmma_es30_long" => ("fejmma_mma", "James monthly moving averages", "ES .3 +-5% long"),
         "fejmma_es40_long" => ("fejmma_mma", "James monthly moving averages", "ES .4 +-5% long"),
-        "fejmma_barnes_5pct" => ("fejmma_barnes_5pct", "Barnes 5% moving-average penetration (quoted by James)", "7-month SMA +-5%"),
+        "fejmma_barnes_5pct" => ("fejmma_mma", "James monthly moving averages", "Barnes +-5% (7-month SMA): an option of fejmma_sma7"), // R4 #309 (2)
         "fejmma_merritt_12m" => ("fejmma_quoted", "Rules quoted by James", "not testable"),
         _ => return None,
     })

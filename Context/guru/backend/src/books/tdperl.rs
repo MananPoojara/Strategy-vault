@@ -84,18 +84,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("tdperl_setup_long", "Perfected TD Buy Setup (Perl's rules)", "Ch 1 · TD Setup", "Long", Live,
           &[SETUP,
             "F|Perl's rules (p.13): \"1. When the TD Buy Setup has been perfected, that is, the low of TD Buy Setup bar eight or nine is less than the lows of TD Buy Setup bars six and seven\" (definition box p.11: \"less than, or equal to\"; perfection must be on bar 8 or 9 since entry is the bar-9 close); \"2. When none of the bars within the TD Buy Setup has closed below TDST support\" (true low of the most recently completed TD Sell Setup, p.5-6).",
-            "F|Rule 3 \"When the close of TD Buy Setup bar nine is in close proximity to TDST support\" has no number. Unstated in the book: the distance that counts as 'close proximity'; vault reading (lane R2B, R4 #297): rule 3 is not applied, so every setup that passes rules 1 and 2 and the 1.5 reward/risk test trades. Optional (c9_lt_c8=1): close of bar 9 below close of bar 8 (\"optional\").",
+            "F|Rule 3 \"When the close of TD Buy Setup bar nine is in close proximity to TDST support\" has no number. Unstated in the book: the distance that counts as 'close proximity'; vault reading (R4 #297/#309 (3)): the bar-nine close lies within 0.5 x ATR(10) of TDST support (ATR = mean true range of the 10 bars ending at bar nine; p.prox sets the multiple, 0 = rule 3 off). Optional (c9_lt_c8=1): close of bar 9 below close of bar 8 (\"optional\").",
             "F|p.14: \"I would take the trade only if the difference between the entry price (close of TD Buy Setup bar nine), and TDST Resistance is more than 1.5 times the difference between the close of TD Buy Setup bar nine and the TD risk level\" (rr).",
             "E|Buy on the close of TD Buy Setup bar nine (p.12 Fig 1.11).",
             "X|Stop (p.14): \"identify the TD Buy Setup bar with the lowest true low, and subtract the true range of that bar from its true low\"; intrabar stop.",
             "X|Target (p.14): \"The expectation would be for a return toward the upper-range extreme, as defined by TDST Resistance, in other words, the true high of the most recently completed TD Buy Setup\": sell limit at that level. Stop and target on one bar: stop first [conservative, book silent]."],
-          "Adapted: 2 unstated details (lane R2B, R4 #297). Unstated in the book: (1) how close the bar-nine close must be to TDST support for rule 3 ('in close proximity', p.13); vault reading: rule 3 not applied; (2) which of the stop and the target fills when one bar reaches both; vault reading: the stop. Book prints no statistics. India: instrument swap only."),
+          "Adapted: 2 unstated details (lane R2B, R4 #297). Unstated in the book: (1) how close the bar-nine close must be to TDST support for rule 3 ('in close proximity', p.13); vault reading: within 0.5 x ATR(10) of it (p.prox; 0 = off); (2) which of the stop and the target fills when one bar reaches both; vault reading: the stop (a bar that opens through either level fills it at the open first). Book prints no statistics. India: instrument swap only."),
         d("tdperl_setup_short", "Perfected TD Sell Setup (Perl's rules)", "Ch 1 · TD Setup", "Short", Live,
           &[SETUP,
-            "F|Perl's rules (p.16): sell setup perfected (high of bar 8 or 9 >= highs of bars 6 and 7); no setup bar closed above TDST resistance (true high of the most recent completed TD Buy Setup); rule 3 'close proximity' (p.16) has no number: vault reading (lane R2B, R4 #297): not applied; reward to TDST support > 1.5 x risk (p.17).",
+            "F|Perl's rules (p.16): sell setup perfected (high of bar 8 or 9 >= highs of bars 6 and 7); no setup bar closed above TDST resistance (true high of the most recent completed TD Buy Setup); rule 3 'close proximity' (p.16) has no number: vault reading (R4 #297/#309 (3)): the bar-nine close within 0.5 x ATR(10) of TDST resistance (p.prox; 0 = off); reward to TDST support > 1.5 x risk (p.17).",
             "E|Sell on the close of TD Sell Setup bar nine.",
             "X|Stop: highest true high of the setup plus that bar's true range (p.17). Target: true low of the setup = TDST support (p.17). Stop and target on one bar: stop first [book silent]."],
-          "Adapted: 2 unstated details (lane R2B, R4 #297). Unstated in the book: (1) how close the bar-nine close must be to TDST resistance for rule 3 ('in close proximity', p.16); vault reading: rule 3 not applied; (2) which of the stop and the target fills when one bar reaches both; vault reading: the stop. Book prints no statistics. India: instrument swap only."),
+          "Adapted: 2 unstated details (lane R2B, R4 #297). Unstated in the book: (1) how close the bar-nine close must be to TDST resistance for rule 3 ('in close proximity', p.16); vault reading: within 0.5 x ATR(10) of it (p.prox; 0 = off); (2) which of the stop and the target fills when one bar reaches both; vault reading: the stop (a bar that opens through either level fills it at the open first). Book prints no statistics. India: instrument swap only."),
         d("tdperl_tdline_long", "TD Supply Line qualified upside breakout", "Ch 4 · TD Lines", "Long", Live,
           &["F|TD Supply Point (p.91): a high with `level` lower highs on either side (strict); Perl's preference Level One (p.92). Confirmed only after the `level` bars to its right close.",
             "F|TD Supply Line (p.92-93): \"connect the two most recent TD Supply Points of the same magnitude (from right to left) to draw a downward-sloping TD Supply Line\"; Fig 4.2: most-recent point and \"the next-most-recent, higher\" point. Extended bar by bar.",
@@ -214,7 +214,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         }
         "tdperl_setup_long" | "tdperl_setup_short" => {
             let mut v = setup();
-            v.extend([p("rr", "Reward/risk to TDST must exceed (0 off)", 1.5, 0., 3., 0.5), p("c9_lt_c8", "Optional: bar 9 close beyond bar 8 close", 0., 0., 1., 1.)]);
+            v.extend([p("rr", "Reward/risk to TDST must exceed (0 off)", 1.5, 0., 3., 0.5), p("c9_lt_c8", "Optional: bar 9 close beyond bar 8 close", 0., 0., 1., 1.),
+                p("prox", "Rule 3 'close proximity': bar-9 close within this many ATR(10) of TDST (vault reading 0.5; 0 = off)", 0.5, 0., 3., 0.25)]);
             v
         }
         "tdperl_tdline_long" => vec![p("level", "TD Point level", 1., 1., 5., 1.)],
@@ -443,7 +444,7 @@ fn run_countdown(x: &Ctx, b: &Bars, sigs: &[Sig], opp: &[usize], entry: u32, max
     out
 }
 
-fn run_setup(x: &Ctx, b: &Bars, look: usize, sn: u32, rr: f64, c9: bool, from: usize, to: usize) -> Vec<Trade> {
+fn run_setup(x: &Ctx, b: &Bars, look: usize, sn: u32, rr: f64, c9: bool, prox: f64, from: usize, to: usize) -> Vec<Trade> {
     let (bs, ss) = (setup_count(b, look, false), setup_count(b, look, true));
     let n9 = sn as usize;
     let mut support: Option<f64> = None; // TDST support: true low of the latest completed opposite setup
@@ -451,9 +452,10 @@ fn run_setup(x: &Ctx, b: &Bars, look: usize, sn: u32, rr: f64, c9: bool, from: u
     let mut cur: Option<(Trade, f64, f64)> = None;
     for i in 0..b.n() {
         if let Some((t, risk, tgt)) = cur.take() {
-            if b.o[i] <= risk { out.push(close(t, b, i, b.o[i], "TD risk level (gap)")); }
+            // R4 #309 (3): a bar that opens through the target (or the stop) fills it at the open first; inside the bar the stop first
+            if b.o[i] >= tgt { out.push(close(t, b, i, b.o[i], "TDST target (gap)")); }
+            else if b.o[i] <= risk { out.push(close(t, b, i, b.o[i], "TD risk level (gap)")); }
             else if b.l[i] <= risk { out.push(close(t, b, i, risk, "TD risk level")); }
-            else if b.o[i] >= tgt { out.push(close(t, b, i, b.o[i], "TDST target (gap)")); }
             else if b.h[i] >= tgt { out.push(close(t, b, i, tgt, "TDST target")); }
             else { cur = Some((t, risk, tgt)); }
         } else if bs[i] == sn && n9 >= 4 && i >= from && i < to {
@@ -463,7 +465,9 @@ fn run_setup(x: &Ctx, b: &Bars, look: usize, sn: u32, rr: f64, c9: bool, from: u
             let risk = b.risk(s1, i);
             let tgt = (s1..=i).map(|j| b.th[j]).fold(f64::MIN, f64::max);
             let ok_rr = rr <= 0. || tgt - b.c[i] > rr * (b.c[i] - risk);
-            if perfected && held && ok_rr && (!c9 || b.c[i] < b.c[i - 1]) {
+            // rule 3 (R4 #309 (3)): the bar-nine close within prox x ATR(10) of TDST (ATR = mean true range of the 10 bars ending at i)
+            let near = prox <= 0. || (i >= 9 && support.is_some_and(|sup| (b.c[i] - sup).abs() <= prox * (i - 9..=i).map(|j| b.th[j] - b.tl[j]).sum::<f64>() / 10.));
+            if perfected && held && ok_rr && near && (!c9 || b.c[i] < b.c[i - 1]) {
                 cur = Some((trade(b, i, b.c[i], "close"), risk, tgt));
             }
         }
@@ -723,7 +727,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
     } else {
         match base {
-            "tdperl_setup" => run_setup(x, &b, u("look").max(1), u("setup_n") as u32, g("rr"), g("c9_lt_c8") >= 0.5, from, to),
+            "tdperl_setup" => run_setup(x, &b, u("look").max(1), u("setup_n") as u32, g("rr"), g("c9_lt_c8") >= 0.5, g("prox"), from, to),
             "tdperl_tdline" if id == "tdperl_tdline_short" && g("path") >= 0.5 => run_lines_minutes(x, &b, &m, u("level").max(1), from, to), // intraday wave 3
             "tdperl_tdline" => run_lines(x, &b, &m, u("level").max(1), from, to),
             _ if id == "tdperl_rebo" && g("path") >= 0.5 => run_rebo_minutes(x, &b, g("k"), from, to), // K25: minute path
