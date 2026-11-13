@@ -437,6 +437,7 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwicw_bond_tdw_gold", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
     ("lwicw_bond_tdom", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
     ("lwicw_bond_tdom_gold", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.33-35: T-bond trade-day-of-week and trade-day-of-month studies (buy the open, first profitable opening), with and without the gold filter (gold below its close 25 days earlier); run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), review B2), lane F1D."),
+    ("lwicw_sp_first_of_month", "&SP", "Larry Williams, Inner Circle Workshop notes (2000) p.43: buy the S&P open of the first trading day of every month, 2-day exit, 90%-of-range stop (open entry and next-day stop from LTS p.148); run on the Norgate S&P 500 contract, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D."),
     ("lwicw_sp_oops_bonds", "&SP", "Larry Williams, Inner Circle Workshop Book1 (2000) p.54, Oops! revisited: S&P Oops! buys and sells with trend and T-bond filters, bailout and a $3,500 stop from the day after entry, 01/01/83-12/23/98; run on the Norgate S&P 500 contract with the Norgate T-bond contract as Data2, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D."),
     ("lwicw_sp_tdw_bonds", "&SP", "Larry Williams, Inner Circle Workshop notes (2000) p.38-43: S&P trade-day-of-week / trade-day-of-month studies and first-of-month trades filtered by the T-bond trend; run on the Norgate S&P 500 contract with the Norgate T-bond contract as Data2, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D."),
     ("lwicw_sp_tdom_bonds", "&SP", "Larry Williams, Inner Circle Workshop notes (2000) p.38-43: S&P trade-day-of-week / trade-day-of-month studies and first-of-month trades filtered by the T-bond trend; run on the Norgate S&P 500 contract with the Norgate T-bond contract as Data2, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D."),
@@ -713,6 +714,31 @@ mod tests {
         let t = crate::books::lwicw::run("lwicw_bond_holidays", &Ctx::new(&r, &r, &[]), 0, 9, &crate::connors::Params::new()).unwrap();
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i, t[1].dir, t[1].legs[0].i), (-1., 2, 4, 1., 4), "{t:?}");
         assert!(home("lwicw_bond_holidays", "SPX").is_some());
+    }
+    #[test]
+    fn f1d_lwicw_bond_filter_cards() {
+        // review m5: (1) Oops! revisited sell: the open above the setup day's high, a sell stop at that high, stop not armed on the
+        // entry day; (2) first of month (no filter): bought on the open of TDOM 1, out on the close two days later; (3) the bond
+        // flag is read on bar i-1: lwicw_sp_tdw_bonds refuses without bond data
+        let d: Vec<String> = (0..30).map(|k| if k < 22 { format!("1990-01-{:02}", 2 + k) } else { format!("1990-02-{:02}", k - 21) }).collect();
+        let mk = |b: &[(f64, f64, f64, f64)]| -> Vec<Row> { b.iter().zip(&d).map(|(&(o, h, l, c), d)| Row { ticker: "S&P 500 (Norgate &SP)".into(), date: d.clone(), open: o, high: h, low: l, close: c, volume: None }).collect() };
+        let mut b = vec![(100., 101., 99., 100.); 30];
+        b[22] = (100., 102., 99.9, 101.); b[23] = (101., 101.5, 100.5, 101.2); b[24] = (101.2, 101.6, 100.8, 101.4);
+        let r = mk(&b);
+        let t = crate::books::lwicw::run("lwicw_sp_first_of_month", &Ctx::new(&r, &r, &[]), 0, 29, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i), (1, 22, 100., 24), "{t:?}");
+        // bonds rising 2 bars, falling 4 bars: set up an Oops! sell on bar 15 (open above bar 14's high 101), bonds below 4 bars ago
+        let mut b = vec![(100., 101., 99., 100.); 30];
+        for k in 0..14 { b[k] = (90. + k as f64, 91. + k as f64, 89. + k as f64, 90. + k as f64); }
+        b[14] = (103.5, 104., 103.2, 103.8); b[15] = (104.5, 104.6, 103.0, 103.1); b[16] = (102.9, 103.5, 102.5, 103.0);
+        let r = mk(&b);
+        let zb: Vec<_> = (0..30).map(|k| { let c = 100. - k as f64 * 0.1; (c, c, c, c) }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        assert!(crate::books::lwicw::run("lwicw_sp_tdw_bonds", &x, 0, 29, &crate::connors::Params::new()).unwrap().is_empty());
+        TEST_ROWS.with(|t| t.borrow_mut().insert("&ZB", Box::leak(f1c_rows("US T-Bond (Norgate &ZB)", &zb).into_boxed_slice())));
+        let t = crate::books::lwicw::run("lwicw_sp_oops_bonds", &x, 0, 29, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (-1., 15, 104., 16, 102.9), "{t:?}");
+        TEST_ROWS.with(|t| t.borrow_mut().clear());
     }
     #[test]
     fn f1d_bond_cards_bail_delay_and_nearer_stop() {
