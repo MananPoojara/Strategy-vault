@@ -9,7 +9,7 @@ use Status::*;
 pub const BOOK: &str = "wmny";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m",
-    "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */];
+    "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */, "wmny_pct_nh" /* lane PB batch 2: NYSE new highs/lows from Norgate #NYSEHI/#NYSELO; ref authors/pb/w/pb_ref4.py */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -106,7 +106,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|\"% new highs: A 10-day simple moving average of new 52-week highs divided by the total of new 52-week highs and new 52-week lows (NH / (NH+NL)).\"",
             "E|\"The best signals come when the indicator crosses ... from below to above 30\" (\"flashed a buy signal on August 19 when it crossed back above 30\")",
             "X|\"crosses from above to below 70\" (\"flashed a sell signal by slipping through the key 70% mark\"; a decline before reaching 70 gives no sell: \"it has no ability to register a sell signal\")"],
-          "Series: NYSE_NEW_HIGHS / NYSE_NEW_LOWS (daily NYSE 52-week highs / lows); the exchange is not named (examples: S&P 500, Nasdaq) [B]. Not in the vault: data gap. Fills at the close [B].", None),
+          "Series: NYSE_NEW_HIGHS / NYSE_NEW_LOWS = daily NYSE 52-week new highs / new lows from Norgate (#NYSEHI/#NYSELO 1932-2020-09-04, lane PB); the exchange is not named (examples: S&P 500, Nasdaq) [B]. A day with no new highs and no new lows has no ratio, so the 10-day average is undefined for 10 days [B]. Fills at the close [B]. NYSE breadth: runs on the US indices and ETFs SPX, SPY, DJI, DIA, NDX, QQQ only (R4 #306); results end 2020-09-04.", None),
         d("wmny_bond_band", "Bonds above Wilder volatility-band average: own the S&P 500 (Blackman / Williams)", "WM2004 p.61-63 · Are Stocks And Bonds Recoupling?", "Long", Live, false, &["TBOND_FUT_HIGH", "TBOND_FUT_LOW", "TBOND_FUT_CLOSE"],
           &["F|x:=Input(\"MA Periods\",2,1000,10); z:=Input(\"VolatilityFactor\",1,5,2.5); LowerB:=(Ref(LLV(C,7),-1)+(Ref(ATR(7),-1)*z)); UpperB:=(Ref(HHV(C,7),-1)-(Ref(ATR(7),-1)*z)); Mov((LowerB+UpperB)/2,x,S) (weekly T-bond chart)",
             "E|\"buying the S&P 500 index when bonds move above the volatility band\"", "X|\"and exiting when bonds move below the magenta line\""],
