@@ -189,12 +189,20 @@ pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("jkbwts_ez_bonder", 11, ""), ("konwv_bond", 5, ""), ("mhptdi_tdi", 5, ""),
     ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""), // lane PA1 (enabled at integration int-1114a)
 ];
-/// The card notes with the &ZB open label appended (unchanged for other cards).
+/// Lane PF (F1C item 4): the same 1999-12..2000-10 open episode on Norgate &ZN (10-year T-note), measured the ZB-OPEN.md way
+/// (median |open - previous close| 0.5-1.5 ticks of 1/32 and 10-48% zero gaps in those months, vs 3-4.5 ticks and 0-10% in 1995-99).
+pub const ZN_OPEN_NOTE: &str = "On Norgate &ZN, from 1999-12 to 2000-10 the open sits at or near the previous close (median gap 0.5-1.5 ticks, 10-48% of days exactly equal), as on &ZB (R4 #331), so open fills in those 11 months are not true opening prices (the whole history is kept).";
+pub const ZN_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    ("ftm_rg_intermarket", 23, " All 23 lie inside the article's test period (1988-2002); the signals read closes only."),
+    // review PF2 b9ca8ce8 M16: Abel's hard stop fills at the open when gapped; 4 of its 99 &ZN trades are held through those months
+    ("scabeldiv_sma", 4, " They are held through those months; none of their exits fills at an open there."),
+];
+/// The card notes with the &ZB / &ZN open label appended (unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
-    match ZB_OPEN_CARDS.iter().find(|c| c.0 == id) {
-        Some((_, n, extra)) => format!("{notes}{}{ZB_OPEN_NOTE} {n} of this card's &ZB trades are affected.{extra}", if notes.is_empty() { "" } else { " " }),
-        None => notes.to_string(),
-    }
+    let sep = if notes.is_empty() { "" } else { " " };
+    if let Some((_, n, extra)) = ZB_OPEN_CARDS.iter().find(|c| c.0 == id) { return format!("{notes}{sep}{ZB_OPEN_NOTE} {n} of this card's &ZB trades are affected.{extra}"); }
+    if let Some((_, n, extra)) = ZN_OPEN_CARDS.iter().find(|c| c.0 == id) { return format!("{notes}{sep}{ZN_OPEN_NOTE} {n} of this card's &ZN trades are affected.{extra}"); }
+    notes.to_string()
 }
 
 /// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
@@ -476,6 +484,7 @@ const ABEL: &str = "Phil Abel, Diversification And Your Portfolio, S&C V21:10 p.
 const CARDS_PF: &[(&str, &str, &str)] = &[
     ("scbrower_long", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the buy patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scbrower_short", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the sell patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("ftm_rg_intermarket", "&ZN", "Murray Ruggiero, What makes a system a winner, Futures Magazine May 2002 p.59: the silver / 10-year T-note intermarket rule on the Norgate continuous 10-year T-note contract with Norgate silver as the second market (R4 #293 (1)), lane PF."),
     ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scabeldiv_sma", "&6J", ABEL),
     ("scabeldiv_sma", "&6S", ABEL),
@@ -537,7 +546,7 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 mod tests {
     #[test] fn zb_open_label() { // R4 #331: every listed id is a live card; the label is appended only to them
         let ids: Vec<&str> = crate::books::catalogue().iter().map(|d| d.id).collect();
-        for c in super::ZB_OPEN_CARDS { assert!(ids.contains(&c.0), "{}", c.0); }
+        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
         assert_eq!(super::zb_open_notes("dmadr_daily", "x"), "x");
     }
