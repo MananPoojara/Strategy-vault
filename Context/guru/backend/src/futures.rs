@@ -92,6 +92,11 @@ pub const MARKETS: &[Market] = &[
         source: "ICE Sugar No. 11 futures: 112,000 lb per contract, quoted in US cents per lb (1.00 = US$1,120; 0.01 = US$11.20)" },
     Market { sym: "&ZN", name: "10-Year T-Note", tick: 1. / 64., usd: &[("1982-05-03", 1_000.)],
         source: "CBOT 10-year U.S. Treasury note futures: US$100,000 face value, quoted in points of par (1 point = US$1,000; 1/64 = US$15.625)" },
+    // lane PH (WaveRider, the manual's 21-commodity portfolio)
+    Market { sym: "&HE", name: "Lean Hogs", tick: 0.025, usd: &[("1978-11-14", 400.)],
+        source: "CME lean hog futures: 40,000 lb per contract, quoted in US cents per lb (1.00 = US$400; 0.025 = US$10). Norgate quotes the whole series at the lean-hog price level (88.85 cents on 1990-06-01, when live hogs traded near 60), so the lean-hog contract size is applied throughout (the live-hog contract of the 1970s-90s is not held as quoted)" },
+    Market { sym: "&ZM", name: "Soybean Meal", tick: 0.1, usd: &[("1978-01-25", 100.)],
+        source: "CBOT soybean meal futures: 100 short tons per contract, quoted in US$ per short ton (1.00 = US$100; 0.10 = US$10)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -201,6 +206,7 @@ pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("mhs_sp830128_2", 0, ""), ("mhs_sp830107_2", 0, ""), ("mhs_sp830825_2", 3, ""), ("mhs_sp830405_2", 5, ""),
     ("jkbwts_ez_bonder", 11, ""), ("konwv_bond", 5, ""), ("mhptdi_tdi", 5, ""),
     ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""), // lane PA1 (enabled at integration int-1114a)
+    ("ltwr_waverider", 6, " They are held through those months (a stop that the open gaps through fills at the open); none of their fills is at an open there."), // lane PH
 ];
 /// Lane PF (F1C item 4): the same 1999-12..2000-10 open episode on Norgate &ZN (10-year T-note), measured the ZB-OPEN.md way
 /// (median |open - previous close| 0.5-1.5 ticks of 1/32 and 10-48% zero gaps in those months, vs 3-4.5 ticks and 0-10% in 1995-99).
@@ -210,6 +216,7 @@ pub const ZN_OPEN_CARDS: &[(&str, usize, &str)] = &[
     // review PF2 b9ca8ce8 M16: Abel's hard stop fills at the open when gapped; 4 of its 99 &ZN trades are held through those months
     ("scabeldiv_sma", 4, " They are held through those months; none of their exits fills at an open there."),
     ("andro_andromeda", 3, " Its orders all fill at the next open; signals read closes only."),
+    ("ltwr_waverider", 4, " They are held through those months (a stop that the open gaps through fills at the open); none of their fills is at an open there."), // lane PH
 ];
 /// Review PF2 e41b28c8 M17: Norgate &ZC (corn) has a longer episode of the same kind, 1999-12 to about 2006-12 (most months 15-82% of days
 /// open exactly at the previous close and median gaps 0-12 bp, against 5-14% and 13-111 bp in 1999-06..11; mixed again from 2007).
@@ -217,11 +224,17 @@ pub const ZC_OPEN_NOTE: &str = "On Norgate &ZC, from 1999-12 to about 2006-12 th
 pub const ZC_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("andro_andromeda", 30, " Its orders all fill at the next open; 7 of them fall inside The Trading Plan's 1980-2001 window and #168 passes without them."),
     ("scabeldiv_sma", 26, " They are held through those years; 2 of their exits fill at an open there."),
+    ("ltwr_waverider", 24, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at an open there."), // lane PH
 ];
+/// Lane PH (WaveRider): the same CBOT pattern on soybean meal and soybeans, measured as ZC (share of days whose open equals the previous close).
+pub const ZM_OPEN_NOTE: &str = "On Norgate &ZM, from 1999-12 to about 2007-12 the open often sits at the previous close (in most months 15-57% of days exactly equal, against 0-15% in 1995-99 and 0-14% from 2008), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
+pub const ZM_OPEN_CARDS: &[(&str, usize, &str)] = &[("ltwr_waverider", 42, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at an open there.")];
+pub const ZS_OPEN_NOTE: &str = "On Norgate &ZS, from 1999-11 to about 2007-12 the open often sits at the previous close (13-41% of days exactly equal in most months to 2003, 5-24% to 2007, against 0-10% in 1995-99 and 0-14% from 2008), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
+pub const ZS_OPEN_CARDS: &[(&str, usize, &str)] = &[("ltwr_waverider", 39, " They are held through those years (a stop that the open gaps through fills at the open); 7 of their fills are at an open there.")];
 /// The card notes with every matching open-episode label appended (&ZB, &ZN, &ZC; unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
     let mut s = notes.to_string();
-    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC")] {
+    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC"), (ZM_OPEN_CARDS, ZM_OPEN_NOTE, "&ZM"), (ZS_OPEN_CARDS, ZS_OPEN_NOTE, "&ZS")] {
         if let Some((_, n, extra)) = table.iter().find(|c| c.0 == id) {
             if !s.is_empty() { s.push(' '); }
             s += &format!("{note} {n} of this card's {sym} trades are affected.{extra}");
@@ -397,6 +410,11 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
     ("ch_bta2_long_bomb", "&ZB", "1982-01-01", "1995-07-10"), ("ch_bta2_long_bomb", "&HO", "1982-01-01", "1995-07-10"),
     // STAD Vol 5 p.16 "from June, 1993, to May, 1998": 4.5% of trades touch a bar with fills on both legs of its path (7.0% 1979-2020)
     ("stad5_curbond", "&6S", "1993-06-01", "1998-05-31"),
+    // lane PH: WaveRider manual Sec. VI "04/10/1970-6/30/2002": inside it 0.0-4.4% of trades give different fills in the two path orders
+    // of a daily bar (1978-2020: CL 16.8%, CT 5.8%, GC 18.6%, HG 13.0%, NG 19.9%, 6S 6.2%, SI 24.7%)
+    ("ltwr_waverider", "&CL", "1970-04-10", "2002-06-30"), ("ltwr_waverider", "&CT", "1970-04-10", "2002-06-30"), ("ltwr_waverider", "&GC", "1970-04-10", "2002-06-30"),
+    ("ltwr_waverider", "&HG", "1970-04-10", "2002-06-30"), ("ltwr_waverider", "&NG", "1970-04-10", "2002-06-30"), ("ltwr_waverider", "&6S", "1970-04-10", "2002-06-30"),
+    ("ltwr_waverider", "&SI", "1970-04-10", "2002-06-30"),
 ];
 /// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
 const HELD: &[(&str, &str, &str)] = &[
@@ -408,6 +426,10 @@ const HELD: &[(&str, &str, &str)] = &[
     ("lwlts_talon_bondfilter", "&SP", "held under R4 #240 (review B3): 7.1% of its trades on the published 1982-95 window give different fills in the two path orders of a daily bar (an entry and its $1,750 stop, or both entries), and no S&P futures minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 87.4% of its trades (87.8% in the book's 1990-98 window) give different fills when the daily bar is run in its two possible path orders, and no T-bond minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 86.9% of its trades (86.0% in the book's 1990-98 window) give different fills in the two path orders of a daily bar, and no T-bond minute bars exist (limit 5%)"),
+    // lane PH: WaveRider ($2,100 money stop on weekly orders, walked on daily bars; no futures minute bars)
+    ("ltwr_waverider", "&6J", "held under R4 #240/#308: 9.6% of its trades in the manual's 1970-2002 window (11.3% over 1979-2020) give different fills in the two path orders of a daily bar (an entry stop and the $2,100 money stop or the opposite stop on one day), and no yen futures minute bars exist (limit 5%)"),
+    ("ltwr_waverider", "&KC", "held under R4 #240/#308: 18.8% of its trades in the manual's 1970-2002 window (19.0% over 1978-2020) give different fills in the two path orders of a daily bar (an entry stop and the $2,100 money stop on one day), and no coffee futures minute bars exist (limit 5%)"),
+    ("ltwr_waverider", "&GE", "held under R4 #240/#308: 7.3% of its trades in the manual's 1970-2002 window (9.0% over 1982-2020) give different fills in the two path orders of a daily bar, and no Eurodollar futures minute bars exist (limit 5%)"),
     ("ch_bta2_long_bomb", "&KC", "held on coffee under R4 #240: 12.2% of its trades in the book's 1982-95 window (15.7% over 1978-2020) enter and hit the stop on the same day, which daily bars cannot order, and no coffee futures minute bars exist (limit 5%, R4 #314 (3))"),
 ];
 /// Why a card is held on a market its source tests (HELD), if it is.
@@ -478,7 +500,7 @@ const WTC: &str = "Market Analytics, William Tell Coffee Trading System (WT Coff
 const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
@@ -571,6 +593,12 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
     ("scabeldiv_sma", "&ZN", ABEL),
     ("scabeldiv_sma", "&GE", ABEL),
 ];
+/// Lane PH: WaveRider on the manual's portfolio; CL CT GC HG NG 6S SI only inside the manual's window (BOOK_WINDOW), 6J KC GE held (HELD).
+const WR: &str = "longtermtrading.com (Alan Pryor), WaveRider System Manual v1.02a (2002) Sec. V-VI with the vendor's weekly trade lists (MoneyManagement/WR-W-*.xls, 21 commodities 1970-2002): run on this Norgate continuous contract of the manual's portfolio, weekly bars from the back-adjusted daily bars, US$ stops at the contract's US$ per point on the trade date (R4 #293 (1), (3), (4)), lane PH.";
+const CARDS_PH: &[(&str, &str, &str)] = &[("ltwr_waverider", "&ZC", WR), ("ltwr_waverider", "&CC", WR), ("ltwr_waverider", "&LE", WR), ("ltwr_waverider", "&HE", WR),
+    ("ltwr_waverider", "&ZS", WR), ("ltwr_waverider", "&SB", WR), ("ltwr_waverider", "&ZM", WR), ("ltwr_waverider", "&ZN", WR), ("ltwr_waverider", "&ZB", WR),
+    ("ltwr_waverider", "&CL", WR), ("ltwr_waverider", "&CT", WR), ("ltwr_waverider", "&GC", WR), ("ltwr_waverider", "&HG", WR), ("ltwr_waverider", "&NG", WR),
+    ("ltwr_waverider", "&6S", WR), ("ltwr_waverider", "&SI", WR)];
 /// Lane PB: Konstenius wave 1 (S&C V14:12), each printed parameter set on its own contract.
 const CARDS_PB: &[(&str, &str, &str)] = &[
     ("mhptdi_tdi", "&ZB", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
@@ -615,7 +643,7 @@ mod tests {
     #[test] fn non_usd_contract_has_no_usd_value() { let m = super::MARKETS.iter().find(|m| m.sym == "&YAP").unwrap(); assert!(super::usd_per_point(m, "2000-01-03").is_none()); } // review PF2 M20
     #[test] fn zb_open_label() { // R4 #331: every listed id is a live card; the label is appended only to them
         let ids: Vec<&str> = crate::books::catalogue().iter().map(|d| d.id).collect();
-        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
+        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS).chain(super::ZM_OPEN_CARDS).chain(super::ZS_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
         let two = super::zb_open_notes("andro_andromeda", "x"); // a card on several contracts carries each label
         assert!(two.contains("this card's &ZN trades") && two.contains("this card's &ZC trades"));
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
