@@ -10,6 +10,7 @@ import {createPaint,NOT_READY} from '../services/first-paint';
 import {routeData} from '../services/route-data';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
+import {exportEverything,EXPORT_INDICES,EXPORT_PERIODS} from '../services/export-everything';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
 import {BANDY_SIMPLE_METHOD,simpleInstrumentContext} from '../services/bandy-source-account';
 import {unitExposureMethod,unitExposureInstrumentContext,validatedUnitExposureReport} from '../services/unit-exposure-report';
@@ -159,12 +160,12 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
  function snapshotContext(run=STRAT){
   if(!run?.d||!run?.v)throw Error('No completed backtest is available for export.');
-  const state=immutable(S),region=run.region||state.region,unit=unitFor({...run,state,params:run.indicatorParameters,region}),d=unit?run.d:immutable(run.d),v=immutable(run.v);
+  const state=immutable(run.state||S),region=run.region||state.region,unit=unitFor({...run,state,params:run.indicatorParameters,region}),d=unit?run.d:immutable(run.d),v=immutable(run.v);
   const benchmark=currentBenchmark?.d===run.d?currentBenchmark:null;
   const benchmarkTk=document.querySelector('[data-benchmark-comparison]')?.getAttribute('data-benchmark-symbol')||benchmark?.tk||(region==='us'?'SPX':'NIFTY 50');
-  return Object.freeze({d,v,unit,display:immutable(run.display),tk:run.tk,region,state,url:run.url||location.href,params:immutable(run.params||(run.account||unit?run.indicatorParameters:run.d.params||state.p||{})),px:immutable(run.px),
+  return Object.freeze({d,v,unit,display:immutable(run.display),tk:run.tk,region,state,url:run.url||location.href,params:immutable(run.params||run.indicatorParameters||run.d.params||decodeP(state.p)),px:immutable(run.px),
    actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||run.tk,
-   benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px),fileTag:run.fileTag});
+   benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px),fileTag:run.fileTag??(state.p?settingsTag(decodeP(state.p)):undefined)});
  }
  const filePart=value=>String(value??'report').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90)||'report';
  const reportName=(st,kind,extension)=>`${filePart(st.v.id)}-${filePart(st.actualSymbol)}-${filePart(st.d.dates?.[0]||'period')}-${filePart(st.d.dates?.at(-1)||'end')}-${filePart(kind)}${st.fileTag?'-'+filePart(st.fileTag):''}.${extension}`;
@@ -186,7 +187,11 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   sheet['!rows']=[{hpt:30}];if(rows.length&&width){sheet['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:width-1}})};}sheet['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft',state:'frozen'};
   return sheet;
  }
- async function xlsx(kind,rows,percentColumns,st,rowTypes=[]){
+ // Each page export's table, as xlsx() arguments. The page buttons and "Export everything" both build workbooks here, so the files are identical.
+ const REPORT_KINDS=['trades','equity','monthly','benchmark','details'];
+ async function reportTable(kind,st){if(kind==='trades')return ['trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st];if(kind==='details')return ['detailed-statistics',[['Statistic','Net','Gross'],...VaultReport.detailRows(st.d).map(r=>r.slice(0,3))],[],st,['header',...VaultReport.detailRows(st.d).map(r=>r[3])]];if(kind==='monthly'){const m=VaultReport.monthly(st.d),mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return ['monthly-returns',[['Year',...mon,'Total'],...m.years.map(y=>[y,...mon.map((_,i)=>m.months[`${y}-${String(i+1).padStart(2,'0')}`]??null),m.annual[y]]),['Avg',...m.averages,m.annualAverage]],Array.from({length:13},(_,i)=>i+1),st];}if(kind==='equity')return ['equity',[['Date',st.d.source_account?sourceAccountCopy(st.d.source_account).bandy?'Net cash-account equity (initial unit)':'Net risk-sized account equity (initial unit)':'Net equity (normalized)',st.d.source_account?'Gross same-quantity account equity (initial unit)':'Gross equity (normalized)','Selected-symbol buy & hold'],...st.d.dates.map((date,i)=>[date,st.d.equity[i],st.d.gross_equity?.[i]??null,st.d.bh[i]])],[],st];if(kind==='benchmark'){const px=st.benchmarkPx||(st.unit?null:immutable(await benchmarkOhlc(st.benchmarkTk))),{b:benchmark,note}=benchmarkFor(st.d,px,st.unit),keys=['total_return','cagr','max_dd','sharpe','sortino','mar','vol','exposure'];return ['benchmark',[['Statistic','Selected strategy',st.benchmarkLabel+' buy & hold'],...keys.map(k=>[k,st.d.stats[k]??null,benchmark?.[k]??null]),['period',`${st.d.dates[0]} to ${st.d.dates.at(-1)}`,benchmark?`${benchmark.from} to ${benchmark.to}`:note]],[],st,['header','percent','percent','percent','ratio','ratio','ratio','percent','percent']];}throw Error('Unknown export: '+kind);}
+ // save=false returns {name,bytes} instead of downloading (used by "Export everything").
+ async function xlsx(kind,rows,percentColumns,st,rowTypes=[],save=true){
   msg('Preparing Excel…');await (typeof loadXlsx==='function'?loadXlsx():loadScript('vendor/xlsx-js-style-1.2.0.min.js'));
   if(!window.XLSX?.utils)throw Error('The Excel library did not load.');
   const unit=unitFor(st),unitTables=unit?unitExposureTables(unit):null;
@@ -209,7 +214,7 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   XLSX.utils.book_append_sheet(book,styledSheet(context), 'Metadata');XLSX.utils.book_append_sheet(book,styledSheet(sources),'Sources');
   if(st.d.kind==='basket'){XLSX.utils.book_append_sheet(book,styledSheet([['Symbol','Source key','First','Last','Status','Coverage note'],...(st.d.coverage||[]).map(c=>[c.symbol,c.ticker,c.first,c.last,c.status,c.note])]),'Constituent coverage');XLSX.utils.book_append_sheet(book,styledSheet([['Symbol','Entry','Exit','Open','Initial-equity slot','Source net return','Portfolio contribution'],...(st.d.trades||[]).map(t=>[t.symbol,t.entry,t.exit,t.open,t.allocation,t.ret,t.portfolio_contribution])],[4,5,6]),'Portfolio allocation');XLSX.utils.book_append_sheet(book,styledSheet([['Field','Value'],...Object.entries(st.d.portfolio||{}).filter(([,value])=>!Array.isArray(value))]),'Portfolio method');}
   XLSX.utils.book_append_sheet(book,styledSheet([['Parameter','Value'],...Object.entries(st.params)]),'Parameters');
-  const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),reportName(st,kind,'xlsx'));msg('Excel downloaded.');
+  const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});if(!save)return {name:reportName(st,kind,'xlsx'),bytes:new Uint8Array(bytes)};downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),reportName(st,kind,'xlsx'));msg('Excel downloaded.');
  }
  async function pristineExport(data,view,kind){
   if(!pristineCurrent(data,view))throw Error('The Pristine response or current controls changed.');
@@ -283,7 +288,7 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   const enc=encodeURIComponent,links={wa:`https://wa.me/?text=${enc(text+' '+url)}`,x:`https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}`,tg:`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`,mail:`mailto:?subject=${enc(text)}&body=${enc(text+'\n\n'+url+'\n\nTip: use "Send as PDF file" or the download icon to attach the page as a PDF.')}`};
   window.open(links[kind],'_blank','noopener');msg('Link shared. Recipients need a Vault login to open it; send the PDF instead for anyone without one.');}
  async function action(name){if(name==='like'){toggleLike();return;}if(name==='pdf'){msg('Preparing PDF…');try{download(await pagePdf());msg('PDF downloaded.');}catch(e){if(e?.name==='ReportChangedError'){msg(e.message);return;}msg('PDF failed, opening print instead: '+(e?.message||e));finishMetricAnimations();window.print();}return;}if(name==='share-menu'){const m=document.querySelector('.share-menu');if(m){m.hidden=!m.hidden;document.querySelector('[data-action=share-menu]')?.setAttribute('aria-expanded',String(!m.hidden));if(!m.hidden)m.querySelector('button')?.focus();}return;}if(name==='save'){const key=savedKey();if(!key)return;let list=savedList();const was=list.some(x=>x.key===key);list=was?list.filter(x=>x.key!==key):[{key,id:R.id,tk:S.tk,region:S.region,name:(document.querySelector('h1.st')?.textContent||R.id).trim(),hash:location.hash,at:new Date().toISOString().slice(0,10)},...list];writeSaved(list);const b=document.querySelector('[data-action=save]');if(b){const on=!was;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);b.title=on?'Remove from Saved':'Save to your Saved list';b.innerHTML=(on?ICON.saved:ICON.save);}msg(was?'Removed from Saved.':'Saved. Open it any time from Saved in the top menu.');return;}if(name==='share'){const link=location.href;try{await navigator.clipboard.writeText(link);msg('Page link copied. Recipients need a Vault login.');}catch{const field=document.createElement('input');field.value=link;field.setAttribute('aria-label','Shareable page link');const host=document.getElementById('page-action-message');host.replaceChildren(field);field.select();try{if(document.execCommand('copy'))msg('Page link copied. Recipients need a Vault login.');}catch{}}return;}}
- async function exportRunTrades(run){if(run.d.source_account||run.d.unit_exposure_report)throw Error('Account-sized tradesheet: use Apply, then download it from Positions.');if(run.d.trades_page)throw Error(`This run has ${run.d.trades_page.total} trades: open it and download its tradesheet page by page.`);const st=snapshotContext(run);return xlsx('trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st);}
+ async function exportRunTrades(run){if(run.d.source_account||run.d.unit_exposure_report)throw Error('Account-sized tradesheet: use Apply, then download it from Positions.');if(run.d.trades_page)throw Error(`This run has ${run.d.trades_page.total} trades: open it and download its tradesheet page by page.`);const st=snapshotContext(run);return xlsx(...await reportTable('trades',st));}
  const KIND=b=>b.dataset.chartSnapshot?'png':b.id==='csv'?'csv':'xls';
  function iconize(root=document){
   root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);const text=b.id==='csv'?'CSV':b.id==='trades-xlsx'?'Excel':'';b.className=text?'ibtn ibtn-text':'ibtn';b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k]+(text?`<span aria-hidden="true">${text}</span>`:'');});
@@ -293,12 +298,56 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
  document.addEventListener('click',e=>{const s=e.target.closest('[data-share]');if(s){share(s.dataset.share);return;}const m=document.querySelector('.share-menu');if(m&&!m.hidden&&!e.target.closest('.share-menu,[data-action="share-menu"]'))m.hidden=true;});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=document.querySelector('.share-menu');if(m)m.hidden=true;}});
  async function init(){iconize();}
- document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot],[data-report-export],#trades-xlsx,#csv');if(!b)return;try{if(b.dataset.action)return await action(b.dataset.action);if(b.dataset.chartSnapshot)return await snapshot(b.dataset.chartSnapshot);if(!STRAT)return;const st=snapshotContext();if(b.id==='csv')return downloadBlob(new Blob([VaultReport.csv(csvSafeRows([tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)]))],{type:'text/csv;charset=utf-8'}),reportName(st,'trades','csv'));if(b.id==='trades-xlsx')return await xlsx('trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st);const kind=b.dataset.reportExport;if(kind==='unit-audit'||kind==='unit-daily'){const unit=unitFor(st);if(!unit)throw Error('No validated unit-exposure report is available.');const table=unitExposureTables(unit)[kind==='unit-audit'?'audit':'daily'];return await xlsx(kind,[table.headers,...table.rows],table.percentColumns,st);}if(kind==='account-audit'){const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region));if(!account)throw Error('No protected source account is available.');const table=sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)).audit;return await xlsx('account-audit',[table.headers,...table.rows],table.percentColumns,st);}if(kind==='details')return await xlsx('detailed-statistics',[['Statistic','Net','Gross'],...VaultReport.detailRows(st.d).map(r=>r.slice(0,3))],[],st,['header',...VaultReport.detailRows(st.d).map(r=>r[3])]);if(kind==='monthly'){const m=VaultReport.monthly(st.d),mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return await xlsx('monthly-returns',[['Year',...mon,'Total'],...m.years.map(y=>[y,...mon.map((_,i)=>m.months[`${y}-${String(i+1).padStart(2,'0')}`]??null),m.annual[y]]),['Avg',...m.averages,m.annualAverage]],Array.from({length:13},(_,i)=>i+1),st);}if(kind==='equity')return await xlsx('equity',[['Date',st.d.source_account?sourceAccountCopy(st.d.source_account).bandy?'Net cash-account equity (initial unit)':'Net risk-sized account equity (initial unit)':'Net equity (normalized)',st.d.source_account?'Gross same-quantity account equity (initial unit)':'Gross equity (normalized)','Selected-symbol buy & hold'],...st.d.dates.map((date,i)=>[date,st.d.equity[i],st.d.gross_equity?.[i]??null,st.d.bh[i]])],[],st);if(kind==='benchmark'){const px=st.benchmarkPx||(st.unit?null:immutable(await benchmarkOhlc(st.benchmarkTk))),{b:benchmark,note}=benchmarkFor(st.d,px,st.unit),keys=['total_return','cagr','max_dd','sharpe','sortino','mar','vol','exposure'];return await xlsx('benchmark',[['Statistic','Selected strategy',st.benchmarkLabel+' buy & hold'],...keys.map(k=>[k,st.d.stats[k]??null,benchmark?.[k]??null]),['period',`${st.d.dates[0]} to ${st.d.dates.at(-1)}`,benchmark?`${benchmark.from} to ${benchmark.to}`:note]],[],st,['header','percent','percent','percent','ratio','ratio','ratio','percent','percent']);}}catch(e){msg('Export failed: '+e.message);}});
+ document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot],[data-report-export],#trades-xlsx,#csv');if(!b)return;try{if(b.dataset.action)return await action(b.dataset.action);if(b.dataset.chartSnapshot)return await snapshot(b.dataset.chartSnapshot);if(!STRAT)return;const st=snapshotContext();if(b.id==='csv')return downloadBlob(new Blob([VaultReport.csv(csvSafeRows([tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)]))],{type:'text/csv;charset=utf-8'}),reportName(st,'trades','csv'));if(b.id==='trades-xlsx')return await xlsx(...await reportTable('trades',st));const kind=b.dataset.reportExport;if(kind==='unit-audit'||kind==='unit-daily'){const unit=unitFor(st);if(!unit)throw Error('No validated unit-exposure report is available.');const table=unitExposureTables(unit)[kind==='unit-audit'?'audit':'daily'];return await xlsx(kind,[table.headers,...table.rows],table.percentColumns,st);}if(kind==='account-audit'){const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region));if(!account)throw Error('No protected source account is available.');const table=sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)).audit;return await xlsx('account-audit',[table.headers,...table.rows],table.percentColumns,st);}if(REPORT_KINDS.includes(kind))return await xlsx(...await reportTable(kind,st));}catch(e){msg('Export failed: '+e.message);}});
  const refreshHeat=()=>{const el=document.getElementById('heatbox');if(el&&STRAT?.d)el.innerHTML=heatTable(STRAT.d);};
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
  addEventListener('afterprint',()=>document.querySelectorAll('details[data-print-closed]').forEach(d=>{d.open=false;delete d.dataset.printClosed;}));
- return {costState,exportRunTrades,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,tradeTableHTML,equityNavigator,init,iconize,pristineExport,ICON,TRADE_PAGE};
+ // "Export everything" (verifiers): the five page exports for book settings and the optimiser's #1 (its default grid and ranking, as on
+ // the optimisation page) on Nifty 50, Bank Nifty and Midcap 100, full history and from 2010-01-04, one engine run at a time, in one zip.
+ // Admission rules are the page's: an index the strategy is not admitted on, or data that is not ready, is listed in the manifest as skipped.
+ const exportAllHTML=()=>`<div class="detail-tools export-all" data-export-all-box><span class="rnote" data-export-all-status role="status">${isUS()?'Export everything uses the India indices: switch the market to India.':`Export everything: trades, equity, monthly, benchmark and detailed statistics for book settings and the optimiser's #1 on ${EXPORT_INDICES.map(x=>x[1]).join(', ')}, ${EXPORT_PERIODS.map(x=>x[1].toLowerCase()).join(' and ')}, in one zip.`}</span><progress max="1" value="0" hidden></progress><button type="button" class="dbtn sm" data-export-all="cancel" hidden>Cancel</button><button type="button" class="dbtn sm primary" data-export-all="start" ${isUS()?'disabled':''}>Export everything (zip)</button></div>`;
+ let exportAllControl=null;
+ async function exportAll(base,box){
+  const v=base.v,cost=S.cost||'0',exec=costState(S),controls=instrumentControls(v.instrument_policy,v.id,v.book),unitOnly=unitExposureMethod(v.id,v.book),before=new Set(Object.keys(RUNS));
+  const ui=(sel)=>box.querySelector(sel),status=ui('[data-export-all-status]'),bar=ui('progress'),cancel=ui('[data-export-all="cancel"]'),start=ui('[data-export-all="start"]');
+  exportAllControl=new AbortController();const signal=exportAllControl.signal,t0=new Date();
+  start.disabled=true;cancel.hidden=false;bar.hidden=false;
+  const selection=(tk,from,p)=>({...S,region:'in',run_scope:'single',basket:'',tk,from,to:'',p});
+  try{
+   await (typeof loadXlsx==='function'?loadXlsx():loadScript('vendor/xlsx-js-style-1.2.0.min.js'));if(!window.XLSX?.CFB)throw Error('The Excel library did not load.');
+   const {files,manifest}=await exportEverything({signal,
+    progress:(done,total,text)=>{if(!document.contains(box))exportAllControl.abort();bar.max=total;bar.value=done;status.textContent=`${done} of ${total} runs · ${text}`;},
+    admit:tk=>!controls.index?controls.note||'Not admitted on indices.':unitOnly&&tk!=='NIFTY 50'?'This reviewed configuration is admitted on Nifty 50 only.':null,
+    ready:async(tk,from,p)=>{const a=(await getReadiness(tk,from,'',v.id,p,API_IN))[v.id];return a?.status==='ready'?null:a?.note||'The data requirements could not be verified.';},
+    optimiserTop:async(tk,from)=>{
+     const ps=OPT.schemaSync?.[v.id]||[];if(!ps.length)return {skip:'This rule has no settings to optimise.'};
+     if(window.VAULT_APP&&window.VAULT_USER?.role==='viewer')return {skip:'Optimiser runs require researcher access.'};
+     const res=await fetchOpt(optQuery(v,tk,{from,to:''},OptimCore.defaultGrid(ps,OPT_LIMIT),false,exec),API_IN),top=res.rank?.top3?.[0];
+     if(!top)return {skip:`No setting had the optimiser's minimum of ${res.rank?.min_trades??'?'} trades.`};
+     return encodeP(rowOf(res,res.rows[top.row]).p);},
+    run:async(tk,from,p,settings)=>{
+     for(const key of Object.keys(RUNS))if(!before.has(key))delete RUNS[key]; // memory: keep only the run being exported
+     const sel=selection(tk,from,p),d=await runData(v.id,tk,from,'',cost,p,API_IN,exec);if(!d||d.error)throw Error(d?.error||'No response from the calculation engine');
+     const {parameters,unit,account,display}=runModel(v,tk,d,sel);
+     return {d,v,tk,region:'in',state:sel,account,unit,display,indicatorParameters:parameters,params:parameters,dates:d.dates,ms:d._ms==null?undefined:Math.round(d._ms),
+      fixed:account||unit?'Only the fixed reviewed configuration is admitted; optimiser settings need their own review.':undefined,
+      url:location.href.split('#')[0]+href('/s/'+encodeURIComponent(v.id),sel),fileTag:settings==='book'?'book':settingsTag(decodeP(p))};},
+    workbook:async(kind,run)=>{
+     if(kind==='trades'&&run.d.trades_page)return {skip:`This run has ${run.d.trades_page.total} trades, more than one response carries: open it and download its tradesheet page by page.`};
+     const st=snapshotContext(run),[k,rows,pc,,types]=await reportTable(kind,st);const book=await xlsx(k,rows,pc,st,types,false);
+     return book;}});
+   const zip=XLSX.CFB.utils.cfb_new(),stamp=t0.toISOString().replace(/[:.]/g,'-');
+   for(const f of files)XLSX.CFB.utils.cfb_add(zip,f.path,f.bytes);
+   XLSX.CFB.utils.cfb_add(zip,'manifest.csv',new TextEncoder().encode(VaultReport.csv(csvSafeRows(manifest))));
+   const bytes=XLSX.CFB.write(zip,{fileType:'zip',type:'array'});
+   downloadBlob(new Blob([bytes],{type:'application/zip'}),`${filePart(v.id)}-export-everything-${stamp}.zip`);
+   status.textContent=`Downloaded ${files.length} files (${manifest.length-1-files.length} skipped, see manifest.csv).`;
+  }catch(e){status.textContent=signal.aborted?'Export everything cancelled; nothing was downloaded.':'Export everything failed: '+e.message;}
+  finally{for(const key of Object.keys(RUNS))if(!before.has(key))delete RUNS[key];exportAllControl=null;start.disabled=false;cancel.hidden=true;bar.hidden=true;}
+ }
+ document.addEventListener('click',e=>{const b=e.target.closest('[data-export-all]');if(!b)return;if(b.dataset.exportAll==='cancel'){if(exportAllControl){exportAllControl.abort();const st=b.closest('[data-export-all-box]')?.querySelector('[data-export-all-status]');if(st)st.textContent='Cancelling after the current engine call…';}return;}if(!exportAllControl&&STRAT?.v)exportAll(STRAT,b.closest('[data-export-all-box]'));});
+ return {costState,exportRunTrades,exportAllHTML,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,tradeTableHTML,equityNavigator,init,iconize,pristineExport,ICON,TRADE_PAGE};
 })();
 
 // Optimization research on the strategy page: parameter ranges, Rust grid run, Claude's conclusion (top 3 by the
@@ -309,6 +358,7 @@ const OPT_LIMIT = 50000, CC_LIMIT = 10000; // manual search limit; Claude's conc
 const optSchema = async (api=API_IN) => OPT.schemaSync = await (OPT.schemas[api] || (OPT.schemas[api] = Promise.all(guruIds().map(g=>fetch(`${api}/guru/${g}/params`).then(r=>{if(!r.ok)throw new Error('Parameter schema unavailable');return r.json();}))).then(sets=>Object.assign({},...sets)).catch(()=>({}))));
 const decodeP = s => Object.fromEntries((s || '').split(',').filter(Boolean).map(kv => kv.split(':')).map(([k, v]) => [k, +v]));
 const encodeP = p => Object.entries(p).map(([k, v]) => `${k}:${v}`).join(',');
+const settingsTag = p => Object.keys(p).length ? Object.entries(p).map(([k, x]) => k + x).join('_') : 'default';
 const optKey = (id, tk) => [id, tk, S.from, S.to, S.cost, S.slippage, S.rollover, S.region, S.basket].join('|');
 const nVals = g => g.step > 0 && g.max >= g.min ? Math.floor((g.max - g.min) / g.step + 1e-9) + 1 : 0;
 const pLabel = (id, k) => (OPT.schemaSync?.[id] || []).find(x => x.key === k)?.label || k;
@@ -448,7 +498,7 @@ const tradesLink = p => `<button class="olink" data-trades="${esc(encodeP(p))}">
 // The Metadata sheet's Net Profit display and report link describe this row's run, not the default-settings page run.
 async function optTrades(b, res) { const { v, tk } = STRAT, label = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
   try { const d = await runData(v.id, tk, S.from || '', S.to || '', S.cost || '0', b.dataset.trades, API, { ...VaultUI.costState(S), ...res.exec }); if (d.error) throw Error(d.error);
-    const p = decodeP(b.dataset.trades); await VaultUI.exportRunTrades({ ...STRAT, d, params: { ...bookDefaults(v.id), ...p }, display: returnDisplay(d, S.report_mode), url: location.href.split('#')[0] + href('/s/' + encodeURIComponent(v.id), { ...S, p: b.dataset.trades, ...res.exec }), fileTag: Object.keys(p).length ? Object.entries(p).map(([k, x]) => k + x).join('_') : 'default' }); b.textContent = label; }
+    const p = decodeP(b.dataset.trades); await VaultUI.exportRunTrades({ ...STRAT, d, params: { ...bookDefaults(v.id), ...p }, display: returnDisplay(d, S.report_mode), url: location.href.split('#')[0] + href('/s/' + encodeURIComponent(v.id), { ...S, p: b.dataset.trades, ...res.exec }), fileTag: settingsTag(p) }); b.textContent = label; }
   catch (err) { b.textContent = 'Failed: ' + err.message; } finally { b.disabled = false; } }
 const setLine = (p, def) => Object.keys(def).map(k => `<span class="oset">${esc(sLabel(k))} <b class="${Math.abs((p[k] ?? def[k]) - def[k]) > 1e-9 ? 'chg' : ''}">${p[k] ?? def[k]}</b></span>`).join(' ');
 const statCells = m => CC_STATS.map(([k, , f, signed]) => `<td class="n ${k === 'max_dd' ? 'neg' : signed ? cls(m[k]) : ''}">${f(m[k])}</td>`).join('');
@@ -1822,6 +1872,8 @@ async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,opti
  }catch(error){if(generation!==busy)return '';return hold(error.message||'The selected Pristine response could not be validated.');}
 }
 
+// The page's reading of one engine run: its full settings, admitted unit/account report and Net Profit display ("Export everything" reads its runs the same way).
+function runModel(v,tk,d,selection){const parameters={...bookDefaults(v.id),...decodeP(selection.p)},unit=unitExposureMethod(v.id,v.book)||Object.hasOwn(d,'unit_exposure_report')?validatedUnitExposureReport(d,unitAdmission(v,tk,parameters,selection.region,selection)):null,account=sourceAccount(d,v.id,v.book,tk,sourceAdmission(v,tk,parameters,selection.region));return {parameters,unit,account,display:returnDisplay(d,selection.report_mode,account,unit)};}
 async function viewStrategy() {
   const generation=busy,selection={...S},runApi=API,optimization=R.optim;
   let v = CAT.find(x => x.id === R.id);
@@ -1846,9 +1898,8 @@ async function viewStrategy() {
   if (!d || d.error) return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:apiError(d?.error || 'No response from the calculation engine',tk)});
   await schemaRequest;
   if(generation!==busy)return '';
-  let account,unit;const parameters={...bookDefaults(v.id),...decodeP(selection.p)};try{unit=unitExposureMethod(v.id,v.book)||Object.hasOwn(d,'unit_exposure_report')?validatedUnitExposureReport(d,unitAdmission(v,tk,parameters,selection.region,selection)):null;account=sourceAccount(d,v.id,v.book,tk,sourceAdmission(v,tk,parameters,selection.region));}catch(error){return withheldStrategy(v,tk,crumbs,switches,{status:'calculation_unavailable',note:error.message});}
+  let account,unit,parameters,display;try{({parameters,unit,account,display}=runModel(v,tk,d,selection));}catch(error){return withheldStrategy(v,tk,crumbs,switches,{status:'calculation_unavailable',note:error.message});}
   const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(check=>check?.available), pass = chk.filter(x => x.ok).length;
-  const display=returnDisplay(d,selection.report_mode,account,unit);
   const tiles = [[account||unit?display.label:'Net Profit',display.value,x=>pct(x,2,true),display.reportMode,cls(display.value)],['Avg net pnl',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),account?'Weighted per closed trade':'Per closed trade',cls(s.avg_trade)],['No. of trades',s.trades,x=>fx(x,0),'Closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),account?sourceAccountCopy(account).decline:'Largest equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),account?'Account daily returns · rf = 0':'Daily returns · rf = 0']];
   const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);
   if(generation!==busy)return '';
@@ -1861,7 +1912,7 @@ async function viewStrategy() {
     <section class="box"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>
       ${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk, d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}
       <div class="metrics">${tiles.map(([k, x, f, i, c], n) => `<div class="metric"><span>${k}</span><b class="${c || ''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div>
-      </section>
+      ${VaultUI.exportAllHTML()}</section>
     <div data-react-slot="strategy-params"></div><section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>${v.guru==='chande'?'Source interpretation and declared adaptation':'implemented interpretation of the'} ${v.book === 'stc9' ? 'course' : 'book'}, ${srcOf(v)}</small></div>${rulesPanel(v)}</section>
     <section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>
     <section class="box"><div class="box-h">${unit?'Canonical unit-exposure model':account?sourceAccountCopy(account).accountEquity:'Compounded return model'} <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>${account?'Account':'Strategy'}</span><label class="dcheck"><input type="checkbox" id="cmp"> <i class="sw-line" style="background:var(--bh)"></i>Compare with buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div>
