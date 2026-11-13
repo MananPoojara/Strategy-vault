@@ -846,8 +846,9 @@ mod tests {
     #[test]
     fn option_rules_need_real_option_prices() {
         // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
-        let r=rows();
         for &id in crate::options::RULES {
+            let mut r=rows();
+            if id.starts_with("as51_opt") {for x in r.iter_mut(){x.ticker="NIFTY 50".into();}} // lane F2: gate-allowed on NIFTY 50 only; no weekly store loaded here
             let mut ctx=Ctx::new(&r,&r,&[]);
             ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
             let e=check(&ctx,&definition(id),0,4,&Params::new()).unwrap();

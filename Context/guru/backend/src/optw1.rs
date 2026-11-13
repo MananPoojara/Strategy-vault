@@ -3,7 +3,7 @@
 //! Data: `<options dir>/../weekly1m/<TICKER>.w1.csv` + `.w1idx.csv` (Date,offset,bytes,expiry), built read-only from the
 //! user's StockMock store (#Data/stores/NIFTY_full) by authors/titles-1030/F2w/build_w1.py: per trading date from 2019-02-11 the
 //! nearest expiry's 1-minute bars (padded / zero-volume minutes dropped: a minute without a trade has no bar) of the strikes
-//! within 300 points of the spot range of the day and the day before, the out-of-the-money strikes beyond it that traded at
+//! within 300 points of the spot range of the day and the two trading days before, the out-of-the-money strikes beyond it that traded at
 //! 10 or more that day, and the highest-open-interest call and put at 09:19; plus the NIFTY 50 spot minutes (contract 0).
 //! Day block: `#,<date>,<expiry>,<n>`, `K,<ci>,<strike>,<CE|PE>,<oi at 09:19>`, then runs `R,<ci>,<m0>` of rows `a,b,c,d` in
 //! paise (a = open - previous close, the run's first row: the open; b = high - open; c = open - low; d = close - open);
@@ -23,20 +23,23 @@ use std::sync::OnceLock;
 /// Folder of the w1 files (set by main from the India options folder: its sibling `weekly1m`).
 pub static DIR: OnceLock<String> = OnceLock::new();
 static STORES: OnceLock<BTreeMap<String, Store>> = OnceLock::new();
+static NEXT: OnceLock<BTreeMap<String, Store>> = OnceLock::new();
 pub const SPOT: usize = 0;
 pub const MINUTES: usize = 375;
 
 pub struct Store { idx: BTreeMap<String, (u64, usize)>, path: std::path::PathBuf }
 
 impl Store {
-    pub fn load(dir: &str, ticker: &str) -> Option<Store> {
+    pub fn load(dir: &str, ticker: &str) -> Option<Store> { Store::load_named(dir, ticker, "w1") }
+    /// `kind` w1 = the nearest expiry of each date; w1n = the next weekly expiry on expiry days (lane F2, 6.13)
+    pub fn load_named(dir: &str, ticker: &str, kind: &str) -> Option<Store> {
         let t = ticker.replace(' ', "_");
-        let text = std::fs::read_to_string(format!("{dir}/{t}.w1idx.csv")).ok()?;
+        let text = std::fs::read_to_string(format!("{dir}/{t}.{kind}idx.csv")).ok()?;
         let idx: BTreeMap<String, (u64, usize)> = text.lines().skip(1).filter_map(|l| {
             let mut f = l.split(',');
             Some((f.next()?.to_string(), (f.next()?.parse().ok()?, f.next()?.parse().ok()?)))
         }).collect();
-        (!idx.is_empty()).then(|| Store { idx, path: format!("{dir}/{t}.w1.csv").into() })
+        (!idx.is_empty()).then(|| Store { idx, path: format!("{dir}/{t}.{kind}.csv").into() })
     }
     pub fn first(&self) -> &str { self.idx.keys().next().map_or("", |s| s.as_str()) }
     pub fn last(&self) -> &str { self.idx.keys().next_back().map_or("", |s| s.as_str()) }
@@ -47,6 +50,15 @@ impl Store {
         std::fs::File::open(&self.path).and_then(|mut f| { f.seek(SeekFrom::Start(off))?; f.read_exact(&mut buf) }).ok()?;
         Day::parse(std::str::from_utf8(&buf).ok()?)
     }
+}
+
+/// The next-weekly-expiry blocks of expiry days (`<TICKER>.w1n.csv`; None: not built).
+pub fn store_next(ticker: &str) -> Option<&'static Store> {
+    NEXT.get_or_init(|| {
+        let mut m = BTreeMap::new();
+        if let Some(d) = DIR.get() { for t in ["NIFTY 50"] { if let Some(s) = Store::load_named(d, t, "w1n") { m.insert(t.to_string(), s); } } }
+        m
+    }).get(ticker)
 }
 
 /// The store of one underlying (None: no w1 files for it, or the folder is not set).
@@ -163,6 +175,8 @@ pub struct Leg {
     pub hold: Option<usize>,
     /// the entry fill (price, minute), kept after the leg closes
     pub fill: Option<(f64, usize)>,
+    /// bought leg: once started (start_trail), the stop follows frac x the highest price since (NaN: off)
+    pub trail_frac: f64,
     /// last traded price of the contract seen by the leg (a level order's reference price at its start)
     pub prev: f64,
     /// working levels once open
@@ -173,7 +187,7 @@ pub struct Leg {
 
 impl Leg {
     pub fn new(ci: usize, q: f64, st: St) -> Leg {
-        Leg { ci, q, st, stop: f64::NAN, target: f64::NAN, trail_at: f64::NAN, trail_to: f64::NAN, exit_m: MINUTES, exit_why: "", amb: false, hold: None, fill: None,
+        Leg { ci, q, st, stop: f64::NAN, target: f64::NAN, trail_at: f64::NAN, trail_to: f64::NAN, exit_m: MINUTES, exit_why: "", amb: false, hold: None, fill: None, trail_frac: f64::NAN,
             stop_lv: f64::NAN, target_lv: f64::NAN, trail_lv: f64::NAN, prev: f64::NAN }
     }
     pub fn entry(&self) -> Option<(f64, usize)> { if let St::Open { entry, m } = self.st { Some((entry, m)) } else { None } }
@@ -207,7 +221,10 @@ impl Leg {
                     if up && inside(self.stop_lv) { (Some(self.stop_lv), "stop") }
                     else if !up && inside(self.trail_lv) { let t = self.trail_lv; self.stop_lv = self.trail_stop(); return self.seg(t, b, false, m, ev); }
                     else { (None, "") }
-                } else if !up && inside(self.stop_lv) { (Some(self.stop_lv), "stop") } else if up && inside(self.target_lv) { (Some(self.target_lv), "target") } else { (None, "") };
+                } else if !up && inside(self.stop_lv) { (Some(self.stop_lv), "stop") } else if up && inside(self.target_lv) { (Some(self.target_lv), "target") } else {
+                    if up && self.trail_frac.is_finite() { self.stop_lv = self.stop_lv.max(self.trail_frac * b); } // a new high raises the trailing stop
+                    (None, "")
+                };
                 if let Some(lv) = hit {
                     let px = at(lv);
                     ev.push((1, (px * 1e4).round() as i64));
@@ -262,6 +279,12 @@ impl Leg {
         walk(&mut other, !hf, &mut e2);
         if e1 != e2 { self.amb = true; }
         self.prev = z.c;
+    }
+    /// Start trailing a bought leg's stop at frac x its last traded price, then x every new high.
+    pub fn start_trail(&mut self, frac: f64) {
+        if !matches!(self.st, St::Open { .. }) || self.q < 0.0 { return; }
+        self.trail_frac = frac;
+        if self.prev.is_finite() { self.stop_lv = self.stop_lv.max(frac * self.prev); }
     }
     /// Close an open leg at `px` (end of the data / the day), minute m.
     pub fn close(&mut self, px: f64, m: usize, why: &str) { if matches!(self.st, St::Open { .. }) { self.st = St::Done { px, m, why: why.into() }; } }
@@ -343,5 +366,19 @@ mod tests {
         let mut l = mk();
         l.step(101, bar(60.0, 60.0, 60.0, 60.0));
         assert_eq!(l.st, St::Gone);
+    }
+
+    #[test]
+    fn bought_leg_trailing_stop_follows_new_highs() {
+        // bought at 100, stop 50%; trailing at half the price from 170, then from the new high 200 (stop 100)
+        let mut l = Leg::new(1, 1.0, St::Timed { at: 0, until: 10 });
+        l.stop = 0.5;
+        l.step(0, bar(100.0, 100.0, 100.0, 100.0));
+        l.step(1, bar(170.0, 170.0, 170.0, 170.0));
+        l.start_trail(0.5);
+        l.step(2, bar(180.0, 200.0, 180.0, 190.0));
+        assert!(matches!(l.st, St::Open { .. }));
+        l.step(3, bar(150.0, 150.0, 99.0, 120.0)); // opens at 150 (> 100), falls through 100
+        assert_eq!(l.st, St::Done { px: 100.0, m: 3, why: "stop".into() });
     }
 }

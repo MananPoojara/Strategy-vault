@@ -340,7 +340,7 @@ pub fn options_tickers(id:&str)->&'static [&'static str] {
             |"hfm_und"|"hfm_und_long"|"hfm_und_short"|"otvt_diz_short_strangle"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only; otvt_diz: lane K54
         "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
         "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
-        "as51_opt_multi_sell"|"as51_opt_oi_buy"|"as51_opt_theta"|"as51_opt_btst"|"as51_opt_3pm"=>&["NIFTY 50"], // lane F2 (R4 #293): NIFTY weekly options, the contract the book names
+        "as51_opt_multi_sell"|"as51_opt_oi_buy"|"as51_opt_theta"|"as51_opt_btst"|"as51_opt_3pm"|"as51_opt_straddle"=>&["NIFTY 50"], // lane F2 (R4 #293): NIFTY weekly options, the contract the book names
         _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
     }
 }
