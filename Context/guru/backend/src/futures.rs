@@ -357,7 +357,8 @@ pub fn rows(sym: &str) -> Option<&'static [Row]> {
 thread_local! { pub static TEST_ROWS: std::cell::RefCell<BTreeMap<&'static str, &'static [Row]>> = Default::default(); }
 /// Cards that read a second Norgate contract (Data2) and the contracts they read (lane F1C, review REV-F1B M3).
 const DATA2: &[(&str, &[&str])] = &[("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2_goldbond_adx", &["&GC"]), ("ch_bta2_intermarket_trio", &["&GC", "&ZS", "&HG"]),
-    ("nfgu_pathfinder", &["&ZB"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"])];
+    ("nfgu_pathfinder", &["&ZB"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"]),
+    ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"])];
 /// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
 pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
     ctx_market(x)?;
@@ -385,6 +386,7 @@ pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == i
 /// Lane F1D (continues F1B/F1C).
 /// Lane F1D: Larry Williams's printed T-bond rules (Long-Term Secrets to Short-Term Trading ch.4, 6, 7, 8).
 const LWB: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999): the T-bond rules of ch.4 (p.61-65), ch.6 (p.86-87), ch.7 (p.98, 116-118) and ch.8 (p.124-126), tested on CSI \"DAY T-BONDS\" back-adjusted data with System Writer/TradeStation; run on the Norgate T-bond continuous contract with the book's dollar stops at $1,000 per point (R4 #293 (1), (3)), lane F1D.";
+const LWB10: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999) ch.10 p.150-157, Figs. 10.2, 10.6, 10.8-10.10: T-bond first trading day of the month, TDM 18 / 22 buys with the gold downtrend filter and TDM 12 sells (with and without the gold uptrend filter), DAY T-BONDS 01/01/86-08/28/98; run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 for the gold filters ($ stops at $1,000 per point; R4 #293 (1), (3)), lane F1D.";
 const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_vb_bonds", "&ZB", LWB),
     ("lwlts_vb_bonds_tdw", "&ZB", LWB),
@@ -396,6 +398,11 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_oops_buy_bonds_ma9", "&ZB", LWB),
     ("lwlts_oops_sell_bonds_ma9", "&ZB", LWB),
     ("lwlts_gsv_bonds", "&ZB", LWB),
+    ("lwlts_month_day1_bonds", "&ZB", LWB10),
+    ("lwlts_tdm18_gold_bonds", "&ZB", LWB10),
+    ("lwlts_tdm22_gold_bonds", "&ZB", LWB10),
+    ("lwlts_tdm12_sell_bonds", "&ZB", LWB10),
+    ("lwlts_tdm12_sell_gold_bonds", "&ZB", LWB10),
     ("lwlts_bonds_8day", "&ZB", "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999) p.212-213, the August 1997 letter: buy the close when it is above the close 8 days ago, $850 stop, $3,500 target, T-bond futures since 1977 with $50 commission and slippage; run on the Norgate T-bond continuous contract ($850 = 0.85 point, $3,500 = 3.5 points at $1,000 per point; R4 #293 (1), (3)), lane F1D."),
 ];
 /// Lane P1: two-leg spreads on two continuous contracts, run in the first contract's context.
@@ -601,6 +608,19 @@ mod tests {
         let ta = run(&a);
         assert!(ta.len() == 1 && ta[0].legs[0].i == 45 && ta[0].dir > 0., "{ta:?}");
         assert!(run(&z).is_empty());
+        TEST_ROWS.with(|t| t.borrow_mut().clear());
+    }
+    #[test]
+    fn f1d_tdm12_sell_gold_filter_reads_gold_bars() {
+        // TDM 12 = bar 11 (the month starts on the 1st); gold's close on bar 10 is above its close 10 gold bars earlier -> sell
+        // the open of bar 11, out on the close of bar 14; no gold loaded -> no trade (readiness refuses: data2_issue)
+        let r = f1c_rows("US T-Bond (Norgate &ZB)", &vec![(100., 101., 99., 100.); 20]);
+        let run = || crate::books::lwlts::run("lwlts_tdm12_sell_gold_bonds", &Ctx::new(&r, &r, &[]), 0, 19, &crate::connors::Params::new()).unwrap();
+        assert!(run().is_empty());
+        let gold: Vec<_> = (0..20).map(|k| (300. + k as f64, 300. + k as f64, 300. + k as f64, 300. + k as f64)).collect();
+        TEST_ROWS.with(|t| t.borrow_mut().insert("&GC", Box::leak(f1c_rows("Gold (Norgate &GC)", &gold).into_boxed_slice())));
+        let t = run();
+        assert_eq!((t.len(), t[0].dir, t[0].legs[0].i, t[0].exit_i), (1, -1., 11, 14), "{t:?}");
         TEST_ROWS.with(|t| t.borrow_mut().clear());
     }
     #[test]

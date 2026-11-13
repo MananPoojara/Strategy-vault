@@ -93,6 +93,14 @@ const GSVB_R: &[&str] = &["F|Buy setup: \"today's close lower than the close 5 d
     "X|\"my stop is $1,600\" (p.125); \"my computer software does not allow us to bring into play a protective stop on the day of entry\" (p.126): from the day after entry",
     "X|\"I will take profits on the first profitable opening after being in the trade for 2 days\" (p.125). Unstated in the book: the count; vault reading: from the opening of the 2nd bar after the entry bar",
     "X|Unstated in the book: an opposite signal while in a trade; vault reading: it exits and reverses (Ch. 11 rule 3)"];
+/// Lane F1D: Ch. 10 bond month trades (p.149-156; reports 01/01/86-08/28/98, OCR authors/f1d/w/lw_p152..157.txt).
+const TDMG_R: &[&str] = &["E|\"buying Bonds on the opening of TDM 18 with a $1,500 stop and exiting on the close 3 days after entry\" (p.153; TDM 22: \"delaying our entry until TDM 22\", p.154); TDM = count of trading days so far this month",
+    "F|\"trades were only taken if Gold was in a downtrend (i.e., the close of Gold on the day prior to entry was less than 24 days ago)\" (p.153): the Norgate gold contract as Data2, its close on the bond's previous bar (gold's last bar on or before that date) below its close 24 gold bars earlier",
+    "X|$1,500 = 1.5 points from the entry day (\"the Bonds used a $1,500 stop starting on entry day\", p.89); out on the close of the third day after entry"];
+const TDM12_R: &[&str] = &["E|\"The rules called for selling on the open of TDM 12\" (p.155)",
+    "X|\"with our usual 3-day exit and $1,400 stop\" (p.155): out on the close of the third day after entry; $1,400 = 1.4 points from the entry day (the bond TDM convention, p.89)"];
+const TDM12G_F: &str = "F|\"trades were only taken when Gold had closed greater than the close 10 days ago\" (p.156-157): the Norgate gold contract as Data2, its close on the bond's previous bar above its close 10 gold bars earlier (reading: the day prior to entry, as the buy filter p.153)";
+const TDM12G_R: &[&str] = &[TDM12_R[0], TDM12G_F, TDM12_R[1]];
 const HH_N: &str = "Fig. 15.4 (p.239), S&P 500; test window not printed. Read: TradeStation Highest(High,X) on today's bar as the stop level, setup uses the X bars before today. Stop armed on the entry day.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -265,7 +273,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Friday closes down and Bonds on Friday above 15 days ago (p.127)", "E|Buy Monday at the open + Friday's high minus Friday's open", "X|Bailout and $2,500 stop"], "161 trades 86% $354.58, 09/15/87-08/28/98."),
         off!("lwlts_willspread", "Will-Spread (Ch. 9)", "Ch 9 · Quote screen", "Long/Short", NeedsData("Needs 15/30-minute bars of the traded market and of T-Bonds/T-Bills (or Gold for bonds); intraday and bond data are not in the vault."),
             &["F|Spread = primary / secondary x 100; 5-period EMA minus 20-period EMA (S&P: 3 and 15) (p.138-141)", "E|Zero-line crossing, then the next bar takes out the crossing bar's high (low)"], "Intraday."),
-        off!("lwlts_month_bonds", "Month-end bond trades and S&P first day with bond trend (Ch. 10)", "Ch 10 · Month-end", "Long/Short", NeedsData(BONDS),
+        live!("lwlts_month_day1_bonds", "Bonds buy the first trading day of the month (Fig. 10.2)", "Ch 10 · Month-end", "Long",
+            &["E|\"buying the first trading day of every month in the Bonds, as we did in the S&P 500\" (p.150): the open of TDM 1",
+              "X|\"using an $1,100 stop and exiting on the first profitable opening\" (p.150): 1.1 points. Unstated in the book: the stop on the entry day; vault reading: armed on the entry day (the bonds' TDM convention, p.89)",
+              "F|Option p.skip=1 (not the base rule): \"by-passing the poorer performing months which, as shown in Table 10.2, are January, February, April, and October\" (p.150)"],
+            ZB_N, claim("149", "69%", "$218.75", "1 day", "01/01/86-08/28/98")),
+        live!("lwlts_tdm18_gold_bonds", "T-Bond buy TDM 18 · gold downtrend (Fig. 10.6)", "Ch 10 · Month-end", "Long", TDMG_R, ZB_N, claim("90", "75%", "$356.25", "3 days", "01/01/86-08/28/98")),
+        live!("lwlts_tdm22_gold_bonds", "T-Bond buy TDM 22 · gold downtrend (Fig. 10.8)", "Ch 10 · Month-end", "Long", TDMG_R, ZB_N, claim("28", "89%", "$719.87", "3 days", "01/01/86-08/28/98")),
+        live!("lwlts_tdm12_sell_bonds", "T-Bond sell TDM 12 (Fig. 10.9)", "Ch 10 · Month-end", "Short", TDM12_R, ZB_N, claim("152", "76%", "$133.43", "3 days", "01/01/86-08/28/98")),
+        live!("lwlts_tdm12_sell_gold_bonds", "T-Bond sell TDM 12 · gold uptrend (Fig. 10.10)", "Ch 10 · Month-end", "Short", TDM12G_R, ZB_N, claim("73 ($26,250 / $359)", "78%", "$359", "3 days", "01/01/86-08/28/98")),
+        off!("lwlts_month_bonds", "Month-end bond trades and S&P first day with bond trend (Ch. 10)", "Ch 10 · Month-end", "Long/Short", NotTestable("Split into its printed rules (lane F1D, R4 #293): lwlts_month_day1_bonds, lwlts_tdm18_gold_bonds, lwlts_tdm22_gold_bonds, lwlts_tdm12_sell_bonds, lwlts_tdm12_sell_gold_bonds on the Norgate T-bond contract; the S&P first-day rule with the bond trend is lwlts_month_day1_sp_bonds. TDM 18 and TDM 22 without gold (Fig. 10.5, 10.7) are lwlts_tdm18_bonds / lwlts_tdm22_bonds."),
             &["F|S&P first trading day only if Bonds closed higher than 30 days ago (p.149)", "E|Bonds: first TDM ($1,100 stop, bailout); TDM 18 and 22 ($1,500 stop, close 3 days after entry, Gold < 24 days ago); sell TDM 12 ($1,400, Gold > 10 days ago) (p.149-156)"], "Bond and gold futures."),
         off!("lwlts_bonds_channel", "S&P buys on bond channel breakouts (Fig. 15.1, 15.2)", "Ch 15 · Data A and data B", "Long", NeedsData(BONDS),
             &["E|Buy the S&P market on close when Bonds close above the highest high of the last 14 days (p.235)", "X|Lowest low of the last 17 days in Bonds, or a $3,000 stop; Fig. 15.2: lowest low of the last 12 days in the S&P"], "$141,792.50, avg $1,750."),
@@ -344,6 +361,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwlts_outside_down_bonds_xthu" => f("lwlts_outside", "Outside day down close", "Bonds, not Thursday"),
         "lwlts_month_day1" => f("lwlts_month", "Month-end trades", "S&P first trading day"),
         "lwlts_month_bonds" | "lwlts_eom_sp" => f("lwlts_month", "Month-end trades", "Bonds / end of month"),
+        "lwlts_month_day1_bonds" => f("lwlts_month", "Month-end trades", "Bonds first trading day"),
+        "lwlts_tdm18_gold_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 18, gold"),
+        "lwlts_tdm22_gold_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 22, gold"),
+        "lwlts_tdm12_sell_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds sell TDM 12"),
+        "lwlts_tdm12_sell_gold_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds sell TDM 12, gold"),
         "lwlts_hh1" => f("lwlts_hh", "Buy new X-day highs", "X = 1"),
         "lwlts_hh5" => f("lwlts_hh", "Buy new X-day highs", "X = 5"),
         "lwlts_hh10" => f("lwlts_hh", "Buy new X-day highs", "X = 10"),
@@ -406,6 +428,12 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "lwlts_oops_buy_bonds_ma9" | "lwlts_oops_sell_bonds_ma9" => vec![stop(1800.0), day0(1.0), p("bail_after", "Bailout from the opening N bars after entry", 3.0, 1.0, 10.0, 1.0), zb()],
         "lwlts_gsv_bonds" => vec![p("mult", "Entry: open +/- x the 4-day average swing", 1.8, 0.2, 4.0, 0.1), stop(1600.0), day0(0.0),
             p("bail_after", "Bailout from the opening N bars after entry", 2.0, 1.0, 10.0, 1.0), p("gold", "Sell only if gold closed below its close 20 bars earlier (option, p.125)", 0.0, 0.0, 1.0, 1.0), zb()],
+        "lwlts_month_day1_bonds" => vec![stop(1100.0), day0(1.0), p("skip", "Skip January, February, April, October (option, p.150)", 0.0, 0.0, 1.0, 1.0), zb()],
+        "lwlts_tdm18_gold_bonds" | "lwlts_tdm22_gold_bonds" => vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(1500.0), day0(1.0),
+            p("gold_n", "Gold close below its close N gold bars earlier", 24.0, 1.0, 100.0, 1.0), zb()],
+        "lwlts_tdm12_sell_bonds" => vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(1400.0), day0(1.0), zb()],
+        "lwlts_tdm12_sell_gold_bonds" => vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(1400.0), day0(1.0),
+            p("gold_n", "Gold close above its close N gold bars earlier", 10.0, 1.0, 100.0, 1.0), zb()],
         "lwlts_bonds_8day" => vec![p("lookback", "Close above the close N bars ago", 8.0, 1.0, 50.0, 1.0), stop(850.0),
             p("target_usd", "Profit target (book $)", 3500.0, 0.0, 10000.0, 250.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" =>
@@ -721,6 +749,37 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                             _ => none,
                         }
                     })
+                }
+            }
+        }
+        "lwlts_month_day1_bonds" | "lwlts_tdm18_gold_bonds" | "lwlts_tdm22_gold_bonds" | "lwlts_tdm12_sell_bonds" | "lwlts_tdm12_sell_gold_bonds" => {
+            // lane F1D (R4 #293): Ch. 10 bond month trades, only on the Norgate T-bond contract
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            // gold (Data2): its close on the bond's bar i-1 vs gold_n gold bars earlier, on gold's own bars
+            let gold = |up: bool| -> Option<Vec<f64>> {
+                let n = g("gold_n").max(1.0) as usize;
+                let rows = crate::futures::rows("&GC")?;
+                let gc = crate::second::align("&GC", x.r, rows);
+                Some(gc.own(|r| (0..r.len()).map(|k| if k >= n { ((r[k].close > r[k - n].close) == up && r[k].close != r[k - n].close) as u8 as f64 } else { f64::NAN }).collect()))
+            };
+            match id {
+                "lwlts_month_day1_bonds" => {
+                    cfg.bailout = true; cfg.hold = None;
+                    let skip = g("skip") >= 0.5;
+                    simulate(x, from, to, &cfg, |i| {
+                        let m = &x.r[i].date[5..7];
+                        if td[i] == 1 && !(skip && matches!(m, "01" | "02" | "04" | "10")) { (Some(Ent::Open), None) } else { none }
+                    })
+                }
+                "lwlts_tdm12_sell_bonds" => simulate(x, from, to, &cfg, |i| if td[i] == 12 { (None, Some(Ent::Open)) } else { none }),
+                "lwlts_tdm12_sell_gold_bonds" => {
+                    let Some(gu) = gold(true) else { return Some(vec![]) }; // readiness refuses this case (futures::data2_issue)
+                    simulate(x, from, to, &cfg, |i| if td[i] == 12 && i > 0 && gu[i - 1] == 1.0 { (None, Some(Ent::Open)) } else { none })
+                }
+                _ => {
+                    let n = if id == "lwlts_tdm18_gold_bonds" { 18 } else { 22 };
+                    let Some(gd) = gold(false) else { return Some(vec![]) };
+                    simulate(x, from, to, &cfg, |i| if td[i] == n && i > 0 && gd[i - 1] == 1.0 { (Some(Ent::Open), None) } else { none })
                 }
             }
         }
