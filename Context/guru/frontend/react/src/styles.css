@@ -633,6 +633,7 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .metrics {grid-template-columns:repeat(7,minmax(0,1fr));}
 .metric b {font-size:28px;}
 .chart-tools,.detail-tools {display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;}
+.export-all [hidden] {display:none!important;} .export-all .rnote {flex:1 1 320px;margin:0;} .export-all progress {width:140px;}
 .equity-navigator {padding:12px;border:1px solid var(--rule);background:var(--card);margin-top:12px;border-radius:var(--r-field);display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
 .equity-navigator label {display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);}
 .equity-navigator input {width:100%;accent-color:var(--blue);cursor:ew-resize;}
