@@ -246,7 +246,8 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
 /// Lane F1C (R4 #326): six Chande ch.5 systems on crude enter at the 2020-04-20 close (unadjusted -37.63), so on &CL their run
 /// ends 2020-04-17 (ch_bta2_adx30 does not trade there and keeps the whole series).
 const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref",
-    "ch_bta2_adx_rising", "ch_bta2_pullback"];
+    "ch_bta2_adx_rising", "ch_bta2_pullback",
+    "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */];
 /// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
 pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
     if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
@@ -437,7 +438,8 @@ const CARDS_PB: &[(&str, &str, &str)] = &[
 ];
 /// Lane PA1: Downs's tactical patterns (books::scdtac), each on the contract the article tests (S&C V.17:1).
 const DOWNS: &str = "Walter T. Downs, The Tactical Trader, Technical Analysis of Stocks & Commodities V.17:1 (Jan 1999) p.27-37: weekly soybean gaps and monthly equilateral quads, each tested by the author on one futures market (Omega back-adjusted continuous data); run on the Norgate continuous contract of that market (R4 #293 (1)), lane PA1.";
-const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS)]; // the quads ids are duplicates of wtdtt_m_equi_quads (R4 #324 B1)
+const PEE: &str = "M.H. Pee, Trend Continuation Factor (S&C V.20:3 p.58-64) and Trend Intensity Index (S&C V.20:6 p.32-35): reversal systems tested on continuous contracts of 15 futures 1/4/1982-12/31/1998; each card runs on the Norgate continuous contract of one market the article tested and the vault holds (R4 #293 (1), #323 (1)), lane PA1.";
+const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS), ("scpee_tcf_zb", "&ZB", PEE), ("scpee_tcf_6b", "&6B", PEE), ("scpee_tcf_cl", "&CL", PEE), ("scpee_tcf_gc", "&GC", PEE), ("scpee_tcf_6j", "&6J", PEE), ("scpee_tcf_6s", "&6S", PEE), ("scpee_tcf_si", "&SI", PEE), ("scpee_tii_zb", "&ZB", PEE), ("scpee_tii_6b", "&6B", PEE), ("scpee_tii_cl", "&CL", PEE), ("scpee_tii_gc", "&GC", PEE), ("scpee_tii_6j", "&6J", PEE), ("scpee_tii_6s", "&6S", PEE), ("scpee_tii_si", "&SI", PEE)];
 /// Lane PA2 (13 Nov 2026): Barrie's CBOT T-bond tests (books::scsbqs), on the T-bond continuous contract the article names.
 const SBQS: &str = "Scott Barrie, 'Quasi-Seasonal Tendencies in Bond Futures', Technical Analysis of Stocks & Commodities V.14:1 (1996) p.19-25 (Figures 4, 7, 10: CBOT long bond futures 1979-1994, close-to-close, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 const JMCT: &str = "John L. Momsen, 'Trade Crude Now', Technical Analysis of Stocks & Commodities V.19:8 (2001) p.53-56, sidebar 'Crude oil seasonal trade #2' (TradeStation code; November crude oil futures 1983-1999): run on the Norgate crude-oil continuous contract only (R4 #293 (1))";
