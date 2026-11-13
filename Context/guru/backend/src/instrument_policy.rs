@@ -270,7 +270,8 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
     "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
-    "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3", "ftm_rg_oops" /* K54, #233 tick default: K54w/M3-oops.tsv */];
+    "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3", "ftm_rg_oops" /* K54, #233 tick default: K54w/M3-oops.tsv */,
+    "scrfobv_3ema" /* lane PA1: authors/pa1/w/stats.out (NDX better in both windows) */];
 pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "atm01_td_carrie", "atmrc_swing_stop", "atmrc_swing_trail", "bfmm_mm2_es",
     "bfmm_nql", "djcs_pct_reversal", "elcim_ts_fi", "epfpp_fxed_trend", "fot07_kama_range", "ftm_kf_sd", "jbid_inside_day",
     "jcurt_jk31_pattern", "jkbk_starting_point", "kets_seas_mom_limit", "lebtcb_adavol", "lg3k_tr_day", "lkcpt_wdmi", "lkqts_tiar", "lwmdc_open_up_oc",
@@ -3994,7 +3995,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(73,17,44)); // + K70 as51_donchian_pb, as51_fractal_sma (SPX) // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(73,18,44)); // + PA1 scrfobv_3ema (NDX) // + K70 as51_donchian_pb, as51_fractal_sma (SPX) // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
