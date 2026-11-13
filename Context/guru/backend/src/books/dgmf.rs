@@ -8,7 +8,7 @@ use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, Str
 
 pub const BOOK: &str = "dgmf";
 /// Admitted ids (authors/guppyf/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["dgmf_21d_rev_di", "dgmf_katz_cyclical", "dgmf_roc_ma", "dgmf_stoch_ma", "dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
+pub const REVIEWED: &[&str] = &["dgmf_ipi" /* lane PG: NYSE Composite from Norgate */, "dgmf_21d_rev_di", "dgmf_katz_cyclical", "dgmf_roc_ma", "dgmf_stoch_ma", "dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
@@ -252,9 +252,9 @@ fn defs() -> Vec<S> {
                      "X|Sell:=C; Stop:=O; HitStop:= If(Trade AND Stop>=Sell,TRUE,FALSE); exit at Stop if HitStop else at Sell"],
             notes: "guppymsformulas.pdf p. 255-256. Same-day trade: buy stop at Buy, out at the close, or at the open price when the close is at/below the open. Commission:=21 / TradeAmt:=10000 not applied (the engine's cost settings apply). The print defines Sell:=C; Stop:=O; with the entry formula; the rule text shows them with the exit." },
         // ---- data gaps
-        S { id: "dgmf_ipi", name: "Investor Preference Index system (Cyril Smith, TASC Dec 1997)", group: "Formula 4", dir: "Long", status: NeedsData("needs the NYSE Composite index (P) alongside the S&P 500"), vol: false,
+        S { id: "dgmf_ipi", name: "Investor Preference Index system (Cyril Smith, TASC Dec 1997)", group: "Formula 4", dir: "Long", status: Live, vol: false,
             rules: &["F|(Sum(Mov(ROC(Log(C),24,%)-ROC(Log(P),24,%),15,S)-Mov(ROC(Log(C),24,%)-ROC(Log(P),24,%),38,S),54)+1)*100, C=S&P 500, P=NYSE index", "E|Enter Long C=HHV(C,26)", "X|Close Long Fml(\"Investor Preference Index\")<97.6 AND ROC(Fml(\"Investor Preference Index\"),2,$)<=(-.04)"],
-            notes: "guppymsformulas.pdf p. 70. Not coded: no NYSE Composite series in the vault." },
+            notes: "guppymsformulas.pdf p. 70. Lane PG (14 Nov 2026): P = the NYSE Composite close from Norgate ($NYA, SOURCES norgate-us-indices-20200908-f3; extra series NYSE_COMP, aligned by date). Only closes are read (Norgate's $NYA open/high/low equal the close before 1988-12-07, so close-only is required and holds). C = the selected instrument; the formula names the S&P 500, so it runs on SPX and SPY only. Log = MetaStock's natural logarithm; ROC(..,24,%) = 100 x (x / x 24 bars ago - 1); Mov(..,S) = simple average; ROC(IPI,2,$) = IPI - IPI two bars ago. MetaStock System Tester defaults: trades at the signal bar's close, long only. The source prints no results: UNVERIFIED." },
         S { id: "dgmf_25x25_bond", name: "\"25 x 25\" Bond Trading System", group: "Formula 8", dir: "Long", status: NeedsData("US T-bond futures (continuous, back-adjusted, day session) - rules are in bond points (2.5 pt stop, 18/32 entry offset)"), vol: false,
             rules: &["E|setup: PDI(14) > MDI(14) AND ADX(14) > 20 AND RSI(4) < 50; buy stop C + .5625 next day", "X|stops: LLV(L,25); \"After 25 days (count entry day as day 1), change stop #2 from the lowest low of 25 days to the lowest low of 2 days\" (p.138); entry - 2.5; LLV(L,2) once profit > 5*Mov(ATR(1),45)"],
             notes: "guppymsformulas.pdf p. 138-146. Printed with a 1988-1998 bond trade list. Not coded." },
@@ -287,7 +287,7 @@ fn defs() -> Vec<S> {
 pub fn catalogue() -> Vec<StrategyDef> {
     defs().into_iter().map(|s| StrategyDef {
         id: s.id, name: s.name, group: s.group, session: 0, dir: s.dir, status: s.status, needs_volume: s.vol, needs_vix: false,
-        needs_series: &[], book: BOOK, rules: s.rules, notes: if s.status == Status::Live { leak(format!("{}{}", s.notes, MS)) } else { s.notes }, claim: None,
+        needs_series: if s.id == "dgmf_ipi" { &["NYSE_COMP"] } else { &[] }, book: BOOK, rules: s.rules, notes: if s.status == Status::Live { leak(format!("{}{}", s.notes, MS)) } else { s.notes }, claim: None,
     }).collect()
 }
 fn leak(s: String) -> &'static str { Box::leak(s.into_boxed_str()) }
@@ -335,6 +335,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "dgmf_williams_exp" => vec![],
         "dgmf_vbo_taylor" => vec![p("mult", "Range fraction", 0.7, 0.3, 1., 0.1)],
         "dgmf_gap1" => vec![],
+        "dgmf_ipi" => vec![],
         _ => return None,
     };
     if defs().iter().any(|s| s.id == id && s.dir == "Long/Short") { v.push(crate::books::msws::REVERSE_PARAM); }
@@ -572,6 +573,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let s = stoch(x, 12, 3); let (w6, w3) = (wma(&s, 6), wma(&s, 3));
             (Sig { el: bools(n, |i| fin(s[i]) && s[i] < g("buy") && cross(&s, &w6, i)),
                    xl: bools(n, |i| (fin(s[i]) && s[i] > g("sell") && cross(&w3, &s, i)) || (fin(w3[i]) && w3[i] > g("w3"))), es: no.clone(), xs: no.clone() }, close)
+        }
+        "dgmf_ipi" => {
+            // guppymsformulas.pdf p.70: IPI = (Sum(Mov(X,15,S) - Mov(X,38,S), 54) + 1) * 100, X = ROC(Log(C),24,%) - ROC(Log(P),24,%)
+            let nan = vec![NAN; n];
+            let p_: &[f64] = x.series("NYSE_COMP").unwrap_or(&nan[..]); // readiness refuses a context without it (needs_series); no signals here
+            let lc: Vec<f64> = c.iter().map(|v| v.ln()).collect();
+            let lp: Vec<f64> = p_.iter().map(|v| v.ln()).collect();
+            let (rc, rp) = (roc_pct(&lc, 24), roc_pct(&lp, 24));
+            let xv: Vec<f64> = rc.iter().zip(&rp).map(|(a, b)| a - b).collect();
+            let (m15, m38) = (sma(&xv, 15), sma(&xv, 38));
+            let d: Vec<f64> = m15.iter().zip(&m38).map(|(a, b)| a - b).collect();
+            let ipi: Vec<f64> = sum(&d, 54).iter().map(|v| (v + 1.) * 100.).collect();
+            let hh = hhv(c, 26);
+            let el = bools(n, |i| fin(hh[i]) && c[i] == hh[i]);
+            let xl = bools(n, |i| i >= 2 && fin(ipi[i]) && fin(ipi[i - 2]) && ipi[i] < 97.6 && ipi[i] - ipi[i - 2] <= -0.04);
+            (Sig { el, xl, es: no.clone(), xs: no.clone() }, close)
         }
         "dgmf_triple_ma" => {
             let (s, m, lg) = (sma(c, u("s")), sma(c, u("m")), sma(c, u("l")));
