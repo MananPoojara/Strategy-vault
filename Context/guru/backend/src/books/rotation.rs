@@ -304,7 +304,7 @@ pub fn account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params,
 // signal bar only; fills are at the member's own open or close of the fill bar. A member with no bar on a day is not ranked or
 // traded that day; nothing is filled in. Rules: alpha, atm04, cjlmom, dgstt, gh52w, ggth (gregoriou), hmrw, jtwl modules.
 // Independent check: authors/titles-1030/K56w/k56_ref.py.
-pub const BASKET_IDS: &[&str] = &["alpha_weekly_mr", "atm04_mtpg", "cjlmom_r6", "dgstt_low_risk", "ggth_momentum", "gh52w_52wh_6x6", "hmrw_sp500_rotation", "jtwl_jk", "jtwl_jk_skip"];
+pub const BASKET_IDS: &[&str] = &["alpha_weekly_mr", "atm04_mtpg", "cjlmom_r6", "dgstt_low_risk", "ggth_momentum", "gh52w_52wh_6x6", "hmrw_sp500_rotation", "jowws_rs50", "jtwl_jk", "jtwl_jk_skip"];
 pub fn is_basket(id: &str) -> bool { BASKET_IDS.contains(&id) }
 pub const BASKET_MODEL: &str = "basket_ranking_v1";
 pub const BASKET_BASIS: &str = "Basket ranking account (EP5, lane K56). The rule ranks the stocks of a vault US basket on the SPY calendar and holds the chosen stocks on one account. Universe (#239): every stock in the vault that was ever in the index (us_sp500_past / us_dow30_past: the current members and the former members with their own price files, e.g. old GM and Sears); membership dates are not known, so a stock is ranked whenever it has prices, also before it joined or after it left the index. p.members = 1 ranks today's list only (us_sp500 / us_dow30, the Norgate snapshot of 8 Sep 2020), a labelled option with survivorship bias. India: withheld, the NSE basket is the 2026 member list (#239 (2)). Prices are the vault's split-adjusted daily files, price only (no dividends). SPY supplies only the calendar and the buy-and-hold benchmark; each trade's prices are those of the stock named in its reason. A stock is ranked or traded only on days it has its own bar (a chosen stock without a bar on the fill day is not bought and its share of the vintage stays in cash; a slot entry the account cannot pay for is not bought and its slot stays open); a held stock with no bar on a day keeps its last real close in the equity line (a mark, never a fill), and an exit that falls on such a day happens at the stock's next real bar. A held stock whose file ends (a delisting, merger or rename) is sold at its last real close (a data-end convention, as the vault's basket portfolio). Idle cash that a rule puts in an ETF grows only between two consecutive days that both have the ETF's close. Shorts reserve their own principal (no leverage): a long/short vintage puts equal money on every leg. Costs: the vault fee and slippage setting per side on each position (0 by default). The run ends where the basket's price files end (11 Sep 2020).";
@@ -523,6 +523,33 @@ fn momentum(x: &Ctx, m: &Members, from: usize, to: usize, c: &Mom) -> Vec<P5> {
                     why: format!("{} {tag}: rank {r} of {} by {what} {} at {}", if dir > 0. { "bought" } else { "sold short" }, elig.len(), if c.high52 { format!("{:.3}", sc[a]) } else { pct(sc[a]) }, x.r[s].date),
                     xwhy: if gone { "the stock's price file ends".into() } else { format!("{}-month holding period ended", c.k) } });
             }
+        }
+    }
+    plans
+}
+
+/// lane K81: O'Shaughnessy, What Works on Wall Street (1997) p.28, 192: at each year's last close buy the 50 stocks with the
+/// largest price change over the year (this close / the previous year-end close), equal weight, sold at the next year-end
+/// close; p.worst = 1: the 50 worst. One portfolio a year (one sleeve).
+fn jowws(x: &Ctx, m: &Members, from: usize, to: usize, p: &Params) -> Vec<P5> {
+    const N: usize = 50;
+    let (n, u) = (x.r.len(), &m.u);
+    let worst = p.get("worst").copied().unwrap_or(0.) >= 0.5;
+    let ye: Vec<usize> = (0..n).filter(|&k| year_end(x, k)).collect();
+    let mut plans = vec![];
+    for q in 1..ye.len() {
+        let (s, b) = (ye[q], ye[q - 1]);
+        if s < from || s > to { continue; }
+        let sc: Vec<f64> = (0..m.len()).map(|a| if m.has(a, s) && m.has(a, b) { u.c[a][s] / u.c[a][b] - 1. } else { f64::NAN }).collect();
+        let elig: Vec<usize> = u.rank(&sc).into_iter().filter(|&a| sc[a].is_finite()).collect();
+        if elig.len() < N { continue; }
+        let set = if worst { &elig[elig.len() - N..] } else { &elig[..N] };
+        for &a in set {
+            let r = elig.iter().position(|&v| v == a).unwrap() + 1;
+            let (xi, gone) = m.exit_at(a, ye.get(q + 1).copied().unwrap_or(n));
+            plans.push(P5 { a, dir: 1., i: s, io: false, x: xi, xo: false, sleeve: 0, size: 0., legs: N,
+                why: format!("bought: rank {r} of {} by the 1-year price change {} at {}", elig.len(), pct(sc[a]), x.r[s].date),
+                xwhy: if gone { "the stock's price file ends".into() } else { "1-year holding period ended".into() } });
         }
     }
     plans
@@ -749,6 +776,7 @@ pub fn basket_account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &
                 (momentum(x, &m, from, to, &mom(j, k, false, 0., pint(p, "n", 5., 1., 10.), 0, 0, true)), Book5 { sleeves: k, prev_equity: false, cash_px: None })
             }
             "dgstt_low_risk" => (dgstt(x, &m, from, to, p), Book5 { sleeves: 3, prev_equity: false, cash_px: None }),
+            "jowws_rs50" => (jowws(x, &m, from, to, p), Book5 { sleeves: 1, prev_equity: false, cash_px: None }),
             "hmrw_sp500_rotation" => funded(&m, Book5 { sleeves: 1, prev_equity: false, cash_px: None }, from, to, cost, hmrw(x, &m, from, to, p))?,
             "alpha_weekly_mr" => {
                 // idle cash in SHY where the price file holds SHY (US); otherwise cash earns nothing
@@ -770,6 +798,22 @@ mod tests {
     fn rows(t: &str, closes: &[f64]) -> Vec<Row> {
         // 28 bars a month from January 2001
         closes.iter().enumerate().map(|(d, &c)| { let m = d / 28; Row { ticker: t.into(), date: format!("{}-{:02}-{:02}", 2001 + m / 12, m % 12 + 1, d % 28 + 1), open: c, high: c, low: c, close: c, volume: None } }).collect()
+    }
+    #[test]
+    fn jowws_buys_the_50_best_one_year_performers_at_each_year_end() {
+        // lane K81: 3 years of 28-bar months; stock i grows by (i + 1) / 10000 a bar, so the 50 best are i = 10..59
+        let n = 36 * 28;
+        let spy = rows("SPY", &vec![100.; n]);
+        let x = Ctx::new(&spy, &spy, &[]);
+        let mem: Vec<(String, Vec<Row>)> = (0..60).map(|i| { let t = format!("S{i:02}"); let r = rows(&t, &(0..n).map(|k| 10. * (1. + (i as f64 + 1.) / 10000.).powi(k as i32)).collect::<Vec<_>>()); (t, r) }).collect();
+        let m = Members::new(&x, mem);
+        let pl = jowws(&x, &m, 0, n - 1, &Params::new());
+        // year ends: bars 335 (Dec 2001) and 671 (Dec 2002); bar 1007 is the last bar (not a year end): one portfolio, at 671, held to the end (usize::MAX)
+        assert_eq!(pl.len(), 50);
+        assert!(pl.iter().all(|p| p.i == 671 && p.x == usize::MAX && p.legs == 50 && m.u.names[p.a] >= "S10"));
+        let w = jowws(&x, &m, 0, n - 1, &[("worst".to_string(), 1.)].into_iter().collect());
+        assert!(w.iter().all(|p| m.u.names[p.a] < "S50") && w.len() == 50);
+        assert!(crate::gate::get("jowws_rs50").is_some_and(|g| g.allowed == Some(&["SPY"][..])));
     }
     #[test]
     fn sell_in_may_switches_at_april_and_october_closes_and_values_each_etf_at_its_own_close() {
