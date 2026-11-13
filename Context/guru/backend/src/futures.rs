@@ -71,6 +71,9 @@ pub const MARKETS: &[Market] = &[
         source: "FINEX/ICE US Dollar Index futures: Downs's printed P&L (V.17:1 Figure 15: +0.50 index points on 5 contracts = $875 after $375 costs) implies US$500 per index point in 1987-96 (R4 #323 (2)); the later US$1,000 contract's start date is not established, so from 1996-08-01 (after the article's last printed month) no multiplier is given and US$ amounts are refused (R4 #324 M1); tick 0.01 of the book era" },
     // lane PF (Abel, S&C V21:10 Figure 3 portfolio): contract sizes from the exchange specifications (reference data); the Abel
     // system's stops are standard-deviation distances, so these multipliers only label the contract
+    // lane PG (13 Nov 2026): Balsara's live cattle test (books::scnbps)
+    Market { sym: "&LE", name: "Live Cattle", tick: 0.025, usd: &[("1978-10-23", 400.)],
+        source: "CME live cattle futures: 40,000 pounds per contract, quoted in US cents per pound (1.00 = US$400; 0.025 = US$10, the tick of the book era)" },
     Market { sym: "&NG", name: "Natural Gas", tick: 0.001, usd: &[("1990-04-03", 10_000.)],
         source: "NYMEX Henry Hub natural gas futures: 10,000 MMBtu per contract, quoted in US$ per MMBtu (1.00 = US$10,000; 0.001 = US$10)" },
     Market { sym: "&ZC", name: "Corn", tick: 0.25, usd: &[("1978-01-04", 50.)],
@@ -184,7 +187,7 @@ pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("mhs_hd_rt_long", 0, " This pattern itself reads the open (O(0)); none of its signals falls in those months."),
     ("mhs_sp830128_2", 0, ""), ("mhs_sp830107_2", 0, ""), ("mhs_sp830825_2", 3, ""), ("mhs_sp830405_2", 5, ""),
     ("jkbwts_ez_bonder", 11, ""), ("konwv_bond", 5, ""), ("mhptdi_tdi", 5, ""),
-    // PA1 (not on this base; enable at integration): ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""),
+    ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""), // lane PA1 (enabled at integration int-1114a)
 ];
 /// The card notes with the &ZB open label appended (unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
@@ -271,7 +274,8 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
 /// ends 2020-04-17 (ch_bta2_adx30 does not trade there and keeps the whole series).
 const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref",
     "ch_bta2_adx_rising", "ch_bta2_pullback",
-    "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */];
+    "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */,
+    "scnbps_cross" /* lane PG: Balsara crossover on &CL (R4 #326) */];
 /// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
 pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
     if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
@@ -397,9 +401,16 @@ pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String>
     let (f, t) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
     (f < a || t > b).then(|| format!("Results are published only from {a} to {b} on {}: outside the book's test window more than 5% of its trades depend on the order of fills inside one daily bar, which daily bars cannot settle (R4 #240, #314 (3)).", x.r[0].ticker))
 }
+/// Lane PG (13 Nov 2026): Sweeney's and Saitta's S&C T-bond tests (books::scswrl, books::scsarf), on the contract they name.
+const CARDS_PG: &[(&str, &str, &str)] = &[("scswrl_underlying", "&ZB", SWRL), ("scswrl_reverse", "&ZB", SWRL), ("scsarf_hs", "&ZB", SARF), /* scsarf_dt held (REV-PG B1, R4 #297 (5)): no home, so instrument_policy refuses it with its held reason */
+    ("scpged_weekly", "&GE", PGED), ("scnbps_cross", "&GE", NBPS), ("scnbps_cross", "&6S", NBPS), ("scnbps_cross", "&SP", NBPS), ("scnbps_cross", "&LE", NBPS), ("scnbps_cross", "&CL", NBPS)];
+const PGED: &str = "George Panagakis, 'Trading The Eurodollar', Technical Analysis of Stocks & Commodities V.13:3 (1995) p.102-106 (Figure 5: June/December Eurodollar contracts, fiscal years 1982-1993): run on the Norgate Eurodollar continuous contract only (R4 #293 (1))";
+const NBPS: &str = "Nauzer Balsara, 'Using Probability Stops In Trading', Technical Analysis of Stocks & Commodities V.10:5 (1992) p.225-228 (Figures 1-5: Eurodollar, Swiss franc, S&P 500, live cattle and crude oil futures, 1988-1991, closing prices): run on those five Norgate continuous contracts only (R4 #293 (1))";
+const SWRL: &str = "John Sweeney, 'Reversing Your Losses', Technical Analysis of Stocks & Commodities V.10:4 (1992) p.184-186 (Figure 5: December 1986 T-bond contract), with the underlying system's printed rules from V.10:1 (1992) p.43-45 Figure 1: run on the Norgate T-bond continuous contract only (R4 #293 (1))";
+const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }

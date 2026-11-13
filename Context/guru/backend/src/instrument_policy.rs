@@ -1561,6 +1561,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // connors-final 26 Oct 2026: cwin_vix_gap_window is admitted on NIFTY 50 (India VIX 1-minute series); this text is no longer reached.
         "ss_morning_news_reversal"=>"Held: needs data. Morning News Reversals (Ch 17, p.135-139) trades the first move after an 8:30 ET economic report (the book trades bond and currency futures, which react before the stock market opens): the vault has no dated list of report days and no futures prices, and on stock indices the report comes an hour before the open, so the book's \"lifts the market four ticks above yesterday's high\" cannot be seen as it happened. Reviewed 26 Oct 2026; choices for you in authors/connors-final/USER-DECISIONS.md.",
         "alpha_weekly_mr_single"=>"Held: ranking method. The book (Ch. 6) buys the 10 lowest-volatility candidates from the 500 most liquid US stocks each week and reads the market regime from SPY; a single index, ETF or stock cannot reproduce that selection. The full method needs a stock universe (see the portfolio entry).",
+        // lane PG (REV-PG B1, R4 #297 (5)): more than two unstated details; questions in authors/verifier-questions.tsv
+        "scsarf_dt"=>"Held: the article leaves more than two details open (R4 #297): how a swing (reactionary high/low) is confirmed, at which bar the sloped base is read for the height, how 'immediate' the breakout must be, and patterns completing during a trade. The code is kept for the verifier's answers; no result is published.",
         _=>return None,
     })
 }
