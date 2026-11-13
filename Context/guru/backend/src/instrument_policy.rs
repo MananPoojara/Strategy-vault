@@ -342,18 +342,23 @@ pub fn options_tickers(id:&str)->&'static [&'static str] {
         "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
         "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
         "as51_opt_multi_sell"|"as51_opt_oi_buy"|"as51_opt_theta"|"as51_opt_btst"|"as51_opt_3pm"|"as51_opt_straddle"=>&["NIFTY 50"], // lane F2 (R4 #293): NIFTY weekly options, the contract the book names
+        "as51_opt_st_sell"|"as51_opt_vwap"|"as51_opt_mom_buy"|"as51_opt_expiry"=>&["NIFTYBANK"], // lane F4 (R4 #300 (6)): BANKNIFTY weekly options, the book's contract
         _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
     }
 }
 const OPTIONS_P2_BASIS:&str="Options phase 2 (2026-10-24): the rule trades real option contracts. Prices come from the NSE F&O end-of-day bhavcopy (NIFTY and BANKNIFTY monthly index options) and the SPY/QQQ/IWM 16:00 ET option snapshot (2008-2025; QQQ from 2011), built by library/options/build_{india,us}.py; monthly expiries only. A fill needs a contract that traded that day (India Contracts > 0 at its close or open; US volume > 0 at the 16:00 mid (bid+ask)/2, labelled, no bid/ask edge). Open positions are valued every day at the held contract's own price (India settlement price / US two-sided mid on untraded days, labelled). The books traded OEX, S&P, QQQ, SPY or stock options in 1997-2009, so these runs are a declared application on our market and period. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
-const AS51_OPT_BASIS:&str="Lane F2 (13 Nov 2026, R4 #293): Singhal's NIFTY option rules trade the NIFTY weekly options the book names, on real 1-minute prices of the exact contracts (the user's StockMock store, #Data/stores/NIFTY_full, nearest expiry, from 2019-02-11 when NIFTY weekly options began; src/optw1.rs). A price at a clock time is that minute's open; fills need a traded minute; no option price is modelled or filled in. They run on NIFTY 50 only; BANKNIFTY weekly minutes are not extracted yet, and no other instrument has weekly option prices in the vault.";
+const AS51_OPT_BASIS:&str="Lane F2 (13 Nov 2026, R4 #293): Singhal's NIFTY option rules trade the NIFTY weekly options the book names, on real 1-minute prices of the exact contracts (the user's StockMock store, #Data/stores/NIFTY_full, nearest expiry, from 2019-02-11 when NIFTY weekly options began; src/optw1.rs). A price at a clock time is that minute's open; fills need a traded minute; no option price is modelled or filled in. The NIFTY rules run on NIFTY 50 only; no other instrument has weekly option prices in the vault. Lane F4 (13 Nov 2026, R4 #300 (6)): the BANKNIFTY rules (6.4-6.7) trade BANKNIFTY weekly options on real 1-minute prices of the exact contracts (the user's AmiBroker database DATABASE/zerodha_N50_BN_FN__MIDCP_Options_From_01-02-2017_To_08-09-2025, nearest weekly expiry 2017-02-01 to 2024-11-13; data/options/weekly1m/NIFTYBANK.w1.csv) and run on NIFTYBANK only.";
 fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if !options_p2(def) || (!native_stock && options_tickers(def.id).contains(&ticker)) {return None;}
     let us=matches!(ticker,"SPY"|"QQQ"|"IWM");
     // lane I1 (R4 #303 (3)): the sector-options rule runs on the vault's sector index with real option prices only
     if def.id=="otvt_sector_options_overpriced" {return Some(Issue{status:"needs_data",note:format!("Not published on {ticker}: this rule sells overpriced options on a stock-sector index; it runs on NIFTY BANK, the sector index whose real option prices (NSE F&O bhavcopy) the vault holds, as an Indian application of the US-market rule.")});}
     let note=if def.book=="as51ts" {
-        format!("This rule trades NIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of NIFTY weekly options only (lane F2); {ticker} has none (BANKNIFTY weekly minutes are not extracted yet), and the underlying's own price cannot stand in for an option's, so no result is published.")
+        if crate::books::as51ts::BNF_IDS.contains(&def.id) {
+            format!("This rule trades BANKNIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of BANKNIFTY weekly options for NIFTYBANK (lane F4); {ticker} has none, and another underlying's options or the underlying's own price cannot stand in for them, so no result is published.")
+        } else {
+            format!("This rule trades NIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of NIFTY weekly options only for NIFTY 50 (lane F2); {ticker} has none, and another underlying's options or the underlying's own price cannot stand in for them, so no result is published.")
+        }
     } else if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
         format!("This option rule needs the option's own intraday high or opening price (a 2x stop on the option's high, or a next-morning exit). The US option data hold only the 16:00 snapshot (bid, ask, last), so {ticker} cannot be priced as the book trades it; the rule runs on NIFTY 50 and NIFTY BANK index options. No result is published.")
     } else {
@@ -3161,7 +3166,12 @@ mod tests {
         assert!(check(&def("spmt_eom_puts","spmt"),"SPY",false).is_some());
         assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_some());
         // lane F2: Singhal's option rules run on NIFTY weekly 1-minute options only
-        for id in crate::books::as51ts::OPT_IDS {assert!(check(&def(id,"as51ts"),"NIFTYBANK",false).unwrap().note.contains("NIFTY weekly"),"{id}");}
+        for id in crate::books::as51ts::OPT_IDS {
+            let bnf=crate::books::as51ts::BNF_IDS.contains(id);
+            // lane F4: the BANKNIFTY rules run on NIFTYBANK only, the NIFTY rules on NIFTY 50 only
+            assert!(check(&def(id,"as51ts"),if bnf {"NIFTY 50"} else {"NIFTYBANK"},false).unwrap().note.contains(if bnf {"BANKNIFTY weekly"} else {"NIFTY weekly"}),"{id}");
+            assert!(check(&def(id,"as51ts"),if bnf {"NIFTYBANK"} else {"NIFTY 50"},false).is_none(),"{id}");
+        }
     }
     #[test]
     fn intraday_p1_admits_minute_tickers_only() {

@@ -8,6 +8,9 @@
 //! Day block: `#,<date>,<expiry>,<n>`, `K,<ci>,<strike>,<CE|PE>,<oi at 09:19>`, then runs `R,<ci>,<m0>` of rows `a,b,c,d` in
 //! paise (a = open - previous close, the run's first row: the open; b = high - open; c = open - low; d = close - open);
 //! m = minutes after 09:15 (the bar stamped 09:15 = 0, 15:29 = 374). The engine reads one day at a time.
+//! Lane F4 (13 Nov 2026, R4 #300 (6)): `NIFTYBANK.w1.csv` (+ idx, `.w1n`), BANKNIFTY weekly options 2017-02-01..2024-11-13 built
+//! read-only from the user's AmiBroker database (DATABASE/zerodha_N50_BN_FN__MIDCP_Options_..., per-contract 1-minute files) by
+//! authors/titles-1030/F4w/bn/build_bn.py; its option rows carry a fifth field, the minute's traded volume (`Day::vol`).
 //!
 //! Prices (the store's README): a bar stamped 09:16 covers 09:16:00-09:16:59, so the price at a clock time is that bar's OPEN;
 //! when the contract did not trade in that minute, its last traded price (the close of its last earlier bar).
@@ -60,7 +63,7 @@ impl Store {
 pub fn store_next(ticker: &str) -> Option<&'static Store> {
     NEXT.get_or_init(|| {
         let mut m = BTreeMap::new();
-        if let Some(d) = DIR.get() { for t in ["NIFTY 50"] { if let Some(s) = Store::load_named(d, t, "w1n") { m.insert(t.to_string(), s); } } }
+        if let Some(d) = DIR.get() { for t in ["NIFTY 50", "NIFTYBANK"] { if let Some(s) = Store::load_named(d, t, "w1n") { m.insert(t.to_string(), s); } } }
         m
     }).get(ticker)
 }
@@ -69,7 +72,7 @@ pub fn store_next(ticker: &str) -> Option<&'static Store> {
 pub fn store(ticker: &str) -> Option<&'static Store> {
     STORES.get_or_init(|| {
         let mut m = BTreeMap::new();
-        if let Some(d) = DIR.get() { for t in ["NIFTY 50"] { if let Some(s) = Store::load(d, t) { m.insert(t.to_string(), s); } } }
+        if let Some(d) = DIR.get() { for t in ["NIFTY 50", "NIFTYBANK"] { if let Some(s) = Store::load(d, t) { m.insert(t.to_string(), s); } } }
         m
     }).get(ticker)
 }
@@ -83,6 +86,8 @@ pub struct Day {
     pub k: Vec<(f64, bool, f64)>,
     /// bars[ci][m]
     pub bars: Vec<Vec<Option<B>>>,
+    /// vol[ci][m]: the minute's traded volume (0: not in the file; the NIFTY file carries none)
+    pub vol: Vec<Vec<f64>>,
 }
 
 impl Day {
@@ -92,7 +97,7 @@ impl Day {
         if h.first() != Some(&"#") { return None; }
         let n: usize = h.get(3)?.parse().ok()?;
         let mut d = Day { expiry: h.get(2)?.replace('-', "").parse().ok()?, k: vec![(f64::NAN, false, 0.0); n + 1],
-            bars: vec![vec![None; MINUTES]; n + 1] };
+            bars: vec![vec![None; MINUTES]; n + 1], vol: vec![vec![0.0; MINUTES]; n + 1] };
         let (mut ci, mut m, mut pc) = (0usize, 0usize, 0i64);
         let mut first = true;
         // a malformed line makes the whole day unreadable (None): the caller reports it, nothing is guessed
@@ -108,10 +113,13 @@ impl Day {
                 "R" => { if f.len() != 3 { return None; } ci = f[1].parse().ok()?; m = f[2].parse().ok()?; first = true; if ci > n { return None; } }
                 _ => {
                     let v: Vec<i64> = f.iter().map(|s| s.parse().ok()).collect::<Option<_>>()?;
-                    if v.len() != 4 { return None; }
+                    if v.len() != 4 && v.len() != 5 { return None; }
                     let o = if first { v[0] } else { pc + v[0] };
                     let c = o + v[3];
-                    if m < MINUTES { d.bars[ci][m] = Some(B { o: o as f64 / 100.0, h: (o + v[1]) as f64 / 100.0, l: (o - v[2]) as f64 / 100.0, c: c as f64 / 100.0 }); }
+                    if m < MINUTES {
+                        d.bars[ci][m] = Some(B { o: o as f64 / 100.0, h: (o + v[1]) as f64 / 100.0, l: (o - v[2]) as f64 / 100.0, c: c as f64 / 100.0 });
+                        if let Some(&q) = v.get(4) { d.vol[ci][m] = q as f64; }
+                    }
                     pc = c; m += 1; first = false;
                 }
             }
@@ -338,6 +346,10 @@ mod tests {
         assert!(Day::parse("#,2023-06-02,2023-06-08,1\nK,1,18500,CE\n").is_none(), "short contract line");
         assert!(Day::parse("#,2023-06-02,2023-06-08,1\nR,3,0\n1,0,0,0\n").is_none(), "run of an unknown contract");
         assert!(Day::parse("#,2023-06-02,2023-06-08,1\nR,1,0\n1,0,0\n").is_none(), "short price row");
+        // lane F4: BANKNIFTY rows carry the minute's volume as a fifth field
+        let d = Day::parse("#,2023-06-02,2023-06-07,1\nK,1,44000,CE,0\nR,1,2\n30000,500,100,200,1250\n100,0,0,0,25\n").unwrap();
+        assert_eq!((d.bars[1][2], d.vol[1][2], d.vol[1][3], d.vol[1][1]), (bar(300.0, 305.0, 299.0, 302.0), 1250.0, 25.0, 0.0));
+        assert!(Day::parse("#,2023-06-02,2023-06-07,1\nR,1,0\n1,0,0,0,5,6\n").is_none(), "six fields");
     }
 
     #[test]
