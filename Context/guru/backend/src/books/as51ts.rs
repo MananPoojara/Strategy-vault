@@ -45,7 +45,7 @@ macro_rules! data {
 /// Lane F2 (R4 #293): the five NIFTY option rules on real weekly 1-minute option prices (src/optw1.rs).
 pub const OPT_IDS: &[&str] = &["as51_opt_multi_sell", "as51_opt_oi_buy", "as51_opt_theta", "as51_opt_btst", "as51_opt_3pm", "as51_opt_straddle"];
 const OPTNOTE: &str = "The book prints trade lists from its own backtests (another data vendor, 2019-2023); the vault runs the rule on its own data; where printed rows can be read they are compared in authors/titles-1030/F2.tsv. No costs in the vault's run.";
-const OPTMIN: &str = "A|Real NIFTY weekly options, 1-minute (R4 #293): the user's StockMock store (#Data/stores/NIFTY_full, nearest expiry, 2019-02-11 on; src/optw1.rs). A price at a clock time is the open of that minute's bar (the bar covers the minute; the store's README), else the contract's last traded price; a level order fills at its level when the 1-minute path reaches it, or at a minute's open when the price jumps through it; inside a minute the path is open, nearer extreme (ties: high), other extreme, close; a minute whose fills differ between its two extreme orders is ambiguous (#175). Each leg is one option per unit of NIFTY on the options account (options::account): P&L in index points / the spot at entry. No costs (the book gives none; the vault cost setting applies).";
+const OPTMIN: &str = "A|Real NIFTY weekly options, 1-minute (R4 #293): the user's StockMock store (#Data/stores/NIFTY_full, nearest expiry, 2019-02-11 on; src/optw1.rs). A price at a clock time is the open of that minute's bar (the bar covers the minute; the store's README), else the contract's last traded price; a level order fills at its level when the 1-minute path reaches it, or at a minute's open when the price jumps through it; inside a minute the path is open, nearer extreme (ties: high), other extreme, close; a minute whose fills differ between its two extreme orders is ambiguous (#175). Each leg is one option per unit of NIFTY on the options account (options::account): P&L in index points / the spot at entry. No costs (the book gives none; the vault cost setting applies). Days without option minutes in the store (2026-09-16 to 2026-09-28: the source has no spot minutes) and days with fewer than 300 spot minutes (2026-09-30) are not traded, and each is noted on the next trade. The rejection of the vault's own NIFTY 50 minute file from 2026-08-11 (frozen 15:15-15:19 bars, then a spike; intraday_w2b::NIFTY_BAD_FROM) is not applied: this store's spot is another source, and it shows neither defect on any day of Jul-Oct 2026 (lane F2 check).";
 const OPT: &str = "NIFTY weekly 1-minute option prices are now held (lane F2, R4 #293), but this rule manages two legs as one position (a combined or linked stop, or a spread across two expiries), which the vault's option account does not run yet (#263, #182 (2)).";
 const BNF: &str = "Needs BANKNIFTY weekly option prices during the day (the rule trades BANKNIFTY options). The user's share holds them only as AmiBroker per-contract 1-minute sets (Globaldatafeed 2017-2023, zerodha 2017-2025; about 100,000 contract files), not yet extracted (lane F2, 13 Nov 2026). The NIFTY weekly minutes now held cannot stand in for BANKNIFTY options.";
 
@@ -814,12 +814,27 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
         return Some(Err("needs_data: no NIFTY weekly 1-minute option prices are loaded for this instrument".into()));
     };
     if to >= x.r.len() || from > to { return Some(Ok(vec![])); }
+    let ticker = x.r[0].ticker.as_str();
+    let next_store = crate::optw1::store_next(ticker);
+    if id == "as51_opt_straddle" && next_store.is_none() {
+        return Some(Err("needs_data: the next weekly expiry's 1-minute prices on expiry days (NIFTY_50.w1n) are not loaded; 6.13 buys that contract on expiry Thursdays".into()));
+    }
     let g = |k: &str| super::jb624::getp(id, p, k);
     let mut out = Vec::new();
+    // days the rule could not trade, said on the next position (bar index, note)
+    let mut notes: Vec<(usize, String)> = Vec::new();
     let mut i = from;
     while i <= to {
         let date = x.r[i].date.as_str();
-        let Some(d) = st.has(date).then(|| st.day(date)).flatten() else { i += 1; continue };
+        if !st.has(date) {
+            if date > st.first() && date < st.last() { notes.push((i, format!("{date}: no option minutes in the store"))); }
+            i += 1;
+            continue;
+        }
+        let Some(d) = st.day(date) else {
+            return Some(Err(format!("calculation_unavailable: the weekly option minutes of {date} could not be read (malformed store block); no result is published")));
+        };
+        if d.special() { notes.push((i, format!("{date}: fewer than 300 NIFTY spot minutes in the store (a special session, or missing spot minutes as on 2026-09-30), not traded"))); i += 1; continue; }
         let short = |ci: usize, stt: St| { let mut l = Leg::new(ci, -1.0, stt); l.exit_m = T1515; l.exit_why = "15:15 exit"; l };
         match id {
             "as51_opt_multi_sell" => {
@@ -931,14 +946,18 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
                 continue;
             }
             "as51_opt_straddle" => {
-                // 6.13 (R4 #294 (4)): Thursday 15:29, buy the ATM call and put of the next weekly expiry; 50% stops; when one leg
-                // stops, the other's stop trails at half its price (then half of each new high); out at 15:29 on the 2nd trading day.
+                // 6.13 (R4 #294 (4), #300): Thursday 15:29, buy the ATM call and put of the next weekly expiry; 50% stops; when one
+                // leg stops, the other's stop trails at half its price (then half of each new high); out at 15:29 on the 2nd trading
+                // day of the store (its dates are the trading days); a leg still held on the contract's expiry day settles there at
+                // intrinsic value on the NIFTY close.
                 let today = crate::options::ymd(date);
                 let dn = crate::options::day_no(today);
                 if dn - crate::options::week_of(today) != 3 { i += 1; continue; } // Thursdays only
-                let ticker = x.r[0].ticker.as_str();
                 let e = if d.expiry > today { d } else {
-                    match crate::optw1::store_next(ticker).and_then(|s| s.day(date)) { Some(n) => n, None => { i += 1; continue; } }
+                    match next_store.and_then(|s| s.has(date).then(|| s.day(date)).flatten()) {
+                        Some(n) => n,
+                        None => { notes.push((i, format!("{date}: expiry Thursday without the next expiry's prices in NIFTY_50.w1n, not traded"))); i += 1; continue; }
+                    }
                 };
                 let (sl, trail, hold) = (g("sl") / 100.0, g("trail") / 100.0, g("hold").round().max(1.0) as usize);
                 let Some(k) = e.atm(T1529) else { i += 1; continue };
@@ -954,34 +973,67 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
                     }
                 };
                 crate::optw1::walk(&e, &mut legs, T1529, &mut each);
-                let fills: Vec<Option<(f64, usize)>> = legs.iter().map(|l| l.fill).collect();
-                if fills.iter().all(|f| f.is_none()) { i += 1; continue; }
+                // the straddle is both legs: a day on which either leg has no trade at 15:29 is not traded (#300 review)
+                if legs.iter().any(|l| l.fill.is_none()) {
+                    if legs.iter().any(|l| l.fill.is_some()) { notes.push((i, format!("{date}: only one leg of the {k} straddle traded at 15:29, not traded"))); }
+                    i += 1;
+                    continue;
+                }
                 let keys = [(k, false, cc), (k, true, pc)];
                 let mut marks: Vec<Vec<f64>> = vec![vec![], vec![]];
                 let mut exit_j: Vec<Option<usize>> = legs.iter().map(|l| (!matches!(l.st, St::Open { .. })).then_some(i)).collect();
-                let mut last = i;
                 for (j, l) in legs.iter().enumerate() { if exit_j[j].is_none() { marks[j].push(e.last_close(l.ci).unwrap_or(l.fill.map_or(0.0, |f| f.0))); } }
-                let mut jd = i + 1;
-                while jd <= (i + hold).min(to) && legs.iter().any(|l| matches!(l.st, St::Open { .. })) {
-                    last = jd;
-                    let n = st.day(&x.r[jd].date).filter(|n| n.expiry == e.expiry);
+                let mut last = i;
+                // the holding days are the store's next trading days, mapped to the vault's daily bars
+                for (step, nd) in st.next_dates(date, hold).iter().enumerate() {
+                    if !legs.iter().any(|l| matches!(l.st, St::Open { .. })) { break; }
+                    let jd = x.r.partition_point(|r| r.date.as_str() < nd.as_str());
+                    if jd > to { break; } // past the run's window: open
+                    if jd >= x.r.len() || x.r[jd].date != *nd {
+                        for (j, l) in legs.iter_mut().enumerate() {
+                            if !matches!(l.st, St::Open { .. }) { continue; }
+                            let p = marks[j].pop().unwrap();
+                            l.close(p, crate::optw1::MINUTES - 1, "the next trading day has no NIFTY 50 daily bar: last traded price");
+                            exit_j[j] = Some(last);
+                        }
+                        break;
+                    }
+                    let Some(n) = st.day(nd) else {
+                        return Some(Err(format!("calculation_unavailable: the weekly option minutes of {nd} could not be read (malformed store block); no result is published")));
+                    };
+                    // daily bars of the vault between two store days (no option minutes) carry the last value (one mark per bar)
+                    for j in 0..2 { if exit_j[j].is_none() && legs[j].fill.is_some() { while marks[j].len() < jd - i { let v = *marks[j].last().unwrap(); marks[j].push(v); } } }
+                    let final_day = step + 1 == hold;
+                    let expiry_day = crate::options::ymd(nd) == e.expiry;
                     for (j, l) in legs.iter_mut().enumerate() {
                         if !matches!(l.st, St::Open { .. }) { continue; }
-                        match n.as_ref().and_then(|n| n.ci(keys[j].0, keys[j].1)) {
-                            Some(ci) => { l.carry(); l.ci = ci; if jd == i + hold { (l.exit_m, l.exit_why) = (T1529, "15:29 exit, 2nd trading day"); } }
-                            None => { let p = *marks[j].last().unwrap(); l.close(p, crate::optw1::MINUTES - 1, "contract not in the next day's data: last traded price"); exit_j[j] = Some(jd - 1); marks[j].pop(); }
+                        match (n.expiry == e.expiry).then(|| n.ci(keys[j].0, keys[j].1)).flatten() {
+                            Some(ci) => { l.carry(); l.ci = ci; if final_day { (l.exit_m, l.exit_why) = (T1529, "15:29 exit, 2nd trading day"); } }
+                            None => { let p = marks[j].pop().unwrap(); l.close(p, crate::optw1::MINUTES - 1, "contract not in the next day's data: last traded price"); exit_j[j] = Some(last); }
                         }
                     }
-                    let Some(n) = n else { break };
                     crate::optw1::walk(&n, &mut legs, 0, &mut each);
                     for (j, l) in legs.iter_mut().enumerate() {
                         if exit_j[j].is_some() || l.fill.is_none() { continue; }
                         if matches!(l.st, St::Open { .. }) {
-                            if jd == i + hold { let p = n.last_close(l.ci).unwrap_or(*marks[j].last().unwrap()); l.close(p, crate::optw1::MINUTES - 1, "no trade at or after the exit time: last traded price"); exit_j[j] = Some(jd); }
-                            else { let prev = *marks[j].last().unwrap(); marks[j].push(n.last_close(l.ci).unwrap_or(prev)); }
+                            if final_day {
+                                let prev = *marks[j].last().unwrap();
+                                l.close(n.last_close(l.ci).unwrap_or(prev), crate::optw1::MINUTES - 1, "no trade at or after the exit time: last traded price");
+                                exit_j[j] = Some(jd);
+                            } else if expiry_day {
+                                // held into its expiry day: cash-settled at intrinsic value on the NIFTY close (no later price exists)
+                                let s = n.last_close(crate::optw1::SPOT).unwrap_or(f64::NAN);
+                                let v = if keys[j].1 { (keys[j].0 - s).max(0.0) } else { (s - keys[j].0).max(0.0) };
+                                l.close(v, crate::optw1::MINUTES - 1, "expiry day: final settlement at intrinsic value on the NIFTY close");
+                                exit_j[j] = Some(jd);
+                            } else {
+                                let prev = *marks[j].last().unwrap();
+                                marks[j].push(n.last_close(l.ci).unwrap_or(prev));
+                            }
                         } else { exit_j[j] = Some(jd); }
                     }
-                    jd += 1;
+                    last = jd;
+                    if expiry_day { break; }
                 }
                 for (j, l) in legs.iter().enumerate() {
                     let Some(f) = l.fill else { continue };
@@ -989,7 +1041,7 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
                     l0.ci = keys[j].2;
                     let p = match (&l.st, exit_j[j]) {
                         (St::Done { px, m, why }, Some(xj)) => leg_pos(x, &e, i, &l0, f, (xj, *px, *m, why.clone()), &marks[j][..xj - i], false),
-                        _ => { // still open at the end of the window
+                        _ => { // still open at the end of the window or of the data
                             let mk = marks[j].pop().unwrap_or(f.0);
                             leg_pos(x, &e, i, &l0, f, (last, mk, crate::optw1::MINUTES - 1, "open".into()), &marks[j], true)
                         }
@@ -1019,6 +1071,13 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
             }
         }
         i += 1;
+    }
+    // each note goes on the first position entered after it (the days a rule skipped are never silent)
+    out.sort_by_key(|q: &crate::options::Pos| q.entry_i);
+    let mut k = 0;
+    for (ni, note) in notes {
+        while k < out.len() && out[k].entry_i <= ni { k += 1; }
+        if k < out.len() { out[k].reason.push_str(&format!(" · note: {note}")); }
     }
     Some(Ok(out))
 }
