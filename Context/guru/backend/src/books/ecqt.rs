@@ -93,7 +93,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// joined by exact date. Independent reference authors/titles-1030/P1-1113w/p1_ref.py.
 pub const PAIR: &str = "ecqt_gld_gdx_pair";
 pub const GDX: &str = "GDX.Close";
-const PAIR_NOTE: &str = "Lane P1 (13 Nov 2026). Chan's printed MATLAB (Example 3.6, p.55-58) as written: the two series are intersected by date; the first 252 common days are the training set; hedge ratio = OLS of GLD on GDX without intercept (the spatialeconometrics ols with one regressor); spread = GLD - hedgeRatio x GDX; z = (spread - training mean) / training standard deviation (MATLAB std: n - 1), fixed for the whole run; z <= -2: +1 GLD, -1 GDX (long the spread); z >= 2: -1 GLD, +1 GDX; |z| <= 1: flat; otherwise the position is carried; the position taken at a close earns the next day's returns (lag1), each leg's money stays the same every day (pnl = sum(lag1(positions) .* dailyret)), so a trade's return = the sum of its daily (GLD return - GDX return) x direction / 2 (two legs of money 1). No unstated details. Data (labelled): GLD from the vault's US price file and GDX from the Norgate US Equities snapshot (split-adjusted, price only, ends 2020-09-11; Chan uses adjusted closes from his GLD.xls/GDX.xls), so the common days run 2006-05-22..2020-09-11 and the training set is 2006-05-22.. its 252nd common day; the run carries the training-set parameters to the end of the data, as the book's test set does. Published: Sharpe about 2.3 on the training set and about 1.5 on the test set; with entry 1 / exit 0.5 standard deviation 2.9 and 2.1 (p.58-59). Half-life of the spread about 10 days (Ex 7.5, p.141-142). Costs: none in the book ('I have not incorporated transaction costs', p.59); the vault's fee setting applies per leg.";
+const PAIR_NOTE: &str = "Lane P1 (13 Nov 2026). Chan's printed MATLAB (Example 3.6, p.55-58) as written: the two series are intersected by date; the first 252 common days are the training set; hedge ratio = OLS of GLD on GDX without intercept (the spatialeconometrics ols with one regressor); spread = GLD - hedgeRatio x GDX; z = (spread - training mean) / training standard deviation (MATLAB std: n - 1), fixed for the whole run; z <= -2: +1 GLD, -1 GDX (long the spread); z >= 2: -1 GLD, +1 GDX; |z| <= 1: flat; otherwise the position is carried; the position taken at a close earns the next day's returns (lag1), each leg's money stays the same every day (pnl = sum(lag1(positions) .* dailyret)), so a trade's return = the sum of its daily (GLD return - GDX return) x direction / 2 (two legs of money 1). No unstated details. Trades are taken only on the test days, after the 252 training days whose prices fit the hedge ratio, mean and sd (Chan's own split: the training-set trades are in-sample and are not published); the position starts flat on the first test day. Book check of the training set, separately (not in the published result): Sharpe of Chan's daily pnl on the training days 2006-05-22..2007-05-22 = 2.39 (book about 2.3); test days 2007-05-23..2007-11-30 = 1.18 (book about 1.5; the book's test-set end is not printed). Data (labelled): GLD from the vault's US price file and GDX from the Norgate US Equities snapshot (split-adjusted, price only, ends 2020-09-11; Chan uses adjusted closes from his GLD.xls/GDX.xls), so the common days run 2006-05-22..2020-09-11 and the training set is 2006-05-22.. its 252nd common day; the test set runs with the training-set parameters to the end of the data, as the book's test set does. Published: Sharpe about 2.3 on the training set and about 1.5 on the test set; with entry 1 / exit 0.5 standard deviation 2.9 and 2.1 (p.58-59). Half-life of the spread about 10 days (Ex 7.5, p.141-142). Costs: none in the book ('I have not incorporated transaction costs', p.59); the vault's fee setting applies per leg.";
 /// GDX daily closes from the Norgate CSV ("Date" yyyymmdd, "Close"); None if the file is missing.
 pub fn gdx_series(path: &std::path::Path) -> Option<std::collections::BTreeMap<String, f64>> {
     let text = std::fs::read_to_string(path).map_err(|e| eprintln!("warning: GDX not loaded from {}: {e}", path.display())).ok()?;
@@ -133,7 +133,9 @@ fn pair(x: &Ctx, from: usize, to: usize, p: &Params) -> Result<Vec<crate::option
         let reason = format!("{side} at the {} close (z = {z0:.2}; hedge ratio {beta:.4} on the first {train} common days); {why}", x.r[e].date);
         crate::spread::rebalanced(&[(&x.c, 1.), (gdx, -1.)], dir, e, xi, reason, open).ok_or_else(|| format!("calculation_unavailable: no price on {}", x.r[e].date))
     };
-    for (k, &i) in j.iter().enumerate() {
+    // review of 9316875b: the hedge ratio, mean and sd are fitted on the training days, so trades are taken only after them
+    // (Chan's own split: training set, then test set); the run starts flat on the first test day
+    for (k, &i) in j.iter().enumerate().skip(train) {
         if i > to { break; }
         let z = (s[k] - mean) / sd;
         let held = pos.map_or(0., |q| q.1);
@@ -172,6 +174,7 @@ mod tests {
         let s: Vec<f64> = (0..n).map(|i| gld[i] - beta * gdx[i]).collect();
         let m = s[..60].iter().sum::<f64>() / 60.;
         let sd = (s[..60].iter().map(|v| (v - m) * (v - m)).sum::<f64>() / 59.).sqrt();
+        assert!(pos.iter().all(|q| q.entry_i >= 60)); // no trade inside the training days
         for q in &pos {
             let z = (s[q.entry_i] - m) / sd;
             assert!(if q.dir > 0. { z <= -2. } else { z >= 2. });
