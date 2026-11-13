@@ -91,6 +91,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
     if let Some((_,last,why))=books::mhstp::window(def.id) {ends.push((upto(&last),if books::mhstp::OPEN_WINDOW.iter().any(|o|o.0==def.id) || books::mhstp::OPEN_WINDOW_OTHER.iter().any(|o|o.0==def.id) {format!("the published window ({why})")} else {"the published window (Harris book test window, R4 #294 (1))".into()}));} // lane F3; lane PF (R4 #328)
     if let Some(k)=crate::futures::first_nonpositive(def.id,ctx) {ends.push((k.checked_sub(1),format!("the positive unadjusted prices of {ticker} (on {} the unadjusted price is <= 0 and a % return has no base, R4 #316)",ctx.r[k].date)));} // lane X4
+    if let Some((_,last))=crate::futures::window(def.id,ticker) {ends.push((upto(last),format!("the published window ({})",crate::futures::window_why(def.id,ticker))));} // lane F1C; lane PF (R4 #334)
     // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
     if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}
     let Some((end,what))=ends.into_iter().filter_map(|(e,w)|Some((e?,w))).filter(|(e,_)|*e<to).min_by_key(|(e,_)|*e) else {return (to,None)};
@@ -492,6 +493,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                 if books::rotation::is_rotation(def.id) {
                     return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
                 }
+                if let Some(h)=crate::futures::held(def.id,&row.ticker) {return issue("not_testable",format!("Not published on {}: {h}. {}",row.ticker,g.reason));} // lane F1C (#240): a held market says why
                 return issue("not_testable", format!("Not published on {}: this rule uses fixed point or dollar amounts set for {}; on this instrument they would not mean what the book meant. {}", row.ticker, if allowed.is_empty() { "an instrument this vault does not hold".to_string() } else { allowed.join(", ") }, g.reason));
             }
         }
@@ -551,6 +553,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     // lane K40 (decision #207): Luisi's literal-points option is SPX only; Blackman's gold season is GLD only
     if let Some(note)=books::mhstp::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F3 (lead review): published window
     if let Some(k)=crate::futures::first_nonpositive(def.id,ctx).filter(|&k|k<=to) {return issue("needs_data",format!("Results are published only before {}: the unadjusted price is <= 0 that day, so a % return has no base (R4 #316).",ctx.r[k].date));} // lane X4
+    if let Some(note)=crate::futures::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F1C (R4 #314 (3))
+    if let Some(note)=crate::futures::data2_issue(def.id,ctx) {return issue("needs_data",note);} // lane F1C (REV-F1B M3)
     if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
         return issue("not_testable",note);
     }

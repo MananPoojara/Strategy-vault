@@ -48,7 +48,10 @@ pub const BOOK_WINDOW: &[(&str, &str, &str)] = &[("mhs_ua830418_1", "1983-02-15"
 /// Lane PF (R4 #328, review PF2 B1): published period of the &SP opening-gap cards (first and last date, inclusive).
 /// R4 #330 (audit authors/rev/SP-OPEN.md): the live &SP cards that enter at, or measure from, the open get the same cap.
 pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21", "1995-07-31"), ("scbrower_short", "1982-04-21", "1995-07-31"),
-    ("stad10_mwt", "1982-04-21", "1995-07-31"), ("rgc_im_sp_tbond", "1982-04-21", "1995-07-31"), ("mhs_us881011_2", "1983-02-15", "1995-07-31")];
+    ("stad10_mwt", "1982-04-21", "1995-07-31"), ("rgc_im_sp_tbond", "1982-04-21", "1995-07-31"), ("mhs_us881011_2", "1983-02-15", "1995-07-31"),
+    // lane F1D (R4 #330): Larry Williams S&P cards that enter or gap-fill at the &SP open
+    ("lwlts_talon_bondfilter", "1982-04-21", "1995-07-31"), ("lwlts_gsv_sp", "1982-04-21", "1995-07-31"), ("lwlts_gsv_sp_monday", "1982-04-21", "1995-07-31"),
+    ("lwlts_month_day1_sp_bonds", "1982-04-21", "1995-07-31"), ("lwlts_bonds_channel_bstop", "1982-04-21", "1995-07-31"), ("lwlts_bonds_channel_sstop", "1982-04-21", "1995-07-31")];
 pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open this card's entries, fills or stops read (R4 #328, #330)";
 /// Lane PF: the same cap for other contracts' open changes, each with its own reason (first, last, why).
 const YAP_WHY: &str = "from January 1992 Norgate's SPI (&YAP) open is a session or vendor open (median gap 3-6 bp against 9-70 bp before; up to half the days open at the prior close), not the day-session open this card enters and exits at (R4 #333, as #330)";

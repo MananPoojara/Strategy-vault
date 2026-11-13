@@ -592,12 +592,12 @@ fn defs_a() -> Vec<Def> {
     let d = |id, name, group, dir, status, rules, notes, family| Def { id, name, group, dir, status, needs_volume: false, rules, notes, family };
     vec![
     // ================= Volume 5 (1998)
-    d("stad5_curbond", "Currency/Bond System", "Vol 5 · Trending", "Long/Short",
-      NeedsData("Needs a second aligned data stream: Data1 = a currency future, Data2 = US Treasury Bond futures (XAverage(Close,50) of Data2). No bond or currency futures in the vault."),
+    d("stad5_curbond", "Currency/Bond System", "Vol 5 · Trending", "Long/Short", Live,
       &["F|FastXAvg = XAverage(C,4), MedXAvg = XAverage(C,12), SlowXAvg = XAverage(C,23); LongXAvg = XAverage(Close,50) of Data2 (bonds) (Vol 5 p.13-14 code)",
         "E|FastXAvg > FastXAvg[1] and Med > Slow and LongXAvg > LongXAvg[1]: BuyLevel = High + .50*Average(TrueRange,10); buy stop for 5 bars (sell mirror)",
-        "X|MedXAvg < SlowXAvg: ExitLong next bar at market (short mirror); ExitLong next bar at Close - StopAmt($1000)/BigPointValue stop"],
-      "Vol 5 ch.2 p.12-20. Book: Swiss Franc + bonds 6/93-5/98: $28,425 on 56 trades, 62% winners, win/loss 1.47, PF 2.45.", ("stad5_curbond", "Currency/Bond", "Vol 5")),
+        "X|MedXAvg < SlowXAvg: ExitLong next bar at market (short mirror); ExitLong next bar at Close - StopAmt($1000)/BigPointValue stop",
+        "X|Format dialog: \"Under the Stops tab, we enabled a money management stop of $1,200\" (p.16); no slippage or commission (p.16)"],
+      "Vol 5 ch.2 p.12-20. Book: Swiss Franc + bonds 6/93-5/98: $28,425 on 56 trades, 62% winners, win/loss 1.47, PF 2.45. Runs on the Norgate Swiss franc continuous contract with the Norgate T-bond contract as Data2 (its XAverage on its own bars, carried to the franc's dates, TradeStation Data2; lane F1C, R4 #293, #314 (4)): $1,000 and $1,200 at $125,000 per 1.00 (0.008 and 0.0096). Variables start at 0 as declared, so in the first 4 bars of the data (1979) the buy stop at BuyLevel 0 fills at the open (literal). MaxBarsBack 11 (Average(TrueRange,10)). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad5_curbond", "Currency/Bond", "Vol 5")),
     d("stad5_im1", "Intermarket I", "Vol 5 · Trending", "Long",
       NeedsData("Needs Data2 = the US Treasury bond yield (daily); no rate series in the vault."),
       &["E|If Close of Data2 < Close[1] of Data2 + LYldTrg(.25): Buy this bar on close (Vol 5 p.21 code; prose '25% of the yield' - code adds .25)",
@@ -614,7 +614,7 @@ fn defs_a() -> Vec<Def> {
         "E|BuySetup <= SetUpLen(24) and (SwingLow(1,XAvg,1,2) <> -1 or Close > XAvg): Buy next bar at market; BuySetup = SetUpLen",
         "E|SellSetup <= 24 and (SwingHigh(1,XAvg,1,2) <> -1 or Close < XAvg): Sell next bar at market; SellSetup = SetUpLen",
         "X|Format dialog (p.38): $200 money-management stop and $400 $ Risk Trailing stop (book's Gold test: $100/point -> 2 and 4 points; params mm_usd, tr_usd, bpv)"],
-      "Vol 5 ch.3 p.34-41. Setup counters start at 0 (as declared), so the first 24 bars after MaxBarsBack can enter without a setup (literal). Book: Gold futures 6/93-7/98: 85 trades, 35% profitable, win/loss 2.76, PF 1.51.",
+      "Vol 5 ch.3 p.34-41. Setup counters start at 0 (as declared), so the first 24 bars after MaxBarsBack can enter without a setup (literal). Book: Gold futures 6/93-7/98: 85 trades, 35% profitable, win/loss 2.76, PF 1.51. Runs on the Norgate continuous contract of the book's market only (lane F1B, R4 #293): the Format stops are native contract points; Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
       ("stad5_fib382", "Fibonacci .382 Retracement", "Vol 5")),
     d("stad5_hlosc", "High/Low Oscillator", "Vol 5 · Support/Resistance", "Long/Short", Live,
       &["F|HighOsc = High - XAverage(High,10); LowOsc = Low - XAverage(Low,10); CloseAvg = XAverage(Close,60) (Vol 5 p.43-44 code)",
@@ -657,7 +657,7 @@ fn defs_a() -> Vec<Def> {
         "E|MRO(Close < LoChannel,10,1) > -1 and High > Highest(High,4)[1]: Sell next bar at market",
         "X|High > Highest(High,8)[1]: ExitLong this bar on close; Low < Lowest(Low,8)[1]: ExitShort this bar on close",
         "X|Format dialog (p.80): $1,000 money-management stop, breakeven floor $200 (book's T-bond test: 1.0 and 0.2 points)"],
-      "Vol 5 ch.4 p.77-84. Book: T-bonds 6/93-9/98: 220 trades, 69% profitable, win/loss .73, PF 1.66.", ("stad5_chbopb", "Channel Breakout with Pullback", "Vol 5")),
+      "Vol 5 ch.4 p.77-84. Book: T-bonds 6/93-9/98: 220 trades, 69% profitable, win/loss .73, PF 1.66. Runs on the Norgate continuous contract of the book's market only (lane F1B, R4 #293): the Format stops are native contract points; Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad5_chbopb", "Channel Breakout with Pullback", "Vol 5")),
     d("stad5_dsdb", "Displaced Standard Deviation Bands", "Vol 5 · Volatility breakout", "Long/Short", Live,
       &["F|AvgVal = Average(Close,3); SDmult = StdDev(Close,SDLen=12)*2; DispTop = AvgVal[16] + SDmult; DispBottom = AvgVal[16] - SDmult (Vol 5 p.86 code; prose says 15 bars - code wins)",
         "E|CurrentBar > 16: Buy next bar at DispTop stop; Sell next bar at DispBottom stop",
@@ -965,11 +965,12 @@ fn defs_c() -> Vec<Def> {
         "E|Short: Low = Lowest(Low,5) and Close < Low[2] and XAverage falling: Sell next bar at SellEntry = MedianPrice[2] limit; ShortExitTarget = Low - 3*(SellEntry - Low)",
         "X|ATR Protective 3, ATR length 10 (strategy inputs p.29)"],
       "Vol 11 ch.2 p.27-44. Book (optimised): IBM 27 trades 48%, PF 5.15; MSFT 19 trades 73%; crude 52 trades 55%.", ("stad11_bullseye", "Hit the Bull's Eye", "Vol 11")),
-    d("stad11_miser", "MISER (Murray's Intermarket Strategy Revisited)", "Vol 11 · Strategies", "Long",
-      NeedsData("Needs US Treasury Bond futures as Data2 aligned to the traded index (Average(Close of Data2,26)); no bond series in the vault."),
-      &["E|Close < Average(Close,16) and Close of Data2 > Average(Close of Data2,26): Buy next bar at market (Vol 11 p.48 code)",
-        "X|Close > SPAvg and bonds below their average: ExitLong next bar at market; ATR Breakeven 4, Big Profit 7/3, Protective 3, Trailing LX 3 (+ entry-bar version), Volatility 2"],
-      "Vol 11 ch.3 p.45-56. Book: S&P long-only 2/92-11/99 (optimised): $178,727 on 42 trades, 78%.", ("stad11_miser", "MISER", "Vol 11")),
+    d("stad11_miser", "MISER (Murray's Intermarket Strategy Revisited)", "Vol 11 · Strategies", "Long", Live,
+      &["E|\"If Close of Data1 < SPAvg AND Close of Data2 > BondsAvg Then Buy next bar at market\"; SPAvg = Average(Close of Data1, SPLength), BondsAvg = Average(Close of Data2, BondsLength) (Vol 11 p.48 code); Data2 = T-bond futures",
+        "X|\"If Close of Data1 > SPAvg AND Close of Data2 < BondsAvg Then ExitLong next bar at market\" (p.48)",
+        "X|ATR Trailing LX (p.49): PosHigh - ATRs x AvgTrueRange(10) stop while long, \"ATR eb\" High - ATRs x AvgTrueRange(10) stop otherwise (the entry bar); ATR Volatility Stop (p.50): EntryPrice - VolatilityATRs x ATR; ATR Breakeven, Big Profit and Protective Stops (Appendix A p.150-154): EntryPrice stop once the highest close since entry > EntryPrice + ATRs x ATR; Lowest(Low, ExitBarLen) stop once it > EntryPrice + BigProfitATRs x ATR; EntryPrice - ProtectiveATRs x ATR",
+        "F|Defaults = the optimized values of the printed test (p.52): Breakeven 4, Protective 4, Big Profit 9 / ExitBarLength 2, Volatility 3, Trailing 5 ATRs (ten-day ATR), SP SMA 14, US SMA 40; the Strategy Inputs table's 3/4/7/3/2/3, 16/26 are the starting values (p.47); long side only, as tested; MaxBarsBack 50; $40 slippage + $10 commission per trade (p.52)"],
+      "Vol 11 ch.3 p.45-56. Book: S&P long-only 2/92-11/99 (optimised): $178,727 on 42 trades, 78%, avg $4,255. Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (its closes and average on its own bars, carried to the S&P dates, TradeStation Data2; lane F1C, R4 #293, #314 (4)); every stop is in ATRs of the S&P bars, so no dollar amount is converted. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad11_miser", "MISER", "Vol 11")),
     d("stad11_exits", "Chandelier and Yo-Yo exits (LeBeau & Tan)", "Vol 11 · Articles", "Long/Short",
       NotTestable("Exit techniques only: the printed examples use placeholder entries ('Buy_Condition'), so there is no complete system to test."),
       &["X|Chandelier: highest high (or close) since entry - 3*AvgTrueRange(20) stop", "X|Yo-Yo: Close -/+ 2*AvgTrueRange(20) stop"],
@@ -1144,6 +1145,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         v
     };
     let mut v: Vec<ParamDef> = match id {
+        "stad11_miser" => [vec![p("splen", "SP SMA length", 14., 5., 40., 1.), p("bondlen", "US (Data2) SMA length", 40., 10., 80., 1.)], atrx(4., 4., 5., 3., 9., 2., 0., 10.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad5_curbond" => [vec![p("fast", "Fast XAverage", 4., 2., 20., 1.), p("med", "Medium XAverage", 12., 5., 40., 1.), p("slow", "Slow XAverage", 23., 10., 60., 1.),
+            p("bondma", "Bond XAverage (Data2)", 50., 10., 100., 1.), p("actvbar", "Bars the entry stop stays active", 5., 1., 20., 1.), usd("stop_usd", "StopAmt: risk trailing stop from the close ($)", 1000.),
+            usd("mm_usd", "Money-management stop ($, Format dialog)", 1200.)], bpv(125000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_fib382" => [vec![p("xavglen", "XAverage length", 15., 5., 40., 1.), p("hilolen", "High/low range bars", 50., 20., 100., 5.), p("retrace", "Retracement", 0.382, 0.2, 0.618, 0.01),
             p("setuplen", "Setup length bars", 24., 5., 50., 1.), usd("mm_usd", "Money-management stop ($)", 200.), usd("tr_usd", "$ Risk trailing ($)", 400.)], bpv(100., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_hlosc" => [vec![p("len1", "High/Low XAverage length", 10., 3., 30., 1.), p("len2", "Close XAverage length", 60., 20., 120., 5.), p("trailstp", "TrailStp ($ / BigPointValue)", 700., 0., 2000., 50.),
@@ -1291,6 +1296,42 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut ast = AtrState::default();
     Some(match id {
         // ============================================================ Volume 5
+        "stad11_miser" => {
+            // lane F1C (R4 #293): Data2 = the Norgate T-bond contract (Close of Data2 carried; its Average on its own bars)
+            // readiness refuses a missing T-bond series (futures::data2_issue)
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) };
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let d2 = crate::second::align("&ZB", x.r, rows);
+            let (ba, bc) = (d2.own(|r| sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondlen"))), d2.carried(crate::second::Field::C));
+            let spa = sma(c, u("splen"));
+            let tr_atrs = g("trail");
+            run_ts(x, from, to, 50, cfg(), |i, st, _now, nx| {
+                if c[i] < spa[i] && bc[i] > ba[i] { nx.push(o(A::Buy, P::Mkt, "MISER Buy")); }
+                if c[i] > spa[i] && bc[i] < ba[i] { nx.push(o(A::Xl, P::Mkt, "MISER Exit")); }
+                atr_exits(x, i, st, &ax, atrv[i], &mut ast, nx);
+                // ATR Trailing LX's entry-bar branch (p.49): while not long, a stop for a position opened next bar
+                if st.pos != 1 { nx.push(o(A::Xl, P::Stop(h[i] - tr_atrs * atrv[i]), "ATR Trailing eb")); }
+            })
+        }
+        "stad5_curbond" => {
+            // lane F1C (R4 #293): Data2 = the Norgate T-bond contract; XAverage(Close, BondMA) of Data2 on its own bars, carried
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) };
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let lx = crate::second::align("&ZB", x.r, rows).own(|r| xavg(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondma")));
+            let (fx, mx, sx, av) = (xavg(c, u("fast")), xavg(c, u("med")), xavg(c, u("slow")), atr(x, 10));
+            let (actv, stp) = (g("actvbar"), usd("stop_usd"));
+            let mut cf = cfg(); cf.ss.sl = usd("mm_usd");
+            let (mut lsb, mut ssb, mut bl, mut sl) = (0i64, 0i64, 0.0, 0.0);
+            run_ts(x, from, to, 11, cf, |i, st, _now, nx| {
+                if fx[i] > fx[i - 1] && mx[i] > sx[i] && lx[i] > lx[i - 1] { lsb = st.bn; bl = h[i] + 0.5 * av[i]; }
+                if fx[i] < fx[i - 1] && mx[i] < sx[i] && lx[i] < lx[i - 1] { ssb = st.bn; sl = l[i] - 0.5 * av[i]; }
+                if ((st.bn - lsb) as f64) < actv { nx.push(o(A::Buy, P::Stop(bl), "CurBond Buy")); }
+                if ((st.bn - ssb) as f64) < actv { nx.push(o(A::Sell, P::Stop(sl), "CurBond Sell")); }
+                if mx[i] < sx[i] { nx.push(o(A::Xl, P::Mkt, "MedXAvg below SlowXAvg")); }
+                if mx[i] > sx[i] { nx.push(o(A::Xs, P::Mkt, "MedXAvg above SlowXAvg")); }
+                nx.push(o(A::Xl, P::Stop(c[i] - stp), "Risk trailing stop")); nx.push(o(A::Xs, P::Stop(c[i] + stp), "Risk trailing stop"));
+            })
+        }
         "stad5_fib382" => {
             let (xa, hl, rt, sul) = (xavg(c, u("xavglen")), u("hilolen"), g("retrace"), g("setuplen"));
             let mut cf = cfg(); cf.ss.sl = usd("mm_usd"); cf.ss.dtr = usd("tr_usd");
@@ -2565,7 +2606,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 66); // + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 68); // + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 
