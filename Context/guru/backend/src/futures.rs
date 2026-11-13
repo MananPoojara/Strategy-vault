@@ -63,6 +63,9 @@ pub const MARKETS: &[Market] = &[
         source: "ICE frozen concentrated orange juice futures: 15,000 lb per contract, quoted in US cents per lb (1.00 = US$150; 0.05 = US$7.50)" },
     // lane PF (Abel, S&C V21:10 Figure 3 portfolio): contract sizes from the exchange specifications (reference data); the Abel
     // system's stops are standard-deviation distances, so these multipliers only label the contract
+    // lane PF (Gibbs SPI systems, Guppy newsletters): the SPI contract (A$ per point; % returns do not depend on the currency)
+    Market { sym: "&YAP", name: "ASX SPI 200", tick: 1., usd: &[("1983-02-16", 25.)],
+        source: "SFE/ASX SPI 200 index futures: A$25 x the index (the article's own conversion: $1,500 = 60 points); the 1983-2000 All Ordinaries SPI is spliced in by Norgate; quoted in A$, not US$" },
     // lane PF (Andromeda 8-market portfolio): the Dollar Index
     Market { sym: "&DX", name: "US Dollar Index", tick: 0.01, usd: &[("1985-11-20", 1_000.)],
         source: "ICE (formerly FINEX/NYBOT) U.S. Dollar Index futures: US$1,000 x the index (1.00 = US$1,000; 0.01 = US$10, the tick of the 1985-2001 era)" },
@@ -341,6 +344,7 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
     ("scbrower_short", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the sell patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("andro_andromeda", "&6S", ANDRO), ("andro_andromeda", "&CL", ANDRO), ("andro_andromeda", "&ZN", ANDRO), ("andro_andromeda", "&ZC", ANDRO),
     ("andro_andromeda", "&6J", ANDRO), ("andro_andromeda", "&DX", ANDRO), ("andro_andromeda", "&GE", ANDRO), ("andro_andromeda", "&CT", ANDRO),
+    ("dgnl_spi_dom", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 08/09/2000 p.20-22 (Day of the Month SPI rules): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("ftm_rg_intermarket", "&ZN", "Murray Ruggiero, What makes a system a winner, Futures Magazine May 2002 p.59: the silver / 10-year T-note intermarket rule on the Norgate continuous 10-year T-note contract with Norgate silver as the second market (R4 #293 (1)), lane PF."),
     ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scabeldiv_sma", "&6J", ABEL),

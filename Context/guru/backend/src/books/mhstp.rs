@@ -50,11 +50,15 @@ pub const BOOK_WINDOW: &[(&str, &str, &str)] = &[("mhs_ua830418_1", "1983-02-15"
 pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21", "1995-07-31"), ("scbrower_short", "1982-04-21", "1995-07-31"),
     ("stad10_mwt", "1982-04-21", "1995-07-31"), ("rgc_im_sp_tbond", "1982-04-21", "1995-07-31"), ("mhs_us881011_2", "1983-02-15", "1995-07-31")];
 pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open this card's entries, fills or stops read (R4 #328, #330)";
+/// Lane PF: the same cap for other contracts' open changes, each with its own reason (first, last, why).
+pub const OPEN_WINDOW_OTHER: &[(&str, &str, &str, &str)] = &[("dgnl_spi_dom", "1983-02-16", "1991-12-31",
+    "from January 1992 Norgate's SPI (&YAP) open is a session or vendor open (median gap 3-6 bp against 9-70 bp before; up to half the days open at the prior close), not the day-session open this card enters and exits at (lane PF, as R4 #330; lead ruling pending)")];
 pub fn window(id: &str) -> Option<(String, String, &'static str)> {
     let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
         "outside the book's test window more than 5% of its trades reach the target and the stop on one day, which daily bars cannot order (R4 #240, #294 (1))"));
     // lane PF (R4 #328): Brower's opening-gap patterns read the &SP pit open, which Norgate's &SP open stops being in August 1995
     if let Some(o) = OPEN_WINDOW.iter().find(|o| o.0 == id) { w = Some((o.1.to_string(), o.2.to_string(), OPEN_WHY)); }
+    if let Some(o) = OPEN_WINDOW_OTHER.iter().find(|o| o.0 == id) { w = Some((o.1.to_string(), o.2.to_string(), o.3)); }
     if let Some(t) = INTER.iter().find(|t| t.0 == id) {
         let m = crate::futures::MARKETS.iter().find(|m| m.sym == t.2);
         let first = m.and_then(|m| crate::books::rotation::PRELOADED.get()?.get(&crate::futures::ticker(m))?.first().map(|r| r.date.clone()));

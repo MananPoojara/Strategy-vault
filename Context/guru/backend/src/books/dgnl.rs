@@ -30,10 +30,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"A stop loss of $1500 will be used and commission costs will be set to $40\" (p5)",
             "F|Variants: enter on any day except Tuesday (p6); buy/sell on 10-year bond 12-day high / 10-day low instead of the SPI's (p7, needs SFE 10-year bond futures)"],
           "SPI since 1983 (p5). 12/10 are stated as the optimised inputs. Results only in images.", None),
-        d("dgnl_spi_dom", "SPI day-of-month seasonal trades (A Gibbs)", "Gibbs · SPI systems", "Long/Short", Status::NeedsData(SPI),
+        d("dgnl_spi_dom", "SPI day-of-month seasonal trades (A Gibbs)", "Gibbs · SPI systems", "Long/Short", Status::Live,
           &["E|Long \"Buy on Open\" when ((Month=3 and DayOfMonth=1) or DayOfMonth=31) or (Month=4 and DayOfMonth=30) or ((Month=6 and DayOfMonth=1) or DayOfMonth=30) or (Month=8 and DayOfMonth=1 or DayOfMonth=31) or (Month=9 and DayOfMonth=30) or (Month=10 and DayOfMonth=30) or (Month=11 and DayOfMonth=30); Short when \"DayOfMonth(date)=8 and Month(date)=5 or Month(date)=6 or Month(date)=8 or Month(date)=9 or Month(date)=10 or Month(date)=12\" (08/09/2000 p22 'Rules for Day of the Month SPI Daily')",
             "X|\"Exit on First Profitable open: MarketPosition=1 and open next>entryprice / Exit next bar at market\" (short: mirror); \"uses a money management stop of $1500\" (p21)"],
-          "1983-2000: 185 trades, 166 winners, $63,217 one contract (p20-21). The and/or grouping of the printed formula is ambiguous (SuperCharts precedence).",
+          "[Adapted: 2 readings labelled, R4 #297; lane PF, 14 Nov 2026] Runs only on the Norgate continuous SPI contract (&YAP, back-adjusted daily bars; ASX SPI 200, the All Ordinaries SPI before 2000; ends 2020-09-11; roll method not stated by the vendor). Date grouping: each date belongs to its stated month (long 1 Mar, 31 Mar, 30 Apr, 1 Jun, 30 Jun, 1 Aug, 31 Aug, 30 Sep, 30 Oct, 30 Nov; short 8 May, 8 Jun, 8 Aug, 8 Sep, 8 Oct, 8 Dec) - the article's reader count (185 trades in 205 months, 'no trades made in January or February') rules out the literal SuperCharts grouping, which would trade every 30th/31st and every June day. Readings: (1) the order placed on the dated bar fills at the NEXT open (a strategy cannot fill at the open of the bar it is evaluated on); (2) the $1,500 money stop = 60 SPI points (the article's own $25 per point, p.8), from the entry, filled at the stop or at the open when gapped. Exit at the first later open beyond the entry (long: above, short: below), at that open; an opposite dated signal reverses. No costs (the reader's test used none stated).",
           claim("185", "166 winners (89.7%)", "$63,217 net, one contract", "", "SPI 1983 - Sept 2000 (p20-21)")),
         d("dgnl_spi_seasonal_q1", "SPI seasonal dates January-March (A Gibbs)", "Gibbs · SPI systems", "Long", Status::NeedsData(SPI),
           &["E|\"If: (DayofMonth(date)=1 and month(date)=2 or month(date)=3) or (DayOfMonth(date)=9 and month(date)=1 or month(date)=3) or (dayofmonth(date)=13 and month(date)=1 or month(date)=3) or (dayofmonth(date)=22 and month(date=3) or (dayofmonth(date)=24 and month(date)=1 or month(date)=2) or (dayofmonth(date)=25 and month(date)=1) or (dayofmonth(date)=30 and month(date)=3) or (dayofmonth(date)=31 and month(date)=3) then: Buy on Stop: open next bar\" (29/09/2000 p13, 'Seasonality And The SPI')",
@@ -100,5 +100,64 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     })
 }
 
-pub fn params(_id: &str) -> Option<Vec<ParamDef>> { None }
-pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> { None }
+pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    (id == "dgnl_spi_dom").then(|| vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }])
+}
+
+/// Lane PF: Gibbs' day-of-month SPI rules (08/09/2000 p.22), dates grouped by their stated month (see the card note).
+const DOM_LONG: &[(u32, u32)] = &[(3, 1), (3, 31), (4, 30), (6, 1), (6, 30), (8, 1), (8, 31), (9, 30), (10, 30), (11, 30)];
+const DOM_SHORT: &[(u32, u32)] = &[(5, 8), (6, 8), (8, 8), (9, 8), (10, 8), (12, 8)];
+
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id != "dgnl_spi_dom" || from > to || to >= x.r.len() { return None; }
+    let stop_pts = p.get("stop").copied().unwrap_or(60.);
+    let md = |i: usize| -> (u32, u32) { let d = &x.r[i].date; (d[5..7].parse().unwrap_or(0), d[8..10].parse().unwrap_or(0)) };
+    let want = |i: usize| if DOM_LONG.contains(&md(i)) { 1 } else if DOM_SHORT.contains(&md(i)) { -1 } else { 0 };
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut out = vec![];
+    let mut pos: Option<(i32, usize, f64)> = None; // (dir, entry bar, entry price)
+    for k in from + 1..=to {
+        let sig = want(k - 1);
+        // 1) at the open: first profitable open, or an opposite dated signal from yesterday
+        let was = pos.map(|p| p.0);
+        if let Some((d, e, ep)) = pos {
+            if (k > e && (d as f64) * (o[k] - ep) > 0.) || (sig != 0 && sig != d) {
+                out.push(super::rbtie::mk(d as f64, e, ep, "open", k, o[k], if sig != 0 && sig != d { "reversed at the open" } else { "first profitable open" }, false, k - 1));
+                pos = None;
+            }
+        }
+        // 2) entry at this open on yesterday's date signal
+        // (a same-direction signal while already in that position is ignored, as TradeStation without pyramiding)
+        if pos.is_none() && sig != 0 && was != Some(sig) { pos = Some((sig, k, o[k])); }
+        // 3) the money stop during the day
+        if let Some((d, e, ep)) = pos {
+            let st = ep - (d as f64) * stop_pts;
+            if (d > 0 && l[k] <= st) || (d < 0 && h[k] >= st) {
+                let px = if d > 0 { o[k].min(st) } else { o[k].max(st) };
+                out.push(super::rbtie::mk(d as f64, e, ep, "open", k, px, "money stop ($1,500)", false, k));
+                pos = None;
+            }
+        }
+    }
+    if let Some((d, e, ep)) = pos { out.push(super::rbtie::mk(d as f64, e, ep, "open", to, c[to], "open", true, to)); }
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{connors::Params, Row};
+    #[test]
+    fn day_of_month_entry_next_open_first_profitable_open_and_stop() {
+        // Unit-test fixture only (no market data): the bar dated 1 Mar (a long date)
+        // signals a long at the 2 Mar open (100); 5 Mar opens at 99, 6 Mar opens at 101 -> exit at 101 (first profitable open).
+        let bar = |d: &str, o: f64, l: f64| Row { ticker: "T".into(), date: d.into(), open: o, high: o + 1., low: l, close: o, volume: None };
+        let r = vec![bar("1990-02-28", 100., 99.), bar("1990-03-01", 100., 99.), bar("1990-03-02", 100., 99.), bar("1990-03-05", 99., 98.), bar("1990-03-06", 101., 100.)];
+        let t = run("dgnl_spi_dom", &Ctx::new(&r, &r, &[]), 0, 4, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i, t.exit_px)).collect::<Vec<_>>(), vec![(1.0, 2, 4, 101.)]);
+        // a 60-point money stop: the 5 Mar low at 39 hits 100 - 60 = 40 -> filled at the stop
+        let r2 = vec![bar("1990-02-28", 100., 99.), bar("1990-03-01", 100., 99.), bar("1990-03-02", 100., 99.), bar("1990-03-05", 99., 39.)];
+        let t2 = run("dgnl_spi_dom", &Ctx::new(&r2, &r2, &[]), 0, 3, &Params::new()).unwrap();
+        assert_eq!((t2[0].exit_i, t2[0].exit_px), (3, 40.));
+    }
+}
