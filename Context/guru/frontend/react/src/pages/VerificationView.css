@@ -7,13 +7,20 @@
   --st-todo: color-mix(in srgb, var(--ink3) 62%, var(--rp-surface));
   --st-needs_data: var(--rp-held);
   --st-cant_test: color-mix(in srgb, var(--ink3) 24%, var(--rp-surface)); /* out of scope: recedes */
+  --st-precheck: color-mix(in srgb, var(--rp-ok) 30%, var(--rp-surface));
+  --st-mismatch: var(--rp-bad);
   --st-other: var(--ink3);
   min-width: 0;
 }
 :root[data-theme="midnight"] .vt { --st-done_earlier: #7cb4ea; }
 .vt .st-done { --c: var(--st-done); } .vt .st-done_generic { --c: var(--st-done_generic); } .vt .st-done_earlier { --c: var(--st-done_earlier); }
 .vt .st-todo { --c: var(--st-todo); } .vt .st-needs_data { --c: var(--st-needs_data); } .vt .st-cant_test { --c: var(--st-cant_test); }
+.vt .st-precheck { --c: var(--st-precheck); } .vt .st-mismatch { --c: var(--st-mismatch); }
 .vt .st-other { --c: var(--st-other); } .vt .bad { --c: var(--rp-bad); }
+/* Errors & mismatches statuses: open = red, pending = amber, explained = green, the rest recede */
+.vt .et-open { --c: var(--rp-bad); } .vt .et-pending { --c: var(--rp-held); } .vt .et-nodata { --c: var(--st-needs_data); }
+.vt .et-explained { --c: var(--rp-ok); } .vt .et-superseded { --c: var(--st-todo); } .vt .et-wontrun { --c: var(--st-cant_test); }
+.vt .et-other { --c: var(--ink3); }
 .vt h1 { margin-bottom: 4px; }
 .vt h2 .rp-muted { font-weight: 500; }
 
@@ -72,6 +79,19 @@
 .vt-slices b { font: 600 14px "Inter Numbers", system-ui, sans-serif; text-align: right; }
 .vt-slices small { color: var(--ink2); text-align: right; font-size: 12px; }
 
+/* results: segmented control (Trades right / Wrong trades / No trades) */
+.vt .vt-g-right { --c: var(--rp-ok); } .vt .vt-g-wrong { --c: var(--rp-bad); } .vt .vt-g-none { --c: var(--st-todo); }
+.vt-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; margin: 6px 0 4px; border-radius: 12px; max-width: 100%;
+  background: color-mix(in srgb, var(--ink3) 10%, var(--rp-surface)); border: 1px solid var(--rp-line); }
+.vt .vt-seg button { display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 9px; padding: 7px 14px; background: none;
+  font-size: 14px; font-weight: 500; color: var(--ink2); cursor: pointer; }
+.vt .vt-seg button:hover { color: var(--ink); background: color-mix(in srgb, var(--rp-surface) 60%, transparent); }
+.vt .vt-seg button[aria-selected="true"] { background: var(--rp-surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 14%, transparent); }
+.vt-seg i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+.vt-seg b { font: 600 12.5px "Inter Numbers", system-ui, sans-serif; padding: 1px 8px; border-radius: 99px; color: var(--ink);
+  background: color-mix(in srgb, var(--c) 16%, var(--rp-surface)); }
+.vt-segnote { margin: 2px 0 10px !important; }
+
 /* results, bugs */
 .vt-results, .vt-bugs { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 10px; }
 .vt-results li { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(200px, 260px); gap: 16px; padding: 14px 18px; }
@@ -94,6 +114,24 @@
 .vt-good td:first-child { min-width: 220px; }
 .vt-open { white-space: nowrap; font-weight: 600; text-decoration: none; }
 .vt-open:hover { text-decoration: underline; }
+
+/* errors & mismatches */
+.vt .vt-echips { margin: 8px 0 8px; }
+.vt .vt-echips b { font: 600 12.5px "Inter Numbers", system-ui, sans-serif; margin-left: 4px; }
+.vt .vt-echips button:disabled { opacity: .45; cursor: default; }
+.vt .vt-echips button[aria-pressed="true"] .vt-dot { box-shadow: 0 0 0 1.5px var(--card); }
+.vt-efilter { grid-template-columns: minmax(200px, 520px); }
+.vt-errors td:first-child { width: 150px; }
+.vt-errors .vt-st { white-space: normal; align-items: baseline; }
+.vt-errors .vt-st i { flex: none; transform: translateY(-1px); }
+.vt-errors td[data-label="Strategy"] { min-width: 200px; max-width: 300px; }
+.vt-errors td[data-label="Strategy"] { overflow-wrap: anywhere; }
+.vt-elink { font-weight: 600; text-decoration: none; }
+.vt-elink:hover { text-decoration: underline; }
+.vt-errors td[data-label="Problem"] { min-width: 110px; }
+.vt-errors .vt-result { max-width: 300px; }
+.vt-eex { margin: 4px 0 0; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.vt-ewhy { max-width: 300px; }
 
 /* strategy list */
 .vt-filters { display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(160px, 1fr) minmax(160px, 1fr); gap: 10px; margin: 6px 0 4px; }
@@ -135,6 +173,13 @@
   .vt-list td[data-label="Status"] { grid-column: 1; }
   .vt-list .vt-opencell { grid-column: 2; grid-row: 1; text-align: right; }
   .vt-result { max-width: none; }
+  .vt-errors td[data-label="Strategy"], .vt-errors .vt-result, .vt-ewhy { max-width: none; min-width: 0; }
+  .vt-errors td[data-label="Problem"] { grid-column: 1 / -1; font-weight: 600; }
+  .vt-errors td[data-label="Status"] { grid-column: 1; grid-row: 1; }
+  .vt-errors td[data-label="Count"] { grid-column: 2; grid-row: 1; text-align: right; }
+  .vt-errors td[data-label="Count"]:not(:empty)::before { content: "Count "; color: var(--ink2); font-size: 12px; }
+  .vt-errors td[data-label="Reason"], .vt-errors td[data-label="Why"] { grid-column: 1 / -1; }
+  .vt-errors td:first-child { display: block; width: auto; }
 }
 @media (max-width: 640px) {
   .vt-kpis { grid-template-columns: 1fr 1fr; }
@@ -147,4 +192,6 @@
   .vt-how dl > div { grid-template-columns: 1fr; gap: 2px; }
   .vt-head { align-items: flex-start; }
   .vt-fresh { border-radius: 12px; }
+  .vt-seg { display: flex; }
+  .vt .vt-seg button { flex: 1 1 auto; justify-content: center; padding: 7px 8px; font-size: 13.5px; }
 }
