@@ -338,6 +338,7 @@ pub fn options_tickers(id:&str)->&'static [&'static str] {
         "otvt_cvr1_sell_puts"=>&["SPY"],
         "ccl08_weekly_rsi_options"|"mahrs_covered_calls"|"ccl08_quick_scalp"|"fotol_covered_call"|"fotol_monthend_call"
             |"hfm_und"|"hfm_und_long"|"hfm_und_short"|"otvt_diz_short_strangle"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only; otvt_diz: lane K54
+        "otvt_sector_options_overpriced"=>&["NIFTYBANK"], // lane I1 (R4 #303 (3)): the sector index with real option prices
         "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
         "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
         _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
@@ -347,6 +348,8 @@ const OPTIONS_P2_BASIS:&str="Options phase 2 (2026-10-24): the rule trades real 
 fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if !options_p2(def) || (!native_stock && options_tickers(def.id).contains(&ticker)) {return None;}
     let us=matches!(ticker,"SPY"|"QQQ"|"IWM");
+    // lane I1 (R4 #303 (3)): the sector-options rule runs on the vault's sector index with real option prices only
+    if def.id=="otvt_sector_options_overpriced" {return Some(Issue{status:"needs_data",note:format!("Not published on {ticker}: this rule sells overpriced options on a stock-sector index; it runs on NIFTY BANK, the sector index whose real option prices (NSE F&O bhavcopy) the vault holds, as an Indian application of the US-market rule.")});}
     let note=if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
         format!("This option rule needs the option's own intraday high or opening price (a 2x stop on the option's high, or a next-morning exit). The US option data hold only the 16:00 snapshot (bid, ask, last), so {ticker} cannot be priced as the book trades it; the rule runs on NIFTY 50 and NIFTY BANK index options. No result is published.")
     } else {

@@ -451,7 +451,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // These runners still price options with Black-Scholes. Loading IV or changing
     // a catalogue badge must never enable their modeled performance in the app.
-    if matches!(def.id,"otvt_cvr1_buy_puts" | "otvt_sector_options_overpriced") { // otvt_cvr1_sell_puts, otvt_diz_short_strangle (lane K54): options phase 2 (real prices)
+    if matches!(def.id,"otvt_cvr1_buy_puts") { // otvt_sector_options_overpriced: options phase 2 since lane I1 (R4 #303 (3)) // otvt_cvr1_sell_puts, otvt_diz_short_strangle (lane K54): options phase 2 (real prices)
         return issue("needs_data","This options runner uses a pricing model, not traded contract prices, and is disabled. Real prices of the exact contracts (strike, expiry and each leg) and a validated option-price implementation are required. Loading an IV or VIX series cannot enable this backtest.");
     }
     match def.status {
@@ -837,7 +837,7 @@ mod tests {
     fn modeled_options_are_blocked_even_with_real_underlying_and_iv() {
         let r=rows();let mut ctx=Ctx::new(&r,&r,&[]);
         ctx.extra.insert("IV30".into(),vec![20.0;5]);
-        for id in ["otvt_diz_short_strangle","otvt_cvr1_sell_puts","otvt_cvr1_buy_puts","otvt_sector_options_overpriced"] {
+        for id in ["otvt_diz_short_strangle","otvt_cvr1_sell_puts","otvt_cvr1_buy_puts","otvt_sector_options_overpriced"] { // no chain loaded: needs data
             assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).unwrap().status,"needs_data");
             let mut def=definition(id);def.status=Status::Live;
             assert_eq!(check(&ctx,&def,0,4,&Params::new()).unwrap().status,"needs_data");

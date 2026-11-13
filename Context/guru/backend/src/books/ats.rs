@@ -194,7 +194,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|After a split announcement, sell the overpriced calls while implied volatility stays inflated"], "No mechanical thresholds; needs split announcement dates and option IV.", None),
         d("ats_sector_options_overpriced", "Exploiting Overpriced Sector Options", "Ch 19 · Overpriced Sector Options", "Short vol", opt,
             &["E|Sector index whose near-the-money put and call implied volatility (combined) is three times the 50-day HV: sell them",
-              "X|Risk 30 to 45 percent of the combined premium"], "RIX example (HV50 4.76%, IVs about 13%).", None),
+              "X|Risk 30 to 45 percent of the combined premium"], "RIX example (HV50 4.76%, IVs about 13%). Duplicate of otvt_sector_options_overpriced: the same Professional Traders Journal article (Oct 1996), which runs it on real BANKNIFTY option prices (lane I1, R4 #303 (3)); not run a second time here.", None),
         // ---- Section 6 day trading
         ser(d("ats_15min_adx_breakout", "15-Minute ADX Breakout", "Ch 20 · 15-Minute ADX Breakout", "Long/Short", Live, ADX15_RULES, ADX15_NOTE, None), ADX15_SERIES),
         ser(d("ats_15min_adx_breakout_equities", "15-Minute ADX Breakout · equities filter", "Ch 20 · 15-Minute ADX Breakout", "Long/Short", Live, ADX15_RULES,
