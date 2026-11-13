@@ -77,11 +77,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "One-contract printout p.31: 172 trades, 69%, $460.47, largest loss $1,800. Market and window are not printed (the dollar sizes fit the S&P; the 100-lot run starts 1/1990 and ends 12/20/96). The same entry with other exits is lwlts_mon_gap_*.",
             claim("172", "69%", "$460.47 ($79,200)", "1 day", "not printed (1990-12/1996?)")),
         // ---- Needs data
-        sd!("lwicw_bond_shortterm", "Bond short-term rules (TDW, TDOM, holidays, Gold, price patterns, hidden Oops!)", "Bonds", "Long", NeedsData(BONDS),
+        sd!("lwicw_bond_holidays", "T-Bond holiday trades", "Bonds · Holidays", "Long/Short", Live,
+            &["E|New Year's: sell close 3rd TD before; Presidents' Day: buy close 5th TD before, sell open 1st TD before; Easter: sell close 1st TD before; Memorial Day: buy open 4th TD before; Independence Day: buy open 5th TD before, sell open 1st TD after; Labor Day: buy close 3rd TD before; Thanksgiving: buy close 4th TD before, sell close 6th TD before; Christmas: buy open 2nd TD before (p.34-35)",
+              "F|\"1st TD before\" = the last trading day before the holiday (\"For Easter, sell on the close of the day before the holiday ... For Thanksgiving buy the close on the 4th day before the holiday\", p.34); the note \"'0' means the day before the actual holiday\" contradicts these examples and is not applied (reading); Easter = the Good Friday closure",
+              "X|\"use a $1,400 stop and exit on the first profitable opening\" (p.34): 1.4 points, armed on the entry day for open entries, from the next day for close entries",
+              "X|Unstated in the book: an opposite holiday entry while in a trade; vault reading: it exits and reverses (as lwicw_sp_holidays)"],
+            "Printout p.35: DAY T-BONDS 01/10/78-07/06/99, 190 trades, 84%, $52,200, average $274.74. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price, $1,400 = 1.4 points at $1,000 per point. US exchange holidays from the calendar as lwicw_sp_holidays. Adapted: 2 unstated details (R4 #297).",
+            claim("190", "84%", "$274.74 ($52,200)", "1 day", "01/10/78-07/06/99")),
+        sd!("lwicw_bond_shortterm", "Bond short-term rules (TDW, TDOM, holidays, Gold, price patterns, hidden Oops!)", "Bonds", "Long", NotTestable("Split (lane F1D, R4 #293): the holiday system is lwicw_bond_holidays on the Norgate T-bond contract. Not coded: the TDW, TDOM and gold-filtered TDW tables (p.33-35) are studies with no stop and no window, not trading rules; the price patterns (p.35-37: consecutive down closes, gap down closes, Friday set-ups, hidden Oops!) state no stop or exit for any pattern and use alternative lookbacks ('8, 10 or 12 days', '6 OR 25 days', '15 or 24 days'), more than two unstated details (R4 #297 (5))."),
             &["E|TDW and TDOM buys on the open, bailout; holiday trades with a $1,400 stop and bailout (p.33-35)", "F|Gold below its close 25 days ago (p.35)",
               "E|Consecutive down closes, gap down closes, Friday set-ups for Monday, hidden Oops! with the projected high/low (H+L+C)/3*2-L/H (p.36-37)"],
             "Printouts: holidays 190 trades 84% $274.74 (01/10/78-07/06/99); patterns 285 trades 87% $254.56 (01/01/90-07/06/99)."),
-        sd!("lwicw_bond_best_days", "Bond best buy/sell trade days of the year; Bonds seasonal TDOMs backed by Gold; Bonds Oops! by TDOM", "Bonds", "Long/Short", NeedsData(BONDS),
+        sd!("lwicw_bond_best_days", "Bond best buy/sell trade days of the year; Bonds seasonal TDOMs backed by Gold; Bonds Oops! by TDOM", "Bonds", "Long/Short", NotTestable("Not coded (lane F1D, R4 #297 (5)): more than two unstated details. The exit is given twice and differently (\"exit on any profitable opening after 3 days\" vs the tables' \"WITH 4 DAYS HOLD\", p.44); the sell entry is not stated (\"buy on the opening of the day shown, plus 7% of the previous days range\" covers buys only); and the table rows are partly illegible in the only copy (November and the bracketed September/October days)."),
             &["E|Buy the open of the day shown + 7% of the previous day's range, $1,800 stop or any profitable opening after 3 days (p.44-45)", "E|Book1 p.50-51 tables"], ""),
         sd!("lwicw_sp_bond_filter", "S&P TDW/TDOM with bonds above 14 / 10-15 days ago; first-of-month with bonds; seasonal TDOMs backed by bonds; Oops! revisited", "S&P · Bond filters", "Long/Short", NeedsData(BONDS),
             &["F|\"Bonds in an up-trend, i.e., greater than 14 days ago\" (p.39)", "F|First of month: \"Bonds close is greater than 32 days ago\" (p.43)", "F|Oops! revisited: buy Mon/Tue/Fri if Bonds > 2 days ago; sell if Bonds < 4 days ago (Book1 p.53)"],
@@ -112,6 +119,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwicw_sp_tdw_fri" => f("lwicw_tdw", "S&P trade day of week", "Friday"),
         "lwicw_sp_tdom" => f("lwicw_tdom", "S&P trade day of month", "Buy TDOM N"),
         "lwicw_sp_holidays" => f("lwicw_holidays", "Holiday trades", "S&P"),
+        "lwicw_bond_holidays" => f("lwicw_holidays", "Holiday trades", "T-Bonds"),
         "lwicw_oops_tdom_buy" => f("lwicw_oops", "Oops! by TDOM", "Buys"),
         "lwicw_oops_tdom_sell" => f("lwicw_oops", "Oops! by TDOM", "Sells"),
         "lwicw_mon_gap_bail" => f("lwicw_mon_gap", "Monday gap-down buy", "Bailout, $1,750 stop"),
@@ -138,6 +146,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "lwicw_sp_tdw_mon" | "lwicw_sp_tdw_tue" | "lwicw_sp_tdw_wed" | "lwicw_sp_tdw_thu" | "lwicw_sp_tdw_fri" => vec![stop(3500.0), pt()],
         "lwicw_sp_tdom" => vec![p("tdom", "Trading day of the month", 1.0, 1.0, 23.0, 1.0), stop(3500.0), pt()],
+        "lwicw_bond_holidays" => vec![stop(1400.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwicw_sp_holidays" => vec![stop(2500.0), p("bail_delay", "Bars held after entry before the bailout applies (book 1)", 1.0, 0.0, 5.0, 1.0), pt()],
         "lwicw_oops_tdom_buy" => vec![p("tdom", "Trading day of the month", 19.0, 1.0, 23.0, 1.0), stop(2750.0), pt()],
         "lwicw_oops_tdom_sell" => vec![p("tdom", "Trading day of the month", 3.0, 1.0, 23.0, 1.0), stop(2750.0), pt()],
@@ -426,11 +435,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             cfg.bail = Some(0);
             sim(x, from, to, &cfg, |i| if wd(i) == 1 && x.o[i] < x.c[i - 1] { vec![(1.0, Ord::Open)] } else { vec![] })
         }
-        "lwicw_sp_holidays" => {
-            cfg.bail = Some(g("bail_delay").max(0.0) as usize);
+        "lwicw_sp_holidays" | "lwicw_bond_holidays" => {
+            let bond = id == "lwicw_bond_holidays";
+            // lane F1D (R4 #293): the bond table only on the Norgate T-bond contract (readiness refuses other tickers)
+            if bond && crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            cfg.bail = Some(if bond { 0 } else { g("bail_delay").max(0.0) as usize });
             cfg.reverse = true;
             use Hol::*;
             // (holiday, trading-day offset, dir, order)
+            const BOND: &[(Hol, i32, f64, bool)] = &[(NewYear, 3, -1.0, false), (Presidents, 5, 1.0, false), (Presidents, 1, -1.0, true),
+                (Easter, 1, -1.0, false), (Memorial, 4, 1.0, true), (July4, 5, 1.0, true), (July4, -1, -1.0, true), (Labor, 3, 1.0, false),
+                (Thanksgiving, 4, 1.0, false), (Thanksgiving, 6, -1.0, false), (Christmas, 2, 1.0, true)];
             const RULES: &[(Hol, i32, f64, bool)] = &[(NewYear, 3, 1.0, true), (Presidents, 3, 1.0, true), (Presidents, 2, -1.0, false),
                 (Easter, 2, 1.0, false), (Easter, -1, -1.0, true), (Memorial, 1, 1.0, false), (July4, 5, 1.0, true), (Labor, -1, 1.0, true),
                 (Thanksgiving, 3, 1.0, false), (Christmas, 5, 1.0, true)];
@@ -438,7 +453,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let y1: i32 = x.r[x.r.len() - 1].date[..4].parse().ok()?;
             let mut ord: Vec<Vec<(f64, Ord)>> = vec![vec![]; x.r.len()];
             for y in y0..=y1 + 1 {
-                for &(hh, k, dir, at_open) in RULES {
+                for &(hh, k, dir, at_open) in if bond { BOND } else { RULES } {
                     if let Some(j) = td_rel(x, &holiday(hh, y), k) {
                         ord[j].push((dir, if at_open { Ord::Open } else { Ord::Close }));
                     }

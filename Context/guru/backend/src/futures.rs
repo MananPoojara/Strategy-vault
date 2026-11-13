@@ -398,6 +398,7 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_outside_down_bonds", "&ZB", LWB),
     ("lwlts_outside_down_bonds_xthu", "&ZB", LWB),
     ("lwlts_3up_thu_sell_bonds", "&ZB", LWB),
+    ("lwicw_bond_holidays", "&ZB", "Larry Williams, Inner Circle Workshop notes (2000) p.34-35: the T-bond holiday trades (open or close entries a set number of trading days before or after 8 US holidays, $1,400 stop, first profitable opening), DAY T-BONDS 01/10/78-07/06/99; run on the Norgate T-bond continuous contract ($1,400 = 1.4 points; R4 #293 (1), (3)), lane F1D."),
     ("lwlts_oops_buy_bonds", "&ZB", LWB),
     ("lwlts_oops_sell_bonds_wed", "&ZB", LWB),
     ("lwlts_oops_buy_bonds_ma9", "&ZB", LWB),
@@ -648,6 +649,15 @@ mod tests {
         assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i, t[0].entry_kind), (1, 15, 20, "close"), "{t:?}");
         assert!(crate::books::mhstp::window("lwlts_bonds_channel_bstop").is_some_and(|w| w.1 == "1995-07-31"));
         TEST_ROWS.with(|t| t.borrow_mut().clear());
+    }
+    #[test]
+    fn f1d_bond_holidays_on_the_contract_only() {
+        // Thanksgiving 1990-11-22: "Sell Close Sixth TD Before" (bar of 1990-11-14) then "Buy Close Fourth TD Before" (11-16) reverses
+        let d = ["1990-11-12", "1990-11-13", "1990-11-14", "1990-11-15", "1990-11-16", "1990-11-19", "1990-11-20", "1990-11-21", "1990-11-23", "1990-11-26"];
+        let r: Vec<Row> = d.iter().map(|d| Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.to_string(), open: 100., high: 100.2, low: 99.8, close: 100., volume: None }).collect();
+        let t = crate::books::lwicw::run("lwicw_bond_holidays", &Ctx::new(&r, &r, &[]), 0, 9, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i, t[1].dir, t[1].legs[0].i), (-1., 2, 4, 1., 4), "{t:?}");
+        assert!(home("lwicw_bond_holidays", "SPX").is_some());
     }
     #[test]
     fn f1d_bond_cards_bail_delay_and_nearer_stop() {
