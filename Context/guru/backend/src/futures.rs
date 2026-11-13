@@ -335,12 +335,17 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
     ("ch_bta2_long_bomb", "&ZB", "1982-01-01", "1995-07-10"), ("ch_bta2_long_bomb", "&HO", "1982-01-01", "1995-07-10"),
     // STAD Vol 5 p.16 "from June, 1993, to May, 1998": 4.5% of trades touch a bar with fills on both legs of its path (7.0% 1979-2020)
     ("stad5_curbond", "&6S", "1993-06-01", "1998-05-31"),
+    // lane F1D: Commodity Timing Vol. 32 No. 5 "1988 to date" (May 1996): 4.1% order-dependent (10.3% 1978-2020)
+    ("lwnl_bond_dowm_buy", "&ZB", "1988-01-01", "1996-04-30"),
 ];
 /// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
 const HELD: &[(&str, &str, &str)] = &[
     // lane F1D: Larry Williams bond stop-entry cards (no T-bond minute bars; limit 5%)
     ("lwnl_bond_dec_td7_sell", "&ZB", "held under R4 #297 (5): 3 unstated details (order type, stop, exit), more than two"),
     ("lwnl_bond_dec_td8_sell", "&ZB", "held under R4 #297 (5): 3 unstated details (order type, stop, exit), more than two"),
+    ("lwmdc_bond_gold30", "&ZB", "held under R4 #297 (2) (review B5): the manual prints no exit for this study"),
+    ("lwmdc_bond_gold30_vb", "&ZB", "held under R4 #297 (2) (review B5): the manual prints no exit for this study"),
+    ("lwmdc_bond_gold30_vb_nr", "&ZB", "held under R4 #297 (2) (review B5): the manual prints no exit for this study"),
     ("lwnl_bond_projected", "&ZB", "held under R4 #240: 9.2% of its trades (8.6% in the letter's 1977-94 window) give different fills in the two path orders of a daily bar (the entry stop and its $750 stop), and no T-bond minute bars exist (limit 5%)"),
     ("lwnl_cti_bonds", "&ZB", "held under R4 #240: 49.4% of its trades give different fills in the two path orders of a daily bar (an entry and the $750 short stop, or both entries), and no T-bond minute bars exist (limit 5%)"),
     ("lwnl_bond_sp_9ma_1down", "&SP", "held under R4 #240: 7.5% of its trades on the published 1982-95 window give different fills in the two path orders of a daily bar (the buy stop and its $2,500 stop armed on the entry day, a reading), and no S&P futures minute bars exist (limit 5%)"),
@@ -422,6 +427,7 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwmdc_bond_gold30", "&ZB", "Larry Williams, Million Dollar Challenge seminar manual (2005-06) p.46-47: T-bond rules (TDOM 20 breakout with a $1,500 stop; buys while gold's 30-day average falls, with down-close, 20% breakout and small-range filters), DAY T-BONDS 1988-1999; run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), (3)), lane F1D."),
     ("lwmdc_bond_gold30_vb", "&ZB", "Larry Williams, Million Dollar Challenge seminar manual (2005-06) p.46-47: T-bond rules (TDOM 20 breakout with a $1,500 stop; buys while gold's 30-day average falls, with down-close, 20% breakout and small-range filters), DAY T-BONDS 1988-1999; run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), (3)), lane F1D."),
     ("lwmdc_bond_gold30_vb_nr", "&ZB", "Larry Williams, Million Dollar Challenge seminar manual (2005-06) p.46-47: T-bond rules (TDOM 20 breakout with a $1,500 stop; buys while gold's 30-day average falls, with down-close, 20% breakout and small-range filters), DAY T-BONDS 1988-1999; run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 (R4 #293 (1), (3)), lane F1D."),
+    ("lwnl_bond_dowm_buy", "&ZB", "Larry Williams, Commodity Timing Vol. 32 No. 5 (archive folder 1996) p.2: Ken Hornbrook's day-of-week-of-month bond buys (a limit 3 ticks under the open after the 4th Monday, Tuesday and Thursday/Friday and the 5th Monday and Tuesday), $1,000 stop, $2,250 target or the close 3 days later, 1988-1996; run on the Norgate T-bond continuous contract (R4 #293 (1), (3)), lane F1D."),
     ("lwnl_bond_xmas_buy", "&ZB", "Larry Williams, Commodity Timing Vol. 34 No. 12 (December 1997) p.4: buy T-bonds 5 trading days before Christmas and sell on the opening after the holiday; sell T-bonds 5 trading days before New Year's and exit on the first opening of the new year; run on the Norgate T-bond continuous contract (R4 #293 (1), (3)), lane F1D."),
     ("lwnl_bond_newyear_sell", "&ZB", "Larry Williams, Commodity Timing Vol. 34 No. 12 (December 1997) p.4: buy T-bonds 5 trading days before Christmas and sell on the opening after the holiday; sell T-bonds 5 trading days before New Year's and exit on the first opening of the new year; run on the Norgate T-bond continuous contract (R4 #293 (1), (3)), lane F1D."),
     ("lwnl_bond_projected", "&ZB", "Larry Williams, Commodity Timing Vol. 29 No. 9 (September 1995 by its volume number) p.2-3: buy at the projected low when the open is below it (any day), sell at the projected high when the open is above it (Mon/Wed/Thu), bailout and a $750 stop, bonds 1977-1994; run on the Norgate T-bond continuous contract (R4 #293 (1), (3)), lane F1D."),
