@@ -64,13 +64,7 @@ pub fn load(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) -> BTr
             eprintln!("warning: futures {} not loaded from {}", m.sym, dir.display()); continue };
         let t = ticker(m);
         let raw: BTreeMap<String, Row> = raw.into_iter().map(|r| (r.date.clone(), r)).collect();
-        let mut rows: Vec<Row> = adj.into_iter().filter(|r| raw.contains_key(&r.date)).map(|r| Row { ticker: t.clone(), ..r }).collect();
-        // lane F1: a % return needs a positive unadjusted price: the series ends the day before the first non-positive one
-        // (NYMEX crude settled at -37.63 on 2020-04-20); nothing is filled or estimated
-        if let Some(k) = rows.iter().position(|r| { let x = &raw[&r.date]; [x.open, x.high, x.low, x.close].iter().any(|v| *v <= 0.) }) {
-            println!("futures {t}: series ends {} (unadjusted price <= 0 on {})", rows.get(k.wrapping_sub(1)).map_or("-", |r| &r.date), rows[k].date);
-            rows.truncate(k);
-        }
+        let rows: Vec<Row> = adj.into_iter().filter(|r| raw.contains_key(&r.date)).map(|r| Row { ticker: t.clone(), ..r }).collect();
         // lead review of F3: a file that parsed to no common bars is not served (an empty context would break /api/tickers)
         if rows.is_empty() { eprintln!("warning: futures {} not loaded: 0 bars in both {}_CCB.csv and {}.csv", m.sym, m.sym, m.sym); continue; }
         for (k, f) in [("Open", 0), ("High", 1), ("Low", 2), ("Close", 3)] {
@@ -173,6 +167,18 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
     !(ok && raw_ok)
 }
 
+/// R4 #316 (lane X4): cards whose published run ends the day before the first non-positive unadjusted price (NYMEX crude
+/// settled at -37.63 on 2020-04-20, where a % return has no base); readiness::auto_end / check apply it. The series itself
+/// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
+const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17"];
+/// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
+pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
+    if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
+    let s = ["RAW.Open", "RAW.High", "RAW.Low", "RAW.Close"].map(|k| x.series(k));
+    if s.iter().any(|v| v.is_none()) { return None; }
+    (0..x.c.len()).find(|&i| s.iter().flatten().any(|v| v.get(i).is_some_and(|p| *p <= 0.)))
+}
+
 /// Cards that run on one named continuous contract (#293 (1)): (strategy id, market symbol, instrument_policy basis).
 pub const CARDS: &[(&str, &str, &str)] = &[
     ("ataa_moon", "&6A", "ATAA Journal Dec 1990 p.11-12 (Krastins, Sheer Lunacy): the moon-phase stop and reverse tested on AUD/USD IMM futures, run on the Norgate Australian dollar continuous contract (R4 #293 (1)); close fills, no amounts."),
@@ -248,6 +254,22 @@ mod tests {
         assert_eq!(m.get(&("*".to_string(), "NASDAQ_COMP".to_string())).and_then(|v| v.get("1971-02-05")), Some(&100.5));
         assert!(!m.contains_key(&("*".to_string(), "NYSE_COMP".to_string()))); // a missing file loads nothing
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn x4_ehrlich17_run_ends_before_a_nonpositive_unadjusted_price() {
+        // R4 #316: the &CL series stays whole; only jkbwts_ehrlich17's run is capped (auto_end) / refused (check)
+        let r: Vec<Row> = (0..10).map(|i| Row { ticker: "Crude Oil (Norgate &CL)".into(), date: format!("2020-04-{:02}", i + 10), open: 20., high: 20., low: 20., close: 20., volume: None }).collect();
+        let mut x = Ctx::new(&r, &[], &[]);
+        for k in ["RAW.Open", "RAW.High", "RAW.Low"] { x.extra.insert(k.into(), vec![30.; 10]); }
+        let mut c = vec![30.; 10]; c[6] = -37.63; x.extra.insert("RAW.Close".into(), c);
+        assert_eq!(first_nonpositive("jkbwts_ehrlich17", &x), Some(6));
+        assert_eq!(first_nonpositive("mhs_cl850210_1", &x), None);
+        let d = crate::books::jkbwts::catalogue().into_iter().find(|d| d.id == "jkbwts_ehrlich17").unwrap();
+        let p = crate::connors::Params::new();
+        let (end, note) = crate::readiness::auto_end(&x, &d, 0, 9, &p);
+        assert!(end == 5 && note.is_some_and(|n| n.contains("2020-04-16") && n.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 0, 5, &p).map_or(true, |i| !i.note.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 6, 9, &p).is_some_and(|i| i.note.contains("R4 #316")));
     }
     use crate::connors::Leg;
     fn row(d: &str, c: f64) -> Row { Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.into(), open: c, high: c, low: c, close: c, volume: None } }
