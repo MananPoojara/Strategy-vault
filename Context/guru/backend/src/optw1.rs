@@ -44,6 +44,10 @@ impl Store {
     pub fn first(&self) -> &str { self.idx.keys().next().map_or("", |s| s.as_str()) }
     pub fn last(&self) -> &str { self.idx.keys().next_back().map_or("", |s| s.as_str()) }
     pub fn has(&self, date: &str) -> bool { self.idx.contains_key(date) }
+    /// The store's next `n` dates after `date` (its trading days).
+    pub fn next_dates(&self, date: &str, n: usize) -> Vec<String> {
+        self.idx.range::<str, _>((std::ops::Bound::Excluded(date), std::ops::Bound::Unbounded)).take(n).map(|(k, _)| k.clone()).collect()
+    }
     pub fn day(&self, date: &str) -> Option<Day> {
         let &(off, n) = self.idx.get(date)?;
         let mut buf = vec![0u8; n];
@@ -91,13 +95,20 @@ impl Day {
             bars: vec![vec![None; MINUTES]; n + 1] };
         let (mut ci, mut m, mut pc) = (0usize, 0usize, 0i64);
         let mut first = true;
+        // a malformed line makes the whole day unreadable (None): the caller reports it, nothing is guessed
         for l in lines {
             let f: Vec<&str> = l.split(',').collect();
             match f[0] {
-                "K" => { let i: usize = f[1].parse().ok()?; d.k[i] = (f[2].parse().ok()?, f[3] == "PE", f[4].parse().ok()?); }
-                "R" => { ci = f[1].parse().ok()?; m = f[2].parse().ok()?; first = true; }
+                "K" => {
+                    if f.len() != 5 { return None; }
+                    let i: usize = f[1].parse().ok()?;
+                    if i == 0 || i > n { return None; }
+                    d.k[i] = (f[2].parse().ok()?, f[3] == "PE", f[4].parse().ok()?);
+                }
+                "R" => { if f.len() != 3 { return None; } ci = f[1].parse().ok()?; m = f[2].parse().ok()?; first = true; if ci > n { return None; } }
                 _ => {
                     let v: Vec<i64> = f.iter().map(|s| s.parse().ok()).collect::<Option<_>>()?;
+                    if v.len() != 4 { return None; }
                     let o = if first { v[0] } else { pc + v[0] };
                     let c = o + v[3];
                     if m < MINUTES { d.bars[ci][m] = Some(B { o: o as f64 / 100.0, h: (o + v[1]) as f64 / 100.0, l: (o - v[2]) as f64 / 100.0, c: c as f64 / 100.0 }); }
@@ -107,6 +118,9 @@ impl Day {
         }
         Some(d)
     }
+    /// A short day: fewer than 300 spot minutes inside 09:15-15:29 (a special session such as a Muhurat hour, or missing spot
+    /// minutes: only 2026-09-30 in the store, 140 minutes). The option rules skip such days and say so on the next position.
+    pub fn special(&self) -> bool { self.bars[SPOT].iter().filter(|z| z.is_some()).count() < 300 }
     /// Price known at clock minute `m`: the open of the bar at `m`, else the close of the last earlier bar.
     pub fn price_at(&self, ci: usize, m: usize) -> Option<f64> {
         let b = &self.bars[ci];
@@ -318,6 +332,12 @@ mod tests {
         assert_eq!(d.price_at(2, 2), None);
         assert_eq!(d.atm(0), Some(18500.0));
         assert_eq!(d.k[2], (18500.0, true, 200.0));
+        assert!(d.special(), "2 spot minutes is not a normal session");
+        // malformed blocks are unreadable, never half-read
+        assert!(Day::parse("#,2023-06-02,2023-06-08,1\nK,2,18500,CE,100\n").is_none(), "contract index out of range");
+        assert!(Day::parse("#,2023-06-02,2023-06-08,1\nK,1,18500,CE\n").is_none(), "short contract line");
+        assert!(Day::parse("#,2023-06-02,2023-06-08,1\nR,3,0\n1,0,0,0\n").is_none(), "run of an unknown contract");
+        assert!(Day::parse("#,2023-06-02,2023-06-08,1\nR,1,0\n1,0,0\n").is_none(), "short price row");
     }
 
     #[test]
