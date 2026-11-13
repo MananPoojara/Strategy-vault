@@ -12,7 +12,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "tdperl";
 /// Admitted ids (authors/perl/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["tdperl_tdline_long", "tdperl_clop_long", "tdperl_clop_short" /* intraday wave 2b: daily bars decide every trade */,
-    /* lane R2B (13 Nov 2026, R4 #297): Perl's TD Setup trade with the unquantified rule 3 read as not applied (2 labelled readings) */
+    /* lanes R2B/R2E (13 Nov 2026, R4 #297, #309 (3)): Perl's TD Setup trade; rule 3 read as within 0.5 x ATR(10) of TDST, open-through target first (2 labelled readings) */
     "tdperl_setup_long", "tdperl_setup_short"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
