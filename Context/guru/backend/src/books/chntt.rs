@@ -34,7 +34,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ch_ntt_to_buy", "Thrust oscillator buy signal (NYSE breadth)", "Ch 6 · Market thrust", "Long", Live, NYSE, to_rules,
             concat!("Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal (extra_data NYSE_ADV_DEC, 1965-03-01..2020-02-10). ", TO_READ!())),
         d("ch_ntt_to_buy_nse", "Thrust oscillator buy signal (NSE breadth)", "Ch 6 · Market thrust", "Long", Live, NSE, to_rules,
-            concat!("India mapping on NSE breadth (extra_data NSE_ADV_DEC advances, declines, advancing and declining volume, 1999-); the book's test is NYSE breadth on the DJIA. ", TO_READ!())),
+            concat!("Withheld (R4 #306): NSE mapping of a NYSE-calibrated level (-0.3) held, as the 21 Oct 2026 user decision for the Connors breadth rules; no results are published. India mapping on NSE breadth (extra_data NSE_ADV_DEC advances, declines, advancing and declining volume, 1999-); the book's test is NYSE breadth on the DJIA. ", TO_READ!())),
         nt("ch_ntt_vidya_close", "VIDYA close crossover (std-dev VIDYA)", "Ch 3 · VIDYA",
             "VIDYA's volatility index k = sigma(x days)/sigma(reference) is left open (x and the reference are 'for example' choices), and order type/fill is not given.",
             &["E|\"Or, you can go long when prices close above VIDYA, and go short when prices close below VIDYA.\" (p.55)"], "Printed pp.49-72. The fully specified VIDYA system is ch_ntt_vidya_cmo."),
@@ -202,7 +202,7 @@ mod tests {
             assert_eq!(z.exit_px, r[z.exit_i].close);
         }
         assert!(t.windows(2).all(|w| w[1].legs[0].i > w[0].exit_i));
-        assert!(crate::books::ADMISSIONS.iter().any(|a| (a.reviewed)(&catalogue().into_iter().find(|d| d.id == "ch_ntt_to_buy_nse").unwrap())));
+        assert!(!crate::books::ADMISSIONS.iter().any(|a| (a.reviewed)(&catalogue().into_iter().find(|d| d.id == "ch_ntt_to_buy_nse").unwrap()))); // R4 #306: NSE mapping withheld
     }
     #[test]
     fn months_roll_over_year_end() {
@@ -213,7 +213,7 @@ mod tests {
 
 // Instrument admission: thrust-oscillator buy unheld 2026-11-13 by lane R2E (R4 #297: 3-month hold and overlap rule are labelled readings).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "ch_ntt_to_buy" | "ch_ntt_to_buy_nse"),
-    label: "Chande & Kroll's thrust-oscillator buy (DJIA, NYSE breadth) on daily bars of indices, ETFs and stocks: NYSE breadth for US instruments, NSE breadth for India. Exit = the book's 3-month horizon (Table 6.2), a labelled reading. Adapted: 2 unstated details.",
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "ch_ntt_to_buy", // R4 #306: ch_ntt_to_buy_nse withheld (NSE mapping of a NYSE level)
+    label: "Chande & Kroll's thrust-oscillator buy (DJIA, NYSE breadth) on daily bars of the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (gate list, R4 #306): NYSE breadth; not on Indian instruments or single stocks. Exit = the book's 3-month horizon (Table 6.2), a labelled reading. Adapted: 2 unstated details.",
     basis: "The New Technical Trader p.143-159, Table 6.2 p.157; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
 };

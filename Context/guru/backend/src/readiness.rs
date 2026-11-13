@@ -871,9 +871,11 @@ mod tests {
             let p=Params::from([("stop_pts".into(),4.)]);
             assert!(check(&ctx,&def,0,4,&p).unwrap().note.contains("Futures dollar stops"));
         }
-        for id in ["ch_ntt_vidya_cmo" /* ch_ntt_to_buy(_nse): admitted by lane R2E (chntt::ADMISSION, R4 #297) */] {
+        for id in ["ch_ntt_vidya_cmo","ch_ntt_to_buy","ch_ntt_to_buy_nse"] { // R4 #306: ch_ntt_to_buy is US-only, the NSE mapping withheld
             assert!(crate::instrument_policy::check(&definition(id),"NIFTY 50",false).is_some());
         }
+        assert!(crate::instrument_policy::check(&definition("ch_ntt_to_buy"),"SPY",false).is_none());
+        for t in ["SPY","SPX","DJI"] {assert!(crate::instrument_policy::check(&definition("ch_ntt_to_buy_nse"),t,false).is_some());}
     }
     #[test]
     fn volume_is_required_on_each_day_and_prices_must_be_valid() {

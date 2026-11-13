@@ -521,9 +521,16 @@ fn hfm_otvt_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Op
 }
 /// User decision (2026-10-21): every NSE breadth / TRIN mapping of the NYSE-calibrated Connors rules is held; US versions run.
 pub fn nse_breadth_held(def:&StrategyDef,ticker:&str)->Option<Issue> {
-    let held=matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse")
+    let held=matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse"|"ch_ntt_to_buy_nse")
         || (ticker=="NIFTY 50" && matches!(def.id,"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"));
     held.then(||Issue{status:"needs_data",note:"Held: this rule uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.".into()})
+}
+/// R4 #306: the thrust-oscillator buy reads NYSE breadth, so it runs only on the US indices/ETFs in its gate list
+/// (SPX, SPY, DJI, DIA, NDX, QQQ): never on an Indian instrument or a single stock.
+fn chntt_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    if !(def.book==crate::books::chntt::BOOK && def.id=="ch_ntt_to_buy") {return None;}
+    let allowed=crate::gate::get(def.id).and_then(|g|g.allowed).unwrap_or(&[]);
+    (native_stock || !allowed.contains(&ticker)).then(||Issue{status:"not_testable",note:format!("Not published on {ticker}. Chande & Kroll's thrust-oscillator buy reads NYSE breadth and runs only on the US indices and ETFs {} (R4 #306); not on Indian instruments or single stocks.",allowed.join(", "))})
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -1284,6 +1291,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if open_all(def) {return open_all_symbol_issue(def,ticker,native_stock.then_some(false)).or_else(||check_selected(p,def.id,ticker,selected));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
+    if let Some(issue)=chntt_symbol_issue(def,ticker,native_stock){return Some(issue);} // R4 #306
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=spmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
@@ -1327,6 +1335,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if open_all(def) {return open_all_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
+    if let Some(issue)=chntt_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);} // R4 #306
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=spmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
@@ -1448,6 +1457,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "ch_bta2_ma1011_trend"=>"Held: the S&P cash index flatters this rule. Chande's $2,000 stop is 4 points of the S&P-500 contract ($500 a point, p.133-134), so the rule could run only on the S&P 500 index (SPX); decision #179's two-window check finds SPX better than the tradable SPY (points scaled) in both 2010-2020 and 1993-2026, because SPX daily open/high/low come from stale component prints. No result is published (lane K58).",
         // "ch_bta2_tat": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         // "ch_bta2_xopp"|"ch_bta2_xopp_trail": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
+        // ch_ntt_to_buy: admitted on SPX, SPY, DJI, DIA, NDX, QQQ only (lane R2E, R4 #297/#306; chntt::ADMISSION + gate list)
+        "ch_ntt_to_buy_nse"=>"Held: NSE mapping of a NYSE-calibrated level (-0.3) held, as the 21 Oct 2026 user decision for the Connors breadth rules (R4 #306). The New Technical Trader tests the thrust-oscillator buy on NYSE breadth and the DJIA (p.143-159); its -0.3 level is not calibrated for NSE breadth.",
         "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
         // ch_pbs_cbpb_trail3: admitted on SPX only with the workshop's $1,500 / $500 = 3.00-point initial stop (lane K74, R4 #277; chpbs::ADMISSION_SPX)
         // ---- end Chande block
@@ -1666,7 +1677,7 @@ mod tests {
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {
                     // Kaeppel's US-only rules keep their own symbol check (kaeppel_symbol_issue; kaeppel_review_... test).
                     // Fosback's Seasonality Indicator likewise (fosback_symbol_issue; fosback_seasonality_runs_on_us_instruments_only test).
-                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && crate::intraday_ep6::held_note(d.id,t).is_none() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
+                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && crate::intraday_ep6::held_note(d.id,t).is_none() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) && d.id!="ch_ntt_to_buy" /* R4 #306: US gate list only */ {refused.push((d.id,t));}
                 }
             }
         }
@@ -1965,7 +1976,7 @@ mod tests {
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
         for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
                    /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
-                   /* ch_ntt_to_buy(_nse): admitted by lane R2E (chntt::ADMISSION, R4 #297) */ "ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
+                   /* ch_ntt_to_buy: admitted on the US gate list by lane R2E (chntt::ADMISSION, R4 #297/#306) */ "ch_ntt_to_buy_nse","ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -3450,6 +3461,16 @@ mod tests {
             assert!(check(&d,"NIFTY 50",false).is_some());
         }
         assert!(reviewed_cash_rule(&def("ch_ntt_to_buy","chntt")) && held_reason("ch_ntt_to_buy").is_none()); // lane R2E, R4 #297
+        // R4 #306: ch_ntt_to_buy only on the US gate list; the NSE mapping is withheld everywhere
+        let to=def("ch_ntt_to_buy","chntt");
+        for t in ["SPX","SPY","DJI","DIA","NDX","QQQ"] {assert!(check(&to,t,false).is_none(),"{t}");}
+        for t in ["NIFTY 50","NIFTYBANK","RELIANCE","IWM"] {assert!(check(&to,t,false).is_some(),"{t}");}
+        assert!(check(&to,"AAPL",true).is_some() && check(&to,"RELIANCE",true).is_some());
+        let nse=def("ch_ntt_to_buy_nse","chntt");assert!(!reviewed_cash_rule(&nse));
+        for t in ["NIFTY 50","NIFTYBANK","SPX","SPY","DJI"] {assert!(check(&nse,t,false).is_some(),"{t}");}
+        assert!(check(&nse,"RELIANCE",true).is_some());
+        assert!(crate::gate::get("ch_ntt_to_buy").is_some_and(|g|g.allowed==Some(&["SPX","SPY","DJI","DIA","NDX","QQQ"][..])));
+        assert!(crate::gate::get("ch_ntt_to_buy_nse").is_some_and(|g|g.verdict=="withheld" && g.reason.contains("R4 #306")));
         assert!(check(&def("ch_65sma3cc","ch_bta"),"NIFTY 50",false).is_none());
         assert!(check(&def("ch_cbpb_time","ch_bta"),"SPY",false).is_none());
     }
