@@ -5,17 +5,21 @@
 //!  - "Zweig system for ms" MetaStock expert, research share USB HDD 1/MetaStock/@Systems & Indicators/@Misc Indicators & Systems/
 //!    Zweig system for ms.rar -> Zweig system for ms.txt (copy authors/batch-j/J3w/zweig_4pct.txt): option p.src = 1 (long only).
 //! Book id `tsfour`. Lane PD (A1 pool D, 13 Nov 2026), batch-j J1/J3 to-code rows; independent check authors/pd/w/pd_ref.py.
-//! Not the weekly mbsot_zweig4 (weekly Value Line closes): these codes run on the chart's own bars, here daily.
+//! R4 #326 (lane X5, review authors/rev/PD.md B3): both codes are the Zweig / Ned Davis 4% model of the live mbsot_zweig4 (Schutzman's
+//! header: 'Model was designed to be applied to a weekly chart of the Value Line Composite Index'); daily bars are a variant, not a
+//! new method (as masmt_vl4). The card is marked "Duplicate of mbsot_zweig4" (NotTestable, no ADMISSION) and counted once; the two
+//! code files are cited on mbsot_zweig4's gate row. run() is kept for the record and its test.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::tselhs::Book;
 
 pub const REVIEWED: &[&str] = &["tsfour_close"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Default p.src = 0, Schutzman's TradeStation code as printed: LC = lowest close and HC = highest close, both starting at the first bar's close. Trend 0 (no trades yet) becomes up when (close - LC)/LC >= 4% and down when (HC - close)/HC >= 4% (the second test wins if both hold); this first change places no order. Then: up and (HC - close)/HC >= 4% -> 'Sell Short This Bar on close', trend down, LC = close; down and (close - LC)/LC >= 4% -> 'Buy This Bar on close', trend up, HC = close; after that LC and HC take today's close if it is a new low / high. The comment's weekly Value Line chart is the model's origin (Zweig); the code reads the chart's bars, so daily bars here are a declared application. Option p.src = 1, the 'Zweig system for ms' MetaStock expert as printed: state a = +1 / -1 / 0 (start 0); from +1 it turns -1 when close < 0.96 x the highest close since it turned +1; from -1 it turns +1 when close > 1.04 x the lowest close since it turned -1; from 0 it turns +1 when close > 1.04 x the lowest close so far, else -1 when close < 0.96 x the highest close so far. Enter long when a = 1 (also the first time), close long when a = -1; no short side. Both fill at the signal close (TradeStation 'this bar on close'; MetaStock's default trade price, delay 0). The code files print no test results. Runs on indices, ETFs and stocks, US and India, are a declared application.";
+const DUP: &str = "Duplicate of mbsot_zweig4 (R4 #326): the Schutzman JJMBook.Four%Model TradeStation code and the Zweig system for MetaStock are the Zweig / Ned Davis Four Percent Model (a 4% move off the lowest / highest close since the last signal), which the code's own header says was designed for weekly Value Line closes; the same model is the live card mbsot_zweig4 (p.pct = 4, p.short = 1 for the long-and-short form). Daily bars are a variant, not a new method; counted once, not run as a separate strategy";
+const NOTE: &str = "Duplicate of mbsot_zweig4 (R4 #326); not run twice. Readings kept for the record: [Declared readings] Default p.src = 0, Schutzman's TradeStation code as printed: LC = lowest close and HC = highest close, both starting at the first bar's close. Trend 0 (no trades yet) becomes up when (close - LC)/LC >= 4% and down when (HC - close)/HC >= 4% (the second test wins if both hold); this first change places no order. Then: up and (HC - close)/HC >= 4% -> 'Sell Short This Bar on close', trend down, LC = close; down and (close - LC)/LC >= 4% -> 'Buy This Bar on close', trend up, HC = close; after that LC and HC take today's close if it is a new low / high. The comment's weekly Value Line chart is the model's origin (Zweig); the code reads the chart's bars, so daily bars here are a declared application. Option p.src = 1, the 'Zweig system for ms' MetaStock expert as printed: state a = +1 / -1 / 0 (start 0); from +1 it turns -1 when close < 0.96 x the highest close since it turned +1; from -1 it turns +1 when close > 1.04 x the lowest close since it turned -1; from 0 it turns +1 when close > 1.04 x the lowest close so far, else -1 when close < 0.96 x the highest close so far. Enter long when a = 1 (also the first time), close long when a = -1; no short side. Both fill at the signal close (TradeStation 'this bar on close'; MetaStock's default trade price, delay 0). The code files print no test results. Runs on indices, ETFs and stocks, US and India, are a declared application.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "tsfour_close", name: "Four % Model on daily closes (Schutzman code): reverse at the close after a 4% move off the highest / lowest close", group: "TradeStation / MetaStock code: Four % Model (Schutzman; Zweig system for MS)", session: 0, dir: "Long/Short", status: Status::Live,
+    vec![StrategyDef { id: "tsfour_close", name: "Four % Model on daily closes (Schutzman code): reverse at the close after a 4% move off the highest / lowest close", group: "TradeStation / MetaStock code: Four % Model (Schutzman; Zweig system for MS)", session: 0, dir: "Long/Short", status: Status::NotTestable(DUP),
         needs_volume: false, needs_vix: false, needs_series: &[], book: "tsfour", rules: &[
             "F|\"Inputs: perOffLo(4.00), { percent off lowest close } perOffHi(4.00); { percent off highest close }\" (Code.txt)",
             "E|\"else if trend = -1 and ((close-LC) / LC) >= (perOffLo / 100) then begin Buy This Bar on close; trend = +1; HC = close;\" (Code.txt)",
@@ -26,7 +30,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then_some(("tsfour_close", "Four % Model, daily closes (code)", "Schutzman / Zweig MS"))
+    reviewed(id).then_some(("tsfour_close", "Four % Model, daily closes (code)", "Duplicate of mbsot_zweig4"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -104,9 +108,4 @@ mod tests {
     }
 }
 
-// Instrument admission: Four % Model code (Schutzman; Zweig system for MS) 2026-11-13 (lane PD).
-pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == "tsfour" && reviewed(def.id),
-    label: "The codes were written for a weekly Value Line chart (Zweig's Four Percent Model) but read the chart's own bars; daily runs on indices, ETFs and stocks, US and India, are a declared application.",
-    basis: "Schutzman JJMBook.Four%Model TradeStation code (Code.rar -> Code.txt) and 'Zweig system for ms' MetaStock expert (research share USB HDD 1); independent check authors/pd/w/pd_ref.py",
-};
+// No ADMISSION: duplicate of mbsot_zweig4 (R4 #326).

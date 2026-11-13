@@ -1,6 +1,10 @@
 //! Jay Kaeppel, "The 40-Week Cycle In The Stock Market", Technical Analysis of Stocks & Commodities V.22:1 (January 2004) pp.32-36
 //! (research share Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V22/C01/006KAEP.pdf).
 //! Book id `sckc40`. Lane PD (A1 pool D, 13 Nov 2026), batch-h H2 to-code row; independent check authors/pd/w/pd_ref.py.
+//! R4 #326 (lane X5, review authors/rev/PD.md B1): the same rule as the live kpss_c40w (Kaeppel, Seasonal Stock Market Trends ch.6:
+//! 21 Apr 1967 + 280n, and 15 May 1970 = 21 Apr 1967 + 4 x 280 days; same holiday reading), so the card is marked
+//! "Duplicate of kpss_c40w" (NotTestable, no ADMISSION) and counted once; the article is cited on kpss_c40w's gate row.
+//! run() is kept for the record and its test.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::atm03::{civil, day_num};
 use super::tselhs::Book;
@@ -8,10 +12,11 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["sckc40_bull"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Cycle start dates = 15 May 1970 + n x 280 calendar days (n = 0, 1, 2 ...); the bullish phase ends 140 calendar days after each start. Buy at the close on each start date and sell at the close on its 140th day. When a date is not a trading day the close of the last trading day before it is used: the article's own table does this (start 1/1/88 = S&P 247.09, the 31 Dec 1987 close; mid date 12/25/92 = 439.77, the 24 Dec 1992 close), so the exchange calendar is read as known in advance. Cash between phases earns nothing here (the article's $23,339 figure credits 3% interest; its $14,215 figure does not). Long only. Article (S&P 500, 43 cycles 15 May 1970 - 2 May 2003): bullish phase up in 33 of 43 (77%), average +6.83%, $1,000 -> $14,215 with no interest; the bearish phase $1,000 -> $851. The vault's SPX history starts in 1983, so 26 of the 43 cycles can be checked; the gate row lists that check. Runs on other indices, ETFs and stocks, US and India, are a declared application of the article's calendar.";
+const DUP: &str = "Duplicate of kpss_c40w (R4 #326): Kaeppel's 40-week cycle from S&C V.22:1 (15 May 1970 + 280n days, long for 140 calendar days, a non-trading date uses the last close before it) is the same calendar as the live card kpss_c40w (21 Apr 1967 + 280n; 15 May 1970 is 4 x 280 days later) from his book Seasonal Stock Market Trends; counted once, not run as a separate strategy";
+const NOTE: &str = "Duplicate of kpss_c40w (R4 #326); not run twice. Readings kept for the record: [Declared readings] Cycle start dates = 15 May 1970 + n x 280 calendar days (n = 0, 1, 2 ...); the bullish phase ends 140 calendar days after each start. Buy at the close on each start date and sell at the close on its 140th day. When a date is not a trading day the close of the last trading day before it is used: the article's own table does this (start 1/1/88 = S&P 247.09, the 31 Dec 1987 close; mid date 12/25/92 = 439.77, the 24 Dec 1992 close), so the exchange calendar is read as known in advance. Cash between phases earns nothing here (the article's $23,339 figure credits 3% interest; its $14,215 figure does not). Long only. Article (S&P 500, 43 cycles 15 May 1970 - 2 May 2003): bullish phase up in 33 of 43 (77%), average +6.83%, $1,000 -> $14,215 with no interest; the bearish phase $1,000 -> $851. The vault's SPX history starts in 1983, so 26 of the 43 cycles can be checked; the gate row lists that check. Runs on other indices, ETFs and stocks, US and India, are a declared application of the article's calendar. Known limit of this record run() (review M3): a bar owns the calendar days up to the next bar's date, which is right for scheduled holidays and weekends (the calendar is known in advance) but would place a cycle date on the bar before a data gap, and at the window's last bar reads the next bar's date.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "sckc40_bull", name: "Kaeppel 40-week cycle: buy at the close on each 280-day cycle start from 15 May 1970, sell 140 calendar days later", group: "S&C: The 40-Week Cycle In The Stock Market (Kaeppel, V.22:1)", session: 0, dir: "Long", status: Status::Live,
+    vec![StrategyDef { id: "sckc40_bull", name: "Kaeppel 40-week cycle: buy at the close on each 280-day cycle start from 15 May 1970, sell 140 calendar days later", group: "S&C: The 40-Week Cycle In The Stock Market (Kaeppel, V.22:1)", session: 0, dir: "Long", status: Status::NotTestable(DUP),
         needs_volume: false, needs_vix: false, needs_series: &[], book: "sckc40", rules: &[
             "F|\"Our analysis of the 40-week cycle starts on May 15, 1970, and makes the assumption that a new 40-week cycle starts on this date and a new 40-week cycle starts every 280 calendar days after that.\" (V.22:1 p.32)",
             "E|\"The simplest way to use this information is to buy an S&P 500 fund at the close on the first date of each new cycle\" (p.33)",
@@ -20,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then_some(("sckc40_bull", "Kaeppel 40-week cycle (S&C)", "Bullish 20-week phase"))
+    reviewed(id).then_some(("sckc40_bull", "Kaeppel 40-week cycle (S&C)", "Duplicate of kpss_c40w"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> { reviewed(id).then(Vec::new) }
@@ -69,9 +74,4 @@ mod tests {
     }
 }
 
-// Instrument admission: S&C Kaeppel 40-week cycle 2026-11-13 (lane PD).
-pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == "sckc40" && reviewed(def.id),
-    label: "Jay Kaeppel tested the 40-week cycle on the S&P 500 (1970-2003); SPX and SPY are the article's index. Runs on other indices, ETFs and stocks, US and India, are a declared application of its calendar.",
-    basis: "Technical Analysis of Stocks & Commodities V.22:1 pp.32-36 (The 40-Week Cycle In The Stock Market); independent check authors/pd/w/pd_ref.py",
-};
+// No ADMISSION: duplicate of kpss_c40w (R4 #326).
