@@ -198,6 +198,10 @@ pub const IDS: &[&str] = &[
     "lgsc_sstda_fpo",
     // lane R2D (R4 #304): Bierovic First Prize (books::tbpk: the entry stop and the initial stop on the entry day)
     "tbpk_first_prize",
+    // lane R2E (R4 #305 (3)): Radge's Smash Bar (books::radge: the entry bar's stop entry and its initial stop on the minutes)
+    "radge_smash",
+    // lane R2E (R4 #311): Nguyen's Impact system (books::jnits St::walk: the entry stop, the stop and the 1R/2R targets)
+    "jnits_impact",
     // lane PE (R4 #319): Pezzutti (books::scpezz walk: entry stop, exit limit, reversing stop), Mitchell (books::scmitch walk: close stop, exit stop)
     "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
@@ -219,7 +223,12 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "stkch_gap_fgd_long",
     // lane R2D (R4 #304): SPY 2000-2025 resolved avg +0.016% vs convention -0.012% (test a, sign; R2Dw/lgsc_eval.out)
     "lgsc_sstda_fpo",
-    // lane PE (R4 #319): Pezzutti and Mitchell, published on the SPY/SPX minute window only (gate allowed SPY, SPX)
+    // lane R2E (R4 #305 (3)): 30-37% of Smash Bar trades are order-dependent on the daily bar; only the minute window publishes
+    "radge_smash",
+    // lane R2E (R4 #311): Nguyen Impact, minute window only (#243 (c))
+    "jnits_impact",
+    // lane PE (R4 #319): Pezzutti (#243 (a) sign flip on SPY) and Mitchell (lead decision R4 #325: #240 (3) + the 15-25% same-day share,
+    // not a #177 failure; scmitch_atr held), published on the SPY/SPX minute window only (gate allowed SPY, SPX)
     "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
@@ -243,7 +252,7 @@ pub const HELD: &[(&str, &str)] = &[
 const CASH177B_K62: &str = "Held (decisions #177b, #246, lane K62): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule loses over 2014-2025 while SPX gains (opposite sign, the cash-vs-tradable check), and SPX is this rule's only ticker, so no results are published.";
 /// #246 (a), lane K62: daily rules whose RESOLVED result fails #179 on SPX (SPX better than SPY in both check windows): the SPX
 /// result is withdrawn and, as #179 rules for SPX-flagged rules, the NIFTY 50 / NIFTYBANK results are held; SPY and the rest stay.
-pub const SPX179: &[&str] = &["bfmmx_nql4", "cwin_single_window", "lgsc_sstda_fpo"]; // + lane K63 (wave 5)
+pub const SPX179: &[&str] = &["bfmmx_nql4", "cwin_single_window", "lgsc_sstda_fpo", "radge_smash"]; // + lane K63 (wave 5)
 const SPX179_NOTE: &str = "The SPX daily result is withdrawn (decisions #179, #246, lane K62): with the same-day order resolved on 1-minute bars, SPX beats tradable SPY over the same dates in both check windows (2014-01-02..2017-06-30 and 2017-07-01..2020-09-11); SPX daily open/high/low come from stale component prints, so the SPY result carries the S&P rule.";
 const SPX179_INDIA: &str = "Not published on this index (decisions #179, #246, lane K62): the same rule fails the tradable-vs-cash check on SPX/SPY with its same-day order resolved on 1-minute bars, and India has no tradable index series to check it on, so the NIFTY result is held.";
 /// #246 (a): SPX-point rules whose RESOLVED result fails #177b (SPX vs tradable SPY with the points scaled, 2014-2025); SPX is
