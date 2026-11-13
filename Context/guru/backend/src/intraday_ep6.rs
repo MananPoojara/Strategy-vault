@@ -193,7 +193,11 @@ pub const IDS: &[&str] = &[
     // lane K74 (R4 #277 wave 3): the Original Turtle Rules (books::covel breakout_ep6: entry, adds and unit exits along the path)
     "cov_turtle_s1", "cov_turtle_s2",
     // lane K75 (R4 #281 (3)): StockCharts full-gap-down long (books::stkch same_day: a trailing-stop exit and a new gap entry on one bar)
-    "stkch_gap_fgd_long"];
+    "stkch_gap_fgd_long",
+    // lane R2D (R4 #304): Gettess SS-TDA with the first-profitable-open exit (books::lgsc fpo: both stops and the reversal on one day)
+    "lgsc_sstda_fpo",
+    // lane R2D (R4 #304): Bierovic First Prize (books::tbpk: the entry stop and the initial stop on the entry day)
+    "tbpk_first_prize"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -210,7 +214,9 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     // lane K74 (R4 #277): the Turtle systems (S1 flags the sign test on SPX, S2 the 3x average test on NIFTYBANK; K74w/t243.tsv)
     "cov_turtle_s1", "cov_turtle_s2",
     // lane K75 (R4 #281 (3)): SPY 2000-2025 compounded +84.9% resolved vs +5.9% convention (test c; K75w/t243.out)
-    "stkch_gap_fgd_long"];
+    "stkch_gap_fgd_long",
+    // lane R2D (R4 #304): SPY 2000-2025 resolved avg +0.016% vs convention -0.012% (test a, sign; R2Dw/lgsc_eval.out)
+    "lgsc_sstda_fpo"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
@@ -233,7 +239,7 @@ pub const HELD: &[(&str, &str)] = &[
 const CASH177B_K62: &str = "Held (decisions #177b, #246, lane K62): the SPX result is withheld. On tradable SPY with the book's S&P points scaled by the trailing 250-day SPX/SPY ratio, the minute-resolved rule loses over 2014-2025 while SPX gains (opposite sign, the cash-vs-tradable check), and SPX is this rule's only ticker, so no results are published.";
 /// #246 (a), lane K62: daily rules whose RESOLVED result fails #179 on SPX (SPX better than SPY in both check windows): the SPX
 /// result is withdrawn and, as #179 rules for SPX-flagged rules, the NIFTY 50 / NIFTYBANK results are held; SPY and the rest stay.
-pub const SPX179: &[&str] = &["bfmmx_nql4", "cwin_single_window"]; // + lane K63 (wave 5)
+pub const SPX179: &[&str] = &["bfmmx_nql4", "cwin_single_window", "lgsc_sstda_fpo"]; // + lane K63 (wave 5)
 const SPX179_NOTE: &str = "The SPX daily result is withdrawn (decisions #179, #246, lane K62): with the same-day order resolved on 1-minute bars, SPX beats tradable SPY over the same dates in both check windows (2014-01-02..2017-06-30 and 2017-07-01..2020-09-11); SPX daily open/high/low come from stale component prints, so the SPY result carries the S&P rule.";
 const SPX179_INDIA: &str = "Not published on this index (decisions #179, #246, lane K62): the same rule fails the tradable-vs-cash check on SPX/SPY with its same-day order resolved on 1-minute bars, and India has no tradable index series to check it on, so the NIFTY result is held.";
 /// #246 (a): SPX-point rules whose RESOLVED result fails #177b (SPX vs tradable SPY with the points scaled, 2014-2025); SPX is
