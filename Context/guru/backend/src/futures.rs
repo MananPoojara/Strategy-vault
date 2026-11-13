@@ -341,6 +341,7 @@ const HELD: &[(&str, &str, &str)] = &[
     // lane F1D: Larry Williams bond stop-entry cards (no T-bond minute bars; limit 5%)
     ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 22.4% of its trades (27.7% in the book's 1990-98 window) have two fills on one daily bar (entry and stop, or stop and reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
     ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 16.8% of its trades (19.5% in the book's 1990-98 window) have two fills on one daily bar, which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
+    ("lwlts_gsv_sp", "&SP", "held under R4 #240: 5.1% of its trades on the published 1982-95 window have two fills on one daily bar (an entry and the reversal), which daily bars cannot order, and no S&P futures minute bars exist (limit 5%)"),
     ("lwlts_gsv_bonds", "&ZB", "held under R4 #240: 16.1% of its trades (16.3% in the book's 1990-98 window) have two fills on one daily bar (an entry and the reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
     ("ch_bta2_long_bomb", "&KC", "held on coffee under R4 #240: 12.2% of its trades in the book's 1982-95 window (15.7% over 1978-2020) enter and hit the stop on the same day, which daily bars cannot order, and no coffee futures minute bars exist (limit 5%, R4 #314 (3))"),
 ];
@@ -358,6 +359,8 @@ thread_local! { pub static TEST_ROWS: std::cell::RefCell<BTreeMap<&'static str, 
 /// Cards that read a second Norgate contract (Data2) and the contracts they read (lane F1C, review REV-F1B M3).
 const DATA2: &[(&str, &[&str])] = &[("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2_goldbond_adx", &["&GC"]), ("ch_bta2_intermarket_trio", &["&GC", "&ZS", "&HG"]),
     ("nfgu_pathfinder", &["&ZB"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"]),
+    ("lwlts_talon_bondfilter", &["&ZB"]), ("lwlts_gsv_sp", &["&ZB"]), ("lwlts_gsv_sp_monday", &["&ZB"]), ("lwlts_month_day1_sp_bonds", &["&ZB"]),
+    ("lwlts_bonds_channel_bstop", &["&ZB"]), ("lwlts_bonds_channel_sstop", &["&ZB"]),
     ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"])];
 /// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
 pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
@@ -387,6 +390,7 @@ pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == i
 /// Lane F1D: Larry Williams's printed T-bond rules (Long-Term Secrets to Short-Term Trading ch.4, 6, 7, 8).
 const LWB: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999): the T-bond rules of ch.4 (p.61-65), ch.6 (p.86-87), ch.7 (p.98, 116-118) and ch.8 (p.124-126), tested on CSI \"DAY T-BONDS\" back-adjusted data with System Writer/TradeStation; run on the Norgate T-bond continuous contract with the book's dollar stops at $1,000 per point (R4 #293 (1), (3)), lane F1D.";
 const LWB10: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999) ch.10 p.150-157, Figs. 10.2, 10.6, 10.8-10.10: T-bond first trading day of the month, TDM 18 / 22 buys with the gold downtrend filter and TDM 12 sells (with and without the gold uptrend filter), DAY T-BONDS 01/01/86-08/28/98; run on the Norgate T-bond continuous contract with the Norgate gold contract as Data2 for the gold filters ($ stops at $1,000 per point; R4 #293 (1), (3)), lane F1D.";
+const LWSPB: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999): S&P 500 rules filtered or triggered by T-bonds (Fig. 4.21 p.72-73, Figs. 8.3-8.4 p.125-128, ch.10 p.148-149, Figs. 15.1-15.2 p.236-237), S&P 500 IND-9967 with $250 per point; run on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2, published 1982-04-21..1995-07-31 (R4 #293 (1), #330), lane F1D.";
 const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_vb_bonds", "&ZB", LWB),
     ("lwlts_vb_bonds_tdw", "&ZB", LWB),
@@ -403,6 +407,12 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_tdm22_gold_bonds", "&ZB", LWB10),
     ("lwlts_tdm12_sell_bonds", "&ZB", LWB10),
     ("lwlts_tdm12_sell_gold_bonds", "&ZB", LWB10),
+    ("lwlts_talon_bondfilter", "&SP", LWSPB),
+    ("lwlts_gsv_sp", "&SP", LWSPB),
+    ("lwlts_gsv_sp_monday", "&SP", LWSPB),
+    ("lwlts_month_day1_sp_bonds", "&SP", LWSPB),
+    ("lwlts_bonds_channel_bstop", "&SP", LWSPB),
+    ("lwlts_bonds_channel_sstop", "&SP", LWSPB),
     ("lwlts_bonds_8day", "&ZB", "Larry Williams, Long-Term Secrets to Short-Term Trading (Wiley 1999) p.212-213, the August 1997 letter: buy the close when it is above the close 8 days ago, $850 stop, $3,500 target, T-bond futures since 1977 with $50 commission and slippage; run on the Norgate T-bond continuous contract ($850 = 0.85 point, $3,500 = 3.5 points at $1,000 per point; R4 #293 (1), (3)), lane F1D."),
 ];
 /// Lane P1: two-leg spreads on two continuous contracts, run in the first contract's context.
@@ -621,6 +631,21 @@ mod tests {
         TEST_ROWS.with(|t| t.borrow_mut().insert("&GC", Box::leak(f1c_rows("Gold (Norgate &GC)", &gold).into_boxed_slice())));
         let t = run();
         assert_eq!((t.len(), t[0].dir, t[0].legs[0].i, t[0].exit_i), (1, -1., 11, 14), "{t:?}");
+        TEST_ROWS.with(|t| t.borrow_mut().clear());
+    }
+    #[test]
+    fn f1d_bond_channel_buys_the_sp_close_and_exits_on_the_bond_low() {
+        // the bond closes above its 14 prior highs on bar 15 -> buy the S&P close; its low breaks the 17 prior lows on bar 20 ->
+        // out at that S&P close (Fig. 15.1); no bond data -> no trade
+        let sp = f1c_rows("S&P 500 (Norgate &SP)", &vec![(400., 401., 399., 400.); 24]);
+        let run = || crate::books::lwlts::run("lwlts_bonds_channel_bstop", &Ctx::new(&sp, &sp, &[]), 0, 23, &crate::connors::Params::new()).unwrap();
+        assert!(run().is_empty());
+        let mut b = vec![(100., 100.5, 99.5, 100.); 24];
+        b[15] = (100., 101., 100., 101.); b[20] = (100., 100., 98., 98.5);
+        TEST_ROWS.with(|t| t.borrow_mut().insert("&ZB", Box::leak(f1c_rows("US T-Bond (Norgate &ZB)", &b).into_boxed_slice())));
+        let t = run();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i, t[0].entry_kind), (1, 15, 20, "close"), "{t:?}");
+        assert!(crate::books::mhstp::window("lwlts_bonds_channel_bstop").is_some_and(|w| w.1 == "1995-07-31"));
         TEST_ROWS.with(|t| t.borrow_mut().clear());
     }
     #[test]
