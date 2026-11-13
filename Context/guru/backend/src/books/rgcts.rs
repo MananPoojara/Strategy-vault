@@ -75,11 +75,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|Sell corn on the first trading day after June 20; exit November 1 (p.57)", "E|If the short is not profitable after July 21, go long the first trading day after July 21 until the first trading day of the next year (p.57)"],
             "p.57: $28,487.50 (65% win) for the short; $38,537.50 (58%) with the counterseasonal long."),
         // ---------------- Chapter 1 / 8: intermarket ----------------
-        mk("rgc_im_sp_tbond", "S&P500 vs T-Bonds: trend, ratio and divergence models", "Ch. 1, 7, 8, 18 · Intermarket S&P500", "Long/Short", Status::NeedsData("the T-bond, Eurodollar, T-bill, dollar index, CRB, XAU, XOI, UTY, gold, crude, D-mark, yen and silver futures or index series the models trade or compare (Cybernetic Trading Strategies p.27-29), which are not in the vault; using ETFs would change the instruments (decision #167)"),
+        mk("rgc_im_sp_tbond", "S&P500 vs T-Bonds: trend, ratio and divergence models", "Ch. 1, 7, 8, 18 · Intermarket S&P500", "Long/Short", Status::Live,
             &["E|Long S&P when T-Bonds > 26-day MA, short below (p.27-28); T-Bond/S&P ratio vs 28-day average (p.29); Eurodollar/S&P ratio vs 10-day MA (p.29)",
               "E|Divergence: if S&P < Average(S&P,12) and T-Bonds > Average(T-Bonds,26) buy at open; reverse for sells (p.265; Table 1.4 lists 16/26, 12/30, 14/26, 12/26)",
+              "X|Stop and reverse: the opposite divergence signal closes the position at the open and opens the other side (Table 7.5 p.117: \"then buy at open\" / \"then sell at open\"); no other exit",
               "E|Open-to-close divergence with T-Bills/T-Bonds (Table 1.5, p.32): best long T-Bills LenTr 18 / LenInt 10; best short T-Bonds LenTr 2 / LenInt 8. The book is not consistent about what the lengths are: p.31 calls them momentum periods and says simple differences worked better, while the text below the table says the best sets 'used the difference between a price and its moving average' and calls them moving-average lengths (p.32); MEM-confirmed version (Table 7.5)"],
-            "Table 1.4 $348,175 (130 trades, 68%); Table 1.5 (p.32, 4/21/82-2/7/96, $50 costs): long T-Bills 18/10 $135,675, 667 trades, 56%; short T-Bonds 2/8 $39,435, 821 trades, 52%; Table 18.4 $321,275 dev set; Table 7.6 $326,775 (54 trades, 80%)."),
+            "Lane F3 (13 Nov 2026, R4 #293, #294): the divergence model is run, on the S&P 500 continuous futures contract only, with the T-bond continuous contract as Data2 (both Norgate, back-adjusted, joined by exact date; the T-bond average is computed on its own bars): TrOsc = S&P close - Average(S&P close, LenTr), InterOsc = T-bond close - Average(T-bond close, LenInt); TrOsc < 0 and InterOsc > 0 -> buy at the open, TrOsc > 0 and InterOsc < 0 -> sell at the open, stop and reverse, no exits otherwise (Table 7.5 p.117 without the MEM filter; Table 1.4 p.31 lengths 16/26 by default). The trend, ratio, Eurodollar and T-bill variants are not run (no complete rule or no data: Table 1.5's lengths are inconsistent, no T-bill or Eurodollar futures in the vault). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. Table 1.4 $348,175 (130 trades, 68%); Table 1.5 (p.32, 4/21/82-2/7/96, $50 costs): long T-Bills 18/10 $135,675, 667 trades, 56%; short T-Bonds 2/8 $39,435, 821 trades, 52%; Table 18.4 $321,275 dev set; Table 7.6 $326,775 (54 trades, 80%)."),
         mk("rgc_im_tbond", "T-Bond intermarket models (Utilities, Eurodollars, XAU, CRB, copper)", "Ch. 1, 8, 20 · Intermarket T-Bonds", "Long/Short", Status::NeedsData("the T-bond, Eurodollar, T-bill, dollar index, CRB, XAU, XOI, UTY, gold, crude, D-mark, yen and silver futures or index series the models trade or compare (Cybernetic Trading Strategies p.27-29), which are not in the vault; using ETFs would change the instruments (decision #167)"),
             &["E|Buy T-Bonds when the Philadelphia Utility average crosses above its 40-day SMA, sell below (p.29)",
               "E|T-Bond/Eurodollar divergence 24/32 (Table 1.6), T-Bond/XAU 6/34 (Table 1.7), CRB 10/16, T-Bond/UTY 8/24 (Table 1.8) with 12-day correlation > .5 filter (Table 8.2)",
@@ -201,7 +202,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "rgc_mom_first" => ("rgc_momentum", "Momentum precedes price", "3-10 oscillator"),
         "rgc_elliott" => ("rgc_elliott", "Mechanical Elliott Wave", "Wave 3/5 counter"),
         "rgc_ga1723" => ("rgc_ga", "GA-evolved rules", "Generation 1723"),
-        "rgc_im_sp_tbond" | "rgc_im_tbond" | "rgc_im_commodities" => ("rgc_intermarket", "Intermarket analysis", "Data missing"),
+        "rgc_im_sp_tbond" => ("rgc_intermarket", "Intermarket analysis", "S&P500 / T-Bond divergence (Norgate futures)"), // lane F3
+        "rgc_im_tbond" | "rgc_im_commodities" => ("rgc_intermarket", "Intermarket analysis", "Data missing"),
         "rgc_fund_djia" | "rgc_cot" => ("rgc_fundamental", "Fundamental and COT models", "Data missing"),
         "rgc_classic_examples" | "rgc_dark_cloud" | "rgc_nn_ml" => ("rgc_other", "Other methods", "Not testable"),
         _ => return None,
@@ -232,6 +234,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("ef", "Fast EMA", 7., 2., 30., 1.), p("es", "Slow EMA", 15., 5., 60., 1.), p("hold", "BarsSinceEntry before the stop", 4., 0., 20., 1.),
             p("m", "Stop = low - m x 3-bar ATR", 0.5, 0., 2., 0.05), p("fastd", "FastD: 0 SMA3 of FastK, 1 Lane sums, 2 EMA(.5) [platform]", 0., 0., 2., 1.),
             p("mbb", "MaxBarsBack: first signal bar of the data (book 210, p.302; 15 = as soon as the indicators exist)", 210., 15., 400., 1.)],
+        "rgc_im_sp_tbond" => vec![p("lentr", "S&P500 moving average length (Table 1.4: 16)", 16., 2., 60., 1.), p("lenint", "T-Bond moving average length (Table 1.4: 26)", 26., 2., 60., 1.)],
         _ => return None,
     })
 }
@@ -292,6 +295,32 @@ fn finish(cur: Option<Trade>, x: &Ctx, to: usize, out: &mut Vec<Trade>) {
         t.open = true;
         out.push(t);
     }
+}
+/// Lane F3 (R4 #294 (1)): S&P500/T-Bond intermarket divergence (Table 1.4 p.31, Table 7.5 p.117 without MEM), stop and reverse at
+/// the next open. Data2 = the Norgate T-bond continuous contract (back-adjusted) on the S&P contract's dates (exact date); its
+/// average on its own bars (TradeStation "Average(Close of Data2, n)"). A date without a T-bond bar gives no signal.
+fn im_sp_tbond(x: &Ctx, from: usize, to: usize, lentr: f64, lenint: f64) -> Vec<Trade> {
+    let (lt, li) = (lentr.round().max(1.) as usize, lenint.round().max(1.) as usize);
+    let Some(m) = crate::futures::MARKETS.iter().find(|m| m.sym == "&ZB") else { return vec![] };
+    let Some(rows) = crate::books::rotation::PRELOADED.get().and_then(|d| d.get(&crate::futures::ticker(m))) else { return vec![] };
+    let s = crate::second::align("&ZB", x.r, rows);
+    let zc = s.exact(crate::second::Field::C);
+    let za = s.own(|r| sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), li));
+    let ta = sma(&x.c, lt);
+    let (mut out, mut cur, mut pend) = (vec![], None::<Trade>, 0i8);
+    for i in from..=to {
+        if pend != 0 {
+            if let Some(t) = cur.take() { close(t, i, x.o[i], "reverse at the open", &mut out); }
+            cur = Some(new_trade(pend as f64, i, x.o[i], "open", i - 1));
+            pend = 0;
+        }
+        if i == to { break; }
+        let (tr, ir) = (x.c[i] - ta[i], zc[i] - za[i]);
+        let want = if tr < 0. && ir > 0. { 1 } else if tr > 0. && ir < 0. { -1 } else { 0 };
+        if want != 0 && cur.as_ref().map_or(0, |t| t.dir as i8) != want { pend = want; }
+    }
+    finish(cur, x, to, &mut out);
+    out
 }
 /// Buy stop touched on bar i -> fill at max(open, stop); sell stop -> min(open, stop).
 fn buy_fill(x: &Ctx, i: usize, s: f64) -> Option<f64> { (s.is_finite() && x.h[i] >= s).then(|| x.o[i].max(s)) }
@@ -371,6 +400,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if from > to || to >= x.r.len() {
         return None;
     }
+    if id == "rgc_im_sp_tbond" { return Some(im_sp_tbond(x, from, to, p.get("lentr").copied().unwrap_or(16.), p.get("lenint").copied().unwrap_or(26.))); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.) as usize;
     let n = x.r.len();

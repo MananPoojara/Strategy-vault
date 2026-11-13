@@ -2184,6 +2184,8 @@ fn main() {
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let mut extra = load_extra(&extra_dir);
     extra.extend(futures_raw); // lane F1: the unadjusted futures series (RAW.*), per futures ticker
+    // lane F3 (R4 #294 (2)): Norgate US indices / Nasdaq breadth next to the US price file; an extra_data file of the same name wins
+    if data.contains_key("SPX") { for (k, v) in futures::load_indices(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908")) { extra.entry(k).or_insert(v); } }
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
     if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}

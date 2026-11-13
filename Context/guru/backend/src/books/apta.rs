@@ -5,7 +5,8 @@
 use crate::connors::{sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["apta_ma200_dji", "apta_ma100_dji", "apta_triple_mom", "apta_roc15", "apta_six_best", "apta_six_worst", "apta_breadth_impulse", "apta_breadth_impulse_nse", "apta_breadth_macd", "apta_breadth_macd_nse", "apta_vix35", "apta_macd"];
+pub const REVIEWED: &[&str] = &["apta_ma200_dji", "apta_ma100_dji", "apta_triple_mom", "apta_roc15", "apta_six_best", "apta_six_worst", "apta_breadth_impulse", "apta_breadth_impulse_nse", "apta_breadth_macd", "apta_breadth_macd_nse", "apta_vix35", "apta_macd",
+    "apta_nasdaq_nyse_rs" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate $COMP / $NYA, independent reference titles-1030/F3w */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "apta";
@@ -69,6 +70,8 @@ fn days(s: &str) -> i64 {
 /// Bars the rules are evaluated on: tf 0 = every day, 1 = last bar of each Monday-Friday week,
 /// 2 = last bar of each month. The final bar of the data counts as a week end only on a Friday
 /// (an unfinished week/month is not a weekly/monthly close).
+#[cfg(test)]
+pub fn tests_friday(k: usize) -> String { let d = 5 + 7 * k as u32; let (m, dd) = if d > 31 { (2, d - 31) } else { (1, d) }; format!("2001-{m:02}-{dd:02}") }
 pub fn bars(x: &Ctx, tf: u8) -> Vec<usize> {
     let n = x.r.len();
     let key = |i: usize| -> i64 {
@@ -277,9 +280,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("apta_cycles_tform", "Time cycles and T-formations", "Ch 5 · Time cycles, T-formations", NotTestable("discretionary: cycle lows, A-B segments and T-formation centres are chosen by eye (\"something of a judgment call\", p.109)"), &[], false,
             &["F|T-formation: distance A-X equals distance X-B (p.108-109)"], "Chart reading.", None),
         // ---- Ch 2: mood indicators
-        d("apta_nasdaq_nyse_rs", "Nasdaq/NYSE Index relative strength", "Ch 2 · Market mood indicators", NeedsData("weekly closes of the Nasdaq Composite and the NYSE Composite Index (neither is in the vault; NDX/SPX are different indices)"), &[], false,
+        d("apta_nasdaq_nyse_rs", "Nasdaq/NYSE Index relative strength", "Ch 2 · Market mood indicators", Live, &["NASDAQ_COMP", "NYSE_COMP"], false,
             &["F|Weekly Nasdaq Composite close / NYSE Index close; ten-week simple average of the ratio (p.31)", "E|Ratio above its ten-week average = Nasdaq leads = invested (p.31)", "X|Ratio below its average = out; trades at the week's close (Table 2.1, p.32)"],
-            "Needs series NASDAQ_COMP (weekly close) and NYSE_COMP (weekly close).",
+            "Lane F3 (R4 #294 (2)): the Nasdaq Composite and NYSE Composite closes come from the Norgate US indices (snapshot 8 Sep 2020, data to 2020-09-04). Each Monday-Friday week's last bar: ratio = Nasdaq Composite / NYSE Index close (Step 2, p.31), its average = the mean of the last ten weekly ratios (Step 3); above the average = buy (or stay) at that week's close, below = sell at that week's close (Step 4, Table 2.1 p.32); a ratio exactly equal to its average keeps the position [book silent]. The book trades the Nasdaq Composite, the S&P 500 and the NYSE Index (Table 2.1); runs on other US indices, ETFs and stocks are a declared application.",
             c("130", "54.6%", "+3.4%", "54.9% invested", "Nasdaq Composite 4/8/1971-12/12/2003")),
         d("apta_monetary", "Intermediate Monetary Filter (3- to 5-year note yields)", "Ch 2 · Market mood indicators", NeedsData("weekly yields of the 3-year and 5-year US Treasury notes (not in the vault)"), &[], false,
             &["F|Average the weekly 3-year and 5-year Treasury note yields (p.37)", "E|Average lower than 33 weeks earlier = favourable = invested (p.37)", "X|Average higher than 33 weeks earlier = out (p.37)"],
@@ -378,6 +381,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("vxo", "Use the old VIX (VXO, S&P 100 options; US only): 1 yes, 0 no", 0., 0., 1., 1.)],
         "apta_mrv" => vec![p("avg_n", "Weeks in average", 10., 5., 20., 1.), p("lo", "Average must reach %", 3., 2., 4., 0.25), p("hi", "Not above %", 6., 4., 8., 0.5),
             p("drop", "Buy after a decline from the peak of", 0.5, 0.25, 1., 0.25), p("hold", "Hold weeks [book silent]", 52., 5., 52., 1.)],
+        "apta_nasdaq_nyse_rs" => vec![p("n", "Weeks in the ratio's average", 10., 4., 30., 1.)],
         "apta_macd" => vec![p("bf", "Buy MACD fast EMA", 12., 6., 13., 1.), p("bs", "Buy MACD slow EMA", 26., 19., 26., 1.), p("bsig", "Buy signal line EMA", 9., 6., 9., 1.),
             p("sf", "Sell MACD fast EMA", 19., 12., 19., 1.), p("ss", "Sell MACD slow EMA", 39., 26., 39., 1.), p("ssig", "Sell signal line EMA", 9., 6., 9., 1.),
             p("stop", "MACD stop (1 on, 0 off)", 1., 0., 1., 1.), p("tf", "Bars: 0 daily, 1 weekly, 2 monthly", 0., 0., 2., 1.)],
@@ -550,6 +554,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             })
         }
+        "apta_nasdaq_nyse_rs" => {
+            // lane F3 (R4 #294 (2)): weekly Nasdaq/NYSE ratio vs its ten-week simple average (p.31, Steps 1-4)
+            let (Some(nq), Some(ny)) = (x.series("NASDAQ_COMP"), x.series("NYSE_COMP")) else { return Some(vec![]) };
+            let wk = bars(x, 1);
+            // each index's weekly close = its last close inside the traded instrument's week (a holiday bar without one looks back)
+            let r: Vec<f64> = wk.iter().enumerate().map(|(k, &i)| {
+                let start = if k == 0 { 0 } else { wk[k - 1] + 1 };
+                (start..=i).rev().find(|&j| nq[j].is_finite() && ny[j].is_finite()).map_or(f64::NAN, |j| nq[j] / ny[j])
+            }).collect();
+            let n = u("n");
+            let avg: Vec<f64> = (0..r.len()).map(|k| if k + 1 >= n { r[k + 1 - n..=k].iter().sum::<f64>() / n as f64 } else { f64::NAN }).collect();
+            run_long(x, &wk, from, to, |k, _, h| {
+                if !on(r[k]) || !on(avg[k]) { None }
+                else if !h && r[k] > avg[k] { Some("Nasdaq/NYSE ratio above its ten-week average: buy at the week's close".into()) }
+                else if h && r[k] < avg[k] { Some("Nasdaq/NYSE ratio below its ten-week average: sell at the week's close".into()) }
+                else { None }
+            })
+        }
         "apta_macd" => macd_run(x, from, to, &Macd {
             buy: (u("bf"), u("bs"), u("bsig")), sell: (u("sf"), u("ss"), u("ssig")),
             both_above: false, sell_on_buy: false, stop: g("stop") > 0.5, tf: g("tf").round().clamp(0., 2.) as u8,
@@ -560,6 +582,21 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn f3_nasdaq_nyse_rs_weekly_ratio_vs_ten_week_average() {
+        // 12 Fridays; Nasdaq/NYSE ratio flat at 1 for ten weeks, then up (buy at week 11's close), then down (sell at week 12's)
+        let r: Vec<crate::Row> = (0..12).map(|k| crate::Row { ticker: "SPX".into(), date: crate::books::apta::tests_friday(k), open: 10., high: 10., low: 10., close: 10. + k as f64, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        let nq: Vec<f64> = (0..12).map(|k| if k == 10 { 120. } else if k == 11 { 80. } else { 100. }).collect();
+        x.extra.insert("NASDAQ_COMP".into(), nq);
+        x.extra.insert("NYSE_COMP".into(), vec![100.; 12]);
+        let t = run("apta_nasdaq_nyse_rs", &x, 0, 11, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].open), (10, 11, false));
+        // apsmts cats and dogs on the same series: .20 EMA from the first ratio; up week 11 -> buy, down week 12 -> sell
+        let t = crate::books::apsmts::run("apsmts_cats_dogs", &x, 0, 11, &Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i), (1, 10, 11));
+    }
     use super::*;
     use crate::Row;
     fn rows(cl: &[f64]) -> Vec<Row> {

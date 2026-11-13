@@ -1414,7 +1414,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "pstc_20_40_75"=>"Held: needs option prices. The course trades this signal by buying long-dated call options (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those option prices, and a stock or index price cannot stand in for them. The course's table also reports the move in the underlying stock, and our independent check of the signal on the underlying matched with 0 differences, but the course's trade is the LEAPS, so the stock leg is not the course's result and is not published (decision #277 (6), lane K74).",
         // ---- end Lane A singles held
         // ---- Lane A newsletters block (26 Oct 2026, lane B): held Live rules
-        "wmny_nhnl_ratio"|"wmny_nhnl_cci"=>"Held: needs data the vault does not have. Both Working Money systems (WM2002 p.71-81) are built on the daily count of Nasdaq new 52-week highs and new lows; no such series is in the vault, so there is nothing to test.",
+        // "wmny_nhnl_ratio"|"wmny_nhnl_cci": admitted by lane F3 (R4 #294 (2)): Norgate Nasdaq new highs/lows (#NASHI/#NASLO, 2005-10-27..2020-09-04)
         "wmny_pct_nh"=>"Held: needs data the vault does not have. The rule (WM2003 p.147-156) uses the daily count of NYSE new 52-week highs and new lows; the vault's US breadth has advances, declines and TRIN only, so there is nothing to test.",
         "wmny_bond_band"=>"Held: needs data the vault does not have. The switch (WM2004 p.61-63) is driven by Treasury-bond futures high/low/close prices; the vault holds no bond futures history, and a stock index cannot stand in for bond prices.",
         // ---- end Lane A newsletters held
@@ -2289,7 +2289,7 @@ mod tests {
     fn la_newsletters_held_rules_have_plain_card_reasons() {
         use crate::books::{rcmm, wmny};
         let all:Vec<StrategyDef>=rcmm::catalogue().into_iter().chain(wmny::catalogue()).collect();
-        for id in ["wmny_nhnl_ratio", "wmny_nhnl_cci", "wmny_pct_nh", "wmny_bond_band"] { // rcmm_20/55: multi-unit account since lane K43
+        for id in ["wmny_pct_nh", "wmny_bond_band"] { // rcmm_20/55: multi-unit account since lane K43; wmny_nhnl_*: admitted by lane F3 (#294 (2))
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
