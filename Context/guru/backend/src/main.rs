@@ -67,9 +67,11 @@ mod guru_ownership_tests {
         assert!(connors.iter().all(|d| !d.book.starts_with("jr_")));
         assert!(connors.iter().all(|d| d.book != books::chande::BOOK));
         assert!(ross.iter().all(|d| d.book.starts_with("jr_")));
-        // only the reviewed Joe Ross rules (books::joe_ross_rules) run; the source references stay held, nothing claims a book result
-        assert!(ross.iter().all(|d| d.claim.is_none() && (d.status != Status::Live || books::joe_ross_rules::reviewed(d.id))));
-        assert_eq!(ross.iter().filter(|d| d.status == Status::Live).count(), books::joe_ross_rules::REVIEWED.len());
+        // only the reviewed Joe Ross rules (books::joe_ross_rules, and lane K80's two Trading by the Minute day trades,
+        // books::jrtbtm::INTRA) run; the source references stay held, nothing claims a book result
+        let runs = |id: &str| books::joe_ross_rules::reviewed(id) || books::jrtbtm::INTRA.contains(&id);
+        assert!(ross.iter().all(|d| d.claim.is_none() && (d.status != Status::Live || runs(d.id))));
+        assert_eq!(ross.iter().filter(|d| d.status == Status::Live).count(), books::joe_ross_rules::REVIEWED.len() + books::jrtbtm::INTRA.len());
         assert!(guru_catalogue("unknown").is_empty());
         let chande= guru_catalogue("chande");
         assert_eq!(chande.len(),5);
