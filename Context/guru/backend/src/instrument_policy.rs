@@ -1496,7 +1496,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "rgt_taylor"=>"Held: incomplete system. Ruggiero prints the Taylor trading code as a shell that is 'missing two patterns ... plus several filters' for the reader to complete (Traders' Secrets p.181-182), and its declared buy and sell filters are unused in the printed code; testing the shell would not be the author's system.",
         // ---- end Murray Ruggiero held
         // ---- Dennis Meyers block (26 Oct 2026, lane B): held Live rules
-        "dmtad_turbo"=>"Held: needs NYSE 52-week new highs and new lows. The Turbo A/D system buys and sells on NYSE advance/decline ratios together with smoothed counts of NYSE new highs and new lows (S&C 1997, p.339-341); the vault has the NYSE advance/decline series but no new-high/new-low history, and India has neither.",
+        // "dmtad_turbo": admitted by lane PB (NYSE new highs/lows from Norgate; dmtad::ADMISSION, gate list US indices/ETFs)
         // ---- end Dennis Meyers held
         // ---- Thomas Stridsman block (26 Oct 2026, lane B): held Live rules
         // "strmm_rs1"|"strmm_rsbands"|"strmm_rotation": admitted by lane K51 (EP4 second series, decision #223)
@@ -2050,11 +2050,10 @@ mod tests {
     // ---- Dennis Meyers held (2026-10-26, lane B) ----
     #[test]
     fn meyers_held_rules_have_plain_card_reasons() {
-        use crate::books::{dmtad};
-        let all:Vec<StrategyDef>=dmtad::catalogue().into_iter().collect();
-        for id in ["dmtad_turbo"] {
-            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        use crate::books::{dmtad, dmtfly, thnhl}; // lane PB: dmtad_turbo admitted with the NYSE new highs/lows; the NYSE-breadth cards stay US-only
+        for d in dmtad::catalogue().into_iter().chain(dmtfly::catalogue()).chain(thnhl::catalogue()) {
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(&d) && held_reason(d.id).is_none(),"{}",d.id);
+            assert!(crate::gate::get(d.id).is_some_and(|g|g.allowed==Some(&["SPX","SPY","DJI","DIA","NDX","QQQ"][..])),"{}",d.id);
         }
     }
     // ---- end Dennis Meyers held ----
