@@ -281,7 +281,7 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
     ("scabeldiv_sma", "&SI", ABEL),
     ("scabeldiv_sma", "&SP", ABEL),
     ("scabeldiv_sma", "&NQ", ABEL),
-    // ("scabeldiv_sma", "&CL"): not run: the 2020-04-20 negative crude settlement leaves a trade without a % base (raw_basis refuses the whole run)
+    // ("scabeldiv_sma", "&CL"): not run: a crude trade held through 2020-04-20 (the short of 2020-02-27 at 47.09) is priced below zero in the contract held at entry (its mark is -38.32 on 2020-04-20, exit -15.84), so the engine's trade validation refuses the whole run
     ("scabeldiv_sma", "&NG", ABEL),
     ("scabeldiv_sma", "&ZC", ABEL),
     ("scabeldiv_sma", "&ZW", ABEL),
@@ -327,6 +327,7 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test] fn market_symbols_unique() { let mut v: Vec<&str> = super::MARKETS.iter().map(|m| m.sym).collect(); let n = v.len(); v.sort(); v.dedup(); assert_eq!(v.len(), n, "duplicate MARKETS symbol (lane merge)"); } // lane PF (review PF2 M4)
     use super::*;
     /// Lane PE (R4 #319): $NYA loads as its own context from Norgate's compact dates (volume 0 = none); only Holt's cards run on it.
     #[test]
