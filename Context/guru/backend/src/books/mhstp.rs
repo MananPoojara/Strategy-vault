@@ -42,20 +42,42 @@ fn point(x: &Ctx) -> f64 { if crate::futures::ctx_market(x).is_some_and(|m| m.sy
 pub const BOOK_WINDOW: &[(&str, &str, &str)] = &[("mhs_ua830418_1", "1983-02-15", "1999-01-07"), ("mhs_cl850919_1", "1984-02-15", "1999-01-07"),
     ("mhs_cl841206_1", "1984-02-15", "1999-01-07"), ("mhs_us881011_2", "1983-02-15", "1999-01-07"), ("mhs_sf850419_2", "1983-02-15", "1999-01-07")];
 // "Historical Performance Results, Period 2/15/83 - 1/7/99" p.151, p.203, p.205; "2/15/84 - 1/7/99" p.167, p.169
+/// Lead review of F3 (13 Nov 2026): the PUBLISHED period itself (readiness::check + auto_start / auto_end), so the statistics,
+/// equity and buy-and-hold cover only it: a BOOK_WINDOW id its book window; an inter-market id from the first bar of its
+/// signal market (before it the pattern cannot form, e.g. &SP from 1982-04-21 for the S&P -> T-bond cards).
+pub fn window(id: &str) -> Option<(String, String, &'static str)> {
+    let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
+        "outside the book's test window more than 5% of its trades reach the target and the stop on one day, which daily bars cannot order (R4 #240, #294 (1))"));
+    if let Some(t) = INTER.iter().find(|t| t.0 == id) {
+        let m = crate::futures::MARKETS.iter().find(|m| m.sym == t.2);
+        let first = m.and_then(|m| crate::books::rotation::PRELOADED.get()?.get(&crate::futures::ticker(m))?.first().map(|r| r.date.clone()));
+        if let Some(f) = first {
+            w = Some(match w { Some((a, b, why)) => (a.max(f), b, why), None => (f, "9999-12-31".into(), "the pattern is read from another contract, whose data starts then") });
+        }
+    }
+    w
+}
+/// readiness::check: the run must lie inside `window` (auto_start / auto_end move it there).
+pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String> {
+    let (a, b, why) = window(id)?;
+    let (f, t) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
+    (f < a.as_str() || t > b.as_str()).then(|| format!("Results are published only from {a}{}: {why}.", if b.as_str() < "9999" { format!(" to {b}") } else { String::new() }))
+}
+
 fn note(id: &str) -> &'static str {
     match &id[4..6] {
-        "ua" | "us" | "hd" => "Runs on the US T-Bond continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in T-bond points (1 point = 1.00 of par = $1,000), % per trade on the unadjusted price of the contract held. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. Norgate &ZB session coverage not stated (the card names the day session for UA patterns, incl. the evening session for US patterns).",
-        "cl" => "Runs on the NYMEX crude oil continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in crude points (1 point = $1.00 a barrel = $1,000), % per trade on the unadjusted price of the contract held. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
-        "sf" => "Runs on the IMM Swiss franc continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in franc points (1 point = 0.01 US$ per franc = $1,250), % per trade on the unadjusted price of the contract held. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
-        _ => "Runs on the COMEX silver continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in silver points (1 point = 1 cent an ounce = $50; Norgate quotes cents), % per trade on the unadjusted price of the contract held. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        "ua" | "us" | "hd" => "Runs on the US T-Bond continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in T-bond points (1 point = 1.00 of par = $1,000), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. Norgate &ZB session coverage not stated (the card names the day session for UA patterns, incl. the evening session for US patterns).",
+        "cl" => "Runs on the NYMEX crude oil continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in crude points (1 point = $1.00 a barrel = $1,000), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        "sf" => "Runs on the IMM Swiss franc continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in franc points (1 point = 0.01 US$ per franc = $1,250), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        _ => "Runs on the COMEX silver continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in silver points (1 point = 1 cent an ounce = $50; Norgate quotes cents), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
     }
 }
 
 fn note_inter(id: &str) -> &'static str {
     match id {
-        "mhs_us881011_2" => "Inter-market (lane F3, R4 #293, #294): the pattern on the US T-Bond continuous futures bars, the position in the S&P 500 continuous futures contract (the card runs only there), 10 S&P points target and stop, Open of Tomorrow (p.202-203). Both back-adjusted Norgate series, joined by exact date; % per trade on the S&P contract's unadjusted price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
-        "mhs_sf850419_2" => "Inter-market (lane F3, R4 #293, #294): the pattern on the Swiss franc continuous futures bars, the short position in the COMEX silver continuous futures contract (the card runs only there), 20 silver points (cents) target and stop, Open of Tomorrow (p.204-205). Both back-adjusted Norgate series, joined by exact date; % per trade on the silver contract's unadjusted price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
-        _ => "Inter-market (lane F3, R4 #293, #294): the pattern on the S&P 500 continuous futures bars, the long position in the US T-Bond continuous futures contract (the card runs only there), target and stop in T-bond points, Open of Tomorrow (p.194-201). Both back-adjusted Norgate series, joined by exact date; % per trade on the T-bond contract's unadjusted price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor; Norgate &ZB session coverage not stated (the card names the day session).",
+        "mhs_us881011_2" => "Inter-market (lane F3, R4 #293, #294): the pattern on the US T-Bond continuous futures bars, the position in the S&P 500 continuous futures contract (the card runs only there), 10 S&P points target and stop, Open of Tomorrow (p.202-203). Both back-adjusted Norgate series, joined by exact date; % per trade on the S&P contract's unadjusted entry price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        "mhs_sf850419_2" => "Inter-market (lane F3, R4 #293, #294): the pattern on the Swiss franc continuous futures bars, the short position in the COMEX silver continuous futures contract (the card runs only there), 20 silver points (cents) target and stop, Open of Tomorrow (p.204-205). Both back-adjusted Norgate series, joined by exact date; % per trade on the silver contract's unadjusted entry price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        _ => "Inter-market (lane F3, R4 #293, #294): the pattern on the S&P 500 continuous futures bars, the long position in the US T-Bond continuous futures contract (the card runs only there), target and stop in T-bond points, Open of Tomorrow (p.194-201). Both back-adjusted Norgate series, joined by exact date; % per trade on the T-bond contract's unadjusted entry price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor; Norgate &ZB session coverage not stated (the card names the day session).",
     }
 }
 
@@ -452,6 +474,15 @@ mod tests {
             assert!(d.status == Status::Live && crate::futures::home(id, "SPX").is_some(), "{id}");
         }
         assert!(crate::futures::home("mhs_sf850419_2", "Silver (Norgate &SI)").is_none() && crate::futures::home("mhs_sp830128_2", "US T-Bond (Norgate &ZB)").is_none());
+        // the published window is the run period itself (lead review): outside 1983-02-15..1999-01-07 readiness refuses, and
+        // auto_end stops a later run at the window's end
+        assert!(window_issue("mhs_ua830418_1", &x2, 0, 11).is_some_and(|n| n.contains("1983-02-15 to 1999-01-07")));
+        let r3: Vec<Row> = (0..300).map(|i| Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: format!("{}-{:02}-{:02}", 1998 + i / 250, 1 + (i % 250) / 21, 1 + i % 21), open: 100., high: 101., low: 99., close: 100., volume: None }).collect();
+        let x3 = Ctx::new(&r3, &r3, &[]);
+        let d = catalogue().into_iter().find(|d| d.id == "mhs_ua830418_1").unwrap();
+        let (end, why) = crate::readiness::auto_end(&x3, &d, 0, 299, &Params::new());
+        assert!(x3.r[end].date.as_str() <= "1999-01-07" && x3.r[end + 1].date.as_str() > "1999-01-07" && why.is_some(), "{end}");
+        assert!(window_issue("mhs_ua830418_1", &x3, 0, end).is_none() && window_issue("mhs_ua830406_1", &x3, 0, 299).is_none());
         // Ruggiero's S&P/T-Bond divergence (lane F3) runs only on the S&P contract; without the T-bond data it trades nothing
         assert!(crate::futures::home("rgc_im_sp_tbond", "S&P 500 (Norgate &SP)").is_none() && crate::futures::home("rgc_im_sp_tbond", "SPX").is_some());
         assert!(crate::books::rgcts::run("rgc_im_sp_tbond", &x2, 0, 11, &Params::new()).unwrap().is_empty());

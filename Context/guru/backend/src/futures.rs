@@ -65,6 +65,8 @@ pub fn load(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) -> BTr
         let t = ticker(m);
         let raw: BTreeMap<String, Row> = raw.into_iter().map(|r| (r.date.clone(), r)).collect();
         let rows: Vec<Row> = adj.into_iter().filter(|r| raw.contains_key(&r.date)).map(|r| Row { ticker: t.clone(), ..r }).collect();
+        // lead review of F3: a file that parsed to no common bars is not served (an empty context would break /api/tickers)
+        if rows.is_empty() { eprintln!("warning: futures {} not loaded: 0 bars in both {}_CCB.csv and {}.csv", m.sym, m.sym, m.sym); continue; }
         for (k, f) in [("Open", 0), ("High", 1), ("Low", 2), ("Close", 3)] {
             extra.insert((t.clone(), format!("RAW.{k}")), rows.iter().map(|r| { let x = &raw[&r.date]; (r.date.clone(), [x.open, x.high, x.low, x.close][f]) }).collect());
         }
@@ -123,7 +125,7 @@ pub fn raw_basis(x: &Ctx, trades: Vec<Trade>) -> Result<(Vec<Trade>, Vec<f64>), 
     let mut close = x.c.clone();
     let out = trades.into_iter().map(|mut t| {
         let e = t.legs[0].i;
-        let off = raw[e] - x.c[e];
+        let off = raw[e] - x.c[e]; // R4 #301: the % base is the unadjusted entry fill (the entry day's roll offset applied)
         if !off.is_finite() { return Err(format!("needs_data: no unadjusted futures close on {}", x.r[e].date)); }
         for l in &mut t.legs { l.px += off; }
         t.exit_px += off;

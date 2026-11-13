@@ -354,10 +354,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ratio: Vec<f64> = (0..n).map(|i| nh[i] / (nh[i] + nl[i])).collect();
             let a = id == "wmny_nhnl_ratio";
             let (e1, e2, e3) = if a { (u("opt1"), u("opt2"), u("opt3")) } else { (7, 16, 2) };
-            // lane F3 (R4 #294 (2)): the Norgate Nasdaq new highs/lows start 2005-10-27, so the MetaStock EMAs are seeded with the
-            // first day that has the series (xavg seeded on a leading NaN would stay NaN)
+            // lane F3 (R4 #294 (2)): the Norgate Nasdaq new highs/lows start 2005-10-27, so the MetaStock EMAs are seeded on the
+            // first day of the series' last unbroken stretch that reaches `from` (an EMA seeded on a NaN would stay NaN)
+            // lead review: seeded after the last gap at or before `from`, so one missing day earlier does not end the series
             let from_first = |v: &[f64], k: usize| -> Vec<f64> {
-                let s = v.iter().position(|y| y.is_finite()).unwrap_or(v.len());
+                let s = v[..=from.min(v.len().saturating_sub(1))].iter().rposition(|y| !y.is_finite()).map_or(0, |g| g + 1).min(v.len());
                 let mut out = vec![f64::NAN; s]; out.extend(xavg(&v[s..], k)); out
             };
             let (f1, f2) = (from_first(&ratio, e1), from_first(&ratio, e2));
