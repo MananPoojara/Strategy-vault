@@ -252,7 +252,7 @@ pub fn positions(id: &str, x: &Ctx, from: usize, to: usize, p: &crate::connors::
 /// underlying's monthly end-of-day chain.
 pub fn coverage(id: &str, x: &Ctx) -> Option<(String, String)> {
     if crate::books::as51ts::OPT_IDS.contains(&id) {
-        let s = crate::optw1::store(x.r.first()?.ticker.as_str())?;
+        let s = crate::books::as51ts::rule_store(id, x.r.first()?.ticker.as_str())?;
         return Some((s.first().to_string(), s.last().to_string()));
     }
     x.options.map(|c| (c.first().to_string(), c.last().to_string()))
