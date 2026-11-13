@@ -4,21 +4,22 @@
 //! weekly closes. Lane PG (14 Nov 2026, pool A row i1773, A1 score <= 1); independent check authors/pg/w/pg_ref.py.
 //! Admitted by books::scjrd::ADMISSION (PG_BOOKS).
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
-use super::sctraub::period_ends;
+use super::sctraub::{ema0, period_ends};
 use super::tselhs::Book;
 
 pub const REVIEWED: &[&str] = &["scpmdm_macd"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Adapted: 2 unstated details, R4 #297; unverified] Weekly closes = the close of each calendar week's last trading day (the data's last week counts only when it ends on a Friday). DEMA1(w) = 2 x EMA1 - EMA2 with alpha = 2/(w+1), EMA1 the EMA of the series and EMA2 the EMA of EMA1, both started from the article's regression initialisation: over the first w values u = intercept and v = slope of the least-squares line (x = 0..w-1), EMA1(0) = u - ((1 - alpha)/alpha) v, EMA2(0) = u - 2((1 - alpha)/alpha) v, then the recursions from the second value (the article's worked example, PDF p.5). Because those starting values use the first w values, DEMA1 is used only from the w-th value on (no look-ahead). MACD-DEMA1 = DEMA1(12) - DEMA1(26) of the weekly closes; its signal line = DEMA1(9) of that MACD. A buy signal = the MACD crossing above its signal line (above this week, at or below last week). Unstated: (1) the exit - vault reading: the MACD crossing back below its signal line, long only (the article counts 'buy signals' and their 'losses', no shorts); (2) the fill - vault reading: the signal week's close. The article's Figure 2 (weekly NASDAQ Composite, from October 1988 into 1993: 9 trades, 3 losses) is a chart without dates or prices; the vault runs the rule on indices, ETFs and stocks, US and India (declared application), so it stays UNVERIFIED. The Figure 8 Parabolic SAR qualifier is an illustration without stated use and is not coded.";
+const NOTE: &str = "[Adapted: 2 unstated details, R4 #297; signal line decided by Figure 2 (REV-PG B1, lead ruling); unverified] Weekly closes = the close of each calendar week's last trading day (the data's last week counts only when it ends on a Friday). DEMA1(w) = 2 x EMA1 - EMA2 with alpha = 2/(w+1), EMA1 the EMA of the series and EMA2 the EMA of EMA1, both started from the article's regression initialisation: over the first w values u = intercept and v = slope of the least-squares line (x = 0..w-1), EMA1(0) = u - ((1 - alpha)/alpha) v, EMA2(0) = u - 2((1 - alpha)/alpha) v, then the recursions from the second value (PDF p.5); DEMA1 is used only from the w-th value on (no look-ahead). MACD-DEMA1 = DEMA1(12) - DEMA1(26) of the weekly closes. Buy when it crosses above its signal line (above this week, at or below last week); out when it crosses back below; long only (the article counts 'buy signals', their 'losses' and 'round-trips'). Unstated: (1) the signal line - the article says 'the filters are not EMAs' for all three lengths, but only an EMA(9) signal line reproduces Figure 2, so EMA(9) of the MACD-DEMA1 (alpha 2/10, started from its first value) is the default and DEMA1(9) is option sig_dema = 1. Calibration table, Norgate NASDAQ Composite weekly closes, Oct 1988 - Dec 1993 (the article's index and window; REV-PG and lane PG): standard EMA MACD 12/26/9 -> 12 buy signals, 6 losses (Figure 1: 12 buy signals, six whipsaws - the data, window and exit reading match); MACD-DEMA1 with an EMA(9) signal -> 9 trades, 2 losses, +429 points (Figure 2: 9 trades, 3 losses, 'fewer round-trips', 'almost twice the profit'); MACD-DEMA1 with a DEMA1(9) signal -> 18 trades, 8 losses, +298 points (more round-trips than the standard MACD: contradicts the caption); EMA lines with a DEMA1(9) signal -> 15 trades, 7 losses. (2) the fill - the signal week's close. The Figure 8 Parabolic SAR qualifier is an illustration without stated use and is not coded. The vault runs the rule on indices, ETFs and stocks, US and India (declared application; the NASDAQ Composite is not a vault ticker).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "scpmdm_macd", name: "Mulloy MACD-DEMA1 (12, 26, 9) on weekly closes: buy when it crosses above its signal line, sell when it crosses back below", group: "S&C: smoothing data with faster moving averages (Mulloy, V.12:1)", session: 0, dir: "Long", status: Status::Live,
+    vec![StrategyDef { id: "scpmdm_macd", name: "Mulloy MACD-DEMA1 (12, 26) with a 9-week signal line on weekly closes: buy when it crosses above, sell when it crosses back below", group: "S&C: smoothing data with faster moving averages (Mulloy, V.12:1)", session: 0, dir: "Long", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "scpmdm", rules: &[
             "F|\"DEMA1 = 2EMA1 - EMA2. Here, we are multiplying the single EMA by two and then subtracting the double EMA.\" with \"S1m = aCm + (1 - a)S1m-1, S2m = aS1m + (1 - a)S2m-1\" (V.12:1, PDF p.5)",
             "F|\"Calculate regression coefficients ... u = Intercept(x,y), v = Slope(x,y) ... Initialization equations: EMA1(0) = u - ((1-a)/a)(v), EMA2(0) = u - 2((1-a)/a)(v)\" (PDF p.5-6)",
             "E|\"In Figure 1, the MACD indicator is applied to the weekly closing price of the NASDAQ composite index ... Figure 2 uses the same filter lengths of 12, 26 and nine, but the filters are not EMAs but are derivations of one-parameter double exponential moving averages (DEMA1). This time, the indicator generated nine trades, with only three losses\" (PDF p.1)",
-            "X|[Unstated] out when the MACD-DEMA1 crosses back below its signal line, at that week's close (vault reading, R4 #297)"],
+            "X|Out when the MACD-DEMA1 crosses back below its signal line, at that week's close (the article counts round-trips of buy signals)",
+            "F|[Reading decided by Figure 2] signal line = EMA(9) of the MACD-DEMA1: on Norgate NASDAQ Composite weekly closes Oct 1988 - Dec 1993 it gives 9 trades / 2 losses (Figure 2: 9 / 3); a DEMA1(9) signal gives 18 / 8 (option sig_dema = 1)"],
         notes: NOTE, claim: crate::connors::claim("9", "67%", "", "", "Weekly NASDAQ Composite, Oct 1988 - 1993 (Figure 2, chart only)") }]
 }
 
@@ -27,7 +28,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     reviewed(id).then(|| vec![
         ParamDef { key: "fast", label: "Fast DEMA1 weeks (article 12)", def: 12., min: 2., max: 100., step: 1. },
         ParamDef { key: "slow", label: "Slow DEMA1 weeks (article 26)", def: 26., min: 3., max: 200., step: 1. },
-        ParamDef { key: "sig", label: "Signal DEMA1 weeks (article 9)", def: 9., min: 2., max: 100., step: 1. }])
+        ParamDef { key: "sig", label: "Signal line weeks (article 9)", def: 9., min: 2., max: 100., step: 1. },
+        ParamDef { key: "sig_dema", label: "Signal line: 0 = EMA (reproduces Figure 2), 1 = DEMA1 (the text's 'not EMAs')", def: 0., min: 0., max: 1., step: 1. }])
 }
 
 /// DEMA1(w) of v with the article's regression start; NaN before the w-th value of v's first finite run.
@@ -59,7 +61,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let wc: Vec<f64> = we.iter().map(|&i| x.c[i]).collect();
     let (f, s) = (dema1(&wc, g("fast", 12.)), dema1(&wc, g("slow", 26.)));
     let m: Vec<f64> = f.iter().zip(&s).map(|(a, b)| a - b).collect();
-    let sg = dema1(&m, g("sig", 9.));
+    let sg = if p.get("sig_dema").copied().unwrap_or(0.) != 0. { dema1(&m, g("sig", 9.)) } else { ema0(&m, g("sig", 9.)) };
     let mut pos = Book::new();
     for k in 1..we.len() {
         let t = we[k];
