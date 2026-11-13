@@ -265,7 +265,8 @@ pub const RULES: &[&str] = &["oiss_short_put", "oiss_short_call", "oiss_plus_thr
     "hfm_und", "hfm_und_long", "hfm_und_short", // + lane K34 (decision 186)
     "otvt_diz_short_strangle", // + lane K54 (decision #229 (4))
     "as51_opt_multi_sell", "as51_opt_oi_buy", "as51_opt_theta", "as51_opt_btst", "as51_opt_3pm", // + lane F2 (R4 #293), weekly 1-minute
-    "as51_opt_straddle"]; // + lane F2 (R4 #294 (4))
+    "as51_opt_straddle", // + lane F2 (R4 #294 (4))
+    "otvt_sector_options_overpriced"]; // + lane I1 (R4 #303 (3)): NIFTY BANK, real BANKNIFTY options
 
 /// Overlapping positions on one account. Each position is sized at the account equity on its entry close (one option
 /// per unit of the underlying, notional = that equity); its value moves with its own daily P&L / s0. Costs: `cost`
