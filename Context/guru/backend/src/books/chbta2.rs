@@ -321,7 +321,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Condition1 = c > h[2]; Condition2 = c[1] > h[3]; Condition3 = c[2] > h[4]; If Condition1 and Condition2 and Condition3 then buy ... at high + 1 point stop\" (p.174)",
             "X|\"ExitLong at Lowest(low,dx)[1] - 1 point stop;\" dx = 50 (p.174)",
             "X|Sizing NumC = intportion(10000/((C - lowest(low,5))*BigPointValue)) and a $1,500 stop (p.176) [sizing not modelled: one contract per signal; the $1,500 stop is on the futures contract of each tested market at its $ per point (lane F1B); \"1 point\" = one tick of the contract (#57)]"],
-            "Printed pp.173-177, Table 5.15 (10 futures markets 1/82-7/95, ~30 trades each). 1 point = one tick of the contract (#57). Sizing changes dollar P&L only. Runs on the Norgate continuous contracts of the book's tested markets only (lane F1B, R4 #293; no Deutsche mark series; held on coffee, heating oil and T-bond, where more than 5% of trades are same-day order-dependent, #240): signals and points on the back-adjusted series, % per trade on the unadjusted entry price, the $1,500 at each contract's $ per point. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
+            "Printed pp.173-177, Table 5.15 (10 futures markets 1/82-7/95, ~30 trades each). 1 point = one tick of the contract (#57). Sizing changes dollar P&L only. Runs on the Norgate continuous contracts of the book's tested markets only (lane F1B, R4 #293; no Deutsche mark series; on heating oil and T-bond only the book's 1/1/82-7/10/95 window is published, where at most 2.9% of trades are same-day order-dependent against 5.2% and 18.6% over 1978-2020; held on coffee, 12.2% in that window, #240, R4 #314 (3)): signals and points on the back-adjusted series, % per trade on the unadjusted entry price, the $1,500 at each contract's $ per point. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
         d("ch_bta2_vol2x", "Volatility system (2x range stops)", "Ch 8 · Data scrambling", "Long/Short", Live, &[
             "E|\"The buy stop for tomorrow is today's high plus two times today's high-low range. Similarly, the sell stop is today's low minus two times today's high-low range.\" (p.237)",
             "X|\"exiting on the close of the twentieth day in the trade\" (p.237)",
@@ -831,7 +831,14 @@ mod tests {
         let plain = Ctx::new(&pr, &pr, &[]); // not a futures context: unchanged (no stop)
         assert!(run("ch_bta2_cbo_ref", &plain, 0, 39, &Params::new()).unwrap()[0].exit_i > 26);
         assert!(crate::futures::home("ch_bta2_cbo_ref", "Coffee (Norgate &KC)").is_none() && crate::futures::home("ch_bta2_cbo_ref", "Silver (Norgate &SI)").is_some());
-        assert!(crate::futures::home("ch_bta2_long_bomb", "Heating Oil (Norgate &HO)").is_some() && crate::futures::home("ch_bta2_long_bomb", "Swiss Franc (Norgate &6S)").is_none() && crate::futures::home("ch_bta2_long_bomb", "Gold (Norgate &GC)").is_some());
+        assert!(crate::futures::home("ch_bta2_long_bomb", "Heating Oil (Norgate &HO)").is_none() && crate::futures::home("ch_bta2_long_bomb", "Swiss Franc (Norgate &6S)").is_none() && crate::futures::home("ch_bta2_long_bomb", "Gold (Norgate &GC)").is_some());
+        // lane F1C (R4 #314 (3)): coffee is refused with the #240 reason; T-bond / heating oil publish only the book's 1982-95 window
+        assert!(crate::futures::home("ch_bta2_long_bomb", "Coffee (Norgate &KC)").is_some_and(|n| n.contains("held on coffee under R4 #240")));
+        assert!(crate::futures::window("ch_bta2_long_bomb", "Swiss Franc (Norgate &6S)").is_none() && crate::futures::window("ch_bta2_cbo_ref", "US T-Bond (Norgate &ZB)").is_none());
+        let wr: Vec<Row> = ["1981-12-31", "1982-01-04", "1995-07-10", "1995-07-11"].iter().map(|d| Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.to_string(), open: 1., high: 1., low: 1., close: 1., volume: None }).collect();
+        let wx = Ctx::new(&wr, &wr, &[]);
+        assert!(crate::futures::window_issue("ch_bta2_long_bomb", &wx, 0, 2).is_some() && crate::futures::window_issue("ch_bta2_long_bomb", &wx, 1, 3).is_some());
+        assert!(crate::futures::window_issue("ch_bta2_long_bomb", &wx, 1, 2).is_none() && crate::futures::window_issue("ch_bta2_cbo_ref", &wx, 0, 3).is_none());
         assert_eq!(crate::futures::card_markets("ch_bta2_adx30").len(), 9);
     }
     #[test]

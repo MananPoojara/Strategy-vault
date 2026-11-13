@@ -227,7 +227,7 @@ const MHS_SI: &str = "Michael Harris, Short-Term Trading with Price Patterns (Tr
 pub const LABEL: &str = "Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
 /// Lane F1B (R4 #293 (1)): cards whose source tests several named markets; one row per market (the card runs on each).
 const CHANDE5: &str = "Chande, Beyond Technical Analysis (Wiley 1997) ch.5 p.148-173, Tables 5.1-5.13: tested on British pound, coffee, cotton, crude oil, Deutsche mark, Eurodollar, gold, Japanese yen, U.S. bond and wheat futures (1/75-7/95 or the market's first data) with a $1,500 initial stop and $100 slippage and commission; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series), the $1,500 at the contract's $ per point (R4 #293 (1), (3)), lane F1B.";
-const CHANDE_LB: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.173-177, Table 5.15 (the Long Bomb TradeStation code, 1/1/82-7/10/95): tested on British pound, coffee, cotton, Deutsche mark, Eurodollar, heating oil, Japanese yen, soybeans, Swiss franc and U.S. bond futures with a $1,500 stop; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series) except coffee, heating oil and T-bond (more than 5% of trades same-day order-dependent, #240), one contract per signal (the book's NumC sizing is not modelled), \"1 point\" = one tick of the contract (#57), lane F1B.";
+const CHANDE_LB: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.173-177, Table 5.15 (the Long Bomb TradeStation code, 1/1/82-7/10/95): tested on British pound, coffee, cotton, Deutsche mark, Eurodollar, heating oil, Japanese yen, soybeans, Swiss franc and U.S. bond futures with a $1,500 stop; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series) except coffee (12.2% of trades in the book window same-day order-dependent, #240); on heating oil and T-bond only inside the book's 1/1/82-7/10/95 window (R4 #314 (3)), one contract per signal (the book's NumC sizing is not modelled), \"1 point\" = one tick of the contract (#57), lane F1B.";
 const CHANDE_IM: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.126-129, Tables 4.15 and 4.17: the gold-bond intermarket systems (gold, and soybeans or copper, signal the U.S. bond futures trade; continuous contracts 8/21/77-7/10/95, $5,000 initial stop, $100 slippage and commission); run on the Norgate T-bond continuous contract with the Norgate gold / soybean / copper contracts as Data2 joined by date (R4 #293 (1)), the $5,000 = 5.00 bond points, lane F1B.";
 const LEB_25: &str = "LeBeau & Tan, 25 x 25 Bond System v2.0 manual (System Traders Club 1998): +DI(14) > -DI(14), ADX(14) > 20, RSI(4) < 50, buy stop 18/32 above the close, $2,500 money stop (2.5 points), 25-day-low stop that becomes the 2-day low after 25 days or once open profit exceeds 5 x the 45-day ATR (the module reproduces the manual's own Us.txt trade list exactly); run on the Norgate T-bond continuous contract (R4 #293 (1)); Norgate does not say which session its T-bond series is (the manual used day-session bonds), lane F1B.";
 const LEB_CB: &str = "LeBeau & Elden, Crossbow Swiss Franc System v1.0 manual (System Traders Club 1999): ADX/ATR setups, buy stop at the 2-day high / sell stop at the prior low, ATR trailing stops, $2,500 money stop, stop and reverse (the module reproduces the manual's own SF.LNG trade list, 67/67); run on the Norgate Swiss franc continuous contract with the $2,500 at $125,000 per 1.00 (= 0.02) and the contract tick 0.0001 (R4 #293 (1), (3)), lane F1B.";
@@ -243,9 +243,34 @@ const CARDS_F1B: &[(&str, &str, &str)] = &[
     ("ch_bta2_adx30", "&6B", CHANDE5), ("ch_bta2_adx30", "&KC", CHANDE5), ("ch_bta2_adx30", "&CT", CHANDE5), ("ch_bta2_adx30", "&CL", CHANDE5), ("ch_bta2_adx30", "&GE", CHANDE5), ("ch_bta2_adx30", "&GC", CHANDE5), ("ch_bta2_adx30", "&6J", CHANDE5), ("ch_bta2_adx30", "&ZB", CHANDE5), ("ch_bta2_adx30", "&ZW", CHANDE5),
     ("ch_bta2_adx_rising", "&6B", CHANDE5), ("ch_bta2_adx_rising", "&KC", CHANDE5), ("ch_bta2_adx_rising", "&CT", CHANDE5), ("ch_bta2_adx_rising", "&CL", CHANDE5), ("ch_bta2_adx_rising", "&GE", CHANDE5), ("ch_bta2_adx_rising", "&GC", CHANDE5), ("ch_bta2_adx_rising", "&6J", CHANDE5), ("ch_bta2_adx_rising", "&ZB", CHANDE5), ("ch_bta2_adx_rising", "&ZW", CHANDE5),
     ("ch_bta2_pullback", "&6B", CHANDE5), ("ch_bta2_pullback", "&KC", CHANDE5), ("ch_bta2_pullback", "&CT", CHANDE5), ("ch_bta2_pullback", "&CL", CHANDE5), ("ch_bta2_pullback", "&GE", CHANDE5), ("ch_bta2_pullback", "&GC", CHANDE5), ("ch_bta2_pullback", "&6J", CHANDE5), ("ch_bta2_pullback", "&ZB", CHANDE5), ("ch_bta2_pullback", "&ZW", CHANDE5),
-    // R4 #240/#308: coffee 15.7%, heating oil 18.6% and T-bond 5.2% of trades are same-day order-dependent (no futures minutes): held there
+    // R4 #240/#308/#314 (3): heating oil and T-bond only inside the book window (BOOK_WINDOW); coffee held (HELD)
     ("ch_bta2_long_bomb", "&6B", CHANDE_LB), ("ch_bta2_long_bomb", "&CT", CHANDE_LB), ("ch_bta2_long_bomb", "&GE", CHANDE_LB), ("ch_bta2_long_bomb", "&6J", CHANDE_LB), ("ch_bta2_long_bomb", "&ZS", CHANDE_LB), ("ch_bta2_long_bomb", "&6S", CHANDE_LB),
+    ("ch_bta2_long_bomb", "&HO", CHANDE_LB), ("ch_bta2_long_bomb", "&ZB", CHANDE_LB),
 ];
+/// R4 #314 (3) (as #294 (1)): over 1978-2020 more than 5% of these trades enter and reach the stop on one daily bar, which daily
+/// bars cannot order and no futures minutes exist for (#240); inside the book's test window at most 5% do. Only that window
+/// (first and last date, inclusive) is the published run period on that contract (readiness::check + auto_start / auto_end).
+const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
+    // Table 5.15 "1/1/82-7/10/95" (p.176): T-bond 2.9% (5.2% 1978-2020), heating oil 0% (18.6% 1978-2020) order-dependent
+    ("ch_bta2_long_bomb", "&ZB", "1982-01-01", "1995-07-10"), ("ch_bta2_long_bomb", "&HO", "1982-01-01", "1995-07-10"),
+];
+/// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
+const HELD: &[(&str, &str, &str)] = &[
+    ("ch_bta2_long_bomb", "&KC", "held on coffee under R4 #240: 12.2% of its trades in the book's 1982-95 window (15.7% over 1978-2020) enter and hit the stop on the same day, which daily bars cannot order, and no coffee futures minute bars exist (limit 5%, R4 #314 (3))"),
+];
+/// Why a card is held on a market its source tests (HELD), if it is.
+pub fn held(id: &str, t: &str) -> Option<&'static str> { let s = of_ticker(t)?.sym; HELD.iter().find(|h| h.0 == id && h.1 == s).map(|h| h.2) }
+/// The published run period of a card on ticker `t`, if it is limited to the book's window (BOOK_WINDOW).
+pub fn window(id: &str, t: &str) -> Option<(&'static str, &'static str)> {
+    let s = of_ticker(t)?.sym;
+    BOOK_WINDOW.iter().find(|w| w.0 == id && w.1 == s).map(|w| (w.2, w.3))
+}
+/// readiness::check: the run must lie inside `window` (auto_start / auto_end move it there).
+pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String> {
+    let (a, b) = window(id, &x.r.first()?.ticker)?;
+    let (f, t) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
+    (f < a || t > b).then(|| format!("Results are published only from {a} to {b} on {}: outside the book's test window more than 5% of its trades enter and reach the stop on one day, which daily bars cannot order (R4 #240, #314 (3)).", x.r[0].ticker))
+}
 fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_F1B) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
@@ -257,6 +282,7 @@ pub fn home(id: &str, t: &str) -> Option<String> {
     let ms: Vec<&Market> = card_markets(id).into_iter().filter_map(|s| MARKETS.iter().find(|m| m.sym == s)).collect();
     let on = of_ticker(t).is_some_and(|m| ms.iter().any(|h| h.sym == m.sym));
     let names = |f: fn(&Market) -> String| ms.iter().map(|m| f(m)).collect::<Vec<_>>().join(", ");
+    if let Some(h) = held(id, t) { return Some(format!("Not published on {t}: {h}; this card runs only on {} ({LABEL})", names(ticker))); }
     (!on).then(|| format!("Not published on {t}: the source trades {} futures; this card runs only on {} ({LABEL})", names(|m| m.name.to_string()), names(ticker)))
 }
 
