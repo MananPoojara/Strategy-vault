@@ -71,11 +71,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Declared research convention: a subsequent opposite crossing closes the current position and reverses; this is not a printed portfolio or capital model.",
         ], "Source convention: choose the literal printed .0476/.0243/.10 (p.204), which do not equal either the stated 2/(N+1) formula or exact 1/(N+1). The book calls the example 20/40/9; these labels do not override its selected literal constants. First actual source close seeds fast/slow; their difference and signal begin at zero. All supplied earlier history is retained, not reset at the test start. First subsequent crossing enters from a flat selected start, equality holds, opposite crossing reverses; terminal-close entries remain open. Completed-close same-close fills are idealized (p.70 recommends preclose calculation). Actual stocks only; shorts are hypothetical without certified borrow/margin/financing. No discretionary divergence/resistance filter, original AOL chart performance, game capital or portfolio is reproduced."),
         // ------------------------------------------------ Ch 15 overbought/oversold
-        d("kfsc_stoch", "Slow stochastic timing and regime selection", "Ch 15 · Overbought/oversold", "Long/Short", NotTestable("The source selects buy/sell directions using a sideways/up/down regime but gives no objective regime classifier (p.220,222-223). Raw oscillator timing alone is not the full strategy."), &[
+        d("kfsc_stoch", "Slow stochastic: sell the %K-slow down-cross after 80, buy the up-cross after 20", "Ch 15 · Overbought/oversold", "Long/Short", Live, &[
             "F|Raw %K = 100 × (close − lowest low of past N days)/(high − low range of past N days) (p.216); %K-slow (%D) = 3-day average of %K; %D-slow = 3-day average of %K-slow (Fig 15.2, p.217)",
-            "E|\"1. After the smoothed stochastic %K-slow has moved above the 80 percent line, sell when the %K-slow line crosses the %D-slow line moving down. 2. After the smoothed stochastic %K-slow has moved below the 20 percent line, buy when the %K-slow line crosses the %D-slow line moving up.\" (p.219)",
+            "E|\"1. After the smoothed stochastic %K-slow has moved above the 80 percent line, sell when the %K-slow line crosses the %D-slow line moving down. 2. After the smoothed stochastic %K-slow has moved below the 20 percent line, buy when the %K-slow line crosses the %D-slow line moving up.\" (p.219); 'the first time after' (p.220)",
             "X|\"In a sideways market use both buy and sell signals\" (p.222): a buy closes a short and goes long, a sell closes a long and goes short",
-        ], "Reading/timing component, not a verified backtest. The Nokia table (p.217) uses a 10-observation range including today, conflicting with the explicit preceding-range prose. The first qualifying threshold excursion/crossing also needs a precise re-arm convention. More materially, p.222 permits both directions in a sideways market but restricts directions in trends; the book supplies no mechanical regime classifier. An unfiltered two-way backtest would omit that condition. Legacy illustrative code and parameter alternatives inherit no source admission; no chart results are claimed."),
+        ], "[R2E, R4 #297: adapted: 2 unstated details] Unstated in the book: how to tell a sideways market from a trend (p.222 takes only sells in a downtrend and only buys in an uptrend, judged with 'a trendline (a moving average or breakout)' that is never defined); vault reading: every market is treated as sideways, so both signals are taken (the p.219 rule as printed), always in after the first signal. Unstated in the book: the fill; vault reading: the close of the signal day (Kaufman's tables use closing prices). Book conflict, followed as printed: the Nokia table (Fig 15.2, p.217) takes the N-day range including today, the prose says the past N days; default = the printed numbers, p.prior=1 = the prose. 'After it has moved above 80' = the first down-cross since %K-slow was last above 80 (today included); a qualifying cross is used up even when the position already points that way. N = 10 is the worked example. Published as UNVERIFIED: the book prints no index result (Nokia worked example only)."),
         d("kfsc_dsm", "Double-smoothed 10-day momentum (Blau)", "Ch 15 · Double smoothing", "Long/Short", Live, &[
             "F|\"1. Calculate the values of the 10-day momentum. 2. Smooth the momentum values using a 20-day percentage smoothing. 3. Smooth the values in step 2 using a 20-day percentage smoothing.\" (p.231); 20-day smoothing = .0476 (p.231)",
             "E|\"It is now possible to use the simple turns in the trendline for buy and sell signals\" (p.231); Fig 15.14: \"Buy when it turns up / Sell when indicator turns down\"",
@@ -473,6 +473,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 mod tests {
     use super::*;
     use crate::Row;
+    #[test]
+    fn stoch_reverses_on_armed_slow_crosses() {
+        // R2E (R4 #297): every armed %K-slow / %D-slow cross reverses at the close; always in after the first signal
+        let r = super::super::sctraub::tests::bars(2000);
+        let x = Ctx::new(&r, &r, &[]);
+        let ks = avg3(&raw_k(&x, 10, false));
+        let ds = avg3(&ks);
+        let t = run("kfsc_stoch", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.len() > 10 && t.iter().any(|z| z.dir > 0.) && t.iter().any(|z| z.dir < 0.));
+        for w in t.windows(2) { assert!(w[1].legs[0].i == w[0].exit_i && w[1].dir == -w[0].dir); }
+        for z in &t {
+            let i = z.legs[0].i;
+            assert_eq!(z.legs[0].px, r[i].close);
+            if z.dir > 0. { assert!(ks[i] > ds[i] && ks[i - 1] <= ds[i - 1]); } else { assert!(ks[i] < ds[i] && ks[i - 1] >= ds[i - 1]); }
+        }
+    }
     fn mk(hlc: &[(f64, f64, f64)]) -> Vec<Row> {
         hlc.iter().enumerate().map(|(i, &(h, l, c))| Row { ticker: "T".into(), date: format!("1996-01-{:02}", i + 1), open: c, high: h, low: l, close: c, volume: None }).collect()
     }
@@ -523,7 +539,7 @@ mod tests {
             }
         }
         let stoch=catalogue().into_iter().find(|d|d.id=="kfsc_stoch").unwrap();
-        assert!(matches!(stoch.status,Status::NotTestable(note) if note.contains("regime classifier")));
+        assert!(stoch.status==Status::Live && stoch.notes.contains("adapted: 2 unstated details")); // R2E, R4 #297
         assert!(!reviewed_momentum_rule(stoch.id));assert!(!reviewed_stock_rule(stoch.id));
     }
     #[test]
@@ -703,3 +719,10 @@ mod hv_source_tests {
         for key in ["unknown","fill","source_convention"]{assert!(validate_hv(HV_ID,&Params::from([(key.into(),0.)])).is_some());}
     }
 }
+
+// Instrument admission: kfsc_stoch unheld 2026-11-13 by lane R2E (R4 #297: regime and fill are labelled readings).
+pub const ADMISSION_STOCH: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "kfsc_stoch",
+    label: "Kaufman's stochastic timing rule (p.219) on daily bars of indices, ETFs and stocks, US and India; every market is read as 'sideways' (both signals taken) because the book's trend test is undefined. Adapted: 2 unstated details, labelled on the card.",
+    basis: "A Short Course in Technical Trading p.216-222, Fig 15.2; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};

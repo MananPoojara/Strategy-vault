@@ -541,7 +541,7 @@ mod short_course_policy_tests {
             for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_none());}
             let mut other=d;other.book="kftsm";assert!(!reviewed_cash_rule(&other));
         }
-        let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id=="kfsc_stoch").unwrap();assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
+        let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id=="kfsc_stoch").unwrap();assert!(reviewed_cash_rule(&d)&&!crate::books::kfsc::reviewed_momentum_rule(d.id)); // R2E: admitted by kfsc::ADMISSION_STOCH (R4 #297)
     }
     #[test]
     fn exact_short_course_rules_require_actual_stocks_and_do_not_widen_other_sources() {
@@ -553,7 +553,7 @@ mod short_course_policy_tests {
             for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_none());}
             let mut wrong=d;wrong.book="kftsm";assert!(!reviewed_cash_rule(&wrong));
         }
-        for id in ["kfsc_regression_band","kfsc_stoch"] {
+        for id in ["kfsc_regression_band"] { // kfsc_stoch admitted by lane R2E (kfsc::ADMISSION_STOCH, R4 #297)
             let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();
             assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
         }
@@ -1424,7 +1424,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- end Lane A vendor2 held
         // ---- Lane A elmtrader block (26 Oct 2026, lane B): held Live rules
         "mstt_kaeppel_ma_9_50_80"=>"Held: not yet re-checked. The Kaeppel 9/50/80 system (Trading Tech. Systems and Indicators for MetaStock, p.25, Equis Traders' Tips) prints Close Long as the 9/50 down-cross with the close still above the 80-day average, so a short entry below the 80-day average comes while the long is open. MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single), and the engine now does that, but this card is not in the reviewed list of its book and has no independent check under that rule yet.",
-        "bcsts_a2"|"bcsts_a4"|"bcsts_a11"=>"Held: every buy and sell in the course (Aula 2 p.6-7, Aula 4 p.17-18, Aula 11 p.42-43) comes from ExtFml(\"ForumDll.Latch\",LE,LX,SE,SX), a free add-in whose behaviour is not printed. When a buy condition and a sell condition fall on the same bar, the trades depend on which one the add-in obeys, and the readings give different trades on both US and India data (Aula 11 in every window, Aula 2 and 4 in a few windows). The engine's reading (sell wins when long, buy wins when flat) matches the reference exactly, but the source cannot confirm it.",
         // ---- end Lane A elmtrader held
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         // ---- end Guppy MetaStock Formula Index held
@@ -1449,7 +1448,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "ch_bta2_ma1011_trend"=>"Held: the S&P cash index flatters this rule. Chande's $2,000 stop is 4 points of the S&P-500 contract ($500 a point, p.133-134), so the rule could run only on the S&P 500 index (SPX); decision #179's two-window check finds SPX better than the tradable SPY (points scaled) in both 2010-2020 and 1993-2026, because SPX daily open/high/low come from stale component prints. No result is published (lane K58).",
         // "ch_bta2_tat": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         // "ch_bta2_xopp"|"ch_bta2_xopp_trail": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
-        "ch_ntt_to_buy"|"ch_ntt_to_buy_nse"=>"Held: not a trade with an exit. The New Technical Trader gives only the thrust-oscillator buy signal and reports the market's gain 3, 6, 12 and 24 months after each signal (Table 6.2, p.157); these are observation horizons, not a trade exit, and no stop or sell rule is printed.",
         "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
         // ch_pbs_cbpb_trail3: admitted on SPX only with the workshop's $1,500 / $500 = 3.00-point initial stop (lane K74, R4 #277; chpbs::ADMISSION_SPX)
         // ---- end Chande block
@@ -1659,7 +1657,7 @@ mod tests {
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
             // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
             // stkch: the intraday block admits the three first-hour gap cards (intraday_ep::K75, lane K75, 11 Nov 2026).
-            const SHARED:&[&str]=&["stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            const SHARED:&[&str]=&["kfsc" /* R2E: kfsc_stoch ADMISSION_STOCH beside the kfsc stock/momentum/hv blocks */,"stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1967,7 +1965,7 @@ mod tests {
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
         for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
                    /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
-                   "ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
+                   /* ch_ntt_to_buy(_nse): admitted by lane R2E (chntt::ADMISSION, R4 #297) */ "ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -2368,9 +2366,14 @@ mod tests {
     fn la_elmtrader_held_rules_have_plain_card_reasons() {
         use crate::books::{bcsts, elmts4, mstt};
         let all:Vec<StrategyDef>=bcsts::catalogue().into_iter().chain(elmts4::catalogue()).chain(mstt::catalogue()).collect();
-        for id in ["mstt_kaeppel_ma_9_50_80", "bcsts_a2", "bcsts_a4", "bcsts_a11"] {
+        for id in ["mstt_kaeppel_ma_9_50_80"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+        // lane R2E (R4 #297): the bcsts Latch same-bar rule is a labelled reading; admitted by bcsts::ADMISSION
+        for id in ["bcsts_a2", "bcsts_a4", "bcsts_a11"] {
+            let d=all.iter().find(|d|d.id==id).unwrap();
+            assert!(reviewed_cash_rule(d) && held_reason(id).is_none() && metadata_json(d).contains("declared_application"),"{id}");
         }
         // lane K73 (R4 #276 (1), #71): elmts4_first_day admitted on DJI only (elmts4::ADMISSION_DJI + gate allowed [DJI])
         let d=all.iter().find(|d|d.id=="elmts4_first_day").unwrap();
@@ -3441,11 +3444,12 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(id,"chntt")));
             assert!(policy(&d).source_basis.contains("Chande"));
         }
-        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt"),("ch_ntt_to_buy","chntt")] {
+        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt")] {
             let d=def(id,book);
             assert!(!reviewed_cash_rule(&d));
             assert!(check(&d,"NIFTY 50",false).is_some());
         }
+        assert!(reviewed_cash_rule(&def("ch_ntt_to_buy","chntt")) && held_reason("ch_ntt_to_buy").is_none()); // lane R2E, R4 #297
         assert!(check(&def("ch_65sma3cc","ch_bta"),"NIFTY 50",false).is_none());
         assert!(check(&def("ch_cbpb_time","ch_bta"),"SPY",false).is_none());
     }

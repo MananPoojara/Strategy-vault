@@ -871,7 +871,7 @@ mod tests {
             let p=Params::from([("stop_pts".into(),4.)]);
             assert!(check(&ctx,&def,0,4,&p).unwrap().note.contains("Futures dollar stops"));
         }
-        for id in ["ch_ntt_vidya_cmo","ch_ntt_to_buy","ch_ntt_to_buy_nse"] {
+        for id in ["ch_ntt_vidya_cmo" /* ch_ntt_to_buy(_nse): admitted by lane R2E (chntt::ADMISSION, R4 #297) */] {
             assert!(crate::instrument_policy::check(&definition(id),"NIFTY 50",false).is_some());
         }
     }
