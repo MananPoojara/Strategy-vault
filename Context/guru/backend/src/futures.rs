@@ -92,6 +92,9 @@ pub const MARKETS: &[Market] = &[
         source: "ICE Sugar No. 11 futures: 112,000 lb per contract, quoted in US cents per lb (1.00 = US$1,120; 0.01 = US$11.20)" },
     Market { sym: "&ZN", name: "10-Year T-Note", tick: 1. / 64., usd: &[("1982-05-03", 1_000.)],
         source: "CBOT 10-year U.S. Treasury note futures: US$100,000 face value, quoted in points of par (1 point = US$1,000; 1/64 = US$15.625)" },
+    // lane PH (Fischer double tops / bottoms, R4 #293 (4)): quoted in index points, EUR 10 per point (NOT US$: NON_USD)
+    Market { sym: "&FESX", name: "EURO STOXX 50", tick: 1., usd: &[("1999-03-26", 10.)],
+        source: "Eurex EURO STOXX 50 index futures: EUR 10 per index point, tick 1 point (EUR 10); the usd row is in EUR, so futures::NON_USD refuses any US$ conversion (the card's rules are in index points)" },
     // lane PH (WaveRider, the manual's 21-commodity portfolio)
     Market { sym: "&HE", name: "Lean Hogs", tick: 0.025, usd: &[("1978-11-14", 400.)],
         source: "CME lean hog futures: 40,000 lb per contract, quoted in US cents per lb (1.00 = US$400; 0.025 = US$10). Norgate quotes the whole series at the lean-hog price level (88.85 cents on 1990-06-01, when live hogs traded near 60), so the lean-hog contract size is applied throughout (the live-hog contract of the 1970s-90s is not held as quoted)" },
@@ -109,7 +112,7 @@ pub fn is_futures(t: &str) -> bool { of_ticker(t).is_some() }
 pub fn ctx_market(x: &Ctx) -> Option<&'static Market> { x.r.first().and_then(|r| of_ticker(&r.ticker)) }
 /// US$ per 1.00 of the quote on `date` (the multiplier in force on the trade date, #293 (3)).
 /// Contracts whose `usd` row is NOT in US$ (review PF2 ca66231c M20): no US$ conversion is made for them.
-pub const NON_USD: &[&str] = &["&YAP"];
+pub const NON_USD: &[&str] = &["&YAP", "&FESX"];
 /// A NaN entry ends a known period: from that date the multiplier is unknown (None), so US$ rules fail closed (R4 #324 M1).
 pub fn usd_per_point(m: &Market, date: &str) -> Option<f64> {
     if NON_USD.contains(&m.sym) { return None; }
@@ -595,7 +598,7 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
 ];
 /// Lane PH: WaveRider on the manual's portfolio; CL CT GC HG NG 6S SI only inside the manual's window (BOOK_WINDOW), 6J KC GE held (HELD).
 const WR: &str = "longtermtrading.com (Alan Pryor), WaveRider System Manual v1.02a (2002) Sec. V-VI with the vendor's weekly trade lists (MoneyManagement/WR-W-*.xls, 21 commodities 1970-2002): run on this Norgate continuous contract of the manual's portfolio, weekly bars from the back-adjusted daily bars, US$ stops at the contract's US$ per point on the trade date (R4 #293 (1), (3), (4)), lane PH.";
-const CARDS_PH: &[(&str, &str, &str)] = &[("ltwr_waverider", "&ZC", WR), ("ltwr_waverider", "&CC", WR), ("ltwr_waverider", "&LE", WR), ("ltwr_waverider", "&HE", WR),
+const CARDS_PH: &[(&str, &str, &str)] = &[("rfcfcp_dtdb", "&FESX", "Robert Fischer, Jens Fischer, Candlesticks, Fibonacci, and Chart Pattern Trading Tools (Wiley 2003) ch.4 p.45-51 (DJ EuroStoxx 50 futures, daily, 300-point swing, Table 4.1 Aug 2001 - Aug 2002): run on the Norgate EURO STOXX 50 continuous contract with the 300 points literal, back-adjusted daily bars (R4 #293 (1), (4)), lane PH."),("ltwr_waverider", "&ZC", WR), ("ltwr_waverider", "&CC", WR), ("ltwr_waverider", "&LE", WR), ("ltwr_waverider", "&HE", WR),
     ("ltwr_waverider", "&ZS", WR), ("ltwr_waverider", "&SB", WR), ("ltwr_waverider", "&ZM", WR), ("ltwr_waverider", "&ZN", WR), ("ltwr_waverider", "&ZB", WR),
     ("ltwr_waverider", "&CL", WR), ("ltwr_waverider", "&CT", WR), ("ltwr_waverider", "&GC", WR), ("ltwr_waverider", "&HG", WR), ("ltwr_waverider", "&NG", WR),
     ("ltwr_waverider", "&6S", WR), ("ltwr_waverider", "&SI", WR)];
