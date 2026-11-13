@@ -267,7 +267,7 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "slct_ct_formula", "sprfs_nr4ib", "stad12_ntw", "stad13_luxor", "stad1_maco",
     "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad7_masr", "stad9_dyf", "stad9_luxor", "stad9_nohurry", "stad9_redrover",
     "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tttt1_tradetimer",
-    "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
+    "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi", "scuhnn_nnp"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
     "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
     "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3", "ftm_rg_oops" /* K54, #233 tick default: K54w/M3-oops.tsv */];
@@ -277,7 +277,7 @@ pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "
     "mqma_moving_average", "msws_dark_cloud_piercing_line_mfi", "msws_engulfing_mfi", "nkms_bull_power_bear_power_2",
     "rgc_runaway_gap", "scjleq_vol", "scraj_red", "sprfs_hvr_nr4ib", "sprfs_nr4ib", "ss_anti_3_10", "stad11_gapper", "stad9_redrover",
     "strmm_expert", "strtw_gd_bj", "tcdt_oc_nr_re", "tselhs_rb_avg", "wbmdd_erg_tsi_s2", "wtdtt_mist1", "wtdtt_mist3", "wtdtt_mist4",
-    "wtdtt_moc_contraction", "wtdtt_moc_manip"];
+    "wtdtt_moc_contraction", "wtdtt_moc_manip", "scuhnn_nnp"];
 /// The tradable-vs-cash refusals (#177 minutes, #179 daily). check() and readiness::check() decide this first, before any
 /// data-coverage check, so a withdrawn (rule, ticker) pair always shows this reason. Ticker routing only; no calculation.
 pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
@@ -3985,7 +3985,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(73,17,44)); // + K70 as51_donchian_pb, as51_fractal_sma (SPX) // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(74,17,45)); // + PA2 scuhnn_nnp (SPX, DJI) // + K70 as51_donchian_pb, as51_fractal_sma (SPX) // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
