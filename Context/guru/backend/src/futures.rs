@@ -339,9 +339,10 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
 /// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
 const HELD: &[(&str, &str, &str)] = &[
     // lane F1D: Larry Williams bond stop-entry cards (no T-bond minute bars; limit 5%)
-    ("lwnl_cti_bonds", "&ZB", "held under R4 #240: 9.7% of its trades have two different fills on one daily bar (an entry and the $750 short stop, or a stop and the opposite entry), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
-    ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 22.4% of its trades (27.7% in the book's 1990-98 window) have two fills on one daily bar (entry and stop, or stop and reversal), which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
-    ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 16.8% of its trades (19.5% in the book's 1990-98 window) have two fills on one daily bar, which daily bars cannot order, and no T-bond minute bars exist (limit 5%)"),
+    ("lwnl_cti_bonds", "&ZB", "held under R4 #240: 49.4% of its trades give different fills in the two path orders of a daily bar (an entry and the $750 short stop, or both entries), and no T-bond minute bars exist (limit 5%)"),
+    ("lwlts_talon_bondfilter", "&SP", "held under R4 #240 (review B3): 7.1% of its trades on the published 1982-95 window give different fills in the two path orders of a daily bar (an entry and its $1,750 stop, or both entries), and no S&P futures minute bars exist (limit 5%)"),
+    ("lwlts_vb_bonds", "&ZB", "held under R4 #240: 87.4% of its trades (87.8% in the book's 1990-98 window) give different fills when the daily bar is run in its two possible path orders, and no T-bond minute bars exist (limit 5%)"),
+    ("lwlts_vb_bonds_tdw", "&ZB", "held under R4 #240: 86.9% of its trades (86.0% in the book's 1990-98 window) give different fills in the two path orders of a daily bar, and no T-bond minute bars exist (limit 5%)"),
     ("ch_bta2_long_bomb", "&KC", "held on coffee under R4 #240: 12.2% of its trades in the book's 1982-95 window (15.7% over 1978-2020) enter and hit the stop on the same day, which daily bars cannot order, and no coffee futures minute bars exist (limit 5%, R4 #314 (3))"),
 ];
 /// Why a card is held on a market its source tests (HELD), if it is.
@@ -689,7 +690,8 @@ mod tests {
         let r = f1c_rows("US T-Bond (Norgate &ZB)", &[(100., 101., 100., 100.5), (100.5, 102., 100.4, 100.9)]);
         let t = crate::books::lwlts::run("lwlts_vb_bonds", &Ctx::new(&r, &r, &[]), 0, 1, &crate::connors::Params::new()).unwrap();
         assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 101.5, 1, 101.), "{t:?}");
-        assert!(held("lwlts_vb_bonds", "US T-Bond (Norgate &ZB)").is_some() && held("lwlts_oops_buy_bonds", "US T-Bond (Norgate &ZB)").is_none() && held("lwlts_gsv_bonds", "US T-Bond (Norgate &ZB)").is_none());
+        assert!(held("lwlts_vb_bonds", "US T-Bond (Norgate &ZB)").is_some() && held("lwlts_oops_buy_bonds", "US T-Bond (Norgate &ZB)").is_none() && held("lwlts_gsv_bonds", "US T-Bond (Norgate &ZB)").is_none()
+            && held("lwlts_talon_bondfilter", "S&P 500 (Norgate &SP)").is_some());
     }
     #[test]
     fn f1d_bonds_8day_close_entry_stop_reentry_target() {
