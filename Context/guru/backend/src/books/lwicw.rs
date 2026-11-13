@@ -109,7 +109,41 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Printouts: holidays 190 trades 84% $274.74 (01/10/78-07/06/99); patterns 285 trades 87% $254.56 (01/01/90-07/06/99)."),
         sd!("lwicw_bond_best_days", "Bond best buy/sell trade days of the year; Bonds seasonal TDOMs backed by Gold; Bonds Oops! by TDOM", "Bonds", "Long/Short", NotTestable("Not coded (lane F1D, R4 #297 (5)): more than two unstated details. The exit is given twice and differently (\"exit on any profitable opening after 3 days\" vs the tables' \"WITH 4 DAYS HOLD\", p.44); the sell entry is not stated (\"buy on the opening of the day shown, plus 7% of the previous days range\" covers buys only); and the table rows are partly illegible in the only copy (November and the bracketed September/October days)."),
             &["E|Buy the open of the day shown + 7% of the previous day's range, $1,800 stop or any profitable opening after 3 days (p.44-45)", "E|Book1 p.50-51 tables"], ""),
-        sd!("lwicw_sp_bond_filter", "S&P TDW/TDOM with bonds above 14 / 10-15 days ago; first-of-month with bonds; seasonal TDOMs backed by bonds; Oops! revisited", "S&P · Bond filters", "Long/Short", NeedsData(BONDS),
+        sd!("lwicw_sp_tdw_bonds", "S&P buy the open of a weekday when bonds are above 14 days ago, first profitable close", "S&P · Trade day of week", "Long", Live,
+            &["F|\"we see each TDW now but with Bonds in an up-trend, i.e., greater than 14 days ago\" (notes p.39): the bond's close (own bars) on the day before entry above its close 14 bond bars earlier",
+              "E|Buy the open of weekday p.day (default Monday), as the TDW study (p.38)", "X|The TDW study's exit: the first profitable close after the entry day, $3,500 stop (7 points), armed on the entry day"],
+            "Table p.39 (window not printed): Mon $133,330 72% $239; Tue $58,650 65% $133; Wed $5,022 65% $10; Thu $15,597 64% $33; Fri -$6,792 65% -$14. Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (own bars, carried to the S&P dates; refused when bonds are not loaded), lane F1D, R4 #293; published 1982-04-21..1995-07-31 (R4 #330: it buys the &SP open). Book dollars at $500 per S&P point as the module (Book1 p.53 header).",
+            claim("", "72% (Monday)", "$239 (Monday)", "", "S&P (window not printed)")),
+        sd!("lwicw_sp_tdom_bonds", "S&P buy the open of trade day of month N when bonds are above 10 or 15 days ago, bailout", "S&P · Trade day of month", "Long", Live,
+            &["F|\"only trades when bonds were greater than the close 10 or 15 days ago\" (p.39). Unstated in the notes: whether one or both lookbacks; vault reading: either (bond close above its close 10 OR 15 bond bars earlier, on the day before entry)",
+              "E|Buy the open of trading day p.tdom of the month (default 1)", "X|The TDOM study's exit: the bailout (first profitable opening) and the $3,500 stop (p.38)"],
+            "Table p.39 (window not printed): e.g. TDOM 1 -$7,292 61% -$52; TDOM 13 $51,872 68% $378. Adapted: 1 unstated detail (R4 #297). Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (own bars, carried to the S&P dates; refused when bonds are not loaded), lane F1D, R4 #293; published 1982-04-21..1995-07-31 (R4 #330: it buys the &SP open). Book dollars at $500 per S&P point as the module (Book1 p.53 header).",
+            claim("", "61% (TDOM 1)", "-$52 (TDOM 1)", "", "S&P (window not printed)")),
+        sd!("lwicw_sp_month_day1_bonds", "S&P buy the first trading day when bonds are above 32 days ago, 2-day exit", "S&P · Trade day of month", "Long", Live,
+            &["E|\"Buy the first trading day of every month from 1982 to 1998 with a 2 day exit and 90% of the range stop ... except Bonds close is greater than 32 days ago\" (notes p.43): the open of TDOM 1 when the bond's close on the day before is above its close 32 bond bars earlier",
+              "X|Unstated in the notes: the '2 day exit'; vault reading: the close of the second day after entry",
+              "X|Unstated in the notes: which range the '90% of the range stop' uses; vault reading: 90% of the previous day's range below the entry, armed on the entry day"],
+            "Notes p.43: 59% accuracy, $147,925, average $1,286 (about 115 trades), 1982-1998. Adapted: 2 unstated details (R4 #297). Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (own bars, carried to the S&P dates; refused when bonds are not loaded), lane F1D, R4 #293; published 1982-04-21..1995-07-31 (R4 #330: it buys the &SP open). Book dollars at $500 per S&P point as the module (Book1 p.53 header).",
+            claim("about 115 ($147,925 / $1,286)", "59%", "$1,286", "2 days", "1982-1998")),
+        sd!("lwicw_bond_month_day1", "T-Bonds: buy the first trading day of the month, 3-day exit", "Bonds · Trade day of month", "Long", Live,
+            &["E|\"Buy the first trade day of every months, since 1977, with a 3 day exit and $1,400 stop\" (notes p.43): the open of TDOM 1 (decision 186)",
+              "X|Unstated in the notes: the '3 day exit'; vault reading: the close of the third day after entry; $1,400 = 1.4 points"],
+            "Notes p.43: 241 trades, 55%, $40,062 (since 1977). Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293); $ amounts at $1,000 per point. Stop armed on the entry day for open entries (the module's convention).",
+            claim("241", "55%", "$166 ($40,062)", "3 days", "1977-1999")),
+        sd!("lwicw_bond_month_day1_gold", "T-Bonds: first trading day of the month, gold below 5 days ago, 3-day exit", "Bonds · Trade day of month", "Long", Live,
+            &["E|\"or just take these trades when Gold has closed lower than 5 days ago\" (notes p.43): the open of TDOM 1 when gold's close on the day before (Norgate gold, own bars, Data2) is below its close 5 gold bars earlier",
+              "X|Unstated in the notes: the '3 day exit'; vault reading: the close of the third day after entry; $1,400 stop"],
+            "Notes p.43: 142 trades, 57%, $34,344, average win $241. Adapted: 1 unstated detail (R4 #297). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293); $ amounts at $1,000 per point. Stop armed on the entry day for open entries (the module's convention). Refused when gold is not loaded.",
+            claim("142", "57%", "$242 ($34,344)", "3 days", "1977-1999")),
+        sd!("lwicw_sp_oops_bonds", "S&P Oops! revisited: trend and bond filters, buys and sells", "S&P · Oops!", "Long/Short", Live,
+            &["E|Oops! buy: the open below the previous day's low, a buy stop at that low; Oops! sell: the open above the previous day's high, a sell stop at that high (the author's definition)",
+              "F|Buys: \"the day prior to the OOPS! Entry (the set up day) cannot be an outside day, and secondly, the close of the day must be lower than the close 9 days ago. There is one other operating signal, it is to take an OOPS! Buy on Monday, Tuesday or Friday if the close of Bonds is greater than two days ago\" (Book1 p.54). Unstated in the notes: how the two buy signals combine; vault reading: either one (OR)",
+              "F|Sells: \"Bonds must be lower than 4 days ago, while the close of the S&P's is greater than the close 10 days ago and the low of the day prior to the OOPS! entry day is equal to or greater than the previous close\" (p.54); bond closes on the bond's own bars, read on the setup day",
+              "X|\"Bail out exit with a $3,500 stop after day of [entry]\" (p.54): first profitable opening; 7 points from the day after entry",
+              "X|Unstated in the notes: an opposite signal while in a trade; vault reading: one position at a time (ignored)"],
+            "Printout Book1 p.54: S&P 500 IND-9967 01/01/83-12/23/98, $45 commission, $500 per point: 163 trades, 149 winners (91%), $266,015, average $1,632. Adapted: 2 unstated details (R4 #297). Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (own bars, carried to the S&P dates; refused when bonds are not loaded), lane F1D, R4 #293; published 1982-04-21..1995-07-31 (R4 #330: its entries are levels set from the &SP open). Book dollars at $500 per S&P point (the printout's P. Value $5.00 per 0.01).",
+            claim("163", "91% (149 of 163)", "$1,632 ($266,015)", "1 day", "01/01/83-12/23/98")),
+        sd!("lwicw_sp_bond_filter", "S&P TDW/TDOM with bonds above 14 / 10-15 days ago; first-of-month with bonds; seasonal TDOMs backed by bonds; Oops! revisited", "S&P · Bond filters", "Long/Short", NotTestable("Split (lane F1D, R4 #293): coded as lwicw_sp_tdw_bonds, lwicw_sp_tdom_bonds, lwicw_sp_month_day1_bonds and lwicw_sp_oops_bonds on the Norgate S&P 500 contract with T-bonds as Data2 (and the T-bond first-of-month trades lwicw_bond_month_day1 / _gold). Held: the numbered S&P patterns of p.39-41 (Monday Oops!, hidden Oops!, consecutive down closes, Monday-only trades) print no exit or stop (R4 #297 (2))."),
             &["F|\"Bonds in an up-trend, i.e., greater than 14 days ago\" (p.39)", "F|First of month: \"Bonds close is greater than 32 days ago\" (p.43)", "F|Oops! revisited: buy Mon/Tue/Fri if Bonds > 2 days ago; sell if Bonds < 4 days ago (Book1 p.53)"],
             "Every printed result uses the bond filter."),
         sd!("lwicw_sp_patterns", "S&P pattern rules (Monday Oops!, hidden Oops!, consecutive down closes, Monday-only trades, short-term sells)", "S&P · Patterns", "Long/Short",
@@ -139,6 +173,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwicw_sp_tdom" => f("lwicw_tdom", "S&P trade day of month", "Buy TDOM N"),
         "lwicw_sp_holidays" => f("lwicw_holidays", "Holiday trades", "S&P"),
         "lwicw_bond_holidays" => f("lwicw_holidays", "Holiday trades", "T-Bonds"),
+        "lwicw_sp_oops_bonds" => f("lwicw_oops", "Oops!", "S&P revisited, bond filters"),
+        "lwicw_sp_tdw_bonds" => f("lwicw_tdw", "S&P trade day of week", "Bonds above 14 days ago"),
+        "lwicw_sp_tdom_bonds" => f("lwicw_tdom", "S&P trade day of month", "Bonds above 10 or 15 days ago"),
+        "lwicw_sp_month_day1_bonds" | "lwicw_bond_month_day1" | "lwicw_bond_month_day1_gold" => f("lwlts_month", "Month-end trades",
+            match id { "lwicw_sp_month_day1_bonds" => "S&P first day, bonds above 32 days, 2-day exit", "lwicw_bond_month_day1" => "Bonds first day, 3-day exit", _ => "Bonds first day, gold below 5 days, 3-day exit" }),
         "lwicw_bond_tdw" => f("lwicw_tdw", "S&P trade day of week", "T-Bonds, day option"),
         "lwicw_bond_tdw_gold" => f("lwicw_tdw", "S&P trade day of week", "T-Bonds, gold below 25 days ago"),
         "lwicw_bond_tdom" => f("lwicw_tdom", "S&P trade day of month", "T-Bonds, TDOM N"),
@@ -169,6 +208,12 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "lwicw_sp_tdw_mon" | "lwicw_sp_tdw_tue" | "lwicw_sp_tdw_wed" | "lwicw_sp_tdw_thu" | "lwicw_sp_tdw_fri" => vec![stop(3500.0), pt()],
         "lwicw_sp_tdom" => vec![p("tdom", "Trading day of the month", 1.0, 1.0, 23.0, 1.0), stop(3500.0), pt()],
+        "lwicw_sp_oops_bonds" => vec![stop(3500.0), pt()],
+        "lwicw_sp_tdw_bonds" => vec![p("day", "Weekday (1 Monday .. 5 Friday)", 1.0, 1.0, 5.0, 1.0), stop(3500.0), pt()],
+        "lwicw_sp_tdom_bonds" => vec![p("tdom", "Trading day of the month", 1.0, 1.0, 23.0, 1.0), stop(3500.0), pt()],
+        "lwicw_sp_month_day1_bonds" => vec![p("stop_rng", "Stop: x the previous day's range below the entry (notes: 90%)", 0.9, 0.1, 3.0, 0.1), p("hold", "Exit on the close N days after entry", 2.0, 0.0, 10.0, 1.0)],
+        "lwicw_bond_month_day1" | "lwicw_bond_month_day1_gold" => vec![stop(1400.0), p("hold", "Exit on the close N days after entry", 3.0, 0.0, 10.0, 1.0),
+            p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwicw_bond_tdw" | "lwicw_bond_tdw_gold" => vec![p("day", "Weekday (1 Monday .. 5 Friday)", 1.0, 1.0, 5.0, 1.0)],
         "lwicw_bond_tdom" | "lwicw_bond_tdom_gold" => vec![p("n", "Trading day of the month", 1.0, 1.0, 23.0, 1.0)],
         "lwicw_bond_holidays" => vec![stop(1400.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
@@ -459,6 +504,54 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "lwicw_mon_gap_bail" => {
             cfg.bail = Some(0);
             sim(x, from, to, &cfg, |i| if wd(i) == 1 && x.o[i] < x.c[i - 1] { vec![(1.0, Ord::Open)] } else { vec![] })
+        }
+        "lwicw_sp_oops_bonds" | "lwicw_sp_tdw_bonds" | "lwicw_sp_tdom_bonds" | "lwicw_sp_month_day1_bonds" | "lwicw_bond_month_day1" | "lwicw_bond_month_day1_gold" => {
+            // lane F1D (R4 #293): the notes' bond-filtered S&P studies (&SP with &ZB as Data2) and the T-bond first-of-month trades
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let td = crate::books::lwlts::tdm(x);
+            // (sym, lookback n, up): Data2 close on its own bars vs n bars earlier, carried to this contract's dates
+            let flag = |sym: &'static str, n: usize, up: bool| -> Option<Vec<f64>> {
+                let rows = crate::futures::rows(sym)?;
+                Some(crate::second::align(sym, x.r, rows).own(|r| (0..r.len()).map(|k| (k >= n && if up { r[k].close > r[k - n].close } else { r[k].close < r[k - n].close }) as u8 as f64).collect()))
+            };
+            match id {
+                "lwicw_sp_oops_bonds" => {
+                    let (Some(b2), Some(b4)) = (flag("&ZB", 2, true), flag("&ZB", 4, false)) else { return Some(vec![]) };
+                    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+                    cfg.day0 = false; cfg.bail = Some(0);
+                    sim(x, from, to, &cfg, |i| {
+                        if i < 11 { return vec![]; }
+                        let s = i - 1;
+                        let outside = h[s] > h[s - 1] && l[s] < l[s - 1];
+                        let buy = o[i] < l[s] && ((!outside && c[s] < c[s - 9]) || (matches!(wd(i), 1 | 2 | 5) && b2[s] == 1.0));
+                        let sell = o[i] > h[s] && b4[s] == 1.0 && c[s] > c[s - 10] && l[s] >= c[s - 1];
+                        if buy { vec![(1.0, Ord::Stop(l[s]))] } else if sell { vec![(-1.0, Ord::Stop(h[s]))] } else { vec![] }
+                    })
+                }
+                "lwicw_sp_tdw_bonds" => {
+                    let Some(b14) = flag("&ZB", 14, true) else { return Some(vec![]) };
+                    let want = g("day").round() as u32;
+                    cfg.prof_close = true;
+                    sim(x, from, to, &cfg, |i| if i > 0 && wd(i) == want && b14[i - 1] == 1.0 { vec![(1.0, Ord::Open)] } else { vec![] })
+                }
+                "lwicw_sp_tdom_bonds" => {
+                    let (Some(b10), Some(b15)) = (flag("&ZB", 10, true), flag("&ZB", 15, true)) else { return Some(vec![]) };
+                    let n = g("tdom") as usize;
+                    cfg.bail = Some(0);
+                    sim(x, from, to, &cfg, |i| if i > 0 && td[i] == n && (b10[i - 1] == 1.0 || b15[i - 1] == 1.0) { vec![(1.0, Ord::Open)] } else { vec![] })
+                }
+                "lwicw_sp_month_day1_bonds" => {
+                    let Some(b32) = flag("&ZB", 32, true) else { return Some(vec![]) };
+                    let c2 = crate::books::lwlts::Cfg { stop: f64::NAN, stop_s: f64::NAN, stop_rng: g("stop_rng"), day0: true, target: f64::NAN,
+                        hold: Some(g("hold").max(0.0) as usize), bailout: false, bail_after: 0, reverse: false, order: false };
+                    crate::books::lwlts::simulate(x, from, to, &c2, |i| (( td[i] == 1 && b32[i - 1] == 1.0).then_some(crate::books::lwlts::Ent::Open), None))
+                }
+                _ => {
+                    let gold = if id.ends_with("_gold") { let Some(v) = flag("&GC", 5, false) else { return Some(vec![]) }; Some(v) } else { None };
+                    cfg.hold = Some(g("hold").max(0.0) as usize);
+                    sim(x, from, to, &cfg, |i| if i > 0 && td[i] == 1 && gold.as_ref().map_or(true, |v| v[i - 1] == 1.0) { vec![(1.0, Ord::Open)] } else { vec![] })
+                }
+            }
         }
         "lwicw_bond_tdw" | "lwicw_bond_tdw_gold" | "lwicw_bond_tdom" | "lwicw_bond_tdom_gold" => {
             // lane F1D (R4 #293, review B2): the bond studies, only on the Norgate T-bond contract; buy the open, first profitable

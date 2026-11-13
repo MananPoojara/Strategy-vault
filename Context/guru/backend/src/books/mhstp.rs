@@ -50,7 +50,8 @@ pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21",
     // lane F1D (R4 #330): Larry Williams S&P cards that enter or gap-fill at the &SP open
     ("lwlts_talon_bondfilter", "1982-04-21", "1995-07-31"), ("lwlts_gsv_sp", "1982-04-21", "1995-07-31"), ("lwlts_gsv_sp_monday", "1982-04-21", "1995-07-31"),
     ("lwlts_month_day1_sp_bonds", "1982-04-21", "1995-07-31"), ("lwlts_bonds_channel_bstop", "1982-04-21", "1995-07-31"), ("lwlts_bonds_channel_sstop", "1982-04-21", "1995-07-31"),
-    ("lwnl_sp_hornbrook_im", "1982-04-21", "1995-07-31"), ("lwnl_bond_sp_9ma_1down", "1982-04-21", "1995-07-31"), ("lwnl_bond_sp_9ma_2down", "1982-04-21", "1995-07-31")];
+    ("lwnl_sp_hornbrook_im", "1982-04-21", "1995-07-31"), ("lwicw_sp_oops_bonds", "1982-04-21", "1995-07-31"), ("lwicw_sp_tdw_bonds", "1982-04-21", "1995-07-31"), ("lwicw_sp_tdom_bonds", "1982-04-21", "1995-07-31"),
+    ("lwicw_sp_month_day1_bonds", "1982-04-21", "1995-07-31"), ("lwnl_bond_sp_9ma_1down", "1982-04-21", "1995-07-31"), ("lwnl_bond_sp_9ma_2down", "1982-04-21", "1995-07-31")];
 pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open the opening-gap patterns read (R4 #328)";
 pub fn window(id: &str) -> Option<(String, String, &'static str)> {
     let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
