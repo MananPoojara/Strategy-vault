@@ -90,6 +90,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     }
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
     if let Some((_,last,_))=books::mhstp::window(def.id) {ends.push((upto(&last),"the published window (Harris book test window, R4 #294 (1))".into()));} // lane F3
+    if let Some(k)=crate::futures::first_nonpositive(def.id,ctx) {ends.push((k.checked_sub(1),format!("the positive unadjusted prices of {ticker} (on {} the unadjusted price is <= 0 and a % return has no base, R4 #316)",ctx.r[k].date)));} // lane X4
     // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
     if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}
     let Some((end,what))=ends.into_iter().filter_map(|(e,w)|Some((e?,w))).filter(|(e,_)|*e<to).min_by_key(|(e,_)|*e) else {return (to,None)};
@@ -549,6 +550,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
     // lane K40 (decision #207): Luisi's literal-points option is SPX only; Blackman's gold season is GLD only
     if let Some(note)=books::mhstp::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F3 (lead review): published window
+    if let Some(k)=crate::futures::first_nonpositive(def.id,ctx).filter(|&k|k<=to) {return issue("needs_data",format!("Results are published only before {}: the unadjusted price is <= 0 that day, so a % return has no base (R4 #316).",ctx.r[k].date));} // lane X4
     if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
         return issue("not_testable",note);
     }

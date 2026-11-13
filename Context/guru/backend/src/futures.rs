@@ -172,8 +172,36 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
     !(ok && raw_ok)
 }
 
+/// R4 #316 (lane X4): cards whose published run ends the day before the first non-positive unadjusted price (NYMEX crude
+/// settled at -37.63 on 2020-04-20, where a % return has no base); readiness::auto_end / check apply it. The series itself
+/// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
+const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17"];
+/// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
+pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
+    if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
+    let s = ["RAW.Open", "RAW.High", "RAW.Low", "RAW.Close"].map(|k| x.series(k));
+    if s.iter().any(|v| v.is_none()) { return None; }
+    (0..x.c.len()).find(|&i| s.iter().flatten().any(|v| v.get(i).is_some_and(|p| *p <= 0.)))
+}
+
 /// Cards that run on one named continuous contract (#293 (1)): (strategy id, market symbol, instrument_policy basis).
-pub const CARDS: &[(&str, &str, &str)] = &[];
+pub const CARDS: &[(&str, &str, &str)] = &[
+    ("ataa_moon", "&6A", "ATAA Journal Dec 1990 p.11-12 (Krastins, Sheer Lunacy): the moon-phase stop and reverse tested on AUD/USD IMM futures, run on the Norgate Australian dollar continuous contract (R4 #293 (1)); close fills, no amounts."),
+    ("jkbwts_neeley31", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.22-23 Neeley31, Japanese Yen CME weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_wagner31", "&GC", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.30-31 Wagner31, COMEX gold weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("stad10_mwt", "&SP", "STAD Vol 10 p.11-17 (Joe Krutsinger, JK Monday We Trade): the printed code with SetStopLoss $1,500 per position, run on the Norgate S&P 500 continuous contract; $1,500 at the multiplier in force on the trade date ($500 per point to 1997-11-02, $250 after, R4 #293 (3))."),
+    ("ch_bta2_vol2x", "&6S", "Chande, Beyond Technical Analysis (1997) p.236-239, Table 8.4: the 2x-range volatility system tested on Swiss franc continuous futures 6/30/89-6/30/95 with a $3,000 initial stop, run on the Norgate Swiss franc continuous contract (R4 #293 (1)); the $3,000 at $125,000 per 1.00."),
+    ("jkbwts_bwilliams19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.32-33 B Williams19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_detrend", "&6S", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.24-25 DeTrend (Jeff Roy DeTrend Oscillator), Swiss Franc daily: the printed TradeStation code run on the Norgate continuous contract of the tested market (R4 #293 (1)); the 0.01 threshold is in the contract's own quote."),
+    ("jkbwts_ehrlich17", "&CL", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.6-7 Ehrlich17, NY light crude oil daily: the printed TradeStation code run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_conner19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.2-3 Conner 19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_ez_bonder", "&ZB", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.20-21 EZ Bonder, Day T-Bonds daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_fox31", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.8-9 Fox31, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_kase30", "&6B", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.14-15 Kase30, British Pound daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_one_night_stand", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.16-17 One Night Stand, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_stuckey19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.28-29 Stuckey19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_williams19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.34-35 Williams 19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+];
 /// Lane F3 (R4 #294): Harris's single-market patterns (books::mhstp), each on the contract its Pattern Library page names.
 const CARDS_F3: &[(&str, &str, &str)] = &[
     ("mhs_ua830406_1", "&ZB", MHS_TB), ("mhs_ua830407_1", "&ZB", MHS_TB), ("mhs_ua830826_1", "&ZB", MHS_TB), ("mhs_ua830131_1", "&ZB", MHS_TB),
@@ -245,6 +273,22 @@ mod tests {
         assert_eq!(m.get(&("*".to_string(), "NASDAQ_COMP".to_string())).and_then(|v| v.get("1971-02-05")), Some(&100.5));
         assert!(!m.contains_key(&("*".to_string(), "NYSE_COMP".to_string()))); // a missing file loads nothing
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn x4_ehrlich17_run_ends_before_a_nonpositive_unadjusted_price() {
+        // R4 #316: the &CL series stays whole; only jkbwts_ehrlich17's run is capped (auto_end) / refused (check)
+        let r: Vec<Row> = (0..10).map(|i| Row { ticker: "Crude Oil (Norgate &CL)".into(), date: format!("2020-04-{:02}", i + 10), open: 20., high: 20., low: 20., close: 20., volume: None }).collect();
+        let mut x = Ctx::new(&r, &[], &[]);
+        for k in ["RAW.Open", "RAW.High", "RAW.Low"] { x.extra.insert(k.into(), vec![30.; 10]); }
+        let mut c = vec![30.; 10]; c[6] = -37.63; x.extra.insert("RAW.Close".into(), c);
+        assert_eq!(first_nonpositive("jkbwts_ehrlich17", &x), Some(6));
+        assert_eq!(first_nonpositive("mhs_cl850210_1", &x), None);
+        let d = crate::books::jkbwts::catalogue().into_iter().find(|d| d.id == "jkbwts_ehrlich17").unwrap();
+        let p = crate::connors::Params::new();
+        let (end, note) = crate::readiness::auto_end(&x, &d, 0, 9, &p);
+        assert!(end == 5 && note.is_some_and(|n| n.contains("2020-04-16") && n.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 0, 5, &p).map_or(true, |i| !i.note.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 6, 9, &p).is_some_and(|i| i.note.contains("R4 #316")));
     }
     use crate::connors::Leg;
     fn row(d: &str, c: f64) -> Row { Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.into(), open: c, high: c, low: c, close: c, volume: None } }
