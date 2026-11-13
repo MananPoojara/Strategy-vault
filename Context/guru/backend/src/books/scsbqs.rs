@@ -42,7 +42,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
 fn concat_note(k: usize) -> &'static str { [NOTE_TUE, NOTE_ME, NOTE_APR][k] }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then_some(("scsbqs_tuesday", "Barrie T-bond quasi-seasonals (S&C)", match id { "scsbqs_tuesday" => "Turnaround Tuesday", "scsbqs_month_end" => "Month end", _ => "April 15" }))
+    // three printed rules (Figures 4, 7, 10), three families (review R4 #322 M1)
+    match id {
+        "scsbqs_tuesday" => Some(("scsbqs_tuesday", "Barrie T-bond turnaround Tuesday (S&C)", "Fade Monday")),
+        "scsbqs_month_end" => Some(("scsbqs_month_end", "Barrie T-bond month-end windows (S&C)", "Figure 7")),
+        "scsbqs_april15" => Some(("scsbqs_april15", "Barrie T-bond tax-day short (S&C)", "April 15 + 2")),
+        _ => None,
+    }
 }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };

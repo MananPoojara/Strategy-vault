@@ -151,7 +151,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nt("ehmd_bandpass", "Bandpass indicator + leading signal", "crossings flag 'long and short trade entry points' but the article never states which crossing is long, and Pcenter is a user choice",
            &["E|Entries at crossings of the Bandpass Indicator and the Leading Signal."], ""),
         nt("ehmd_osc_family", "Fisher Transform / CG / RVI / RSI smoothing / Joy of Detrending",
-           "indicators only; e.g. RVI 'the rules for the use of the RVI are flexible'", &["F|Oscillators with trigger lines."], ""),
+           "indicators only; e.g. RVI 'the rules for the use of the RVI are flexible' (the Fisher transform crossover of Ehlers' S&C V.20:11 article is coded as scehfish_cross)", &["F|Oscillators with trigger lines."], ""),
         nt("ehmd_phase_tutorial", "Stay in Phase / Cycles Tutorial / STARE-E-O / Skinning the Cat",
            "discretionary chart examples (MESA2000 screens, stereograms)", &["E|Sinewave Indicator signals while the market is judged to be in Cycle Mode."], ""),
     ]

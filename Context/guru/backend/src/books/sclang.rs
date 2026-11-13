@@ -82,7 +82,7 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     basis: "Lane PA2 (pool A of authors/a1/A1.tsv, R4 #297): each card cites its article pages; independent check authors/pa2/w/pa2_ref.py",
 };
 /// Books admitted by the entry above.
-pub const PA2_BOOKS: &[&str] = &["sclang", "sckjb", "scmart", "scehfish", "scuhnn", "scgmtt", "scsntf", "scbstfs", "scsrcc", "scmbel"];
+pub const PA2_BOOKS: &[&str] = &["sclang", "sckjb", "scmart", "scehfish", "scuhnn", "scsntf", "scbstfs", "scsrcc", "scmbel"];
 fn pa2_reviewed(book: &str, id: &str) -> bool {
-    match book { "sclang" => reviewed(id), "sckjb" => super::sckjb::reviewed(id), "scmart" => super::scmart::reviewed(id), "scehfish" => super::scehfish::reviewed(id), "scuhnn" => super::scuhnn::reviewed(id), "scgmtt" => super::scgmtt::reviewed(id), "scsntf" => super::scsntf::reviewed(id), "scbstfs" => super::scbstfs::reviewed(id), "scsrcc" => super::scsrcc::reviewed(id), "scmbel" => super::scmbel::reviewed(id), _ => false }
+    match book { "sclang" => reviewed(id), "sckjb" => super::sckjb::reviewed(id), "scmart" => super::scmart::reviewed(id), "scehfish" => super::scehfish::reviewed(id), "scuhnn" => super::scuhnn::reviewed(id), "scsntf" => super::scsntf::reviewed(id), "scbstfs" => super::scbstfs::reviewed(id), "scsrcc" => super::scsrcc::reviewed(id), "scmbel" => super::scmbel::reviewed(id), _ => false }
 }

@@ -300,9 +300,17 @@ pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
     let etf=match ticker {"SPX"=>"SPY","NDX"=>"QQQ","DJI"=>"DIA",_=>""};
     if !m3_withdrawn(def.id,ticker) {return None;}
     if !etf.is_empty() {
-        return Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withdrawn (decision #179, 3 Nov 2026): {ticker} daily open/high/low come from stale component prints; on the tradable {etf} over the same dates this rule fails the check (M3). The daily result is published on {etf}.")});
+        return Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withdrawn (decision #179, 3 Nov 2026): {}; on the tradable {etf} over the same dates this rule fails the check (M3). The daily result is published on {etf}.",m3_reason(def.id,ticker))});
     }
     Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withheld (decision #179, 3 Nov 2026): the US tradable check failed; the vault has no tradable India series. The daily result is published on SPY.")})
+}
+/// Decision #179 note: why the cash index differs from its ETF. Generic: stale opens/highs/lows; a few rules read closes only
+/// and get their own reason (lead review R4 #322 M4).
+pub fn m3_reason(id:&str,ticker:&str)->String {
+    match id {
+        "scuhnn_nnp"=>format!("{ticker} and its ETF differ slightly in their weekly closes, and this rule's nearest-neighbour search on weekly closes amplifies small differences"),
+        _=>format!("{ticker} daily open/high/low come from stale component prints"),
+    }
 }
 /// Decision #179: is this (rule, ticker) daily result withdrawn? Cash index flagged by M3, or NIFTY 50/NIFTYBANK for an SPX flag.
 pub fn m3_withdrawn(id:&str,ticker:&str)->bool {
@@ -3990,7 +3998,7 @@ mod decision_179_tests {
             for id in list {
                 let d=find(id);
                 if d.status!=crate::connors::Status::Live {continue;} // held since (K37: rarsys_trend_weaver, lead decision 199)
-                assert!(check(d,x,false).unwrap().note.contains(&format!("{x} daily open/high/low come from stale component prints; on the tradable {y} over the same dates this rule fails the check (M3)")),"{id} {x}");
+                assert!(check(d,x,false).unwrap().note.contains(&format!("{}; on the tradable {y} over the same dates this rule fails the check (M3)",m3_reason(id,x))),"{id} {x}");
                 assert!(tradable_check_issue(d,y,false).is_none(),"{id} {y}");
                 assert!(tradable_check_issue(d,"AAPL",true).is_none() || crate::intraday_ep6::WINDOW_ONLY.contains(id),"{id}"); // K62 #243 (c)
                 if let Some(g)=crate::gate::get(id) {assert!(g.ours.contains("M3 tradable-vs-cash daily check (#179, flagged)")&&g.reason.contains("Decision #179"),"{id}");}
