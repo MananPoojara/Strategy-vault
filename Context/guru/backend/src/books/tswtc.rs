@@ -9,27 +9,36 @@ use super::sctraub::{civil, days, ticks, weekday};
 pub const REVIEWED: &[&str] = &["tswtc_coffee"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Daily price-pattern system for coffee futures; the vault holds no coffee, so it runs on daily indices, ETFs and stocks as a declared application. The printed TradeStation code is the rule: H, L, O, C are the signal day, [n] earlier days, day-of-week and calendar tests use the signal day's date, and 'open of next bar' is the next open (the code reads it when it places its orders). Orders are placed only when flat, or when a long (short) will open above (below) its entry price; then the position is closed at that open (Sell / Buy to Cover next bar at open) and the fourteen entry orders are issued in code order: (1) Thu/Fri, L > H[1]: sell short stop at H[1]; (2) October Friday: buy at the open; (3) not Tue/Fri, L > H[2], L[1] >= H[3], next open < (H - L) x 0.3 + H: buy stop at H + 0.3 (H - L); (4) Mon/Wed/Thu, L > L[1] < L[2] > L[3] < L[4]: sell short stop at L; (5) H[1] > H[2] and H[1] > H: sell short stop at L - 1.7 (H - L); (6) Friday, O[1] > C[2], O < C[1]: buy stop at next open + 0.8 (H - L); (7a) Mon/Tue, four down closes (C < O): buy limit at H - (H - L); (7b) Tuesday, up day 3 back then three down days: buy limit at H - 0.9 (H - L); (8) not Tue/Wed, outside day with C > C[1]: sell short stop at next open - 0.5 (H - L); (9) Monday, next open < L: buy stop at L; (10) not Mon/Tue, C < L[1]: sell short stop at next open - 0.9 (H - L); (11) C > H[1]: sell short stop at next open - 0.85 (H - L); (12) Thu/Fri, next open > Highest(H, 4): sell short stop 1 point under that high (1 point = 1 tick of the instrument, decision 57; option tick 0 = no offset); (13a/b) on Dec 23 if a Thursday or Friday, Dec 22 if a Friday, or any Dec 24: buy (sell short) at the open after an up (down) day; (13c/d) the Wednesday 20 to 26 days into November (month(date - 20 days) = November and month(date - 27 days) is not, the eve of Thanksgiving): buy (sell short) at the open after an up (down) day. An entry in the direction already held is not placed (TradeStation's no-pyramiding rule), an opposite entry reverses. There is no stop loss in the code: a losing position stays open until a later order reverses it. Fills on the vault's TradeStation daily-bar engine (rrsim). No results are printed. Runs on indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "[Manual rules are the default (lane PG, 14 Nov 2026; R4 #293, RULES 'book rule default, old behaviour labelled'); Adapted: 2 unstated details, R4 #297] The system's user manual (Manual.pdf, same folder) completes the printed code: 'use a large stop ($2750)' - 7.35 points of coffee, as in the manual's example (sell at 175.36, buy stop 182.71); 'Exit at first profitable opening' (an open beyond the entry price); 'Ignore all new trades if currently in the market'; after a profitable-open exit a new entry the same day is allowed, after a stop-out it is not. The 13 patterns are the printed code (orders decided at the close for the next day, some reading the next open as the code does; 'highest(h,4) - 1 point' with 1 point = 1 tick, #57). Prices are not rounded (the code does not round). Unstated (labelled same-day conventions, R4 #240): (1) two orders that could both fill in one day ('take the signal that gets hit first') - the order filled at the open first, otherwise the one nearest the open, ties to the lower pattern number; (2) the stop on the entry day - checked only after an entry at the open. Option pattern = 1-13 runs one pattern alone (the manual's per-pattern tables). Option manual = 0 is the card's earlier reading of the code alone (no stop; an opposite entry reverses a position) - kept as a labelled option. Runs only on the Norgate coffee continuous contract (the manual's market; R4 #293 (1)): signals on the back-adjusted series, each trade priced in the contract held at entry (#301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. No costs (the manual deducts $75 a trade).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "tswtc_coffee", name: "William Tell Coffee: fourteen day-of-week price patterns with stop / limit / open entries, exit at the first profitable open", group: "TradeStation code: William Tell Coffee (Market Analytics)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "tswtc", rules: &[
             "E|if marketposition=0 or (marketposition=1 and open of next bar > entryprice) or (marketposition=-1 and open of next bar < entryprice) then begin ... entries (1) to (13d) ... end",
             "X|if open of next bar > entryprice and marketposition=1 then Sell next bar at open; if open of next bar < entryprice and marketposition=-1 then Buy to Cover next bar at open",
-            "X|No stop loss: a losing trade is held until a later entry reverses it."],
-        notes: NOTE, claim: None }]
+            "X|\"use a large stop and exit a position at the first profitable opening ... By using a large stop ($2750), the odds of having a profitable opening before getting stopped out are very much in our favor.\" (Manual.pdf p.2); example \"Pattern#5: SELL at 175.36 stop / Buy Stop: 182.71\" (p.3)",
+            "F|\"Exit at first profitable opening / Ignore all new trades if currently in the market\" (Manual p.3); \"Should a situation arise where you have two different signals (conflicting or otherwise) take the signal that gets hit first and ignore the other\"; \"Should the market open below 196.00, you can exit your short position with a profit and are free to enter into a new position on the same date.\" (p.4)",
+            "F|Manual performance summaries ($75 a trade deducted): combined 1/1/86-4/2/97 417 trades, 85% profitable, $230,170; per pattern 1/2/80-4/2/97: #1 24 trades 88%, #2 67 87%, #3 46 91%, #4 46 89%, #5 70 84%, #6 46 91%, #7 62 87%, #8 22 95%, #9 129 85%, #10 87 83%, #11 228 78%, #12 87 83%, #13 29 86%"],
+        notes: NOTE, claim: crate::connors::claim("417", "85%", "$552 a trade net of $75", "", "Coffee futures 1/1/86-4/2/97, 13 patterns combined") }]
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("tswtc_coffee", "William Tell Coffee (TradeStation)", "code as printed")) }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    reviewed(id).then(|| vec![p("tick", "Rule 12 offset in ticks (1 point = 1 tick)", 1., 0., 5., 1.)])
+    reviewed(id).then(|| vec![p("tick", "Rule 12 offset in ticks (1 point = 1 tick)", 1., 0., 5., 1.),
+        p("manual", "1 = the manual's rules ($2,750 stop, ignore signals while in a trade); 0 = the printed code alone (no stop, opposite entries reverse)", 1., 0., 1., 1.),
+        p("pattern", "Pattern (manual rules): 0 = all 13, 1-13 = one pattern alone", 0., 0., 13., 1.),
+        p("stop", "Stop in points from the entry (manual $2,750 = 7.35 cents a pound)", 7.35, 0.5, 50., 0.05)])
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let pt = ticks(x, p);
+    if p.get("manual").copied().unwrap_or(1.) != 0. {
+        let pat = p.get("pattern").copied().unwrap_or(0.).round().clamp(0., 13.) as u8;
+        return Some(manual::sim(x, from, to, pat, p.get("stop").copied().unwrap_or(7.35), pt).0);
+    }
     let (o_, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
     Some(run_ts(x, from, to, |t, st, _now, next| {
@@ -71,6 +80,108 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }))
 }
 
+/// The manual's rules (lane PG): the printed patterns with the $2,750 stop, the first-profitable-open exit, no new trade while
+/// in the market, and the two labelled same-day conventions. `sim` also returns how many trades depend on a convention.
+pub mod manual {
+    use crate::connors::{Ctx, Trade};
+    use super::super::sctraub::weekday;
+    use super::super::tselhs::Book;
+    /// One next-day order: (pattern, side, kind 0 market / 1 stop / 2 limit, price).
+    type Order = (u8, f64, u8, f64);
+
+    /// TradeStation dayofweek (0 Sunday .. 6 Saturday) of bar i.
+    fn ts_dow(x: &Ctx, i: usize) -> i64 { (weekday(&x.r[i].date) + 1) % 7 }
+    fn md(x: &Ctx, i: usize) -> (i64, i64) {
+        let d = &x.r[i].date;
+        (d.get(5..7).and_then(|s| s.parse().ok()).unwrap_or(0), d.get(8..10).and_then(|s| s.parse().ok()).unwrap_or(0))
+    }
+
+    /// The orders the code places at bar k's close for bar k + 1 (`no` = bar k + 1's open).
+    pub fn orders(x: &Ctx, k: usize, no: f64, pt: f64) -> Vec<Order> {
+        let mut v = vec![];
+        if k < 4 { return v; }
+        let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+        let w = ts_dow(x, k);
+        let (m, d) = md(x, k);
+        let rng = h[k] - l[k];
+        if (w == 4 || w == 5) && l[k] > h[k - 1] { v.push((1, -1., 1, h[k - 1])); }
+        if m == 10 && w == 5 { v.push((2, 1., 0, no)); }
+        if w != 2 && w != 5 && l[k] > h[k - 2] && l[k - 1] >= h[k - 3] && no < rng * 0.3 + h[k] { v.push((3, 1., 1, h[k] + 0.3 * rng)); }
+        if (w == 1 || w == 3 || w == 4) && l[k] > l[k - 1] && l[k - 1] < l[k - 2] && l[k - 2] > l[k - 3] && l[k - 3] < l[k - 4] { v.push((4, -1., 1, l[k])); }
+        if h[k - 1] > h[k - 2] && h[k - 1] > h[k] { v.push((5, -1., 1, l[k] - 1.7 * rng)); }
+        if w == 5 && o[k - 1] > c[k - 2] && o[k] < c[k - 1] { v.push((6, 1., 1, no + 0.8 * rng)); }
+        if (w == 1 || w == 2) && c[k - 3] < o[k - 3] && c[k - 2] < o[k - 2] && c[k - 1] < o[k - 1] && c[k] < o[k] { v.push((7, 1., 2, h[k] - rng)); }
+        if w == 2 && c[k - 3] > o[k - 3] && c[k - 2] < o[k - 2] && c[k - 1] < o[k - 1] && c[k] < o[k] { v.push((7, 1., 2, h[k] - 0.9 * rng)); }
+        if w != 2 && w != 3 && h[k] > h[k - 1] && l[k] < l[k - 1] && c[k] > c[k - 1] { v.push((8, -1., 1, no - 0.5 * rng)); }
+        if w == 1 && no < l[k] { v.push((9, 1., 1, l[k])); }
+        if w != 1 && w != 2 && c[k] < l[k - 1] { v.push((10, -1., 1, no - 0.9 * rng)); }
+        if c[k] > h[k - 1] { v.push((11, -1., 1, no - 0.85 * rng)); }
+        let hh = h[k - 3..=k].iter().copied().fold(f64::MIN, f64::max);
+        if (w == 4 || w == 5) && no > hh { v.push((12, -1., 1, hh - pt)); }
+        let xmas = m == 12 && ((d == 23 && (w == 5 || w == 4)) || d == 24 || (d == 22 && w == 5));
+        let thanks = m == 11 && w == 3 && (21..=27).contains(&d);
+        if xmas || thanks {
+            if c[k] > o[k] { v.push((13, 1., 0, no)); }
+            if c[k] < o[k] { v.push((13, -1., 0, no)); }
+        }
+        v
+    }
+
+    /// Fill of an order on bar t: (price, filled at the open).
+    pub fn fill(x: &Ctx, t: usize, od: &Order) -> Option<(f64, bool)> {
+        let (_, side, kind, px) = *od;
+        let (o, h, l) = (x.o[t], x.h[t], x.l[t]);
+        match kind {
+            0 => Some((o, true)),
+            1 if side > 0. => if o >= px { Some((o, true)) } else if h >= px { Some((px, false)) } else { None },
+            1 => if o <= px { Some((o, true)) } else if l <= px { Some((px, false)) } else { None },
+            _ => if o <= px { Some((o, true)) } else if l <= px { Some((px, false)) } else { None },
+        }
+    }
+
+    /// The run, plus the number of trades that depend on a same-day convention (entry choice, entry-day stop).
+    pub fn sim(x: &Ctx, from: usize, to: usize, pat: u8, stop: f64, pt: f64) -> (Vec<Trade>, usize) {
+        let mut pos = Book::new();
+        let mut at_open = false; // the open position was entered at an open
+        let mut amb = 0;
+        for t in from.max(5)..=to {
+            let s = pos.side();
+            let mut may_enter = true;
+            if s != 0. && pos.entry_bar().is_some_and(|e| e < t) {
+                let ep = pos.entry_px();
+                if (s > 0. && x.o[t] > ep) || (s < 0. && x.o[t] < ep) { pos.exit(t, x.o[t], "first profitable opening"); }
+                else {
+                    may_enter = false;
+                    let lvl = ep - s * stop;
+                    if (s > 0. && x.o[t] <= lvl) || (s < 0. && x.o[t] >= lvl) { pos.exit(t, x.o[t], "stop"); }
+                    else if (s > 0. && x.l[t] <= lvl) || (s < 0. && x.h[t] >= lvl) { pos.exit(t, lvl, "stop"); }
+                }
+            }
+            if !may_enter || pos.side() != 0. || t >= to { continue; }
+            let cands: Vec<(Order, f64, bool)> = orders(x, t - 1, x.o[t], pt).into_iter().filter(|od| pat == 0 || od.0 == pat)
+                .filter_map(|od| fill(x, t, &od).map(|(p, a)| (od, p, a))).collect();
+            if cands.is_empty() { continue; }
+            let opens: Vec<&(Order, f64, bool)> = cands.iter().filter(|c| c.2).collect();
+            let mut dep; // this trade depends on a same-day convention
+            let pick = if !opens.is_empty() {
+                dep = opens.iter().any(|c| c.0 .1 != opens[0].0 .1);
+                opens[0]
+            } else {
+                dep = cands.iter().any(|c| c.0 .1 > 0.) && cands.iter().any(|c| c.0 .1 < 0.);
+                cands.iter().min_by(|a, b| (a.1 - x.o[t]).abs().partial_cmp(&(b.1 - x.o[t]).abs()).unwrap().then(a.0 .0.cmp(&b.0 .0))).unwrap()
+            };
+            let (od, px, op) = *pick;
+            pos.enter(od.1, t, px, "stop");
+            at_open = op;
+            let lvl = px - od.1 * stop;
+            let hit = (od.1 > 0. && x.l[t] <= lvl) || (od.1 < 0. && x.h[t] >= lvl);
+            if hit && at_open { pos.exit(t, lvl, "stop"); } else if hit { dep = true; }
+            if dep { amb += 1; }
+        }
+        (pos.done(to, x.c[to]), amb)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,12 +193,18 @@ mod tests {
         assert!(t.len() > 5 && t.iter().any(|z| z.dir > 0.) && t.iter().any(|z| z.dir < 0.));
         for w in t.windows(2) { assert!(w[1].legs[0].i >= w[0].exit_i); }
         assert!(run("tswtc_x", &x, 0, 5, &Params::new()).is_none());
+        // manual rules (default): stop exits lose at least 7.35 points, open exits are profitable, no overlapping trades
+        let (m, _) = manual::sim(&x, 0, r.len() - 1, 0, 7.35, 0.01);
+        assert_eq!(m, t);
+        for z in &m {
+            if z.reason == "first profitable opening" { assert!(z.dir * (z.exit_px - z.legs[0].px) > 0. && z.exit_px == x.o[z.exit_i]); }
+            if z.reason == "stop" { assert!(z.dir * (z.exit_px - z.legs[0].px) <= -7.35 + 1e-9); }
+        }
+        let mut old = Params::new();
+        old.insert("manual".into(), 0.);
+        assert!(run("tswtc_coffee", &x, 0, r.len() - 1, &old).unwrap() != m);
     }
 }
 
-// Instrument admission: William Tell Coffee 2026-11-02 (titles lane K18).
-pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == "tswtc" && reviewed(def.id),
-    label: "TradeStation pattern system for coffee futures, with no printed results. Runs on indices, ETFs and stocks, US and India, are a declared application.",
-    basis: "WT Coffe Strategy.txt (Market Analytics, printed TradeStation code); independent check authors/titles-1030/K18w/k18_ref.py",
-};
+// Instrument admission: none since lane PG (14 Nov 2026) - the card runs only on its Norgate coffee contract (futures::CARDS_PG).
+
