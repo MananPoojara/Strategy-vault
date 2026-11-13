@@ -6,7 +6,8 @@
 //! date, the dates fixed by the calendar (ch.1, ch.7 Jupiter-line text) or printed in the book's tables (ch.2-7, to 2050).
 //! The tables are below verbatim (text layer of the PDF, column order kept); the readings applied to them are stated once
 //! here and on every card:
-//!  R1 a date that is not a trading day uses the close of the last trading day before it. Table 1.1 prints exactly those
+//!  R1 a date that is not a trading day uses the close of the last trading day before it, at most 5 calendar days back
+//!     (decision #302 (3): a longer gap, e.g. in a stock's file, is no trade). Table 1.1 prints exactly those
 //!     closes (17 May 1981, a Sunday: 985.95 = Friday 15 May; 17 Nov 1984, a Saturday: 1187.94 = Friday 16 Nov).
 //!  R2 a start and end on the same close is no trade; one position at a time (a window starting before the last exit is
 //!     skipped). A date after the last bar is not known yet: the trade stays open.
@@ -444,14 +445,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|close of 15 July (p.1)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Every year: buy at the close of 7 July, sell at the close of 15 July. ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("15", "86.6%", "", "8 days", "1987-2001, DJIA (p.1; 72.8% overall)")),
         d("jgasn_sun_dec", "Venus opposition: long DJIA from the 24 December close to the 31 December close", "Ch.1 · Sun-stats", "Long", Status::Live, &[
             "E|\"dominant from December 24th - 31st. This is a long position, therefore the DJIA will be higher on the 31st than on the 24th\" (p.1)",
             "X|\"going long on December 24th ... on December 31st the market will be higher at the close\" (p.1)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Every year: buy at the close of 24 December, sell at the close of 31 December. ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("101", "80% (wrong 20 times)", "", "7 days", "1900-2000, DJIA (p.1; the losing years are listed)")),
         d("jgasn_sun_opp", "Opposition of the NYSE Sun: long DJIA from the 17 November close to the 17 May close", "Ch.1 · Sun-stats", "Long", Status::Live, &[
             "E|\"if you are trading on the long side at the closing price of November 17th to the closing price of May 17th, chances are that you are going to be correct\" (p.2)",
@@ -459,23 +460,23 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|option short=1: \"If you are trading on the short side, you might want to trade from the date of the NYSE on May 17th, and short to the closing of November 17th\" (p.2)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Every year: buy at the close of 17 November, sell at the close of 17 May. Option p.short = 1 adds the book's short side, 17 May to 17 November (then always in the market). ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("22", "81.08% (4 of 22 years down)", "", "6 months", "Nov 1980 - May 2002, DJIA (Table 1.1, p.2)")),
         d("jgasn_moon", "Moon from Virgo to Pisces: long DJIA over each printed window (Tables 2.1-2.10)", "Ch.2 · Moon-stats", "Long", Status::Live, &[
             "E|\"the moon's transit from Virgo to Pisces. Therefore, if you are looking to go long ... at the closing price of January 21st would represent the moon in Virgo ... by going long during this period it is indicating to you there is a 70 percent chance that on February 3rd the Dow Jones Industrial Average will be higher\" (p.4)",
             "X|close of the window's end date (Tables 2.1-2.10, p.4-7, 2003-2050)",
             "E|option short=1: \"if you have a stock you want to short, your best chance would be from the sign of Pisces to Virgo ... your exit date going long ... would be the starting date for going short\" (p.4)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each window of Tables 2.1-2.10 (2003-2050): buy at the close of its first date, sell at the close of its last date. Option p.short = 1 also sells short from each window's end to the next window's start. ",
-            "Table misprints (R3, R4): 2003 '1/12-2/3' is read '1/21-2/3' as the text quotes it (p.4); entries that are not real dates or that start before the previous entry ends (2003 '1/21-11/3', '11/18-31'; 2013 the repeated '1/2-15'; 2016 '1/26-11/9'; 2018 '2/2-16', '1/6-20'; 2024 '7/410-24') are skipped. ",
+            "Table misprints (R3, R4): 2003 '1/12-2/3' is read '1/21-2/3' as the text quotes it (p.4); entries that are not real dates or that start before the previous entry ends (2003 '1/21-11/3', '11/18-31'; 2013 the repeated '1/2-15'; 2016 '1/26-11/9'; 2018 '2/2-16', '1/6-20'; 2024 '7/410-24') are skipped. Kept as printed although it looks misprinted: 2011 '11/29-12/2' (3 days; the other windows run 12-15 days). ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("", "about 70%", "", "about 2 weeks", "no period stated (p.4)")),
         d("jgasn_mercury", "Mercury retrograde: long DJIA from the retrograde date to the direct date (Table 3.1)", "Ch.3 · Mercury-stats", "Long", Status::Live, &[
             "E|\"in those years when Mercury is retrograding there is an 85 percent chance that the DJIA price at the time it goes direct will be higher than when it was retrograding\" (p.9)",
             "X|close of the direct date (Table 3.1, p.9, 2003-2050)"],
-          concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Table 3.1 (2003-2050): buy at the close of the retrograde date, sell at the close of the direct date. The 'dates in bold print' (70-80%, p.9) are not marked in the text layer; every period is traded. ",
+          concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Table 3.1 (2003-2050): buy at the close of the retrograde date, sell at the close of the direct date. The 'dates in bold print' (70-80%, p.9) cannot be recovered: the source copy's text layer carries no bold marking (decision #297), so every period is traded. ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("", "85%", "", "about 3 weeks", "no period stated (p.9)")),
         d("jgasn_jupiter_line", "Jupiter-line: long DJIA over each printed Jupiter-line period (Table 6.3)", "Ch.6-7 · Jupiter-line", "Long", Status::Live, &[
             "E|\"a Jupiter-line is always positive with the exit date being higher than the entry date\" (p.37)",
@@ -483,36 +484,36 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|option decade=1: \"every ten years from May 21st - December 21st, is considered a Jupiter-line ... the price on December 21st would be higher than on May 21st\" (years 1895, 1905 ... 2025, p.8)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Table 6.3 (2003-2050; 'None' = no trade that year): buy at the close of the start date, sell at the close of the end date. Option p.decade = 1 uses the chapter 3 rule instead: in every year ending in 5, buy the close of 21 May and sell the close of 21 December. ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("", "98% (failed twice since 1900)", "", "months", "1900-2003 (p.36)")),
         d("jgasn_saturn_line", "Saturn-line: short DJIA over each printed Saturn-line period (Table 6.4)", "Ch.6 · Saturn-stats", "Short", Status::Live, &[
             "E|\"The Saturn-line falls into the category of the 70 - 100 percent accuracy ... the end will always be lower than the beginning, and you will find the tables from the year 2003 - 2050\" (p.31)",
             "X|close of the period's end date (Table 6.4, p.35)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Table 6.4 (2003-2050; 'None' = no trade): sell short at the close of the start date, cover at the close of the end date. ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("", "100% since 1980", "", "months", "1980-2003 (p.31)")),
         d("jgasn_saturn_retro", "Saturn retrograde: long DJIA from the retrograde start to its end (Tables 6.1-6.2)", "Ch.6 · Saturn-stats", "Long", Status::Live, &[
             "E|\"with a Saturn retrograde the key word is 'retreat' so that it does the opposite, instead of being lower at the exit date it will be higher\"; \"since 1980 the retrograded cycle had a 72.72 percent accuracy to the up side\" (p.31)",
             "X|close of the end date (Table 6.1, p.32, 1980-2002 with DJIA prices; Table 6.2, p.33, 2003-2050)"],
-          concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Tables 6.1 and 6.2: buy at the close of the start date, sell at the close of the end date. Misprints (R5): '6/20.82' and '8/21.87' read with a slash; '10/30/9' = 30 Oct 1993 (its printed 3,680.59 is the DJIA close of 29 Oct 1993). ",
+          concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Tables 6.1 and 6.2: buy at the close of the start date, sell at the close of the end date. Misprints (R5): '6/20.82' and '8/21.87' read with a slash; '10/30/9' = 30 Oct 1993 (its printed 3,680.59 is the DJIA close of 29 Oct 1993). Kept as printed although it looks misprinted: Table 6.1 '6/26/96' (starts before the 1995 period's yearly step, 7/7/95 -> 6/26/96 -> 8/3/97). ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("22", "72.72%", "", "about 4.5 months", "1980-2002, DJIA (Table 6.1, p.32)")),
         d("jgasn_jupiter_retro", "Jupiter retrograde: long DJIA from the retrograde start to its finish (Tables 7.1-7.2)", "Ch.7 · Jupiter-stats", "Long", Status::Live, &[
             "E|\"I will usually go long at the start date or either exit or put a stop on the finish date\" (p.36)",
             "X|close of the finish date (Table 7.1, p.38, 1979-2002 with DJIA prices; Table 7.2, p.39, 2003-2050)"],
           concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "Each period of Tables 7.1 and 7.2 (Table 7.1 prints its 2000 row after the 2001 row; full-date tables are sorted by start, R3): buy at the close of the start date, sell at the close of the finish date. The 'stop on the finish date' alternative has no price and is not applied. ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("22", "77.2% (17 of 22 rows up)", "", "about 4 months", "1979-2002, DJIA (Table 7.1, p.38)")),
         d("jgasn_js_aspects", "Jupiter/Saturn aspects: DJIA 16 days before and after each aspect, long sextile/square, short trine/opposition", "Ch.7 · Jupiter-stats", "Long/Short", Status::Live, &[
             "E|\"The sextile and square aspect of Jupiter and Saturn ... the market will move up 16 days before and 16 days after the aspected date. With the trine and opposition aspect of Jupiter and Saturn the DJIA is subject to be down 16 days before and 16 days after the aspect\" (p.37)",
             "E|\"Sixteen B is the starting date 16 days before the aspect is due, and the next column will give you the aspected date. Sixteen A, is the date for the 16 days after the aspect\" (p.37; Tables 7.5-7.6, p.40-41, 2004-2050)",
             "X|close of the aspect date, then close of 16A (two predictions per aspect, Tables 7.3-7.4, p.40)"],
-          concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "For each aspect two trades (R6): from the close of 16B to the close of the aspect date, and from there to the close of 16A; long for sextile/square (Tables 7.4, 7.5), short for trine/opposition (Tables 7.3, 7.6). Tables 7.3/7.4 (1984-1997) print only the aspect date: 16B/16A = 16 calendar days before/after (their printed closes are those dates' closes). The impossible date '11/31/08' (Table 7.6) drops that half. ",
+          concat!("Gillen, Astro Stats for the New York Stock Exchange (2002); printed pages (PDF page = printed + 7). ", "For each aspect two trades (R6): from the close of 16B to the close of the aspect date, and from there to the close of 16A; long for sextile/square (Tables 7.4, 7.5), short for trine/opposition (Tables 7.3, 7.6). Tables 7.3/7.4 (1984-1997) print only the aspect date: 16B/16A = 16 calendar days before/after (their printed closes are those dates' closes). The impossible date '11/31/08' (Table 7.6) drops that half. Kept as printed although they look misprinted (not 16 days): Table 7.5 '4/8/35 -> 4/23/35' (15 days) and Table 7.6 '7/9/46 -> 7/28/46' (19 days). ",
             "Close-to-close on the DJIA in the book; here on every index, ETF and stock as a declared application with the same dates. ",
-            "Dates that are not trading days use the close of the last trading day before them (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
+            "Dates that are not trading days use the close of the last trading day before them, at most 5 calendar days back (R1: Table 1.1 prints exactly those closes); a window that begins and ends on the same close is no trade, and one position at a time (R2). "),
           claim("36", "75% (27 of 36)", "", "16 days", "1984-1997, DJIA (Tables 7.3-7.4, p.37, 40)")),
         d("jgasn_venus_line", "Venus-line: four or more RED (GREEN) weeks in a row = DJIA up (down)", "Ch.4 · Venus-stats", "Long/Short",
           Status::NotTestable("Held: the weekly R/G grid (Tables 4.1-4.5, p.12-15) gives no week numbering or entry price: the worked 'week 10 to week 18' trades start and end on different weekdays (5 Mar - 4 May 1979, 4 Mar - 6 May 1987, p.11), and the text ties the 100% pattern to Venus at 0 Aquarius - 14 Aries without dates, so which runs of 'four or more consecutive weekly patterns' are traded, and from which close, is not stated."), &[
@@ -530,10 +531,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    // one method per chapter rule; the three Sun-stats date windows are one method (like a seasonal calendar)
+    // decision #302 (1): six methods. Ch.1 presents its three windows as the Sun-stats (24-31 Dec is the second of the
+    // 'two statistics related to the sun', worked from Venus in the US chart, p.1), so they stay one method, named for both;
+    // the Mercury, Saturn and Jupiter retrograde periods are one method (long over a retrograde period, ch.3, 6, 7).
     let d = catalogue().into_iter().find(|d| d.id == id)?;
     Some(match id {
-        "jgasn_sun_jul" | "jgasn_sun_dec" | "jgasn_sun_opp" => ("jgasn_sun", "Sun-stats: fixed DJIA calendar windows", d.name),
+        "jgasn_sun_jul" | "jgasn_sun_dec" | "jgasn_sun_opp" => ("jgasn_sun", "Sun-stats: fixed DJIA calendar windows (Sun transit, Venus opposition, NYSE Sun opposition)", d.name),
+        "jgasn_mercury" | "jgasn_saturn_retro" | "jgasn_jupiter_retro" => ("jgasn_retro", "Retrograde periods: long DJIA from retrograde to direct (Mercury, Saturn, Jupiter)", d.name),
         _ => (d.id, d.name, "Astro Stats for the NYSE (Gillen)"),
     })
 }
@@ -648,7 +652,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let dn: Vec<i64> = x.r.iter().map(|r| day_num(&r.date)).collect();
     let (y0, y1) = (x.r[0].date[0..4].parse::<i64>().ok()? - 1, x.r[n - 1].date[0..4].parse::<i64>().ok()? + 1);
     // R1: the last bar on or before the day; unknown when the day is after the last bar
-    let idx = |d: i64| { let k = dn.partition_point(|&b| b <= d); (k > 0 && (dn[k - 1] == d || k < n)).then(|| k - 1) };
+    // R1 (#302 (3)): at most 5 calendar days back (a longer gap in a stock's file is no trade, not an old close)
+    let idx = |d: i64| { let k = dn.partition_point(|&b| b <= d); (k > 0 && (dn[k - 1] == d || k < n) && d - dn[k - 1] <= 5).then(|| k - 1) };
     let mut out = vec![];
     let mut busy = 0usize;
     for (s, e, dir) in windows(id, p, y0, y1)? {
@@ -684,6 +689,9 @@ mod tests {
         assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1, 2, false), (5, 5, true)]);
         let s = run("jgasn_sun_opp", &x, 0, r.len() - 1, &[("short".to_string(), 1.)].into_iter().collect()).unwrap();
         assert_eq!(s.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), vec![(1., 1, 2), (-1., 2, 5), (1., 5, 5)]);
+        // #302 (3): a gap longer than 5 calendar days is no trade (7 Jul 2000 would fall back 17 days to 20 Jun)
+        let g = rows(&[("2000-06-20", 1.), ("2000-07-14", 2.), ("2000-07-17", 3.)]);
+        assert!(run("jgasn_sun_jul", &Ctx::new(&g, &g, &[]), 0, 2, &Params::new()).unwrap().is_empty());
         // R3/R4 on the 2003 Moon row: '1/12-2/3' read as 1/21-2/3; '1/21-11/3' (out of order) and '11/18-31' (no such day) skipped
         let m = year_rows(MOON, &[(2003, "1/12-2/3", "1/21-2/3")]);
         let y03: Vec<_> = m.iter().filter(|w| w.0 < civil(2004, 1, 1)).collect();

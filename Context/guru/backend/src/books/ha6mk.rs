@@ -37,8 +37,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    let d = catalogue().into_iter().find(|d| d.id == id)?;
-    Some((d.id, d.name, "TradeCast chart setups (Abell)"))
+    // decision #302 (2): each buy/sell pair is one method (revival, wedge, smart)
+    catalogue().iter().find(|d| d.id == id)?;
+    let (f, n) = match id.rsplit_once('_')?.0 {
+        "ha6mk_revival" => ("ha6mk_revival", "Revival buy / sell (TradeCast)"),
+        "ha6mk_wedge" => ("ha6mk_wedge", "Wedge buy / sell (TradeCast)"),
+        "ha6mk_smart" => ("ha6mk_smart", "Smart buy / sell (TradeCast)"),
+        _ => return None,
+    };
+    Some((f, n, if id.ends_with("_buy") { "Buy" } else { "Sell" }))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> { id.starts_with("ha6mk_").then(Vec::new) }
