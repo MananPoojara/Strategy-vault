@@ -46,11 +46,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    match id {
-        "gcgas_plan5" => Some(("gcgas", "Cole mechanical rules", "Plan No. 5 · with the trend")),
-        "gcgas_plans_1_3" | "gcgas_plan4" | "gcgas_plan6" => Some(("gcgas", "Cole mechanical rules", "Held")),
-        _ => None,
-    }
+    let d = catalogue().into_iter().find(|d| d.id == id)?;
+    Some((d.id, d.name, "Cole, Mechanical Rules (ch.VII)"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {

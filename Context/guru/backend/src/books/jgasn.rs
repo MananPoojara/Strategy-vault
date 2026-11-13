@@ -530,14 +530,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    let f = |s| Some(("jgasn", "Gillen astro dates", s));
-    match id {
-        "jgasn_sun_jul" | "jgasn_sun_dec" | "jgasn_sun_opp" => f("Sun-stats · fixed calendar dates"),
-        "jgasn_moon" | "jgasn_mercury" => f("Moon / Mercury tables"),
-        "jgasn_jupiter_line" | "jgasn_saturn_line" | "jgasn_saturn_retro" | "jgasn_jupiter_retro" | "jgasn_js_aspects" => f("Saturn / Jupiter tables"),
-        "jgasn_venus_line" | "jgasn_mars_cardinal" | "jgasn_top20" => f("Held"),
-        _ => None,
-    }
+    // one method per chapter rule; the three Sun-stats date windows are one method (like a seasonal calendar)
+    let d = catalogue().into_iter().find(|d| d.id == id)?;
+    Some(match id {
+        "jgasn_sun_jul" | "jgasn_sun_dec" | "jgasn_sun_opp" => ("jgasn_sun", "Sun-stats: fixed DJIA calendar windows", d.name),
+        _ => (d.id, d.name, "Astro Stats for the NYSE (Gillen)"),
+    })
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {

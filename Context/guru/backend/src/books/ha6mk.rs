@@ -37,7 +37,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    id.starts_with("ha6mk_").then_some(("ha6mk", "TradeCast chart setups", "Held · fixed $ targets"))
+    let d = catalogue().into_iter().find(|d| d.id == id)?;
+    Some((d.id, d.name, "TradeCast chart setups (Abell)"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> { id.starts_with("ha6mk_").then(Vec::new) }
