@@ -8,7 +8,9 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stkch";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39", "stkch_gap_fgd_long" /* lane K73, R4 #276 (2) */, "stkch_murphy_macd" /* lane R2A, R4 #297 */];
+pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39", "stkch_gap_fgd_long" /* lane K73, R4 #276 (2) */, "stkch_murphy_macd" /* lane R2A, R4 #297 */, "stkch_preholiday" /* lane R2A, R4 #297 */];
+/// Rules set by the US exchange-holiday calendar: US instruments only (instrument_policy stkch_symbol_issue).
+pub const US_ONLY: &[&str] = &["stkch_preholiday"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const EOD: &str = "E|Fill: the article gives no order type for these end-of-day chart signals; the signal is acted on at the close of the signal day [book silent]";
@@ -64,6 +66,20 @@ fn macd_signals(c: &[f64], fa: usize, sl: usize, sg: usize) -> Vec<i8> {
         if m[t] > sig[t] && m[t - 1] <= sig[t - 1] && m[t] < 0. && sig[t] < 0. { 1 }
         else if m[t] < sig[t] && m[t - 1] >= sig[t - 1] && m[t] > 0. && sig[t] > 0. { -1 } else { 0 }
     }).collect()
+}
+
+/// One of the article's nine holidays (observed US date) falls on day number g (days since 1970-01-01).
+fn holiday9(g: i64) -> bool {
+    use crate::books::mzwws::{dnum, holidays, wday};
+    let (y, _, _) = { let z = g + 719468; let era = z.div_euclid(146097); let doe = z - era * 146097; let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); let mp = (5 * doy + 2) / 153; let m = if mp < 10 { mp + 3 } else { mp - 9 }; (yoe + era * 400 + if m <= 2 { 1 } else { 0 }, m, 0) };
+    let obs = |n: i64| match wday(n) { 5 => n - 1, 6 => n + 1, _ => n };
+    let nth = |m: i64, wd: i64, k: i64| { let f = dnum(y, m, 1); f + (wd - wday(f)).rem_euclid(7) + 7 * (k - 1) };
+    let pres = if y >= 1971 { nth(2, 0, 3) } else { obs(dnum(y, 2, 22)) };
+    let election = nth(11, 0, 1) + 1;
+    // New Year's of y is mzwws's "NewYear" of y - 1 (Jan 1 of the next year)
+    let ny = { let j = dnum(y, 1, 1); if wday(j) == 6 { j + 1 } else { j } }; // Sunday -> Monday; a Saturday New Year's has no closing
+    pres == g || election == g || ny == g || holidays(y).iter().chain(holidays(y - 1).iter()).any(|&(_, d)| d == g)
 }
 
 fn days(d: &str) -> i64 {
@@ -234,10 +250,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
           NotTestable("the confirmation window is not stated: the OBV crossover of its 30-day MA came 'soon after' the K signal (p.6); no rule for how long to wait"), &[],
           &["F|\"one should pair it with a volume assessment for trade confirmation ... the On Balance Volume (OBV) indicator has been added along with a 30 day MA as a signal line\" (lastStochastic.pdf p.5)"],
           "Not testable.", ),
-        d("stkch_preholiday", "Pre-Holiday Effect (buy one or two days before nine US holidays)", "Trading Strategies · The Pre-Holiday Effect", "Long",
-          NotTestable("entry price is not stated ('buy near open' in one example, 'buy near close' in another), 'one or two days prior' is left open and the short-term exit is 'just after the holiday'; the year-end variant is a 1/9-of-capital portfolio schedule over nine US holiday closings"), &[],
-          &["E|\"The general strategy is to purchase equities one or two days prior to a holiday. Short term traders would look to sell just after the holiday while longer-term investors would wait until year end.\" (preHolidayEffect.pdf p.1)"],
-          "Published table (S&P 500 1928-1975, buy 2 / 1 days before, sell at year end) cannot be matched to a mechanical rule. Close relatives in the vault: kpss_hol_d1/d2, mzwws_preholiday, jbcdt2_preholiday_oc.", ),
+        d("stkch_preholiday", "Pre-Holiday Effect: buy two trading days before nine US holidays, sell at the next open after", "Trading Strategies · The Pre-Holiday Effect", "Long",
+          Live, &[],
+          &["F|\"there have been nine holidays during which the Exchanges have traditionally been closed\" (preHolidayEffect.pdf p.1): President's Day (Washington's Birthday), Good Friday, Memorial Day, Independence Day, Labor Day, Election Day, Thanksgiving, Christmas, New Year's (the article's table); a holiday counts in a year only when the market was closed on it",
+            "E|\"The general strategy is to purchase equities one or two days prior to a holiday.\" (p.1); the three worked examples (GE, MOT, VOYN before July 4 2000) all buy on June 30, the second trading day before the holiday",
+            "X|\"Short term traders would look to sell just after the holiday\" (p.1): \"Selling at open on July 5th\" (GE), \"a sell just after the open on July 5th\" (VOYN): sell at the open of the first trading day after the holiday",
+            "F|The long-term variant (hold to year end, 1/9 of capital per holiday) is a portfolio schedule and is not this card"],
+          concat!("Adapted: 2 unstated details (R4 #297). Unstated in the article: one or two days before; vault reading: two trading days before the holiday, the day all three examples buy (p.days = 1: the last trading day before). ",
+            "Unstated: the entry price ('a buy near open' for GE, 'a buy near close' for VOYN); vault reading: the open of the entry day, the first worked example (p.fill = 1: its close). ",
+            "Holiday dates: the observed US dates (Saturday -> Friday, Sunday -> Monday; President's Day = Feb 22 before 1971, then the third Monday of February; Election Day = the Tuesday after the first Monday of November), used only when the data has no bar on that weekday (Election Day closings end in 1980). ",
+            "A trade still open when the next one would start is kept (no overlap). US holiday calendar: US instruments only. Stock examples; indices, ETFs and US stocks are a declared application. The table (S&P 500 1928-1975, sell at year end) is the long-term variant and is not comparable."), ),
         d("stkch_murphy_macd", "Murphy's Law 'Trade MACD' (12/26/9): buy a cross up below zero, sell a cross down above zero, weekly signal first", "Trading Strategies · John Murphy's Ten Laws of Technical Trading", "Long",
           Live, &[],
           &["E|\"A buy signal occurs when the faster line crosses above the slower and both lines are below zero.\" (MurphysLaws.pdf p.2-3, law 8)",
@@ -289,6 +311,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                             p("sell_lvl", "K crosses below (sell)", 50., 10., 90., 5.),
                             p("wk", "Previous week: 0 = calendar week (book); 1 = prior 5 bars", 0., 0., 1., 1.),
                             p("mode", "0 = sell and sell short (book); 1 = sell only", 0., 0., 1., 1.)],
+        "stkch_preholiday" => vec![p("days", "Buy this many trading days before the holiday (article: one or two; 2 = vault reading)", 2., 1., 2., 1.),
+                                   p("fill", "Entry: 0 = the open (vault reading, GE example); 1 = the close (VOYN example)", 0., 0., 1., 1.)],
         "stkch_murphy_macd" => vec![p("fast", "MACD fast EMA (collection: 12)", 12., 2., 50., 1.), p("slow", "MACD slow EMA (collection: 26)", 26., 5., 100., 1.),
                                     p("sig", "Signal line EMA of MACD (collection: 9)", 9., 2., 30., 1.),
                                     p("wk", "Weekly precedence: 1 = weekly signal filters and closes (vault reading); 0 = daily signals alone", 1., 0., 1., 1.),
@@ -315,6 +339,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             let why = if band > 0. { "PPO below -band (sell signal) · close" } else { "fast EMA below slow EMA (sell signal) · close" };
             states(x, from, to, &st, g("rev") >= 0.5, why)
+        }
+        "stkch_preholiday" => {
+            let (back, at_close) = (g("days").round().clamp(1., 2.) as usize, g("fill") >= 0.5);
+            let dn: Vec<i64> = x.r.iter().map(|r| days(&r.date)).collect();
+            let mut out = vec![];
+            let mut busy_until = 0usize;
+            for i in 1..n {
+                // the last trading day before a closed weekday that is one of the nine holidays
+                if i + 1 >= n || !(dn[i] + 1..dn[i + 1]).any(|g| crate::books::mzwws::wday(g) < 5 && holiday9(g)) { continue; }
+                if i + 1 < back { continue; }
+                let e = i + 1 - back;
+                if e < from || e > to || e < busy_until { continue; }
+                let mut t = mk(1., e, if at_close { x.c[e] } else { x.o[e] }, e, if at_close { "close" } else { "open" });
+                if i + 1 <= to { out.push(fin(t, i + 1, x.o[i + 1], i + 1, "first open after the holiday")); busy_until = i + 1; }
+                else { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); busy_until = usize::MAX; }
+            }
+            out
         }
         "stkch_murphy_macd" => {
             let u = |k: &str| (g(k).round() as usize).max(1);
@@ -514,5 +555,18 @@ mod tests {
         for tr in &t { assert!(tr.dir == 1. && sig[tr.legs[0].i] == 1 && tr.legs[0].px == x.c[tr.legs[0].i]); if !tr.open { assert_eq!(sig[tr.exit_i], -1); } }
         let w = run("stkch_murphy_macd", &x, 0, 599, &Params::new()).unwrap();
         assert!(w.iter().all(|tr| sig[tr.legs[0].i] == 1) && w.len() <= t.len());
+    }
+    #[test]
+    fn preholiday_july_4_2000_like_the_ge_example() {
+        // lane R2A (R4 #297): July 4 2000 was a Tuesday; Jun 30 (Fri) is the second trading day before -> buy its open; sell the open of Jul 5.
+        let d = ["2000-06-28", "2000-06-29", "2000-06-30", "2000-07-03", "2000-07-05", "2000-07-06"];
+        let r: Vec<Row> = d.iter().enumerate().map(|(i, s)| row(s, 10. + i as f64, 11. + i as f64, 9. + i as f64, 10.5 + i as f64)).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("stkch_preholiday", &x, 0, 5, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px)).collect::<Vec<_>>(), vec![(2, 12., 4, 14.)]);
+        let one: Params = [("days".to_string(), 1.), ("fill".to_string(), 1.)].into_iter().collect();
+        let t = run("stkch_preholiday", &x, 0, 5, &one).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i)).collect::<Vec<_>>(), vec![(3, 13.5, 4)]);
+        assert!(holiday9(days("2000-02-21")) && holiday9(days("1972-11-07")) && holiday9(days("2006-01-02")) && !holiday9(days("2000-01-17")));
     }
 }

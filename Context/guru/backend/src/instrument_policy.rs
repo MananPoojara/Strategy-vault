@@ -789,6 +789,12 @@ fn hirsch_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opti
     if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
     Some(Issue{status:"needs_data",note:format!("This window is set by the US Thanksgiving exchange holiday (the market is closed on Thursday), so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
+// lane R2A (R4 #297): stkch_preholiday is set by the US exchange-holiday calendar.
+fn stkch_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if def.book!="stkch" || !crate::books::stkch::US_ONLY.contains(&def.id) || !crate::books::stkch::reviewed(def.id) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The Pre-Holiday Effect buys before nine US exchange holidays (StockCharts preHolidayEffect.pdf); Indian markets keep a different holiday calendar, so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+}
 // ---------------------------------------------------------------- end Hirsch
 // ---------------------------------------------------------------- Schaap 2026-10-24
 // Admission only for the module REVIEWED lists (authors/schaap/admission/SOURCE-CONTRACT.md); kept in one block to merge.
@@ -1305,6 +1311,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
     if let Some(issue)=dgagne_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Dave Gagné block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Hirsch block
+    if let Some(issue)=stkch_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // lane R2A stkch_preholiday
     if let Some(issue)=k2_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // overnight K2 block
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
@@ -1348,6 +1355,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
     if let Some(issue)=dgagne_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Dave Gagné block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Hirsch block
+    if let Some(issue)=stkch_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // lane R2A stkch_preholiday
     if let Some(issue)=k2_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // overnight K2 block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
@@ -1668,7 +1676,7 @@ mod tests {
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {
                     // Kaeppel's US-only rules keep their own symbol check (kaeppel_symbol_issue; kaeppel_review_... test).
                     // Fosback's Seasonality Indicator likewise (fosback_symbol_issue; fosback_seasonality_runs_on_us_instruments_only test).
-                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && crate::intraday_ep6::held_note(d.id,t).is_none() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
+                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && crate::intraday_ep6::held_note(d.id,t).is_none() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) && !crate::books::stkch::US_ONLY.contains(&d.id) /* lane R2A: own test */ {refused.push((d.id,t));}
                 }
             }
         }
@@ -1857,6 +1865,13 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            if stkch::US_ONLY.contains(&d.id) { // lane R2A (R4 #297): US holiday calendar
+                for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
+                for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
+                assert!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),"{}",d.id);
+                assert!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_some(),"{}",d.id);
+                continue;
+            }
             for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
             assert!((check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none()) || crate::intraday_ep6::WINDOW_ONLY.contains(&d.id),"{}",d.id); // K62 #243 (c)
         }
