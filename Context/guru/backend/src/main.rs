@@ -2183,6 +2183,8 @@ fn main() {
     }
     let mut data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
     // lane F1 (R4 #293): the US engine also serves Norgate continuous futures from futures/norgate-20200908 next to its price file
+    // lane PE (R4 #319): the NYSE Composite context (Norgate $NYA close + volume), Holt's cards only
+    if data.contains_key("SPX") { futures::load_nya(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); }
     let futures_raw = if data.contains_key("SPX") { futures::load(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908"), &mut data) } else { BTreeMap::new() };
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));

@@ -1307,6 +1307,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=tradable_check_issue(def,ticker,native_stock){return Some(issue);} // decisions #177/#179
+    if ticker==crate::futures::NYA_TICKER {return (!crate::futures::NYA_CARDS.contains(&def.id)).then(||Issue{status:"needs_data",note:format!("{ticker} is loaded for Holt's NYSE Composite systems only (R4 #319): Norgate's $NYA has real closes and volume, but its open/high/low equal the close before 1988-12-07, and no other card is reviewed on it. No results are published.")});} // lane PE
     if let Some(issue)=intraday_p1_symbol_issue(def,ticker,native_stock){return Some(issue);} // intraday phase 1
     if let Some(issue)=options_p2_symbol_issue(def,ticker,native_stock){return Some(issue);} // options phase 2
     if let Some(issue)=connors_final_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // connors-final block

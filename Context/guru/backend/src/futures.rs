@@ -105,7 +105,7 @@ fn read(path: &std::path::Path) -> Option<Vec<Row>> {
     let mut out: Vec<Row> = lines.filter(|l| !l.trim().is_empty()).filter_map(|l| {
         let f = crate::parse_csv_fields(l);
         let num = |i: usize| f.get(i).and_then(|v| crate::parse_csv_number(v).ok()).filter(|v| v.is_finite());
-        Some(Row { ticker: String::new(), date: crate::normalize_date(f.get(di)?)?, open: num(oi)?, high: num(hi)?, low: num(li)?, close: num(ci)?, volume: vi.and_then(num).filter(|v| *v > 0.) })
+        Some(Row { ticker: String::new(), date: crate::normalize_date(f.get(di)?).or_else(|| compact_date(f.get(di)?))?, open: num(oi)?, high: num(hi)?, low: num(li)?, close: num(ci)?, volume: vi.and_then(num).filter(|v| *v > 0.) })
     }).collect();
     out.sort_by(|a, b| a.date.cmp(&b.date));
     out.dedup_by(|a, b| a.date == b.date);
@@ -135,6 +135,21 @@ pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMa
         out.insert(("*".to_string(), name.to_string()), m);
     }
     out
+}
+
+/// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
+fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..])) }
+
+/// Lane PE (R4 #319): the NYSE Composite as its own context, from Norgate $NYA (futures/norgate-us-indices-20200908/$NYA.csv,
+/// SOURCES.csv norgate-us-indices-20200908-f3), so Holt's NYSE Composite systems run on the index they were tested on. Close and
+/// volume are real from 1970-01-05 (volume 0 before = no volume); Norgate's open/high/low equal the close before 1988-12-07, so
+/// only the close-and-volume cards in NYA_CARDS are admitted (instrument_policy::check). A missing file loads nothing.
+pub const NYA_TICKER: &str = "NYSE Composite (Norgate $NYA)";
+pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi"];
+pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) {
+    let Some(rows) = read(&dir.join("$NYA.csv")).filter(|r| !r.is_empty()) else { eprintln!("warning: index $NYA context not loaded from {}", dir.display()); return };
+    println!("context {NYA_TICKER}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
+    data.insert(NYA_TICKER.into(), rows.into_iter().map(|r| Row { ticker: NYA_TICKER.into(), ..r }).collect());
 }
 
 /// The unadjusted close of a futures context (RAW.Close), aligned to its bars.
@@ -289,6 +304,22 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Lane PE (R4 #319): $NYA loads as its own context from Norgate's compact dates (volume 0 = none); only Holt's cards run on it.
+    #[test]
+    fn nya_context_loads_compact_dates_and_admits_only_holt() {
+        let dir = std::env::temp_dir().join(format!("pe-nya-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("$NYA.csv"), "\"Date\",\"Symbol\",\"Security Name\",\"Open\",\"High\",\"Low\",\"Close\",\"Volume\"\n\"19800102\",\"$NYA\",\"NYSE Composite Index\",\"61.6\",\"61.6\",\"61.6\",\"61.6\",\"0\"\n\"19800103\",\"$NYA\",\"NYSE Composite Index\",\"61.2\",\"61.2\",\"61.2\",\"61.2\",\"50480000\"\n").unwrap();
+        let mut data = BTreeMap::new();
+        load_nya(&dir, &mut data);
+        let r = &data[NYA_TICKER];
+        assert_eq!((r.len(), r[0].date.as_str(), r[0].volume, r[1].volume), (2, "1980-01-02", None, Some(50480000.)));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cat = crate::books::scholt::catalogue();
+        assert!(crate::instrument_policy::check(&cat[0], NYA_TICKER, false).is_none());
+        let other = crate::books::scweiss::catalogue();
+        assert!(crate::instrument_policy::check(&other[0], NYA_TICKER, false).is_some_and(|i| i.note.contains("Holt")));
+    }
     #[test]
     fn f3_excursion_and_gross_marks_on_the_unadjusted_contract() {
         // back-adjusted bars around -11, unadjusted close = back-adjusted + 91.5 (one roll offset)

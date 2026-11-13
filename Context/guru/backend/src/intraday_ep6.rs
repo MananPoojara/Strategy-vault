@@ -201,7 +201,9 @@ pub const IDS: &[&str] = &[
     // lane R2E (R4 #305 (3)): Radge's Smash Bar (books::radge: the entry bar's stop entry and its initial stop on the minutes)
     "radge_smash",
     // lane R2E (R4 #311): Nguyen's Impact system (books::jnits St::walk: the entry stop, the stop and the 1R/2R targets)
-    "jnits_impact"];
+    "jnits_impact",
+    // lane PE (R4 #319): Pezzutti (books::scpezz walk: entry stop, exit limit, reversing stop), Mitchell (books::scmitch walk: close stop, exit stop)
+    "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -224,7 +226,9 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     // lane R2E (R4 #305 (3)): 30-37% of Smash Bar trades are order-dependent on the daily bar; only the minute window publishes
     "radge_smash",
     // lane R2E (R4 #311): Nguyen Impact, minute window only (#243 (c))
-    "jnits_impact"];
+    "jnits_impact",
+    // lane PE (R4 #319): Pezzutti and Mitchell, published on the SPY/SPX minute window only (gate allowed SPY, SPX)
+    "scpezz_vbo", "scmitch_lowstop", "scmitch_lrexit", "scmitch_atr"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
