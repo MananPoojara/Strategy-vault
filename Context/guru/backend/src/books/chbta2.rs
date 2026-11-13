@@ -325,7 +325,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ch_bta2_vol2x", "Volatility system (2x range stops)", "Ch 8 · Data scrambling", "Long/Short", Live, &[
             "E|\"The buy stop for tomorrow is today's high plus two times today's high-low range. Similarly, the sell stop is today's low minus two times today's high-low range.\" (p.237)",
             "X|\"exiting on the close of the twentieth day in the trade\" (p.237)",
-            "X|$3,000 initial stop [stop_pts, off by default]"],
+            "X|$3,000 initial stop [stop_pts, off by default; on the Swiss franc futures contract it is on: $3,000 / $125,000 per 1.00 = 0.024 (lane F1, R4 #293)]"],
             "Printed pp.236-239 (Swiss franc 6/89-6/95; Table 8.4 synthetic data). An opposite stop entry reverses (TradeStation default). Also used in ch.7 with a $2,500 stop and 10-day exit."),
         d("ch_bta2_65sma_stop", "65sma-3cc with $1,000 initial stop", "Ch 4 · 65sma-3cc system", "Long/Short", NeedsData(STOP_GAP), &[
             "E|65sma-3cc one-way model (p.89)", "X|\"Adding a $1,000 stop\" (Table 4.3, p.90); $250-$1,750 range p.89; ch.6 $1,500/$5,000 stops on DM"],
@@ -468,7 +468,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| getp(&schema, p, k);
     let u = |k: &str| (g(k).round().max(1.)) as usize;
     let nan = f64::NAN;
-    let stop_pts = g("stop_pts").max(0.);
+    // lane F1 (R4 #293 (3)): on the book's futures contract the printed $ initial stop is the default (at the contract's $ per
+    // point on the run's first date); an explicit stop_pts still wins. Elsewhere unchanged (off by default).
+    let fut_stop = match id { "ch_bta2_vol2x" => 3000., _ => 0. };
+    let stop_pts = match (crate::futures::ctx_market(x), p.get("stop_pts")) {
+        (Some(_), None) if fut_stop > 0. => crate::futures::usd_points(x, from, fut_stop).unwrap_or(0.),
+        _ => g("stop_pts").max(0.),
+    };
     let minute = MINUTE_PATH.contains(&id) && g("path") >= 0.5; // K58 / #240
     let tick = if schema.iter().any(|d| d.key == "tick") { g("tick").max(0.) } else { 0. };
     let one = |o: Option<(f64, Kind)>| [o, None];

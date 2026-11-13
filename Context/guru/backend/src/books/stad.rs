@@ -734,12 +734,12 @@ fn defs() -> Vec<Def> {
       "Vol 7 ch.4 p.70-74. Book: daily S&P 500 futures, 1 contract, 2/8/1994-1/8/1999, no costs: avg win $6,225, avg loss -$2,521 (ratio 2.5), largest win $47,362, largest loss -$18,050. The book's VIX was the original S&P 100-based index (now VXO); the vault has today's CBOE VIX for US tickers and India VIX (from 2015) for NSE indices (instrument swap). VIX bars are aligned by date; a day without a VIX bar gives no signal.",
       ("stad_vix", "S&P 500 Implied Volatility", "Vol 7")) },
     // ================= Volume 10 (1999)
-    d("stad10_mwt", "JK Monday We Trade (Joe Krutsinger)", "Vol 10 · Stock indices", "Long/Short", NotTestable(MWT_HELD),
+    d("stad10_mwt", "JK Monday We Trade (Joe Krutsinger)", "Vol 10 · Stock indices", "Long/Short", Live,
       &["E|If DayOfWeek(Date) = Friday and Close > Average(Close,2): buy next bar at market (Monday's open, or Tuesday's if Monday is closed) (Vol 10 p.13 code; strategy input Length 2)",
         "E|If Friday and Close <= Average(Close,2): sell short next bar at market",
         "X|SetExitOnClose: exit at the close of the entry day",
         "X|SetStopLoss StopLoss_Amount $1,500 per position (strategy input): with one S&P 500 contract at $500/point = 3 index points from the entry, active intraday (params stop_usd, pt_usd; stop_usd = 0 turns it off, as in Joe Krutsinger's NASDAQ test)"],
-      "Vol 10 ch.1 p.11-17. Book: NASDAQ 100 index 4/96-8/99 (no costs, no stop mentioned): $107,035 on 167 trades, 59% winners, avg win $1,827 / avg loss -$1,087, PF 2.45. S&P 500 index 9/95-8/99 with $1,500 stop and $50/contract costs: $68,282 on 194 trades, 44.85% winners, win/loss 1.88, avg trade $351.",
+      "Vol 10 ch.1 p.11-17. Book: NASDAQ 100 index 4/96-8/99 (no costs, no stop mentioned): $107,035 on 167 trades, 59% winners, avg win $1,827 / avg loss -$1,087, PF 2.45. S&P 500 index 9/95-8/99 with $1,500 stop and $50/contract costs: $68,282 on 194 trades, 44.85% winners, win/loss 1.88, avg trade $351. Runs on the S&P 500 continuous futures contract only (lane F1, R4 #293): the $1,500 stop is 3 points to 1997-11-02 and 6 points after ($500 / $250 per point on the trade date); signals and points on the back-adjusted series, % per trade on the unadjusted price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. The NASDAQ 100 test is not run (Norgate E-mini Nasdaq starts 1999-06).",
       ("stad_mwt", "Monday We Trade", "Vol 10")),
     ]
 }
@@ -1529,6 +1529,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     // SetStopLoss: entry (next open) -/+ stop points, armed from the entry bar
                     let on = x.o[i + 1];
                     let (d, tag) = if c[i] > ma[i] { (1.0, "MWT Buy") } else { (-1.0, "MWT Sell") };
+                    // lane F1 (R4 #293 (3)): on the S&P futures contract the $ stop uses the multiplier in force on the entry date
+                    let stop = crate::futures::usd_points(x, i + 1, g("stop_usd")).unwrap_or(stop);
                     let prot = if stop > 0.0 { on - d * stop } else { f64::NAN };
                     nx.push(O { a: if d > 0.0 { A::Buy } else { A::Sell }, p: P::Mkt, w: 1.0, tag, from: "", prot });
                 }

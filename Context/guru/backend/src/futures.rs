@@ -50,6 +50,22 @@ pub const MARKETS: &[Market] = &[
         source: "CBOT soybean futures: 5,000 bushels per contract; Norgate quotes US cents per bushel, so 1.00 (one cent) = US$50 (Downs V.17:1 Figure 2: +7 cents on 5 contracts = $1,750 before costs); tick 0.25 cent = US$12.50" },
     Market { sym: "&DX", name: "US Dollar Index", tick: 0.01, usd: &[("1985-11-20", 500.), ("1996-08-01", f64::NAN)],
         source: "FINEX/ICE US Dollar Index futures: Downs's printed P&L (V.17:1 Figure 15: +0.50 index points on 5 contracts = $875 after $375 costs) implies US$500 per index point in 1987-96 (R4 #323 (2)); the later US$1,000 contract's start date is not established, so from 1996-08-01 (after the article's last printed month) no multiplier is given and US$ amounts are refused (R4 #324 M1); tick 0.01 of the book era" },
+    // lane PB (Pee TDI, S&C V19:10 Figure 2 basket): contract sizes from the exchange specifications (reference data); the TDI
+    // reads closes and fills at the open, so these multipliers only label the contract
+    Market { sym: "&KC", name: "Coffee", tick: 0.05, usd: &[("1978-12-14", 375.)],
+        source: "ICE Coffee C futures: 37,500 lb per contract, quoted in US cents per lb (1.00 = US$375; 0.05 = US$18.75)" },
+    Market { sym: "&HG", name: "Copper", tick: 0.05, usd: &[("1978-04-27", 250.)],
+        source: "COMEX copper futures: 25,000 lb per contract; Norgate quotes US cents per lb (1.00 = US$250; 0.05 = US$12.50)" },
+    Market { sym: "&CT", name: "Cotton", tick: 0.01, usd: &[("1978-09-19", 500.)],
+        source: "ICE Cotton No. 2 futures: 50,000 lb per contract, quoted in US cents per lb (1.00 = US$500; 0.01 = US$5)" },
+    Market { sym: "&GE", name: "Eurodollar", tick: 0.01, usd: &[("1982-02-01", 2_500.)],
+        source: "CME Eurodollar futures: US$1,000,000 three-month deposit, quoted as an IMM index (1.00 = 100 basis points = US$2,500; 0.01 = US$25, the tick of the book era)" },
+    Market { sym: "&HO", name: "Heating Oil", tick: 0.0001, usd: &[("1978-11-15", 42_000.)],
+        source: "NYMEX NY Harbor heating oil (ULSD) futures: 42,000 gallons per contract, quoted in US$ per gallon (1.00 = US$42,000; 0.0001 = US$4.20)" },
+    Market { sym: "&ZO", name: "Oats", tick: 0.25, usd: &[("1978-04-26", 50.)],
+        source: "CBOT oats futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
+    Market { sym: "&OJ", name: "Orange Juice", tick: 0.05, usd: &[("1978-08-08", 150.)],
+        source: "ICE frozen concentrated orange juice futures: 15,000 lb per contract, quoted in US cents per lb (1.00 = US$150; 0.05 = US$7.50)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -95,7 +111,7 @@ fn read(path: &std::path::Path) -> Option<Vec<Row>> {
     let mut out: Vec<Row> = lines.filter(|l| !l.trim().is_empty()).filter_map(|l| {
         let f = crate::parse_csv_fields(l);
         let num = |i: usize| f.get(i).and_then(|v| crate::parse_csv_number(v).ok()).filter(|v| v.is_finite());
-        Some(Row { ticker: String::new(), date: crate::normalize_date(f.get(di)?)?, open: num(oi)?, high: num(hi)?, low: num(li)?, close: num(ci)?, volume: vi.and_then(num).filter(|v| *v > 0.) })
+        Some(Row { ticker: String::new(), date: crate::normalize_date(f.get(di)?).or_else(|| compact_date(f.get(di)?))?, open: num(oi)?, high: num(hi)?, low: num(li)?, close: num(ci)?, volume: vi.and_then(num).filter(|v| *v > 0.) })
     }).collect();
     out.sort_by(|a, b| a.date.cmp(&b.date));
     out.dedup_by(|a, b| a.date == b.date);
@@ -105,7 +121,9 @@ fn read(path: &std::path::Path) -> Option<Vec<Row>> {
 /// Lane F3 (R4 #294 (2)): Norgate US indices and Nasdaq breadth, copied read-only to futures/norgate-us-indices-20200908 next to
 /// us_data.csv (SOURCES.csv norgate-us-indices-20200908-f3). (file, series): each file's close becomes a series every US context
 /// reads by date (NaN where the file has no bar). Other lanes add their US Indices files here.
-pub const INDEX_SERIES: &[(&str, &str)] = &[("$COMP", "NASDAQ_COMP"), ("$NYA", "NYSE_COMP"), ("#NASHI", "NASDAQ_NEW_HIGHS"), ("#NASLO", "NASDAQ_NEW_LOWS")];
+pub const INDEX_SERIES: &[(&str, &str)] = &[("$COMP", "NASDAQ_COMP"), ("$NYA", "NYSE_COMP"), ("#NASHI", "NASDAQ_NEW_HIGHS"), ("#NASLO", "NASDAQ_NEW_LOWS"),
+    // lane PB: NYSE 52-week new highs / lows 1932-2020 (SOURCES norgate-us-indices-20200908-pb)
+    ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY")];
 pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
     let mut out = BTreeMap::new();
     for (file, name) in INDEX_SERIES {
@@ -123,6 +141,21 @@ pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMa
         out.insert(("*".to_string(), name.to_string()), m);
     }
     out
+}
+
+/// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
+fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..])) }
+
+/// Lane PE (R4 #319): the NYSE Composite as its own context, from Norgate $NYA (futures/norgate-us-indices-20200908/$NYA.csv,
+/// SOURCES.csv norgate-us-indices-20200908-f3), so Holt's NYSE Composite systems run on the index they were tested on. Close and
+/// volume are real from 1970-01-05 (volume 0 before = no volume); Norgate's open/high/low equal the close before 1988-12-07, so
+/// only the close-and-volume cards in NYA_CARDS are admitted (instrument_policy::check). A missing file loads nothing.
+pub const NYA_TICKER: &str = "NYSE Composite (Norgate $NYA)";
+pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi"];
+pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) {
+    let Some(rows) = read(&dir.join("$NYA.csv")).filter(|r| !r.is_empty()) else { eprintln!("warning: index $NYA context not loaded from {}", dir.display()); return };
+    println!("context {NYA_TICKER}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
+    data.insert(NYA_TICKER.into(), rows.into_iter().map(|r| Row { ticker: NYA_TICKER.into(), ..r }).collect());
 }
 
 /// The unadjusted close of a futures context (RAW.Close), aligned to its bars.
@@ -178,8 +211,36 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
     !(ok && raw_ok)
 }
 
+/// R4 #316 (lane X4): cards whose published run ends the day before the first non-positive unadjusted price (NYMEX crude
+/// settled at -37.63 on 2020-04-20, where a % return has no base); readiness::auto_end / check apply it. The series itself
+/// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
+const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17", "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */];
+/// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
+pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
+    if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
+    let s = ["RAW.Open", "RAW.High", "RAW.Low", "RAW.Close"].map(|k| x.series(k));
+    if s.iter().any(|v| v.is_none()) { return None; }
+    (0..x.c.len()).find(|&i| s.iter().flatten().any(|v| v.get(i).is_some_and(|p| *p <= 0.)))
+}
+
 /// Cards that run on one named continuous contract (#293 (1)): (strategy id, market symbol, instrument_policy basis).
-pub const CARDS: &[(&str, &str, &str)] = &[];
+pub const CARDS: &[(&str, &str, &str)] = &[
+    ("ataa_moon", "&6A", "ATAA Journal Dec 1990 p.11-12 (Krastins, Sheer Lunacy): the moon-phase stop and reverse tested on AUD/USD IMM futures, run on the Norgate Australian dollar continuous contract (R4 #293 (1)); close fills, no amounts."),
+    ("jkbwts_neeley31", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.22-23 Neeley31, Japanese Yen CME weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_wagner31", "&GC", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.30-31 Wagner31, COMEX gold weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("stad10_mwt", "&SP", "STAD Vol 10 p.11-17 (Joe Krutsinger, JK Monday We Trade): the printed code with SetStopLoss $1,500 per position, run on the Norgate S&P 500 continuous contract; $1,500 at the multiplier in force on the trade date ($500 per point to 1997-11-02, $250 after, R4 #293 (3))."),
+    ("ch_bta2_vol2x", "&6S", "Chande, Beyond Technical Analysis (1997) p.236-239, Table 8.4: the 2x-range volatility system tested on Swiss franc continuous futures 6/30/89-6/30/95 with a $3,000 initial stop, run on the Norgate Swiss franc continuous contract (R4 #293 (1)); the $3,000 at $125,000 per 1.00."),
+    ("jkbwts_bwilliams19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.32-33 B Williams19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_detrend", "&6S", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.24-25 DeTrend (Jeff Roy DeTrend Oscillator), Swiss Franc daily: the printed TradeStation code run on the Norgate continuous contract of the tested market (R4 #293 (1)); the 0.01 threshold is in the contract's own quote."),
+    ("jkbwts_ehrlich17", "&CL", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.6-7 Ehrlich17, NY light crude oil daily: the printed TradeStation code run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_conner19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.2-3 Conner 19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_ez_bonder", "&ZB", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.20-21 EZ Bonder, Day T-Bonds daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_fox31", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.8-9 Fox31, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_kase30", "&6B", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.14-15 Kase30, British Pound daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_one_night_stand", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.16-17 One Night Stand, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_stuckey19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.28-29 Stuckey19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("jkbwts_williams19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.34-35 Williams 19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+];
 /// Lane F3 (R4 #294): Harris's single-market patterns (books::mhstp), each on the contract its Pattern Library page names.
 const CARDS_F3: &[(&str, &str, &str)] = &[
     ("mhs_ua830406_1", "&ZB", MHS_TB), ("mhs_ua830407_1", "&ZB", MHS_TB), ("mhs_ua830826_1", "&ZB", MHS_TB), ("mhs_ua830131_1", "&ZB", MHS_TB),
@@ -217,18 +278,58 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
 const DOWNS: &str = "Walter T. Downs, The Tactical Trader, Technical Analysis of Stocks & Commodities V.17:1 (Jan 1999) p.27-37: weekly soybean gaps and monthly equilateral quads, each tested by the author on one futures market (Omega back-adjusted continuous data); run on the Norgate continuous contract of that market (R4 #293 (1)), lane PA1.";
 const PEE: &str = "M.H. Pee, Trend Continuation Factor (S&C V.20:3 p.58-64) and Trend Intensity Index (S&C V.20:6 p.32-35): reversal systems tested on continuous contracts of 15 futures 1/4/1982-12/31/1998; each card runs on the Norgate continuous contract of one market the article tested and the vault holds (R4 #293 (1), #323 (1)), lane PA1.";
 const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS), ("scpee_tcf_zb", "&ZB", PEE), ("scpee_tcf_6b", "&6B", PEE), ("scpee_tcf_cl", "&CL", PEE), ("scpee_tcf_gc", "&GC", PEE), ("scpee_tcf_6j", "&6J", PEE), ("scpee_tcf_6s", "&6S", PEE), ("scpee_tcf_si", "&SI", PEE), ("scpee_tii_zb", "&ZB", PEE), ("scpee_tii_6b", "&6B", PEE), ("scpee_tii_cl", "&CL", PEE), ("scpee_tii_gc", "&GC", PEE), ("scpee_tii_6j", "&6J", PEE), ("scpee_tii_6s", "&6S", PEE), ("scpee_tii_si", "&SI", PEE)];
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PA1).find(|c| c.0 == id) }
+/// Lane PB: Konstenius wave 1 (S&C V14:12), each printed parameter set on its own contract.
+const CARDS_PB: &[(&str, &str, &str)] = &[
+    ("mhptdi_tdi", "&ZB", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&6B", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&KC", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    // ("mhptdi_tdi", "&CL"): not run: the 2020-04-20 negative crude settlement leaves a TDI trade without a % base (raw_basis refuses the whole run)
+    ("mhptdi_tdi", "&HG", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&CT", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&GE", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&GC", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&HO", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&6J", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&ZO", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&OJ", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&6S", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("mhptdi_tdi", "&SI", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
+    ("konwv_yen", "&6J", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the yen parameters (30/5/50 weeks) on the Norgate continuous Japanese yen contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
+    ("konwv_bond", "&ZB", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the T-bond parameters (20/10/30 weeks) on the Norgate continuous T-bond contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
+];
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PA1).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
     let c = card(id)?;
+    // lane PB: a card may list several contracts (one tuple each); any of them is home
+    let homes: Vec<&Market> = CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PA1).filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
     let m = MARKETS.iter().find(|m| m.sym == c.1)?;
-    (of_ticker(t).map(|m| m.sym) != Some(c.1)).then(|| format!("Not published on {t}: the source trades {} futures; this card runs only on {} ({LABEL})", m.name, ticker(m)))
+    let sym = of_ticker(t).map(|m| m.sym);
+    if homes.iter().any(|h| Some(h.sym) == sym) { return None; }
+    Some(if homes.len() > 1 { format!("Not published on {t}: the source tests futures; this card runs only on the Norgate continuous contracts {} ({LABEL})", homes.iter().map(|h| ticker(h)).collect::<Vec<_>>().join(", ")) }
+        else { format!("Not published on {t}: the source trades {} futures; this card runs only on {} ({LABEL})", m.name, ticker(m)) })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Lane PE (R4 #319): $NYA loads as its own context from Norgate's compact dates (volume 0 = none); only Holt's cards run on it.
+    #[test]
+    fn nya_context_loads_compact_dates_and_admits_only_holt() {
+        let dir = std::env::temp_dir().join(format!("pe-nya-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("$NYA.csv"), "\"Date\",\"Symbol\",\"Security Name\",\"Open\",\"High\",\"Low\",\"Close\",\"Volume\"\n\"19800102\",\"$NYA\",\"NYSE Composite Index\",\"61.6\",\"61.6\",\"61.6\",\"61.6\",\"0\"\n\"19800103\",\"$NYA\",\"NYSE Composite Index\",\"61.2\",\"61.2\",\"61.2\",\"61.2\",\"50480000\"\n").unwrap();
+        let mut data = BTreeMap::new();
+        load_nya(&dir, &mut data);
+        let r = &data[NYA_TICKER];
+        assert_eq!((r.len(), r[0].date.as_str(), r[0].volume, r[1].volume), (2, "1980-01-02", None, Some(50480000.)));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cat = crate::books::scholt::catalogue();
+        assert!(crate::instrument_policy::check(&cat[0], NYA_TICKER, false).is_none());
+        let other = crate::books::scweiss::catalogue();
+        assert!(crate::instrument_policy::check(&other[0], NYA_TICKER, false).is_some_and(|i| i.note.contains("Holt")));
+    }
     #[test]
     fn f3_excursion_and_gross_marks_on_the_unadjusted_contract() {
         // back-adjusted bars around -11, unadjusted close = back-adjusted + 91.5 (one roll offset)
@@ -255,6 +356,22 @@ mod tests {
         assert_eq!(m.get(&("*".to_string(), "NASDAQ_COMP".to_string())).and_then(|v| v.get("1971-02-05")), Some(&100.5));
         assert!(!m.contains_key(&("*".to_string(), "NYSE_COMP".to_string()))); // a missing file loads nothing
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn x4_ehrlich17_run_ends_before_a_nonpositive_unadjusted_price() {
+        // R4 #316: the &CL series stays whole; only jkbwts_ehrlich17's run is capped (auto_end) / refused (check)
+        let r: Vec<Row> = (0..10).map(|i| Row { ticker: "Crude Oil (Norgate &CL)".into(), date: format!("2020-04-{:02}", i + 10), open: 20., high: 20., low: 20., close: 20., volume: None }).collect();
+        let mut x = Ctx::new(&r, &[], &[]);
+        for k in ["RAW.Open", "RAW.High", "RAW.Low"] { x.extra.insert(k.into(), vec![30.; 10]); }
+        let mut c = vec![30.; 10]; c[6] = -37.63; x.extra.insert("RAW.Close".into(), c);
+        assert_eq!(first_nonpositive("jkbwts_ehrlich17", &x), Some(6));
+        assert_eq!(first_nonpositive("mhs_cl850210_1", &x), None);
+        let d = crate::books::jkbwts::catalogue().into_iter().find(|d| d.id == "jkbwts_ehrlich17").unwrap();
+        let p = crate::connors::Params::new();
+        let (end, note) = crate::readiness::auto_end(&x, &d, 0, 9, &p);
+        assert!(end == 5 && note.is_some_and(|n| n.contains("2020-04-16") && n.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 0, 5, &p).map_or(true, |i| !i.note.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 6, 9, &p).is_some_and(|i| i.note.contains("R4 #316")));
     }
     use crate::connors::Leg;
     fn row(d: &str, c: f64) -> Row { Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.into(), open: c, high: c, low: c, close: c, volume: None } }
