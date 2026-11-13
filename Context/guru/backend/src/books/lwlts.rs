@@ -51,6 +51,11 @@ const STOP3000: &str = "X|$3,000 stop (Fig. 3.7-3.11 headers; largest loss $3,05
 const TDM_R: &[&str] = &["E|\"buying ... on the opening of the trading day of the month shown\"; TDM = count of trading days so far this month (p.88)",
     "X|\"exited with either a $2,500 stop in the S&P 500 ... or on the close the third day after entry\" (p.88-89)",
     "X|\"The S&P results reflect no stop on entry day, but a $2,000 stop after entry day\" (p.88): default $2,000 = 8 points from the day after entry (p.stop_usd=2500 is the p.88 figure)"];
+/// Lane F1C (R4 #293): Table 6.7's T-bond TDMs on the Norgate T-bond continuous contract ($1,000 per point, so $1,500 = 1.5 points).
+const TDMB_R: &[&str] = &["E|\"Our entry rule is to buy or sell on the open of the TDM shown\"; TDM = count of trading days so far this month (p.88)",
+    "X|\"exited with either a $2,500 stop in the S&P 500 or $1,500 in the Bonds or on the close the third day after entry\" (p.88)",
+    "X|\"the Bonds used a $1,500 stop starting on entry day\" (p.89): 1.5 points of the T-bond contract ($1,000 per point)"];
+const TDMB_N: &str = "Table 6.7 (p.89, OCR authors/f1c/lwlts_p93_ocr.txt), T-Bonds 1977-1998, each TDM tested on its own; 'Number of Trades' prints trades/winners. Runs on the Norgate T-bond continuous contract only (lane F1C, R4 #293): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price, $1,500 = 1.5 points. The trading-day count is the contract's own calendar. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
 const TDM_N: &str = "Table 6.6 (p.89), S&P 1982-1998, each TDM tested on its own; the table's 'Number of Trades' column prints trades/winners. Long only (the table lists rally days).";
 const STUDY_X: &str = "X|\"buy ... and exit on the next close with a $3,250 stop\" (p.94); Read: entry on the next open, exit at the close of the day after entry (2-bar hold: fits 2,064 trades in Jul-1982..Feb-1998; 'buy on the open tomorrow and exit on the next day's close' p.95)";
 const STOP2000: &str = "X|$2,000 stop (Fig. headers: losers exactly -$2,000) = 8 points, armed on the entry day";
@@ -186,8 +191,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"only take buy signals if the closing price of bonds is greater today than 5 days ago, and only take sells if bonds are lower than 35 days ago\" (p.72)", "E|Talon entries, $1,750 stop, bailout", "F|'One step further' adds the best TDWs (days not listed)"], "Avg $281, DD $5,250; with TDW 90%, $444/trade."),
         off!("lwlts_tdw_bonds", "Bonds Tuesday open + 70% of Monday's range (Fig. 6.3)", "Ch 6 · TDW / TDM", "Long", NeedsData(BONDS),
             &["E|\"Bonds make money buying on Tuesday opening plus 70 percent of Monday's range\" (p.87)"], "53%, $86/trade."),
-        off!("lwlts_tdm_bonds", "Bonds best TDMs (Table 6.7)", "Ch 6 · TDW / TDM", "Long", NeedsData(BONDS),
+        off!("lwlts_tdm_bonds", "Bonds best TDMs (Table 6.7)", "Ch 6 · TDW / TDM", "Long", NotTestable("Split into its printed rules, one per TDM of Table 6.7: lwlts_tdm8_bonds, lwlts_tdm18_bonds ... lwlts_tdm22_bonds (lane F1C, R4 #293), which run on the Norgate T-bond continuous contract."),
             &["E|Buy the open of TDM 8, 18, 19, 20, 21, 22", "X|$1,500 stop from entry day, close of the third day after entry (p.88-89)"], "T-Bonds 1977-1998."),
+        live!("lwlts_tdm8_bonds", "T-Bond buy TDM 8", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("230", "55%", "$166", "3 days", "1977-1998")),
+        live!("lwlts_tdm18_bonds", "T-Bond buy TDM 18", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("231", "57%", "$201", "3 days", "1977-1998")),
+        live!("lwlts_tdm19_bonds", "T-Bond buy TDM 19", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("195", "59%", "$223", "3 days", "1977-1998")),
+        live!("lwlts_tdm20_bonds", "T-Bond buy TDM 20", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("148", "56%", "$292", "3 days", "1977-1998")),
+        live!("lwlts_tdm21_bonds", "T-Bond buy TDM 21", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("106", "55%", "$297", "3 days", "1977-1998")),
+        live!("lwlts_tdm22_bonds", "T-Bond buy TDM 22", "Ch 6 · TDW / TDM", "Long", TDMB_R, TDMB_N, claim("76", "64%", "$285", "3 days", "1977-1998")),
         off!("lwlts_bond_patterns", "Bond outside-day, 3-up-day and Oops! patterns (Fig. 7.4, 7.5, 7.29, 7.30, 7.32, 7.33)", "Ch 7 · Patterns", "Long/Short", NeedsData(BONDS),
             &["E|Outside day down close + lower open, $1,500 stop, bailout (p.97)", "E|Oops! buys except Wednesday, $1,800 stop, bailout; Oops! sells Wednesday, $1,000 stop, 4-day bailout (p.116)", "E|Oops! with 9-day MA; exit \"the close on the first profitable opening after 3 days\" (p.118)"], "Bond futures results only."),
         off!("lwlts_gsv_bonds", "Greatest Swing Value · bonds (Fig. 8.2)", "Ch 8 · Greatest swing value", "Long/Short", NeedsData(BONDS),
@@ -246,7 +257,13 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwlts_tdm20_sp" => f("lwlts_tdm", "Trading day of month", "TDM 20"),
         "lwlts_tdm21_sp" => f("lwlts_tdm", "Trading day of month", "TDM 21"),
         "lwlts_tdm22_sp" => f("lwlts_tdm", "Trading day of month", "TDM 22"),
-        "lwlts_tdm_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds"),
+        "lwlts_tdm_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds (split)"),
+        "lwlts_tdm8_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 8"),
+        "lwlts_tdm18_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 18"),
+        "lwlts_tdm19_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 19"),
+        "lwlts_tdm20_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 20"),
+        "lwlts_tdm21_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 21"),
+        "lwlts_tdm22_bonds" => f("lwlts_tdm", "Trading day of month", "Bonds TDM 22"),
         "lwlts_study_all" => f("lwlts_study", "Pattern studies", "Every day"),
         "lwlts_study_down1" => f("lwlts_study", "Pattern studies", "After a down close"),
         "lwlts_study_down3" => f("lwlts_study", "Pattern studies", "After 3 down closes"),
@@ -308,6 +325,8 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "lwlts_mon_vb" => vec![p("buy_mult", "Buy: open + x Friday's range", 0.05, 0.0, 1.0, 0.05), stop(3000.0), day0(1.0), pt(),
             // intraday wave 1
             p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0)],
+        "lwlts_tdm8_bonds" | "lwlts_tdm18_bonds" | "lwlts_tdm19_bonds" | "lwlts_tdm20_bonds" | "lwlts_tdm21_bonds" | "lwlts_tdm22_bonds" =>
+            vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(1500.0), day0(1.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" =>
             vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(2000.0), day0(0.0), pt()],
         "lwlts_study_all" | "lwlts_study_down1" | "lwlts_study_down3" | "lwlts_study_trend" | "lwlts_study_trend_mon" =>
@@ -543,6 +562,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             cfg.hold = Some(0);
             let m = g("buy_mult");
             simulate(x, from, to, &cfg, |i| if wd(i) == 1 { (Some(Ent::Stop(o[i] + m * (h[i - 1] - l[i - 1]))), None) } else { none })
+        }
+        "lwlts_tdm8_bonds" | "lwlts_tdm18_bonds" | "lwlts_tdm19_bonds" | "lwlts_tdm20_bonds" | "lwlts_tdm21_bonds" | "lwlts_tdm22_bonds" => {
+            // lane F1C (R4 #293): only on the Norgate T-bond contract (readiness refuses other tickers with futures::home)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let n: usize = id["lwlts_tdm".len()..id.len() - "_bonds".len()].parse().ok()?;
+            simulate(x, from, to, &cfg, |i| if td[i] == n { (Some(Ent::Open), None) } else { none })
         }
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" => {
             let n: usize = id["lwlts_tdm".len()..id.len() - 3].parse().ok()?;
