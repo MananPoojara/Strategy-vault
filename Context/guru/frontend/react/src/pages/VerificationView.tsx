@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import "./VerificationView.css";
 import { research, fmtDate, fmtStamp, ago } from "../services/research";
 import {
-  loadTracker, statusSlices, filterRows, booksFor, strategyHref, pct, reportFolder, STATUS_LABEL,
-  type Tracker, type TrackerRow, type TrackerResult, type AuditReport, type Filters, type StatusKey,
+  loadTracker, statusSlices, filterRows, booksFor, strategyHref, pct, reportFolder, STATUS_LABEL, resultGroup, errorStatuses, filterErrors, errorTone,
+  type Tracker, type TrackerRow, type TrackerResult, type AuditReport, type Filters, type StatusKey, type ResultGroup, type TrackerError,
 } from "../services/verification";
 
 /* Verification tab of the Research page: Yash Darji's tracker workbook, synced every 5 minutes. Read-only. */
 
 const num = (n: number | undefined) => (n ?? 0).toLocaleString("en-IN");
-const REFRESH_MS = 5 * 60 * 1000, LIST_PER = 50, AUTHORS_SHOWN = 12, RESULTS_SHOWN = 8;
+const REFRESH_MS = 5 * 60 * 1000, LIST_PER = 50, AUTHORS_SHOWN = 12, RESULTS_SHOWN = 8, ERRORS_PER = 25;
 const dateOf = (s?: string | null) => (s && !Number.isNaN(Date.parse(s)) ? fmtDate(s) : s || "");
 
 export function VerificationView() {
@@ -77,7 +77,7 @@ function TrackerBody({ t, sites, stale }: { t: Tracker; sites?: number; stale?: 
       </div>
 
       <Results t={t} />
-      <Good t={t} />
+      <Errors t={t} />
       <Bugs t={t} />
       <StrategyList t={t} filters={filters} setFilters={setFilters} />
 
@@ -112,7 +112,7 @@ function Ring({ value }: { value: number }) {
 }
 
 const Status = ({ s, label }: { s: StatusKey; label?: string }) => (
-  <span className={`rp-pill vt-st st-${s}`}><i aria-hidden="true" />{(label || STATUS_LABEL[s]).replace(/^[^\p{L}\d]+/u, "")}</span>
+  <span className={`rp-pill vt-st st-${s}`}><i aria-hidden="true" />{(label || STATUS_LABEL[s] || STATUS_LABEL.other).replace(/^[^\p{L}\d]+/u, "")}</span>
 );
 
 function AuthorBars({ t, active, pick }: { t: Tracker; active: string; pick: (a: string) => void }) {
@@ -210,8 +210,9 @@ function BookBars({ t, author, pick }: { t: Tracker; author: string; pick: (book
   );
 }
 
-const Report = ({ r }: { r?: AuditReport | null }) => r ? (
-  <p className="vt-report rp-small"><span className="rp-muted">Audit report</span> <b>{r.file}</b> <span className="rp-muted vt-path">in {reportFolder(r)}</span></p>
+/** Audit report as text, never a link. `short`: the file name only, the share folder on hover (dense tables). */
+const Report = ({ r, short }: { r?: AuditReport | null; short?: boolean }) => r ? (
+  <p className="vt-report rp-small" title={short ? r.path : undefined}><span className="rp-muted">Audit report</span> <b>{r.file}</b>{!short && <> <span className="rp-muted vt-path">in {reportFolder(r)}</span></>}</p>
 ) : null;
 
 function TradeBar({ r }: { r: TrackerResult }) {
@@ -225,15 +226,36 @@ function TradeBar({ r }: { r: TrackerResult }) {
   );
 }
 
+const GROUPS: { key: ResultGroup; label: string; note: string }[] = [
+  { key: "right", label: "Trades right", note: "trades checked, none wrong or left to check" },
+  { key: "wrong", label: "Wrong trades", note: "at least one trade wrong or still to check" },
+  { key: "none", label: "No trades", note: "no trades checked (e.g. the site produced no exports)" },
+];
+
 function Results({ t }: { t: Tracker }) {
   const [all, setAll] = useState(false);
-  const R = t.runs;
+  const [group, setGroup] = useState<ResultGroup>("right");
+  const by = useMemo(() => {
+    const m: Record<ResultGroup, TrackerResult[]> = { right: [], wrong: [], none: [] };
+    for (const r of t.results) m[resultGroup(r)].push(r); // the sync keeps them newest first
+    return m;
+  }, [t]);
+  const rows = by[group], R = t.runs, g = GROUPS.find(x => x.key === group)!;
   return (
     <>
       <h2 className="rp-section">Latest results</h2>
       <p className="rp-muted rp-small">{num(t.results.length)} verified versions, newest first. Across all {num(R.runs)} checked backtests: {num(R.trades)} trades, <b>{num(R.right)}</b> right, <b>{num(R.wrong)}</b> wrong{R.last_verified ? `; last run ${dateOf(R.last_verified)}` : ""}.</p>
-      <ul className="vt-results">
-        {(all ? t.results : t.results.slice(0, RESULTS_SHOWN)).map((r, i) => (
+      <div className="vt-seg" role="tablist" aria-label="Results">
+        {GROUPS.map(x => (
+          <button key={x.key} type="button" role="tab" id={`vt-tab-${x.key}`} aria-selected={x.key === group} aria-controls="vt-results" className={`vt-g-${x.key}`}
+            onClick={() => { setGroup(x.key); setAll(false); }} title={x.note}>
+            <i aria-hidden="true" />{x.label}<b>{num(by[x.key].length)}</b>
+          </button>
+        ))}
+      </div>
+      <p className="rp-small rp-muted vt-segnote">{num(rows.length)} {rows.length === 1 ? "result" : "results"}: {g.note}.</p>
+      <ul className="vt-results" id="vt-results" role="tabpanel" aria-labelledby={`vt-tab-${group}`}>
+        {(all ? rows : rows.slice(0, RESULTS_SHOWN)).map((r, i) => (
           <li key={i} className="rp-panel">
             <time>{dateOf(r.checked)}</time>
             <div className="vt-rmain">
@@ -247,37 +269,71 @@ function Results({ t }: { t: Tracker }) {
           </li>
         ))}
       </ul>
-      {t.results.length > RESULTS_SHOWN && <button type="button" className="rp-link" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${num(t.results.length)} results`}</button>}
+      {!rows.length && <p className="rp-empty">No result in this group.</p>}
+      {rows.length > RESULTS_SHOWN && <button type="button" className="rp-link" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${num(rows.length)}`}</button>}
     </>
   );
 }
 
-const ratio = (x?: number, d = 2) => (x == null ? "–" : x.toFixed(d));
-function Good({ t }: { t: Tracker }) {
+function Errors({ t }: { t: Tracker }) {
+  const [status, setStatus] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const statuses = useMemo(() => errorStatuses(t), [t]);
+  const known = useMemo(() => new Set(t.strategies.map(s => s.id)), [t]);
+  const rows = useMemo(() => filterErrors(t, status, q), [t, status, q]);
+  useEffect(() => setPage(1), [status, q]);
+  if (!t.errors?.length) return null;
+  const pages = Math.max(1, Math.ceil(rows.length / ERRORS_PER)), at = Math.min(page, pages);
   return (
     <>
-      <h2 className="rp-section">★ Good strategies</h2>
-      {t.good_rule && <p className="rp-muted rp-small">{t.good_rule}</p>}
-      {!t.good.length ? <p className="rp-empty">No run meets the rule yet.</p> : (
-        <div className="rp-panel rp-scroll">
-          <table className="rp-table vt-good">
-            <thead><tr><th>Strategy</th><th>Index</th><th>Period</th><th>Settings</th><th className="n">Trades</th><th className="n">CAGR</th><th className="n">Max DD</th><th className="n">CAR/MDD</th><th className="n">Sharpe</th><th /></tr></thead>
-            <tbody>
-              {t.good.map((g, i) => (
-                <tr key={i}>
-                  <td><b>{g.strategy}</b>{g.book && <span className="rp-small rp-muted"> · {g.book}</span>}<Report r={g.report} /></td>
-                  <td>{g.index}</td><td className="rp-small">{g.period}</td>
-                  <td className="rp-small">{g.settings}{g.params && <><br /><code>{g.params}</code></>}</td>
-                  <td className="n">{num(g.trades)}</td><td className="n">{pct(g.cagr, 1)}</td><td className="n">{pct(g.maxdd, 1)}</td>
-                  <td className="n">{ratio(g.car_mdd)}</td><td className="n">{ratio(g.sharpe)}</td>
-                  <td>{g.id && <a className="vt-open" href={strategyHref(g.id, g.link)}>Open ▸</a>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <h2 className="rp-section" id="vt-errors">Errors &amp; mismatches</h2>
+      <p className="rp-muted rp-small">Every problem Yash found, one row per strategy, run or kind of problem, with why it happened. Open ones first.</p>
+      <div className="rp-chips vt-echips" role="group" aria-label="Error status">
+        <button type="button" aria-pressed={!status} onClick={() => setStatus("")}>All <b>{num(t.errors.length)}</b></button>
+        {statuses.map(s => (
+          <button key={s.status} type="button" aria-pressed={status === s.status} disabled={!s.rows} onClick={() => setStatus(status === s.status ? "" : s.status)}
+            title={`${s.status}: ${num(s.strategies)} ${s.strategies === 1 ? "strategy" : "strategies"} · ${num(s.rows)} rows`}>
+            <i className={`vt-dot et-${s.tone}`} aria-hidden="true" />{s.status} <b>{num(s.rows)}</b>
+          </button>
+        ))}
+      </div>
+      <div className="vt-filters vt-efilter">
+        <input type="search" placeholder="Find a strategy, ID, index, problem or reason…" value={q} onChange={e => setQ(e.target.value)} aria-label="Find an error" />
+      </div>
+      <p className="rp-small rp-muted">{num(rows.length)} of {num(t.errors.length)} rows{(q || status) && <> · <button type="button" className="rp-link" onClick={() => { setQ(""); setStatus(""); }}>Clear filters</button></>}</p>
+      <div className="rp-panel vt-listpanel">
+        <table className="rp-table vt-list vt-errors">
+          <thead><tr><th>Status</th><th>Strategy</th><th>Problem</th><th className="n">Count</th><th>Reason</th><th>Why</th></tr></thead>
+          <tbody>{rows.slice((at - 1) * ERRORS_PER, at * ERRORS_PER).map((e, i) => <ErrorRow key={`${e.n ?? ""}-${i}`} e={e} linked={!!e.id && known.has(e.id)} />)}</tbody>
+        </table>
+        {!rows.length && <p className="rp-empty">No row matches these filters.</p>}
+      </div>
+      {pages > 1 && (
+        <nav className="rp-pager" aria-label="Error pages">
+          <button type="button" disabled={at <= 1} onClick={() => setPage(at - 1)}>Previous</button>
+          <span>Page {at} of {num(pages)}</span>
+          <button type="button" disabled={at >= pages} onClick={() => setPage(at + 1)}>Next</button>
+        </nav>
       )}
     </>
+  );
+}
+
+function ErrorRow({ e, linked }: { e: TrackerError; linked: boolean }) {
+  const where = [e.index, e.from && `from ${dateOf(e.from)}`, e.settings].filter(Boolean).join(" · ");
+  return (
+    <tr>
+      <td data-label="Status"><span className={`rp-pill vt-st et-${errorTone(e.status)}`}><i aria-hidden="true" />{e.status}</span></td>
+      <td data-label="Strategy">{linked ? <a className="vt-elink" href={strategyHref(e.id!)}>{e.strategy}</a> : <b>{e.strategy}</b>}
+        {e.id && <><br /><code className="rp-small rp-muted">{e.id}</code></>}
+        {e.book && <><br /><span className="rp-small rp-muted">{e.book}</span></>}
+        {where && <><br /><span className="rp-small">{where}</span></>}</td>
+      <td data-label="Problem" className="rp-small">{e.problem}</td>
+      <td data-label="Count" className="n">{e.count != null ? num(e.count) : ""}</td>
+      <td data-label="Reason" className="rp-small vt-result">{e.reason && <span title={e.reason}>{e.reason}</span>}{e.example && <p className="rp-muted vt-eex" title={e.example}>e.g. {e.example}</p>}</td>
+      <td data-label="Why" className="rp-small vt-ewhy">{e.why}<Report r={e.report} short /></td>
+    </tr>
   );
 }
 
@@ -353,7 +409,7 @@ function ListRow({ r }: { r: TrackerRow }) {
   return (
     <tr>
       <td className="n rp-muted" data-label="#">{r.n}</td>
-      <td data-label="Strategy"><b>{r.strategy}</b>{r.good && <span className="vt-star" title="Good runs (see ★ Good strategies)"> {r.good}</span>}<br /><span className="rp-small">{r.version}</span>{r.type && <span className="rp-small rp-muted"> · {r.type}</span>}<br /><code className="rp-small rp-muted">{r.id}</code></td>
+      <td data-label="Strategy"><b>{r.strategy}</b>{r.good && <span className="vt-star" title="Good runs in the tracker"> {r.good}</span>}<br /><span className="rp-small">{r.version}</span>{r.type && <span className="rp-small rp-muted"> · {r.type}</span>}<br /><code className="rp-small rp-muted">{r.id}</code></td>
       <td data-label="Author" className="rp-small">{r.author}<br /><span className="rp-muted">{r.book}</span></td>
       <td data-label="Status"><Status s={r.status} /></td>
       <td data-label="Result" className="rp-small vt-result">{r.result && <span title={r.result}>{r.result}</span>}<Report r={r.report} /></td>
