@@ -397,6 +397,7 @@ const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwlts_tdw_bonds", "&ZB", LWB),
     ("lwlts_outside_down_bonds", "&ZB", LWB),
     ("lwlts_outside_down_bonds_xthu", "&ZB", LWB),
+    ("lwlts_3up_thu_sell_bonds", "&ZB", LWB),
     ("lwlts_oops_buy_bonds", "&ZB", LWB),
     ("lwlts_oops_sell_bonds_wed", "&ZB", LWB),
     ("lwlts_oops_buy_bonds_ma9", "&ZB", LWB),
