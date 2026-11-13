@@ -25,11 +25,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"Exit on the first profitable open. Exit on stop loss set at $-1500.00. Exit on a signal in the opposite direction.\" (p8); \"If: MarketPosition=1 and open next bar > entryprice / Then exit next bar at market / Money Management Stop = $1500\" (p9)",
             "F|\"The general rule however is only take signals from the above system when bonds make a five day high\" (p9)"],
           "SPI 1989-2000, $40 commission, one contract (p9). The $1500 stop is 60 SPI points; it has no index equivalent.", None),
-        d("dgnl_spi_12_10", "SPI 12-day high / 10-day low breakout (A Gibbs)", "Gibbs · SPI systems", "Long/Short", Status::NeedsData(SPI),
+        d("dgnl_spi_12_10", "SPI 12-day high / 10-day low breakout (A Gibbs)", "Gibbs · SPI systems", "Long/Short", Status::Live,
           &["E|\"buy the next day on open if the SPI makes a 12-day high and to sell the next day on open if a 10-day low in the SPI is made\" (01/09/2000 p5-6, 'Testing SPI Breakouts')",
             "X|\"A stop loss of $1500 will be used and commission costs will be set to $40\" (p5)",
             "F|Variants: enter on any day except Tuesday (p6); buy/sell on 10-year bond 12-day high / 10-day low instead of the SPI's (p7, needs SFE 10-year bond futures)"],
-          "SPI since 1983 (p5). 12/10 are stated as the optimised inputs. Results only in images.", None),
+          "[Adapted: 2 unstated details, R4 #297; lane PF, 14 Nov 2026] SPI since 1983 (p5); 12/10 are stated as the optimised inputs; results only in images (unverified). Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333: the &YAP open changes in Jan 1992 and every entry is at the open). Unstated in the article: (1) 'makes a 12-day high': today's high is the highest high of the last 12 bars (10-day low: today's low is the lowest of the last 10); (2) 'sell': a reversal to short (the system is in the market both ways). A same-direction signal while in that position is ignored; both on one bar: no change. $1,500 money stop = 60 points from the entry (the article's $25 per point), from the entry day, at the stop or the open if gapped; after a stop the system waits for the next signal. No costs (the article charged $40).", None),
         d("dgnl_spi_dom", "SPI day-of-month seasonal trades (A Gibbs)", "Gibbs · SPI systems", "Long/Short", Status::Live,
           &["E|Long \"Buy on Open\" when ((Month=3 and DayOfMonth=1) or DayOfMonth=31) or (Month=4 and DayOfMonth=30) or ((Month=6 and DayOfMonth=1) or DayOfMonth=30) or (Month=8 and DayOfMonth=1 or DayOfMonth=31) or (Month=9 and DayOfMonth=30) or (Month=10 and DayOfMonth=30) or (Month=11 and DayOfMonth=30); Short when \"DayOfMonth(date)=8 and Month(date)=5 or Month(date)=6 or Month(date)=8 or Month(date)=9 or Month(date)=10 or Month(date)=12\" (08/09/2000 p22 'Rules for Day of the Month SPI Daily')",
             "X|\"Exit on First Profitable open: MarketPosition=1 and open next>entryprice / Exit next bar at market\" (short: mirror); \"uses a money management stop of $1500\" (p21)"],
@@ -101,7 +101,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == "dgnl_spi_dom").then(|| vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }])
+    match id {
+        "dgnl_spi_dom" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }]),
+        "dgnl_spi_12_10" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. },
+            ParamDef { key: "hi", label: "Buy on an N-day high", def: 12., min: 2., max: 60., step: 1. }, ParamDef { key: "lo", label: "Sell on an N-day low", def: 10., min: 2., max: 60., step: 1. }]),
+        _ => None,
+    }
 }
 
 /// Lane PF: Gibbs' day-of-month SPI rules (08/09/2000 p.22), dates grouped by their stated month (see the card note).
@@ -109,11 +114,18 @@ const DOM_LONG: &[(u32, u32)] = &[(3, 1), (3, 31), (4, 30), (6, 1), (6, 30), (8,
 const DOM_SHORT: &[(u32, u32)] = &[(5, 8), (6, 8), (8, 8), (9, 8), (10, 8), (12, 8)];
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if id != "dgnl_spi_dom" || from > to || to >= x.r.len() { return None; }
+    if !(id == "dgnl_spi_dom" || id == "dgnl_spi_12_10") || from > to || to >= x.r.len() { return None; }
     let stop_pts = p.get("stop").copied().unwrap_or(60.);
-    let md = |i: usize| -> (u32, u32) { let d = &x.r[i].date; (d[5..7].parse().unwrap_or(0), d[8..10].parse().unwrap_or(0)) };
-    let want = |i: usize| if DOM_LONG.contains(&md(i)) { 1 } else if DOM_SHORT.contains(&md(i)) { -1 } else { 0 };
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let md = |i: usize| -> (u32, u32) { let d = &x.r[i].date; (d[5..7].parse().unwrap_or(0), d[8..10].parse().unwrap_or(0)) };
+    let (nh, nl) = (p.get("hi").copied().unwrap_or(12.).max(1.) as usize, p.get("lo").copied().unwrap_or(10.).max(1.) as usize);
+    let want = |i: usize| -> i32 {
+        if id == "dgnl_spi_dom" { return if DOM_LONG.contains(&md(i)) { 1 } else if DOM_SHORT.contains(&md(i)) { -1 } else { 0 }; }
+        // dgnl_spi_12_10: today's high is the N-day high / today's low the N-day low; both at once = no signal
+        let up = i + 1 >= nh && h[i] >= h[i + 1 - nh..=i].iter().cloned().fold(f64::MIN, f64::max);
+        let dn = i + 1 >= nl && l[i] <= l[i + 1 - nl..=i].iter().cloned().fold(f64::MAX, f64::min);
+        if up && !dn { 1 } else if dn && !up { -1 } else { 0 }
+    };
     let mut out = vec![];
     let mut pos: Option<(i32, usize, f64)> = None; // (dir, entry bar, entry price)
     for k in from + 1..=to {
@@ -121,7 +133,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // 1) at the open: first profitable open, or an opposite dated signal from yesterday
         let was = pos.map(|p| p.0);
         if let Some((d, e, ep)) = pos {
-            if (k > e && (d as f64) * (o[k] - ep) > 0.) || (sig != 0 && sig != d) {
+            if (id == "dgnl_spi_dom" && k > e && (d as f64) * (o[k] - ep) > 0.) || (sig != 0 && sig != d) {
                 out.push(super::rbtie::mk(d as f64, e, ep, "open", k, o[k], if sig != 0 && sig != d { "reversed at the open" } else { "first profitable open" }, false, k - 1));
                 pos = None;
             }
