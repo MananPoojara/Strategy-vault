@@ -184,6 +184,8 @@ pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
 pub const ZN_OPEN_NOTE: &str = "On Norgate &ZN, from 1999-12 to 2000-10 the open sits at or near the previous close (median gap 0.5-1.5 ticks, 10-48% of days exactly equal), as on &ZB (R4 #331), so open fills in those 11 months are not true opening prices (the whole history is kept).";
 pub const ZN_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("ftm_rg_intermarket", 23, " All 23 lie inside the article's test period (1988-2002); the signals read closes only."),
+    // review PF2 b9ca8ce8 M16: Abel's hard stop fills at the open when gapped; 4 of its 99 &ZN trades are held through those months
+    ("scabeldiv_sma", 4, " They are held through those months; none of their exits fills at an open there."),
 ];
 /// The card notes with the &ZB / &ZN open label appended (unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
