@@ -90,9 +90,9 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
     "acbff_rsi_5min", "atm04_60min", "jmls_bar_breakout", "jmls_ma_cross_30m"];
 /// Rules whose time filter is a US Eastern clock time the book gives no NSE equivalent for: SPY and SPX only.
 pub const US: &[&str] = &["jmls_ls_model"];
-pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) }
+pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) }
 pub fn us_id(id: &str) -> bool { US.contains(&id) }
-pub fn book(b: &str) -> bool { matches!(b, "stkch" | "atm03" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts") }
+pub fn book(b: &str) -> bool { matches!(b, "stkch" | "atm03" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts" | "jr_tbtm") }
 // ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
 /// No fixed amount: all four minute tickers. Ford's three NinjaTrader systems on 60-minute bars (EP2) and the STAD Vol 3
 /// inside-day breakout failure on 30-minute bars with a daily Data2 (EP1).
@@ -157,6 +157,11 @@ pub fn spy_only(id: &str) -> bool { K53_SPY.contains(&id) || K75_SPY.contains(&i
 /// Heikin Ashi + SAR + RSI (3-minute) and first-hour EMA scalp (5-minute).
 pub const K70: &[&str] = crate::books::as51ts::INTRA;
 // ---- end lane K70 block
+// ---- lane K80 block (13 Nov 2026; authors/titles-1030/K80.tsv; books/jrtbtm.rs)
+/// No fixed amount (one tick of the instrument, #57): all four minute tickers. Joe Ross, Trading by the Minute: Sagging Highs /
+/// Rising Lows and the three-day extreme breakout, day trades on 5-minute bars with the violation-method exit.
+pub const K80: &[&str] = crate::books::jrtbtm::INTRA;
+// ---- end lane K80 block
 // ---- lane K75 block (11 Nov 2026, R4 #279 (2); authors/titles-1030/K75.tsv)
 /// Daily rules that read the first-hour / last-hour series built from the real 1-minute bars (intraday::session_series):
 /// they run only on the minute tickers, over the minute years; a day without minutes makes no trade. No fixed amount.

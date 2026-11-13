@@ -40,7 +40,9 @@ pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hf
     "rwmts_15m_5m_rsi" /* lane K53 (15-minute bars, 2014-2025): SPY avg -0.0029% vs SPX +0.0228% (test a) */,
     "as51_double_rsi" /* lane K70 (5-minute, 2014-2025): SPX avg +0.0311% vs SPY +0.0053% (test b, floor 0.003 pp per #234) */,
     "as51_ha_psar" /* lane K70 (3-minute Heikin Ashi, 2014-2025): SPY avg -0.0005% vs SPX +0.0174% (test a); lane K71 (#271(2) no-wick candle): SPY +0.0011% vs SPX +0.0170%, comp +6.6% vs +351.9% (tests b, c) */,
-    "as51_ema_scalp" /* lane K70 (5-minute, 2014-2025): SPY avg -0.0039% vs SPX +0.0163% (test a) */];
+    "as51_ema_scalp" /* lane K70 (5-minute, 2014-2025): SPY avg -0.0039% vs SPX +0.0163% (test a) */,
+    "jr_tbtm_shrl" /* lane K80 (5-minute, 2014-2025): SPY avg -0.0026% vs SPX +0.0162% (test a) */,
+    "jr_tbtm_3day" /* lane K80 (5-minute, 2014-2025): SPY avg +0.0024% vs SPX +0.0527%, comp +2.7% vs +107.0% (tests b, c) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #232 (1): the SPY-only rules whose #177a flag has the tradable SPY as the BETTER series (gate `ours` numbers);
 /// their withdrawal note says the cash index understates the rule. Every other SPY id was flagged with SPX better.
@@ -206,7 +208,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (24, 38)); // + as51_double_rsi, as51_ha_psar, as51_ema_scalp (K70); // + tdperl_rebo, rwmts_60m_rsi200h, rwmts_60m_seven, rwmts_30m_rsi_cross, rwmts_15m_5m_rsi (K53); + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
+        assert_eq!((SPY.len(), SPX_HELD.len()), (26, 38)); // + jr_tbtm_shrl, jr_tbtm_3day (K80); + as51_double_rsi, as51_ha_psar, as51_ema_scalp (K70); // + tdperl_rebo, rwmts_60m_rsi200h, rwmts_60m_seven, rwmts_30m_rsi_cross, rwmts_15m_5m_rsi (K53); + jbcdt_mac, stad2_bullbeater, stad2_opengap (K55); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42); + vdso_supreme_order, rsrl_rlevels (K48); - kftsm_zones (K50: lag=1 default passes #177a)
         assert!(SPY_BETTER.iter().all(|id| SPY.contains(id))); // #232 (1)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
