@@ -560,7 +560,7 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
         let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
         stats(ctx,&zero,0.)
     } else if costs.side_rate()==0. {s.clone()} else {
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(&ctx.c,&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(futures::marks(ctx,&run.trades).as_deref().unwrap_or(&ctx.c),&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None}; // lane F3: futures marks
         stats(ctx,&zero,0.)
     };
     for (key,source) in [("gross_total_return","total_return"),("gross_avg_trade","avg_trade"),("gross_win_rate","win_rate"),("gross_sharpe","sharpe"),("gross_max_dd","max_dd")] {s.insert(key,gross[source]);}
@@ -1608,7 +1608,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
         o.push_str("]}");
     }
-    let gross_equity=if let Some(a)=&run.option_account {a.gross[..run.equity.len()].to_vec()} else {run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
+    let gross_equity=if let Some(a)=&run.option_account {a.gross[..run.equity.len()].to_vec()} else {run.source_account.as_ref().map_or_else(||equity_curve(futures::marks(ctx,&run.trades).as_deref().unwrap_or(&ctx.c),&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
     let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
     if let Some(a)=&run.option_account {

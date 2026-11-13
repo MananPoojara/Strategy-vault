@@ -42,14 +42,18 @@ enum Fill { Close, Open, At(f64) }
 pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
     let (e,x,epx)=(t.legs[0].i,t.exit_i,t.legs[0].px);
     let xpx=t.exits.last().map_or(t.exit_px,|p|p.1);
-    let entry=if t.entry_kind=="open"&&epx==ctx.o[e] {Fill::Open} else if t.entry_kind=="close"&&epx==ctx.c[e] {Fill::Close} else {Fill::At(epx)};
-    let exit=if t.open||(xpx==ctx.c[x]&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
+    // lane F3 (lead review): a futures trade is priced on the unadjusted contract (futures::raw_basis); read the context's
+    // back-adjusted bars on the same footing. off = 0 on every other context, so nothing else changes.
+    let off=crate::futures::trade_offset(ctx,t);
+    let o=|k:usize|ctx.o[k]+off; let h=|k:usize|ctx.h[k]+off; let l=|k:usize|ctx.l[k]+off; let c=|k:usize|ctx.c[k]+off;
+    let entry=if t.entry_kind=="open"&&epx==o(e) {Fill::Open} else if t.entry_kind=="close"&&epx==c(e) {Fill::Close} else {Fill::At(epx)};
+    let exit=if t.open||(xpx==c(x)&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
     let mut pts=Vec::new();
     for k in e..=x {
         let start=if k==e {entry} else {Fill::Open};
         let end=if k==x {exit} else {Fill::Close};
-        if start==Fill::Close {if k==x {pts.push((k,ctx.c[k]));} continue;} // entered at this close: nothing after it on this bar
-        if start==Fill::Open&&end==Fill::Close {pts.push((k,ctx.l[k]));pts.push((k,ctx.h[k]));continue;}
+        if start==Fill::Close {if k==x {pts.push((k,c(k)));} continue;} // entered at this close: nothing after it on this bar
+        if start==Fill::Open&&end==Fill::Close {pts.push((k,l(k)));pts.push((k,h(k)));continue;}
         // part of a bar: 1-minute bars between the fill(s) when they exist, else only the fill prices
         let inside=|m:&[crate::intraday::Bar1],from:usize,px:f64|m.iter().skip(from).position(|b|b.l<=px&&px<=b.h).map(|j|j+from);
         let minute=ctx.minutes.and_then(|m|m.day(&ctx.r[k].date)).and_then(|m|{
@@ -60,8 +64,8 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
         });
         let daily=||{
             let mut p=vec![];
-            match start {Fill::At(px)=>p.push(px),_ if k==e=>p.push(ctx.o[k]),_=>{}}
-            if k==x {p.push(match end {Fill::At(px)=>px,_=>ctx.c[k]});}
+            match start {Fill::At(px)=>p.push(px),_ if k==e=>p.push(o(k)),_=>{}}
+            if k==x {p.push(match end {Fill::At(px)=>px,_=>c(k)});}
             p
         };
         pts.extend(minute.unwrap_or_else(daily).into_iter().map(|px|(k,px)));
@@ -75,12 +79,13 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
 /// stay banked at their fill price from their bar on.
 pub fn excursion(ctx:&Ctx,t:&Trade)->Option<(f64,f64,usize)> {
     let pts=path_points(ctx,t);
+    let off=crate::futures::trade_offset(ctx,t); // lane F3: 0 off futures contexts
     let mut out:Option<(f64,f64)>=None;
     for &(k,px) in &pts {
         let (mut mark,mut done)=(0.,0.);
         for &(i,q,f) in &t.exits {if i<k||(i==k&&k<t.exit_i) {mark+=f*q;done+=f;}}
         let mark=mark+(1.-done)*px;
-        let r:f64=t.legs.iter().enumerate().filter(|(n,l)|l.i<k||l.i==k&&(*n==0||t.entry_kind=="open"&&l.px==ctx.o[k])).map(|(_,l)|l.w*t.dir*(mark/l.px-1.)).sum();
+        let r:f64=t.legs.iter().enumerate().filter(|(n,l)|l.i<k||l.i==k&&(*n==0||t.entry_kind=="open"&&l.px==ctx.o[k]+off)).map(|(_,l)|l.w*t.dir*(mark/l.px-1.)).sum();
         if !r.is_finite() {return None;}
         out=Some(out.map_or((r,r),|(a,b)|(a.min(r),b.max(r))));
     }

@@ -136,6 +136,21 @@ pub fn raw_basis(x: &Ctx, trades: Vec<Trade>) -> Result<(Vec<Trade>, Vec<f64>), 
     }).collect::<Result<Vec<_>, String>>()?;
     Ok((out, close))
 }
+/// Lane F3 (lead review, shared-loader blocker): the roll offset a futures trade was shifted by (unadjusted - back-adjusted
+/// close of its entry bar; raw_basis), so code that reads the context's back-adjusted bars against a shifted trade can put
+/// them on the trade's prices (MAE/MFE path, entry-type checks). 0 elsewhere.
+pub fn trade_offset(x: &Ctx, t: &Trade) -> f64 {
+    let e = t.legs[0].i;
+    raw_close(x).and_then(|r| r.get(e)).map_or(0., |r| r - x.c[e])
+}
+/// The close series an equity curve marks shifted futures trades with (back-adjusted close + each trade's offset over its
+/// window), None on a non-futures context. Gross equity / gross statistics use it like normalized_run does.
+pub fn marks(x: &Ctx, trades: &[Trade]) -> Option<Vec<f64>> {
+    raw_close(x)?;
+    let mut close = x.c.clone();
+    for t in trades { let off = trade_offset(x, t); for k in t.legs[0].i..=t.exit_i.min(close.len() - 1) { close[k] = x.c[k] + off; } }
+    Some(close)
+}
 /// Buy and hold on a futures context: point change of the back-adjusted close over the unadjusted close at the start.
 pub fn buy_hold(x: &Ctx, from: usize, to: usize) -> Option<Vec<f64>> {
     let raw = raw_close(x)?;
@@ -185,6 +200,23 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn f3_excursion_and_gross_marks_on_the_unadjusted_contract() {
+        // back-adjusted bars around -11, unadjusted close = back-adjusted + 91.5 (one roll offset)
+        let mk = |d: &str, o: f64, h: f64, l: f64, c: f64| Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None };
+        let r = vec![mk("1990-01-02", -11.7, -11.0, -12.7, -11.2), mk("1990-01-03", -11.2, -10.0, -11.5, -10.5)];
+        let mut x = Ctx::new(&r, &[], &[]);
+        x.extra.insert("RAW.Close".into(), vec![80.3, 81.0]);
+        // long at the open of bar 0, exit at bar 1's close
+        let t = Trade { dir: 1., legs: vec![Leg { i: 0, px: -11.7, w: 1. }], exit_i: 1, exit_px: -10.5, reason: "x".into(), entry_kind: "open", signal_i: 1, open: false, exits: vec![] };
+        let (out, close) = raw_basis(&x, vec![t]).unwrap();
+        assert!((trade_offset(&x, &out[0]) - 91.5).abs() < 1e-9 && (out[0].legs[0].px - 79.8).abs() < 1e-9);
+        let (mae, mfe, _) = crate::accounting::excursion(&x, &out[0]).unwrap();
+        assert!((mae - (78.8 / 79.8 - 1.)).abs() < 1e-12 && (mfe - (81.5 / 79.8 - 1.)).abs() < 1e-12, "{mae} {mfe}");
+        assert_eq!(marks(&x, &out).unwrap(), close);
+        let plain = Ctx::new(&r, &[], &[]); // no RAW series: offset 0, no marks
+        assert!(trade_offset(&plain, &out[0]) == 0. && marks(&plain, &out).is_none());
+    }
     #[test]
     fn f3_index_series_from_norgate_compact_dates() {
         let dir = std::env::temp_dir().join(format!("f3idx{}", std::process::id()));
