@@ -390,13 +390,21 @@ fn off_list() -> Vec<StrategyDef> {
             NeedsData("daily sunspot numbers (Royal Observatory of Belgium / SILSO), which the vault does not have; the model's code is only on the CD and its adaptive response vector reads prices up to 10 bars after each event"),
             &["E|Sunspot count above the highest of the previous lb1 counts (or below the lowest) with no such breakout in the previous lb2 counts; direction chosen adaptively from earlier market responses; acted on disp bars later (pp.197-199)", "E|Best: open 35/15/2, limit 40/15/0, stop 35/15/2 (p.199)", "X|Standard exit"],
             "Book: with the stop order the S&P 500 made $4,991/trade IS (37 trades, 40% wins, ROA 20.4%) and $5,640 OOS (11 trades, 45%, ROA 39.5%) (pp.199-200)."),
-        off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · open/limit/stop (Ch.12 Tests 1-3)", "Ch.12 Genetic algorithms", "Long",
-            NeedsData("futures open interest, which is not in the vault for any index, ETF or stock: two of the three evolved rules read it (a fall of at least 4.2% over 36 bars, a rise of at least 5.6% over 44 bars; Encyclopedia of Trading Strategies p.263-264, p.276-277)"),
-            &["E|Buy when all three hold: open interest 36 bars ago - open interest 1 bar ago > 4.2% of the former; close 3 bars ago > close 14 bars ago + 3.47 x ATR; open interest risen >= 5.6% over 44 bars (p.276-277)", "F|Values decoded from the printed chromosome (4,850,65,653), (1,256,530,709), (5,940,47,610) with the printed macros BiasedPosScale/LinearScale (code p.263-264): the tested system (decision 186, FR-13). The prose (p.276) says 34 bars and 3.46 x ATR [option]", "X|Standard exit"],
-            "Book: IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades (p.273)."),
-        off!("kets_ga_short", "Genetically evolved short entry (open-interest + MACD rules) · open/limit/stop (Ch.12 Tests 4-6)", "Ch.12 Genetic algorithms", "Short",
-            NeedsData("futures open interest, which is not in the vault for any index, ETF or stock: two of the three evolved rules read it (Encyclopedia of Trading Strategies p.263-264, p.278)"),
-            &["E|Sell when open interest 1 bar ago > 1.393 x that 40 bars ago, > 1.755 x that 25 bars ago, and the MACD(2,50) slope is down (p.278)", "F|Values decoded from the printed chromosome (5,890,391,532), (5,705,760,956), (10,163,999,196) with the printed macros (code p.263-264): the tested system (decision 186, FR-13). The prose (p.278) says 38% over 38 bars for gene 1 [option]", "X|Standard exit"], "Book: profitable IS, lost OOS (p.274)."),
+        // lane I1 (13 Nov 2026): Indian application on NSE index futures open interest (see `ga` below)
+        StrategyDef { status: Live, needs_series: &[GA_OI], ..off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · entry at the open (Ch.12 Test 1)", "Ch.12 Genetic algorithms", "Long", Live,
+            &["F|Chromosome for long entries at the open (p.276): genes (4,850,65,653), (1,256,530,709), (5,940,47,610), decoded with the printed Rules() templates and macros (p.263-264; CD x16mod01.c): LinearScale(x,a,b) = x(b-a)/1000 + a, BiasedPosScale(x,a) = 0.000001 x^2 a, look-backs truncated to whole bars",
+              "E|Buy at the next open when all three hold on the signal bar: (OI 36 bars ago - OI 1 bar ago) / OI 36 bars ago > 0.04185; close 3 bars ago - close 14 bars ago > 3.4659 x ATR(50) (LinearScale(709,-2.5,2.5) x sqrt(11)); (OI 1 bar ago - OI 44 bars ago) / OI 44 bars ago > 0.05606; no order while long, none on a bar whose next bar has high = low",
+              "X|Standard exit (p.76-77): close-only profit target entry + 4 x ATR(50), close-only stop entry - 1 x ATR(50), out at the close after 10 bars",
+              "F|p.prose = 1 (labelled option): the prose values p.276 (34 bars, 3.46 x ATR) instead of the decoded ones (decision 186)",
+              "F|[Indian application, lane I1] OI = the index's NSE futures (NIFTY / BANKNIFTY), all expiries summed ('total open interest', p.262), NSE F&O bhavcopy; prices = the NSE index (the book: a 36-market futures portfolio, one contract set per market)."],
+            "Indian application of a US-market rule (lane I1): the book evolved and tested the rule on 36 US futures 1985-1999 (IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades, p.273); here NIFTY 50 / NIFTYBANK with their NSE futures open interest, one unit, no costs. Only the open-entry chromosome is printed, so the limit and stop tests (Tests 2-3) are not coded.") },
+        StrategyDef { status: Live, needs_series: &[GA_OI], ..off!("kets_ga_short", "Genetically evolved short entry (open-interest + MACD rules) · entry at the open (Ch.12 Test 4)", "Ch.12 Genetic algorithms", "Short", Live,
+            &["F|Chromosome for short entries at the open (p.278): genes (5,890,391,532), (5,705,760,956), (10,163,999,196), decoded with the printed Rules() templates (p.263-264; CD x16mod01.c)",
+              "E|Sell short at the next open when all three hold: (OI 1 bar ago - OI 40 bars ago) / OI 40 bars ago > 0.39318; (OI 1 bar ago - OI 25 bars ago) / OI 25 bars ago > 0.7548; MACD(2,50) (classic, exponential averages seeded with the first close, MovAvg type 2) below its value 2 bars earlier; no order while short, none on a bar whose next bar has high = low",
+              "X|Standard exit (p.76-77): close-only target entry - 4 x ATR(50), close-only stop entry + 1 x ATR(50), out at the close after 10 bars",
+              "F|p.prose = 1 (labelled option): the prose value p.278 for gene 1 (38% over 38 bars)",
+              "F|[Indian application, lane I1] OI = the index's NSE futures, all expiries summed, NSE F&O bhavcopy; prices = the NSE index."],
+            "Indian application of a US-market rule (lane I1): book IS profitable, OOS lost (p.274) on 36 US futures; here NIFTY 50 / NIFTYBANK with NSE futures open interest. Only the open-entry chromosome is printed (Tests 5-6 not coded).") },
         off!("kets_ga_exit", "Genetically evolved rule-based exits (Ch.15)", "Ch.15 AI exits", "Long/Short",
             NotTestable("the evolved exit rules are printed in prose (long: close above its 12-bar EMA and below its 49-bar EMA with a 6-bar new high; short: close above its 16-bar EMA and 22-bar SMA with the MACD(6,10) slope down, pp.345-346), but the new-high recency window and the random-entry sequence they were evolved and tested on are not printed, so the test cannot be reproduced"),
             &["X|Rule-template exits evolved by a genetic algorithm (pp.345-351)"], "Not reproducible from the book text."),
@@ -415,6 +423,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    if REVIEWED_I1.contains(&id) {
+        return Some([("prose", "Values: 0 = decoded from the printed chromosome (default), 1 = the prose p.276-278", 0., 0., 1., 1.), SES[0], SES[1], SES[2]]
+            .iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect());
+    }
     let t = TESTS.iter().find(|t| t.id == id)?;
     Some(t.defs.iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect())
 }
@@ -467,7 +479,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kets_ma_trend_xo" | "kets_ma_slope" | "kets_ma_ct_xo" | "kets_ma_sr" => f("kets_ma", "Moving-average entries (Ch.6)", "Not testable"),
         "kets_macd_sig" | "kets_rsi_div" | "kets_macd_div" => f("kets_osc_nt", "Oscillator entries, unprinted parameters", "Not testable"),
         "kets_solar" => f("kets_solar", "Sunspot breakout", "Data missing"),
-        "kets_ga_long" | "kets_ga_short" => f("kets_ga", "Genetically evolved entries", "Data missing"),
+        "kets_ga_long" | "kets_ga_short" => f("kets_ga", "Genetically evolved entries", "Open-interest rules (NSE futures OI)"),
         "kets_ga_exit" => f("kets_ai", "Neural / genetic models", "Not testable"),
         _ => None,
     }
@@ -945,6 +957,7 @@ fn turns_up(a: &[f64], c: usize) -> bool { a[c] >= a[c - 1] && a[c - 1] < a[c - 
 fn turns_dn(a: &[f64], c: usize) -> bool { a[c] < a[c - 1] && a[c - 1] >= a[c - 2] }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if REVIEWED_I1.contains(&id) { return Some(ga(id == "kets_ga_short", x, from, to, p)); }
     let t = TESTS.iter().find(|t| t.id == id)?;
     let n = x.c.len();
     if n < 3 || from > to || to >= n { return Some(vec![]); }
@@ -1115,6 +1128,21 @@ mod tests {
             open: v, high: v + 1., low: v - 1., close: v, volume: None }).collect()
     }
     #[test]
+    fn ga_chromosomes_decode_as_printed() {
+        assert_eq!(2 + biased_pos_scale(850., 48.) as usize, 36); assert!((linear_scale(65., 0.01, 0.50) - 0.04185).abs() < 1e-12);
+        assert_eq!((biased_pos_scale(256., 50.) as usize, biased_pos_scale(530., 50.) as usize), (3, 14));
+        assert!((linear_scale(709., -2.5, 2.5) * 11f64.sqrt() - 3.46586).abs() < 1e-4);
+        assert_eq!(2 + biased_pos_scale(940., 48.) as usize, 44); assert!((linear_scale(47., 0.01, 0.99) - 0.05606).abs() < 1e-12);
+        assert_eq!((2 + biased_pos_scale(890., 48.) as usize, 2 + biased_pos_scale(705., 48.) as usize), (40, 25));
+        assert_eq!((2 + biased_pos_scale(163., 18.) as usize, 3 + biased_pos_scale(999., 48.) as usize), (2, 50));
+        // OI-only rule template 5 fires when OI 1 bar ago is > 1.05606 x OI 44 bars ago, never in the first 100 bars
+        let c: Vec<f64> = (0..200).map(|i| 100. + i as f64).collect(); let r = rows(&c); let x = Ctx::new(&r, &r, &[]);
+        let oi: Vec<f64> = (0..200).map(|i| if i < 150 { 1000. } else { 1100. }).collect();
+        let a = ga_rule(&x, &oi, &vec![1.; 200], (5, 940., 47., 610.));
+        assert!(!a[150] && a[151] && a[193] && !a[194] && !a[99]);
+        assert!(ga(false, &x, 0, 199, &Params::new()).is_empty()); // no FUT_OI series: no trades
+    }
+    #[test]
     fn ses_is_close_only_and_counts_the_entry_bar() {
         // flat 100 with range 2 -> ATR50 = 2; long entered at the open of bar 1 is closed at the close of bar 10 (10 bars held)
         let r = rows(&vec![100.; 40]); let x = Ctx::new(&r, &r, &[]);
@@ -1151,6 +1179,70 @@ mod tests {
         let m = va.iter().sum::<f64>() / 1000.; assert!((m - 0.5).abs() < 0.05);
     }
 }
+
+// ---------------------------------------------------------------- lane I1: Ch.12 GA entries (x16mod01.c) on NSE futures OI
+/// Admitted as an Indian application (own block ADMISSION_I1; gate `allowed` = NIFTY 50, NIFTYBANK).
+pub const REVIEWED_I1: &[&str] = &["kets_ga_long", "kets_ga_short"];
+/// Daily open interest of the index's NSE futures (all expiries), the same series as mhnats_oi7.
+const GA_OI: &str = "FUT_OI";
+fn linear_scale(x: f64, a: f64, b: f64) -> f64 { x * (b - a) / 1000. + a }
+fn biased_pos_scale(x: f64, a: f64) -> f64 { 0.000001 * x * x * a }
+/// MovAvg type 2: exponential average seeded with the first value.
+fn ema_seed(v: &[f64], m: usize) -> Vec<f64> {
+    let k = 2. / (1. + m as f64); let mut s = v[0];
+    v.iter().map(|&d| { s += k * (d - s); s }).collect()
+}
+/// One instantiated rule template of Rules() (templates 1, 4, 5, 10 only: the ones the printed chromosomes use).
+fn ga_rule(x: &Ctx, oi: &[f64], atr: &[f64], g: (u8, f64, f64, f64)) -> Vec<bool> {
+    let (v1, v2, v3, v4) = g; let n = x.c.len(); let tiny = 1.0e-20;
+    let mut ans = vec![false; n];
+    let lb = |v: f64, a: f64| 2 + biased_pos_scale(v, a) as usize;
+    match v1 {
+        1 => {
+            let (l1, l2) = (biased_pos_scale(v2, 50.) as usize, biased_pos_scale(v3, 50.) as usize);
+            let fac = linear_scale(v4, -2.5, 2.5) * ((l1 as f64 - l2 as f64).abs()).sqrt();
+            for cb in l1.max(l2)..n { ans[cb] = x.c[cb - l1] - x.c[cb - l2] > fac * atr[cb]; }
+        }
+        4 => { let (l1, thr) = (lb(v2, 48.), linear_scale(v3, 0.01, 0.50)); for cb in l1..n { ans[cb] = (oi[cb - l1] - oi[cb - 1]) / (oi[cb - l1] + tiny) > thr; } }
+        5 => { let (l1, thr) = (lb(v2, 48.), linear_scale(v3, 0.01, 0.99)); for cb in l1..n { ans[cb] = (oi[cb - 1] - oi[cb - l1]) / (oi[cb - l1] + tiny) > thr; } }
+        _ => { // 10: MACD slope (classic, MovAvg type 2)
+            let l1 = lb(v2, 18.); let l2 = l1 + 1 + biased_pos_scale(v3, 48.) as usize;
+            let (a, b) = (ema_seed(&x.c, l1), ema_seed(&x.c, l2));
+            let m: Vec<f64> = a.iter().zip(&b).map(|(p, q)| p - q).collect();
+            for cb in 2..n { ans[cb] = if v4 - 500. >= 0. { m[cb] > m[cb - 2] } else { m[cb] < m[cb - 2] }; }
+        }
+    }
+    for v in ans.iter_mut().take(100) { *v = false; } // maxlb: the first 100 bars are FALSE
+    ans
+}
+fn ga(short: bool, x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
+    let n = x.c.len();
+    let Some(oi) = x.series(GA_OI) else { return vec![] };
+    if n < 3 || from > to || to >= n { return vec![]; }
+    let gv = |k: &str, d: f64| p.get(k).copied().filter(|v| v.is_finite()).unwrap_or(d);
+    let prose = gv("prose", 0.) >= 0.5;
+    let atr50 = sma(&true_range(x), 50);
+    let genes: [(u8, f64, f64, f64); 3] = if short { [(5, 890., 391., 532.), (5, 705., 760., 956.), (10, 163., 999., 196.)] }
+        else { [(4, 850., 65., 653.), (1, 256., 530., 709.), (5, 940., 47., 610.)] };
+    let mut r: Vec<Vec<bool>> = genes.iter().map(|&g| ga_rule(x, oi, &atr50, g)).collect();
+    if prose { // p.276 / p.278 prose: 34 bars + 3.46 ATR (long gene 1/2), 38% over 38 bars (short gene 1)
+        let tiny = 1.0e-20;
+        if short { for cb in 38..n { r[0][cb] = cb >= 100 && (oi[cb - 1] - oi[cb - 38]) / (oi[cb - 38] + tiny) > 0.38; } }
+        else {
+            for cb in 34..n { r[0][cb] = cb >= 100 && (oi[cb - 34] - oi[cb - 1]) / (oi[cb - 34] + tiny) > 0.042; }
+            for cb in 14..n { r[1][cb] = cb >= 100 && x.c[cb - 3] - x.c[cb - 14] > 3.46 * atr50[cb]; }
+        }
+    }
+    let s = if short { -1 } else { 1 };
+    let ses = (gv("pt", 4.), gv("sl", 1.), gv("hold", 10.).round().max(1.) as usize);
+    drive(x, from, to, WARM, false, Od::Open, false, ses, &atr50, |cb, _| (if r.iter().all(|v| v[cb]) { s } else { 0 }, 0.))
+}
+// Instrument admission (lane I1): the GA entries as an Indian application (NSE index futures OI; gate allowed NIFTY 50, NIFTYBANK).
+pub const ADMISSION_I1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "kets" && REVIEWED_I1.contains(&def.id),
+    label: "Indian application of a US-market rule: Katz and McCormick evolved these entries on a 36-market US futures portfolio with each market's total open interest; here the open interest is the index's NSE futures (NSE F&O bhavcopy, all expiries summed) and the trades are on the NIFTY 50 / NIFTYBANK index, one unit. Not the authors' test.",
+    basis: "The Encyclopedia of Trading Strategies Ch.12: Rules() templates and macros p.262-264 (page images read again by OCR, lane I1; = CD TRMODS/CHAP16/X16MOD01.C), chromosomes p.276-278, entry at the open + standard exit (x16mod01 Model). Independent Python reference authors/i1/w/i1_ref.py (with the Katz TRDSIM reference authors/katz/admission/kets_ref.py).",
+};
 
 // Instrument admission: Katz 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/katz/admission/SOURCE-CONTRACT.md); kept in one block to merge.

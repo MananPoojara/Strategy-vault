@@ -2181,6 +2181,11 @@ fn main() {
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let mut extra = load_extra(&extra_dir);
+    // lane I1: NSE F&O bhavcopy series (index futures open interest, stock-option put/call) from futures/nse-fo-bhavcopy-20261113
+    // next to the India price file; India engine only, a missing folder loads nothing, an extra_data file of the same name wins
+    if data.contains_key("NIFTY 50") {
+        for (k, v) in load_extra(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/nse-fo-bhavcopy-20261113").to_string_lossy()) { extra.entry(k).or_insert(v); }
+    }
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
     if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}
