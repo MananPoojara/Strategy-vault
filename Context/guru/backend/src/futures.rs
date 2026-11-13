@@ -238,6 +238,8 @@ const CARDS_F1B: &[(&str, &str, &str)] = &[
     ("nfgu_cqiii", "&6S", NFGU), ("nfgu_cqiii", "&6B", NFGU), ("nfgu_cqiii", "&6J", NFGU),
     ("nfgu_pathfinder", "&6S", NFGU), ("nfgu_pathfinder", "&6B", NFGU), ("nfgu_pathfinder", "&6J", NFGU),
     ("stad5_chbopb", "&ZB", STAD5), ("stad5_fib382", "&GC", STAD5),
+    ("stad11_miser", "&SP", "Omega Research, STAD Vol 11 (2000) ch.3 p.45-56 and Appendix A, MISER: the printed TradeStation 2000i code (S&P 500 futures with T-bond futures as Data2, long side, ATR stops; test 2/92-11/99 with $50 per trade); run on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (R4 #293 (1)), lane F1C."),
+    ("stad5_curbond", "&6S", "Omega Research, STAD Vol 5 (1998) ch.2 p.12-20, Currency/Bond System: the printed TradeStation code on the Swiss franc with T-bond futures as Data2 (book test 6/93-5/98, $1,000 StopAmt and $1,200 Format money-management stop, no costs); run on the Norgate Swiss franc continuous contract with the Norgate T-bond contract as Data2 (R4 #293 (1), (3)), $ amounts at $125,000 per 1.00, lane F1C."),
     ("lebtc_25x25", "&ZB", LEB_25), ("lebtc_crossbow", "&6S", LEB_CB),
     ("ch_bta2_goldbond_ma", "&ZB", CHANDE_IM), ("ch_bta2_goldbond_adx", "&ZB", CHANDE_IM), ("ch_bta2_intermarket_trio", "&ZB", CHANDE_IM),
     ("ch_bta2_cbo_trail5", "&6B", CHANDE5), ("ch_bta2_cbo_trail5", "&KC", CHANDE5), ("ch_bta2_cbo_trail5", "&CT", CHANDE5), ("ch_bta2_cbo_trail5", "&CL", CHANDE5), ("ch_bta2_cbo_trail5", "&GE", CHANDE5), ("ch_bta2_cbo_trail5", "&GC", CHANDE5), ("ch_bta2_cbo_trail5", "&6J", CHANDE5), ("ch_bta2_cbo_trail5", "&ZB", CHANDE5), ("ch_bta2_cbo_trail5", "&ZW", CHANDE5),
@@ -257,6 +259,8 @@ const CARDS_F1B: &[(&str, &str, &str)] = &[
 const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
     // Table 5.15 "1/1/82-7/10/95" (p.176): T-bond 2.9% (5.2% 1978-2020), heating oil 0% (18.6% 1978-2020) order-dependent
     ("ch_bta2_long_bomb", "&ZB", "1982-01-01", "1995-07-10"), ("ch_bta2_long_bomb", "&HO", "1982-01-01", "1995-07-10"),
+    // STAD Vol 5 p.16 "from June, 1993, to May, 1998": 4.5% of trades touch a bar with fills on both legs of its path (7.0% 1979-2020)
+    ("stad5_curbond", "&6S", "1993-06-01", "1998-05-31"),
 ];
 /// A market the source tests but the card is held on, with the reason the refusal gives (R4 #240).
 const HELD: &[(&str, &str, &str)] = &[
@@ -273,7 +277,7 @@ pub fn window(id: &str, t: &str) -> Option<(&'static str, &'static str)> {
 pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String> {
     let (a, b) = window(id, &x.r.first()?.ticker)?;
     let (f, t) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
-    (f < a || t > b).then(|| format!("Results are published only from {a} to {b} on {}: outside the book's test window more than 5% of its trades enter and reach the stop on one day, which daily bars cannot order (R4 #240, #314 (3)).", x.r[0].ticker))
+    (f < a || t > b).then(|| format!("Results are published only from {a} to {b} on {}: outside the book's test window more than 5% of its trades depend on the order of fills inside one daily bar, which daily bars cannot settle (R4 #240, #314 (3)).", x.r[0].ticker))
 }
 fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_F1B) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
