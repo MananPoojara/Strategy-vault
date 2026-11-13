@@ -320,7 +320,7 @@ fn catalogue_base() -> Vec<StrategyDef> {
         sd!("lwnl_tdw_oc_fri", "Buy Friday's open, exit the close", "Day of week (1988-1993 study)", "Long", Live, TDW_R,
             "S&P since 1/1/88: Fri -$44,950, 51%.", claim("", "51%", "-$44,950 total", "same day", "S&P 1/1/88-mid 1993")),
         // ---- Needs data
-        sd!("lwnl_bond_sp_systems", "Bond-driven S&P systems", "Needs data", "Long", NeedsData(BOND),
+        sd!("lwnl_bond_sp_systems", "Bond-driven S&P systems", "Needs data", "Long", NotTestable("Split (lane F1D, R4 #293): the coded rules are the options p.exit_n of lwlts_bonds_channel_bstop / _sstop, lwnl_bond_sp_9ma_1down / _2down and lwnl_sp_hornbrook_im. Not coded: the weekly bond stochastic timer (no exit printed) and the D-mark / dollar index / Eurodollar study (no Deutsche mark or dollar index series in the vault)."),
             &["E|Buy the S&P on the close when Bonds close above their 14-day highest high; exit a 10-day lowest low in Bonds or $3,000 stop (Commodity Timing Vol. 28 No. 4, April 1994 by its volume number, archive folder '1995', p.1-3; 66 trades 50% $112,175), or the S&P 5-day low (94 trades 41% $96,600) = options p.exit_n=10 / 5 of lwlts_bonds_channel_bstop / _sstop (live, lane F1D)",
               "E|9-day MA of Bonds rising + 1 or 2 S&P down closes: buy open + 20% of the last range, $2,500 stop or close 2 days later (Sep 1994 p.3-4; 308 trades 59% $116,900 / 145 trades 58% $43,875) = lwnl_bond_sp_9ma_1down / _2down (coded, lane F1D; withheld under R4 #240: 7.5% / 6.4%)",
               "E|Weekly 14-bar Bond stochastic as an S&P timer (Feb 1992, Jul 1992, Nov 1992, Dec 1993): no exit given",
@@ -355,6 +355,12 @@ fn catalogue_base() -> Vec<StrategyDef> {
               "X|Unstated in the letter: an opposite signal while in a trade; vault reading: it exits and reverses (Ch. 11 rule 3 of Long-Term Secrets)"],
             "Printout p.3 (Vol. 29 No. 9 = September 1995 by its volume number; archive folder '1996'; \"Bond data is from 1977 to 1994\"): 352 trades, 257 winners (73%), net about $71,500 (OCR reads $71,472.50; gross $144,842.25 - $73,269.75). Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293). Adapted: 2 unstated details (R4 #297).",
             claim("352", "73%", "$203 ($71,472.50)", "1 day", "1977-1994")),
+        sd!("lwnl_sp_hornbrook_im", "S&P buy the open on a pound / crude / gold intermarket set-up (Hornbrook)", "Intermarket -> S&P", "Long", Live,
+            &["F|\"If the BP closes today > the close 8 days ago and Crude Oil close today > yesterday and Gold closes today < the close 5 days ago\" (Commodity Timing Vol. 32 No. 5, archive folder 1996, p.3): each on its own Norgate contract's bars (Data2), read on the signal day",
+              "E|\"buy the S&P on the opening\" (p.3)",
+              "X|\"exiting on the close with no stop\" (p.3)"],
+            "Letter p.3 (Ken Hornbrook's intermarket study): in sample 297 trades, 62% winners, $74,900, average $252; out of sample 72 trades, 62%, average $315 (windows not printed). Runs on the Norgate S&P 500 continuous contract with the Norgate British pound, crude oil and gold contracts as Data2 (lane F1D, R4 #293); published 1982-04-21..1995-07-31 (R4 #330: it buys the &SP open). No unstated detail.",
+            claim("297 in sample + 72 out of sample", "62%", "$252 / $315", "same day", "windows not printed")),
         sd!("lwnl_bond_dowm_buy", "T-Bonds: buy 3 ticks under the open after the 4th Mon/Tue/Thu and 5th Mon/Tue of the month", "Bonds · seasonal", "Long", Live,
             &["F|Ken Hornbrook's DOWM function (Commodity Timing Vol. 32 No. 5, archive folder 1996, p.2): week of the month by calendar day (1-7, 8-14, 15-21, 22-28, 29+) and the day of the week",
               "E|\"buying at 3 ticks below the opening of Bonds following the 4th Monday, 4th Tuesday, and 4th Friday of the month as well as following the 5th Monday and Tuesday\" (p.2): a buy limit on the next day at its open - 3/32",
@@ -372,7 +378,7 @@ fn catalogue_base() -> Vec<StrategyDef> {
               "X|\"and exiting on the open of next year\" (p.4): the open of the first trading day of the new year; no stop is stated, so none is used"],
             "Letter: \"has been a big winner\" (no figures printed), so there is no #168 check. R4 #331: 1 of its &ZB trades falls in the 1999-12..2000-10 months whose Norgate opens sit at the previous close. Runs on the Norgate T-bond continuous contract only (lane F1D, R4 #293, review M34). Adapted: 1 unstated detail (R4 #297).",
             claim("", "", "", "about 1 week", "no figures printed")),
-        sd!("lwnl_bond_systems", "T-Bond systems and seasonals", "Needs data", "Long/Short", NeedsData(BOND),
+        sd!("lwnl_bond_systems", "T-Bond systems and seasonals", "Needs data", "Long/Short", NotTestable("Split (lane F1D, R4 #293): the coded rules are listed in its lines (lwlts_bonds_8day, lwnl_cti_bonds, lwnl_bond_projected, the lwnl_bond_* seasonal and holiday cards, lwnl_bond_dowm_buy). Not coded: the Oct 1997 bond table (no stop or exit printed; the table is garbled)."),
             &["E|Close > close 8 days ago, $850 stop, ~3x target (Aug 1991 p.2) = lwlts_bonds_8day (live)",
               "E|CTI bond breakout: high + 60% range buy, low - 90% range sell, stops $3,250 / $750 (Jun 1992 p.2-3) = lwnl_cti_bonds (live, lane F1D)",
               "E|Bond holiday, TDOM and day-of-month trades: Thanksgiving, Christmas, Memorial, July 4th, Labor Day, Jan TD18, Dec TD19, Oct 29th, Nov 3-8, May TD9, July TD12, Sep, Oct, Nov, Dec tables (1993-1997 letters). Coded (lane F1D): lwnl_bond_memorial_buy, lwnl_bond_labor_buy, lwnl_bond_sep_td9_sell, lwnl_bond_sep_td19_buy, lwnl_bond_jul_td12_sell, lwnl_bond_dec_td14_buy, lwnl_bond_dec_td22_buy, lwnl_bond_sep_td4_sell, lwnl_bond_sep_td20_buy; held: lwnl_bond_dec_td7_sell / _td8_sell (3 unstated details). Not coded yet: the Oct 1997 table (no stop or exit printed; the table is garbled) (the Christmas / New Year trades are lwnl_bond_xmas_buy / lwnl_bond_newyear_sell)",
@@ -441,6 +447,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         s if s.starts_with("lwnl_tdw_oc") => f("lwnl_tdw", "Day of week open-to-close", ""),
         "lwnl_cti_bonds" => f("lwnl_cti", "CTI bond system", "60% / 90% range breakout"),
         "lwnl_bond_projected" => f("lwnl_bond_projected", "Projected high/low contrarian", "T-Bonds"),
+        "lwnl_sp_hornbrook_im" => f("lwnl_sp_hornbrook_im", "Intermarket S&P set-up (Hornbrook)", "Pound, crude, gold"),
         "lwnl_bond_sp_9ma_1down" => f("lwnl_bond_sp_9ma", "S&P pullback in a bond uptrend", "One down close"),
         "lwnl_bond_sp_9ma_2down" => f("lwnl_bond_sp_9ma", "S&P pullback in a bond uptrend", "Two down closes"),
         "lwnl_bond_sp_systems" | "lwnl_bond_systems" | "lwnl_commodity_systems" => f("lwnl_needs_data", "Futures systems", "Needs data"),
@@ -471,6 +478,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         return Some(vec![stop(b.7), day0(), pt(1000.0)]);
     }
     if id == "lwnl_bond_xmas_buy" || id == "lwnl_bond_newyear_sell" { return Some(vec![pt(1000.0)]); }
+    if id == "lwnl_sp_hornbrook_im" { return Some(vec![pt(500.0)]); }
     if id == "lwnl_bond_dowm_buy" {
         return Some(vec![stop(1000.0), p("target_usd", "Profit target $ (book $2,250)", 2250.0, 0.0, 10000.0, 250.0), day0(),
             p("fri", "4th Friday instead of the code's 4th Thursday (the text)", 0.0, 0.0, 1.0, 1.0), pt(1000.0)]);
@@ -884,6 +892,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             let e = if b.6 { crate::books::lwlts::Ent::Close } else { crate::books::lwlts::Ent::Open };
             crate::books::lwlts::simulate(x, from, to, &c2, |i| if on[i] { if b.5 > 0.0 { (Some(e), None) } else { (None, Some(e)) } } else { (None, None) })
+        }
+        "lwnl_sp_hornbrook_im" => {
+            // lane F1D (R4 #293): the S&P with the pound, crude and gold as Data2 (own bars, carried to the S&P dates)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let (Some(bp), Some(cl), Some(gc)) = (crate::futures::rows("&6B"), crate::futures::rows("&CL"), crate::futures::rows("&GC")) else { return Some(vec![]) };
+            let flag = |sym: &'static str, rows: &'static [crate::Row], n: usize, up: bool| crate::second::align(sym, x.r, rows)
+                .own(|r| (0..r.len()).map(|k| (k >= n && if up { r[k].close > r[k - n].close } else { r[k].close < r[k - n].close }) as u8 as f64).collect());
+            let (f1, f2, f3) = (flag("&6B", bp, 8, true), flag("&CL", cl, 1, true), flag("&GC", gc, 5, false));
+            let c2 = crate::books::lwlts::Cfg { stop: f64::NAN, stop_s: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN,
+                hold: Some(0), bailout: false, bail_after: 0, reverse: false, order: false };
+            crate::books::lwlts::simulate(x, from, to, &c2, |i| {
+                let s = i - 1;
+                ((f1[s] == 1.0 && f2[s] == 1.0 && f3[s] == 1.0).then_some(crate::books::lwlts::Ent::Open), None)
+            })
         }
         "lwnl_bond_dowm_buy" => {
             // lane F1D (R4 #293): only on the Norgate T-bond contract
