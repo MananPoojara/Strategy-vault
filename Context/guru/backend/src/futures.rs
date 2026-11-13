@@ -215,7 +215,8 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
 }
 /// Lane PA1: Downs's tactical patterns (books::scdtac), each on the contract the article tests (S&C V.17:1).
 const DOWNS: &str = "Walter T. Downs, The Tactical Trader, Technical Analysis of Stocks & Commodities V.17:1 (Jan 1999) p.27-37: weekly soybean gaps and monthly equilateral quads, each tested by the author on one futures market (Omega back-adjusted continuous data); run on the Norgate continuous contract of that market (R4 #293 (1)), lane PA1.";
-const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS)]; // the quads ids are duplicates of wtdtt_m_equi_quads (R4 #324 B1)
+const PEE: &str = "M.H. Pee, Trend Continuation Factor (S&C V.20:3 p.58-64) and Trend Intensity Index (S&C V.20:6 p.32-35): reversal systems tested on continuous contracts of 15 futures 1/4/1982-12/31/1998; each card runs on the Norgate continuous contract of one market the article tested and the vault holds (R4 #293 (1), #323 (1)), lane PA1.";
+const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS), ("scpee_tcf_zb", "&ZB", PEE), ("scpee_tcf_6b", "&6B", PEE), ("scpee_tcf_cl", "&CL", PEE), ("scpee_tcf_gc", "&GC", PEE), ("scpee_tcf_6j", "&6J", PEE), ("scpee_tcf_6s", "&6S", PEE), ("scpee_tcf_si", "&SI", PEE), ("scpee_tii_zb", "&ZB", PEE), ("scpee_tii_6b", "&6B", PEE), ("scpee_tii_cl", "&CL", PEE), ("scpee_tii_gc", "&GC", PEE), ("scpee_tii_6j", "&6J", PEE), ("scpee_tii_6s", "&6S", PEE), ("scpee_tii_si", "&SI", PEE)];
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PA1).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
