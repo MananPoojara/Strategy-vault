@@ -8,7 +8,7 @@ use super::rbtie::mk;
 pub const REVIEWED: &[&str] = &["scbrower_long", "scbrower_short"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Adapted: 1 unstated detail, R4 #297; declared adaptation: the long and short patterns as two cards] Norgate continuous S&P 500 futures (&SP, back-adjusted daily bars; the article used back-adjusted, forward-rolled Genesis data 4/1982-3/1996). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. Unstated in the article: the unit of 'points'; vault reading: TradeStation points = 0.01 S&P index points, so 30 points = 0.30 (as the vault's McNutt reading, kftsm): read as whole index points, gaps of 30-70 S&P points would almost never occur in 1982-96 and could not give the article's 412 trades. DoWinMo = 10 x (the week-of-month occurrence of the weekday, 1-5) + weekday (Monday 1 .. Friday 5) of the SIGNAL day ('all references to DoWinMo numbers identify the day before the trade'); '>50' = any fifth occurrence. Each trade enters on the next day (at the open, or at the stop/limit level when the day reaches it) and exits at that day's close (MOC); no stops. 'Only one trade is allowed in the same direction at the same time': on a day two buy patterns fire, the market-at-open entry (pattern 2) is the one taken. The article's system holds the long and the short patterns together (a long and a short can run the same day); the vault splits them into a long-side and a short-side card, which the article also reports separately (long $138,440; short $41,050, 68% profitable, $500 per trade). Costs: none (the article charged $100 per trade).";
+const NOTE: &str = "[Adapted: 1 unstated detail, R4 #297; declared adaptation: the long and short patterns as two cards] Norgate continuous S&P 500 futures (&SP, back-adjusted daily bars; the article used back-adjusted, forward-rolled Genesis data 4/1982-3/1996). Results are published only from 1982-04-21 to 1995-07-31 (R4 #328): from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open these opening-gap patterns read. Roll method not stated by the vendor. Unstated in the article: the unit of 'points'; vault reading: TradeStation points = 0.01 S&P index points, so 30 points = 0.30 (as the vault's McNutt reading, kftsm): read as whole index points, gaps of 30-70 S&P points would almost never occur in 1982-96. Evidence per pattern against the article's Figure 3 (authors/pf/w/book5.out, each pattern alone, in-sample 4/1982-12/1989 / out-of-sample 1/1990-3/1996): pattern 5: 38 / 35 trades vs 39 / 33; pattern 7: 21 / 16 vs 17 / 14; pattern 6: 28 / 22 vs 28 / 21; pattern 8: 10 / 23 vs 10 / 23. Pattern 2 falls short in both periods: 107 / 103 trades vs 130 / 139 (-18% / -26%); the cause is not resolved (perhaps the data vendor's opens on small gaps), so the long card trades pattern 2 less often than the article did. DoWinMo = 10 x (the week-of-month occurrence of the weekday, 1-5) + weekday (Monday 1 .. Friday 5) of the SIGNAL day ('all references to DoWinMo numbers identify the day before the trade'); '>50' = any fifth occurrence. Each trade enters on the next day (at the open, or at the stop/limit level when the day reaches it) and exits at that day's close (MOC); no stops. 'Only one trade is allowed in the same direction at the same time': on a day two buy patterns fire, the market-at-open entry (pattern 2) is the one taken. The article's system holds the long and the short patterns together (a long and a short can run the same day); the vault splits them into a long-side and a short-side card, which the article also reports separately (long $138,440; short $41,050, 68% profitable, $500 per trade). Costs: none (the article charged $100 per trade).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, rules, claim| StrategyDef { id, name, group: "S&C: The S&P 500 Seasonal Day Trade (Brower, V14:8)", session: 0, dir, status: Status::Live,
@@ -24,7 +24,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Pattern 6 If tomorrow's open minus 20 points is greater than today's high, then sell at today's close stop.\" DoWinMo 21, 32, 41, 43, >50 (Figure 2)",
             "E|\"Pattern 8 If tomorrow's open plus 70 points is less than today's close, then sell at today's high limit.\" DoWinMo 14, 33, 34, 42",
             "X|\"Each pattern is a day trade using a simple market-on-close (MOC) exit.\" \"No stops of any sort are used.\" (p.340-341)"],
-          crate::connors::claim("about 82", "68%", "$41,050 net, $500 per trade (with $100 slippage and commission)", "1 day", "S&P 500 futures daily 4/1982-3/1996 (p.341)")),
+          crate::connors::claim("82 (Figure 3: 28 + 21 + 10 + 23)", "68%", "$41,050 net, $500 per trade (with $100 slippage and commission)", "1 day", "S&P 500 futures daily 4/1982-3/1996 (p.341)")),
     ]
 }
 
@@ -76,5 +76,21 @@ mod tests {
         assert_eq!(dowinmo("1996-03-11"), Some(21)); // second Monday
         assert_eq!(dowinmo("1996-01-29"), Some(51)); // fifth Monday
         assert_eq!(dowinmo("1996-03-02"), None);     // Saturday
+    }
+    use crate::Row;
+    #[test]
+    fn pattern_5_fills_at_the_prior_low_and_pattern_2_takes_the_open_first() {
+        // Unit-test fixture only (no market data). Signal day 1996-03-05 = first Tuesday (DoWinMo 12: patterns 2 and 5 both listed).
+        let bars = |o: f64| vec![
+            Row { ticker: "T".into(), date: "1996-03-05".into(), open: 100., high: 101., low: 99.95, close: 100., volume: None },
+            Row { ticker: "T".into(), date: "1996-03-06".into(), open: o, high: 100.5, low: o - 0.5, close: 100.2, volume: None }];
+        // open 99.80: 99.80 + 0.10 < 99.95 (pattern 5) but 99.80 + 0.30 >= 100.00 (no pattern 2) -> buy stop at the prior low 99.95
+        let r = bars(99.80);
+        let t = run("scbrower_long", &Ctx::new(&r, &r, &[]), 0, 1, &Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].legs[0].px, t[0].entry_kind, t[0].exit_px), (1, 1, 99.95, "stop", 100.2));
+        // open 99.00: both patterns qualify -> one long trade, at the open (pattern 2 comes first)
+        let r = bars(99.00);
+        let t = run("scbrower_long", &Ctx::new(&r, &r, &[]), 0, 1, &Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].px, t[0].entry_kind), (1, 99.00, "open"));
     }
 }

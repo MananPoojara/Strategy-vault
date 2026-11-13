@@ -45,9 +45,14 @@ pub const BOOK_WINDOW: &[(&str, &str, &str)] = &[("mhs_ua830418_1", "1983-02-15"
 /// Lead review of F3 (13 Nov 2026): the PUBLISHED period itself (readiness::check + auto_start / auto_end), so the statistics,
 /// equity and buy-and-hold cover only it: a BOOK_WINDOW id its book window; an inter-market id from the first bar of its
 /// signal market (before it the pattern cannot form, e.g. &SP from 1982-04-21 for the S&P -> T-bond cards).
+/// Lane PF (R4 #328, review PF2 B1): published period of the &SP opening-gap cards (first and last date, inclusive).
+pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21", "1995-07-31"), ("scbrower_short", "1982-04-21", "1995-07-31")];
+pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open the opening-gap patterns read (R4 #328)";
 pub fn window(id: &str) -> Option<(String, String, &'static str)> {
     let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
         "outside the book's test window more than 5% of its trades reach the target and the stop on one day, which daily bars cannot order (R4 #240, #294 (1))"));
+    // lane PF (R4 #328): Brower's opening-gap patterns read the &SP pit open, which Norgate's &SP open stops being in August 1995
+    if let Some(o) = OPEN_WINDOW.iter().find(|o| o.0 == id) { w = Some((o.1.to_string(), o.2.to_string(), OPEN_WHY)); }
     if let Some(t) = INTER.iter().find(|t| t.0 == id) {
         let m = crate::futures::MARKETS.iter().find(|m| m.sym == t.2);
         let first = m.and_then(|m| crate::books::rotation::PRELOADED.get()?.get(&crate::futures::ticker(m))?.first().map(|r| r.date.clone()));
