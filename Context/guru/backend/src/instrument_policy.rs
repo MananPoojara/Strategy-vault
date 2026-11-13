@@ -1489,7 +1489,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- end Art Collins block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
-        "jbudt_gap_fpo"|"jbudt_gap_split"=>"Held: no stop in the book. The kept position leaves only on the first opening beyond the entry price, so a short that never gets one stays open: on SPY a short entered in January 1995 is still open in 2026 and has lost more than the whole account, which no account can carry.",
         "jb30d_gap_tick"|"jb30d_gap_pct"|"jbcdt_gap_go"=>"Held: needs intraday data. The trade enters on a stop and is stopped out or closed on the same day; daily bars cannot show whether the stop or the entry came first, and the accuracy check found all of its gain comes from such same-day trades.",
         // ---- end Bernstein g2
         // ---- Faith block (25 Oct 2026): held Live rules
@@ -3149,7 +3148,7 @@ mod tests {
         use crate::books::ss;
         let cat=ss::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday phase 1 ids: own test
-        assert_eq!(admitted.len(),30);
+        assert_eq!(admitted.len(),32); // lane R2D (R4 #297): + ss_study_fresh_adx_buy/_sell
         assert!(admitted.iter().all(|id|ss::REVIEWED_DAILY.contains(id)));
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)) {
             let stock=ss::STOCK_SHOWN.contains(&d.id);let also=ss::STOCK_ALSO.contains(&d.id);
@@ -3167,7 +3166,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
         }
         // Held: gate-withheld, data-missing, discretionary or no trade rule in the book.
-        for id in ["ss_turtle_soup","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal",/* ss_smart_money_index: lane K75 minute admission */"ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse","ss_study_fresh_adx_buy","ss_study_fresh_adx_sell"] {
+        for id in ["ss_turtle_soup","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal",/* ss_smart_money_index: lane K75 minute admission */"ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse"/* ss_study_fresh_adx_buy/_sell: lane R2D, R4 #297 */] {
             let d=def(id,"ss");
             assert!(!reviewed_cash_rule(&d),"{id}");
             assert_eq!(policy(&d).requirement,"source_review_required");
@@ -3836,7 +3835,7 @@ mod bernstein_g2_tests {
         use crate::books::{jb30d,jbudt,jbcdt2};
         let cat:Vec<_>=jb30d::catalogue().into_iter().chain(jbudt::catalogue()).chain(jbcdt2::catalogue()).collect();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // jb30d_gap_pct: intraday wave 1
-        assert_eq!(admitted.len(),14);
+        assert_eq!(admitted.len(),16); // lane R2D (R4 #297): + jbudt_gap_fpo, jbudt_gap_split (labelled stop reading)
         let (us,india)=(NativeEvidence::us_test_fixture(),NativeEvidence::india_test_fixture());
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)) {
             assert!(matches!(d.status,crate::connors::Status::Live),"{}",d.id);
@@ -3855,7 +3854,7 @@ mod bernstein_g2_tests {
             }
         }
         // Held: same-day gap stops, intraday, missing numbers, chart judgement.
-        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"/* jb30d_gap_tick, jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"/* jbudt_pop: 5-minute bars, intraday_ep lane K55 */|"jbcdt2_inside_day"|"jbcdt2_or30")) {
+        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"/* jbudt_gap_fpo, jbudt_gap_split: lane R2D, R4 #297 *//* jb30d_gap_tick, jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"/* jbudt_pop: 5-minute bars, intraday_ep lane K55 */|"jbcdt2_inside_day"|"jbcdt2_or30")) {
             assert!(!reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"source_review_required");
         }
