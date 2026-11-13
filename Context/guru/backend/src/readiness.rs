@@ -482,6 +482,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                 if books::rotation::is_basket(def.id) {
                     return issue("not_testable", format!("Not published on {}. Stock-basket ranking: runs only in the basket's index context ({}); the index is the calendar and the benchmark, the trades are the basket stocks named in each trade.", row.ticker, allowed.join(", ")));
                 }
+                if def.id==books::ecqt::PAIR { // lane P1
+                    return issue("not_testable", format!("Not published on {}. Chan's GLD/GDX pair holds both ETFs and runs only in the GLD context (GDX is the second leg). Open it on GLD for the results.", row.ticker));
+                }
+                if def.id=="vvqmm_pairs" { // lane P1: two actual stocks on the index calendar
+                    return issue("not_testable", format!("Not published on {}. Pairs trade of two actual stocks (pair chosen by the vault): runs only on the SPY calendar (US pairs) or the NIFTY 50 calendar (India pairs); the index is the calendar and the benchmark, the trades are the two stocks named in each trade.", row.ticker));
+                }
                 if books::rotation::is_rotation(def.id) {
                     return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
                 }

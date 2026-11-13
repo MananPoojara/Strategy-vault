@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 430,
-  author: { id: 'quant', name: 'Bysshe & Chan', tagline: 'Opening-range and statistical-arbitrage books · need intraday or pair data', books: [{ id: 'gb10', title: 'Trading the 10 O’clock Bulls (Bysshe)', year: 2004, blurb: 'Opening-range rules need intraday bars' }, { id: 'ecqt', title: 'Quantitative Trading (Chan)', year: 2008, blurb: 'Pairs and stat-arb need stock pairs and data the vault does not have' }] },
+  author: { id: 'quant', name: 'Bysshe & Chan', tagline: 'Opening-range and statistical-arbitrage books · need intraday or pair data', books: [{ id: 'gb10', title: 'Trading the 10 O’clock Bulls (Bysshe)', year: 2004, blurb: 'Opening-range rules need intraday bars' }, { id: 'ecqt', title: 'Quantitative Trading (Chan)', year: 2008, blurb: 'The GLD/GDX pair (Example 3.6) runs as printed; the stock-basket stat-arb examples stay held' }] },
   identities: [],
   profile: {
     "kind": "person",

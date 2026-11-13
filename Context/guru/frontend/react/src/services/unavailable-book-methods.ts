@@ -1,7 +1,10 @@
 interface Definition {id: string; book: string; family?: string; family_name?: string; name?: string}
 interface Reason {id: string; status: string; note?: string}
+export interface UnavailableStrategy {id: string; name: string; status: string; note: string}
 export interface UnavailableBookMethod {
   definition: Definition; key: string; name: string; status: string; reasons: string[];
+  /** Each strategy of the group with its own status and reason (a family can group strategies held for different reasons). */
+  strategies: UnavailableStrategy[];
 }
 /** Group parameters into their book method; an available sibling keeps the method available. */
 export function unavailableBookMethods(definitions: Definition[], reasons: Reason[]): UnavailableBookMethod[] {
@@ -20,6 +23,8 @@ export function unavailableBookMethods(definitions: Definition[], reasons: Reaso
     return [{key, definition: group[0], name: group[0].family_name || group[0].name || group[0].id,
       status: noTrades ? 'no_trades' : states.find(Boolean)?.status || 'no_eligible_results',
       reasons: notes,
+      strategies: group.map((def, i) => ({id: def.id, name: def.name || def.id, status: states[i]?.status || 'no_eligible_results',
+        note: states[i]?.note?.trim() || 'No measured result or admission decision is available for this selection.'})),
     }];
   });
 }

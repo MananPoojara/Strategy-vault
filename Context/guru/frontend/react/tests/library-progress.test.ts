@@ -58,3 +58,14 @@ it('names the plain reason for held rules without changing their status',()=>{
  expect(p.book('five')).toMatchObject({status:'not_backtested',reason:'No backtest is published yet for its 1 strategy: Held (1). Each strategy page gives the exact reason.'});
  expect(p.book('one').reason).toMatch(/available computed result/);
 });
+
+it('gives each held strategy of a shared family its own reason, not the first match in the joined notes',()=>{
+ // lane P1: Van Vliet's QMM family grouped an unnamed-pair rule with an option overlay; both were labelled 'Needs option prices'
+ const mixed=[{id:'p',book:'qmm',family:'held',status:'not_testable',instrument_policy:{requirement:'source_review_required',allowed_types:[]},status_note:'Backtest unavailable: the holding period is not fully defined.'},
+  {id:'f',book:'qmm',family:'held',status:'not_testable',instrument_policy:{requirement:'source_review_required',allowed_types:[]},status_note:'Backtest unavailable: needs option prices.'},
+  {id:'t',book:'bats',family:'held',status:'not_testable',instrument_policy:{requirement:'source_review_required',allowed_types:[]},status_note:'Backtest unavailable: needs a 15-minute bar.'},
+  {id:'u',book:'bats',family:'held',status:'not_testable',instrument_policy:{requirement:'source_review_required',allowed_types:[]},status_note:'Backtest unavailable: needs a 15-minute bar.'}];
+ const p=libraryProgress(mixed,{...snapshot,catalogue_variant_ids:mixed.map(v=>v.id),catalogue_rule_signatures:Object.fromEntries(mixed.map(v=>[v.id,definitionSignature(v)]))});
+ expect(p.book('qmm').reason).toBe('No backtest is published yet for its 1 strategy: Rules not fully defined + Needs option prices (1). Each strategy page gives the exact reason.');
+ expect(p.book('bats').reason).toContain(': Needs intraday data (1).');
+});
