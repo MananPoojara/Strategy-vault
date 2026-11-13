@@ -61,6 +61,9 @@ pub const MARKETS: &[Market] = &[
         source: "CBOT oats futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
     Market { sym: "&OJ", name: "Orange Juice", tick: 0.05, usd: &[("1978-08-08", 150.)],
         source: "ICE frozen concentrated orange juice futures: 15,000 lb per contract, quoted in US cents per lb (1.00 = US$150; 0.05 = US$7.50)" },
+    // lane PG (13 Nov 2026): Balsara's live cattle test (books::scnbps)
+    Market { sym: "&LE", name: "Live Cattle", tick: 0.025, usd: &[("1978-10-23", 400.)],
+        source: "CME live cattle futures: 40,000 pounds per contract, quoted in US cents per pound (1.00 = US$400; 0.025 = US$10, the tick of the book era)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -208,7 +211,7 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
 /// R4 #316 (lane X4): cards whose published run ends the day before the first non-positive unadjusted price (NYMEX crude
 /// settled at -37.63 on 2020-04-20, where a % return has no base); readiness::auto_end / check apply it. The series itself
 /// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
-const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17"];
+const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17", "scnbps_cross" /* lane PG: Balsara crossover on &CL (R4 #326) */];
 /// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
 pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
     if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
@@ -287,13 +290,20 @@ const CARDS_PB: &[(&str, &str, &str)] = &[
     ("konwv_yen", "&6J", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the yen parameters (30/5/50 weeks) on the Norgate continuous Japanese yen contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
     ("konwv_bond", "&ZB", "Jeremy G. Konstenius, Combining Trend And Oscillator Signals, S&C V14:12 p.520-525: the wave 1 model with the T-bond parameters (20/10/30 weeks) on the Norgate continuous T-bond contract, back-adjusted weekly bars (R4 #293 (1)), lane PB."),
 ];
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).find(|c| c.0 == id) }
+/// Lane PG (13 Nov 2026): Sweeney's and Saitta's S&C T-bond tests (books::scswrl, books::scsarf), on the contract they name.
+const CARDS_PG: &[(&str, &str, &str)] = &[("scswrl_underlying", "&ZB", SWRL), ("scswrl_reverse", "&ZB", SWRL), ("scsarf_hs", "&ZB", SARF), ("scsarf_dt", "&ZB", SARF),
+    ("scpged_weekly", "&GE", PGED), ("scnbps_cross", "&GE", NBPS), ("scnbps_cross", "&6S", NBPS), ("scnbps_cross", "&SP", NBPS), ("scnbps_cross", "&LE", NBPS), ("scnbps_cross", "&CL", NBPS)];
+const PGED: &str = "George Panagakis, 'Trading The Eurodollar', Technical Analysis of Stocks & Commodities V.13:3 (1995) p.102-106 (Figure 5: June/December Eurodollar contracts, fiscal years 1982-1993): run on the Norgate Eurodollar continuous contract only (R4 #293 (1))";
+const NBPS: &str = "Nauzer Balsara, 'Using Probability Stops In Trading', Technical Analysis of Stocks & Commodities V.10:5 (1992) p.225-228 (Figures 1-5: Eurodollar, Swiss franc, S&P 500, live cattle and crude oil futures, 1988-1991, closing prices): run on those five Norgate continuous contracts only (R4 #293 (1))";
+const SWRL: &str = "John Sweeney, 'Reversing Your Losses', Technical Analysis of Stocks & Commodities V.10:4 (1992) p.184-186 (Figure 5: December 1986 T-bond contract), with the underlying system's printed rules from V.10:1 (1992) p.43-45 Figure 1: run on the Norgate T-bond continuous contract only (R4 #293 (1))";
+const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PG).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
     let c = card(id)?;
     // lane PB: a card may list several contracts (one tuple each); any of them is home
-    let homes: Vec<&Market> = CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
+    let homes: Vec<&Market> = CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PG).filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
     let m = MARKETS.iter().find(|m| m.sym == c.1)?;
     let sym = of_ticker(t).map(|m| m.sym);
     if homes.iter().any(|h| Some(h.sym) == sym) { return None; }
