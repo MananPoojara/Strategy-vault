@@ -296,7 +296,12 @@ const CARDS_PB: &[(&str, &str, &str)] = &[
 /// Lane PA1: Downs's tactical patterns (books::scdtac), each on the contract the article tests (S&C V.17:1).
 const DOWNS: &str = "Walter T. Downs, The Tactical Trader, Technical Analysis of Stocks & Commodities V.17:1 (Jan 1999) p.27-37: weekly soybean gaps and monthly equilateral quads, each tested by the author on one futures market (Omega back-adjusted continuous data); run on the Norgate continuous contract of that market (R4 #293 (1)), lane PA1.";
 const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS)]; // the quads ids are duplicates of wtdtt_m_equi_quads (R4 #324 B1)
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PA1).find(|c| c.0 == id) }
+/// Lane PA2 (13 Nov 2026): Barrie's CBOT T-bond tests (books::scsbqs), on the T-bond continuous contract the article names.
+const SBQS: &str = "Scott Barrie, 'Quasi-Seasonal Tendencies in Bond Futures', Technical Analysis of Stocks & Commodities V.14:1 (1996) p.19-25 (Figures 4, 7, 10: CBOT long bond futures 1979-1994, close-to-close, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
+const JMCT: &str = "John L. Momsen, 'Trade Crude Now', Technical Analysis of Stocks & Commodities V.19:8 (2001) p.53-56, sidebar 'Crude oil seasonal trade #2' (TradeStation code; November crude oil futures 1983-1999): run on the Norgate crude-oil continuous contract only (R4 #293 (1))";
+const CARDS_PA2: &[(&str, &str, &str)] = &[("scsbqs_tuesday", "&ZB", SBQS), ("scsbqs_month_end", "&ZB", SBQS), ("scsbqs_april15", "&ZB", SBQS), ("scjmct_crude2", "&CL", JMCT), ("scasrb_breakout", "&ZB", ASRB)];
+const ASRB: &str = "Alex Saitta, 'Range Breakout Trading in Treasury Bonds', Technical Analysis of Stocks & Commodities V.13:4 (1995) p.149-152 (Figure 4: one T-bond contract 1984-1994, closes, no costs; Morris's MetaStock transcription msws_gm9_range_breakout is held as NotTestable): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {

@@ -267,7 +267,7 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "slct_ct_formula", "sprfs_nr4ib", "stad12_ntw", "stad13_luxor", "stad1_maco",
     "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad7_masr", "stad9_dyf", "stad9_luxor", "stad9_nohurry", "stad9_redrover",
     "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tttt1_tradetimer",
-    "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
+    "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi", "scuhnn_nnp"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
     "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
     "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3", "ftm_rg_oops" /* K54, #233 tick default: K54w/M3-oops.tsv */,
@@ -278,7 +278,7 @@ pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "
     "mqma_moving_average", "msws_dark_cloud_piercing_line_mfi", "msws_engulfing_mfi", "nkms_bull_power_bear_power_2",
     "rgc_runaway_gap", "scjleq_vol", "scraj_red", "sprfs_hvr_nr4ib", "sprfs_nr4ib", "ss_anti_3_10", "stad11_gapper", "stad9_redrover",
     "strmm_expert", "strtw_gd_bj", "tcdt_oc_nr_re", "tselhs_rb_avg", "wbmdd_erg_tsi_s2", "wtdtt_mist1", "wtdtt_mist3", "wtdtt_mist4",
-    "wtdtt_moc_contraction", "wtdtt_moc_manip"];
+    "wtdtt_moc_contraction", "wtdtt_moc_manip", "scuhnn_nnp"];
 /// The tradable-vs-cash refusals (#177 minutes, #179 daily). check() and readiness::check() decide this first, before any
 /// data-coverage check, so a withdrawn (rule, ticker) pair always shows this reason. Ticker routing only; no calculation.
 pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
@@ -301,9 +301,17 @@ pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
     let etf=match ticker {"SPX"=>"SPY","NDX"=>"QQQ","DJI"=>"DIA",_=>""};
     if !m3_withdrawn(def.id,ticker) {return None;}
     if !etf.is_empty() {
-        return Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withdrawn (decision #179, 3 Nov 2026): {ticker} daily open/high/low come from stale component prints; on the tradable {etf} over the same dates this rule fails the check (M3). The daily result is published on {etf}.")});
+        return Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withdrawn (decision #179, 3 Nov 2026): {}; on the tradable {etf} over the same dates this rule fails the check (M3). The daily result is published on {etf}.",m3_reason(def.id,ticker))});
     }
     Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withheld (decision #179, 3 Nov 2026): the US tradable check failed; the vault has no tradable India series. The daily result is published on SPY.")})
+}
+/// Decision #179 note: why the cash index differs from its ETF. Generic: stale opens/highs/lows; a few rules read closes only
+/// and get their own reason (lead review R4 #322 M4).
+pub fn m3_reason(id:&str,ticker:&str)->String {
+    match id {
+        "scuhnn_nnp"=>format!("{ticker} and its ETF differ slightly in their weekly closes, and this rule's nearest-neighbour search on weekly closes amplifies small differences"),
+        _=>format!("{ticker} daily open/high/low come from stale component prints"),
+    }
 }
 /// Decision #179: is this (rule, ticker) daily result withdrawn? Cash index flagged by M3, or NIFTY 50/NIFTYBANK for an SPX flag.
 pub fn m3_withdrawn(id:&str,ticker:&str)->bool {
@@ -3995,12 +4003,12 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(73,18,44)); // + PA1 scrfobv_3ema (NDX) // + K70 as51_donchian_pb, as51_fractal_sma (SPX) // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(74,18,45)); // + PA1 scrfobv_3ema (NDX) // + PA2 scuhnn_nnp (SPX, DJI) // + K70 as51_donchian_pb, as51_fractal_sma (SPX) // - K63 part C #255 re-admits (ss_hist_vol_crabel, ss_three_day_unfilled_gap) // - K63 #255 re-admits (ltcoat_coat_tails, scluisi_nr, stad2_adxdiff, stad6_adxmac; jrfsp_weekly_breakout, lgtt30_tt30, putg_pattern_vbo) // + K54 ftm_rg_oops (NDX) // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
                 if d.status!=crate::connors::Status::Live {continue;} // held since (K37: rarsys_trend_weaver, lead decision 199)
-                assert!(check(d,x,false).unwrap().note.contains(&format!("{x} daily open/high/low come from stale component prints; on the tradable {y} over the same dates this rule fails the check (M3)")),"{id} {x}");
+                assert!(check(d,x,false).unwrap().note.contains(&format!("{}; on the tradable {y} over the same dates this rule fails the check (M3)",m3_reason(id,x))),"{id} {x}");
                 assert!(tradable_check_issue(d,y,false).is_none(),"{id} {y}");
                 assert!(tradable_check_issue(d,"AAPL",true).is_none() || crate::intraday_ep6::WINDOW_ONLY.contains(id),"{id}"); // K62 #243 (c)
                 if let Some(g)=crate::gate::get(id) {assert!(g.ours.contains("M3 tradable-vs-cash daily check (#179, flagged)")&&g.reason.contains("Decision #179"),"{id}");}
