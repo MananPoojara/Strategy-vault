@@ -14,6 +14,10 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 fn def(id: &'static str, name: &'static str, dir: &'static str, notes: &'static str, rules: &'static [&'static str]) -> StrategyDef {
     StrategyDef { id, name, group: "S&C: The Tactical Trader (Downs, V.17:1)", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: "scdtac", rules, notes, claim: None }
 }
+/// R4 #324 B1: the quads are Downs's "Equilateral Quads" from Trading for Tigers, live as wtdtt_m_equi_quads (the article says it
+/// "was adapted from Downs' forthcoming book, Trading For Tigers"; same pattern, same market table). Marked as duplicates like
+/// jdfts_ema5_13 (NotTestable, no futures card); run() and the reference check are kept for the record.
+pub const DUP_QUADS: &str = "Duplicate of wtdtt_m_equi_quads (R4 #324 B1): Downs's S&C equilateral quads (V.17:1) are the Equilateral Quads of his Trading for Tigers, already live as wtdtt_m_equi_quads; counted once, not run as a separate strategy. Readings differ only in form: the S&C formula is strict (H < H[1] - Range[1] x 0.01, L > L[1] + Range[1] x 0.01) where the book text is inclusive (<= / >=), and the article trades each market's bias where the book card places both stops. Record kept: on the Norgate contracts the S&C version made T-bonds 10 trades (100%) vs 14 (93%), soybeans 18 (72.2%) vs 21 printed since 1977 (76.2%), dollar 10 (70%) vs 10 (80%), S&P 10 (90%) vs 9 (89%) (lane PA1, authors/pa1/w/book2.out).";
 const R_GAPS: &[&str] = &["E|\"On a weekly chart of soybeans, the opening price of the week must gap higher than the previous week's high. This gap week becomes our setup bar.\" \"In the week following the gap week, if the market opens below the gap week high and then exceeds the high of the gap week, we will go long the market.\" (V.17:1 p.28)",
     "X|\"We will exit our long positions on the opening of the following week.\" (p.28); \"No protective stops were used.\" (p.30)"];
 const R_QUADS: &[&str] = &["E|\"On a monthly chart, if the following mathematical condition is true, then our setup month is complete: H < H[n] - (Range[n]*R) AND L > L[n]+(Range[n]*R) ... In this tactical pattern, n = 1 and R = 0.01.\" (p.31)",
@@ -30,7 +34,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "scdtac_quads_dx" => ("Downs equilateral quads · US dollar: after an inside month (1% of range), trade its breakout either way, out at month end", "Long/Short"),
             _ => ("Downs equilateral quads · S&P 500: after an inside month (1% of range), buy above its high, out at month end", "Long"),
         };
-        v.push(def(id, name, dir, note(id), R_QUADS));
+        let mut d = def(id, name, dir, note(id), R_QUADS);
+        d.status = Status::NotTestable(DUP_QUADS); // R4 #324 B1: counted once, as wtdtt_m_equi_quads
+        v.push(d);
     }
     v
 }
@@ -48,7 +54,7 @@ pub fn note(id: &str) -> &'static str {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     match id {
         "scdtac_gaps_zs" => Some(("scdtac_gaps", "Downs soybean gaps (S&C)", "Soybeans")),
-        _ => QUADS.iter().find(|q| q.0 == id).map(|q| ("scdtac_quads", "Downs equilateral quads (S&C)", q.1)),
+        _ => QUADS.iter().find(|q| q.0 == id).map(|q| (q.0, "Downs equilateral quads (S&C)", "Duplicate of wtdtt_m_equi_quads")),
     }
 }
 
@@ -127,6 +133,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dx_multiplier_fails_closed_after_the_article() {
+        let dx = crate::futures::MARKETS.iter().find(|m| m.sym == "&DX").unwrap();
+        assert_eq!(crate::futures::usd_per_point(dx, "1990-06-29"), Some(500.));
+        assert_eq!(crate::futures::usd_per_point(dx, "2005-01-03"), None);
+    }
+    #[test]
+    fn quads_are_duplicates() {
+        for d in catalogue().iter().filter(|d| d.id.starts_with("scdtac_quads")) { assert!(matches!(d.status, Status::NotTestable(s) if s.starts_with("Duplicate of wtdtt_m_equi_quads"))); }
+    }
     #[test]
     fn quads_and_gaps() {
         let r = super::super::sctraub::tests::bars(5000);

@@ -10,7 +10,7 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["sckfvi_daily"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Complete rule (printed TradeStation 7 code, Sidebar 1 part 3, with the daily column of Figure 7); unverified] TP = (H+L+C)/3; INTRA = ln H - ln L; INTER = ln TP - ln TP[1]; VINTRA, VINTER = population standard deviations (TradeStation StandardDev, data type 1 as in Sidebar 1) of the last Samples values; CUTOFF = 0.1 VINTRA + 0.1 VINTER; MF = C - (H+L)/2 + TP - TP[1]; factor = +1 if MF > CUTOFF x C, -1 if MF < -CUTOFF x C, else 0; FVE = sum of volume x factor over Samples bars / (Samples-bar average volume x Samples) x 100. Daily inputs (Figure 7): Samples 24, entry -20 < FVE < 10, linear regression angle of FVE over 20 bars > 30 degrees, FVE above its 40-bar exponential average, the 30-bar regression slope of the close between -0.2% and +0.6% of the line's value 29 bars ago (a basing price); exit when the 20-bar FVE regression angle is below -30 degrees, or 50 bars after the entry. Buy and sell at the bar's close ('this bar on close'), long only. Angle = arctangent of the regression slope in degrees (TradeStation LinearRegAngle). [Declared reading] FVE starts after 2 x Samples bars, as the code's 'BarNumber > 2*Samples'; its exponential average is seeded with the first FVE value. The article's daily test (Atmel, 9/4/2001-5/20/2003, $10,000 a trade): 4 trades, 3 winners, +$16,943.70. Atmel is not held, so no book check. The 5-, 15- and 30-minute versions need stock minute data the vault does not hold. Runs on indices, ETFs and stocks with volume, US and India, are a declared application.";
+const NOTE: &str = "[Complete rule (printed TradeStation 7 code, Sidebar 1 part 3, with the daily column of Figure 7); unverified] TP = (H+L+C)/3; INTRA = ln H - ln L; INTER = ln TP - ln TP[1]; VINTRA, VINTER = population standard deviations (TradeStation StandardDev, data type 1 as in Sidebar 1) of the last Samples values; CUTOFF = 0.1 VINTRA + 0.1 VINTER; MF = C - (H+L)/2 + TP - TP[1]; factor = +1 if MF > CUTOFF x C, -1 if MF < -CUTOFF x C, else 0; FVE = sum of volume x factor over Samples bars / (Samples-bar average volume x Samples) x 100. Daily inputs (Figure 7): Samples 24, entry -20 < FVE < 10, linear regression angle of FVE over 20 bars > 30 degrees, FVE above its 40-bar exponential average, the 30-bar regression slope of the close between -0.2% and +0.6% of the line's value 29 bars ago (a basing price); exit when the 20-bar FVE regression angle is below -30 degrees, or 50 bars after the entry (at the first close at least 50 bars after it when a volume-less day leaves FVE undefined, R4 #324 M2). Buy and sell at the bar's close ('this bar on close'), long only. Angle = arctangent of the regression slope in degrees (TradeStation LinearRegAngle). [Declared reading] FVE starts after 2 x Samples bars, as the code's 'BarNumber > 2*Samples'; its exponential average is seeded with the first FVE value. The article's daily test (Atmel, 9/4/2001-5/20/2003, $10,000 a trade): 4 trades, 3 winners, +$16,943.70. Atmel is not held, so no book check. The 5-, 15- and 30-minute versions need stock minute data the vault does not hold. Runs on indices, ETFs and stocks with volume, US and India, are a declared application.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "sckfvi_daily", name: "Katsanos volatility FVE breakout: FVE turning up sharply near zero while price bases; out on a steep FVE fall or after 50 bars", group: "S&C: Detecting Breakouts In Intraday Charts (Katsanos, V.21:9)", session: 0, dir: "Long", status: Status::Live,
@@ -79,13 +79,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let fe = ema0(&f, 40);
     let mut pos = Book::new();
     for t in from..=to {
-        if !f[t].is_finite() { continue; }
-        let ang = angle(&f, t, 20);
         if pos.side() > 0. {
+            // R4 #324 M2: the time exit does not depend on FVE (a volume-less day makes FVE NaN for Samples bars)
             let e = pos.entry_bar().unwrap_or(t);
-            if ang < sang { pos.exit(t, x.c[t], "FVE exit"); } else if t - e == hold { pos.exit(t, x.c[t], "time exit"); }
+            if f[t].is_finite() && angle(&f, t, 20) < sang { pos.exit(t, x.c[t], "FVE exit"); } else if t - e >= hold { pos.exit(t, x.c[t], "time exit"); }
             continue;
         }
+        if !f[t].is_finite() { continue; }
+        let ang = angle(&f, t, 20);
         let (slope, v0) = linreg(&x.c, t, 30);
         if f[t] > -20. && f[t] < 10. && ang > 30. && f[t] > fe[t] && slope < ub * v0 / 100. && slope > lb * v0 / 100. {
             pos.enter(1., t, x.c[t], "close");
