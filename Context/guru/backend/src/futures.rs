@@ -45,6 +45,11 @@ pub const MARKETS: &[Market] = &[
         source: "CME E-mini S&P 500 futures: US$50 x the S&P 500 index since launch (9 Sep 1997); tick 0.25 index point = US$12.50" },
     Market { sym: "&NQ", name: "E-mini Nasdaq-100", tick: 0.25, usd: &[("1999-06-21", 20.)],
         source: "CME E-mini Nasdaq-100 futures: US$20 x the Nasdaq-100 index since launch (21 Jun 1999); tick 0.25 index point = US$5" },
+    // lane PA1 (Downs, S&C V.17:1 soybean gaps and equilateral quads)
+    Market { sym: "&ZS", name: "Soybeans", tick: 0.25, usd: &[("1977-11-21", 50.)],
+        source: "CBOT soybean futures: 5,000 bushels per contract; Norgate quotes US cents per bushel, so 1.00 (one cent) = US$50 (Downs V.17:1 Figure 2: +7 cents on 5 contracts = $1,750 before costs); tick 0.25 cent = US$12.50" },
+    Market { sym: "&DX", name: "US Dollar Index", tick: 0.01, usd: &[("1985-11-20", 500.)],
+        source: "FINEX/ICE US Dollar Index futures: Downs's printed P&L (V.17:1 Figure 15: +0.50 index points on 5 contracts = $875 after $375 costs) implies US$500 per index point in 1987-96; the later US$1,000 contract and its start date are not established here (not used by the Downs patterns: check before any US$ amount); tick 0.01 of the book era" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -207,7 +212,10 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
         if let Some(raw) = extra.get(&(tb, "RAW.Close".to_string())).cloned() { extra.insert((ta, format!("{b}.RAW.Close")), raw); }
     }
 }
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).find(|c| c.0 == id) }
+/// Lane PA1: Downs's tactical patterns (books::scdtac), each on the contract the article tests (S&C V.17:1).
+const DOWNS: &str = "Walter T. Downs, The Tactical Trader, Technical Analysis of Stocks & Commodities V.17:1 (Jan 1999) p.27-37: weekly soybean gaps and monthly equilateral quads, each tested by the author on one futures market (Omega back-adjusted continuous data); run on the Norgate continuous contract of that market (R4 #293 (1)), lane PA1.";
+const CARDS_PA1: &[(&str, &str, &str)] = &[("scdtac_gaps_zs", "&ZS", DOWNS), ("scdtac_quads_zb", "&ZB", DOWNS), ("scdtac_quads_zs", "&ZS", DOWNS), ("scdtac_quads_dx", "&DX", DOWNS), ("scdtac_quads_sp", "&SP", DOWNS)];
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PA1).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
