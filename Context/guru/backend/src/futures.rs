@@ -157,6 +157,27 @@ pub const INDEX_SERIES: &[(&str, &str)] = &[("$COMP", "NASDAQ_COMP"), ("$NYA", "
     ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY"),
     // lane PF: the DJIA close for Meyers' DJstr/DJCstr (SOURCES norgate-us-indices-20200908-pf)
     ("$DJI", "DJ_INDUSTRIAL")];
+/// Lane PG (14 Nov 2026): daily HIGHS of the three Dow averages for stad7_dow (STAD Vol 7 Dow Theory: Data2-4 new highs).
+/// $DJT mirrored by lane PG (SOURCES norgate-us-indices-20200908-pg); $DJI (PF) and $DJU (PB) were already mirrored.
+pub const INDEX_HIGHS: &[(&str, &str)] = &[("$DJI", "DJ_IND_HIGH"), ("$DJT", "DJ_TRANS_HIGH"), ("$DJU", "DJ_UTIL_HIGH")];
+pub fn load_index_highs(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
+    let mut out = BTreeMap::new();
+    for (file, name) in INDEX_HIGHS {
+        let Ok(text) = std::fs::read_to_string(dir.join(format!("{file}.csv"))) else { eprintln!("warning: index {file} highs not loaded from {}", dir.display()); continue };
+        let mut lines = text.lines();
+        let head = crate::parse_csv_fields(lines.next().unwrap_or(""));
+        let (Some(di), Some(hi)) = (head.iter().position(|h| h == "Date"), head.iter().position(|h| h == "High")) else { continue };
+        let m: BTreeMap<String, f64> = lines.filter_map(|l| {
+            let f = crate::parse_csv_fields(l);
+            let d = f.get(di)?;
+            let date = (d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..]))?;
+            Some((date, crate::parse_csv_number(f.get(hi)?).ok().filter(|v| v.is_finite())?))
+        }).collect();
+        println!("index {file} highs -> {name}: {} days", m.len());
+        out.insert(("*".to_string(), name.to_string()), m);
+    }
+    out
+}
 pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
     let mut out = BTreeMap::new();
     for (file, name) in INDEX_SERIES {

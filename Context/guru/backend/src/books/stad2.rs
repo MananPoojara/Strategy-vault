@@ -25,7 +25,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad2";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
+pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_dow" /* lane PG: Dow averages from Norgate */, "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -752,11 +752,10 @@ fn defs_b() -> Vec<Def> {
     let d = |id, name, group, dir, status, rules, notes, family| Def { id, name, group, dir, status, needs_volume: false, rules, notes, family };
     vec![
     // ================= Volume 7 (1999)
-    d("stad7_dow", "Dow Theory (Chris Evans)", "Vol 7 · Trending", "Long",
-      NeedsData("Needs four aligned streams: a Dow 30 stock (Data1), the Dow Industrials (Data2), Dow Transports (Data3) and Dow Utilities (Data4). The vault has the Industrials (DJI) only - no Transports or Utilities and no single stocks with the indices aligned."),
+    d("stad7_dow", "Dow Theory (Chris Evans)", "Vol 7 · Trending", "Long", Live,
       &["E|High Data1 > Highest(High Data1,50)[1] starts a 10-bar confirmation window; all three Dow averages make new 50-bar highs in it -> Buy next bar at market (Vol 7 p.15 code)",
         "X|ExitLong next bar at highest High since entry - 5*AvgTrueRange(10) stop"],
-      "Vol 7 ch.2 p.14-20. Book (parameters 3/6/5/10, 1/2/90-4/1/98): CAT 31 trades 58%; T 31 trades 42%; KO 24 trades 63% ...", ("stad7_dow", "Dow Theory", "Vol 7")),
+      "[Literal printed code; unverified] Vol 7 ch.2 p.14-20 (code p.15). Data1 = the selected instrument (the book: any Dow 30 stock); Data2-4 = the Dow Jones Industrial, Transportation and Utility Averages' daily highs from Norgate ($DJI, $DJT, $DJU; lane PG, 14 Nov 2026, SOURCES norgate-us-indices-20200908-pg/-pf/-pb), aligned by date (an average without a bar that day, or with a missing day in its Length window, gives no new high). Defaults are the printed Inputs (Length 50, Confirm 10, ATRStop 5, ATRLen 10); the book's results table uses 3/6/5/10 (set them as parameters). Book (parameters 3/6/5/10, 1/2/90-4/1/98): CAT 31 trades 58%; T 31 42%; IBM 37 41%; KO 24 63% ...; ours on that window: CAT 33 trades 55%, AA (HWM) 40 52%, ALD (HON) 27 44%, IBM 37 41% pass; MRK 36 42% and KO 26 54% miss the win-rate tolerance by 2 and 1 points; T is not comparable (the vault's T is SBC before 2005), S not held - UNVERIFIED pending a lead ruling. Norgate's Dow averages' highs before 1992 appear to be theoretical intraday highs (never equal to the close), actual highs after. US instruments only (the Dow averages are US series).", ("stad7_dow", "Dow Theory", "Vol 7")),
     d("stad7_dma", "Derivative Moving Average (Hans Stimming)", "Vol 7 · Trending", "Long/Short", Live,
       &["F|AvgVal = Average(Close,9); DerivMA1 = (AvgVal - AvgVal[9])/9; DerivMA2 = DerivMA1 - DerivMA1[1] (Vol 7 p.25 code)",
         "F|DerivMA2 crosses above 0: BuyFlag = True; DerivMA2 crosses below 0: SellFlag = True",
@@ -1113,11 +1112,13 @@ fn defs_c() -> Vec<Def> {
     ]
 }
 
+/// Lane PG: the three Dow averages' daily highs stad7_dow reads (futures::INDEX_HIGHS).
+const DOW_SERIES: &[&str] = &["DJ_IND_HIGH", "DJ_TRANS_HIGH", "DJ_UTIL_HIGH"];
 fn defs() -> Vec<Def> { let mut v = defs_a(); v.extend(defs_b()); v.extend(defs_c()); v }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     defs().into_iter().map(|d| StrategyDef { id: d.id, name: d.name, group: d.group, session: 0, dir: d.dir, status: d.status,
-        needs_volume: d.needs_volume, needs_vix: false, needs_series: &[], book: BOOK, rules: d.rules, notes: d.notes, claim: None }).collect()
+        needs_volume: d.needs_volume, needs_vix: false, needs_series: if d.id == "stad7_dow" { DOW_SERIES } else { &[] }, book: BOOK, rules: d.rules, notes: d.notes, claim: None }).collect()
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     defs().into_iter().find(|d| d.id == id).map(|d| d.family)
@@ -1178,6 +1179,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad6_parvol" => vec![p("acc", "Parabolic acceleration", 0.03, 0.01, 0.1, 0.01), p("volavg", "Volume average length", 5., 2., 20., 1.), p("pcntdiff", "Entry fraction of SAR move", 0.3, 0., 1., 0.05), p("setuplen", "Setup window bars", 4., 1., 10., 1.)],
         "stad6_vwm" => vec![p("momlen", "Momentum length", 5., 2., 20., 1.), p("avglen", "XAverage length", 20., 5., 50., 1.), p("atrlen", "ATR length", 5., 2., 20., 1.), p("atrpcnt", "ATR fraction", 0.25, 0., 1., 0.05), p("setuplen", "Setup length bars", 5., 1., 15., 1.)],
         "stad7_dma" => vec![p("len", "Average length", 9., 3., 30., 1.)],
+        "stad7_dow" => vec![p("len", "Length: bars for the new high (code 50; book table 3)", 50., 2., 200., 1.), p("confirm", "Confirm: bars to find all three confirmations (code 10; book table 6)", 10., 1., 50., 1.),
+            p("atrs", "ATRStop: trailing stop ATR multiple", 5., 0.5, 15., 0.5), p("atrlen", "ATRLen", 10., 2., 50., 1.)],
         "stad7_stsr" => vec![p("buylev", "Buy level", 0.3, 0.1, 0.5, 0.05), p("selllev", "Sell level", 0.7, 0.5, 0.9, 0.05), p("exitlen", "Trailing stop bars", 2., 1., 10., 1.)],
         "stad7_masr" => vec![p("len", "Average length", 10., 3., 40., 1.), p("patrs", "Protective ATRs", 1., 0.5, 5., 0.5), p("tatrs", "Trailing ATRs", 2.5, 0.5, 6., 0.5), p("atrlen", "ATR length", 10., 3., 30., 1.)],
         "stad7_trbo" => vec![p("rangelen", "Range bars", 7., 3., 20., 1.), p("rngpcnt", "No-trade % of range", 200., 50., 400., 10.), p("atrs", "Trailing ATRs", 8., 1., 15., 0.5), p("atrlen", "ATR length", 2., 1., 20., 1.)],
@@ -1656,6 +1659,29 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if st.pos == -1 { if st.bse(i) == 0 { pl = l[i]; } if l[i] < pl { pl = l[i]; }
                     nx.push(o(A::Xs, P::Stop(e + a[i] * pa), "Protective")); nx.push(o(A::Xs, P::Stop(pl + a[i] * ta), "Trailing")); }
                 lord_p = lord; sord_p = sord;
+            })
+        }
+        "stad7_dow" => {
+            // Vol 7 p.15, line by line; Data2-4 = the Dow averages' highs (aligned by date, NaN where an average has no bar)
+            let (len, conf, ats) = (u("len"), u("confirm") as i64, g("atrs"));
+            let a = atr(x, u("atrlen"));
+            let nan = vec![f64::NAN; n];
+            let ser = |k: &str| x.series(k).map(|v| v.to_vec()).unwrap_or_else(|| nan.clone());
+            let (d2, d3, d4) = (ser("DJ_IND_HIGH"), ser("DJ_TRANS_HIGH"), ser("DJ_UTIL_HIGH"));
+            let newhi = |v: &[f64], i: usize| v[i].is_finite() && v[i + 1 - len..i].iter().all(|z| z.is_finite()) && v[i] > highest(v, len, i - 1);
+            let (mut count, mut di, mut dt, mut du, mut hihi) = (0i64, 0, 0, 0, 0.0);
+            run_ts(x, from, to, len + 1, cfg(), |i, st, _now, nx| {
+                if h[i] > highest(h, len, i - 1) && count == 0 && st.pos != 1 { count = 1; }
+                if count != 0 && count <= conf {
+                    if newhi(&d2, i) { di = 1; }
+                    if newhi(&d3, i) { dt = 1; }
+                    if newhi(&d4, i) { du = 1; }
+                    count += 1;
+                } else { count = 0; }
+                if count != 0 && di + dt + du == 3 { nx.push(o(A::Buy, P::Mkt, "Dow Theory buy")); di = 0; dt = 0; du = 0; count = 0; }
+                if st.bse(i) == 0 { hihi = h[i]; }
+                if st.pos == 1 && h[i] > hihi { hihi = h[i]; }
+                if st.pos == 1 { nx.push(o(A::Xl, P::Stop(hihi - ats * a[i]), "ATR trailing stop")); }
             })
         }
         "stad7_trbo" => {
@@ -2606,7 +2632,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 68); // + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 69); // + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 
