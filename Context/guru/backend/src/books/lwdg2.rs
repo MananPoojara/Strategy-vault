@@ -136,7 +136,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let c = &x.c;
     let none = (None, None);
-    let day = |stop: f64, reverse: bool| Cfg { stop, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: Some(0), bailout: false, bail_after: 0, reverse, order: false };
+    let day = |stop: f64, reverse: bool| Cfg { stop, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: Some(0), bailout: false, bail_after: 0, stop_s: f64::NAN, reverse, order: false };
     Some(match id {
         "lwdg2_updown_daytrade" => simulate(x, from, to, &day(g("stop_pts"), false), |i| {
             if i < 2 { none } else if c[i - 1] < c[i - 2] { (Some(Ent::Open), None) } else if c[i - 1] > c[i - 2] { (None, Some(Ent::Open)) } else { none }

@@ -298,10 +298,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"exit on the first profitable opening\"; \"The stop I chose was only $1,500, but was not used on the day of entry\" (p.148): 6 points from the day after entry"],
             SPB_N, claim("", "", "", "1 day", "no figure printed")),
         live!("lwlts_bonds_channel_bstop", "S&P buys on bond channel breakouts · bond channel exit (Fig. 15.1)", "Ch 15 · Data A and data B", "Long",
-            &[BCH_E, "X|\"either a trailing stop of the lowest low of the last 17 days-in Bonds-or a 3,000 stop from the point of entry\" (p.236): $3,000 = 12 points; the bond exit when the bond's low falls below the lowest bond low of the 17 bars before it. Unstated in the book: the S&P fill of that bond stop; vault reading: the S&P close of that day"],
+            &[BCH_E, "X|\"either a trailing stop of the lowest low of the last 17 days-in Bonds-or a 3,000 stop from the point of entry\" (p.236): $3,000 = 12 points; the bond exit when the bond's low falls below the lowest bond low of the 17 bars before it. Unstated in the book: the S&P fill of that bond stop; vault reading: the S&P close of that day",
+              "X|Option p.exit_n=10: the Commodity Timing Vol. 28 No. 4 letter's version (April 1994 by its volume number; archive folder '1995') (\"a trailing stop of the lowest low of the last 10 days--IN Bonds--or a $3,000 stop\"; 66 trades, 50%, $112,175; lwnl_bond_sp_systems)"],
             SPB_N, claim("81", "53%", "$1,750.52 (after $45 commission)", "", "08/09/82-03/01/98")),
         live!("lwlts_bonds_channel_sstop", "S&P buys on bond channel breakouts · S&P 12-day low exit (Fig. 15.2)", "Ch 15 · Data A and data B", "Long",
-            &[BCH_E, "X|\"exiting at the lowest low of the last 12 days in the S&P\" (p.237): a sell stop at the lowest S&P low of the 12 bars before each day; with the $3,000 stop of Fig. 15.1 (12 points; reading, the figure is the same test with the S&P exit)"],
+            &[BCH_E, "X|\"exiting at the lowest low of the last 12 days in the S&P\" (p.237): a sell stop at the lowest S&P low of the 12 bars before each day; with the $3,000 stop of Fig. 15.1 (12 points; reading, the figure is the same test with the S&P exit)",
+              "X|Option p.exit_n=5: the Commodity Timing Vol. 28 No. 4 letter's version (April 1994 by its volume number; archive folder '1995') (\"exit at the lowest low of the last 5 days in the S&P\"; 94 trades, 41%, $96,600; lwnl_bond_sp_systems)"],
             SPB_N, claim("106", "45%", "$1,163.73 (after $45 commission)", "", "08/09/82-03/01/98")),
         off!("lwlts_willspread", "Will-Spread (Ch. 9)", "Ch 9 · Quote screen", "Long/Short", NeedsData("Needs 15/30-minute bars of the traded market and of T-Bonds/T-Bills (or Gold for bonds); intraday and bond data are not in the vault."),
             &["F|Spread = primary / secondary x 100; 5-period EMA minus 20-period EMA (S&P: 3 and 15) (p.138-141)", "E|Zero-line crossing, then the next bar takes out the crossing bar's high (low)"], "Intraday."),
@@ -476,7 +478,10 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "lwlts_gsv_sp" => vec![p("mult", "Entry: open +/- x the 4-day average swing (text 1.8; Fig. 8.3 caption .80)", 1.8, 0.2, 4.0, 0.1), stop(2500.0), day0(0.0), pt()],
         "lwlts_gsv_sp_monday" => vec![stop(2500.0), day0(0.0), pt()],
         "lwlts_month_day1_sp_bonds" => vec![stop(1500.0), day0(0.0), pt()],
-        "lwlts_bonds_channel_bstop" | "lwlts_bonds_channel_sstop" => vec![stop(3000.0), pt()],
+        "lwlts_bonds_channel_bstop" => vec![p("entry_n", "Entry: bond close above its highest high of N bars", 14.0, 2.0, 60.0, 1.0),
+            p("exit_n", "Exit: bond low below its lowest low of N bars (book 17; Vol. 28 No. 4 (Apr 1994) letter: 10)", 17.0, 2.0, 60.0, 1.0), stop(3000.0), pt()],
+        "lwlts_bonds_channel_sstop" => vec![p("entry_n", "Entry: bond close above its highest high of N bars", 14.0, 2.0, 60.0, 1.0),
+            p("exit_n", "Exit: S&P lowest low of N bars (book 12; Vol. 28 No. 4 (Apr 1994) letter: 5)", 12.0, 2.0, 60.0, 1.0), stop(3000.0), pt()],
         "lwlts_bonds_8day" => vec![p("lookback", "Close above the close N bars ago", 8.0, 1.0, 50.0, 1.0), stop(850.0),
             p("target_usd", "Profit target (book $)", 3500.0, 0.0, 10000.0, 250.0), p("pt_usd", "Dollars per point (T-bond contract: $1,000)", 1000.0, 100.0, 5000.0, 100.0)],
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" =>
@@ -512,7 +517,7 @@ pub fn dow(date: &str) -> u32 {
 /// Trading day of the month (1-based) for every bar; 0 = unknown. A series that starts mid-month cannot count that
 /// month's trading days, so its first month is 0 unless every earlier day of that month is a weekend day or 1 January
 /// (decision 186, FR-08).
-fn tdm(x: &Ctx) -> Vec<usize> {
+pub(crate) fn tdm(x: &Ctx) -> Vec<usize> {
     let mut out = vec![0; x.r.len()];
     let Some(first) = x.r.first() else { return out };
     let d0: u32 = first.date[8..10].parse().unwrap_or(1);
@@ -540,6 +545,7 @@ pub(crate) struct Cfg {
     pub(crate) target: f64,      // profit target distance in points (NaN = none)
     pub(crate) hold: Option<usize>, // exit on the close `hold` bars after the entry bar
     pub(crate) bailout: bool,    // exit on the first profitable opening after the entry bar
+    pub(crate) stop_s: f64,      // lane F1D: the short side's stop distance when it differs (NaN = `stop` for both sides)
     pub(crate) bail_after: usize, // lane F1D: the bailout only from the opening `bail_after` bars after entry (0/1 = the next bar)
     pub(crate) reverse: bool,    // an opposite entry signal exits and reverses
     pub(crate) order: bool,      // EP6 (#243): order-dependent days on the real 1-minute path (false = the bar path always)
@@ -571,7 +577,8 @@ pub(crate) fn simulate(x: &Ctx, from: usize, to: usize, cfg: &Cfg, sig: impl Fn(
         let open_pos = |dir: f64, px: f64| {
             let rs = cfg.stop_rng * (x.h[i - 1] - x.l[i - 1]);
             // lane F1D: "$1,500 or 50 percent of the previous day's range" (p.61) = the nearer of the two when both are set
-            let sd = if cfg.stop_rng.is_finite() && cfg.stop.is_finite() { rs.min(cfg.stop) } else if cfg.stop_rng.is_finite() { rs } else { cfg.stop };
+            let st = if dir < 0.0 && cfg.stop_s.is_finite() { cfg.stop_s } else { cfg.stop };
+            let sd = if cfg.stop_rng.is_finite() && st.is_finite() { rs.min(st) } else if cfg.stop_rng.is_finite() { rs } else { st };
             Pos { dir, i, px, stop: if sd.is_finite() && sd > 0.0 { px - dir * sd } else { f64::NAN },
                 target: if cfg.target.is_finite() && cfg.target > 0.0 { px + dir * cfg.target } else { f64::NAN }, od: crate::intraday_ep6::Day::Plain, close: false }
         };
@@ -669,7 +676,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let pts = |k: &str| { let v = g(k); if v.is_finite() && v > 0.0 { v / g("pt_usd") } else { f64::NAN } };
     let hold = g("hold");
     let mut cfg = Cfg { stop: pts("stop_usd"), stop_rng: f64::NAN, day0: g("stop_day0") != 0.0, target: pts("target_usd"),
-        hold: hold.is_finite().then(|| hold.max(0.0) as usize), bailout: false, bail_after: 0, reverse: false, order: crate::intraday_ep6::on(id, p) };
+        hold: hold.is_finite().then(|| hold.max(0.0) as usize), bailout: false, bail_after: 0, stop_s: f64::NAN, reverse: false, order: crate::intraday_ep6::on(id, p) };
     let wd = |i: usize| dow(&x.r[i].date);
     let td = tdm(x);
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
@@ -882,15 +889,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     // bond 14-bar breakout -> buy the S&P close; exits: the $ stop (and the S&P 12-bar low for _sstop) as sell stops
                     // (the higher one first; at the open when gapped), or (_bstop) the S&P close of a day the bond's low breaks the
                     // lowest bond low of the 17 bars before it
-                    let brk = zb.own(|r| (0..r.len()).map(|k| (k >= 14 && r[k].close > r[k - 14..k].iter().map(|b| b.high).fold(f64::MIN, f64::max)) as u8 as f64).collect());
-                    let bdn = zb.own(|r| (0..r.len()).map(|k| (k >= 17 && r[k].low < r[k - 17..k].iter().map(|b| b.low).fold(f64::MAX, f64::min)) as u8 as f64).collect());
+                    let (en, xn) = (g("entry_n").max(1.0) as usize, g("exit_n").max(1.0) as usize);
+                    let brk = zb.own(|r| (0..r.len()).map(|k| (k >= en && r[k].close > r[k - en..k].iter().map(|b| b.high).fold(f64::MIN, f64::max)) as u8 as f64).collect());
+                    let bdn = zb.own(|r| (0..r.len()).map(|k| (k >= xn && r[k].low < r[k - xn..k].iter().map(|b| b.low).fold(f64::MAX, f64::min)) as u8 as f64).collect());
                     let sstop = id.ends_with("sstop");
                     let mut out = vec![];
                     let mut pos: Option<Pos> = None;
                     for i in from.max(1)..=to {
                         if let Some(p) = pos.take() {
                             let mut lv = p.stop;
-                            if sstop && i >= 12 { lv = lv.max(l[i - 12..i].iter().copied().fold(f64::MAX, f64::min)); }
+                            if sstop && i >= xn { lv = lv.max(l[i - xn..i].iter().copied().fold(f64::MAX, f64::min)); }
                             if o[i] <= lv { out.push(close_trade(x, &p, i, o[i], "stop (gap at the open)")); }
                             else if l[i] <= lv { out.push(close_trade(x, &p, i, lv, if lv == p.stop { "stop" } else { "S&P 12-day low" })); }
                             else if !sstop && bdn[i] == 1.0 { out.push(close_trade(x, &p, i, c[i], "bond 17-day low: S&P close")); }

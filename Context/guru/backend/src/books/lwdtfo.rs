@@ -87,7 +87,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (bm, sm) = (g("buy_mult"), g("sell_mult"));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
-    let cfg = Cfg { stop: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: None, bailout: false, bail_after: 0, reverse: true, order: crate::intraday_ep6::on(id, p) };
+    let cfg = Cfg { stop: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: None, bailout: false, bail_after: 0, stop_s: f64::NAN, reverse: true, order: crate::intraday_ep6::on(id, p) };
     Some(simulate(x, from, to, &cfg, |i| {
         let s = i - 1;
         let r = h[s] - l[s];
