@@ -3,13 +3,14 @@
 .vt {
   --st-done: var(--rp-ok);
   --st-done_generic: color-mix(in srgb, var(--rp-ok) 55%, var(--rp-surface));
-  --st-done_earlier: var(--blue);
-  --st-todo: color-mix(in srgb, var(--ink3) 38%, var(--rp-surface));
+  --st-done_earlier: #3d7cc9; /* fixed: the theme accent is green, brown or plum in some themes */
+  --st-todo: color-mix(in srgb, var(--ink3) 62%, var(--rp-surface));
   --st-needs_data: var(--rp-held);
-  --st-cant_test: color-mix(in srgb, var(--ink2) 85%, var(--rp-surface));
+  --st-cant_test: color-mix(in srgb, var(--ink3) 24%, var(--rp-surface)); /* out of scope: recedes */
   --st-other: var(--ink3);
   min-width: 0;
 }
+:root[data-theme="midnight"] .vt { --st-done_earlier: #7cb4ea; }
 .vt .st-done { --c: var(--st-done); } .vt .st-done_generic { --c: var(--st-done_generic); } .vt .st-done_earlier { --c: var(--st-done_earlier); }
 .vt .st-todo { --c: var(--st-todo); } .vt .st-needs_data { --c: var(--st-needs_data); } .vt .st-cant_test { --c: var(--st-cant_test); }
 .vt .st-other { --c: var(--st-other); } .vt .bad { --c: var(--rp-bad); }

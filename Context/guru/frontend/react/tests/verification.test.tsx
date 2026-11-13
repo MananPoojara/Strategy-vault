@@ -99,3 +99,24 @@ it("renders freshness, version KPIs beside the site count, results, bugs and a f
   await act(async () => cant.click());
   expect([...host.querySelectorAll(".vt-list tbody tr")].map(r => r.querySelector("code")!.textContent)).toEqual(["hfm_bond_evening"]);
 });
+
+it("is open to every signed-in user: no reviewer PIN needed for the Verification tab", async () => {
+  const { ResearchPortal } = await import("../src/pages/ResearchPortal");
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "data/verification-tracker.json") return new Response(JSON.stringify(tracker), { status: 200 });
+    if (url.startsWith("/api/app/research/me")) return new Response(JSON.stringify({ employee: null, admin: false, ready: true }), { status: 200 });
+    return new Response(JSON.stringify({ error: "Enter first" }), { status: 401 });
+  }));
+  history.replaceState(null, "", "/#/research?v=verify");
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  await act(async () => root!.render(<ResearchPortal />));
+  await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+  expect(host.querySelector(".rp-gate")).toBeNull();
+  expect(host.textContent).toContain("Tracker updated 13 Nov 2026, 12:30");
+  expect(host.textContent).not.toContain("the site lists"); // the reviewer-only summary is optional
+  history.replaceState(null, "", "/#/research"); dispatchEvent(new HashChangeEvent("hashchange"));
+  await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+  expect(host.querySelector(".rp-gate")!.textContent).toContain("Open the verification tracker");
+  history.replaceState(null, "", "/");
+});

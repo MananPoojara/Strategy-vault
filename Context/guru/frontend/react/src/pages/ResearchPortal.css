@@ -43,6 +43,7 @@
 .rp-bar { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 10px 0 14px; border-bottom: 1px solid var(--rp-line); margin-bottom: 18px; }
 .rp-brand { font: 600 22px "Newsreader", Georgia, serif; color: var(--ink) !important; text-decoration: none; }
 .rp-bar nav { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+@media (max-width: 640px) { .rp-bar nav { order: 3; flex-basis: 100%; } }
 .rp-bar nav a { padding: 6px 14px; border-radius: 999px; text-decoration: none; color: var(--ink2); font-weight: 500; }
 .rp-bar nav a[aria-current="page"] { background: color-mix(in srgb, var(--blue) 12%, var(--rp-surface)); color: var(--ink); }
 .rp-who { display: flex; align-items: center; gap: 10px; font-size: 14px; }

@@ -38,11 +38,20 @@ function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
 }
 
 export function ResearchPortal() {
-  const me = useLoad(research.me, []);
+  const me = useLoad(research.me, []), view = useHash().get("v");
   useEffect(() => { document.title = "Research · Strategy Vault"; }, []);
   if (me.error) return <div className="rp"><Problem error={me.error} retry={me.reload} /></div>;
   if (!me.data) return <div className="rp"><p className="rp-loading">Loading…</p></div>;
-  if (!me.data.employee && !me.data.admin) return <div className="rp"><Gate me={me.data} done={me.reload} /></div>;
+  // The verification tracker is read-only, so every signed-in user sees it without the reviewer PIN.
+  if (!me.data.employee && !me.data.admin) return (
+    <div className="rp">
+      {view === "verify" ? <>
+        <header className="rp-bar"><a className="rp-brand" href="#/research">Research</a><nav><a href={hashWith({ v: "verify" }, "#/research")} aria-current="page">Verification</a></nav>
+          <span className="rp-who"><a href="#/research">Enter as a reviewer</a></span></header>
+        <VerificationView />
+      </> : <Gate me={me.data} done={me.reload} />}
+    </div>
+  );
   return <div className="rp"><Signed me={me.data} reload={me.reload} /></div>;
 }
 
@@ -66,6 +75,7 @@ function Gate({ me, done }: { me: Me; done: () => void }) {
       {error && <p className="rp-problem" role="alert">{error}</p>}
       <button className="rp-primary" type="submit" disabled={busy}>{busy ? "Checking…" : "Enter"}</button>
       <button type="button" className="rp-link" onClick={() => { setAdmin(!admin); setPin(""); setError(""); }}>{admin ? "Back to employee entry" : "I am the admin"}</button>
+      <a className="rp-small" href={hashWith({ v: "verify" }, "#/research")}>Only looking? Open the verification tracker</a>
     </form>
   );
 }
