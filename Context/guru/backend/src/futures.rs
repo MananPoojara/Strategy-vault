@@ -63,6 +63,9 @@ pub const MARKETS: &[Market] = &[
         source: "ICE frozen concentrated orange juice futures: 15,000 lb per contract, quoted in US cents per lb (1.00 = US$150; 0.05 = US$7.50)" },
     // lane PF (Abel, S&C V21:10 Figure 3 portfolio): contract sizes from the exchange specifications (reference data); the Abel
     // system's stops are standard-deviation distances, so these multipliers only label the contract
+    // lane PF (Andromeda 8-market portfolio): the Dollar Index
+    Market { sym: "&DX", name: "US Dollar Index", tick: 0.01, usd: &[("1985-11-20", 1_000.)],
+        source: "ICE (formerly FINEX/NYBOT) U.S. Dollar Index futures: US$1,000 x the index (1.00 = US$1,000; 0.01 = US$10, the tick of the 1985-2001 era)" },
     Market { sym: "&NG", name: "Natural Gas", tick: 0.001, usd: &[("1990-04-03", 10_000.)],
         source: "NYMEX Henry Hub natural gas futures: 10,000 MMBtu per contract, quoted in US$ per MMBtu (1.00 = US$10,000; 0.001 = US$10)" },
     Market { sym: "&ZC", name: "Corn", tick: 0.25, usd: &[("1978-01-04", 50.)],
@@ -186,6 +189,7 @@ pub const ZN_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("ftm_rg_intermarket", 23, " All 23 lie inside the article's test period (1988-2002); the signals read closes only."),
     // review PF2 b9ca8ce8 M16: Abel's hard stop fills at the open when gapped; 4 of its 99 &ZN trades are held through those months
     ("scabeldiv_sma", 4, " They are held through those months; none of their exits fills at an open there."),
+    ("andro_andromeda", 3, " Its orders all fill at the next open; signals read closes only."),
 ];
 /// The card notes with the &ZB / &ZN open label appended (unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
@@ -331,9 +335,12 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
 /// Lane PF: Saitta (S&C V14:3) on the T-bond; Abel (S&C V21:10) on each Figure 3 contract held (the regular Nasdaq-100 contract is
 /// not held: its E-mini, which the article names, stands in).
 const ABEL: &str = "Phil Abel, Diversification And Your Portfolio, S&C V21:10 p.20-31 (Figure 3: 16 US futures, 1995-2002): the printed SMA 25/50/100 system with the 4-standard-deviation hard stop on this Norgate continuous contract (R4 #293 (1)), lane PF.";
+const ANDRO: &str = "Andromeda (andromedafutures.com), Open Code.txt + The Trading Plan (2002): the vendor's TradeStation code on this Norgate continuous contract of the recommended 8-market portfolio (back-adjusted daily bars, BigPointValue = the contract's US$ per point on the bar's date, R4 #293 (1), (3)), lane PF.";
 const CARDS_PF: &[(&str, &str, &str)] = &[
     ("scbrower_long", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the buy patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scbrower_short", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the sell patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("andro_andromeda", "&6S", ANDRO), ("andro_andromeda", "&CL", ANDRO), ("andro_andromeda", "&ZN", ANDRO), ("andro_andromeda", "&ZC", ANDRO),
+    ("andro_andromeda", "&6J", ANDRO), ("andro_andromeda", "&DX", ANDRO), ("andro_andromeda", "&GE", ANDRO), ("andro_andromeda", "&CT", ANDRO),
     ("ftm_rg_intermarket", "&ZN", "Murray Ruggiero, What makes a system a winner, Futures Magazine May 2002 p.59: the silver / 10-year T-note intermarket rule on the Norgate continuous 10-year T-note contract with Norgate silver as the second market (R4 #293 (1)), lane PF."),
     ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("scabeldiv_sma", "&6J", ABEL),
