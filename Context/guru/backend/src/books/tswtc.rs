@@ -9,10 +9,10 @@ use super::sctraub::{civil, days, ticks, weekday};
 pub const REVIEWED: &[&str] = &["tswtc_coffee"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Manual rules are the default (lane PG, 14 Nov 2026; R4 #293, RULES 'book rule default, old behaviour labelled'); Adapted: 2 unstated details, R4 #297] The system's user manual (Manual.pdf, same folder) completes the printed code: 'use a large stop ($2750)' - 7.35 points of coffee, as in the manual's example (sell at 175.36, buy stop 182.71); 'Exit at first profitable opening' (an open beyond the entry price); 'Ignore all new trades if currently in the market'; after a profitable-open exit a new entry the same day is allowed, after a stop-out it is not. The 13 patterns are the printed code (orders decided at the close for the next day, some reading the next open as the code does; 'highest(h,4) - 1 point' with 1 point = 1 tick, #57). Prices are not rounded (the code does not round). Unstated (labelled same-day conventions, R4 #240): (1) two orders that could both fill in one day ('take the signal that gets hit first') - the order filled at the open first, otherwise the one nearest the open, ties to the lower pattern number; (2) the stop on the entry day - checked only after an entry at the open. Option pattern = 1-13 runs one pattern alone (the manual's per-pattern tables). Option manual = 0 is the card's earlier reading of the code alone (no stop; an opposite entry reverses a position) - kept as a labelled option. Runs only on the Norgate coffee continuous contract (the manual's market; R4 #293 (1)): signals on the back-adjusted series, each trade priced in the contract held at entry (#301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. No costs (the manual deducts $75 a trade).";
+const NOTE: &str = "[Manual rules are the default (lane PG, 14 Nov 2026; R4 #293, RULES 'book rule default, old behaviour labelled'); Adapted: 2 unstated details, R4 #297] The system's user manual (Manual.pdf, same folder) completes the printed code: 'use a large stop ($2750)' - 7.35 points of coffee, as in the manual's example (sell at 175.36, buy stop 182.71); 'Exit at first profitable opening' (an open beyond the entry price); 'Ignore all new trades if currently in the market'; after a profitable-open exit a new entry the same day is allowed, after a stop-out it is not. The 13 patterns are the printed code (orders decided at the close for the next day, some reading the next open as the code does; 'highest(h,4) - 1 point' with 1 point = 1 tick, #57). Declared deviation: the manual's instruction 'Round all values to the nearest 0.05' (for placing live orders) is not applied - the manual's performance tables come from the unrounded code, and the reproduction matches them. Unstated (labelled same-day conventions, R4 #240): (1) two orders that could both fill in one day ('take the signal that gets hit first') - the order filled at the open first, otherwise the one nearest the open, ties to the lower pattern number; (2) the stop on the entry day - checked only after an entry at the open. Option pattern = 1-13 runs one pattern alone (the manual's per-pattern tables). Option manual = 0 is the card's earlier reading of the code alone (no stop; an opposite entry reverses a position) - kept as a labelled option. On Norgate coffee that no-stop reading wipes out the account (full history: in January 1987; 2003-12 window: in June 2012) and the run stops there. Runs only on the Norgate coffee continuous contract (the manual's market; R4 #293 (1)): signals on the back-adjusted series, each trade priced in the contract held at entry (#301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. No costs (the manual deducts $75 a trade).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "tswtc_coffee", name: "William Tell Coffee: fourteen day-of-week price patterns with stop / limit / open entries, exit at the first profitable open", group: "TradeStation code: William Tell Coffee (Market Analytics)", session: 0, dir: "Long/Short", status: Status::Live,
+    vec![StrategyDef { id: "tswtc_coffee", name: "William Tell Coffee: thirteen price and calendar patterns with stop / limit / open entries, $2,750 stop, exit at the first profitable open", group: "TradeStation code: William Tell Coffee (Market Analytics)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "tswtc", rules: &[
             "E|if marketposition=0 or (marketposition=1 and open of next bar > entryprice) or (marketposition=-1 and open of next bar < entryprice) then begin ... entries (1) to (13d) ... end",
             "X|if open of next bar > entryprice and marketposition=1 then Sell next bar at open; if open of next bar < entryprice and marketposition=-1 then Buy to Cover next bar at open",
@@ -22,7 +22,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         notes: NOTE, claim: crate::connors::claim("417", "85%", "$552 a trade net of $75", "", "Coffee futures 1/1/86-4/2/97, 13 patterns combined") }]
 }
 
-pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("tswtc_coffee", "William Tell Coffee (TradeStation)", "code as printed")) }
+pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("tswtc_coffee", "William Tell Coffee (TradeStation)", "manual rules")) }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
@@ -142,7 +142,6 @@ pub mod manual {
     /// The run, plus the number of trades that depend on a same-day convention (entry choice, entry-day stop).
     pub fn sim(x: &Ctx, from: usize, to: usize, pat: u8, stop: f64, pt: f64) -> (Vec<Trade>, usize) {
         let mut pos = Book::new();
-        let mut at_open = false; // the open position was entered at an open
         let mut amb = 0;
         for t in from.max(5)..=to {
             let s = pos.side();
@@ -172,10 +171,9 @@ pub mod manual {
             };
             let (od, px, op) = *pick;
             pos.enter(od.1, t, px, "stop");
-            at_open = op;
             let lvl = px - od.1 * stop;
             let hit = (od.1 > 0. && x.l[t] <= lvl) || (od.1 < 0. && x.h[t] >= lvl);
-            if hit && at_open { pos.exit(t, lvl, "stop"); } else if hit { dep = true; }
+            if hit && op { pos.exit(t, lvl, "stop"); } else if hit { dep = true; }
             if dep { amb += 1; }
         }
         (pos.done(to, x.c[to]), amb)
