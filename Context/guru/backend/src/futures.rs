@@ -55,6 +55,11 @@ pub const MARKETS: &[Market] = &[
         source: "COMEX high grade copper futures: 25,000 lb per contract, quoted in US cents per lb (1.00 cent = US$250; tick 0.05 cent = US$12.50)" },
     Market { sym: "&ZS", name: "Soybeans", tick: 0.25, usd: &[("1977-11-21", 50.)],
         source: "CBOT soybean futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 cent = US$50; tick 1/4 cent = US$12.50)" },
+    // lane P1 (vvbats_spread, Van Vliet BATS ch.46): the E-mini legs of the ES/NQ ratio spread
+    Market { sym: "&ES", name: "E-mini S&P 500", tick: 0.25, usd: &[("1997-09-09", 50.)],
+        source: "CME E-mini S&P 500 futures: US$50 x the S&P 500 index since launch (9 Sep 1997); tick 0.25 index point = US$12.50" },
+    Market { sym: "&NQ", name: "E-mini Nasdaq-100", tick: 0.25, usd: &[("1999-06-21", 20.)],
+        source: "CME E-mini Nasdaq-100 futures: US$20 x the Nasdaq-100 index since launch (21 Jun 1999); tick 0.25 index point = US$5" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -79,13 +84,7 @@ pub fn load(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) -> BTr
             eprintln!("warning: futures {} not loaded from {}", m.sym, dir.display()); continue };
         let t = ticker(m);
         let raw: BTreeMap<String, Row> = raw.into_iter().map(|r| (r.date.clone(), r)).collect();
-        let mut rows: Vec<Row> = adj.into_iter().filter(|r| raw.contains_key(&r.date)).map(|r| Row { ticker: t.clone(), ..r }).collect();
-        // lane F1: a % return needs a positive unadjusted price: the series ends the day before the first non-positive one
-        // (NYMEX crude settled at -37.63 on 2020-04-20); nothing is filled or estimated
-        if let Some(k) = rows.iter().position(|r| { let x = &raw[&r.date]; [x.open, x.high, x.low, x.close].iter().any(|v| *v <= 0.) }) {
-            println!("futures {t}: series ends {} (unadjusted price <= 0 on {})", rows.get(k.wrapping_sub(1)).map_or("-", |r| &r.date), rows[k].date);
-            rows.truncate(k);
-        }
+        let rows: Vec<Row> = adj.into_iter().filter(|r| raw.contains_key(&r.date)).map(|r| Row { ticker: t.clone(), ..r }).collect();
         // lead review of F3: a file that parsed to no common bars is not served (an empty context would break /api/tickers)
         if rows.is_empty() { eprintln!("warning: futures {} not loaded: 0 bars in both {}_CCB.csv and {}.csv", m.sym, m.sym, m.sym); continue; }
         for (k, f) in [("Open", 0), ("High", 1), ("Low", 2), ("Close", 3)] {
@@ -188,6 +187,21 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
     !(ok && raw_ok)
 }
 
+/// R4 #316 (lane X4): cards whose published run ends the day before the first non-positive unadjusted price (NYMEX crude
+/// settled at -37.63 on 2020-04-20, where a % return has no base); readiness::auto_end / check apply it. The series itself
+/// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
+/// Lane F1C (R4 #326): six Chande ch.5 systems on crude enter at the 2020-04-20 close (unadjusted -37.63), so on &CL their run
+/// ends 2020-04-17 (ch_bta2_adx30 does not trade there and keeps the whole series).
+const POSITIVE_RAW_ONLY: &[&str] = &["jkbwts_ehrlich17", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref",
+    "ch_bta2_adx_rising", "ch_bta2_pullback"];
+/// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
+pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
+    if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
+    let s = ["RAW.Open", "RAW.High", "RAW.Low", "RAW.Close"].map(|k| x.series(k));
+    if s.iter().any(|v| v.is_none()) { return None; }
+    (0..x.c.len()).find(|&i| s.iter().flatten().any(|v| v.get(i).is_some_and(|p| *p <= 0.)))
+}
+
 /// Cards that run on one named continuous contract (#293 (1)): (strategy id, market symbol, instrument_policy basis).
 pub const CARDS: &[(&str, &str, &str)] = &[
     ("ataa_moon", "&6A", "ATAA Journal Dec 1990 p.11-12 (Krastins, Sheer Lunacy): the moon-phase stop and reverse tested on AUD/USD IMM futures, run on the Norgate Australian dollar continuous contract (R4 #293 (1)); close fills, no amounts."),
@@ -226,7 +240,7 @@ const MHS_SF: &str = "Michael Harris, Short-Term Trading with Price Patterns (Tr
 const MHS_SI: &str = "Michael Harris, Short-Term Trading with Price Patterns (Traders Press 1998/2000) p.188-190 (COMEX silver patterns): the printed pattern logic, entry and fixed profit target / protective stop in silver points (1 point = 1 cent an ounce = $50), good-til-cancelled (p.63), one position per pattern; run on the Norgate continuous silver contract (R4 #293 (1), #294 (1)), lane F3.";
 pub const LABEL: &str = "Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
 /// Lane F1B (R4 #293 (1)): cards whose source tests several named markets; one row per market (the card runs on each).
-const CHANDE5: &str = "Chande, Beyond Technical Analysis (Wiley 1997) ch.5 p.148-173, Tables 5.1-5.13: tested on British pound, coffee, cotton, crude oil, Deutsche mark, Eurodollar, gold, Japanese yen, U.S. bond and wheat futures (1/75-7/95 or the market's first data) with a $1,500 initial stop and $100 slippage and commission; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series), the $1,500 at the contract's $ per point (R4 #293 (1), (3)), lane F1B.";
+const CHANDE5: &str = "Chande, Beyond Technical Analysis (Wiley 1997) ch.5 p.148-173, Tables 5.1-5.13: tested on British pound, coffee, cotton, crude oil, Deutsche mark, Eurodollar, gold, Japanese yen, U.S. bond and wheat futures (1/75-7/95 or the market's first data) with a $1,500 initial stop and $100 slippage and commission; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series), the $1,500 at the contract's $ per point (R4 #293 (1), (3)), lane F1B; on crude oil every system but the ADX crossover runs to 2020-04-17, the day before the unadjusted price turned negative (R4 #316, #326).";
 const CHANDE_LB: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.173-177, Table 5.15 (the Long Bomb TradeStation code, 1/1/82-7/10/95): tested on British pound, coffee, cotton, Deutsche mark, Eurodollar, heating oil, Japanese yen, soybeans, Swiss franc and U.S. bond futures with a $1,500 stop; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series) except coffee (12.2% of trades in the book window same-day order-dependent, #240); on heating oil and T-bond only inside the book's 1/1/82-7/10/95 window (R4 #314 (3)), one contract per signal (the book's NumC sizing is not modelled), \"1 point\" = one tick of the contract (#57), lane F1B.";
 const CHANDE_IM: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.126-129, Tables 4.15 and 4.17: the gold-bond intermarket systems (gold, and soybeans or copper, signal the U.S. bond futures trade; continuous contracts 8/21/77-7/10/95, $5,000 initial stop, $100 slippage and commission); run on the Norgate T-bond continuous contract with the Norgate gold / soybean / copper contracts as Data2 joined by date (R4 #293 (1)), the $5,000 = 5.00 bond points, lane F1B.";
 const LEB_25: &str = "LeBeau & Tan, 25 x 25 Bond System v2.0 manual (System Traders Club 1998): +DI(14) > -DI(14), ADX(14) > 20, RSI(4) < 50, buy stop 18/32 above the close, $2,500 money stop (2.5 points), 25-day-low stop that becomes the 2-day low after 25 days or once open profit exceeds 5 x the 45-day ATR (the module reproduces the manual's own Us.txt trade list exactly); run on the Norgate T-bond continuous contract (R4 #293 (1)); Norgate does not say which session its T-bond series is (the manual used day-session bonds), lane F1B.";
@@ -275,6 +289,25 @@ const HELD: &[(&str, &str, &str)] = &[
 ];
 /// Why a card is held on a market its source tests (HELD), if it is.
 pub fn held(id: &str, t: &str) -> Option<&'static str> { let s = of_ticker(t)?.sym; HELD.iter().find(|h| h.0 == id && h.1 == s).map(|h| h.2) }
+/// The bars of a Norgate market as main loaded them (rotation::PRELOADED); tests supply them per thread (TEST_ROWS).
+pub fn rows(sym: &str) -> Option<&'static [Row]> {
+    #[cfg(test)]
+    if let Some(r) = TEST_ROWS.with(|t| t.borrow().get(sym).copied()) { return Some(r); }
+    let m = MARKETS.iter().find(|m| m.sym == sym)?;
+    crate::books::rotation::PRELOADED.get()?.get(&ticker(m)).map(|v| v.as_slice())
+}
+#[cfg(test)]
+thread_local! { pub static TEST_ROWS: std::cell::RefCell<BTreeMap<&'static str, &'static [Row]>> = Default::default(); }
+/// Cards that read a second Norgate contract (Data2) and the contracts they read (lane F1C, review REV-F1B M3).
+const DATA2: &[(&str, &[&str])] = &[("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2_goldbond_adx", &["&GC"]), ("ch_bta2_intermarket_trio", &["&GC", "&ZS", "&HG"]),
+    ("nfgu_pathfinder", &["&ZB"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"])];
+/// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
+pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
+    ctx_market(x)?;
+    let (_, syms) = DATA2.iter().find(|d| d.0 == id)?;
+    let miss: Vec<String> = syms.iter().filter(|s| rows(s).is_none()).filter_map(|s| MARKETS.iter().find(|m| m.sym == *s).map(ticker)).collect();
+    (!miss.is_empty()).then(|| format!("This card reads {} as a second data series, and it is not loaded; no result is published.", miss.join(", ")))
+}
 /// The published run period of a card on ticker `t`, if it is limited to the book's window (BOOK_WINDOW).
 pub fn window(id: &str, t: &str) -> Option<(&'static str, &'static str)> {
     let s = of_ticker(t)?.sym;
@@ -286,10 +319,24 @@ pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String>
     let (f, t) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
     (f < a || t > b).then(|| format!("Results are published only from {a} to {b} on {}: outside the book's test window more than 5% of its trades depend on the order of fills inside one daily bar, which daily bars cannot settle (R4 #240, #314 (3)).", x.r[0].ticker))
 }
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_F1B) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
+/// Lane P1: two-leg spreads on two continuous contracts, run in the first contract's context.
+const CARDS_P1: &[(&str, &str, &str)] = &[("vvbats_spread", "&ES", "Benjamin Van Vliet, Building Automated Trading Systems (Academic Press 2007) ch.46 p.290-301 (Spreader_Example: spread = -1 x ES + 2 x NQ, z of the last 30 spread prices, |z| > 2 entry, target z = 0, stop 4 ES ticks): run on the Norgate E-mini S&P 500 continuous contract with the Norgate E-mini Nasdaq-100 contract as the second leg, joined by exact date, daily closes instead of bid/ask quotes (R4 #293 (1), #297), lane P1.")];
+/// (traded contract, second leg): the second leg's back-adjusted and unadjusted closes are attached to the traded contract's
+/// context as `<sym>.Close` / `<sym>.RAW.Close` (extra series: exact date, NaN where it has no bar).
+pub const LEG2: &[(&str, &str)] = &[("&ES", "&NQ")];
+pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(String, String), BTreeMap<String, f64>>) {
+    for (a, b) in LEG2 {
+        let (Some(ma), Some(mb)) = (MARKETS.iter().find(|m| m.sym == *a), MARKETS.iter().find(|m| m.sym == *b)) else { continue };
+        let (ta, tb) = (ticker(ma), ticker(mb));
+        let Some(rows) = data.get(&tb) else { continue };
+        extra.insert((ta.clone(), format!("{b}.Close")), rows.iter().map(|r| (r.date.clone(), r.close)).collect());
+        if let Some(raw) = extra.get(&(tb, "RAW.Close".to_string())).cloned() { extra.insert((ta, format!("{b}.RAW.Close")), raw); }
+    }
+}
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
@@ -331,6 +378,22 @@ mod tests {
         assert!(!m.contains_key(&("*".to_string(), "NYSE_COMP".to_string()))); // a missing file loads nothing
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[test]
+    fn x4_ehrlich17_run_ends_before_a_nonpositive_unadjusted_price() {
+        // R4 #316: the &CL series stays whole; only jkbwts_ehrlich17's run is capped (auto_end) / refused (check)
+        let r: Vec<Row> = (0..10).map(|i| Row { ticker: "Crude Oil (Norgate &CL)".into(), date: format!("2020-04-{:02}", i + 10), open: 20., high: 20., low: 20., close: 20., volume: None }).collect();
+        let mut x = Ctx::new(&r, &[], &[]);
+        for k in ["RAW.Open", "RAW.High", "RAW.Low"] { x.extra.insert(k.into(), vec![30.; 10]); }
+        let mut c = vec![30.; 10]; c[6] = -37.63; x.extra.insert("RAW.Close".into(), c);
+        assert_eq!(first_nonpositive("jkbwts_ehrlich17", &x), Some(6));
+        assert_eq!(first_nonpositive("mhs_cl850210_1", &x), None);
+        let d = crate::books::jkbwts::catalogue().into_iter().find(|d| d.id == "jkbwts_ehrlich17").unwrap();
+        let p = crate::connors::Params::new();
+        let (end, note) = crate::readiness::auto_end(&x, &d, 0, 9, &p);
+        assert!(end == 5 && note.is_some_and(|n| n.contains("2020-04-16") && n.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 0, 5, &p).map_or(true, |i| !i.note.contains("R4 #316")));
+        assert!(crate::readiness::check(&x, &d, 6, 9, &p).is_some_and(|i| i.note.contains("R4 #316")));
+    }
     use crate::connors::Leg;
     fn row(d: &str, c: f64) -> Row { Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: d.into(), open: c, high: c, low: c, close: c, volume: None } }
     #[test]
@@ -355,6 +418,58 @@ mod tests {
         assert!((close[1] - 80.8).abs() < 1e-9);
         assert!((buy_hold(&x, 0, 2).unwrap()[2] - (1. + 2. / 79.8)).abs() < 1e-12);
         assert!(!invalid_bar(&x, 0) || x.series("RAW.Open").is_none());
+    }
+    fn f1c_rows(t: &str, bars: &[(f64, f64, f64, f64)]) -> Vec<Row> {
+        bars.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: t.into(), date: format!("1990-{:02}-{:02}", 1 + i / 28, 1 + i % 28), open: o, high: h, low: l, close: c, volume: None }).collect()
+    }
+    fn f1c_bond(closes: &[f64]) -> &'static [Row] {
+        let b: Vec<_> = closes.iter().map(|&c| (c, c, c, c)).collect();
+        Box::leak(f1c_rows("US T-Bond (Norgate &ZB)", &b).into_boxed_slice())
+    }
+    #[test]
+    fn f1c_miser_entry_bar_stop_and_data2_refusal() {
+        // REV-F1C b5ac727b M2: S&P below its 14-day SMA while bonds close above their 40-day SMA -> buy the next open; the
+        // Trailing LX "ATR eb" stop (signal bar's high - 5 x ATR(10)) protects that entry bar
+        let mut sp = vec![(100., 100.5, 99.5, 100.); 59];
+        sp.extend([(99.8, 100.3, 98.9, 99.), (99., 99.5, 90., 92.), (92., 92.5, 91.5, 92.)]);
+        let r = f1c_rows("S&P 500 (Norgate &SP)", &sp);
+        let x = Ctx::new(&r, &r, &[]);
+        assert!(data2_issue("stad11_miser", &x).is_some() && data2_issue("ch_bta2_cbo_ref", &x).is_none()); // no T-bond loaded: refused
+        let mut b = vec![100.; 62]; b[59] = 101.;
+        TEST_ROWS.with(|t| t.borrow_mut().insert("&ZB", f1c_bond(&b)));
+        assert!(data2_issue("stad11_miser", &x).is_none());
+        let t = crate::books::stad2::run("stad11_miser", &x, 0, 61, &crate::connors::Params::new()).unwrap();
+        let atr = (9. * 1. + 1.4) / 10.; // true ranges 1.0 x 9 and 1.4 on the signal bar
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i), (1, 60, 60), "{t:?}");
+        assert!((t[0].legs[0].px - 99.).abs() < 1e-9 && (t[0].exit_px - (100.3 - 5. * atr)).abs() < 1e-9 && t[0].reason.contains("eb"), "{t:?}");
+        TEST_ROWS.with(|t| t.borrow_mut().clear());
+    }
+    #[test]
+    fn f1c_curbond_entry_stop_lives_five_bars() {
+        // a setup only on bar 40 (bond XAverage rises that day only): its buy stop is sent for bars 41-45, not 46
+        let franc = |jump: usize| -> Vec<Row> {
+            let bars: Vec<_> = (0..60).map(|i| { let c = 1. + 0.00005 * i as f64; (c, c + if i == jump { 0.01 } else { 0.0005 }, c - 0.0005, c) }).collect();
+            f1c_rows("Swiss Franc (Norgate &6S)", &bars)
+        };
+        let mut b = vec![100.; 60]; b[40] = 101.;
+        TEST_ROWS.with(|t| t.borrow_mut().insert("&ZB", f1c_bond(&b)));
+        let run = |r: &Vec<Row>| crate::books::stad2::run("stad5_curbond", &Ctx::new(r, r, &[]), 20, 59, &crate::connors::Params::new()).unwrap();
+        let (a, z) = (franc(45), franc(46));
+        let ta = run(&a);
+        assert!(ta.len() == 1 && ta[0].legs[0].i == 45 && ta[0].dir > 0., "{ta:?}");
+        assert!(run(&z).is_empty());
+        TEST_ROWS.with(|t| t.borrow_mut().clear());
+    }
+    #[test]
+    fn f1c_tdm_bonds_on_the_contract_only() {
+        // REV-F1C 81cb0080 M2: TDM 8 = the 8th bar of a month that starts on the 1st; out at the close of the third day after
+        let r = f1c_rows("US T-Bond (Norgate &ZB)", &vec![(100., 101., 99., 100.); 28]);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = crate::books::lwlts::run("lwlts_tdm8_bonds", &x, 0, 27, &crate::connors::Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i), (1, 7, 10), "{t:?}");
+        let sp: Vec<Row> = r.iter().map(|b| Row { ticker: "SPX".into(), ..b.clone() }).collect();
+        assert!(crate::books::lwlts::run("lwlts_tdm22_bonds", &Ctx::new(&sp, &sp, &[]), 0, 27, &crate::connors::Params::new()).is_some_and(|t| t.is_empty()));
+        assert!(home("lwlts_tdm18_bonds", "US T-Bond (Norgate &ZB)").is_none() && home("lwlts_tdm18_bonds", "SPX").is_some());
     }
     #[test]
     fn f1b_cards_run_only_on_their_contracts() {

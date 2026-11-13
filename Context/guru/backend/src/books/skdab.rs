@@ -7,7 +7,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::books::mpts::sma;
 
 pub const BOOK: &str = "skdab";
-pub const REVIEWED: &[&str] = &["skdab_trend3ma"];
+pub const REVIEWED: &[&str] = &["skdab_trend3ma", "skdab_9_18_50"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 /// Lane K74 (R4 #277 (2)): Kroll on Futures Trading Strategy p.97, the 19-day close cross (not a duplicate of kftsm_ma, which
 /// trades the average's direction).
@@ -27,9 +27,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
                      "F|\"In an uptrend, carry long positions only, or else stand aside. No short positions.\" (p.60)"],
             notes: "Kroll: 'the particular moving average values presented here are not the ones I specifically use. They are presented for illustration only' (p.59), but they are the rules he gives for the discussion. [Declared readings, not from the book] all averages are simple averages of closes; slope up = today's 50-day average above yesterday's; orders fill at the close of the signal day; re-entry is allowed while the trend has stayed in the same direction since the stop-out (a trend change ends it); the optional exit stop at 70% of futures margin is not used; flat at the window start. Indices, ETFs and stocks, US and India, are a declared application (book: NIKKEI and futures examples).",
             claim: None },
-        nt("skdab_9_18_50", "Close vs 9/18/50-day averages with the 50-day trend (Ch.6 NIKKEI example)", "Ch.6 · That's the way you want to bet (p.32-35)", BOOK,
-           "the 9/18/50 signals are given as entry and exit signals but the exit (opposite signal, or loss of the buy condition) and the 'get back aboard on the close of the next two days' re-entry are not defined exactly",
-           &["E|\"Buy: close > 9-SMA > 18-SMA > 50-SMA. Sell: close < 9-SMA < 18-SMA < 50 SMA.\" (p.32)"]),
+        StrategyDef { id: "skdab_9_18_50", name: "Close vs 9/18/50-day averages, stop and reverse (Ch.6 NIKKEI example)", group: "Ch.6 · That's the way you want to bet (p.32-35)",
+            session: 0, dir: "Long/Short", status: Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
+            rules: &["F|\"we shall use the 50-day simple moving average (SMA) versus the closing price, as our trend indicator. We shall also take our entry and exit signals from the 9-day simple moving average versus the 18-day simple moving average versus the 50-day simple moving average\" (p.32)",
+                     "E|\"Buy: close > 9-SMA > 18-SMA > 50-SMA. Sell: close < 9-SMA < 18-SMA < 50 SMA.\" (p.32)",
+                     "X|The opposite signal closes the trade and reverses it (vault reading; the book trades 'both sides of the market', p.34). Option p.flat=1: exit when the buy (sell) condition no longer holds and re-enter when it holds again"],
+            notes: "[R2E, R4 #297: adapted: 2 unstated details] Unstated in the book: whether a position ends at the opposite signal or when its own condition stops holding; vault reading: the opposite signal (stop and reverse; always in after the first signal), option p.flat=1 = exit on the loss of the condition. Unstated in the book: the fill; vault reading: the close of the signal day. Stated: simple averages of closes; the 50-day trend test is implied by the alignment (close above the 50-day). The 'get back aboard' re-entry (p.34) concerns exits taken for other reasons and is not needed under the reversal reading. The book's NIKKEI chart (Mar 1993-Feb 1994) prints no results. Indices, ETFs and stocks, US and India, are a declared application.",
+            claim: None },
         nt("skdab_strategy", "Pyramiding, margin, news and trader-discipline chapters", "Dragons and Bulls", BOOK, "money management and judgement, no complete rule", &[]),
         StrategyDef { id: "skfts_ma19_close", name: "19-day moving average close cross (Ch.12 example)", group: "Kroll on Futures Trading Strategy · Ch.12 (p.95-100)",
             session: 0, dir: "Long", status: Live, needs_volume: false, needs_vix: false, needs_series: &[], book: "skfts",
@@ -49,6 +53,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "skdab_trend3ma" => ("skdab_trend3ma", "Kroll trend strategy", "10/20/50 + 4/9/18"),
+        "skdab_9_18_50" => ("skdab_9_18_50", "Kroll 9/18/50 alignment", "9/18/50"),
         "skfts_ma19_close" => ("skfts_ma19_close", "Kroll 19-day close cross", "19-day MA"),
         _ if id.starts_with("skdab_") || id.starts_with("skfts_") => ("skdab_nt", "Kroll (held)", "-"),
         _ => return None,
@@ -58,6 +63,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "skdab_trend3ma" => vec![],
+        "skdab_9_18_50" => vec![ParamDef { key: "flat", label: "0 = stop and reverse on the opposite signal (vault reading), 1 = exit when the condition no longer holds", def: 0., min: 0., max: 1., step: 1. }],
         "skfts_ma19_close" => vec![ParamDef { key: "n", label: "Moving average days (book example 19)", def: 19., min: 2., max: 100., step: 1. },
             ParamDef { key: "reverse", label: "'possibly reversing as well': 0 = long/flat (default), 1 = long and short", def: 0., min: 0., max: 1., step: 1. }],
         _ if id.starts_with("skdab_") || id.starts_with("skfts_") => vec![],
@@ -67,6 +73,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec<Trade>> {
     if id == "skfts_ma19_close" { return ma_close_cross(x, from, to, _p); }
+    if id == "skdab_9_18_50" { return align_9_18_50(x, from, to, _p); }
     if id != "skdab_trend3ma" || from > to || to >= x.r.len() { return None; }
     let c = &x.c;
     let (m4, m9, m18, m10, m20, m50) = (sma(c, 4), sma(c, 9), sma(c, 18), sma(c, 10), sma(c, 20), sma(c, 50));
@@ -98,6 +105,34 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
         }
     }
     if let Some(mut tr) = cur { tr.exit_i = to; tr.exit_px = c[to]; tr.signal_i = to; tr.reason = "open".into(); tr.open = true; out.push(tr); }
+    Some(out)
+}
+
+/// Kroll p.32 (lane R2E, R4 #297): +1 when close > 9 > 18 > 50-day averages, -1 when close < 9 < 18 < 50; trades at the close.
+/// flat = 0: a position is reversed by the opposite signal only; flat = 1: it is closed as soon as its own alignment fails.
+fn align_9_18_50(x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    let flat = p.get("flat").copied().unwrap_or(0.);
+    if from > to || to >= x.r.len() || !(flat == 0. || flat == 1.) || p.keys().any(|k| k != "flat") { return None; }
+    let c = &x.c;
+    let (m9, m18, m50) = (sma(c, 9), sma(c, 18), sma(c, 50));
+    let side = |i: usize| -> f64 {
+        if !(m9[i].is_finite() && m18[i].is_finite() && m50[i].is_finite()) { return 0.; }
+        if c[i] > m9[i] && m9[i] > m18[i] && m18[i] > m50[i] { 1. } else if c[i] < m9[i] && m9[i] < m18[i] && m18[i] < m50[i] { -1. } else { 0. }
+    };
+    let (mut out, mut cur) = (vec![], None::<Trade>);
+    for i in from..=to {
+        let s = side(i);
+        if let Some(mut t) = cur.take() {
+            if t.dir == s || (s == 0. && flat == 0.) { cur = Some(t); continue; }
+            t.exit_i = i; t.exit_px = c[i]; t.signal_i = i;
+            t.reason = if s == 0. { "alignment no longer holds".into() } else { "opposite 9/18/50 signal".into() };
+            out.push(t);
+        }
+        if s != 0. {
+            cur = Some(Trade { dir: s, legs: vec![Leg { i, px: c[i], w: 1. }], exit_i: i, exit_px: c[i], reason: String::new(), entry_kind: "close", signal_i: i, open: false, exits: vec![] });
+        }
+    }
+    if let Some(mut t) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)
 }
 
@@ -153,6 +188,18 @@ mod k74_tests {
         assert_eq!(t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), vec![(1., 3, 4), (-1., 4, 5), (1., 5, 5)]);
         assert_eq!(params("skfts_ma19_close").unwrap()[0].def, 19.0);
     }
+    #[test]
+    fn kroll_9_18_50_reverses_on_the_opposite_alignment() {
+        let r = super::super::sctraub::tests::bars(1500);
+        let x = Ctx::new(&r, &r, &[]);
+        let (c, m9, m18, m50) = (&x.c, sma(&x.c, 9), sma(&x.c, 18), sma(&x.c, 50));
+        let t = run("skdab_9_18_50", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.len() > 4);
+        for w in t.windows(2) { assert!(w[1].legs[0].i == w[0].exit_i && w[1].dir == -w[0].dir); }
+        for z in &t { let i = z.legs[0].i; assert!(if z.dir > 0. { c[i] > m9[i] && m9[i] > m18[i] && m18[i] > m50[i] } else { c[i] < m9[i] && m9[i] < m18[i] && m18[i] < m50[i] }); }
+        let f = run("skdab_9_18_50", &x, 0, r.len() - 1, &[("flat".to_string(), 1.)].into_iter().collect()).unwrap();
+        assert!(f.len() >= t.len());
+    }
 }
 
 // Lane K74 (11 Nov 2026, R4 #277 (2)): Kroll on Futures Trading Strategy p.97, the 19-day close cross.
@@ -168,5 +215,5 @@ pub const ADMISSION_SKFTS: crate::instrument_policy::Admission = crate::instrume
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"skdab") && (crate::books::skdab::reviewed(def.id)),
     label: "Stanley Kroll illustrated this strategy on the NIKKEI and futures; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
-    basis: "Stanley Kroll, Dragons and Bulls (Addison-Wesley 1994), Ch.11 Long-term versus Short-term Trading (p.59-61): 50-day average trend filter, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries. Reviewed in authors/kroll/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; no costs.",
+    basis: "Stanley Kroll, Dragons and Bulls (Addison-Wesley 1994); Ch.6 p.32-35 9/18/50 alignment (lane R2E, R4 #297, 2 labelled readings, independent check authors/titles-1030/R2Ew/r2e_ref.py); Ch.11 Long-term versus Short-term Trading (p.59-61): 50-day average trend filter, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries. Reviewed in authors/kroll/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; no costs.",
 };

@@ -16,6 +16,9 @@
 //! Lane F2 (13 Nov 2026, R4 #293; authors/titles-1030/F2.tsv): five option rules (6.2, 6.3, 6.9, 6.10, 6.11) on real NIFTY weekly
 //! 1-minute option prices (src/optw1.rs; the user's StockMock store), NIFTY 50 only; 6.4-6.7 need BANKNIFTY weekly minutes (not
 //! extracted), 6.12 prints no exit; reference authors/titles-1030/F2w/f2_ref.py.
+//! Lane F4 (13 Nov 2026, R4 #300 (6); authors/titles-1030/F4.tsv): 6.4 Supertrend selling, 6.5 straddle + VWAP, 6.6 momentum
+//! buying and 6.7 expiry decay on real BANKNIFTY weekly 1-minute option prices (NIFTYBANK.w1.csv, from the user's AmiBroker
+//! database; src/optw1.rs), NIFTYBANK only; reference authors/titles-1030/F4w/f4_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::intraday::{day_trade, Bar1};
 use crate::intraday_ep6::{self as ep6, Ev, Seg};
@@ -43,11 +46,18 @@ macro_rules! data {
     ($id:expr, $name:expr, $rule:expr, $why:expr) => { def!($id, $name, "Long/Short", Status::NeedsData($why), &[$rule], SRC) };
 }
 /// Lane F2 (R4 #293): the five NIFTY option rules on real weekly 1-minute option prices (src/optw1.rs).
-pub const OPT_IDS: &[&str] = &["as51_opt_multi_sell", "as51_opt_oi_buy", "as51_opt_theta", "as51_opt_btst", "as51_opt_3pm", "as51_opt_straddle"];
+pub const OPT_IDS: &[&str] = &["as51_opt_multi_sell", "as51_opt_oi_buy", "as51_opt_theta", "as51_opt_btst", "as51_opt_3pm", "as51_opt_straddle",
+    "as51_opt_st_sell", "as51_opt_vwap", "as51_opt_mom_buy", "as51_opt_expiry"];
+/// Lane F4 (R4 #300 (6)): the BANKNIFTY option rules (6.4-6.7); they run on NIFTYBANK only, the others on NIFTY 50 only.
+/// NSE's scheduled short sessions in the BANKNIFTY store's span (Muhurat 2017-2024; the live DR-site Saturdays of 2 Mar and 18 May
+/// 2024): known in advance, so 6.7 does not count them as trading days. Unscheduled halts (10 Jul 2017, 24 Feb 2021) are trading days.
+const BN_SCHEDULED: &[&str] = &["2017-10-19", "2018-11-07", "2019-10-27", "2020-11-14", "2021-11-04", "2022-10-24", "2023-11-12", "2024-03-02", "2024-05-18", "2024-11-01"];
+pub const BNF_IDS: &[&str] = &["as51_opt_st_sell", "as51_opt_vwap", "as51_opt_mom_buy", "as51_opt_expiry"];
+const OPTNOTE_BN: &str = "The book prints trade lists from its own backtests (another data vendor; 6.4 and 6.6 over 6 years, 6.7 from 2017); the vault runs the rule on its own data; where printed rows can be read they are compared in authors/titles-1030/F4.tsv. No costs in the vault's run.";
+const OPTMIN_BN: &str = "A|Real BANKNIFTY weekly options, 1-minute (R4 #300 (6), lane F4): the user's AmiBroker database DATABASE/zerodha_N50_BN_FN__MIDCP_Options_From_01-02-2017_To_08-09-2025 (one file per contract, the same vendor files as the Globaldatafeed folders, extended to 2025) and its NIFTY BANK index minutes; the nearest weekly expiry, 2017-02-01 to 2024-11-13 (NSE ended BANKNIFTY weekly options after 13 Nov 2024); src/optw1.rs. The database repeats a contract's last bar in minutes without a trade (same open, high, low, close and volume): such repeats are dropped, so a minute without a trade has no bar. A price at a clock time is the open of that minute's bar, else the contract's last traded price; a level order fills at its level when the 1-minute path reaches it, or at a minute's open when the price jumps through it; inside a minute the path is open, nearer extreme (ties: high), other extreme, close; a minute whose fills differ between its two extreme orders is ambiguous (#175). Each leg is one option per unit of BANKNIFTY on the options account (options::account): P&L in index points / the spot at entry. No costs (the book gives none; the vault cost setting applies). Days with fewer than 300 index minutes (trading halts, special Saturday and Muhurat sessions) are not traded, and each is noted on the next trade.";
 const OPTNOTE: &str = "The book prints trade lists from its own backtests (another data vendor, 2019-2023); the vault runs the rule on its own data; where printed rows can be read they are compared in authors/titles-1030/F2.tsv. No costs in the vault's run.";
 const OPTMIN: &str = "A|Real NIFTY weekly options, 1-minute (R4 #293): the user's StockMock store (#Data/stores/NIFTY_full, nearest expiry, 2019-02-11 on; src/optw1.rs). A price at a clock time is the open of that minute's bar (the bar covers the minute; the store's README), else the contract's last traded price; a level order fills at its level when the 1-minute path reaches it, or at a minute's open when the price jumps through it; inside a minute the path is open, nearer extreme (ties: high), other extreme, close; a minute whose fills differ between its two extreme orders is ambiguous (#175). Each leg is one option per unit of NIFTY on the options account (options::account): P&L in index points / the spot at entry. No costs (the book gives none; the vault cost setting applies). Days without option minutes in the store (2026-09-16 to 2026-09-28: the source has no spot minutes) and days with fewer than 300 spot minutes (2026-09-30) are not traded, and each is noted on the next trade. The rejection of the vault's own NIFTY 50 minute file from 2026-08-11 (frozen 15:15-15:19 bars, then a spike; intraday_w2b::NIFTY_BAD_FROM) is not applied: this store's spot is another source, and it shows neither defect on any day of Jul-Oct 2026 (lane F2 check).";
 const OPT: &str = "NIFTY weekly 1-minute option prices are now held (lane F2, R4 #293), but this rule manages two legs as one position (a combined or linked stop, or a spread across two expiries), which the vault's option account does not run yet (#263, #182 (2)).";
-const BNF: &str = "Needs BANKNIFTY weekly option prices during the day (the rule trades BANKNIFTY options). The user's share holds them only as AmiBroker per-contract 1-minute sets (Globaldatafeed 2017-2023, zerodha 2017-2025; about 100,000 contract files), not yet extracted (lane F2, 13 Nov 2026). The NIFTY weekly minutes now held cannot stand in for BANKNIFTY options.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
@@ -160,10 +170,26 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"Our stoploss will be at the 20% of the entry premium. For example, for a 19,300 put option of Rs.50, the stoploss will be Rs.10. We will cover positions in profit when the trade has given us a risk to reward ratio of 1:2. Meaning, if we are risking Rs. 10, the aim will be to earn Rs.20\"; \"the holding period will be for 30 minutes only ... there are 3 defined exits in this strategy - Stoploss, target or time-based exit in 30 minutes\" (p.326); \"an intraday strategy which will be executed and exited in the early half of the market itself\" (p.321 [PDF 162])",
               "A|Read: the nearest weekly expiry; open interest = the last printed OI of each contract at or before the 09:19 minute (the chain as seen at 9:20); the call and the put with the highest OI; their reference prices = the price at 9:20; a buy stop at 1.1 x that price working from 9:20 to 12:21 (the session's first half ends 12:22:30; option until), each contract at most once a day; stop at 0.8 x entry, target at 1.4 x entry (twice the Rs 10 risk on Rs 50); out at the open of the first traded minute 30 minutes after the fill [Declared readings].", OPTMIN],
             OPTNOTE),
-        data!("as51_opt_st_sell", "6.4 Supertrend option selling", "E|Intraday option selling on Supertrend signals (p.329-335 [PDF 166-169])", BNF),
-        data!("as51_opt_vwap", "6.5 Option + VWAP", "E|Intraday option trades with VWAP on the option chart (p.335-345 [PDF 169-174])", "Needs BANKNIFTY weekly option prices during the day (the rule sells the BANKNIFTY ATM straddle, p.339); the user's share holds them only as AmiBroker per-contract 1-minute sets, not yet extracted (lane F2, 13 Nov 2026). Also open: the straddle VWAP's volume (two legs) is not defined in the book."),
-        data!("as51_opt_mom_buy", "6.6 Momentum option buying", "E|Intraday momentum option buying (p.345-351 [PDF 174-177])", "Needs BANKNIFTY weekly option prices during the day (the chapter's example and results are BANKNIFTY, p.349); the user's share holds them only as AmiBroker per-contract 1-minute sets, not yet extracted (lane F2, 13 Nov 2026)."),
-        data!("as51_opt_expiry", "6.7 Expiry-day decay", "E|Expiry-day option selling for theta decay (p.351-355 [PDF 177-179])", BNF),
+        def!("as51_opt_st_sell", "6.4 Supertrend option selling: on the 5-minute BANKNIFTY chart sell the weekly ATM put while the Supertrend (7, 3) is green and the ATM call while it is red, switching at each colour change; no new trade after 3:15 pm", "Long/Short", Status::Live,
+            &["E|\"This intraday strategy applies the Supertrend indicator on a 5-minute Bank Nifty chart for selling the ATM call and puts options of Bank Nifty based on the directional signals generated by the Supertrend indicator\"; \"at the 9:20 a.m. the price is above the Supertrend indicator and it is also green ... At this point, we will sell an at the money put option of the weekly expiry\" (p.333 [PDF 168]); the chart: NIFTY BANK, 5-minute, \"Supertrend 7 3\" (p.331 [PDF 167])",
+              "X|\"We will cover our the option whenever the Supertrend changes its color into red. This provides with another trading opportunity and we can sell an at the money call\"; \"we will continue to sell ATM calls and puts whenever the Supertrend indicator changes its colors. This systematic alternating of calls and puts will continue till 3:15 p.m. We will stop trading after 3:15 p.m.\"; \"The dynamic bands of the Supertrend indicator acts as the exit trigger instead of rigid stoplosses\" (p.333); the book's trade table enters at 9:15 bars and exits each day's last trade at the 15:25 bar (p.334 [PDF 168])",
+              "A|Read: Supertrend (ATR 7, factor 3; TradingView's built-in, as as51_st_pivot) on session 5-minute bars of the NIFTY BANK index minutes (09:15-09:19 ... 15:25-15:29), one continuous series across days as on the chart (a run starts it 5 trading days before its window), fed with every store day's index minutes, short sessions too: the 2017-2022 Muhurat sessions are not in the source, the 2023 one has no index minutes, the 2024 one's minutes enter the series (a negligible effect on the next day's colour); a bar's colour acts at its close, the open of the next minute (the 9:15 bar at 9:20, the book's example); each day the first evaluated bar opens a position in its colour (green: sell the ATM put; red: the ATM call); every colour change buys it back and sells the other type; ATM = the strike listed as call and put nearest the spot at that minute (tie: lower); the nearest weekly expiry (on expiry day the contract expiring that day); no new position on a bar closing after 15:15; the day's last position leaves at its last traded price of the day (the book's table exits at the 15:25 bar) [Declared readings]. The book's table and text disagree on the contract: its 16-22 Dec 2022 rows carry the prices of the 29 Dec 2022 monthly contract (5 rows checked in the source files: within Rs 4), not of the nearest weekly (22 Dec), while the text says 'the weekly expiry'; the vault runs the text's nearest weekly contract (its store holds no other expiry). On 23-29 Dec 2022, where the two are the same contract, the vault's entries match the table within Rs 5.40 and its exits within Rs 5.55, and 21 of the 22 legible rows have a vault leg at the same minute (authors/titles-1030/F4w/book.out).", OPTMIN_BN],
+            OPTNOTE_BN),
+        def!("as51_opt_vwap", "6.5 Option + VWAP: sell the BANKNIFTY weekly ATM straddle (strike fixed at 9:15) when its 5-minute premium is 3% below the straddle's VWAP; buy it back when the premium touches the VWAP; at most 3 trades a day, none after 3 pm", "Short", Status::Live,
+            &["E|\"we are going to sell an At-The-Money straddle of the Bank Nifty at the open and use VWAP as a tool to manage our risks. We are going to use a 5-minute chart and ... the combined straddle premium is plotted on the 5-minute chart\"; \"the entry signal is only triggered when the premium value declines 3% below the VwAP line. This allows us to set a risk buffer and the VWAP acts as the stoploss level\" (p.339 [PDF 171]); the example chart: BANKNIFTY 13JUL23 44900 call + 44900 put, 5min, with its VWAP (p.339)",
+              "X|\"we will square off our trade as soon as the premium value touches the VwAP line. We can only take a maximum number of 3 trades per day. We will not take a trade after 3 p.m.\" (p.341 [PDF 172])",
+              "A|Adapted: 2 unstated details (#297). Unstated in the book: (1) the straddle's VWAP volume: the book's VWAP is cumulative price x volume over cumulative volume (p.339), but a two-leg straddle has no volume of its own; vault reading: each 5-minute bar's straddle price = the call's close + the put's close (their last traded prices at the bar's end), its volume = the two legs' traded volume added, accumulated from 9:15; (2) the exit of a position still open late in the day: none printed; vault reading: out at the open of 15:15, the book's intraday exit time in 6.2, 6.6, 6.8 and 6.9 (option eod). Read: BANKNIFTY (the chapter's straddle); the nearest weekly expiry; the ATM strike at 9:15 (listed as call and put nearest the spot; tie: lower), kept all day (the book's chart plots one strike); signals at 5-minute closes, acting at the open of the next minute; sell when the straddle's close is at or below 0.97 x VWAP, buy back when it is at or above the VWAP; at most 3 entries a day; no entry on a bar closing after 15:00; both legs or neither: a trade in which one leg has no trade in its window is not traded and noted [Declared readings].", OPTMIN_BN],
+            OPTNOTE_BN),
+        def!("as51_opt_mom_buy", "6.6 Momentum option buying: buy the BANKNIFTY weekly ATM call or put when it rises 15% over its 9:30 price; stop 25%, target 100%; out 3:15 pm", "Long/Short", Status::Live,
+            &["E|\"Traders would typically execute this strategy by purchasing At-the-Money call and put options based on the spot prices at 9:30 in the morning\" (p.347 [PDF 175]); \"if the call price at 9:30 is 100, traders would wait for the price to increase by 15% (reaching 115) before initiating the trade. Similarly, for the put option priced at 120, a 15% increase (reaching 138) would serve as the trigger for entry\" (p.347)",
+              "X|\"we maintain the 25% stoploss and a 100% target, both calculated from the entry price\" (p.349 [PDF 176]); \"set stoploss and target levels for each position and wait for the trade to either hit the stoploss, reach the target, or exit at 3:15 p.m.\" (p.347); the example, BANKNIFTY 24 Apr 2017: only the call reached its trigger (p.349)",
+              "A|Adapted: 1 unstated detail (#297). Unstated in the book: how long the 15% trigger works; vault reading: until the 3:15 pm exit (the order works 9:30 to 15:14; option until). Read: BANKNIFTY (the chapter's example and results); the nearest weekly expiry; ATM at 9:30 (the strike listed as call and put nearest the spot; tie: lower); each leg's reference = its price at 9:30; a buy stop at 1.15 x that price, each contract at most once a day; stop at 0.75 x entry, target at 2 x entry; out at the open of 15:15 [Declared readings].", OPTMIN_BN],
+            OPTNOTE_BN),
+        def!("as51_opt_expiry", "6.7 Expiry decay: two trading days before the BANKNIFTY weekly expiry, at 10:00 sell the call 100 points above and the put 100 points below the rounded spot; stop 90% of premium per leg; out 9:55 am on expiry day", "Short", Status::Live,
+            &["E|\"This is typically done around 10:00 a.m. when the initial volatility has settled. We choose to implement this strategy 2 days prior to the expiry date\" (p.351 [PDF 177]); \"Once we have the Bank Nifty spot value, we round it off and select one Out-of-the-Money (OTM) call option and one OTM put option to sell. For instance, if the spot value is 41,181, we round it to 41,200. Therefore, we would look for a Bank Nifty 41,300 call (100 points OTM) and a Bank Nifty 41,100 put (100 points OTM)\"; \"an initial stoploss is set at 90% of the premium for each leg\" (p.351)",
+              "X|\"if the premium is 100, the initial stoploss would be 90 (Sell price- 100, Stoploss- 190)\"; \"it is recommended to exit the strategy at 9:55 a.m. on the expiry day instead of waiting for the expiry time\" (p.353 [PDF 178])",
+              "A|Adapted: 1 unstated detail (#297). Unstated in the book: the rounding of a spot exactly halfway between hundreds; vault reading: up. Read: '2 days prior' = two trading days before the expiry day (the book's table enters on Mondays when the expiry is on a Wednesday or follows a holiday, p.353); trading days = the vault's NIFTYBANK dates except NSE's scheduled Muhurat and special Saturday sessions (listed in as51ts::BN_SCHEDULED; a position is held across one, its value carried); an unscheduled trading halt or a data gap is still a trading day, so the entry never depends on later days; a week whose next day or expiry day is short or has no option minutes in the source is not traded and noted (in the store: the 24 Feb 2021 halt and 8 Feb 2023); both legs or neither: a week where either strike is not listed or has no trade from 10:00 is not traded and noted; the spot at 10:00 = the open of the 10:00 minute, rounded to the nearest 100; each leg sold at the open of its first traded minute from 10:00; stop at 1.9 x entry per leg, working through the two nights (a gap above it fills at the open); out at the open of 9:55 on the expiry day; the advice to skip weeks of very high VIX (p.353) is not modelled [Declared readings].", OPTMIN_BN],
+            OPTNOTE_BN),
         held!("as51_opt_comb_sl", "6.8 Combined stoploss straddle", "E|Short straddle / strangle with a combined premium stop (p.355-359 [PDF 179-181])", "Held (lane F2, R4 #294 (4) re-read, 13 Nov 2026): the data are held (NIFTY weekly 1-minute options), but the strikes are not defined: the chapter sells 'out-of-the-money (OTM) call and put options' at 9:30 with a combined stop of 40 points and an exit at 3:15 (p.355-356), and never says how far out of the money; its only example sells a 19800 call and a 19800 put of 28 Sep 2023 (p.355), the same strike for both legs. Choosing the distance would be our value (#36)."),
         def!("as51_opt_theta", "6.9 Theta decay: sell the NIFTY weekly ATM call and put at 9:30, stop 25% each, re-sell the new ATM leg after a stop (at most 3 trades a day); out 3:15 pm", "Long/Short", Status::Live,
             &["E|\"The strategy typically begins at 9:30 a.m. ... Traders identify the current spot price of a particular index or stock, such as the Nifty, and select the ATM call and put options accordingly. One lot of each option is sold to initiate the strategy\" (p.359 [PDF 181]); \"if either the call or put option hits the predetermined stoploss level, the trader exits that particular leg of the trade. Subsequently, at 10:34 a.m., the trader reenters the trade by selling the new ATM call or put option, placing another stop-loss order at 25% above the entry price\" (p.360)",
@@ -242,6 +268,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             pd("prem", "Premium legs: price sought at 15:00, Rs (150)", 150., 10., 1000., 10.)],
         "as51_opt_straddle" => vec![pd("sl", "Stop, % below entry (50)", 50., 5., 95., 5.), pd("trail", "Survivor's trailing stop, % of its price (50)", 50., 5., 95., 5.),
             pd("hold", "Exit on this trading day after entry (2; the book: 2-3 days, its table exits on the 2nd)", 2., 1., 5., 1.)],
+        // lane F4 (R4 #300 (6)): BANKNIFTY option rules on weekly 1-minute prices
+        "as51_opt_st_sell" => vec![pd("atr", "Supertrend ATR length (7, the book's chart)", 7., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5),
+            pd("last", "Last new position, minutes after 9:15 (360 = 15:15)", 360., 5., 370., 5.)],
+        "as51_opt_vwap" => vec![pd("below", "Entry: premium below the VWAP, % (3)", 3., 0.5, 50., 0.5), pd("max_trades", "Trades a day (3)", 3., 1., 20., 1.),
+            pd("eod", "Time exit, minutes after 9:15 (360 = 15:15; unstated in the book)", 360., 300., 374., 1.)],
+        "as51_opt_mom_buy" => vec![pd("rise", "Entry: rise over the 9:30 price, % (15)", 15., 1., 100., 1.), pd("sl", "Stop, % below entry (25)", 25., 5., 90., 1.),
+            pd("tgt", "Target, % above entry (100)", 100., 5., 1000., 5.), pd("until", "Last entry minute after 9:15 (359 = 15:14; unstated in the book)", 359., 16., 359., 1.)],
+        "as51_opt_expiry" => vec![pd("sl", "Stop, % of premium (90)", 90., 10., 500., 5.), pd("otm", "Points out of the money (100)", 100., 0., 2000., 100.)],
         _ => return None,
     })
 }
@@ -771,6 +805,8 @@ const T1100: usize = 105;
 const T1500: usize = 345;
 const T1515: usize = 360;
 const T1529: usize = 374;
+const T0955: usize = 40;
+const T1000: usize = 45;
 
 fn hhmm(m: usize) -> String { format!("{:02}:{:02}", (555 + m) / 60, (555 + m) % 60) }
 
@@ -789,8 +825,9 @@ fn leg_pos(x: &Ctx, d: &crate::optw1::Day, i: usize, l: &crate::optw1::Leg, entr
     let exp = d.expiry;
     let amb = if l.amb { " · ambiguous minute (#175: the order inside one minute is unknown; nearer extreme first)" } else { "" };
     let when = if exit_i == i { hhmm(m) } else { format!("{} {}", x.r[exit_i].date, hhmm(m)) };
+    let und = if x.r[0].ticker == "NIFTYBANK" { "BANKNIFTY" } else { "NIFTY" };
     Some(crate::options::Pos { dir, s0, entry_i: i, exit_i, pnl, open,
-        reason: format!("{side} NIFTY {strike} {ty} exp {}-{:02}-{:02} at {} {:.2}; out {when} {px:.2} ({why}){amb}", exp / 10000, exp / 100 % 100, exp % 100, hhmm(entry.1), entry.0) })
+        reason: format!("{side} {und} {strike} {ty} exp {}-{:02}-{:02} at {} {:.2}; out {when} {px:.2} ({why}){amb}", exp / 10000, exp / 100 % 100, exp % 100, hhmm(entry.1), entry.0) })
 }
 
 /// Finished legs of one intraday day as positions (a leg still open at the end of the day leaves at its last traded price).
@@ -806,23 +843,78 @@ fn day_pos(x: &Ctx, d: &crate::optw1::Day, i: usize, legs: &mut [crate::optw1::L
     }
 }
 
-/// Lane F2 option rules (None: not one of them; Err: no NIFTY weekly 1-minute option prices for this instrument).
+/// 5-minute bars of contract `ci` on one day (session-aligned: 09:15-09:19 ... 15:25-15:29): (bar no., open, high, low, close).
+fn five(d: &crate::optw1::Day, ci: usize) -> Vec<(usize, f64, f64, f64, f64)> {
+    (0..crate::optw1::MINUTES / 5).filter_map(|j| {
+        let v: Vec<crate::optw1::B> = (5 * j..5 * j + 5).filter_map(|m| d.bars[ci][m]).collect();
+        let (f, z) = (v.first()?, v.last()?);
+        Some((j, f.o, v.iter().map(|b| b.h).fold(f64::MIN, f64::max), v.iter().map(|b| b.l).fold(f64::MAX, f64::min), z.c))
+    }).collect()
+}
+
+/// TradingView ta.supertrend fed one bar at a time: the same arithmetic as `supertrend` (lane F4, 6.4 runs one continuous series
+/// across the days it reads).
+pub struct StInc { n: usize, fac: f64, t: usize, trs: f64, atr: f64, up: f64, lo: f64, st: f64, pc: f64 }
+impl StInc {
+    pub fn new(n: usize, fac: f64) -> StInc { StInc { n, fac, t: 0, trs: 0.0, atr: f64::NAN, up: f64::NAN, lo: f64::NAN, st: f64::NAN, pc: f64::NAN } }
+    /// Add one bar; Some(direction: -1 up / green, +1 down / red) once it is evaluated (the ATR existed on the bar before).
+    pub fn push(&mut self, h: f64, l: f64, c: f64) -> Option<i8> {
+        let (t, n) = (self.t, self.n);
+        let tr = if t == 0 { h - l } else { (h - l).max((h - self.pc).abs()).max((l - self.pc).abs()) };
+        let atr = if t + 1 < n { self.trs += tr; f64::NAN } else if t + 1 == n { (self.trs + tr) / n as f64 } else { (1.0 / n as f64) * tr + (1.0 - 1.0 / n as f64) * self.atr };
+        let src = (h + l) / 2.0;
+        let (mut u, mut d) = (src + self.fac * atr, src - self.fac * atr);
+        let nz = |v: f64| if v.is_nan() { 0.0 } else { v };
+        let (pu, pl) = if t > 0 { (nz(self.up), nz(self.lo)) } else { (0.0, 0.0) };
+        let pc = if t > 0 { self.pc } else { f64::NAN };
+        if !(d > pl || pc < pl) { d = pl; }
+        if !(u < pu || pc > pu) { u = pu; }
+        if atr.is_nan() { u = f64::NAN; d = f64::NAN; }
+        let evaluated = t > 0 && !self.atr.is_nan();
+        let dir: i8 = if !evaluated { 1 } else if self.st == self.up { if c > u { -1 } else { 1 } } else if c < d { 1 } else { -1 };
+        (self.up, self.lo, self.st, self.atr, self.pc, self.t) = (u, d, if dir == -1 { d } else { u }, atr, c, t + 1);
+        evaluated.then_some(dir)
+    }
+}
+
+/// Lane F2 / F4 option rules (None: not one of them; Err: no weekly 1-minute option prices of the rule's market for this instrument).
 pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
-    use crate::optw1::{Leg, St};
     if !OPT_IDS.contains(&id) { return None; }
-    let Some(st) = crate::optw1::store(x.r.first().map_or("", |r| r.ticker.as_str())) else {
-        return Some(Err("needs_data: no NIFTY weekly 1-minute option prices are loaded for this instrument".into()));
+    let ticker = x.r.first().map_or("", |r| r.ticker.as_str());
+    let bnf = BNF_IDS.contains(&id);
+    let Some(st) = rule_store(id, ticker) else {
+        return Some(Err(if bnf { "needs_data: no BANKNIFTY weekly 1-minute option prices are loaded for this instrument (the rule trades BANKNIFTY weekly options)" }
+            else { "needs_data: no NIFTY weekly 1-minute option prices are loaded for this instrument" }.into()));
     };
-    if to >= x.r.len() || from > to { return Some(Ok(vec![])); }
-    let ticker = x.r[0].ticker.as_str();
-    let next_store = crate::optw1::store_next(ticker);
+    Some(positions_in(id, x, from, to, p, st, crate::optw1::store_next(ticker)))
+}
+
+/// The weekly 1-minute store a rule may read on `ticker`: each rule trades its own market's options, the NIFTY rules on NIFTY 50,
+/// the BANKNIFTY rules (lane F4) on NIFTYBANK (None: another market, or no store).
+pub fn rule_store(id: &str, ticker: &str) -> Option<&'static crate::optw1::Store> {
+    (ticker == if BNF_IDS.contains(&id) { "NIFTYBANK" } else { "NIFTY 50" }).then(|| crate::optw1::store(ticker)).flatten()
+}
+
+fn positions_in(id: &str, x: &Ctx, from: usize, to: usize, p: &Params, st: &crate::optw1::Store, next_store: Option<&crate::optw1::Store>) -> Result<Vec<crate::options::Pos>, String> {
+    use crate::optw1::{Leg, St, MINUTES, SPOT};
+    if to >= x.r.len() || from > to { return Ok(vec![]); }
     if id == "as51_opt_straddle" && next_store.is_none() {
-        return Some(Err("needs_data: the next weekly expiry's 1-minute prices on expiry days (NIFTY_50.w1n) are not loaded; 6.13 buys that contract on expiry Thursdays".into()));
+        return Err("needs_data: the next weekly expiry's 1-minute prices on expiry days (NIFTY_50.w1n) are not loaded; 6.13 buys that contract on expiry Thursdays".into());
     }
     let g = |k: &str| super::jb624::getp(id, p, k);
     let mut out = Vec::new();
     // days the rule could not trade, said on the next position (bar index, note)
     let mut notes: Vec<(usize, String)> = Vec::new();
+    // 6.4 (lane F4): the Supertrend runs on one continuous 5-minute series, started 5 trading days before the window
+    let mut stinc = (id == "as51_opt_st_sell").then(|| StInc::new(g("atr").round().max(1.0) as usize, g("fac")));
+    if let Some(s) = stinc.as_mut() {
+        for j in from.saturating_sub(5)..from {
+            let dt = x.r[j].date.as_str();
+            if !st.has(dt) { continue; }
+            let d = st.day(dt).ok_or_else(|| format!("calculation_unavailable: the weekly option minutes of {dt} could not be read (malformed store block); no result is published"))?;
+            for (_, _, h, l, c) in five(&d, SPOT) { s.push(h, l, c); }
+        }
+    }
     let mut i = from;
     while i <= to {
         let date = x.r[i].date.as_str();
@@ -832,9 +924,18 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
             continue;
         }
         let Some(d) = st.day(date) else {
-            return Some(Err(format!("calculation_unavailable: the weekly option minutes of {date} could not be read (malformed store block); no result is published")));
+            return Err(format!("calculation_unavailable: the weekly option minutes of {date} could not be read (malformed store block); no result is published"));
         };
-        if d.special() { notes.push((i, format!("{date}: fewer than 300 NIFTY spot minutes in the store (a special session, or missing spot minutes as on 2026-09-30), not traded"))); i += 1; continue; }
+        // 6.4: the day's index bars feed the continuous Supertrend (every store day of the vault's calendar, short sessions too)
+        let dirs: Vec<(usize, Option<i8>)> = match stinc.as_mut() { Some(s) => five(&d, SPOT).into_iter().map(|(j, _, h, l, c)| (j, s.push(h, l, c))).collect(), None => vec![] };
+        if d.special() {
+            notes.push((i, if BNF_IDS.contains(&id) { format!("{date}: fewer than 300 NIFTY BANK index minutes in the source (a trading halt, a special Saturday or Muhurat session), not traded") }
+                else { format!("{date}: fewer than 300 NIFTY spot minutes in the store (a special session, or missing spot minutes as on 2026-09-30), not traded") }));
+            i += 1;
+            continue;
+        }
+        // a day with index minutes but no option minutes (the BANKNIFTY source lacks every contract on 2023-02-08; lane F4)
+        if d.k.len() <= 1 { notes.push((i, format!("{date}: no option minutes in the source on this day, not traded"))); i += 1; continue; }
         let short = |ci: usize, stt: St| { let mut l = Leg::new(ci, -1.0, stt); l.exit_m = T1515; l.exit_why = "15:15 exit"; l };
         match id {
             "as51_opt_multi_sell" => {
@@ -999,7 +1100,7 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
                         break;
                     }
                     let Some(n) = st.day(nd) else {
-                        return Some(Err(format!("calculation_unavailable: the weekly option minutes of {nd} could not be read (malformed store block); no result is published")));
+                        return Err(format!("calculation_unavailable: the weekly option minutes of {nd} could not be read (malformed store block); no result is published"));
                     };
                     // daily bars of the vault between two store days (no option minutes) carry the last value (one mark per bar)
                     for j in 0..2 { if exit_j[j].is_none() && legs[j].fill.is_some() { while marks[j].len() < jd - i { let v = *marks[j].last().unwrap(); marks[j].push(v); } } }
@@ -1051,6 +1152,181 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
                 i += 1;
                 continue;
             }
+            "as51_opt_st_sell" => {
+                // 6.4 (lane F4): each evaluated 5-minute bar's colour acts at its close (the open of the next minute); the day's first
+                // evaluated bar and every colour change open a sold ATM leg of that colour (green: put, red: call), which a later
+                // change buys back; no new leg after `last`; the day's last leg leaves at its last traded price of the day
+                let last = g("last").round() as usize;
+                let mut dec: Vec<(usize, bool)> = Vec::new();
+                let mut cur: Option<i8> = None;
+                for &(j, dir) in &dirs {
+                    let Some(dir) = dir else { continue };
+                    if cur != Some(dir) { dec.push((5 * (j + 1), dir == -1)); cur = Some(dir); }
+                }
+                let mut legs = Vec::new();
+                for (k, &(a, put)) in dec.iter().enumerate() {
+                    if a > last { break; }
+                    let nxt = dec.get(k + 1).map(|z| z.0).filter(|&n| n < MINUTES);
+                    let Some(ci) = d.atm(a).and_then(|kk| d.ci(kk, put)) else {
+                        notes.push((i, format!("{date} {}: no ATM {} in the store, leg not traded", hhmm(a), if put { "put" } else { "call" })));
+                        continue;
+                    };
+                    let mut l = short(ci, St::Timed { at: a, until: nxt.map_or(T1529, |n| n - 1) });
+                    (l.exit_m, l.exit_why) = match nxt { Some(n) => (n, "Supertrend colour change"), None => (MINUTES, "") };
+                    legs.push(l);
+                }
+                crate::optw1::walk(&d, &mut legs, 0, &mut |_, _| {});
+                for l in legs.iter_mut() {
+                    if matches!(l.st, St::Open { .. }) && l.exit_m >= MINUTES {
+                        let lm = (0..MINUTES).rev().find(|&m| d.bars[l.ci][m].is_some()).unwrap_or(T1529);
+                        l.close(d.bars[l.ci][lm].map_or(f64::NAN, |z| z.c), lm, "the day's last trade (the book's table exits at the 15:25 bar)");
+                    }
+                }
+                day_pos(x, &d, i, &mut legs, &mut out);
+            }
+            "as51_opt_vwap" => {
+                // 6.5 (lane F4): straddle of the 9:15 ATM strike; 5-minute closes vs the straddle's VWAP (#297 reading: price = the two
+                // legs' closes added, volume = their volumes added, from 9:15)
+                let (below, maxt, eod) = (g("below") / 100.0, g("max_trades").round() as usize, g("eod").round() as usize);
+                let ks = d.atm(0).map(|k| (d.ci(k, false), d.ci(k, true)));
+                let Some((Some(cc), Some(pc))) = ks else { notes.push((i, format!("{date}: no 9:15 ATM call and put pair in the store, not traded"))); i += 1; continue };
+                let close_by = |ci: usize, e: usize| (0..=e).rev().find_map(|m| d.bars[ci][m]).map(|z| z.c);
+                let (mut pv, mut vv) = (0.0, 0.0);
+                let mut trades: Vec<(usize, usize, &'static str)> = Vec::new();
+                let mut open: Option<usize> = None;
+                for j in 0..MINUTES / 5 {
+                    let (e, a) = (5 * j + 4, 5 * j + 5);
+                    let (Some(c1), Some(c2)) = (close_by(cc, e), close_by(pc, e)) else { continue };
+                    let px = c1 + c2;
+                    let v: f64 = (5 * j..=e).map(|m| d.vol[cc][m] + d.vol[pc][m]).sum();
+                    pv += px * v;
+                    vv += v;
+                    if vv <= 0.0 || a >= eod { continue; }
+                    let w = pv / vv;
+                    match open {
+                        Some(t0) => if px >= w { trades.push((t0, a, "premium back at the VWAP")); open = None; },
+                        None => if trades.len() < maxt && a <= T1500 && px <= (1.0 - below) * w { open = Some(a); },
+                    }
+                }
+                if let Some(t0) = open { trades.push((t0, eod, if eod == T1515 { "15:15 exit" } else { "time exit" })); }
+                let mut legs = Vec::new();
+                for &(t0, t1, why) in &trades {
+                    for ci in [cc, pc] {
+                        let mut l = short(ci, St::Timed { at: t0, until: t1 - 1 });
+                        (l.exit_m, l.exit_why) = (t1, why);
+                        legs.push(l);
+                    }
+                }
+                crate::optw1::walk(&d, &mut legs, 0, &mut |_, _| {});
+                // the straddle is both legs: a trade in which one leg has no trade in its window is not traded (as 6.13)
+                let mut both = Vec::new();
+                for (t, pr) in legs.chunks(2).enumerate() {
+                    if pr.iter().all(|l| l.fill.is_some()) { both.extend_from_slice(pr); }
+                    else if pr.iter().any(|l| l.fill.is_some()) { notes.push((i, format!("{date} {}: only one leg of the straddle traded, not traded", hhmm(trades[t].0)))); }
+                }
+                let mut legs = both;
+                day_pos(x, &d, i, &mut legs, &mut out);
+            }
+            "as51_opt_mom_buy" => {
+                // 6.6 (lane F4): the 9:30 ATM call and put, each bought when it rises `rise` over its 9:30 price
+                let (rise, sl, tgt) = (g("rise") / 100.0, g("sl") / 100.0, g("tgt") / 100.0);
+                let mut legs = Vec::new();
+                for put in [false, true] {
+                    let Some(ci) = d.atm(T0930).and_then(|k| d.ci(k, put)) else { notes.push((i, format!("{date}: no 9:30 ATM {} in the store, not traded", if put { "put" } else { "call" }))); continue };
+                    let Some(p0) = d.price_at(ci, T0930) else { continue };
+                    let mut l = Leg::new(ci, 1.0, St::Trigger { lv: p0 * (1.0 + rise), up: true, from: T0930, until: g("until").round() as usize });
+                    (l.stop, l.target, l.exit_m, l.exit_why, l.prev) = (sl, tgt, T1515, "15:15 exit", p0);
+                    legs.push(l);
+                }
+                crate::optw1::walk(&d, &mut legs, T0930, &mut |_, _| {});
+                day_pos(x, &d, i, &mut legs, &mut out);
+            }
+            "as51_opt_expiry" => {
+                // 6.7 (lane F4): two trading days before the expiry (trading days = the vault's dates except NSE's scheduled
+                // Muhurat and special Saturday sessions: an unscheduled halt or a data gap does not move the entry), at 10:00 sell
+                // the call `otm` above and the put `otm` below the spot rounded to 100; stop 1 + sl; out 9:55 on the expiry day. A
+                // week whose next day or expiry day is short or has no option minutes is not traded (its legs could not be priced
+                // through it; #300 review). A scheduled session inside the holding is held across (its value carried).
+                let today = crate::options::ymd(date);
+                let tdays: Vec<usize> = (i + 1..x.r.len()).filter(|&j| !BN_SCHEDULED.contains(&x.r[j].date.as_str())).take(2).collect();
+                if d.expiry <= today || tdays.len() != 2 || crate::options::ymd(&x.r[tdays[1]].date) != d.expiry { i += 1; continue; }
+                let mut nxt: Vec<(usize, crate::optw1::Day)> = Vec::new();
+                for &j in &tdays {
+                    let dj = x.r[j].date.as_str();
+                    let n = if st.has(dj) { Some(st.day(dj).ok_or_else(|| format!("calculation_unavailable: the weekly option minutes of {dj} could not be read (malformed store block); no result is published"))?) } else { None };
+                    match n {
+                        Some(n) if !n.special() && n.k.len() > 1 && n.expiry == d.expiry => nxt.push((j, n)),
+                        _ => break,
+                    }
+                }
+                if nxt.len() != 2 {
+                    let dj = &x.r[tdays[nxt.len()]].date;
+                    notes.push((i, format!("{date}: 6.7 entry not traded: {dj}, a day of the holding, is short or has no option minutes in the source (the legs cannot be priced through it)")));
+                    i += 1;
+                    continue;
+                }
+                let (sl, otm) = (g("sl") / 100.0, g("otm"));
+                let Some(s) = d.price_at(SPOT, T1000) else { i += 1; continue };
+                let r0 = (s / 100.0 + 0.5).floor() * 100.0;
+                let mut keys = Vec::new();
+                let mut legs = Vec::new();
+                for (k, put) in [(r0 + otm, false), (r0 - otm, true)] {
+                    let Some(ci) = d.ci(k, put) else { break };
+                    let mut l = short(ci, St::Timed { at: T1000, until: T1529 });
+                    (l.stop, l.exit_m, l.exit_why) = (sl, MINUTES, "");
+                    legs.push(l);
+                    keys.push((k, put, ci));
+                }
+                if legs.len() < 2 { notes.push((i, format!("{date}: the {} call or {} put is not in the store, not traded", r0 + otm, r0 - otm))); i += 1; continue; }
+                crate::optw1::walk(&d, &mut legs, T1000, &mut |_, _| {});
+                // both legs or neither (as 6.13): a leg without a trade from 10:00 would otherwise wait into the next days
+                if legs.iter().any(|l| l.fill.is_none()) {
+                    notes.push((i, format!("{date}: the {} call or {} put had no trade from 10:00, not traded", r0 + otm, r0 - otm)));
+                    i += 1;
+                    continue;
+                }
+                let mut marks: Vec<Vec<f64>> = vec![Vec::new(); legs.len()];
+                let mut cur: Vec<f64> = legs.iter().map(|l| d.last_close(l.ci).unwrap_or(l.fill.map_or(0.0, |f| f.0))).collect();
+                let mut exit_j: Vec<Option<usize>> = legs.iter().map(|l| (!matches!(l.st, St::Open { .. })).then_some(i)).collect();
+                let mut last = i;
+                for (step, (jd, n)) in nxt.iter().enumerate() {
+                    if *jd > to || !legs.iter().any(|l| matches!(l.st, St::Open { .. })) { break; }
+                    for (q, l) in legs.iter_mut().enumerate() {
+                        if !matches!(l.st, St::Open { .. }) { continue; }
+                        match n.ci(keys[q].0, keys[q].1) {
+                            Some(ci) => {
+                                while marks[q].len() < jd - i { marks[q].push(cur[q]); } // the close of the last day, carried over vault days without minutes
+                                l.carry();
+                                l.ci = ci;
+                                if step == 1 { (l.exit_m, l.exit_why) = (T0955, "9:55 exit, expiry day"); }
+                            }
+                            None => { l.close(cur[q], MINUTES - 1, "contract not in the next day's data: last traded price"); exit_j[q] = Some(last); }
+                        }
+                    }
+                    crate::optw1::walk(n, &mut legs, 0, &mut |_, _| {});
+                    for (q, l) in legs.iter_mut().enumerate() {
+                        if exit_j[q].is_some() || l.fill.is_none() { continue; }
+                        if let Some(c) = n.last_close(l.ci) { cur[q] = c; }
+                        if matches!(l.st, St::Open { .. }) {
+                            if step == 1 { l.close(cur[q], MINUTES - 1, "no trade at or after the exit time: last traded price"); exit_j[q] = Some(*jd); }
+                        } else { exit_j[q] = Some(*jd); }
+                    }
+                    last = *jd;
+                }
+                for (q, l) in legs.iter().enumerate() {
+                    let Some(f) = l.fill else { continue };
+                    let mut l0 = l.clone();
+                    l0.ci = keys[q].2;
+                    let pos = match (&l.st, exit_j[q]) {
+                        (St::Done { px, m, why }, Some(xj)) => leg_pos(x, &d, i, &l0, f, (xj, *px, *m, why.clone()), &marks[q][..xj - i], false),
+                        _ => { // still open at the end of the window
+                            while marks[q].len() < last - i { marks[q].push(cur[q]); }
+                            leg_pos(x, &d, i, &l0, f, (last, cur[q], MINUTES - 1, "open".into()), &marks[q][..last - i], true)
+                        }
+                    };
+                    if let Some(z) = pos { out.push(z); }
+                }
+            }
             _ => { // as51_opt_3pm
                 let (drop, sl, prem) = (g("drop") / 100.0, g("sl") / 100.0, g("prem"));
                 let mut legs = Vec::new();
@@ -1079,7 +1355,7 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
         while k < out.len() && out[k].entry_i <= ni { k += 1; }
         if k < out.len() { out[k].reason.push_str(&format!(" · note: {note}")); }
     }
-    Some(Ok(out))
+    Ok(out)
 }
 
 // Instrument admission: the five daily rules (lane K70, 8 Nov 2026). The minute rules: intraday_ep::K70.
@@ -1259,6 +1535,111 @@ mod tests {
                     z.pnl.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(";"), z.reason, z.open).unwrap();
             }
         }
+    }
+
+    /// Lane F4: F4_OUT=<csv> VAULT_IDX=<idx_data.csv> F2_W1=<weekly1m dir> cargo test --release f4_dump -- --ignored;
+    /// then authors/titles-1030/F4w/f4_cmp.py.
+    #[test]
+    #[ignore]
+    fn f4_dump() {
+        use std::io::Write;
+        let _ = crate::optw1::DIR.set(std::env::var("F2_W1").unwrap());
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("F4_OUT").unwrap()).unwrap());
+        let rows = crate::load_csv(&std::env::var("VAULT_IDX").unwrap()).unwrap().remove("NIFTYBANK").unwrap();
+        let x = Ctx::new(&rows, &rows, &[]);
+        let st = crate::optw1::store("NIFTYBANK").unwrap();
+        let from = rows.partition_point(|r| r.date.as_str() < st.first());
+        let to = rows.partition_point(|r| r.date.as_str() <= st.last()) - 1;
+        let opts: &[(&str, &[(&str, f64)])] = &[("as51_opt_st_sell", &[]), ("as51_opt_st_sell", &[("atr", 10.)]), ("as51_opt_vwap", &[]), ("as51_opt_vwap", &[("eod", 374.)]),
+            ("as51_opt_mom_buy", &[]), ("as51_opt_expiry", &[])];
+        for (id, kv) in opts {
+            let mut p = Params::new();
+            for (k, v) in kv.iter() { p.insert(k.to_string(), *v); }
+            let tag = kv.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(";");
+            for z in option_positions(id, &x, from, to, &p).unwrap().unwrap() {
+                writeln!(f, "{id}{}{tag},{},{},{},{},{},\"{}\",{}", if tag.is_empty() { "" } else { "|" }, rows[z.entry_i].date, rows[z.exit_i].date, z.s0, z.dir,
+                    z.pnl.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(";"), z.reason, z.open).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn f4_incremental_supertrend_matches_the_series_version() {
+        let n = 300;
+        let c: Vec<f64> = (0..n).map(|i| { let f = i as f64; 1000. + 30. * (f / 17.).sin() + 12. * (f / 5.3).cos() + 0.2 * f }).collect();
+        let h: Vec<f64> = c.iter().enumerate().map(|(i, v)| v + 2. + (i % 7) as f64).collect();
+        let l: Vec<f64> = c.iter().enumerate().map(|(i, v)| v - 1.5 - (i % 5) as f64).collect();
+        let (_, dir) = supertrend(&h, &l, &c, 7, 3.);
+        let mut s = StInc::new(7, 3.);
+        for t in 0..n {
+            let got = s.push(h[t], l[t], c[t]);
+            if t < 7 { assert_eq!(got, None, "{t}: the direction is only evaluated once the ATR existed on the bar before"); } else { assert_eq!(got, Some(dir[t]), "{t}"); }
+        }
+        assert!(dir.iter().any(|&d| d == 1) && dir.iter().any(|&d| d == -1));
+    }
+
+    /// Lane F4: the BANKNIFTY rules on a hand-made 3-day store (Tue, Wed, Thu expiry): 6.7 entry two trading days before the
+    /// expiry, stop at 1.9 x, 9:55 exit; 6.6 trigger, target; the guards (NIFTY rules on NIFTYBANK and the reverse).
+    #[test]
+    fn f4_banknifty_rules_on_a_small_store() {
+        // spot flat at 44,170 (rounds to 44,200: call 44,300, put 44,100); prices in paise, rows a,b,c,d[,v]
+        let dir = std::env::temp_dir().join(format!("f4_store_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let day_n = |date: &str, ce: &[(usize, i64, i64, i64, i64)], pe: &[(usize, i64, i64, i64, i64)], spot: usize| -> String {
+            let mut s = format!("#,{date},2023-06-08,4\nK,1,44200,CE,0\nK,2,44300,CE,0\nK,3,44100,PE,0\nK,4,44200,PE,0\nR,0,0\n4417000,0,0,0\n");
+            for _ in 1..spot { s.push_str("0,0,0,0\n"); }
+            for (ci, rows) in [(2, ce), (3, pe)] {
+                for &(m, o, h, l, c) in rows.iter() { s.push_str(&format!("R,{ci},{m}\n{o},{},{},{},10\n", h - o, o - l, c - o)); }
+            }
+            // the ATM pair, traded every minute at 300 (the 9:30 ATM for 6.6 is 44,200)
+            for ci in [1, 4] { s.push_str(&format!("R,{ci},0\n30000,0,0,0,5\n")); for _ in 1..375 { s.push_str("0,0,0,0,5\n"); } }
+            s
+        };
+        let day = |date: &str, ce: &[(usize, i64, i64, i64, i64)], pe: &[(usize, i64, i64, i64, i64)]| day_n(date, ce, pe, 375);
+        let d1 = day("2023-06-06", &[(45, 10000, 10000, 10000, 10000), (300, 9000, 9000, 9000, 9000)], &[(45, 8000, 8000, 8000, 8000)]);
+        // day 2: the put jumps to 160 (stop 152 = 1.9 x 80): filled at the open 160; the call drifts
+        let d2 = day("2023-06-07", &[(0, 9500, 9500, 9500, 9500)], &[(10, 16000, 16000, 16000, 16000)]);
+        // day 3 (expiry): the call trades at 9:55 at 20
+        let d3 = day("2023-06-08", &[(30, 3000, 3000, 3000, 3000), (40, 2000, 2000, 2000, 2000)], &[]);
+        let mk = |sub: &str, days: [&String; 3]| {
+            let (mut text, mut idx, mut off) = (String::new(), String::from("Date,offset,bytes,expiry\n"), 0);
+            for (d, b) in ["2023-06-06", "2023-06-07", "2023-06-08"].into_iter().zip(days) { idx.push_str(&format!("{d},{off},{},2023-06-08\n", b.len())); off += b.len(); text.push_str(b); }
+            let p = dir.join(sub);
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(p.join("NIFTYBANK.w1.csv"), text).unwrap();
+            std::fs::write(p.join("NIFTYBANK.w1idx.csv"), idx).unwrap();
+            crate::optw1::Store::load(p.to_str().unwrap(), "NIFTYBANK").unwrap()
+        };
+        let st = mk("a", [&d1, &d2, &d3]);
+        let mut r = rows(3);
+        for (k, d) in ["2023-06-06", "2023-06-07", "2023-06-08"].iter().enumerate() { r[k].date = d.to_string(); r[k].ticker = "NIFTYBANK".into(); }
+        let x = Ctx::new(&r, &r, &[]);
+        let ps = positions_in("as51_opt_expiry", &x, 0, 2, &Params::new(), &st, None).unwrap();
+        assert_eq!(ps.len(), 2, "{:?}", ps.iter().map(|p| &p.reason).collect::<Vec<_>>());
+        let call = ps.iter().find(|p| p.reason.contains("44300 CE")).unwrap();
+        let put = ps.iter().find(|p| p.reason.contains("44100 PE")).unwrap();
+        assert!(call.reason.contains("at 10:00 100.00") && call.reason.contains("2023-06-08 09:55 20.00 (9:55 exit, expiry day)"), "{}", call.reason);
+        assert_eq!((call.entry_i, call.exit_i), (0, 2));
+        assert_eq!(call.pnl, vec![100.0 - 90.0, 100.0 - 95.0, 100.0 - 20.0]);
+        assert!(put.reason.contains("at 10:00 80.00") && put.reason.contains("2023-06-07 09:25 160.00 (stop)"), "{}", put.reason);
+        assert_eq!(put.pnl, vec![0.0, 80.0 - 160.0]);
+        // 6.7 needs two trading days before the expiry: entering on the Wednesday is not the rule
+        assert!(positions_in("as51_opt_expiry", &x, 1, 2, &Params::new(), &st, None).unwrap().is_empty());
+        // #300 review: a short day inside the holding (a halt) does not move the entry earlier, and the week is not traded
+        let st_halt = mk("b", [&d1, &day_n("2023-06-07", &[(0, 9500, 9500, 9500, 9500)], &[], 100), &d3]);
+        assert!(positions_in("as51_opt_expiry", &x, 0, 2, &Params::new(), &st_halt, None).unwrap().is_empty());
+        // both legs or neither: the put without a trade from 10:00 on the entry day stops the week
+        let st_one = mk("c", [&day("2023-06-06", &[(45, 10000, 10000, 10000, 10000)], &[(10, 8000, 8000, 8000, 8000)]), &d2, &d3]);
+        assert!(positions_in("as51_opt_expiry", &x, 0, 2, &Params::new(), &st_one, None).unwrap().is_empty());
+        // the rules keep to their own market
+        for id in OPT_IDS {
+            let bnf = BNF_IDS.contains(id);
+            let mut r2 = rows(5);
+            for z in r2.iter_mut() { z.ticker = if bnf { "NIFTY 50" } else { "NIFTYBANK" }.into(); }
+            let e = option_positions(id, &Ctx::new(&r2, &r2, &[]), 0, 4, &Params::new());
+            assert!(matches!(e, Some(Err(ref m)) if m.starts_with("needs_data") && m.contains(if bnf { "BANKNIFTY" } else { "NIFTY weekly" })), "{id}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

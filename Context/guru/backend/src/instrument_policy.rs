@@ -342,18 +342,23 @@ pub fn options_tickers(id:&str)->&'static [&'static str] {
         "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
         "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
         "as51_opt_multi_sell"|"as51_opt_oi_buy"|"as51_opt_theta"|"as51_opt_btst"|"as51_opt_3pm"|"as51_opt_straddle"=>&["NIFTY 50"], // lane F2 (R4 #293): NIFTY weekly options, the contract the book names
+        "as51_opt_st_sell"|"as51_opt_vwap"|"as51_opt_mom_buy"|"as51_opt_expiry"=>&["NIFTYBANK"], // lane F4 (R4 #300 (6)): BANKNIFTY weekly options, the book's contract
         _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
     }
 }
 const OPTIONS_P2_BASIS:&str="Options phase 2 (2026-10-24): the rule trades real option contracts. Prices come from the NSE F&O end-of-day bhavcopy (NIFTY and BANKNIFTY monthly index options) and the SPY/QQQ/IWM 16:00 ET option snapshot (2008-2025; QQQ from 2011), built by library/options/build_{india,us}.py; monthly expiries only. A fill needs a contract that traded that day (India Contracts > 0 at its close or open; US volume > 0 at the 16:00 mid (bid+ask)/2, labelled, no bid/ask edge). Open positions are valued every day at the held contract's own price (India settlement price / US two-sided mid on untraded days, labelled). The books traded OEX, S&P, QQQ, SPY or stock options in 1997-2009, so these runs are a declared application on our market and period. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
-const AS51_OPT_BASIS:&str="Lane F2 (13 Nov 2026, R4 #293): Singhal's NIFTY option rules trade the NIFTY weekly options the book names, on real 1-minute prices of the exact contracts (the user's StockMock store, #Data/stores/NIFTY_full, nearest expiry, from 2019-02-11 when NIFTY weekly options began; src/optw1.rs). A price at a clock time is that minute's open; fills need a traded minute; no option price is modelled or filled in. They run on NIFTY 50 only; BANKNIFTY weekly minutes are not extracted yet, and no other instrument has weekly option prices in the vault.";
+const AS51_OPT_BASIS:&str="Lane F2 (13 Nov 2026, R4 #293): Singhal's NIFTY option rules trade the NIFTY weekly options the book names, on real 1-minute prices of the exact contracts (the user's StockMock store, #Data/stores/NIFTY_full, nearest expiry, from 2019-02-11 when NIFTY weekly options began; src/optw1.rs). A price at a clock time is that minute's open; fills need a traded minute; no option price is modelled or filled in. The NIFTY rules run on NIFTY 50 only; no other instrument has weekly option prices in the vault. Lane F4 (13 Nov 2026, R4 #300 (6)): the BANKNIFTY rules (6.4-6.7) trade BANKNIFTY weekly options on real 1-minute prices of the exact contracts (the user's AmiBroker database DATABASE/zerodha_N50_BN_FN__MIDCP_Options_From_01-02-2017_To_08-09-2025, nearest weekly expiry 2017-02-01 to 2024-11-13; data/options/weekly1m/NIFTYBANK.w1.csv) and run on NIFTYBANK only.";
 fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if !options_p2(def) || (!native_stock && options_tickers(def.id).contains(&ticker)) {return None;}
     let us=matches!(ticker,"SPY"|"QQQ"|"IWM");
     // lane I1 (R4 #303 (3)): the sector-options rule runs on the vault's sector index with real option prices only
     if def.id=="otvt_sector_options_overpriced" {return Some(Issue{status:"needs_data",note:format!("Not published on {ticker}: this rule sells overpriced options on a stock-sector index; it runs on NIFTY BANK, the sector index whose real option prices (NSE F&O bhavcopy) the vault holds, as an Indian application of the US-market rule.")});}
     let note=if def.book=="as51ts" {
-        format!("This rule trades NIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of NIFTY weekly options only (lane F2); {ticker} has none (BANKNIFTY weekly minutes are not extracted yet), and the underlying's own price cannot stand in for an option's, so no result is published.")
+        if crate::books::as51ts::BNF_IDS.contains(&def.id) {
+            format!("This rule trades BANKNIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of BANKNIFTY weekly options for NIFTYBANK (lane F4); {ticker} has none, and another underlying's options or the underlying's own price cannot stand in for them, so no result is published.")
+        } else {
+            format!("This rule trades NIFTY weekly options during the day, as the book does. The vault holds real 1-minute prices of NIFTY weekly options only for NIFTY 50 (lane F2); {ticker} has none, and another underlying's options or the underlying's own price cannot stand in for them, so no result is published.")
+        }
     } else if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
         format!("This option rule needs the option's own intraday high or opening price (a 2x stop on the option's high, or a next-morning exit). The US option data hold only the 16:00 snapshot (bid, ask, last), so {ticker} cannot be priced as the book trades it; the rule runs on NIFTY 50 and NIFTY BANK index options. No result is published.")
     } else {
@@ -1007,6 +1012,8 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 /// Lane K28 (3 Nov 2026): rotation rules rank or weight several actual US ETFs on one account (books::rotation).
 const ROTATION_BASIS:&str="Rotation across several actual US ETFs (books::rotation, lane K28): the rule's own universe is read from the vault's US price file, SPY supplies the calendar and the benchmark, and each holding is the ETF named in its trade. It runs only on SPY; an index, another ETF or a stock cannot stand in for the universe, and India has no sector or multi-asset series in the vault (decision #11).";
 /// Lane K56 (5 Nov 2026, EP5): basket ranking rules rank the stocks of a vault basket and hold them on one account (books::rotation).
+const ECQT_PAIR_BASIS:&str="Chan's GLD/GDX pair (books::ecqt on the two-leg spread engine, lane P1): the book's own two ETFs, GLD (the vault's US price file, the run's context and benchmark) and GDX (Norgate US Equities snapshot, joined by exact date). It runs only on GLD; no other instrument or market stands in for the pair.";
+const PAIRS_BASIS:&str="Pairs trade of two actual stocks (books::vanvliet on the two-leg spread engine, lane P1; R4 #297): Kumiega & Van Vliet name no pair, so the vault declares same-sector pairs (US KO/PEP, option XOM/CVX; India HDFCBANK/ICICIBANK, option TCS/INFY: 'pair chosen by the vault'). The stocks' own daily files are joined by exact date with the SPY or NIFTY 50 calendar; the index or ETF is the calendar and the benchmark, never a stand-in for the stocks. A pair chosen by the vault instead of the authors' unnamed pair is a declared application.";
 const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the US stocks of a vault basket on the SPY calendar (default: every stock in the vault that was ever in the index, us_sp500_past / us_dow30_past, membership dates not known, decision #239; option: today's members; atm04_mtpg: the column's 18 named stocks) and each trade is one of those stocks. SPY is the calendar and the benchmark, never a stand-in for the stocks. India is withheld: the NSE basket is the 2026 member list, and a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). A ranking on these baskets instead of the author's universe is a declared application.";
 fn base_policy(def:&StrategyDef)->Policy {
     if let Some(basis)=crate::futures::card_basis(def) {return requirement("futures",&["futures"],basis);} // lane F1 (R4 #293): the named continuous contract
@@ -1022,6 +1029,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if crate::books::rotation::is_rotation(def.id) {let mut p=etf(ROTATION_BASIS);p.market_adaptation=def.book=="fbrs";return p;} // lane K28 rotation block
     if crate::books::rotation::is_basket(def.id) {let mut p=requirement("index_or_etf",&["index","etf"],BASKET_BASIS);p.market_adaptation=true;return p;} // lane K56 EP5 block
+    if def.id==crate::books::ecqt::PAIR {return requirement("etf",&["etf"],ECQT_PAIR_BASIS);} // lane P1: Chan's GLD/GDX pair on the GLD context
+    if def.id=="vvqmm_pairs" {let mut p=requirement("index_or_etf",&["index","etf"],PAIRS_BASIS);p.market_adaptation=true;return p;} // lane P1 pairs block
     if let Some(a)=admission(def) {let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],a.basis);p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;} // per-book ADMISSION table
     if let Some(p)=schaap_policy(def) {return p;} // Schaap block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
@@ -1455,7 +1464,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         // ---- end Guppy MetaStock Formula Index held
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
-        "tdperl_setup_long"|"tdperl_setup_short"=>"Held: rules not fully defined. Perl trades a completed TD Setup only when three conditions hold, and the third, that the close of setup bar nine is 'in close proximity to' TDST support (resistance for sells) (p.13, 16), is not quantified; leaving it out or picking a distance would not be his rule.",
+        // tdperl_setup_long / _short: admitted by tdperl::ADMISSION (lane R2B, R4 #297: rule 3 read as not applied)
         "tdperl_diff_up"|"tdperl_diff_down"|"tdperl_clopwin_long"|"tdperl_clopwin_short"=>"Held: not a trade rule. Perl presents TD Differential and TD Clopwin as forecasts of the next price bar (p.26, 165-166) with no stop or exit; the vault's next-close measurement tests the forecast, not a trading strategy from the book.",
         // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held
@@ -1686,8 +1695,13 @@ mod tests {
             // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
             // stkch: the intraday block admits the three first-hour gap cards (intraday_ep::K75, lane K75, 11 Nov 2026).
             // kets, phbt: ADMISSION_I1 admits the Indian applications on NSE F&O data (lane I1, 13 Nov 2026) with their own label.
-            const SHARED:&[&str]=&["kets","phbt","kfsc" /* R2E: kfsc_stoch ADMISSION_STOCH beside the kfsc stock/momentum/hv blocks */,"stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
-            for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
+            const SHARED:&[&str]=&["kets","phbt","stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            // R4 #309 (6): ids admitted by a second, newer entry in a book that already had other routes (lanes R2B/R2E, R4 #297):
+            // the newer entry must admit only these ids, and the book's other routes must not admit them.
+            const NEW_IDS:&[&str]=&["sbma_p73_rsi34","fejmma_barnes_5pct","kfsc_stoch"];
+            let new_entry=admitted.iter().all(|d|NEW_IDS.contains(&d.id));
+            for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)
+                && !(new_entry && !NEW_IDS.contains(&d.id)) && !(!new_entry && NEW_IDS.contains(&d.id))) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
                 let p=policy(d);assert_eq!(p.requirement,"index_etf_or_stock","{}",d.id);assert!(p.market_adaptation,"{}",d.id);
@@ -1976,9 +1990,13 @@ mod tests {
     fn perl_held_rules_have_plain_card_reasons() {
         use crate::books::{tdperl};
         let all:Vec<StrategyDef>=tdperl::catalogue().into_iter().collect();
-        for id in [/* tdperl_rebo: intraday block (K25) */ "tdperl_setup_long", "tdperl_setup_short", "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
+        for id in [/* tdperl_rebo: intraday block (K25); tdperl_setup_long/_short: lane R2B (R4 #297) */ "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+        for id in ["tdperl_setup_long", "tdperl_setup_short"] { // lane R2B (R4 #297)
+            let d=all.iter().find(|d|d.id==id).unwrap();
+            assert!(reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end Jason Perl held ----
@@ -3148,7 +3166,12 @@ mod tests {
         assert!(check(&def("spmt_eom_puts","spmt"),"SPY",false).is_some());
         assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_some());
         // lane F2: Singhal's option rules run on NIFTY weekly 1-minute options only
-        for id in crate::books::as51ts::OPT_IDS {assert!(check(&def(id,"as51ts"),"NIFTYBANK",false).unwrap().note.contains("NIFTY weekly"),"{id}");}
+        for id in crate::books::as51ts::OPT_IDS {
+            let bnf=crate::books::as51ts::BNF_IDS.contains(id);
+            // lane F4: the BANKNIFTY rules run on NIFTYBANK only, the NIFTY rules on NIFTY 50 only
+            assert!(check(&def(id,"as51ts"),if bnf {"NIFTY 50"} else {"NIFTYBANK"},false).unwrap().note.contains(if bnf {"BANKNIFTY weekly"} else {"NIFTY weekly"}),"{id}");
+            assert!(check(&def(id,"as51ts"),if bnf {"NIFTYBANK"} else {"NIFTY 50"},false).is_none(),"{id}");
+        }
     }
     #[test]
     fn intraday_p1_admits_minute_tickers_only() {

@@ -38,9 +38,9 @@ it('Excel, CSV and optimizer exports take every row from the run data, not from 
   expect(exported).toHaveLength(7706 + 1);
   expect(VaultReport.csv(exported).trim().split(/\r?\n/)).toHaveLength(7706 + 1);
   const handlers = runtime.slice(runtime.indexOf('async function exportRunTrades'), runtime.indexOf('const refreshHeat='));
-  expect(handlers.match(/\[tradeHeadersFor\(st\.d\),\.\.\.tradeRowsFor\(st\.d,st\.tk\)\]/g)).toHaveLength(1); // CSV
+  expect(handlers.match(/csvSafeRows\(tradeExportRows\(st\)\)/g)).toHaveLength(1); // CSV
   expect(handlers.match(/reportTable\('trades',st\)/g)).toHaveLength(2); // optimizer, Excel (Export everything uses reportTable(kind,st))
-  expect(runtime.slice(runtime.indexOf(' async function reportTable('), runtime.indexOf(' async function xlsx('))).toContain("if(kind==='trades')return ['trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],");
+  expect(runtime.slice(runtime.indexOf(' async function reportTable('), runtime.indexOf(' async function xlsx('))).toContain("if(kind==='trades')return ['trades',tradeExportRows(st),");
   expect(handlers).not.toMatch(/#tradesheet|data-tradesheet/);
   expect(handlers).not.toContain('tradeTableHTML');
 });

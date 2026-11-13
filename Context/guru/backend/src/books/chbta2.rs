@@ -337,7 +337,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ch_bta2_goldbond_adx", "Gold-bond ADX-filtered intermarket", "Ch 4 · Gold-bond intermarket", "Long/Short", Live, &[
             "E|\"1. If the 14-day ADX is greater than its value 14 days ago, and if the 3-day SMA is below the 20-day SMA of the daily gold closes, then buy the bond futures on tomorrows open. 2. ... above ... then sell the bond futures on tomorrow's open.\" (p.127)",
             "F|The 14-day ADX is gold's (\"simply require that the 14-day ADX be rising\" for \"the emerging trend in the gold market\", p.126-127); Wilder ADX",
-            "X|$5,000 initial stop (p.127); the opposite condition reverses [book silent on other exits]"], "Table 4.15 (8/21/77-7/10/95, $5,000 stop, $100 costs): 152 trades, 52% won, $92,488, avg $608. The condition is a state: while it holds and the bond position is flat or opposite, the next open enters. Runs on the Norgate T-bond continuous contract only, the signal market's Norgate contract read on the bond's dates (its indicators on its own bars, the last value carried to a bond date it has no bar for; TradeStation Data2) (lane F1B, R4 #293): signals on the back-adjusted series, % per trade on the unadjusted entry price, the $5,000 = 5.00 bond points. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
+            "X|$5,000 initial stop (p.127); the opposite condition reverses [book silent on other exits]",
+            "A|Unstated in the book: where \"the 14-day ADX ... greater than its value 14 days ago\" counts its 14 days; vault reading: 14 T-bond bars back on gold's ADX carried to the bond's dates (TradeStation's ADX of data2 [14] would count gold bars; they differ only around days one exchange was closed)"], "Table 4.15 (8/21/77-7/10/95, $5,000 stop, $100 costs): 152 trades, 52% won, $92,488, avg $608. The condition is a state: while it holds and the bond position is flat or opposite, the next open enters. Runs on the Norgate T-bond continuous contract only, the signal market's Norgate contract read on the bond's dates (its indicators on its own bars, the last value carried to a bond date it has no bar for; TradeStation Data2) (lane F1B, R4 #293): signals on the back-adjusted series, % per trade on the unadjusted entry price, the $5,000 = 5.00 bond points. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
         d("ch_bta2_intermarket_trio", "Gold-soybeans-bond (three markets)", "Ch 4 · Gold-bond intermarket", "Long/Short", Live, &[
             "E|\"if the 10-day SMA of the daily close was below the 50-day SMA for both gold and soybeans, then that would trigger a buy signal for bonds\" (p.129); both above: sell bonds; tomorrow's open as in the two-market system (p.126)",
             "X|\"As usual, we used a $5,000 initial stop\" (p.129); the opposite signal reverses",
@@ -408,8 +409,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let path = || p("path", "Entry day with a stop entry that reaches its stop: 1 = real SPX 1-minute bars (#240), 0 = daily bar, stop assumed after the entry [Not from the book]", 1., 0., 1., 1.);
-    let stop = |def| p("stop_pts", "Initial stop, S&P index points (the book's dollars / $500 a point, p.134; 0 = off)", def, 0., 50., 1.);
-    let tick = || p("tick", "Stop-entry offset (1 point/tick)", 0.01, 0., 5., 0.01);
+    let stop = |def| p("stop_pts", "Initial stop, S&P index points (the book's dollars / $500 a point, p.134; 0 = off). On a Norgate futures contract, leave it unset: the book's $ stop at the contract's $ per point applies; a value sent here replaces it", def, 0., 50., 1.);
+    let tick = || p("tick", "Stop-entry offset (1 point/tick). On a Norgate futures contract, leave it unset: the contract's tick applies; a value sent here replaces it", 0.01, 0., 5., 0.01);
     let sma_n = || p("sma", "Trend SMA closes", 65., 45., 85., 10.);
     let cc = || p("confirm", "Consecutive closes", 3., 2., 5., 1.);
     let ravi = |d| p("ravi", "RAVI barrier (%)", d, 0., 3., 0.5);
@@ -671,8 +672,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             // lane F1B: the signal markets' Norgate contracts on the bond's dates (TradeStation Data2: own-bar indicators, carried)
             let data2 = |sym: &str| -> Option<crate::second::Second<'static>> {
                 let m = crate::futures::MARKETS.iter().find(|m| m.sym == sym)?;
-                let rows = crate::books::rotation::PRELOADED.get()?.get(&crate::futures::ticker(m))?;
-                Some(crate::second::align(m.sym, x.r, rows))
+                Some(crate::second::align(m.sym, x.r, crate::futures::rows(sym)?))
             };
             if crate::futures::ctx_market(x).map(|m| m.sym) != Some("&ZB") { return Some(vec![]); }
             let Some(gc) = data2("&GC") else { return Some(vec![]) };
@@ -705,8 +705,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     let (mf, ms) = (ma(&m2, f), ma(&m2, s));
                     // both markets trending down (10 < 50) buys bonds, both up sells; the signal is the first day both agree
                     let joint = |i: usize| { let (a, b) = (side(&gf, &gs, i), side(&mf, &ms, i)); if a == b { a } else { 0. } };
+                    // REV-F1B M1: a change counts only between two days on which all four averages exist (not the first
+                    // computable day, nor the end of a Data2 gap)
+                    let known = |i: usize| [gf[i], gs[i], mf[i], ms[i]].iter().all(|v| v.is_finite());
                     let entry = |i: usize, _: f64| {
-                        if i == 0 { return [None, None]; }
+                        if i == 0 || !known(i) || !known(i - 1) { return [None, None]; }
                         let (now, was) = (joint(i), joint(i - 1));
                         one(if now != 0. && now != was { Some((-now, Kind::Open)) } else { None })
                     };

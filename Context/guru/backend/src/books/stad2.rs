@@ -1298,10 +1298,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // ============================================================ Volume 5
         "stad11_miser" => {
             // lane F1C (R4 #293): Data2 = the Norgate T-bond contract (Close of Data2 carried; its Average on its own bars)
-            let m = crate::futures::MARKETS.iter().find(|m| m.sym == "&ZB")?;
-            let Some(rows) = crate::books::rotation::PRELOADED.get().and_then(|d| d.get(&crate::futures::ticker(m))) else { return Some(vec![]) };
+            // readiness refuses a missing T-bond series (futures::data2_issue)
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) };
             if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
-            let d2 = crate::second::align(m.sym, x.r, rows);
+            let d2 = crate::second::align("&ZB", x.r, rows);
             let (ba, bc) = (d2.own(|r| sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondlen"))), d2.carried(crate::second::Field::C));
             let spa = sma(c, u("splen"));
             let tr_atrs = g("trail");
@@ -1315,10 +1315,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "stad5_curbond" => {
             // lane F1C (R4 #293): Data2 = the Norgate T-bond contract; XAverage(Close, BondMA) of Data2 on its own bars, carried
-            let m = crate::futures::MARKETS.iter().find(|m| m.sym == "&ZB")?;
-            let Some(rows) = crate::books::rotation::PRELOADED.get().and_then(|d| d.get(&crate::futures::ticker(m))) else { return Some(vec![]) };
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) };
             if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
-            let lx = crate::second::align(m.sym, x.r, rows).own(|r| xavg(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondma")));
+            let lx = crate::second::align("&ZB", x.r, rows).own(|r| xavg(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondma")));
             let (fx, mx, sx, av) = (xavg(c, u("fast")), xavg(c, u("med")), xavg(c, u("slow")), atr(x, 10));
             let (actv, stp) = (g("actvbar"), usd("stop_usd"));
             let mut cf = cfg(); cf.ss.sl = usd("mm_usd");

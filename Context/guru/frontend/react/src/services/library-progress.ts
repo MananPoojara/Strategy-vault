@@ -78,10 +78,14 @@ export function libraryProgress(definitions: Definition[], input: unknown) {
       const pending = rows.filter(v => /not completed admission review/i.test(v.status_note || ''));
       const coded = rows.filter(v => v.status === 'live' && v.instrument_policy?.allowed_types?.length);
       const series = coded.flatMap(v => v.needs_series || []).join(' ');
+      // A family can group strategies held for different reasons: each held sibling keeps its own reason (never the
+      // first pattern that matches the joined notes of all of them).
+      const held = rows.filter(v => !pending.includes(v)), own = [...new Set(held.map(v => reasonLabel(v.status_note)).filter(Boolean))];
+      const ownLabel = own.length ? (held.some(v => !reasonLabel(v.status_note)) ? [...own, 'Held'] : own).join(' + ') : '';
       const label = coded.length ? (coded.some(v => v.needs_vix) || /VIX/i.test(series) ? 'VIX data required'
           : /TRIN|ADV|DEC/i.test(series) ? 'Breadth data required (TRIN / advance-decline)' : 'Coded, not yet measured in the published results')
         : reasonLabel(pending.flatMap(v => v.needs_series || []).join(' ')) || (pending.some(v => v.needs_series?.length) ? 'Required data missing' : '')
-        || reasonLabel(rows.filter(v => !pending.includes(v)).map(v => v.status_note).join(' '))
+        || ownLabel
         || (pending.length ? 'Held until instrument admission review' : 'Held');
       tally.set(label, (tally.get(label) || 0) + 1);
     }

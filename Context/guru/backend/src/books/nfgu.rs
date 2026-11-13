@@ -84,7 +84,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("trl_usd", "Trailing stop $ per contract (TrlStop)", 2000., 250., 10000., 250.), p("mbb", "MaxBarsBack (caps the trailing window; TradeStation default 50)", 50., 10., 500., 1.)],
         "nfgu_cqiii" => vec![p("ma", "Moving average days", 10., 3., 50., 1.), p("lb", "MA compared with N days ago", 10., 1., 50., 1.), p("roc", "Close compared with N days ago", 40., 5., 100., 1.),
             p("atr", "Average true range days", 49., 5., 100., 1.), p("mult", "Default stop (x ATR, all 3 support)", 10., 1., 20., 0.5), p("med", "Medium stop factor (2 of 3)", 0.6, 0.1, 1., 0.05),
-            p("tight", "Tight stop factor (1 of 3)", 0.4, 0.1, 1., 0.05), stop],
+            p("tight", "Tight stop factor (1 of 3)", 0.4, 0.1, 1., 0.05), stop,
+            p("onchange", "[Option, not the default reading] 1 = enter only on the day the indicator count reaches 3 (no same-direction re-entry after a stop)", 0., 0., 1., 1.),
+            p("ratchet", "[Option, not the default reading] 1 = the trailing stop never loosens", 0., 0., 1., 1.)],
         "nfgu_pathfinder" => vec![p("fast", "Currency short MA", 9., 2., 30., 1.), p("slow", "Currency long MA", 18., 5., 60., 1.), p("bfast", "T-bond short MA", 3., 1., 20., 1.),
             p("bslow", "T-bond long MA", 25., 5., 60., 1.), p("trig", "Entry MA (rising / falling)", 6., 2., 30., 1.), stop],
         _ => return None,
@@ -128,24 +130,29 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (mult, med, tight) = (g("mult"), g("med"), g("tight"));
             // how many of the three trend indicators support direction d (strict, as printed)
             let n = |i: usize, d: f64| [(c[i] - ma[i]) * d > 0., (ma[i] - ma[i - lb]) * d > 0., (c[i] - c[i - roc]) * d > 0.].iter().filter(|b| **b).count();
+            // REV-F1B (3aff014d) M1: two labelled options; the defaults keep the declared readings
+            let (onchange, ratchet) = (g("onchange") >= 0.5, g("ratchet") >= 0.5);
+            let mut held: (usize, f64) = (usize::MAX, f64::NAN); // (entry bar, tightest trailing level so far)
             sim(x, from, to, init, false, |i, pos, _| {
                 if i < lb.max(roc) || !ma[i - lb].is_finite() || !atr[i].is_finite() { return vec![]; }
                 let cur = pos.map_or(0, |q| q.dir);
+                let fresh = |d: f64| n(i, d) == 3 && !(onchange && i > lb.max(roc) && n(i - 1, d) == 3);
                 let mut v = vec![];
-                if n(i, 1.) == 3 && cur != 1 { v.push(entry(1, Ty::Mkt, 0., "CQIII long")); }
-                if n(i, -1.) == 3 && cur != -1 { v.push(entry(-1, Ty::Mkt, 0., "CQIII short")); }
+                if fresh(1.) && cur != 1 { v.push(entry(1, Ty::Mkt, 0., "CQIII long")); }
+                if fresh(-1.) && cur != -1 { v.push(entry(-1, Ty::Mkt, 0., "CQIII short")); }
                 if let Some(q) = pos.filter(|q| i > q.i) {
                     let d = q.dir as f64;
                     let f = match n(i, d) { 3 => 1., 2 => med, _ => tight };
-                    v.push(exit(q.dir, Ty::Stop, best(q.i + 1, i, q.dir) - d * f * mult * atr[i], "Adaptive trailing stop"));
+                    let mut lv = best(q.i + 1, i, q.dir) - d * f * mult * atr[i];
+                    if ratchet { if held.0 == q.i && (held.1 - lv) * d > 0. { lv = held.1; } held = (q.i, lv); }
+                    v.push(exit(q.dir, Ty::Stop, lv, "Adaptive trailing stop"));
                 }
                 v
             })
         }
         "nfgu_pathfinder" => {
-            let m = crate::futures::MARKETS.iter().find(|m| m.sym == "&ZB")?;
-            let Some(rows) = crate::books::rotation::PRELOADED.get().and_then(|d| d.get(&crate::futures::ticker(m))) else { return Some(vec![]) };
-            let zb = crate::second::align(m.sym, x.r, rows);
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) }; // readiness refuses this case (futures::data2_issue)
+            let zb = crate::second::align("&ZB", x.r, rows);
             let bma = |k: usize| zb.own(|r| sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), k));
             let (bf, bs) = (bma(u("bfast")), bma(u("bslow")));
             let (f, s, t) = (sma(c, u("fast")), sma(c, u("slow")), sma(c, u("trig")));

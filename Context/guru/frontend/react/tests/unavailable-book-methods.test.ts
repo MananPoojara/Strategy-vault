@@ -12,3 +12,8 @@ it('does not invent performance or merge unrelated books with the same method la
  expect(items).toHaveLength(2);expect(items[0].reasons).toEqual(['Exit rule is unspecified.']);expect(items[1].reasons).toEqual(['Options quotes are missing.']);
  expect(items.every(x=>!('stats'in x)&&!('spark'in x))).toBe(true);
 });
+it('keeps each strategy of a shared family with its own reason',()=>{
+ const items=unavailableBookMethods([{id:'t',book:'b',family:'held',name:'Tick MA'},{id:'s',book:'b',family:'held',name:'ES/NQ spread'}],[{id:'t',status:'not_testable',note:'Needs ticks.'},{id:'s',status:'needs_data',note:'Needs quotes.'}]);
+ expect(items).toHaveLength(1);
+ expect(items[0].strategies).toEqual([{id:'t',name:'Tick MA',status:'not_testable',note:'Needs ticks.'},{id:'s',name:'ES/NQ spread',status:'needs_data',note:'Needs quotes.'}]);
+});

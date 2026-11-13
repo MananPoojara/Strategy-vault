@@ -90,6 +90,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     }
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
     if let Some((_,last,_))=books::mhstp::window(def.id) {ends.push((upto(&last),"the published window (Harris book test window, R4 #294 (1))".into()));} // lane F3
+    if let Some(k)=crate::futures::first_nonpositive(def.id,ctx) {ends.push((k.checked_sub(1),format!("the positive unadjusted prices of {ticker} (on {} the unadjusted price is <= 0 and a % return has no base, R4 #316)",ctx.r[k].date)));} // lane X4
     if let Some((_,last))=crate::futures::window(def.id,ticker) {ends.push((upto(last),"the published window (the book's test window on this contract, R4 #314 (3))".into()));} // lane F1C
     // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
     if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}
@@ -483,6 +484,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                 if books::rotation::is_basket(def.id) {
                     return issue("not_testable", format!("Not published on {}. Stock-basket ranking: runs only in the basket's index context ({}); the index is the calendar and the benchmark, the trades are the basket stocks named in each trade.", row.ticker, allowed.join(", ")));
                 }
+                if def.id==books::ecqt::PAIR { // lane P1
+                    return issue("not_testable", format!("Not published on {}. Chan's GLD/GDX pair holds both ETFs and runs only in the GLD context (GDX is the second leg). Open it on GLD for the results.", row.ticker));
+                }
+                if def.id=="vvqmm_pairs" { // lane P1: two actual stocks on the index calendar
+                    return issue("not_testable", format!("Not published on {}. Pairs trade of two actual stocks (pair chosen by the vault): runs only on the SPY calendar (US pairs) or the NIFTY 50 calendar (India pairs); the index is the calendar and the benchmark, the trades are the two stocks named in each trade.", row.ticker));
+                }
                 if books::rotation::is_rotation(def.id) {
                     return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
                 }
@@ -545,7 +552,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
     // lane K40 (decision #207): Luisi's literal-points option is SPX only; Blackman's gold season is GLD only
     if let Some(note)=books::mhstp::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F3 (lead review): published window
+    if let Some(k)=crate::futures::first_nonpositive(def.id,ctx).filter(|&k|k<=to) {return issue("needs_data",format!("Results are published only before {}: the unadjusted price is <= 0 that day, so a % return has no base (R4 #316).",ctx.r[k].date));} // lane X4
     if let Some(note)=crate::futures::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F1C (R4 #314 (3))
+    if let Some(note)=crate::futures::data2_issue(def.id,ctx) {return issue("needs_data",note);} // lane F1C (REV-F1B M3)
     if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
         return issue("not_testable",note);
     }
@@ -854,7 +863,7 @@ mod tests {
         // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
         for &id in crate::options::RULES {
             let mut r=rows();
-            if id.starts_with("as51_opt") {for x in r.iter_mut(){x.ticker="NIFTY 50".into();}} // lane F2: gate-allowed on NIFTY 50 only; no weekly store loaded here
+            if id.starts_with("as51_opt") {let t=if crate::books::as51ts::BNF_IDS.contains(&id) {"NIFTYBANK"} else {"NIFTY 50"}; for x in r.iter_mut(){x.ticker=t.into();}} // lanes F2 / F4: gate-allowed on NIFTY 50 / NIFTYBANK only; no weekly store loaded here
             let mut ctx=Ctx::new(&r,&r,&[]);
             ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
             let e=check(&ctx,&definition(id),0,4,&Params::new()).unwrap();
