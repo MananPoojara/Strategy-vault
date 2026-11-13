@@ -1460,7 +1460,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- end Guppy MetaStock Formula Index held
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
         // tdperl_setup_long / _short: admitted by tdperl::ADMISSION (lane R2B, R4 #297: rule 3 read as not applied)
-        "radge_smash"=>"Held: coded with two labelled readings (lane R2B, R4 #297: EMA 12, exit stop 1 tick beyond the prior bar), but 30-37% of its trades enter on a stop and reach the initial stop on the same day (SPY 31.0%, SPX 33.6%, QQQ 30.3%, DIA 37.0%, NIFTY 50 34.2%, AAPL 16.8%, RELIANCE 31.5%); daily bars do not show which came first, above the 5% limit (#175, #240). Needs the 1-minute path (EP6) before it can be published.",
         "tdperl_diff_up"|"tdperl_diff_down"|"tdperl_clopwin_long"|"tdperl_clopwin_short"=>"Held: not a trade rule. Perl presents TD Differential and TD Clopwin as forecasts of the next price bar (p.26, 165-166) with no stop or exit; the vault's next-close measurement tests the forecast, not a trading strategy from the book.",
         // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held

@@ -197,7 +197,11 @@ pub const IDS: &[&str] = &[
     // lane R2D (R4 #304): Gettess SS-TDA with the first-profitable-open exit (books::lgsc fpo: both stops and the reversal on one day)
     "lgsc_sstda_fpo",
     // lane R2D (R4 #304): Bierovic First Prize (books::tbpk: the entry stop and the initial stop on the entry day)
-    "tbpk_first_prize"];
+    "tbpk_first_prize",
+    // lane R2E (R4 #305 (3)): Radge's Smash Bar (books::radge: the entry bar's stop entry and its initial stop on the minutes)
+    "radge_smash",
+    // lane R2E (R4 #311): Nguyen's Impact system (books::jnits St::walk: the entry stop, the stop and the 1R/2R targets)
+    "jnits_impact"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
@@ -216,7 +220,11 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     // lane K75 (R4 #281 (3)): SPY 2000-2025 compounded +84.9% resolved vs +5.9% convention (test c; K75w/t243.out)
     "stkch_gap_fgd_long",
     // lane R2D (R4 #304): SPY 2000-2025 resolved avg +0.016% vs convention -0.012% (test a, sign; R2Dw/lgsc_eval.out)
-    "lgsc_sstda_fpo"];
+    "lgsc_sstda_fpo",
+    // lane R2E (R4 #305 (3)): 30-37% of Smash Bar trades are order-dependent on the daily bar; only the minute window publishes
+    "radge_smash",
+    // lane R2E (R4 #311): Nguyen Impact, minute window only (#243 (c))
+    "jnits_impact"];
 
 /// Decisions #231/#234 (lane K63, R4 #255): EP6 minute-window results on NSE cash-index minutes that are India-better than
 /// tradable SPY over the same dates on both magnitude tests (average trade > 3x and > 0.003 pp above; compounded > 10x, or
