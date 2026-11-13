@@ -1316,7 +1316,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=tradable_check_issue(def,ticker,native_stock){return Some(issue);} // decisions #177/#179
-    if ticker==crate::futures::NYA_TICKER {return (!crate::futures::NYA_CARDS.contains(&def.id)).then(||Issue{status:"needs_data",note:format!("{ticker} is loaded for Holt's NYSE Composite systems only (R4 #319): Norgate's $NYA has real closes and volume, but its open/high/low equal the close before 1988-12-07, and no other card is reviewed on it. No results are published.")});} // lane PE
+    if ticker==crate::futures::NYA_TICKER {return (!crate::futures::NYA_CARDS.contains(&def.id)).then(||Issue{status:"needs_data",note:format!("{ticker} is loaded for the close-only NYSE Composite systems only (Holt, R4 #319; Appel & Hitschler, lane PF): Norgate's $NYA has real closes and volume, but its open/high/low equal the close before 1988-12-07, and no other card is reviewed on it. No results are published.")});} // lane PE
     if let Some(issue)=intraday_p1_symbol_issue(def,ticker,native_stock){return Some(issue);} // intraday phase 1
     if let Some(issue)=options_p2_symbol_issue(def,ticker,native_stock){return Some(issue);} // options phase 2
     if let Some(issue)=connors_final_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // connors-final block
@@ -2060,8 +2060,8 @@ mod tests {
     // ---- Dennis Meyers held (2026-10-26, lane B) ----
     #[test]
     fn meyers_held_rules_have_plain_card_reasons() {
-        use crate::books::{dmtad, dmtfly, thnhl}; // lane PB: dmtad_turbo admitted with the NYSE new highs/lows; the NYSE-breadth cards stay US-only
-        for d in dmtad::catalogue().into_iter().chain(dmtfly::catalogue()).chain(thnhl::catalogue()) {
+        use crate::books::{dmadr, dmtad, dmtbb, dmtfly, dmvrs, thnhl}; // lane PB: dmtad_turbo admitted with the NYSE new highs/lows; the NYSE-breadth cards stay US-only (+ lane PF)
+        for d in dmtad::catalogue().into_iter().chain(dmtfly::catalogue()).chain(thnhl::catalogue()).chain(dmadr::catalogue()).chain(dmvrs::catalogue()).chain(dmtbb::catalogue()) {
             assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(&d) && held_reason(d.id).is_none(),"{}",d.id);
             assert!(crate::gate::get(d.id).is_some_and(|g|g.allowed==Some(&["SPX","SPY","DJI","DIA","NDX","QQQ"][..])),"{}",d.id);
         }

@@ -89,7 +89,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
         ends.push(((0..=to).rev().find(|&i|ctx.lf[i].is_finite()),format!("the Liquidity Filter inputs (close x volume of {ticker} and its benchmark)")));
     }
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
-    if let Some((_,last,_))=books::mhstp::window(def.id) {ends.push((upto(&last),"the published window (Harris book test window, R4 #294 (1))".into()));} // lane F3
+    if let Some((_,last,why))=books::mhstp::window(def.id) {ends.push((upto(&last),if books::mhstp::OPEN_WINDOW.iter().any(|o|o.0==def.id) {format!("the published window ({why})")} else {"the published window (Harris book test window, R4 #294 (1))".into()}));} // lane F3; lane PF (R4 #328)
     if let Some(k)=crate::futures::first_nonpositive(def.id,ctx) {ends.push((k.checked_sub(1),format!("the positive unadjusted prices of {ticker} (on {} the unadjusted price is <= 0 and a % return has no base, R4 #316)",ctx.r[k].date)));} // lane X4
     // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
     if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}

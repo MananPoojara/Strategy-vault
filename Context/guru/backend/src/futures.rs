@@ -66,6 +66,20 @@ pub const MARKETS: &[Market] = &[
         source: "CBOT soybean futures: 5,000 bushels per contract; Norgate quotes US cents per bushel, so 1.00 (one cent) = US$50 (Downs V.17:1 Figure 2: +7 cents on 5 contracts = $1,750 before costs); tick 0.25 cent = US$12.50" },
     Market { sym: "&DX", name: "US Dollar Index", tick: 0.01, usd: &[("1985-11-20", 500.), ("1996-08-01", f64::NAN)],
         source: "FINEX/ICE US Dollar Index futures: Downs's printed P&L (V.17:1 Figure 15: +0.50 index points on 5 contracts = $875 after $375 costs) implies US$500 per index point in 1987-96 (R4 #323 (2)); the later US$1,000 contract's start date is not established, so from 1996-08-01 (after the article's last printed month) no multiplier is given and US$ amounts are refused (R4 #324 M1); tick 0.01 of the book era" },
+    // lane PF (Abel, S&C V21:10 Figure 3 portfolio): contract sizes from the exchange specifications (reference data); the Abel
+    // system's stops are standard-deviation distances, so these multipliers only label the contract
+    Market { sym: "&NG", name: "Natural Gas", tick: 0.001, usd: &[("1990-04-03", 10_000.)],
+        source: "NYMEX Henry Hub natural gas futures: 10,000 MMBtu per contract, quoted in US$ per MMBtu (1.00 = US$10,000; 0.001 = US$10)" },
+    Market { sym: "&ZC", name: "Corn", tick: 0.25, usd: &[("1978-01-04", 50.)],
+        source: "CBOT corn futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
+    Market { sym: "&ZW", name: "Wheat", tick: 0.25, usd: &[("1978-01-05", 50.)],
+        source: "CBOT Chicago SRW wheat futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 = US$50; 0.25 = US$12.50)" },
+    Market { sym: "&CC", name: "Cocoa", tick: 1., usd: &[("1979-12-19", 10.)],
+        source: "ICE cocoa futures: 10 metric tonnes per contract, quoted in US$ per tonne (1.00 = US$10)" },
+    Market { sym: "&SB", name: "Sugar No. 11", tick: 0.01, usd: &[("1978-10-17", 1_120.)],
+        source: "ICE Sugar No. 11 futures: 112,000 lb per contract, quoted in US cents per lb (1.00 = US$1,120; 0.01 = US$11.20)" },
+    Market { sym: "&ZN", name: "10-Year T-Note", tick: 1. / 64., usd: &[("1982-05-03", 1_000.)],
+        source: "CBOT 10-year U.S. Treasury note futures: US$100,000 face value, quoted in points of par (1 point = US$1,000; 1/64 = US$15.625)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -123,7 +137,9 @@ fn read(path: &std::path::Path) -> Option<Vec<Row>> {
 /// reads by date (NaN where the file has no bar). Other lanes add their US Indices files here.
 pub const INDEX_SERIES: &[(&str, &str)] = &[("$COMP", "NASDAQ_COMP"), ("$NYA", "NYSE_COMP"), ("#NASHI", "NASDAQ_NEW_HIGHS"), ("#NASLO", "NASDAQ_NEW_LOWS"),
     // lane PB: NYSE 52-week new highs / lows 1932-2020 (SOURCES norgate-us-indices-20200908-pb)
-    ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY")];
+    ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY"),
+    // lane PF: the DJIA close for Meyers' DJstr/DJCstr (SOURCES norgate-us-indices-20200908-pf)
+    ("$DJI", "DJ_INDUSTRIAL")];
 pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
     let mut out = BTreeMap::new();
     for (file, name) in INDEX_SERIES {
@@ -143,15 +159,27 @@ pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMa
     out
 }
 
+/// Lane PF (Meyers, S&C V15:11): the CBOT T-bond continuous future, back-adjusted close (Norgate &ZB_CCB in futures/norgate-20200908,
+/// SOURCES norgate-continuous-futures-20200908; R4 #293 (2): indicators on the back-adjusted series) as a series every US context reads
+/// by date. A missing file loads nothing.
+pub const TBOND_SERIES: &str = "TBOND_CCB";
+pub fn load_tbond(dir: &std::path::Path) -> Option<BTreeMap<String, f64>> {
+    let rows = read(&dir.join("&ZB_CCB.csv")).filter(|r| !r.is_empty());
+    if rows.is_none() { eprintln!("warning: {TBOND_SERIES} not loaded from {}", dir.display()); }
+    Some(rows?.into_iter().map(|r| (r.date, r.close)).collect())
+}
+
 /// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
 fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..])) }
 
 /// Lane PE (R4 #319): the NYSE Composite as its own context, from Norgate $NYA (futures/norgate-us-indices-20200908/$NYA.csv,
 /// SOURCES.csv norgate-us-indices-20200908-f3), so Holt's NYSE Composite systems run on the index they were tested on. Close and
 /// volume are real from 1970-01-05 (volume 0 before = no volume); Norgate's open/high/low equal the close before 1988-12-07, so
-/// only the close-and-volume cards in NYA_CARDS are admitted (instrument_policy::check). A missing file loads nothing.
+/// only the close(-and-volume) cards in NYA_CARDS are admitted (instrument_policy::check). A missing file loads nothing.
 pub const NYA_TICKER: &str = "NYSE Composite (Norgate $NYA)";
-pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi"];
+pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi",
+    // lane PF: Appel & Hitschler's close-only NYSE Index systems (Stock Market Trading Systems, Tables 4-5, 4-6, 5-1, 6-2, 9-1)
+    "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_channel"];
 pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) {
     let Some(rows) = read(&dir.join("$NYA.csv")).filter(|r| !r.is_empty()) else { eprintln!("warning: index $NYA context not loaded from {}", dir.display()); return };
     println!("context {NYA_TICKER}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
@@ -274,6 +302,30 @@ pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(Stri
         if let Some(raw) = extra.get(&(tb, "RAW.Close".to_string())).cloned() { extra.insert((ta, format!("{b}.RAW.Close")), raw); }
     }
 }
+/// Lane PF: Saitta (S&C V14:3) on the T-bond; Abel (S&C V21:10) on each Figure 3 contract held (the regular Nasdaq-100 contract is
+/// not held: its E-mini, which the article names, stands in).
+const ABEL: &str = "Phil Abel, Diversification And Your Portfolio, S&C V21:10 p.20-31 (Figure 3: 16 US futures, 1995-2002): the printed SMA 25/50/100 system with the 4-standard-deviation hard stop on this Norgate continuous contract (R4 #293 (1)), lane PF.";
+const CARDS_PF: &[(&str, &str, &str)] = &[
+    ("scbrower_long", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the buy patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("scbrower_short", "&SP", "William Brower, The S&P 500 Seasonal Day Trade, S&C V14:8 p.338-342: the sell patterns with their DoWinMo filters on the Norgate continuous S&P 500 contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("scabeldiv_sma", "&6J", ABEL),
+    ("scabeldiv_sma", "&6S", ABEL),
+    ("scabeldiv_sma", "&GC", ABEL),
+    ("scabeldiv_sma", "&SI", ABEL),
+    ("scabeldiv_sma", "&SP", ABEL),
+    ("scabeldiv_sma", "&NQ", ABEL),
+    // ("scabeldiv_sma", "&CL"): not run: a crude trade held through 2020-04-20 (the short of 2020-02-27 at 47.09) is priced below zero in the contract held at entry (its mark is -38.32 on 2020-04-20, exit -15.84), so the engine's trade validation refuses the whole run
+    ("scabeldiv_sma", "&NG", ABEL),
+    ("scabeldiv_sma", "&ZC", ABEL),
+    ("scabeldiv_sma", "&ZW", ABEL),
+    ("scabeldiv_sma", "&CC", ABEL),
+    ("scabeldiv_sma", "&SB", ABEL),
+    ("scabeldiv_sma", "&CT", ABEL),
+    ("scabeldiv_sma", "&KC", ABEL),
+    ("scabeldiv_sma", "&ZN", ABEL),
+    ("scabeldiv_sma", "&GE", ABEL),
+];
 /// Lane PB: Konstenius wave 1 (S&C V14:12), each printed parameter set on its own contract.
 const CARDS_PB: &[(&str, &str, &str)] = &[
     ("mhptdi_tdi", "&ZB", "M.H. Pee, Trend Detection Index, S&C V19:10 p.54-61 and Figure 2 (15 futures, 16 years): the sidebar spreadsheet rule on this Norgate continuous contract (one of the 14 Figure 2 markets the vault holds; no Deutschemark), back-adjusted (R4 #293 (1)), lane PB."),
@@ -301,13 +353,15 @@ const SBQS: &str = "Scott Barrie, 'Quasi-Seasonal Tendencies in Bond Futures', T
 const JMCT: &str = "John L. Momsen, 'Trade Crude Now', Technical Analysis of Stocks & Commodities V.19:8 (2001) p.53-56, sidebar 'Crude oil seasonal trade #2' (TradeStation code; November crude oil futures 1983-1999): run on the Norgate crude-oil continuous contract only (R4 #293 (1))";
 const CARDS_PA2: &[(&str, &str, &str)] = &[("scsbqs_tuesday", "&ZB", SBQS), ("scsbqs_month_end", "&ZB", SBQS), ("scsbqs_april15", "&ZB", SBQS), ("scjmct_crude2", "&CL", JMCT), ("scasrb_breakout", "&ZB", ASRB)];
 const ASRB: &str = "Alex Saitta, 'Range Breakout Trading in Treasury Bonds', Technical Analysis of Stocks & Commodities V.13:4 (1995) p.149-152 (Figure 4: one T-bond contract 1984-1994, closes, no costs; Morris's MetaStock transcription msws_gm9_range_breakout is held as NotTestable): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).find(|c| c.0 == id) }
+/// Every lane's card list; card() and home() both read this, so a new list is added once here.
+fn all_cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF) }
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { all_cards().find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
     let c = card(id)?;
     // lane PB: a card may list several contracts (one tuple each); any of them is home
-    let homes: Vec<&Market> = CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_PB).filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
+    let homes: Vec<&Market> = all_cards().filter(|k| k.0 == id).filter_map(|k| MARKETS.iter().find(|m| m.sym == k.1)).collect();
     let m = MARKETS.iter().find(|m| m.sym == c.1)?;
     let sym = of_ticker(t).map(|m| m.sym);
     if homes.iter().any(|h| Some(h.sym) == sym) { return None; }
@@ -317,6 +371,7 @@ pub fn home(id: &str, t: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test] fn market_symbols_unique() { let mut v: Vec<&str> = super::MARKETS.iter().map(|m| m.sym).collect(); let n = v.len(); v.sort(); v.dedup(); assert_eq!(v.len(), n, "duplicate MARKETS symbol (lane merge)"); } // lane PF (review PF2 M4)
     use super::*;
     /// Lane PE (R4 #319): $NYA loads as its own context from Norgate's compact dates (volume 0 = none); only Holt's cards run on it.
     #[test]
