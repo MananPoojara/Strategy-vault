@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
+import { VerificationView } from "./VerificationView";
 import {
   research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, csvCell, ago, dayKey, readHashParams, hashWith,
   type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareInventory, type ShareSource, type Site, type Strategy,
@@ -81,6 +82,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
   else if (v === "team" && me.admin) body = <TeamView />;
   else if (v === "share" && me.admin) body = <ShareView />;
   else if (v === "claude") body = <ClaudeView />;
+  else if (v === "verify") body = <VerificationView />;
   else if (v === "emp" && me.admin && p.get("emp")) body = <WorkView person={p.get("emp")!} title={`${p.get("emp")}'s work`} admin />;
   else if (p.get("book")) body = <BookView author={p.get("author") || ""} book={p.get("book")!} />;
   else if (p.get("author")) body = <AuthorView author={p.get("author")!} />;
@@ -92,6 +94,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
         <nav>
           <a href="#/research" aria-current={!v && !p.get("author") && !p.get("s") ? "page" : undefined}>Authors</a>
           {who && <a href={hashWith({ v: "mine" }, "#/research")} aria-current={v === "mine" ? "page" : undefined}>My work</a>}
+          <a href={hashWith({ v: "verify" }, "#/research")} aria-current={v === "verify" ? "page" : undefined}>Verification</a>
           <a href={hashWith({ v: "claude" }, "#/research")} aria-current={v === "claude" ? "page" : undefined}>Claude's work</a>
           {me.admin && <a href={hashWith({ v: "team" }, "#/research")} aria-current={v === "team" || v === "emp" ? "page" : undefined}>Employees</a>}
           {me.admin && <a href={hashWith({ v: "share" }, "#/research")} aria-current={v === "share" ? "page" : undefined}>Research share</a>}

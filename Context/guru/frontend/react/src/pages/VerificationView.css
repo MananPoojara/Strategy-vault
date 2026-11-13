@@ -1,0 +1,149 @@
+/* Verification tab. Lives inside .rp, so it inherits the Research page tokens (--rp-ok, --rp-held, --rp-bad, --rp-line,
+   --rp-surface) and through them every app theme, light and dark. Status colours are set once here. */
+.vt {
+  --st-done: var(--rp-ok);
+  --st-done_generic: color-mix(in srgb, var(--rp-ok) 55%, var(--rp-surface));
+  --st-done_earlier: var(--blue);
+  --st-todo: color-mix(in srgb, var(--ink3) 38%, var(--rp-surface));
+  --st-needs_data: var(--rp-held);
+  --st-cant_test: color-mix(in srgb, var(--ink2) 85%, var(--rp-surface));
+  --st-other: var(--ink3);
+  min-width: 0;
+}
+.vt .st-done { --c: var(--st-done); } .vt .st-done_generic { --c: var(--st-done_generic); } .vt .st-done_earlier { --c: var(--st-done_earlier); }
+.vt .st-todo { --c: var(--st-todo); } .vt .st-needs_data { --c: var(--st-needs_data); } .vt .st-cant_test { --c: var(--st-cant_test); }
+.vt .st-other { --c: var(--st-other); } .vt .bad { --c: var(--rp-bad); }
+.vt h1 { margin-bottom: 4px; }
+.vt h2 .rp-muted { font-weight: 500; }
+
+/* header + freshness */
+.vt-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; margin-bottom: 16px; }
+.vt-head > div { max-width: 640px; }
+.vt-fresh { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin: 0 !important; padding: 7px 14px; border-radius: 999px; font-size: 13.5px;
+  background: color-mix(in srgb, var(--rp-ok) 9%, var(--rp-surface)); border: 1px solid color-mix(in srgb, var(--rp-ok) 30%, var(--rp-line)); }
+.vt-fresh i { width: 8px; height: 8px; border-radius: 50%; background: var(--rp-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rp-ok) 22%, transparent); }
+
+/* KPI strip */
+.vt-kpis { display: grid; grid-template-columns: minmax(300px, 1.7fr) repeat(4, minmax(130px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.vt-ringcard { display: flex; align-items: center; gap: 16px; padding: 14px 18px; }
+.vt-ringcard > div { font-size: 15px; }
+.vt-ringcard > div > b { font: 600 20px "Inter Numbers", system-ui, sans-serif; }
+.vt-ring { width: 104px; height: 104px; flex: none; }
+.vt-ring circle { fill: none; stroke-width: 12; }
+.vt-ring .track { stroke: color-mix(in srgb, var(--ink3) 18%, transparent); }
+.vt-ring .fill { stroke: var(--rp-ok); stroke-linecap: round; }
+.vt :is(.vt-ring, .vt-donut svg) .big { font: 600 22px "Inter Numbers", system-ui, sans-serif; fill: var(--ink); }
+.vt :is(.vt-ring, .vt-donut svg) .small { font-size: 12px; fill: var(--ink2); }
+.vt-kpi small { color: var(--ink3); font-size: 12px; line-height: 1.2; }
+.vt .rp-stat.vt-testable { --c: var(--ink2); }
+.vt-kpi span { display: grid; }
+.vt-notes { margin: 0 0 18px; }
+.vt-notes p { margin: 0 0 2px; }
+
+/* author bars, donut, book bars */
+.vt-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.vt-stack { display: grid; gap: 14px; min-width: 0; }
+.vt-key, .vt-slices { list-style: none; padding: 0; margin: 8px 0 10px; }
+.vt-key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink2); }
+.vt-key i, .vt-slices i, .vt-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 6px; vertical-align: -1px; flex: none; }
+.vt-abars, .vt-bbars { list-style: none; padding: 0; margin: 0 0 6px; display: grid; gap: 2px; }
+.vt .vt-abars button, .vt .vt-bbars button { width: 100%; display: grid; grid-template-columns: minmax(120px, 210px) minmax(60px, 1fr) 78px; gap: 12px; align-items: center;
+  text-align: left; border: 0; border-radius: 8px; padding: 6px 8px; background: none; font-size: 13.5px; }
+.vt .vt-bbars button { grid-template-columns: minmax(0, 1fr) minmax(60px, 34%) 64px; }
+.vt .vt-abars button:hover, .vt .vt-bbars button:hover { background: color-mix(in srgb, var(--blue) 6%, transparent); }
+.vt .vt-abars button[aria-pressed="true"] { background: color-mix(in srgb, var(--blue) 12%, var(--rp-surface)); }
+.vt-aname, .vt-bname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vt-track { display: flex; gap: 2px; height: 10px; border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--ink3) 12%, transparent); }
+.vt-track i { display: block; height: 100%; background: var(--c); flex: none; }
+.vt-track i:first-child { border-radius: 99px 0 0 99px; }
+.vt-anum { display: grid; text-align: right; line-height: 1.2; }
+.vt-anum b { font: 600 14px "Inter Numbers", system-ui, sans-serif; }
+.vt-anum small { font-size: 11.5px; color: var(--ink2); white-space: nowrap; }
+.vt-donutrow { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.vt-donut svg { width: 150px; height: 150px; flex: none; }
+.vt-donut circle { fill: none; stroke-width: 18; }
+.vt-donut .track { stroke: color-mix(in srgb, var(--ink3) 10%, transparent); }
+.vt-donut .seg { stroke: var(--c); cursor: pointer; transition: opacity .15s; }
+.vt-donut .seg.dim { opacity: .3; }
+.vt-slices { flex: 1; min-width: 210px; display: grid; gap: 1px; }
+.vt .vt-slices button { width: 100%; display: grid; grid-template-columns: auto 1fr auto 52px; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 6px; font-size: 13.5px; text-align: left; border-radius: 6px; }
+.vt .vt-slices button:hover { background: color-mix(in srgb, var(--blue) 6%, transparent); }
+.vt-slices b { font: 600 14px "Inter Numbers", system-ui, sans-serif; text-align: right; }
+.vt-slices small { color: var(--ink2); text-align: right; font-size: 12px; }
+
+/* results, bugs */
+.vt-results, .vt-bugs { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 10px; }
+.vt-results li { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(200px, 260px); gap: 16px; padding: 14px 18px; }
+.vt-results time { font: 600 13.5px "Inter Numbers", system-ui, sans-serif; color: var(--ink2); }
+.vt-rmain p { margin: 0 0 3px; }
+.vt-rtitle { font-weight: 600; }
+.vt-rtitle a { text-decoration: none; }
+.vt-rtitle a:hover { text-decoration: underline; }
+.vt .vt-check { font-size: 11.5px; font-weight: 600; vertical-align: 1px; --c: var(--blue); }
+.vt .vt-check.full { --c: var(--rp-ok); }
+.vt-trades { display: grid; gap: 6px; align-content: start; padding-top: 4px; }
+.vt-trades .vt-track { height: 8px; }
+.vt-bad { color: var(--rp-bad); }
+.vt-report { margin-top: 4px !important; overflow-wrap: anywhere; }
+.vt-path { font-size: 12px; }
+.vt-bugs li { padding: 14px 18px; }
+.vt-bugs .rp-meta { margin-bottom: 4px; }
+.vt .vt-bug.open { --c: var(--rp-bad); } .vt .vt-bug.closed { --c: var(--rp-ok); }
+.vt-good code { font-size: 12px; overflow-wrap: anywhere; }
+.vt-good td:first-child { min-width: 220px; }
+.vt-open { white-space: nowrap; font-weight: 600; text-decoration: none; }
+.vt-open:hover { text-decoration: underline; }
+
+/* strategy list */
+.vt-filters { display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(160px, 1fr) minmax(160px, 1fr); gap: 10px; margin: 6px 0 4px; }
+.vt select { font: inherit; font-size: 14px; color: var(--ink); background: var(--rp-surface); border: 1px solid var(--rp-line); border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0; }
+.vt .rp-chips { margin: 8px 0 6px; }
+.vt .rp-chips button { font-size: 13px; padding: 5px 12px; }
+.vt .rp-chips button[aria-pressed="true"] .vt-dot { box-shadow: 0 0 0 1.5px var(--card); }
+.vt-listpanel { padding: 4px 8px; }
+.vt-list td { line-height: 1.4; }
+.vt-list code { font-size: 11.5px; }
+.vt-result { max-width: 360px; }
+.vt-result > span { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.vt-star { color: var(--rp-held); font-weight: 700; font-size: 13px; }
+.vt .vt-st { white-space: nowrap; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.vt .vt-st i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.vt-how { margin-top: 28px; }
+.vt-how summary { cursor: pointer; font-weight: 600; }
+.vt-how dl { display: grid; gap: 8px; margin: 12px 0; }
+.vt-how dl > div { display: grid; grid-template-columns: 220px 1fr; gap: 12px; }
+.vt-how dt { font-weight: 600; }
+.vt-how dd { margin: 0; color: var(--ink2); }
+
+@media (max-width: 1180px) {
+  .vt-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .vt-ringcard { grid-column: 1 / -1; }
+}
+@media (max-width: 960px) {
+  .vt-cols { grid-template-columns: minmax(0, 1fr); }
+  .vt-results li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .vt-filters { grid-template-columns: 1fr 1fr; }
+  .vt-filters input { grid-column: 1 / -1; }
+  /* the list becomes one card per version */
+  .vt-list thead { display: none; }
+  .vt-list, .vt-list tbody, .vt-list tr, .vt-list td { display: block; }
+  .vt-list tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 6px; border-bottom: 1px solid var(--rp-line); }
+  .vt-list td { border: 0; padding: 2px 0; }
+  .vt-list td:first-child { display: none; }
+  .vt-list td[data-label="Strategy"], .vt-list td[data-label="Author"], .vt-list td[data-label="Result"] { grid-column: 1 / -1; }
+  .vt-list td[data-label="Status"] { grid-column: 1; }
+  .vt-list .vt-opencell { grid-column: 2; grid-row: 1; text-align: right; }
+  .vt-result { max-width: none; }
+}
+@media (max-width: 640px) {
+  .vt-kpis { grid-template-columns: 1fr 1fr; }
+  .vt-ringcard { align-items: center; }
+  .vt-ring { width: 84px; height: 84px; }
+  .vt-filters { grid-template-columns: minmax(0, 1fr); }
+  .vt .vt-abars button { grid-template-columns: minmax(0, 1fr) 70px; }
+  .vt .vt-abars .vt-track, .vt .vt-bbars .vt-track { grid-column: 1 / -1; grid-row: 2; }
+  .vt .vt-bbars button { grid-template-columns: minmax(0, 1fr) 64px; }
+  .vt-how dl > div { grid-template-columns: 1fr; gap: 2px; }
+  .vt-head { align-items: flex-start; }
+  .vt-fresh { border-radius: 12px; }
+}
