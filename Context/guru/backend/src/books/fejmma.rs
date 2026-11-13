@@ -46,9 +46,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|a = .4, MAX 1.05, MIN .95, LONG ONLY (Table 2 lines 5-6, p.325)", "E|Month-end close >= 1.05 x F and flat -> buy", "X|Month-end close <= .95 x F while long -> sell to cash", SEED],
             "Line 5 (dividends): D = -$145 (n=232, t=-0.309); line 6 (price only, PR2): +$337 (t=1.788), the best result in the paper.",
             claim("", "", "D = -$145 (dividends) / +$337 (price only) per $100", "", "232 NYSE stocks 1926-1960")),
-        d("fejmma_barnes_5pct", "Barnes 5% moving-average penetration", "Long/Short", NotTestable("the moving-average length is not given for this quoted rule"),
-            &["F|\"When a stock's price curve penetrates its moving average line on the downside by at least 5 percent, this is a sell signal; when it penetrates its moving average line on the upside by at least 5 percent, this is a buy signal\" (p.319)"],
-            "Quoted recommendation (Barnes); the paper's own models above use 7 months / alpha.", None),
+        d("fejmma_barnes_5pct", "Barnes 5% moving-average penetration", "Long/Short", Live,
+            &["F|\"When a stock's price curve penetrates its moving average line on the downside by at least 5 percent, this is a sell signal; when it penetrates its moving average line on the upside by at least 5 percent, this is a buy signal\" (p.319)",
+              "E|Read: month-end close >= 1.05 x the 7-month simple average of month-end closes and not long -> buy (covering any short) at that close",
+              "X|Read: month-end close <= .95 x the average and not short -> sell and sell short at that close (p.short = 0: sell to cash)", SEED],
+            "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated for this quoted rule (Barnes, quoted on p.319): (1) the moving-average length; vault reading: the paper's own unweighted length, 7 months of month-end closes (p.320; p.n sets any length); (2) whether a sell signal goes short or to cash; vault reading: short, as the paper's own long-and-short models (p.322; p.short = 0 = cash). Month-end closes, fills at that close, signals from the 7th month as the paper's unweighted models. A quoted recommendation with no results of its own.", None),
         d("fejmma_merritt_12m", "Merritt 12-month Dow average", "Long", NotTestable("a trend definition, not an order: no sell rule is stated (\"The trend of the market is assumed to be up when the Dow-Jones Industrials are above the 12-month moving average and the line is moving upward\")"),
             &["F|\"a 12-month moving average of the Dow-Jones Industrials, plotted monthly\" (p.318)"], "Quoted from Merritt (1957).", None),
     ]
@@ -61,7 +63,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "fejmma_es10_long" => ("fejmma_mma", "James monthly moving averages", "ES .1 +-5% long"),
         "fejmma_es30_long" => ("fejmma_mma", "James monthly moving averages", "ES .3 +-5% long"),
         "fejmma_es40_long" => ("fejmma_mma", "James monthly moving averages", "ES .4 +-5% long"),
-        "fejmma_barnes_5pct" | "fejmma_merritt_12m" => ("fejmma_quoted", "Rules quoted by James", "not testable"),
+        "fejmma_barnes_5pct" => ("fejmma_barnes_5pct", "Barnes 5% moving-average penetration (quoted by James)", "7-month SMA +-5%"),
+        "fejmma_merritt_12m" => ("fejmma_quoted", "Rules quoted by James", "not testable"),
         _ => return None,
     })
 }
@@ -73,6 +76,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "fejmma_sma7" => vec![p("n", "Months in the average", 7.0, 2.0, 24.0, 1.0), p("max", "Buy at close >= MAX x average", 1.02, 1.0, 1.2, 0.01),
             p("min", "Sell at close <= MIN x average", 0.98, 0.8, 1.0, 0.01), p("short", "Sell signals go short (1) or to cash (0)", 1.0, 0.0, 1.0, 1.0)],
+        "fejmma_barnes_5pct" => vec![p("n", "Months in the average (vault reading 7; Barnes gives none)", 7.0, 2.0, 24.0, 1.0), p("max", "Buy at close >= MAX x average", 1.05, 1.0, 1.2, 0.01),
+            p("min", "Sell at close <= MIN x average", 0.95, 0.8, 1.0, 0.01), p("short", "Sell signals go short (1) or to cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "fejmma_es10_ls" => es(0.1, 1.0),
         "fejmma_es10_long" => es(0.1, 0.0),
         "fejmma_es30_long" => es(0.3, 0.0),
@@ -97,7 +102,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let me = bars(x, 2);
     let mc: Vec<f64> = me.iter().map(|&i| x.c[i]).collect();
     // average at each month end, and the first month index whose close is compared
-    let (avg, first): (Vec<f64>, usize) = if id == "fejmma_sma7" {
+    let (avg, first): (Vec<f64>, usize) = if id == "fejmma_sma7" || id == "fejmma_barnes_5pct" {
         let k = g("n").round().max(1.0) as usize;
         let a = (0..mc.len()).map(|j| if j + 1 >= k { mc[j + 1 - k..=j].iter().sum::<f64>() / k as f64 } else { f64::NAN }).collect();
         (a, k) // "each month after the 7th month"
@@ -167,4 +172,12 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| def.book=="fejmma" && crate::books::fejmma::reviewed(def.id),
     label: "James tested these monthly moving-average rules on NYSE stocks (1926-1960); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills at the month-end close.",
     basis: "F. E. James Jr., Monthly Moving Averages - An Effective Investment Tool?, JFQA 3(3) 1968, pp.315-326",
+};
+
+pub const REVIEWED_R2B: &[&str] = &["fejmma_barnes_5pct"];
+// Lane R2B (13 Nov 2026, R4 #297): Barnes' quoted 5% rule with two labelled readings (7-month SMA, sells go short).
+pub const ADMISSION_R2B: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && REVIEWED_R2B.contains(&def.id),
+    label: "James quotes Barnes' 5% penetration rule without a length or a test; runs on indices, ETFs and stocks, US and India, are a declared application with the length and short side read as stated on the card, fills at the month-end close.",
+    basis: "F. E. James Jr., Monthly Moving Averages, JFQA 3(3) 1968, p.319 (Barnes) and p.320-322 (the paper's 7-month convention); R4 #297; independent check authors/titles-1030/R2Bw/r2b_ref.py",
 };

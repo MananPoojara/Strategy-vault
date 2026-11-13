@@ -72,7 +72,7 @@ The manual's portfolio layer (10 slots, ranking by 4-day % drop) is catalogued s
             &["F|manual: 'portfolio size factor of 10'; rank candidates by (C[4]-C)/C[4]x100, highest first; a stock fills one slot (Aggressive: up to two)"],
             "Published: monthly returns 2000-2006 (Original, 10/25/50% stop, Aggressive), commission 1 cent/share."),
         def(WDT, "Weaver-DT trendline breakout", "Weaver-DT (Code.rar)", "Long/Short",
-            Status::NotTestable("The target (ADD) is the widest swing measured only over bars 'IF W<=MAXBARSBACK', a TradeStation chart setting the code does not state, so the exit price depends on an unstated value."), false,
+            Status::NotTestable("Duplicate of alwdt_trendline (the same Weaver-DT TradeStation code, coded there with the MaxBarsBack = 50 reading, lane R2E / R4 #297); not counted again."), false,
             &["E|\"Buy Next Bar LINE STOP\" / \"Sell Short Next Bar ULINE STOP\" (trendlines through the last two lower pivot highs / higher pivot lows, STRENGTH 1)", "X|\"Sell Next Bar LONGX LIMIT\" (LONGX = LINE+ADD); \"Buy to Cover Next Bar SHORTX LIMIT\""],
             "No manual in the folder (Code.rar, WEAVER-DT.ELD/.ELS only)."),
     ]

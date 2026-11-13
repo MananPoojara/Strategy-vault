@@ -7,13 +7,14 @@ use super::rrsim::{o, run_ts, A, P};
 pub const REVIEWED: &[&str] = &["alwdt_trendline"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] TradeStation code as printed (STRENGTH 1), on daily bars. Swing low: Low[1] below the TrueLow of the current bar and below the TrueLow of the first earlier bar whose low differs from it (equal lows skipped, the code's E counter); swing highs mirrored with TrueHigh. The last 20 swing lows and highs are kept with their ages in bars. Down trendline: POINT2 = the latest swing high, POINT1 = the most recent earlier swing high above it; SLOPE = (POINT2 - POINT1) / bars between them; the line is walked from POINT1 one bar at a time to the next bar, and ADD = line - Low at the bar of the lowest low met on the walk (the channel width). When not long and the close is under the line (or the high under the line - SLOPE): buy next bar on a stop at the line, with the target LONGX = line + ADD as a sell limit while long. Up trendline under the swing lows mirrored: sell short on a stop at the line, cover limit at line + ADD (ADD is negative there); the short condition uses the long side's SLOPE variable, as printed. The opposite stop reverses the position; there is no stop loss. The walk's 'IF W <= MAXBARSBACK' guard only protects TradeStation's reference buffer (the strategy's MaxBarsBack setting is not printed), so every bar back to POINT1 is used; option mbb = 50 applies TradeStation's default setting. Swing arrays start at 0 as the code's arrays do. Fills on the vault's TradeStation daily-bar engine (rrsim). No market is named and no results are printed. Runs on daily indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "[Declared readings] TradeStation code as printed (STRENGTH 1), on daily bars. Swing low: Low[1] below the TrueLow of the current bar and below the TrueLow of the first earlier bar whose low differs from it (equal lows skipped, the code's E counter); swing highs mirrored with TrueHigh. The last 20 swing lows and highs are kept with their ages in bars. Down trendline: POINT2 = the latest swing high, POINT1 = the most recent earlier swing high above it; SLOPE = (POINT2 - POINT1) / bars between them; the line is walked from POINT1 one bar at a time to the next bar, and ADD = line - Low at the bar of the lowest low met on the walk (the channel width). When not long and the close is under the line (or the high under the line - SLOPE): buy next bar on a stop at the line, with the target LONGX = line + ADD as a sell limit while long. Up trendline under the swing lows mirrored: sell short on a stop at the line, cover limit at line + ADD (ADD is negative there); the short condition uses the long side's SLOPE variable, as printed. The opposite stop reverses the position; there is no stop loss. The walk's 'IF W <= MAXBARSBACK' guard only protects TradeStation's reference buffer (the strategy's MaxBarsBack setting is not printed), so every bar back to POINT1 is used; option mbb = 50 applies TradeStation's default setting. Swing arrays start at 0 as the code's arrays do. Fills on the vault's TradeStation daily-bar engine (rrsim). No market is named and no results are printed. Runs on daily indices, ETFs and stocks, US and India, are a declared application. [R2E, R4 #297: adapted: 2 unstated details] Unstated in the code: TradeStation's Maximum Bars Back setting that limits the trendline walk ('IF W<=MAXBARSBACK'); vault reading: TradeStation's default 50 bars (p.mbb; 0 = no limit, the earlier K18 run). Unstated in the code: what the profit-target limit order does when it is sent while flat; vault reading: as TradeStation, an exit order acts only on a position held at the close it is placed (cashpf_adx reads it the same way). Published as UNVERIFIED: no results are published for the code.";
 
 /// Withheld (prepared 3 Nov 2026, lane K23; the live card changes only after the user's OK). The run code stays for a re-admission.
-const HELD: &str = "withheld: the trendline walk is limited by 'IF W<=MAXBARSBACK', TradeStation's Maximum Bars Back chart setting, which the code does not state; the limit changes the channel width (ADD) and so the LONGX / SHORTX profit targets. The same unprinted setting is why the TradeStation trend-line family of row 308 is held (lead decisions 36, 135, 157). Also open if it is re-admitted: the code's limit exit is sent on the order bar while flat, which cashpf_adx reads as TradeStation does (an exit acts only on a position held at the close it is placed)";
+#[allow(dead_code)]
+const HELD: &str = "withheld (until lane R2E, 13 Nov 2026: unheld under R4 #297, which supersedes #36/#157 for this unstated setting): the trendline walk is limited by 'IF W<=MAXBARSBACK', TradeStation's Maximum Bars Back chart setting, which the code does not state; the limit changes the channel width (ADD) and so the LONGX / SHORTX profit targets. The same unprinted setting is why the TradeStation trend-line family of row 308 is held (lead decisions 36, 135, 157). Also open if it is re-admitted: the code's limit exit is sent on the order bar while flat, which cashpf_adx reads as TradeStation does (an exit acts only on a position held at the close it is placed)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "alwdt_trendline", name: "Weaver-DT: break of the trendline through the last two falling swing highs (rising swing lows) on a stop, channel-width target", group: "TradeStation code: Weaver-DT (alfaranda.com)", session: 0, dir: "Long/Short", status: Status::NotTestable(HELD),
+    vec![StrategyDef { id: "alwdt_trendline", name: "Weaver-DT: break of the trendline through the last two falling swing highs (rising swing lows) on a stop, channel-width target", group: "TradeStation code: Weaver-DT (alfaranda.com)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "alwdt", rules: &[
             "F|POINT2 = HP[0] (latest swing high), POINT1 = the latest earlier HP[Y] > HP[0]; SLOPE = (POINT2 - POINT1) / (POINT1BAR - POINT2BAR); LINE walked from POINT1 to the next bar; ADD = LINE - LL at the lowest low on the walk",
             "E|IF MARKETPOSITION<1 AND (C<LINE OR H<LINE-SLOPE) THEN BEGIN LONGX=LINE+ADD; Buy(\"Buy\") Next Bar LINE STOP; END; (short side mirrored on the swing lows, Sell Short at ULINE STOP)",
@@ -25,12 +26,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    reviewed(id).then(|| vec![p("mbb", "MaxBarsBack limit on the walk (0 = none; TradeStation default 50)", 0., 0., 500., 1.)])
+    reviewed(id).then(|| vec![p("mbb", "MaxBarsBack limit on the walk (vault reading = TradeStation's default 50; 0 = no limit)", 50., 0., 500., 1.)])
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
-    let mbb = p.get("mbb").copied().unwrap_or(0.);
+    let mbb = p.get("mbb").copied().unwrap_or(50.);
     let (h, l, c) = (&x.h, &x.l, &x.c);
     let tl = |k: usize| if k == 0 { l[0] } else { l[k].min(c[k - 1]) };
     let th = |k: usize| if k == 0 { h[0] } else { h[k].max(c[k - 1]) };
@@ -109,6 +110,10 @@ mod tests {
         assert!(t.len() > 3);
         for w in t.windows(2) { assert!(w[1].legs[0].i >= w[0].exit_i); }
         assert!(run("alwdt_x", &x, 0, 5, &Params::new()).is_none());
+        // R2E (R4 #297): the default is the MaxBarsBack 50 reading
+        let t50 = run("alwdt_trendline", &x, 0, r.len() - 1, &[("mbb".to_string(), 50.)].into_iter().collect()).unwrap();
+        assert_eq!(t.iter().map(|z| (z.legs[0].i, z.exit_i)).collect::<Vec<_>>(), t50.iter().map(|z| (z.legs[0].i, z.exit_i)).collect::<Vec<_>>());
+        assert!(catalogue()[0].status == Status::Live);
     }
 }
 
@@ -116,5 +121,5 @@ mod tests {
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "alwdt" && reviewed(def.id),
     label: "TradeStation trendline-breakout code with no named market and no published results. Runs on daily indices, ETFs and stocks, US and India, are a declared application.",
-    basis: "Weaver-DT Code.txt (alfaranda.com, printed code); independent check authors/titles-1030/K18w/k18_ref.py",
+    basis: "Weaver-DT Code.txt (alfaranda.com, printed code); R4 #297 (MaxBarsBack = TradeStation default 50, labelled); independent check authors/titles-1030/K18w/k18_ref.py (re-run by lane R2E)",
 };

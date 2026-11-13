@@ -9,6 +9,8 @@ use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, S
 
 /// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
 pub const REVIEWED: &[&str] = &["kftsm_parabolic", "kftsm_donchian_4wk", "kftsm_moon", "kftsm_multi_tf"];
+/// Lane R2B (13 Nov 2026, R4 #297): held rules coded with up to two labelled readings (own admission entry below).
+pub const REVIEWED_R2B: &[&str] = &["kftsm_trix"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "kftsm";
@@ -199,7 +201,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         // ------------------------------------------------ Not testable
         d("kftsm_mptdi", "MPTDI step-weighted average", "Ch 8 · Applications of single trends", "Long/Short", NotTestable("Table 8.1 gives steps only for gold in points; no table for any index"), &["F|Table 8.1 MPTDI variables for gold (p.272)"], "Futures-specific table."),
         d("kftsm_mart", "Mart's Master Trading Formula", "Ch 8 · Applications of single trends", "Long/Short", NotTestable("the smoothing-constant lookup table and band formula are not printed"), &["E|\"look up a smoothing constant in a modified log-scale table\" (p.276)"], ""),
-        d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", "Long/Short", NotTestable("smoothing constant not given (only 'less than a 20-day equivalent')"), &["E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)"], ""),
+        d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", "Long/Short", Live, &[
+            "F|\"Substituting the log of the price to account for growth, he applied an exponential smoothing three times using the same smoothing constant.\" (p.273)",
+            "E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days; a sell signal followed a two-day decline in the trendline.\" (p.273)",
+            "X|A sell signal closes the long and goes short, a buy signal the reverse (the chapter's trend systems are always in the market and reverse, p.278)",
+            "F|\"The calculation period selected would normally be faster for triple smoothing than for a single smoothed line (less than a 20-day equivalent, when 2/(n + 1) is used to convert the n days to a smoothing constant)\" (p.273)",
+        ], "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated in the book: (1) the smoothing constant (only 'less than a 20-day equivalent'); vault reading: the 15-day equivalent, s = 2/(15+1) = 0.125 (the usual TRIX length; p.n sets any n); (2) when the orders fill; vault reading: at the close of the signal day, as the chapter's other trend systems. Natural log of the close; each smoothing starts at its first input value (TSM CD style: savg = savg[1] + s*(x - savg[1])) and runs over the whole history before the window. 'Rose for two consecutive days' = the smoothed line higher than the day before on two days running (t3[t] > t3[t-1] > t3[t-2]). No results are printed for this rule."),
         d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", NotTestable("N weeks not given"), &["E|\"Buy if the closing price on Friday exceeds the highest closing price of the past N weeks\" (p.178)"], ""),
         d("kftsm_4wk_final3m", "Four-Week Rule, final three months", "Ch 5 · N-day breakout", "Long/Short", NeedsData("individual futures contracts with delivery months"), &["E|Plot the four-week high/low from 3 months before delivery, 2.5% stop, exit the last day of the month before delivery (p.177)"], ""),
         d("kftsm_dunnigan", "Dunnigan thrust / one-way formula", "Ch 4 · Dunnigan", "Long/Short", NotTestable("'predetermined percentage' and thrust size per market not given"), &["E|Two of four patterns followed by a thrust (p.121-122)"], ""),
@@ -227,6 +234,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kftsm_ma_pct_band" => Some(("kftsm_ma_pct_band", "Moving average with percent bands", "")),
         "kftsm_ma_tr_band" => Some(("kftsm_ma_tr_band", "Moving average with true-range bands", "")),
         "kftsm_triple_smooth" => Some(("kftsm_triple_smooth", "Triple exponential smoothing", "")),
+        "kftsm_trix" => Some(("kftsm_trix", "Hutson triple smoothing (TRIX)", "")), // lane R2B
         "kftsm_vol_breakout" => Some(("kftsm_vol_breakout", "Volatility breakout", "")),
         "kftsm_keltner" => Some(("kftsm_keltner", "Keltner ten-day moving average rule", "")),
         "kftsm_hh_ma" => Some(("kftsm_hh_ma", "Hochheimer single moving average", "")),
@@ -288,6 +296,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_fc_bb_abx" => vec![p("period", "MA / std-dev period", 21., 5., 100., 1.), p("nsd", "Outer band std devs (inner = half)", 2., 0.5, 4., 0.1)],
         "kftsm_ma_pct_band" => vec![p("period", "MA period", 20., 2., 250., 1.), p("pcband", "Band (% of MA)", 2., 0.1, 10., 0.1)],
         "kftsm_ma_tr_band" => vec![p("period", "MA / ATR period", 20., 2., 250., 1.), p("band", "Band (x average true range)", 5., 0.1, 10., 0.1)],
+        "kftsm_trix" => vec![p("n", "Smoothing period n (s = 2/(n+1); book: under 20; vault reading 15)", 15., 2., 19., 1.)],
         "kftsm_triple_smooth" => vec![p("len1", "First smoothing period", 20., 2., 100., 1.), p("len2", "Second smoothing period", 10., 2., 100., 1.), p("len3", "Third smoothing period", 5., 2., 100., 1.)],
         "kftsm_vol_breakout" => vec![p("length", "ATR period", 20., 2., 100., 1.), p("factor", "Volatility factor k", 3., 0.5, 5., 0.1), p("vlag", "1 = previous bar's ATR (text), 0 = include today (CD Ch08)", 1., 0., 1., 1.)],
         "kftsm_raschke_first_cross" => vec![p("osc1", "Fast MA", 3., 2., 10., 1.), p("osc2", "Slow MA", 10., 5., 30., 1.), p("ntrend", "Oscillator smoothing", 16., 5., 40., 1.), p("vfilter", "Trend reach filter", 0., 0., 100., 1.)],
@@ -503,7 +512,7 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
         let integer = matches!(key.as_str(), "period" | "lag" | "kind" | "printed" | "rev" |
             "len1" | "len2" | "len3" | "length" | "vlag" | "osc1" | "osc2" | "ntrend" |
             "length1" | "length2" | "length3" | "hold" | "stop_ref" | "weeks" | "per2" |
-            "fast" | "slow" | "fstoch" | "holddays" | "day" | "exit_day" | "in_month" | "out_month");
+            "fast" | "slow" | "fstoch" | "holddays" | "n" | "day" | "exit_day" | "in_month" | "out_month");
         if !value.is_finite() || value < def.min || value > def.max || (integer && value.fract() != 0.) {
             return Some(format!("Kaufman TSM parameter {key} must be {}from {} to {}",
                 if integer { "an integer " } else { "finite " }, def.min, def.max));
@@ -683,6 +692,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             for i in from.max(1)..=to {
                 if c[i] > ma[i - 1] + at[i - 1] * k { b.at_close(i, 1, "close above upper band"); }
                 if c[i] < ma[i - 1] - at[i - 1] * k { b.at_close(i, -1, "close below lower band"); }
+            }
+            b.done()
+        }
+        "kftsm_trix" => { // lane R2B (R4 #297): Hutson, p.273
+            let a = 2. / (g("n").max(1.) + 1.);
+            let lg: Vec<f64> = c.iter().map(|v| v.ln()).collect();
+            let t3 = expo(&expo(&expo(&lg, a), a), a);
+            let mut b = Bk::new(x, from, to);
+            for i in from.max(2)..=to {
+                if t3[i] > t3[i - 1] && t3[i - 1] > t3[i - 2] { b.at_close(i, 1, "trendline rose two days"); }
+                else if t3[i] < t3[i - 1] && t3[i - 1] < t3[i - 2] { b.at_close(i, -1, "trendline fell two days"); }
             }
             b.done()
         }
@@ -1368,3 +1388,10 @@ mod tests {
         assert!(run("kftsm_adapt_rsi",&x,0,49,&Params::new()).unwrap().is_empty());
     }
 }
+
+// Lane R2B (13 Nov 2026, R4 #297): Hutson triple smoothing with its two labelled readings.
+pub const ADMISSION_R2B: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && REVIEWED_R2B.contains(&def.id),
+    label: "Kaufman reports Hutson's rule without a test; runs on indices, ETFs and stocks, US and India, are a declared application with the smoothing constant and fills read as stated on the card.",
+    basis: "Perry J. Kaufman, New Trading Systems and Methods, 4th ed. (Wiley 2005), p.273; R4 #297; independent check authors/titles-1030/R2Bw/r2b_ref.py",
+};

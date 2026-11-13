@@ -45,11 +45,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
           nt("needs judgement: gap must be 'during a sustained trend' and 'not a part of a pullback or retracement ... such as in a consolidation area'; trend 'if it's not already obvious'"),
           &["F|Gap away from preceding bar P in trend direction; filled within 4 days; P low not breached", "E|Stop 1 tick above the bar that fills the gap, lowered with each lower high", "X|Initial stop 1 tick below the entry bar; trailing stop"],
           "The 4-day fill and P-bar rules are mechanical but the qualifying gap needs a discretionary trend/consolidation call; exit is an unspecified trailing stop."),
-        d("radge_smash", "Smash Bars", "Trading Course · Trend Momentum", "Long/Short",
-          nt("trend EMA length is given only as 'somewhere around 10 to 15 days'; no exact value"),
-          &["F|Trend: EMA pointing up/down, length 'somewhere around 10 to 15 days'", "F|Uptrend: close in the lowest quartile of the day (downtrend: highest quartile)",
-            "E|Next day only: buy stop 1 tick above the Smash bar high (short: 1 tick below its low)", "X|Initial stop 1 tick beyond the other end of the Smash bar", "X|Exit on the first lower low (short: first higher high)"],
-          "Everything but the EMA length is mechanical; it becomes Live the moment one exact length is chosen by the user (would then be labelled as not from the book)."),
+        d("radge_smash", "Smash Bars", "Trading Course · Trend Momentum", "Long/Short", Status::Live,
+          &["F|\"Define the trend using a shorter moving average, somewhere around 10 to 15 days and again, use an exponential moving average. If the EMA is pointing down then the trend is down. If the EMA is pointing up the trend is up.\" (Trend Momentum Techniques)",
+            "F|\"In a downtrend we need a close near the highs, in fact in the highest quartile of the day. In an uptrend, we need a close near the lows or in the lowest quartile of the day.\" (Smash Bars, The Setup)",
+            "E|\"The entry is activated when the Smash Bar is broken the very next day in the direction of our trend ... in an uptrend the high of the Smash Bar must be breached by 1 tick\"; short: \"a stop entry 1 tick below the low of the Smash bar for the next day\" (The Entry)",
+            "X|\"Place the initial stop 1 tick outside the setup day\": 1 tick below the Smash bar's low (long), 1 tick above its high (short) (The Initial Stop)",
+            "X|\"the suggested method is a channel breakout of 1 day ... In an uptrend, as soon as the first lower low is made, exit the trade\"; downtrend: \"as soon as a new higher high is made over the prior bar\" (The Exit)"],
+          "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated in the course: (1) the exact EMA length ('somewhere around 10 to 15 days'); vault reading: 12 days (inside the range; p.ema sets 10-15); (2) the exit order's level for 'as soon as the first lower low is made'; vault reading: a stop 1 tick below the prior bar's low (above its high for shorts), the course's 1-tick convention for its other stops (p.xticks = 0: at the prior low itself). Vault conventions: EMA alpha 2/(n+1) started from the mean of its first n closes; 'pointing up' = the EMA above the day before on the Smash day; the quartiles include their boundary (close - low <= 25% of the range); a day with no range is no Smash bar; ticks are the instrument's own (US 0.01, NSE 0.05). Daily-bar order: an entry stop that fills inside a bar whose range also reaches the initial stop counts as stopped that day (the order inside the bar is unknown, #240 share stated on the gate); a stop gapped through at the open fills at the open. The course gives no performance figures for this method."),
         d("radge_swing_target", "Swing Target Trading", "Trading Course · Trend Momentum", "Long/Short",
           nt("swing high/low points (HP/LP/R) are chart-identified; 'a strong trend or thrust' is required; target/risk filter '2.5 to 3 times'"),
           &["F|Retracement of at least 30% of the prior swing", "E|Buy stop 1 tick above bar R", "X|Stop 1 tick below R; target T = HP + 0.618 x (HP - R)"],
@@ -70,6 +72,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "radge_ma220" => ("radge_ma220", "2/20 MA breakout", "Long/Short"),
+        "radge_smash" => ("radge_smash", "Smash Bars", "Long/Short"),
         "radge_oc_long" => ("radge_oc", "Open-to-close day trade", "Long · no stop (Ch.1)"),
         "radge_oc_long_stop" => ("radge_oc", "Open-to-close day trade", "Long · point stop (App. A)"),
         "radge_oc_short_stop" => ("radge_oc", "Open-to-close day trade", "Short · point stop (App. B)"),
@@ -82,6 +85,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "radge_ma220" => vec![p("ma", "Simple moving average (days)", 20., 10., 60., 5.), p("days", "Lows/highs beyond the MA (days)", 2., 1., 4., 1.),
                               p("ticks", "Entry ticks beyond the 2-day high/low", 10., 0., 20., 1.),
+                              p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 US)", 0., 0., 1., 0.01)],
+        "radge_smash" => vec![p("ema", "Trend EMA (days; course 'around 10 to 15', vault reading 12)", 12., 10., 15., 1.),
+                              p("xticks", "Exit stop ticks beyond the prior bar's low/high (vault reading 1; 0 = at it)", 1., 0., 5., 1.),
                               p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 US)", 0., 0., 1., 0.01)],
         "radge_oc_long" => vec![],
         "radge_oc_long_stop" | "radge_oc_short_stop" => vec![p("stop_pts", "Protective stop (index points; book table 1-50)", 1., 1., 50., 1.)],
@@ -150,6 +156,39 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             if let Some(mut t) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
         }
+        "radge_smash" => { // lane R2B (R4 #297)
+            let e = super::apta::ema(c, g("ema").round().max(1.) as usize);
+            let tick = if g("tick") > 0. { g("tick") } else { x.market_tick() };
+            let xoff = g("xticks").round() * tick;
+            let r8 = |v: f64| (v * 1e8).round() / 1e8;
+            let mut cur: Option<(Trade, f64)> = None; // (trade, initial stop)
+            let mut pend: Option<(f64, f64, f64)> = None; // (dir, entry stop, initial stop) for the next bar only
+            for i in from..=to {
+                if let Some((dir, lvl, st)) = pend.take() {
+                    let fill = if dir > 0. { (h[i] >= lvl).then(|| o[i].max(lvl)) } else { (l[i] <= lvl).then(|| o[i].min(lvl)) };
+                    if let Some(px) = fill { cur = Some((trade(dir, i, px, "stop"), st)); }
+                }
+                if let Some((t, st)) = cur.as_mut() {
+                    let entry_bar = t.legs[0].i == i;
+                    // active stop: the initial stop, or from the day after entry the 1-day channel exit if nearer
+                    let lvl = if entry_bar { *st } else if t.dir > 0. { st.max(r8(l[i - 1] - xoff)) } else { st.min(r8(h[i - 1] + xoff)) };
+                    let px = if t.dir > 0. {
+                        if !entry_bar && o[i] <= lvl { Some(o[i]) } else if l[i] <= lvl { Some(lvl) } else { None }
+                    } else if !entry_bar && o[i] >= lvl { Some(o[i]) } else if h[i] >= lvl { Some(lvl) } else { None };
+                    if let Some(px) = px {
+                        t.exit_i = i; t.exit_px = px; t.signal_i = i;
+                        t.reason = if entry_bar { "initial stop (entry bar)".into() } else if lvl == *st { "initial stop".into() } else { "1-day channel exit".into() };
+                        out.push(cur.take().unwrap().0);
+                    }
+                }
+                if cur.is_none() && i < to && i >= 1 && e[i].is_finite() && e[i - 1].is_finite() && h[i] > l[i] {
+                    let q = 0.25 * (h[i] - l[i]);
+                    if e[i] > e[i - 1] && c[i] - l[i] <= q { pend = Some((1., r8(h[i] + tick), r8(l[i] - tick))); }
+                    else if e[i] < e[i - 1] && h[i] - c[i] <= q { pend = Some((-1., r8(l[i] - tick), r8(h[i] + tick))); }
+                }
+            }
+            if let Some((mut t, _)) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+        }
         _ => return None,
     }
     Some(out)
@@ -179,6 +218,19 @@ mod tests {
         assert_eq!(ts[0].exit_px, 90.);
     }
     #[test]
+    fn smash_bar_next_day_stop_entry_and_one_day_channel_exit() {
+        // rising closes -> EMA up; bar 30 closes on its low (lowest quartile): buy stop 1 tick over its high on bar 31 only
+        let mut r: Vec<Row> = (0..40).map(|i| { let v = 100. + i as f64; Row { ticker: "T".into(), date: format!("{:04}-01-01", 1900 + i), open: v, high: v + 1., low: v - 1., close: v + 0.9, volume: None } }).collect();
+        r[30].close = r[30].low + 0.1; // smash: 129.1 in 129..131
+        r[31] = Row { open: 130., high: 132., low: 129.5, close: 131.5, ..r[31].clone() }; // breaks 131.01 -> long 131.01
+        r[32] = Row { open: 131.6, high: 133., low: 131., close: 132.5, ..r[32].clone() };
+        r[33] = Row { open: 132.6, high: 133.2, low: 130.5, close: 131., ..r[33].clone() }; // low < prior low 131 - 0.01 -> out at 130.99
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("radge_smash", &x, 20, 39, &Params::new()).unwrap();
+        let s = t.iter().find(|z| z.legs[0].i == 31).unwrap();
+        assert!((s.legs[0].px - 131.01).abs() < 1e-9 && s.exit_i == 33 && (s.exit_px - 130.99).abs() < 1e-9, "{:?}", (s.legs[0].px, s.exit_i, s.exit_px));
+    }
+    #[test]
     fn open_close_stop_fills_at_level() {
         let mut r = rows(3);
         r[1].low = 99.5; r[1].close = 100.7;
@@ -197,7 +249,7 @@ mod tests {
         ids.sort(); ids.dedup();
         assert_eq!(ids.len(), c.len());
         assert!(c.iter().all(|d| d.id.starts_with("radge_") && family_of(d.id).is_some()));
-        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 4);
+        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 5); // + radge_smash (lane R2B)
     }
 }
 

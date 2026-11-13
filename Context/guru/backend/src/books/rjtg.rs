@@ -9,18 +9,21 @@ pub const BOOK: &str = "rjtg";
 const NOTE: &str = "Book market: eight futures (Bonds, Swiss Franc, D-Mark, Eurodollar, Crude Oil, Wheat, JY, 10-Year Notes; p.188-189), test period and the X/Y used for the printed results not stated. \
 Defaults X=20, Y=3 are the book's only numbers (the worked example, p.186-190: 'For example, if X = 20 and Y = 3'); the book says X and Y may be anything that fits the logic. \
 Runs on the indices (instrument swap). Signals on the close, fills at the next open (p.187 'buy on the open the next day'). Always in once the first setup fires; a same-direction setup while already in that direction is ignored. \
-NOT APPLIED: the book's 'set protective stop' ('unless the market goes against the position too far', p.186, 190) - its size is never stated, so no number can be copied; trades end only on the reverse setup.";
+NOT APPLIED: the book's 'set protective stop' ('unless the market goes against the position too far', p.186, 190) - its size is never stated, so no number can be copied; trades end only on the reverse setup. \
+Adapted: 1 unstated detail (lane R2B, 13 Nov 2026, R4 #297). Unstated in the book: the size of the protective stop; vault reading: no stop. The book's results are on futures over an unstated period with unstated X/Y, so there is no comparison.";
+
+pub const REVIEWED: &[&str] = &["rjtg_simple"];
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes| StrategyDef {
         id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None,
     };
     vec![
-        d("rjtg_simple", "A Simple Trading Method (rising average + pullback, stop and reverse)", "Ch.13 The System · A Simple Trading Method", "Long/Short", Status::NotTestable("the book uses a protective stop on every trade but never gives its size, and X=20 / Y=3 are only its worked example; running it without the stop would change the book's rule, and the vault does not invent one"), &[
+        d("rjtg_simple", "A Simple Trading Method (rising average + pullback, stop and reverse)", "Ch.13 The System · A Simple Trading Method", "Long/Short", Status::Live, &[
             "E|Buys: \"1. Requires the average close of X days to be greater than the same average close Y days ago. 2. Requires the close to be less than the close Y days ago. 3. Requires the close to be greater than the close Y + X days ago. If these three conditions are met, the method will buy on the open the next day.\" (p.187)",
             "E|Sells: \"1. Requires the average close of X days to be less than the same average close Y days ago. 2. Requires the close to be greater than the close Y days ago. 3. Requires the close to be less than the close Y + X days ago. If these three conditions are met, the method will sell on the open the next day.\" (p.187)",
             "X|\"This is a trend-following method and reverses. There are no exit rules other than a reversing situation and a set protective stop.\" (p.186) - reverse at the next open on the opposite setup.",
-            "X|[Not applied] protective stop: size not stated anywhere in the book (p.186, 190).",
+            "X|[Not applied] protective stop: size not stated anywhere in the book (p.186, 190). Unstated in the book: the stop size; vault reading (lane R2B, R4 #297): no protective stop, so trades end only on the reverse setup.",
         ], NOTE),
         d("rjtg_ma_cross_example", "10/40 moving average crossover (optimization illustration)", "Ch.14 Optimization", "Long/Short", Status::NotTestable(
             "duplicate / illustration: a plain 10/40 SMA crossover used only to illustrate over-optimization (p.191-193); the vault already has SMA crossover systems (e.g. kftsm_hh_cross, cov_tfm_ma_cross_50_75 with editable lengths)"), &[
@@ -99,3 +102,10 @@ mod tests {
         assert_eq!((ts[0].dir, ts[0].legs[0].i, ts[0].legs[0].px), (1.0, 31, 125.5));
     }
 }
+
+// Lane R2B (13 Nov 2026, R4 #297): the simple method with the unsized protective stop read as not applied (1 labelled reading).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && REVIEWED.contains(&def.id),
+    label: "Ryan Jones tested this method on eight futures markets over an unstated period; runs on indices, ETFs and stocks, US and India, are a declared application, with the unsized protective stop not applied.",
+    basis: "Ryan Jones, The Trading Game (Wiley 1999), ch.13 p.186-190; R4 #297; independent check authors/titles-1030/R2Bw/r2b_ref.py",
+};

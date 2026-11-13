@@ -1428,7 +1428,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         // ---- end Guppy MetaStock Formula Index held
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
-        "tdperl_setup_long"|"tdperl_setup_short"=>"Held: rules not fully defined. Perl trades a completed TD Setup only when three conditions hold, and the third, that the close of setup bar nine is 'in close proximity to' TDST support (resistance for sells) (p.13, 16), is not quantified; leaving it out or picking a distance would not be his rule.",
+        // tdperl_setup_long / _short: admitted by tdperl::ADMISSION (lane R2B, R4 #297: rule 3 read as not applied)
+        "radge_smash"=>"Held: coded with two labelled readings (lane R2B, R4 #297: EMA 12, exit stop 1 tick beyond the prior bar), but 30-37% of its trades enter on a stop and reach the initial stop on the same day (SPY 31.0%, SPX 33.6%, QQQ 30.3%, DIA 37.0%, NIFTY 50 34.2%, AAPL 16.8%, RELIANCE 31.5%); daily bars do not show which came first, above the 5% limit (#175, #240). Needs the 1-minute path (EP6) before it can be published.",
         "tdperl_diff_up"|"tdperl_diff_down"|"tdperl_clopwin_long"|"tdperl_clopwin_short"=>"Held: not a trade rule. Perl presents TD Differential and TD Clopwin as forecasts of the next price bar (p.26, 165-166) with no stop or exit; the vault's next-close measurement tests the forecast, not a trading strategy from the book.",
         // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held
@@ -1657,7 +1658,7 @@ mod tests {
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
             // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
             // stkch: the intraday block admits the three first-hour gap cards (intraday_ep::K75, lane K75, 11 Nov 2026).
-            const SHARED:&[&str]=&["kfsc" /* R2E: kfsc_stoch ADMISSION_STOCH beside the kfsc stock/momentum/hv blocks */,"stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            const SHARED:&[&str]=&["sbma" /* lane R2B: ADMISSION_R2B + the Burns stock routes */,"fejmma" /* lane R2B: ADMISSION_R2B (Barnes) */,"kfsc" /* R2E: kfsc_stoch ADMISSION_STOCH beside the kfsc stock/momentum/hv blocks */,"stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1940,9 +1941,13 @@ mod tests {
     fn perl_held_rules_have_plain_card_reasons() {
         use crate::books::{tdperl};
         let all:Vec<StrategyDef>=tdperl::catalogue().into_iter().collect();
-        for id in [/* tdperl_rebo: intraday block (K25) */ "tdperl_setup_long", "tdperl_setup_short", "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
+        for id in [/* tdperl_rebo: intraday block (K25); tdperl_setup_long/_short: lane R2B (R4 #297) */ "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+        for id in ["tdperl_setup_long", "tdperl_setup_short"] { // lane R2B (R4 #297)
+            let d=all.iter().find(|d|d.id==id).unwrap();
+            assert!(reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end Jason Perl held ----

@@ -11,7 +11,9 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tdperl";
 /// Admitted ids (authors/perl/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["tdperl_tdline_long", "tdperl_clop_long", "tdperl_clop_short" /* intraday wave 2b: daily bars decide every trade */];
+pub const REVIEWED: &[&str] = &["tdperl_tdline_long", "tdperl_clop_long", "tdperl_clop_short" /* intraday wave 2b: daily bars decide every trade */,
+    /* lane R2B (13 Nov 2026, R4 #297): Perl's TD Setup trade with the unquantified rule 3 read as not applied (2 labelled readings) */
+    "tdperl_setup_long", "tdperl_setup_short"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NO_EXIT: &str = "[Not from the book] Perl gives no profit exit (p.48: \"it's up to you to manage the risk and the take-profit level ... TD Sequential is an indicator, not a system\"). Vault exit: the opposite signal of the same study, at its close (p.49: \"there isn't always a signal in the opposite direction to tell you where to close out a profitable trade\"). Optional time exit max_bars (p.28: \"a meaningful response within twelve price bars\") is off by default.";
@@ -82,18 +84,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("tdperl_setup_long", "Perfected TD Buy Setup (Perl's rules)", "Ch 1 · TD Setup", "Long", Live,
           &[SETUP,
             "F|Perl's rules (p.13): \"1. When the TD Buy Setup has been perfected, that is, the low of TD Buy Setup bar eight or nine is less than the lows of TD Buy Setup bars six and seven\" (definition box p.11: \"less than, or equal to\"; perfection must be on bar 8 or 9 since entry is the bar-9 close); \"2. When none of the bars within the TD Buy Setup has closed below TDST support\" (true low of the most recently completed TD Sell Setup, p.5-6).",
-            "F|Rule 3 \"When the close of TD Buy Setup bar nine is in close proximity to TDST support\" has no number: not applied [judgement]. Optional (c9_lt_c8=1): close of bar 9 below close of bar 8 (\"optional\").",
+            "F|Rule 3 \"When the close of TD Buy Setup bar nine is in close proximity to TDST support\" has no number. Unstated in the book: the distance that counts as 'close proximity'; vault reading (lane R2B, R4 #297): rule 3 is not applied, so every setup that passes rules 1 and 2 and the 1.5 reward/risk test trades. Optional (c9_lt_c8=1): close of bar 9 below close of bar 8 (\"optional\").",
             "F|p.14: \"I would take the trade only if the difference between the entry price (close of TD Buy Setup bar nine), and TDST Resistance is more than 1.5 times the difference between the close of TD Buy Setup bar nine and the TD risk level\" (rr).",
             "E|Buy on the close of TD Buy Setup bar nine (p.12 Fig 1.11).",
             "X|Stop (p.14): \"identify the TD Buy Setup bar with the lowest true low, and subtract the true range of that bar from its true low\"; intrabar stop.",
             "X|Target (p.14): \"The expectation would be for a return toward the upper-range extreme, as defined by TDST Resistance, in other words, the true high of the most recently completed TD Buy Setup\": sell limit at that level. Stop and target on one bar: stop first [conservative, book silent]."],
-          "Book prints no statistics. India: instrument swap only."),
+          "Adapted: 2 unstated details (lane R2B, R4 #297). Unstated in the book: (1) how close the bar-nine close must be to TDST support for rule 3 ('in close proximity', p.13); vault reading: rule 3 not applied; (2) which of the stop and the target fills when one bar reaches both; vault reading: the stop. Book prints no statistics. India: instrument swap only."),
         d("tdperl_setup_short", "Perfected TD Sell Setup (Perl's rules)", "Ch 1 · TD Setup", "Short", Live,
           &[SETUP,
-            "F|Perl's rules (p.16): sell setup perfected (high of bar 8 or 9 >= highs of bars 6 and 7); no setup bar closed above TDST resistance (true high of the most recent completed TD Buy Setup); rule 3 'close proximity' not applied [judgement]; reward to TDST support > 1.5 x risk (p.17).",
+            "F|Perl's rules (p.16): sell setup perfected (high of bar 8 or 9 >= highs of bars 6 and 7); no setup bar closed above TDST resistance (true high of the most recent completed TD Buy Setup); rule 3 'close proximity' (p.16) has no number: vault reading (lane R2B, R4 #297): not applied; reward to TDST support > 1.5 x risk (p.17).",
             "E|Sell on the close of TD Sell Setup bar nine.",
-            "X|Stop: highest true high of the setup plus that bar's true range (p.17). Target: true low of the setup = TDST support (p.17)."],
-          "Book prints no statistics. India: instrument swap only."),
+            "X|Stop: highest true high of the setup plus that bar's true range (p.17). Target: true low of the setup = TDST support (p.17). Stop and target on one bar: stop first [book silent]."],
+          "Adapted: 2 unstated details (lane R2B, R4 #297). Unstated in the book: (1) how close the bar-nine close must be to TDST resistance for rule 3 ('in close proximity', p.16); vault reading: rule 3 not applied; (2) which of the stop and the target fills when one bar reaches both; vault reading: the stop. Book prints no statistics. India: instrument swap only."),
         d("tdperl_tdline_long", "TD Supply Line qualified upside breakout", "Ch 4 · TD Lines", "Long", Live,
           &["F|TD Supply Point (p.91): a high with `level` lower highs on either side (strict); Perl's preference Level One (p.92). Confirmed only after the `level` bars to its right close.",
             "F|TD Supply Line (p.92-93): \"connect the two most recent TD Supply Points of the same magnitude (from right to left) to draw a downward-sloping TD Supply Line\"; Fig 4.2: most-recent point and \"the next-most-recent, higher\" point. Extended bar by bar.",
