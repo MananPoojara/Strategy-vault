@@ -10,7 +10,7 @@ use super::tilma::ema;
 pub const BOOK: &str = "bcsts";
 
 const K: &str = "F|K12 = Mov((RSI(12)-LLV(RSI(12),12)) / (HHV(RSI(12),12)-LLV(RSI(12),12)),3,E)*100 and K14 = the same with 14 (MetaStock; RSI = Wilder). Cross(a,b) = a > b today and a <= b yesterday";
-const LATCH: &str = "Latch(LE,LX,0,0) [ForumDll, behaviour not printed]: flat -> long on a bar with LE; long -> flat on a bar with LX; one change per bar (no same-bar exit and re-entry). Buy symbol = \"B>0 AND Ref(B,-1)<=0\", sell symbol = \"B=0 AND Ref(B,-1)>0\". Fills: Expert Advisor symbols appear on the bar's close; the vault trades at that close [book silent]. HHV = LLV (zero range) gives no value that bar. Course instrument: Bovespa stocks (PETR4, GRND3, CMET4); India: instrument swap only. No published results (charts only).";
+const LATCH: &str = "Latch(LE,LX,0,0) [ForumDll, behaviour not printed]: flat -> long on a bar with LE; long -> flat on a bar with LX; one change per bar (no same-bar exit and re-entry). Buy symbol = \"B>0 AND Ref(B,-1)<=0\", sell symbol = \"B=0 AND Ref(B,-1)>0\". Fills: Expert Advisor symbols appear on the bar's close; the vault trades at that close [book silent]. HHV = LLV (zero range) gives no value that bar. Course instrument: Bovespa stocks (PETR4, GRND3, CMET4); India: instrument swap only. No published results (charts only). [R2E, R4 #297: adapted: 2 unstated details] Unstated in the book: what ForumDll.Latch does on a bar where the buy (LE) and the sell (LX) conditions are both true; vault reading: the state decides (long -> LX wins and the trade exits; flat -> LE wins and the trade enters), one change per bar. Options: p.tie=1 the sell always wins (a flat bar with LE and LX does not enter), p.tie=2 the buy always wins (a long bar with LE and LX stays long). Unstated in the book: the fill; vault reading: the close of the signal bar (Expert Advisor symbols are drawn on the bar's close). Published as UNVERIFIED: the course prints no results.";
 const A2: &[&str] = &[
     K,
     "E|\"LE:= Cross(K12,25)\" (Aula 2, p.6-7)",
@@ -52,6 +52,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let mut v = vec![
+        p("tie", "Latch when buy and sell fall on one bar: 0 state decides (vault reading), 1 sell wins, 2 buy wins", 0., 0., 2., 1.),
         p("n_in", "Entry Stochastic RSI length", 12., 5., 30., 1.),
         p("lvl_in", "Buy when K crosses above", 25., 5., 50., 5.),
         p("n_out", "Exit Stochastic RSI length", 14., 5., 30., 1.),
@@ -99,6 +100,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut lentry = vec![f64::NAN; c.len()];
     for i in 0..c.len() { lentry[i] = if cross_up(i) { c[i] } else if i > 0 { lentry[i - 1] } else { f64::NAN }; }
     let a11 = id == "bcsts_a11";
+    let tie = g("tie").round() as i32;
     let (dly, stp) = if a11 { (g("delay_pct") / 100., g("stop_pct") / 100.) } else { (0., 0.) };
     let le = |i: usize| (cross_up(i) && filter_ok(i)) || (a11 && fin(lentry[i]) && c[i] > lentry[i] * (1. + dly));
     let lx = |i: usize| cross_dn(i) || (a11 && fin(lentry[i]) && c[i] < lentry[i] * (1. - stp));
@@ -106,14 +108,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
     for i in from..=to {
         if cur.is_some() {
-            if lx(i) {
+            if lx(i) && !(tie == 2 && le(i)) {
                 let mut t = cur.take().unwrap();
                 (t.exit_i, t.exit_px, t.signal_i, t.reason) = (i, c[i], i, "latch LX (sell symbol)".into());
                 out.push(t);
             }
             continue;
         }
-        if le(i) {
+        if le(i) && !(tie == 1 && lx(i)) {
             cur = Some(Trade { dir: 1., legs: vec![Leg { i, px: c[i], w: 1. }], exit_i: i, exit_px: f64::NAN, reason: String::new(),
                 entry_kind: "close", signal_i: i, open: false, exits: vec![] });
         }
@@ -139,4 +141,25 @@ mod tests {
         assert!(t.len() > 3);
         assert!(t.windows(2).all(|w| w[1].legs[0].i > w[0].exit_i));
     }
+    #[test]
+    fn latch_tie_options_run_and_default_is_the_state_reading() {
+        let r = super::super::sctraub::tests::bars(3000);
+        let x = Ctx::new(&r, &r, &[]);
+        for id in ["bcsts_a2", "bcsts_a4", "bcsts_a11"] {
+            let run_t = |tie: f64| run(id, &x, 0, r.len() - 1, &Params::from([("tie".to_string(), tie)])).unwrap();
+            let (t0, t1, t2) = (run_t(0.), run_t(1.), run_t(2.));
+            let td = run(id, &x, 0, r.len() - 1, &Params::new()).unwrap();
+            assert!(!t0.is_empty() && t0.iter().chain(&t1).chain(&t2).all(|t| t.dir > 0.), "{id}");
+            assert_eq!(td.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), t0.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), "{id}");
+            for t in [&t1, &t2] { assert!(t.windows(2).all(|w| w[1].legs[0].i > w[0].exit_i), "{id}"); }
+            assert!(crate::books::ADMISSIONS.iter().any(|a| (a.reviewed)(&catalogue().into_iter().find(|d| d.id == id).unwrap())));
+        }
+    }
 }
+
+// Instrument admission: Castelo Stochastic RSI swing, unheld 2026-11-13 by lane R2E (R4 #297: the Latch same-bar rule and the fill are labelled readings).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "bcsts_a2" | "bcsts_a4" | "bcsts_a11"),
+    label: "Bulli Castelo's course trades Bovespa stocks (PETR4, GRND3, CMET4); daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 2 unstated details (Latch same-bar rule, close fill), labelled on the card.",
+    basis: "Aulas Swing Trading System, Aula 2 p.6-7, Aula 4 p.17-18, Aula 11 p.42-43; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};

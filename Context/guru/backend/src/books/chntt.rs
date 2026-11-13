@@ -1,6 +1,6 @@
 //! Chande & Kroll, "The New Technical Trader" (Wiley 1994). The CMO-driven VIDYA system (ch.8) needs
 //! actual futures ticks and its dollar stop. The thrust-oscillator table (ch.6) is a buy-signal event study
-//! without an executable exit. Neither is ready on the available price-only cash series.
+//! without an executable exit; lane R2E (R4 #297) runs it with the table's 3-month horizon as a labelled exit reading.
 //! Uses the small engine in chbta2.rs. Source + page per rule: library/chntt/README.md.
 use crate::books::chbta2::{getp, none_exit, no_trail, run_sys, Kind, Pos, Sys};
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -10,6 +10,9 @@ pub const BOOK: &str = "chntt";
 const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume"];
 const NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume"];
 
+/// Lane R2E (13 Nov 2026, R4 #297): the thrust-oscillator buy is unheld with two labelled readings.
+macro_rules! TO_READ { () => { "[R2E, R4 #297: adapted: 2 unstated details] Unstated in the book: the exit; vault reading: hold 3 calendar months, the first horizon of Table 6.2 (p.157), and sell at the close of the first trading day on or after the same day of the month 3 months later (6/12/24 = p.months). Unstated in the book: a new buy signal while a position is held; vault reading: ignored (one position at a time, the next signal after the sale is taken). Stated: TO = (AI*AV - DI*DV)/(AI*AV + DI*DV) without the optional x100, 21-day SMA of TO below -0.3 arms the signal, the buy is the SMA's first cross above its 13-day EMA (alpha 2/14, restarted after a missing day), entry at the next day's close. Published as UNVERIFIED." } }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, needs_series, rules, notes| StrategyDef { id, name, group, session: 0, dir, status,
         needs_volume: false, needs_vix: false, needs_series, book: BOOK, rules, notes, claim: None };
@@ -18,7 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let to_rules: &'static [&'static str] = &[
         "F|\"MT = (AI*AV - DI*DV)\" ... \"TO = (AI*AV - DI*DV)/(AI*AV + DI*DV) * 100\"; \"The multiplication by 100 is optional\" (eq. 6.3, 6.5, p.146); AI/DI = advancing/declining issues, AV/DV = advancing/declining volume (p.144)",
         "E|\"we first calculated TO and then plotted a 21-day simple moving average of the TO, adding a second 13-day exponential moving average of this SMA. A buy signal occurs when the 21-day SMA of TO goes below -0.3 then crosses above its own 13-day EMA. We enter the market on the close the next day.\" (p.157)",
-        "X|No exit rule: Table 6.2 reports the gain 3, 6, 12 and 24 months after each buy (p.157). Those observation horizons are not orders; the historical months runner is held."];
+        "X|Table 6.2 reports the gain 3, 6, 12 and 24 months after each buy (p.157); the book prints no sell rule. Vault reading (R4 #297): sell at the close of the first day on or after the same calendar day 3 months after the entry (the table's first horizon); p.months = 6, 12 or 24 for the other columns."];
     vec![
         d("ch_ntt_vidya_cmo", "CMO-driven VIDYA system", "Ch 8 · How to use this book", "Long/Short", Live, &[], &[
             "F|\"|CMO| = |(2*RSI9 - 100)/100|, A = t*|CMO| (t <= 0.5), VIDYA = A * Close + (1-A) * VIDYA[1]\" (eq. 8.1, p.180); RSI = System Writer's unsmoothed 9-day RSI (p.180)",
@@ -29,9 +32,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"$1,500 initial stop\" (p.183), in futures contract dollars; held until actual contract inputs and causal fills are verified."],
             "Printed pp.179-189; reviewed order/stop pages pp.180-183 are PDF spreads 101-102. Unsmoothed RSI9 implies |CMO|=|Su-Sd|/(Su+Sd) over 9 changes and t=0.1. One source contract tick is not a generic 0.01 cash-index point. The closing-basis suggestion for stocks does not define a replacement for the dollar stop. Historical runner retained for inspection; no prepared result or source-performance claim."),
         d("ch_ntt_to_buy", "Thrust oscillator buy signal (NYSE breadth)", "Ch 6 · Market thrust", "Long", Live, NYSE, to_rules,
-            "Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal. No source exit or sequential account is supplied; the historical hold-month runner is retained for inspection and held."),
+            concat!("Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal (extra_data NYSE_ADV_DEC, 1965-03-01..2020-02-10). ", TO_READ!())),
         d("ch_ntt_to_buy_nse", "Thrust oscillator buy signal (NSE breadth)", "Ch 6 · Market thrust", "Long", Live, NSE, to_rules,
-            "Historical India mapping retained for inspection. No actual NSE breadth input or missing source exit is invented; held."),
+            concat!("Withheld (R4 #306): NSE mapping of a NYSE-calibrated level (-0.3) held, as the 21 Oct 2026 user decision for the Connors breadth rules; no results are published. India mapping on NSE breadth (extra_data NSE_ADV_DEC advances, declines, advancing and declining volume, 1999-); the book's test is NYSE breadth on the DJIA. ", TO_READ!())),
         nt("ch_ntt_vidya_close", "VIDYA close crossover (std-dev VIDYA)", "Ch 3 · VIDYA",
             "VIDYA's volatility index k = sigma(x days)/sigma(reference) is left open (x and the reference are 'for example' choices), and order type/fill is not given.",
             &["E|\"Or, you can go long when prices close above VIDYA, and go short when prices close below VIDYA.\" (p.55)"], "Printed pp.49-72. The fully specified VIDYA system is ch_ntt_vidya_cmo."),
@@ -182,8 +185,35 @@ mod tests {
         assert!((v[18] - 109.3646).abs() < 1e-3);
     }
     #[test]
+    fn thrust_buy_holds_the_three_month_horizon_and_ignores_signals_while_long() {
+        // R2E (R4 #297): exit = first close on/after entry + 3 calendar months; one position at a time
+        let r = super::super::sctraub::tests::bars(2500);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let f = |i: usize| i as f64;
+        x.extra.insert(NYSE[0].into(), (0..r.len()).map(|i| 500. + 300. * (f(i) / 23.).sin()).collect());
+        x.extra.insert(NYSE[1].into(), (0..r.len()).map(|i| 500. - 300. * (f(i) / 23.).sin()).collect());
+        x.extra.insert(NYSE[2].into(), (0..r.len()).map(|i| 1e6 * (1.2 + (f(i) / 11.).sin())).collect());
+        x.extra.insert(NYSE[3].into(), (0..r.len()).map(|i| 1e6 * (1.2 - (f(i) / 13.).sin())).collect());
+        let t = run("ch_ntt_to_buy", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.len() > 3);
+        for z in t.iter().filter(|z| !z.open) {
+            let due = add_months(&r[z.legs[0].i].date, 3);
+            assert!(r[z.exit_i].date >= due && r[z.exit_i - 1].date < due, "{} {}", r[z.legs[0].i].date, r[z.exit_i].date);
+            assert_eq!(z.exit_px, r[z.exit_i].close);
+        }
+        assert!(t.windows(2).all(|w| w[1].legs[0].i > w[0].exit_i));
+        assert!(!crate::books::ADMISSIONS.iter().any(|a| (a.reviewed)(&catalogue().into_iter().find(|d| d.id == "ch_ntt_to_buy_nse").unwrap()))); // R4 #306: NSE mapping withheld
+    }
+    #[test]
     fn months_roll_over_year_end() {
         assert_eq!(add_months("1990-10-18", 3), "1991-01-18");
         assert_eq!(add_months("1980-04-03", 24), "1982-04-03");
     }
 }
+
+// Instrument admission: thrust-oscillator buy unheld 2026-11-13 by lane R2E (R4 #297: 3-month hold and overlap rule are labelled readings).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "ch_ntt_to_buy", // R4 #306: ch_ntt_to_buy_nse withheld (NSE mapping of a NYSE level)
+    label: "Chande & Kroll's thrust-oscillator buy (DJIA, NYSE breadth) on daily bars of the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (gate list, R4 #306): NYSE breadth; not on Indian instruments or single stocks. Exit = the book's 3-month horizon (Table 6.2), a labelled reading. Adapted: 2 unstated details.",
+    basis: "The New Technical Trader p.143-159, Table 6.2 p.157; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};
