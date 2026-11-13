@@ -117,7 +117,9 @@ fn read(path: &std::path::Path) -> Option<Vec<Row>> {
 /// reads by date (NaN where the file has no bar). Other lanes add their US Indices files here.
 pub const INDEX_SERIES: &[(&str, &str)] = &[("$COMP", "NASDAQ_COMP"), ("$NYA", "NYSE_COMP"), ("#NASHI", "NASDAQ_NEW_HIGHS"), ("#NASLO", "NASDAQ_NEW_LOWS"),
     // lane PB: NYSE 52-week new highs / lows 1932-2020 (SOURCES norgate-us-indices-20200908-pb)
-    ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY")];
+    ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY"),
+    // lane PF: the DJIA close for Meyers' DJstr/DJCstr (SOURCES norgate-us-indices-20200908-pf)
+    ("$DJI", "DJ_INDUSTRIAL")];
 pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
     let mut out = BTreeMap::new();
     for (file, name) in INDEX_SERIES {
@@ -137,15 +139,27 @@ pub fn load_indices(dir: &std::path::Path) -> BTreeMap<(String, String), BTreeMa
     out
 }
 
+/// Lane PF (Meyers, S&C V15:11): the CBOT T-bond continuous future, back-adjusted close (Norgate &ZB_CCB in futures/norgate-20200908,
+/// SOURCES norgate-continuous-futures-20200908; R4 #293 (2): indicators on the back-adjusted series) as a series every US context reads
+/// by date. A missing file loads nothing.
+pub const TBOND_SERIES: &str = "TBOND_CCB";
+pub fn load_tbond(dir: &std::path::Path) -> Option<BTreeMap<String, f64>> {
+    let rows = read(&dir.join("&ZB_CCB.csv")).filter(|r| !r.is_empty());
+    if rows.is_none() { eprintln!("warning: {TBOND_SERIES} not loaded from {}", dir.display()); }
+    Some(rows?.into_iter().map(|r| (r.date, r.close)).collect())
+}
+
 /// Norgate's compact yyyymmdd date (the US Indices files) as yyyy-mm-dd.
 fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..])) }
 
 /// Lane PE (R4 #319): the NYSE Composite as its own context, from Norgate $NYA (futures/norgate-us-indices-20200908/$NYA.csv,
 /// SOURCES.csv norgate-us-indices-20200908-f3), so Holt's NYSE Composite systems run on the index they were tested on. Close and
 /// volume are real from 1970-01-05 (volume 0 before = no volume); Norgate's open/high/low equal the close before 1988-12-07, so
-/// only the close-and-volume cards in NYA_CARDS are admitted (instrument_policy::check). A missing file loads nothing.
+/// only the close(-and-volume) cards in NYA_CARDS are admitted (instrument_policy::check). A missing file loads nothing.
 pub const NYA_TICKER: &str = "NYSE Composite (Norgate $NYA)";
-pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi"];
+pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi",
+    // lane PF: Appel & Hitschler's close-only NYSE Index systems (Stock Market Trading Systems, Tables 4-5, 4-6, 5-1, 6-2, 9-1)
+    "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_channel"];
 pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) {
     let Some(rows) = read(&dir.join("$NYA.csv")).filter(|r| !r.is_empty()) else { eprintln!("warning: index $NYA context not loaded from {}", dir.display()); return };
     println!("context {NYA_TICKER}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
