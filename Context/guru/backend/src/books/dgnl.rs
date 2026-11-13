@@ -35,11 +35,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"Exit on First Profitable open: MarketPosition=1 and open next>entryprice / Exit next bar at market\" (short: mirror); \"uses a money management stop of $1500\" (p21)"],
           "[Adapted: 2 readings labelled, R4 #297; lane PF, 14 Nov 2026] Runs only on the Norgate continuous SPI contract (&YAP, back-adjusted daily bars; ASX SPI 200, the All Ordinaries SPI before 2000; ends 2020-09-11; roll method not stated by the vendor). Date grouping: each date belongs to its stated month (long 1 Mar, 31 Mar, 30 Apr, 1 Jun, 30 Jun, 1 Aug, 31 Aug, 30 Sep, 30 Oct, 30 Nov; short 8 May, 8 Jun, 8 Aug, 8 Sep, 8 Oct, 8 Dec) - the article's reader count (185 trades in 205 months, 'no trades made in January or February') rules out the literal SuperCharts grouping, which would trade every 30th/31st and every June day. Readings: (1) the order placed on the dated bar fills at the NEXT open (a strategy cannot fill at the open of the bar it is evaluated on); (2) the $1,500 money stop = 60 SPI points (the article's own $25 per point, p.8), from the entry, filled at the stop or at the open when gapped. Exit at the first later open beyond the entry (long: above, short: below), at that open; an opposite dated signal reverses. No costs (the reader's test used none stated).",
           claim("185", "166 winners (89.7%)", "$63,217 net, one contract", "", "SPI 1983 - Sept 2000 (p20-21)")),
-        d("dgnl_spi_seasonal_q1", "SPI seasonal dates January-March (A Gibbs)", "Gibbs · SPI systems", "Long", Status::NeedsData(SPI),
+        d("dgnl_spi_seasonal_q1", "SPI seasonal dates January-March (A Gibbs)", "Gibbs · SPI systems", "Long", Status::Live,
           &["E|\"If: (DayofMonth(date)=1 and month(date)=2 or month(date)=3) or (DayOfMonth(date)=9 and month(date)=1 or month(date)=3) or (dayofmonth(date)=13 and month(date)=1 or month(date)=3) or (dayofmonth(date)=22 and month(date=3) or (dayofmonth(date)=24 and month(date)=1 or month(date)=2) or (dayofmonth(date)=25 and month(date)=1) or (dayofmonth(date)=30 and month(date)=3) or (dayofmonth(date)=31 and month(date)=3) then: Buy on Stop: open next bar\" (29/09/2000 p13, 'Seasonality And The SPI')",
             "X|\"MarketPosition=1 and open next bar > entryprice then: Sell next bar at market / Stop=$1500\" (p14); dates within 2 days of a previous signal are dropped (25 Jan, 30 Mar)"],
-          "The dates are fitted on the SPI's own history; Sept/Oct 2000 dates are listed on 13/10/2000 p19-20 (Sept: 7 of 7 winners, $4,125).", None),
-        d("dgnl_spi_vb70_month", "SPI volatility breakout open + 70% of yesterday's range, May/Jun/Jul/Dec (A Gibbs)", "Gibbs · SPI systems", "Long", Status::NeedsData(SPI),
+          "[Adapted: 1 reading, R4 #297; lane PF, 14 Nov 2026] The dates are fitted on the SPI's own history; Sept/Oct 2000 dates are listed on 13/10/2000 p19-20 (not part of this card). Dates = the 'y' cells of the article's own table (p.13-14), less the two it drops ('within 2 days of a previous signal ... exclude the 25th Jan and the 30th March'): 9, 13, 24 Jan; 1, 24 Feb; 1, 9, 13, 22, 31 Mar (the printed and/or formula is read through that table). The dated bar's order 'Buy on Stop: open next bar' fills at the next open. Reading: the $1,500 stop = 60 SPI points (the newsletter's $25 per point, 25/08/2000 p.8). Exit at the first later open above the entry. Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333). The report is an image: unverified.", None),
+        d("dgnl_spi_vb70_month", "SPI volatility breakout open + 70% of yesterday's range, May/Jun/Jul/Dec (A Gibbs)", "Gibbs · SPI systems", "Long", Status::NotTestable("held under R4 #240 (lane PF, 14 Nov 2026): on Norgate continuous SPI (&YAP) over the publishable 1983-02-16..1991-12-31 window (R4 #333), 16 of its 211 trades (7.6%) fill the open + 70% buy stop and reach the $400 (16-point) money stop inside the same daily bar with the open through neither, which daily bars cannot order, and no SPI minute bars exist (limit 5%)"),
           &["E|\"(market open + (yesterdays high-yesterdays low)*70%)\" buy stop; \"If: Month(date)=1 (January) then buy on open next bar + ((h-l)*.7)\" (20/10/2000 p16-17, 'Using Seasonality To Filter A Trading System')",
             "F|\"the best months to trade this system are May, June, July and December these are the only month in which we will trade this system\" (p17)",
             "X|\"The exit used for this system is simply first profitable open ... a stop loss of $400 will be used\" (p16)"],
@@ -102,7 +102,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
-        "dgnl_spi_dom" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }]),
+        "dgnl_spi_dom" | "dgnl_spi_seasonal_q1" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }]),
         "dgnl_spi_12_10" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. },
             ParamDef { key: "hi", label: "Buy on an N-day high", def: 12., min: 2., max: 60., step: 1. }, ParamDef { key: "lo", label: "Sell on an N-day low", def: 10., min: 2., max: 60., step: 1. }]),
         _ => None,
@@ -112,15 +112,19 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// Lane PF: Gibbs' day-of-month SPI rules (08/09/2000 p.22), dates grouped by their stated month (see the card note).
 const DOM_LONG: &[(u32, u32)] = &[(3, 1), (3, 31), (4, 30), (6, 1), (6, 30), (8, 1), (8, 31), (9, 30), (10, 30), (11, 30)];
 const DOM_SHORT: &[(u32, u32)] = &[(5, 8), (6, 8), (8, 8), (9, 8), (10, 8), (12, 8)];
+/// Lane PF: Gibbs' January-March dates (29/09/2000 p.13-14, the table's 'y' cells less 25 Jan and 30 Mar), long only.
+const Q1_LONG: &[(u32, u32)] = &[(1, 9), (1, 13), (1, 24), (2, 1), (2, 24), (3, 1), (3, 9), (3, 13), (3, 22), (3, 31)];
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if !(id == "dgnl_spi_dom" || id == "dgnl_spi_12_10") || from > to || to >= x.r.len() { return None; }
+    if !matches!(id, "dgnl_spi_dom" | "dgnl_spi_12_10" | "dgnl_spi_seasonal_q1") || from > to || to >= x.r.len() { return None; }
+    let dated = id != "dgnl_spi_12_10"; // the dated rules exit at the first profitable open
     let stop_pts = p.get("stop").copied().unwrap_or(60.);
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let md = |i: usize| -> (u32, u32) { let d = &x.r[i].date; (d[5..7].parse().unwrap_or(0), d[8..10].parse().unwrap_or(0)) };
     let (nh, nl) = (p.get("hi").copied().unwrap_or(12.).max(1.) as usize, p.get("lo").copied().unwrap_or(10.).max(1.) as usize);
     let want = |i: usize| -> i32 {
         if id == "dgnl_spi_dom" { return if DOM_LONG.contains(&md(i)) { 1 } else if DOM_SHORT.contains(&md(i)) { -1 } else { 0 }; }
+        if id == "dgnl_spi_seasonal_q1" { return Q1_LONG.contains(&md(i)) as i32; }
         // dgnl_spi_12_10: today's high is the N-day high / today's low the N-day low; both at once = no signal
         let up = i + 1 >= nh && h[i] >= h[i + 1 - nh..=i].iter().cloned().fold(f64::MIN, f64::max);
         let dn = i + 1 >= nl && l[i] <= l[i + 1 - nl..=i].iter().cloned().fold(f64::MAX, f64::min);
@@ -133,7 +137,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // 1) at the open: first profitable open, or an opposite dated signal from yesterday
         let was = pos.map(|p| p.0);
         if let Some((d, e, ep)) = pos {
-            if (id == "dgnl_spi_dom" && k > e && (d as f64) * (o[k] - ep) > 0.) || (sig != 0 && sig != d) {
+            if (dated && k > e && (d as f64) * (o[k] - ep) > 0.) || (sig != 0 && sig != d) {
                 out.push(super::rbtie::mk(d as f64, e, ep, "open", k, o[k], if sig != 0 && sig != d { "reversed at the open" } else { "first profitable open" }, false, k - 1));
                 pos = None;
             }
