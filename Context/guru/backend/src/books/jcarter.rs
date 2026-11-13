@@ -55,7 +55,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "intraday YM futures with fixed 20-point stops and pivot +/- 3 point orders; YM intraday data are not in the vault and level choice ('multi-pivot', midpoints when levels are 40+ points apart) is judged",
            &["E|limit orders at daily/weekly pivots and midpoints +/- 3 points; \"My initial stop is almost always 20 points\""]),
         nt("jcags_grains", "Grain futures day and swing setups (with Hubert Senters)", "Online Day Trading Seminar on Grains", "jcags",
-           "corn, wheat and soybean futures (not in the vault) with cent-based stops; the setups repeat Mastering the Trade", &[]),
+           "Lane PH (14 Nov 2026, D1 RULE UNCHECKED row, R4 #293 (4)): daily corn, wheat and soybean futures are now held (Norgate &ZC/&ZW/&ZS, cents), and the cent stops would run literally, but the seminar (AGSSeminar.pdf, re-read in full) has no daily rule: the day-trading setups are on 3- or 5-minute pit-session charts ('let the markets trade for 30 minutes, then start taking the breaks of the highs and lows'), 144-tick charts and 15-minute 21-EMA closes (no grain minute bars exist), the 'Manage the Trade' third target is 'discretionary', and the swing setups place stops at hand-drawn RSI and price trendlines (slides 48-52) with a 'discretionary' second target. Held", &[]),
         nt("jccbot_lessons", "CBOT trading lessons (mini-sized Dow)", "CBOT Trading Lessons WorkBook", "jccbot",
            "introductory futures lessons and the YM pivot method (intraday, fixed points)", &[]),
     ]

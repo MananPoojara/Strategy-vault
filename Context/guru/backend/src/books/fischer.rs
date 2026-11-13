@@ -2,7 +2,8 @@
 //! Trading Tools, 2003), `rffaps` (Fibonacci Applications and Strategies for Traders, 1993), `rfnft` (The New Fibonacci
 //! Trader, 2001, and its Workbook). Reading: claude-continuation-20261020/authors/fischer/agents/. Catalogue only: the five
 //! systems rest on a minimum swing size in fixed futures points; R4 #277 (1) makes the default the percent those points
-//! were at the book's own test, but lane K77 (12 Nov 2026) found each one still held for its own reason (per card).
+//! were at the book's own test, but lane K77 (12 Nov 2026) found each one still held for its own reason (per card). Lane PH
+//! (14 Nov 2026, R4 #293 (4)): rfcfcp_dtdb runs literally (300 points) on Norgate EURO STOXX 50 futures; the others stay held.
 //! PHI-ellipses, channels, spirals and candle patterns are judgement.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
@@ -10,7 +11,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, book, why, rules| StrategyDef { id, name, group, session: 0, dir: "Long/Short", status: Status::NotTestable(why), needs_volume: false,
         needs_vix: false, needs_series: &[], book, rules, notes: "Read 2026-10-24 (authors/fischer/agents).", claim: None };
     let mut v = vec![
-        d("rfcfcp_dtdb", "Double-top / double-bottom swing breakout", "Ch.3 (p.45-51)", "rfcfcp", "Lane K77 (R4 #277 (1)): the swing default would be the percent of price the book's 300 points were at its own test (DJ EuroStoxx 50 futures, Aug 2001 - Aug 2002), but the vault holds no EuroStoxx 50 prices, so that percent cannot be derived from data (Table 4.1's three rounded trade prices, 3,727 / 3,500 / 2,700, are not a period level and disagree with each other: exit 3,550 vs re-entry 3,500), and the 3-trade table cannot be re-run. Held",
+        d("rfcfcp_dtdb", "Double-top / double-bottom swing breakout", "Ch.4 (p.45-51)", "rfcfcp", "Lane K77 (R4 #277 (1)): the swing default would be the percent of price the book's 300 points were at its own test (DJ EuroStoxx 50 futures, Aug 2001 - Aug 2002), but the vault holds no EuroStoxx 50 prices, so that percent cannot be derived from data (Table 4.1's three rounded trade prices, 3,727 / 3,500 / 2,700, are not a period level and disagree with each other: exit 3,550 vs re-entry 3,500), and the 3-trade table cannot be re-run. Held",
           &["E|Long on a close above the last swing peak, short below the last swing valley (p.45-51)", "X|Stop on a close beyond the previous opposite swing point; target one swing size; opposite signal reverses"]),
         d("rfcfcp_fib618", "Fibonacci 61.8% correction system", "Ch.4 (p.52-66); also The New Fibonacci Trader Ch.3", "rfcfcp", "Lane K77 (R4 #277 (1)): the S&P sample rules (p.60) do not say when the 4-day trailing stop starts, and the stop is given two ways (p.55: the peak or valley before the entry; p.60: the low of the impulse's starting day). The plainest reading (zigzag swings of 80 S&P points on daily highs and lows, trail from the day after the entry, stop at the impulse start) on SPX Jan-Nov 2000 gives 17 trades and 7 winners against Table 4.3's 9 trades and 8 winners (p.62), and the table's prices (1,427.50, 1,449.80, 1,517.50) are not SPX prints (futures-like ticks). No reading fixed by the book reproduces the table. Held",
           &["E|After an impulse of at least the minimum swing and a 61.8% correction, buy stop at the previous day's high (p.57-60)", "X|Stop at the low of the impulse's first day; target 0.618 x impulse; trail the lowest low of the previous 4 days"]),
@@ -35,22 +36,24 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v[0].claim = crate::connors::claim("3", "67%", "+141 points", "-", "DJ EuroStoxx 50 futures 08/2001-08/2002, 300-point swing (Table 4.1)");
     v
 }
-const DTDB_NOTE: &str = "[Adapted: 2 unstated details, R4 #297; R4 #293 (1), (4)] Runs only on the Norgate EURO STOXX 50 continuous contract (back-adjusted daily bars; points survive the roll adjustment), with the book's 300 index points literal (p.size). Swing points: unstated in the book (it gives only the minimum size) - vault reading: a zigzag on daily highs and lows: a peak is confirmed when the low falls 300 points below the highest high since the last valley, a valley when the high rises 300 points above the lowest low since the last peak; a point counts from the day after it is confirmed. Long when the close crosses above the last confirmed peak, short when it crosses below the last confirmed valley (fill at that close); stop: a close beyond the swing point opposite the entry at entry time (fill at that close); an opposite signal reverses. Profit target 300 points from the entry - unstated how it fills - vault reading: a limit order from the next day, filled at the target or at the open when the market opens beyond it. Close entries and close stops leave no order question inside a day (R4 #240). Book check (Table 4.1, Aug 2001 - Aug 2002, 3 trades, -177 / +300 / +300 points; trade 2's entry '3,500' is a misprint for the 3,550 reverse of trade 1): started on the chart's first day (2001-08-01) the same window gives 4 closed trades, -609 (a short of 2001-09-20 stopped 2001-10-23), -91 (a long 3,608 -> 3,517 where the book has 3,727 -> 3,550), +300 (3,541 -> 3,241 vs the book's 3,550 -> 3,250) and +300 (2,703 -> 2,403 vs 2,700 -> 2,400); with the swing history before it, 5 (a further +300 short from 2001-08-10): count 4-5 vs 3 fails R4 #168, so unverified. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. EURO STOXX 50 points: EUR 10 per point (no US$ amount is used).";
+const DTDB_NOTE: &str = "[Adapted: 2 unstated details, R4 #297; R4 #293 (1), (4)] Runs only on the Norgate EURO STOXX 50 continuous contract (back-adjusted daily bars; points survive the roll adjustment), with the book's 300 index points literal (p.size). Swing points: unstated in the book (it gives only the minimum size) - vault reading: a zigzag on daily highs and lows (p.zz = 1: on closes, a labelled option): a peak is confirmed when the low falls 300 points below the highest high since the last valley, a valley when the high rises 300 points above the lowest low since the last peak; a point counts from the day after it is confirmed. Long when the close crosses above the last confirmed peak, short when it crosses below the last confirmed valley (fill at that close); stop: a close beyond the swing point opposite the entry at entry time (fill at that close; not trailed to newer swing points - vault reading of 'a previous peak or a previous valley', p.48); an opposite signal reverses. Profit target 300 points from the entry - unstated how it fills - vault reading: a limit order from the next day, filled at the target or at the open when the market opens beyond it. Close entries and close stops leave no order question inside a day (R4 #240). Book check (Table 4.1, Aug 2001 - Aug 2002, 3 trades, -177 / +300 / +300 points; trade 2's entry '3,500' is a misprint for the 3,550 reverse of trade 1): started on the chart's first day (2001-08-01) the same window gives 4 closed trades, -609 (a short of 2001-09-20 stopped 2001-10-23), -91 (a long 3,608 -> 3,517 where the book has 3,727 -> 3,550), +300 (3,541 -> 3,241 vs the book's 3,550 -> 3,250) and +300 (2,703 -> 2,403 vs 2,700 -> 2,400); with the swing history before it, 5 (a further +300 short from 2001-08-10): count 4-5 vs 3 fails R4 #168, so unverified. Prices are shown at each trade's entry contract, so a reverse at the same close can print differently across a roll (3,517 / 3,541). The book says some of its examples include trailing stops it does not describe (p.50), which may explain part of the gap. Figure 4.1 marks 13 turning points for Aug 2001 - Aug 2002 at 300 points; the high/low zigzag confirms 18 there (some in pairs from single wide days, e.g. 2001-09-11 / 09-12, which give the -609 short), the close zigzag 7-8, so neither reading is settled by it. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. EURO STOXX 50 points: EUR 10 per point (no US$ amount is used).";
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     (id.starts_with("rfcfcp_") || id.starts_with("rffaps_") || id.starts_with("rfnft_")).then_some(("rf_nt", "Fischer Fibonacci systems", "-"))
 }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == "rfcfcp_dtdb").then(|| vec![ParamDef { key: "size", label: "Swing size and profit target (index points; the book: 300 on EuroStoxx 50 futures)", def: 300., min: 1., max: 5000., step: 10. }])
+    (id == "rfcfcp_dtdb").then(|| vec![ParamDef { key: "size", label: "Swing size and profit target (index points; the book: 300 on EuroStoxx 50 futures)", def: 300., min: 1., max: 5000., step: 10. },
+        ParamDef { key: "zz", label: "Swing points from: 0 = daily highs and lows (vault reading), 1 = closes", def: 0., min: 0., max: 1., step: 1. }])
 }
 
 /// Zigzag swing points on daily highs and lows: (last confirmed peak, last confirmed valley) as known at each bar's close.
-fn zigzag(x: &Ctx, to: usize, size: f64) -> Vec<(Option<f64>, Option<f64>)> {
-    let (mut peak, mut val, mut d, mut hi, mut lo) = (None, None, 0i8, x.h[0], x.l[0]);
+fn zigzag(x: &Ctx, to: usize, size: f64, closes: bool) -> Vec<(Option<f64>, Option<f64>)> {
+    let (h, l) = if closes { (&x.c, &x.c) } else { (&x.h, &x.l) };
+    let (mut peak, mut val, mut d, mut hi, mut lo) = (None, None, 0i8, h[0], l[0]);
     (0..=to).map(|i| {
-        if d >= 0 { hi = hi.max(x.h[i]); }
-        if d <= 0 { lo = lo.min(x.l[i]); }
-        if d >= 0 && hi - x.l[i] >= size { peak = Some(hi); d = -1; lo = x.l[i]; } // the high is a peak: the low fell `size` below it
-        else if d <= 0 && x.h[i] - lo >= size { val = Some(lo); d = 1; hi = x.h[i]; } // the low is a valley
+        if d >= 0 { hi = hi.max(h[i]); }
+        if d <= 0 { lo = lo.min(l[i]); }
+        if d >= 0 && hi - l[i] >= size { peak = Some(hi); d = -1; lo = l[i]; } // the high is a peak: the low fell `size` below it
+        else if d <= 0 && h[i] - lo >= size { val = Some(lo); d = 1; hi = h[i]; } // the low is a valley
         (peak, val)
     }).collect()
 }
@@ -58,7 +61,7 @@ fn zigzag(x: &Ctx, to: usize, size: f64) -> Vec<(Option<f64>, Option<f64>)> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if id != "rfcfcp_dtdb" || from > to || to >= x.r.len() { return None; }
     let size = p.get("size").copied().unwrap_or(300.);
-    let z = zigzag(x, to, size);
+    let z = zigzag(x, to, size, p.get("zz").copied().unwrap_or(0.) >= 0.5);
     let mk = |d: i8, ei: usize, ep: f64, xi: usize, xp: f64, why: &str, open: bool| Trade { dir: d as f64, legs: vec![Leg { i: ei, px: ep, w: 1. }], exit_i: xi, exit_px: xp,
         reason: why.into(), entry_kind: "close", signal_i: xi, open, exits: vec![] };
     let (mut out, mut pos, mut ep, mut ei, mut stop) = (vec![], 0i8, 0., 0, None::<f64>);

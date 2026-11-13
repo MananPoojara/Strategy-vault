@@ -10,6 +10,10 @@ pub const REVIEWED: &[&str] = &["jcurt_jk24_hl_bands", "jcurt_jk31_pattern"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const J24: &str = "jcurt_jk24_hl_bands";
 const J31: &str = "jcurt_jk31_pattern";
+const J23: &str = "jcurt_jk23_jy";
+const J26: &str = "jcurt_jk26_bp";
+/// Lane PH (14 Nov 2026, D1 RULE UNCHECKED row jcurt_other, R4 #293 (1)): JK-23 / JK-26 are the JK-24 code with the inputs of their named market.
+const FUT_LIVE: &str = "[Literal code; R4 #293 (1)] The JK-24 code (IF L > Average(H,Input2) Then Buy; IF H < Average(L,Input1) Then Sell Short; TradeStation market orders = the next bar's open; the opposite order reverses) with this block's inputs, run only on the Norgate continuous contract of the market the block is named for (back-adjusted daily bars). No performance is printed in the package, so there is no book check (unverified). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
 
 const FUT: &str = "The system is named for one futures market; the vault has no futures contracts (vault convention: non-equity futures systems are NeedsData).";
 
@@ -35,9 +39,9 @@ Daily cash indices (instrument swap). Fills: market orders at the next open. Ind
             "E|\"IF C < H-(Range/6) and C > C[1] Then Buy Next Bar h Stop\"; \"IF C > L+(Range/6) and C < C[1] Then Sell Short Next Bar l Stop\""], ""),
         d("jcurt_jk22_index", "JK-22-SC-INDEXBB: Friday close below its 3-bar MA -> buy", NotTestable("no exit in the code"), &[
             "E|\"IF DayOfWeek(Date)=5 and C < Average(C,3) Then Buy Next Bar at Market\""], ""),
-        d("jcurt_jk23_jy", "JK-23-SC-JY-LTBB (Japanese yen): L > MA(H,50) buy, H < MA(L,65) sell short", NeedsData("Japanese yen futures (block named JY)"), &["E|\"IF L > Average(H,Input2) Then Buy\" (50); \"IF H<Average(L,Input1) Then Sell Short\" (65)"], FUT),
+        d("jcurt_jk23_jy", "JK-23-SC-JY-LTBB (Japanese yen): L > MA(H,50) buy, H < MA(L,65) sell short", Live, &["E|\"IF L > Average(H,Input2) Then Buy\" (50); \"IF H<Average(L,Input1) Then Sell Short\" (65)", "X|No exit statement: the opposite order reverses the position (TradeStation Buy / Sell Short)"], FUT_LIVE),
         d("jcurt_jk25_dm", "JK-25-SC-DM-LTBB (Deutsche mark): L > MA(H,60) buy, H < MA(L,45) sell short", NeedsData("Deutsche mark futures (block named DM)"), &["E|\"IF L > Average(H,Input2) Then Buy\" (60); \"IF H<Average(L,Input1) Then Sell Short\" (45)"], FUT),
-        d("jcurt_jk26_bp", "JK-26-SC-BP-LTBB (British pound): L > MA(H,45) buy, H < MA(L,45) sell short", NeedsData("British pound futures (block named BP)"), &["E|\"IF L > Average(H,Input2) Then Buy\" (45); \"IF H<Average(L,Input1) Then Sell Short\" (45)"], FUT),
+        d("jcurt_jk26_bp", "JK-26-SC-BP-LTBB (British pound): L > MA(H,45) buy, H < MA(L,45) sell short", Live, &["E|\"IF L > Average(H,Input2) Then Buy\" (45); \"IF H<Average(L,Input1) Then Sell Short\" (45)", "X|No exit statement: the opposite order reverses the position (TradeStation Buy / Sell Short)"], FUT_LIVE),
         d("jcurt_jk27_nyse_dt", "JK-27-SC-NYSE-DTBB: day-of-week x 3-bar MA buys", NotTestable("no exit in the code (day-trade exit not stated)"), &[
             "E|\"IF (DayOfWeek(date)=VarA and C < Average(C,3)) OR (DayOfWeek(date)=VarB and C > Average(C,3)) OR (DayOfWeek(Date)=VarC and C > Average(C,3)) Then Buy Next Bar at Market\" (5/4/3)"], ""),
         d("jcurt_jk28_dual", "JK-28-SC-DualBB: data2 close vs its 9-bar MA", NotTestable("trades on data2, a second market the code never names"), &[
@@ -55,7 +59,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    match id { J24 => Some(vec![p("input1", "Input1 (MA of lows)", 45., 5., 150., 1.), p("input2", "Input2 (MA of highs)", 45., 5., 150., 1.)]), _ => None }
+    match id {
+        J24 | J26 => Some(vec![p("input1", "Input1 (MA of lows)", 45., 5., 150., 1.), p("input2", "Input2 (MA of highs)", 45., 5., 150., 1.)]),
+        J23 => Some(vec![p("input1", "Input1 (MA of lows)", 65., 5., 150., 1.), p("input2", "Input2 (MA of highs)", 50., 5., 150., 1.)]),
+        _ => None,
+    }
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -63,8 +71,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let mut s = Sim::new();
     match id {
-        J24 => {
-            let (ml, mh) = (sma(&x.l, g("input1", 45.).max(1.) as usize), sma(&x.h, g("input2", 45.).max(1.) as usize));
+        J24 | J23 | J26 => {
+            let (d1, d2) = if id == J23 { (65., 50.) } else { (45., 45.) };
+            let (ml, mh) = (sma(&x.l, g("input1", d1).max(1.) as usize), sma(&x.h, g("input2", d2).max(1.) as usize));
             for i in first_ok(x.c.len(), from, &[&ml, &mh])..to {
                 let mut q = vec![];
                 if x.l[i] > mh[i] { q.push(ord(K::Buy, Ty::Mkt, "L > Average(H,45)")); }

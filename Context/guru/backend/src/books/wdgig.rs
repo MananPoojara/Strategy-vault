@@ -12,9 +12,9 @@ const SWING_NOTE: &str = "1940-42 wheat research method (\"fitted ... to the 193
 
 const GRAIN_GAP: &str = "Needs daily Chicago grain futures (wheat/corn/oats/rye/soybeans), individual contracts with their delivery months: every threshold is in cents per bushel (e.g. TOB/TOT within 1c, Thrust between 1/2c and 1 1/2c, stops in cents). No percentage or index-point equivalent is given; the author says other markets need other figures he does not supply (\"some smaller figure should be used for oats and some larger figure for soybeans\", p.148).";
 // lane PH (14 Nov 2026, D1 RULE UNCHECKED row wdgig_other; R4 #293 (4), #297, #240): Norgate wheat (&ZW, cents per bushel, 1978-2020) now holds the grain data
-const PCT3_NOTE: &str = "[Adapted: 2 unstated details, R4 #297; R4 #293 (1), (4)] Runs only on the Norgate wheat continuous contract (back-adjusted daily bars, cents per bushel; the book's test is March 1954 wheat). Swings from daily highs and lows: a Bottom is set when the high has risen 3% or more above the lowest low since the last Top, a Top when the low has fallen 3% or more below the highest high since the last Bottom (equal extremes keep the earliest day); the 3% is of the contract's price at that extreme (the back-adjusted low or high plus that day's roll offset, R4 #293 (2): Norgate's back-adjusted wheat sits far above the traded price, e.g. about 2,260c against 418c in March 1980). Buy stop 1 1/4c above the last Top, sell stop 1 1/4c below the last Bottom (swings set by the previous day's close), filled at the level or at the open if it gaps through; stop-and-reverse only, as in the book's record. Unstated - vault readings: (1) 'movements within a single day were ignored' = a swing's Top and Bottom must fall on different days; (2) if both stops are hit on one day while flat, the one nearer the open is taken. The book's 'lines' and its Operating Plan are not described ('need not be discussed here', p.111), so they are not modelled. Order check (R4 #240): 2.7% of the 1978-2020 trades (15 of 554) meet a day on which both stops lie inside the range. The March 1954 wheat record (a figure) cannot be re-run: no 1950s wheat data. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
-const BREAKAWAY_240: &str = "Lane PH (14 Nov 2026, R4 #293 (4), #240): Norgate wheat (&ZW, cents, 1978-2020) now holds the data and the rule is complete as stop-and-reverse (the book's own March 1954 test), but with 5c swings and today's wheat ranges 12.4% of the 1978-2020 trades meet a day on which both the buy and the sell stop lie inside the daily range, which daily bars cannot order, and no wheat minute bars exist (limit 5%). Held";
-const S238_240: &str = "Lane PH (14 Nov 2026, R4 #293 (4), #240): Norgate wheat (&ZW, cents, 1978-2020; always above $1.10, so the 1 1/8c penetration applies) now holds the data and the rule is complete as stop-and-reverse (the book's own March 1954 test), but with 2 3/8c swings 10.2% of the 1978-2020 trades meet a day on which both stops lie inside the daily range, which daily bars cannot order, and no wheat minute bars exist (limit 5%). Held";
+const PCT3_NOTE: &str = "[Adapted: 2 unstated details, R4 #297; R4 #293 (1), (4)] Runs only on the Norgate wheat continuous contract (back-adjusted daily bars, cents per bushel; the book's test is March 1954 wheat). Swings from daily highs and lows: a Bottom is set when the high has risen 3% or more above the lowest low since the last Top, a Top when the low has fallen 3% or more below the highest high since the last Bottom (equal extremes keep the earliest day); the 3% is of the contract's price at that extreme (the back-adjusted low or high plus that day's roll offset, R4 #293 (2): Norgate's back-adjusted wheat sits far above the traded price, e.g. about 2,260c against 418c in March 1980). Buy stop 1 1/4c above the last Top, sell stop 1 1/4c below the last Bottom (swings set by the previous day's close), filled at the level or at the open if it gaps through; stop-and-reverse only, as in the book's record. Unstated - vault readings: (1) 'movements within a single day were ignored' = a swing's Top and Bottom must fall on different days (after a Top or Bottom is set, the next one is looked for from the following day; review REV-PH B1); (2) if both stops are hit on one day while flat, the one nearer the open is taken. The book's 'lines' and its Operating Plan are not described ('need not be discussed here', p.111), so they are not modelled. Order check (R4 #240): 3.3% of the 1978-2020 trades (19 of 574) meet a day on which both stops lie inside the range (each such day counted once, for the trade open after it). The March 1954 wheat record (a figure) cannot be re-run: no 1950s wheat data. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
+const BREAKAWAY_240: &str = "Lane PH (14 Nov 2026, R4 #293 (4), #240): Norgate wheat (&ZW, cents, 1978-2020) now holds the data and the rule is complete as stop-and-reverse (the book's own March 1954 test), but with 5c swings and today's wheat ranges 8.1% of the 1978-2020 trades (91 of 1,121; each day counted once, for the trade open after it; swings as wdgig_pct3: Top and Bottom on different days) meet a day on which both the buy and the sell stop lie inside the daily range, which daily bars cannot order, and no wheat minute bars exist (limit 5%). Held";
+const S238_240: &str = "Lane PH (14 Nov 2026, R4 #293 (4), #240): Norgate wheat (&ZW, cents, 1978-2020; always above $1.10, so the 1 1/8c penetration applies) now holds the data and the rule is complete as stop-and-reverse (the book's own March 1954 test), but with 2 3/8c swings 7.2% of the 1978-2020 trades (85 of 1,179; counted as for the Breakaway card) meet a day on which both stops lie inside the daily range, which daily bars cannot order, and no wheat minute bars exist (limit 5%). Held";
 const DOUBLE_GAP: &str = "Lane PH (14 Nov 2026, R4 #297 (2)): grain data is now held (Norgate wheat), but the by-product gives only the entry ('buy 1% above the highest of these two Tops', Tops within 2c, p.115-116); its exits were 'a definite Operating Plan which limited losses and protected profits' that the book does not state for it. No exit rule. Held";
 const COTTON_GAP: &str = "Needs daily cotton futures contracts (thresholds in cotton points: TOB/TOT 10 points, Thrust 15-25 points, stops 50 points, p.175).";
 const DB_RISE_GAP: &str = "Entry technique only: the book gives the double-bottom rise / double-top decline as how the 1940-41 second method \"sought to buy and sell at more favorable prices\" but does not say whether it is a stand-alone stop-and-reverse or combined with the 1% penetration signals, nor any exit (p.118-119).";
@@ -102,7 +102,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// Lane PH: the Percentage Wheat Method on Norgate wheat (cents). Swings as `swings` (1-day minimum, no fast rule), but the 3% is of
 /// the CONTRACT's price at the extreme (back-adjusted level + that day's roll offset RAW.Close - close, R4 #293 (2)): Norgate's
 /// back-adjusted wheat sits far above the traded price (about 1,900c vs 400c in 1980). The penetration is in cents.
-fn run_pct3(x: &Ctx, from: usize, to: usize, sw: f64, pen: f64) -> Vec<Trade> {
+/// The next leg's extreme is searched from the day AFTER the confirmed extreme, so a Top and a Bottom never fall on one day
+/// ("Movements within a single day were ignored", p.107; review REV-PH B1).
+fn pct3_swings(x: &Ctx, to: usize, sw: f64) -> Vec<(f64, f64)> {
     let (h, l) = (&x.h, &x.l);
     let raw = crate::futures::raw_close(x);
     let off = |i: usize| raw.and_then(|r| r.get(i)).map_or(0., |r| r - x.c[i]);
@@ -114,17 +116,22 @@ fn run_pct3(x: &Ctx, from: usize, to: usize, sw: f64, pen: f64) -> Vec<Trade> {
     let highest = |a: usize, k: usize| (a..=k).fold(a, |m, j| if h[j] > h[m] { j } else { m });
     for k in 0..=to {
         match leg {
-            1 => { if h[k] > h[ext] { ext = k; } if ok_dn(ext, k) { top = h[ext]; leg = -1; ext = lowest(ext, k); } }
-            -1 => { if l[k] < l[ext] { ext = k; } if ok_up(ext, k) { bot = l[ext]; leg = 1; ext = highest(ext, k); } }
+            1 => { if h[k] > h[ext] { ext = k; } if ok_dn(ext, k) { top = h[ext]; leg = -1; ext = lowest(ext + 1, k); } }
+            -1 => { if l[k] < l[ext] { ext = k; } if ok_up(ext, k) { bot = l[ext]; leg = 1; ext = highest(ext + 1, k); } }
             _ => {
                 if l[k] < l[lo0] { lo0 = k; }
                 if h[k] > h[hi0] { hi0 = k; }
-                if ok_up(lo0, k) && (lo0 > hi0 || !ok_dn(hi0, k)) { bot = l[lo0]; leg = 1; ext = highest(lo0, k); }
-                else if ok_dn(hi0, k) { top = h[hi0]; leg = -1; ext = lowest(hi0, k); }
+                if ok_up(lo0, k) && (lo0 > hi0 || !ok_dn(hi0, k)) { bot = l[lo0]; leg = 1; ext = highest(lo0 + 1, k); }
+                else if ok_dn(hi0, k) { top = h[hi0]; leg = -1; ext = lowest(hi0 + 1, k); }
             }
         }
         lv.push((top, bot));
     }
+    lv
+}
+
+fn run_pct3(x: &Ctx, from: usize, to: usize, sw: f64, pen: f64) -> Vec<Trade> {
+    let lv = pct3_swings(x, to, sw);
     let (mut out, mut cur) = (vec![], None::<Trade>);
     for i in from.max(1)..=to {
         let (top, bot) = lv[i - 1];
@@ -213,6 +220,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pct3_never_sets_a_top_and_a_bottom_on_one_day() {
+        // day 1 (105 / 99.5) is the Top once day 2's low 101.5 is 3.5 below it; the next Bottom is searched from day 2, so it is
+        // 101.5 (day 2), never day 1's own low 99.5 (a movement within a single day, p.107; review B1)
+        let hl = [(100., 99.), (105., 99.5), (104., 101.5), (106., 104.)];
+        let r: Vec<crate::Row> = hl.iter().enumerate().map(|(i, &(h, l))| crate::Row { ticker: "X".into(), date: format!("1990-01-{:02}", i + 2), open: l, high: h, low: l, close: l, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let lv = pct3_swings(&x, 3, 0.03);
+        assert_eq!((lv[2].0, lv[3].1), (105., 101.5));
+    }
     #[test]
     fn pct3_measures_three_percent_of_the_contract_price() {
         // back-adjusted lows/highs around 1,000 with a roll offset of -900 (contract price about 100): a 3.5-point rise is 3.5% of
