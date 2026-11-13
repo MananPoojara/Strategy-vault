@@ -14,17 +14,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_volume: false, needs_vix: false, needs_series: &[], book: "dgnl", claim };
     vec![
         d("dgnl_spi_dow_bonds", "SPI day-of-week open-to-close with a bond 5-day-high filter (A Gibbs)", "Gibbs · SPI systems", "Long",
-          Status::NotTestable("no single system (lane PF, 14 Nov 2026): the article prints a results grid of entry weekday x exit weekday (holding 1-4 days) with a 3-year or 10-year bond 5-day-high filter and does not choose one combination to trade; the SPI and SFE bond futures are now held (Norgate &YAP, &YYT, &YXT), so a chosen combination could be run"),
+          Status::Live,
           &["E|\"buying on the open of the day and selling on the close of the same day followed by the following day etc. The results are shown for holding a position from 1-4 days\" (18/08/2000 p25, 'Disproving Random Walk In The SPI')",
             "F|\"in order to take a trade on a specific day of the week 3-year bonds must have closed at a 5-day high\" (p25-26); 10-year bond variant on p26",
             "X|Exit on the close of the chosen exit day (table p25: enter Mon..Fri, exit Mon..Fri)"],
-          "The unfiltered day-of-week grid (p25) is the open-to-close day-of-week study already in the vault (rgc_dow_oc, pbwts_dow_oc, lwlts_mon_3day); only the bond-filtered version is new and it needs Australian bond futures.",
+          "[Adapted: 1 reading, R4 #297; lane PF, 14 Nov 2026; review PF2 B4] Every cell of the article's printed grid is a complete rule, so the card codes the study with options: p.day = entry weekday (1 Monday .. 5 Friday; default 3 = Wednesday, 'by far the best day'), p.hold = extra days held (0 = out at the same day's close .. 3), p.bond = filter (0 none = the first table; 3 = 3-year bonds 'must have closed at a 5-day high' = the second table, Norgate &YYT; 10 = 10-year bonds, &YXT). Long at the entry day's open, out at the close; no stop. Reading: '5-day high' = the bond's close on the previous trading day (the last close known at the open) above the highest close of its 4 bars before, on the bond's own bars, joined by exact date (no bond close = no trade). Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333; the article's tables are 1994-2000, after the cap, so unverified).",
           claim("", "Wed same day 55%, next day 56% (unfiltered); Wed 61% with the 3-yr bond filter", "", "same day to 4 days", "SPI futures March 1994 - 10/8/2000, no commission (p25-26)")),
         d("dgnl_spi_breakout", "SPI breakout: open + (low[5] - high[1]), Monday/Friday (A Gibbs)", "Gibbs · SPI systems", "Long", Status::Live,
           &["E|\"If: low[5]-high[1]>0 and DayOfWeek(date)=5 or DayOfWeek(date)=1 / Then buy next bar on stop at: (open next bar + (low[5]-high[1]))\" (25/08/2000 p8-9, 'SPI Breakouts'; the prose says '(the low 5 days ago - low one day ago)', the code is used)",
             "X|\"Exit on the first profitable open. Exit on stop loss set at $-1500.00. Exit on a signal in the opposite direction.\" (p8); \"If: MarketPosition=1 and open next bar > entryprice / Then exit next bar at market / Money Management Stop = $1500\" (p9)",
             "F|\"The general rule however is only take signals from the above system when bonds make a five day high\" (p9)"],
-          "[Adapted: 1 reading, R4 #297; lane PF, 14 Nov 2026] SPI 1989-2000, $40 commission, one contract (p9); results printed as images (unverified). The $1,500 stop is 60 SPI points ('The tick value of the SPI is set at $25 per point', p.9). Reading: the printed 'low[5]-high[1]>0 and DayOfWeek(date)=5 or DayOfWeek(date)=1' requires the setup on both days (signals on Friday and Monday bars, trades on Monday and Tuesday: 'd1=5 ... will give Mondays performance'). The bond filter ('only take signals ... when bonds make a five day high') is not applied: the article says its tested system could not include it. A buy stop at the next open + (low[5] - high[1]); exit at the first later open above the entry; 'exit on a signal in the opposite direction' has no coded short side. Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333); 0 of 64 trades there fill the entry stop and the money stop on one bar (#240).", None),
+          "[Adapted: 1 reading, R4 #297; lane PF, 14 Nov 2026] SPI 1989-2000, $40 commission, one contract (p9); results printed as images (unverified). The $1,500 stop is 60 SPI points ('The tick value of the SPI is set at $25 per point', p.9). Reading: the printed 'low[5]-high[1]>0 and DayOfWeek(date)=5 or DayOfWeek(date)=1' requires the setup on both days (signals on Friday and Monday bars, trades on Monday and Tuesday: 'd1=5 ... will give Mondays performance'). The bond filter ('only take signals ... when bonds make a five day high') is not in the default: the article's tested system could not include it; p.bond = 3 / 10 applies it as a labelled option (3-year / 10-year SFE bonds, Norgate &YYT / &YXT: the bond's close on the signal bar above its 4 closes before; review PF2 M29). A buy stop at the next open + (low[5] - high[1]); exit at the first later open above the entry; 'exit on a signal in the opposite direction' has no coded short side. Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333); 0 of 64 trades there fill the entry stop and the money stop on one bar (#240).", None),
         d("dgnl_spi_12_10", "SPI 12-day high / 10-day low breakout (A Gibbs)", "Gibbs · SPI systems", "Long/Short", Status::Live,
           &["E|\"buy the next day on open if the SPI makes a 12-day high and to sell the next day on open if a 10-day low in the SPI is made\" (01/09/2000 p5-6, 'Testing SPI Breakouts')",
             "X|\"A stop loss of $1500 will be used and commission costs will be set to $40\" (p5)",
@@ -38,7 +38,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("dgnl_spi_seasonal_q1", "SPI seasonal dates January-March (A Gibbs)", "Gibbs · SPI systems", "Long", Status::Live,
           &["E|\"If: (DayofMonth(date)=1 and month(date)=2 or month(date)=3) or (DayOfMonth(date)=9 and month(date)=1 or month(date)=3) or (dayofmonth(date)=13 and month(date)=1 or month(date)=3) or (dayofmonth(date)=22 and month(date=3) or (dayofmonth(date)=24 and month(date)=1 or month(date)=2) or (dayofmonth(date)=25 and month(date)=1) or (dayofmonth(date)=30 and month(date)=3) or (dayofmonth(date)=31 and month(date)=3) then: Buy on Stop: open next bar\" (29/09/2000 p13, 'Seasonality And The SPI')",
             "X|\"MarketPosition=1 and open next bar > entryprice then: Sell next bar at market / Stop=$1500\" (p14); dates within 2 days of a previous signal are dropped (25 Jan, 30 Mar)"],
-          "[Adapted: 1 reading, R4 #297; lane PF, 14 Nov 2026] The dates are fitted on the SPI's own history; Sept/Oct 2000 dates are listed on 13/10/2000 p19-20 (not part of this card). Dates = the 'y' cells of the article's own table (p.13-14), less the two it drops ('within 2 days of a previous signal ... exclude the 25th Jan and the 30th March'): 9, 13, 24 Jan; 1, 24 Feb; 1, 9, 13, 22, 31 Mar (the printed and/or formula is read through that table). The dated bar's order 'Buy on Stop: open next bar' fills at the next open. Reading: the $1,500 stop = 60 SPI points (the newsletter's $25 per point, 25/08/2000 p.8). Exit at the first later open above the entry. Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333). The report is an image: unverified.", None),
+          "[Literal rules; lane PF, 14 Nov 2026] The dates are fitted on the SPI's own history; Sept/Oct 2000 dates are listed on 13/10/2000 p19-20 (not part of this card). Dates = the 'y' cells of the article's own table (p.13-14), less the two it drops ('within 2 days of a previous signal ... exclude the 25th Jan and the 30th March'): 9, 13, 24 Jan; 1, 24 Feb; 1, 9, 13, 22, 31 Mar (the printed and/or formula is read through that table). The dated bar's order 'Buy on Stop: open next bar' fills at the next open. The $1,500 stop = 60 SPI points: this article sets 'the Universe ... of the price data to 25 value per point' (p.13; review PF2 M28: 0 unstated details). Exit at the first later open above the entry. Runs only on Norgate continuous SPI (&YAP, back-adjusted), published 1983-02-16..1991-12-31 (R4 #333). The report is an image: unverified.", None),
         d("dgnl_spi_vb70_month", "SPI volatility breakout open + 70% of yesterday's range, May/Jun/Jul/Dec (A Gibbs)", "Gibbs · SPI systems", "Long", Status::NotTestable("held under R4 #240 (lane PF, 14 Nov 2026): on Norgate continuous SPI (&YAP) over the publishable 1983-02-16..1991-12-31 window (R4 #333), 16 of its 211 trades (7.6%) fill the open + 70% buy stop and reach the $400 (16-point) money stop inside the same daily bar with the open through neither, which daily bars cannot order, and no SPI minute bars exist (limit 5%)"),
           &["E|\"(market open + (yesterdays high-yesterdays low)*70%)\" buy stop; \"If: Month(date)=1 (January) then buy on open next bar + ((h-l)*.7)\" (20/10/2000 p16-17, 'Using Seasonality To Filter A Trading System')",
             "F|\"the best months to trade this system are May, June, July and December these are the only month in which we will trade this system\" (p17)",
@@ -102,7 +102,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
-        "dgnl_spi_dom" | "dgnl_spi_seasonal_q1" | "dgnl_spi_breakout" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }]),
+        "dgnl_spi_dom" | "dgnl_spi_seasonal_q1" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. }]),
+        "dgnl_spi_breakout" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. },
+            ParamDef { key: "bond", label: "Bond 5-day-high filter: 0 none (tested), 3 = 3-year, 10 = 10-year", def: 0., min: 0., max: 10., step: 1. }]),
+        "dgnl_spi_dow_bonds" => Some(vec![ParamDef { key: "day", label: "Entry weekday (1 Monday .. 5 Friday)", def: 3., min: 1., max: 5., step: 1. },
+            ParamDef { key: "hold", label: "Extra days held (0 = out at the same close)", def: 0., min: 0., max: 3., step: 1. },
+            ParamDef { key: "bond", label: "Bond 5-day-high filter: 0 none, 3 = 3-year, 10 = 10-year", def: 0., min: 0., max: 10., step: 1. }]),
         "dgnl_spi_12_10" => Some(vec![ParamDef { key: "stop", label: "Money stop in SPI points ($1,500 at $25)", def: 60., min: 10., max: 200., step: 5. },
             ParamDef { key: "hi", label: "Buy on an N-day high", def: 12., min: 2., max: 60., step: 1. }, ParamDef { key: "lo", label: "Sell on an N-day low", def: 10., min: 2., max: 60., step: 1. }]),
         _ => None,
@@ -115,10 +120,38 @@ const DOM_SHORT: &[(u32, u32)] = &[(5, 8), (6, 8), (8, 8), (9, 8), (10, 8), (12,
 /// Lane PF: Gibbs' January-March dates (29/09/2000 p.13-14, the table's 'y' cells less 25 Jan and 30 Mar), long only.
 const Q1_LONG: &[(u32, u32)] = &[(1, 9), (1, 13), (1, 24), (2, 1), (2, 24), (3, 1), (3, 9), (3, 13), (3, 22), (3, 31)];
 
+/// Lane PF: true on bar i when the SFE bond (p.bond 3 / 10) closed above the highest close of its 4 bars before, on its own bars,
+/// joined by exact date (no bond close that day = false); all true when p.bond = 0.
+fn bond_high(x: &Ctx, p: &Params) -> Vec<bool> {
+    let n = x.r.len();
+    let sym = match p.get("bond").copied().unwrap_or(0.).round() as i64 { 3 => "&YYT", 10 => "&YXT", _ => return vec![true; n] };
+    let Some(rows) = crate::futures::rows(sym) else { return vec![false; n] };
+    let s = crate::second::align(sym, x.r, rows);
+    let c = s.exact(crate::second::Field::C);
+    let hi4 = s.own(|r| (0..r.len()).map(|k| if k >= 4 { r[k - 4..k].iter().map(|q| q.close).fold(f64::MIN, f64::max) } else { f64::NAN }).collect());
+    (0..n).map(|i| c[i] > hi4[i]).collect()
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "dgnl_spi_dow_bonds" {
+        if from > to || to >= x.r.len() { return None; }
+        let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+        let (day, hold) = ((g("day", 3.).round() as i64 - 1).clamp(0, 4), g("hold", 0.).round().clamp(0., 3.) as usize);
+        let ok = bond_high(x, p);
+        let mut out = vec![];
+        let mut k = from.max(1);
+        while k + hold <= to {
+            if super::jbcdt2::weekday(&x.r[k].date) == day && ok[k - 1] {
+                out.push(super::rbtie::mk(1., k, x.o[k], "open", k + hold, x.c[k + hold], "close", false, k - 1));
+                k += hold + 1;
+            } else { k += 1; }
+        }
+        return Some(out);
+    }
     if !matches!(id, "dgnl_spi_dom" | "dgnl_spi_12_10" | "dgnl_spi_seasonal_q1" | "dgnl_spi_breakout") || from > to || to >= x.r.len() { return None; }
     let dated = id != "dgnl_spi_12_10"; // the dated rules and the breakout exit at the first profitable open
     let ek = if id == "dgnl_spi_breakout" { "stop" } else { "open" };
+    let bonds = bond_high(x, p);
     let stop_pts = p.get("stop").copied().unwrap_or(60.);
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let md = |i: usize| -> (u32, u32) { let d = &x.r[i].date; (d[5..7].parse().unwrap_or(0), d[8..10].parse().unwrap_or(0)) };
@@ -126,9 +159,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let want = |i: usize| -> i32 {
         if id == "dgnl_spi_dom" { return if DOM_LONG.contains(&md(i)) { 1 } else if DOM_SHORT.contains(&md(i)) { -1 } else { 0 }; }
         if id == "dgnl_spi_seasonal_q1" { return Q1_LONG.contains(&md(i)) as i32; }
-        if id == "dgnl_spi_breakout" { // Friday or Monday bar with low[5] - high[1] > 0
+        if id == "dgnl_spi_breakout" { // Friday or Monday bar with low[5] - high[1] > 0 (p.bond: and the bond at a 5-day high that day)
             let wd = super::jbcdt2::weekday(&x.r[i].date);
-            return (i >= 5 && (wd == 4 || wd == 0) && l[i - 5] - h[i - 1] > 0.) as i32;
+            return (i >= 5 && (wd == 4 || wd == 0) && l[i - 5] - h[i - 1] > 0. && bonds[i]) as i32;
         }
         // dgnl_spi_12_10: today's high is the N-day high / today's low the N-day low; both at once = no signal
         let up = i + 1 >= nh && h[i] >= h[i + 1 - nh..=i].iter().cloned().fold(f64::MIN, f64::max);
