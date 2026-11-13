@@ -40,6 +40,21 @@ pub const MARKETS: &[Market] = &[
     // lane F3 (R4 #294 (1)): Harris's COMEX silver patterns
     Market { sym: "&SI", name: "Silver", tick: 0.5, usd: &[("1978-04-27", 50.)],
         source: "COMEX silver futures: 5,000 troy ounces per contract; Norgate quotes US cents per ounce, so 1.00 (one cent) = US$50; tick 0.5 cent = US$25 per the current CME contract specification (not used by the Harris patterns)" },
+    // lane F1B (R4 #293 (3)): the rest of Chande's Table 5.1 / 5.15 markets (Beyond Technical Analysis ch.5)
+    Market { sym: "&KC", name: "Coffee", tick: 0.05, usd: &[("1978-12-14", 375.)],
+        source: "ICE (CSCE) Coffee \"C\" futures: 37,500 lb per contract, quoted in US cents per lb (1.00 cent = US$375; tick 0.05 cent = US$18.75)" },
+    Market { sym: "&CT", name: "Cotton", tick: 0.01, usd: &[("1978-09-19", 500.)],
+        source: "ICE (NYCE) Cotton No. 2 futures: 50,000 lb per contract, quoted in US cents per lb (1.00 cent = US$500; tick 0.01 cent = US$5)" },
+    Market { sym: "&GE", name: "Eurodollar", tick: 0.01, usd: &[("1982-02-01", 2_500.)],
+        source: "CME three-month Eurodollar futures: US$1,000,000 face value, quoted as an IMM index (100 - rate); 1.00 = US$2,500 (0.01 = one basis point = US$25)" },
+    Market { sym: "&ZW", name: "Wheat", tick: 0.25, usd: &[("1978-01-05", 50.)],
+        source: "CBOT soft red winter wheat futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 cent = US$50; tick 1/4 cent = US$12.50)" },
+    Market { sym: "&HO", name: "Heating Oil", tick: 0.0001, usd: &[("1978-11-15", 42_000.)],
+        source: "NYMEX No. 2 heating oil (now NY Harbor ULSD) futures: 42,000 US gallons per contract, quoted in US$ per gallon (1.00 = US$42,000; tick 0.0001 = US$4.20)" },
+    Market { sym: "&HG", name: "Copper", tick: 0.05, usd: &[("1978-04-27", 250.)],
+        source: "COMEX high grade copper futures: 25,000 lb per contract, quoted in US cents per lb (1.00 cent = US$250; tick 0.05 cent = US$12.50)" },
+    Market { sym: "&ZS", name: "Soybeans", tick: 0.25, usd: &[("1977-11-21", 50.)],
+        source: "CBOT soybean futures: 5,000 bushels per contract, quoted in US cents per bushel (1.00 cent = US$50; tick 1/4 cent = US$12.50)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -210,13 +225,37 @@ const MHS_CL: &str = "Michael Harris, Short-Term Trading with Price Patterns (Tr
 const MHS_SF: &str = "Michael Harris, Short-Term Trading with Price Patterns (Traders Press 1998/2000) p.172-178 (IMM Swiss franc patterns): the printed pattern logic, entry and fixed profit target / protective stop in franc points (1 point = 0.01 US$ per franc = $1,250), good-til-cancelled (p.63), one position per pattern; run on the Norgate continuous Swiss franc contract (R4 #293 (1), #294 (1)), lane F3.";
 const MHS_SI: &str = "Michael Harris, Short-Term Trading with Price Patterns (Traders Press 1998/2000) p.188-190 (COMEX silver patterns): the printed pattern logic, entry and fixed profit target / protective stop in silver points (1 point = 1 cent an ounce = $50), good-til-cancelled (p.63), one position per pattern; run on the Norgate continuous silver contract (R4 #293 (1), #294 (1)), lane F3.";
 pub const LABEL: &str = "Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).find(|c| c.0 == id) }
+/// Lane F1B (R4 #293 (1)): cards whose source tests several named markets; one row per market (the card runs on each).
+const CHANDE5: &str = "Chande, Beyond Technical Analysis (Wiley 1997) ch.5 p.148-173, Tables 5.1-5.13: tested on British pound, coffee, cotton, crude oil, Deutsche mark, Eurodollar, gold, Japanese yen, U.S. bond and wheat futures (1/75-7/95 or the market's first data) with a $1,500 initial stop and $100 slippage and commission; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series), the $1,500 at the contract's $ per point (R4 #293 (1), (3)), lane F1B.";
+const CHANDE_LB: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.173-177, Table 5.15 (the Long Bomb TradeStation code, 1/1/82-7/10/95): tested on British pound, coffee, cotton, Deutsche mark, Eurodollar, heating oil, Japanese yen, soybeans, Swiss franc and U.S. bond futures with a $1,500 stop; run on the Norgate continuous contract of each market Norgate carries (no Deutsche mark series) except coffee, heating oil and T-bond (more than 5% of trades same-day order-dependent, #240), one contract per signal (the book's NumC sizing is not modelled), \"1 point\" = one tick of the contract (#57), lane F1B.";
+const CHANDE_IM: &str = "Chande, Beyond Technical Analysis (Wiley 1997) p.126-129, Tables 4.15 and 4.17: the gold-bond intermarket systems (gold, and soybeans or copper, signal the U.S. bond futures trade; continuous contracts 8/21/77-7/10/95, $5,000 initial stop, $100 slippage and commission); run on the Norgate T-bond continuous contract with the Norgate gold / soybean / copper contracts as Data2 joined by date (R4 #293 (1)), the $5,000 = 5.00 bond points, lane F1B.";
+const LEB_25: &str = "LeBeau & Tan, 25 x 25 Bond System v2.0 manual (System Traders Club 1998): +DI(14) > -DI(14), ADX(14) > 20, RSI(4) < 50, buy stop 18/32 above the close, $2,500 money stop (2.5 points), 25-day-low stop that becomes the 2-day low after 25 days or once open profit exceeds 5 x the 45-day ATR (the module reproduces the manual's own Us.txt trade list exactly); run on the Norgate T-bond continuous contract (R4 #293 (1)); Norgate does not say which session its T-bond series is (the manual used day-session bonds), lane F1B.";
+const LEB_CB: &str = "LeBeau & Elden, Crossbow Swiss Franc System v1.0 manual (System Traders Club 1999): ADX/ATR setups, buy stop at the 2-day high / sell stop at the prior low, ATR trailing stops, $2,500 money stop, stop and reverse (the module reproduces the manual's own SF.LNG trade list, 67/67); run on the Norgate Swiss franc continuous contract with the $2,500 at $125,000 per 1.00 (= 0.02) and the contract tick 0.0001 (R4 #293 (1), (3)), lane F1B.";
+const CARDS_F1B: &[(&str, &str, &str)] = &[
+    ("lebtc_25x25", "&ZB", LEB_25), ("lebtc_crossbow", "&6S", LEB_CB),
+    ("ch_bta2_goldbond_ma", "&ZB", CHANDE_IM), ("ch_bta2_goldbond_adx", "&ZB", CHANDE_IM), ("ch_bta2_intermarket_trio", "&ZB", CHANDE_IM),
+    ("ch_bta2_cbo_trail5", "&6B", CHANDE5), ("ch_bta2_cbo_trail5", "&KC", CHANDE5), ("ch_bta2_cbo_trail5", "&CT", CHANDE5), ("ch_bta2_cbo_trail5", "&CL", CHANDE5), ("ch_bta2_cbo_trail5", "&GE", CHANDE5), ("ch_bta2_cbo_trail5", "&GC", CHANDE5), ("ch_bta2_cbo_trail5", "&6J", CHANDE5), ("ch_bta2_cbo_trail5", "&ZB", CHANDE5), ("ch_bta2_cbo_trail5", "&ZW", CHANDE5),
+    ("ch_bta2_cbo_volexit", "&6B", CHANDE5), ("ch_bta2_cbo_volexit", "&KC", CHANDE5), ("ch_bta2_cbo_volexit", "&CT", CHANDE5), ("ch_bta2_cbo_volexit", "&CL", CHANDE5), ("ch_bta2_cbo_volexit", "&GE", CHANDE5), ("ch_bta2_cbo_volexit", "&GC", CHANDE5), ("ch_bta2_cbo_volexit", "&6J", CHANDE5), ("ch_bta2_cbo_volexit", "&ZB", CHANDE5), ("ch_bta2_cbo_volexit", "&ZW", CHANDE5),
+    ("ch_bta2_cbo_inside", "&6B", CHANDE5), ("ch_bta2_cbo_inside", "&KC", CHANDE5), ("ch_bta2_cbo_inside", "&CT", CHANDE5), ("ch_bta2_cbo_inside", "&CL", CHANDE5), ("ch_bta2_cbo_inside", "&GE", CHANDE5), ("ch_bta2_cbo_inside", "&GC", CHANDE5), ("ch_bta2_cbo_inside", "&6J", CHANDE5), ("ch_bta2_cbo_inside", "&ZB", CHANDE5), ("ch_bta2_cbo_inside", "&ZW", CHANDE5),
+    ("ch_bta2_cbo_ref", "&6B", CHANDE5), ("ch_bta2_cbo_ref", "&KC", CHANDE5), ("ch_bta2_cbo_ref", "&CT", CHANDE5), ("ch_bta2_cbo_ref", "&CL", CHANDE5), ("ch_bta2_cbo_ref", "&GE", CHANDE5), ("ch_bta2_cbo_ref", "&GC", CHANDE5), ("ch_bta2_cbo_ref", "&6J", CHANDE5), ("ch_bta2_cbo_ref", "&ZB", CHANDE5), ("ch_bta2_cbo_ref", "&ZW", CHANDE5),
+    ("ch_bta2_adx30", "&6B", CHANDE5), ("ch_bta2_adx30", "&KC", CHANDE5), ("ch_bta2_adx30", "&CT", CHANDE5), ("ch_bta2_adx30", "&CL", CHANDE5), ("ch_bta2_adx30", "&GE", CHANDE5), ("ch_bta2_adx30", "&GC", CHANDE5), ("ch_bta2_adx30", "&6J", CHANDE5), ("ch_bta2_adx30", "&ZB", CHANDE5), ("ch_bta2_adx30", "&ZW", CHANDE5),
+    ("ch_bta2_adx_rising", "&6B", CHANDE5), ("ch_bta2_adx_rising", "&KC", CHANDE5), ("ch_bta2_adx_rising", "&CT", CHANDE5), ("ch_bta2_adx_rising", "&CL", CHANDE5), ("ch_bta2_adx_rising", "&GE", CHANDE5), ("ch_bta2_adx_rising", "&GC", CHANDE5), ("ch_bta2_adx_rising", "&6J", CHANDE5), ("ch_bta2_adx_rising", "&ZB", CHANDE5), ("ch_bta2_adx_rising", "&ZW", CHANDE5),
+    ("ch_bta2_pullback", "&6B", CHANDE5), ("ch_bta2_pullback", "&KC", CHANDE5), ("ch_bta2_pullback", "&CT", CHANDE5), ("ch_bta2_pullback", "&CL", CHANDE5), ("ch_bta2_pullback", "&GE", CHANDE5), ("ch_bta2_pullback", "&GC", CHANDE5), ("ch_bta2_pullback", "&6J", CHANDE5), ("ch_bta2_pullback", "&ZB", CHANDE5), ("ch_bta2_pullback", "&ZW", CHANDE5),
+    // R4 #240/#308: coffee 15.7%, heating oil 18.6% and T-bond 5.2% of trades are same-day order-dependent (no futures minutes): held there
+    ("ch_bta2_long_bomb", "&6B", CHANDE_LB), ("ch_bta2_long_bomb", "&CT", CHANDE_LB), ("ch_bta2_long_bomb", "&GE", CHANDE_LB), ("ch_bta2_long_bomb", "&6J", CHANDE_LB), ("ch_bta2_long_bomb", "&ZS", CHANDE_LB), ("ch_bta2_long_bomb", "&6S", CHANDE_LB),
+];
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_F1B) }
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
+/// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
+pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
-    let c = card(id)?;
-    let m = MARKETS.iter().find(|m| m.sym == c.1)?;
-    (of_ticker(t).map(|m| m.sym) != Some(c.1)).then(|| format!("Not published on {t}: the source trades {} futures; this card runs only on {} ({LABEL})", m.name, ticker(m)))
+    card(id)?;
+    let ms: Vec<&Market> = card_markets(id).into_iter().filter_map(|s| MARKETS.iter().find(|m| m.sym == s)).collect();
+    let on = of_ticker(t).is_some_and(|m| ms.iter().any(|h| h.sym == m.sym));
+    let names = |f: fn(&Market) -> String| ms.iter().map(|m| f(m)).collect::<Vec<_>>().join(", ");
+    (!on).then(|| format!("Not published on {t}: the source trades {} futures; this card runs only on {} ({LABEL})", names(|m| m.name.to_string()), names(ticker)))
 }
 
 #[cfg(test)]
