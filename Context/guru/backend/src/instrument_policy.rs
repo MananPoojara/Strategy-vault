@@ -989,6 +989,7 @@ const ROTATION_BASIS:&str="Rotation across several actual US ETFs (books::rotati
 /// Lane K56 (5 Nov 2026, EP5): basket ranking rules rank the stocks of a vault basket and hold them on one account (books::rotation).
 const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the US stocks of a vault basket on the SPY calendar (default: every stock in the vault that was ever in the index, us_sp500_past / us_dow30_past, membership dates not known, decision #239; option: today's members; atm04_mtpg: the column's 18 named stocks) and each trade is one of those stocks. SPY is the calendar and the benchmark, never a stand-in for the stocks. India is withheld: the NSE basket is the 2026 member list, and a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). A ranking on these baskets instead of the author's universe is a declared application.";
 fn base_policy(def:&StrategyDef)->Policy {
+    if let Some(basis)=crate::futures::card_basis(def) {return requirement("futures",&["futures"],basis);} // lane F1 (R4 #293): the named continuous contract
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
     if options_p2(def) {let mut p=requirement("options_underlying", &["index","etf"], OPTIONS_P2_BASIS);p.market_adaptation=true;return p;} // options phase 2
@@ -1269,6 +1270,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
     match ticker {
         "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"|"NIFTYMIDCAPSELECT"|"NIFTY MIDCAP SELECT"|"SPX"|"NDX"|"DJI" => "index",
         t if US_ETFS.contains(&t) => "etf",
+        t if crate::futures::is_futures(t) => "futures", // lane F1 (R4 #293): Norgate continuous futures
         _ => "unknown",
     }
 }
