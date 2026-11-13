@@ -46,18 +46,13 @@ pub const BOOK_WINDOW: &[(&str, &str, &str)] = &[("mhs_ua830418_1", "1983-02-15"
 /// equity and buy-and-hold cover only it: a BOOK_WINDOW id its book window; an inter-market id from the first bar of its
 /// signal market (before it the pattern cannot form, e.g. &SP from 1982-04-21 for the S&P -> T-bond cards).
 /// Lane PF (R4 #328, review PF2 B1): published period of the &SP opening-gap cards (first and last date, inclusive).
-<<<<<<< HEAD
 /// R4 #330 (audit authors/rev/SP-OPEN.md): the live &SP cards that enter at, or measure from, the open get the same cap.
 pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21", "1995-07-31"), ("scbrower_short", "1982-04-21", "1995-07-31"),
-    ("stad10_mwt", "1982-04-21", "1995-07-31"), ("rgc_im_sp_tbond", "1982-04-21", "1995-07-31"), ("mhs_us881011_2", "1983-02-15", "1995-07-31")];
-pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open this card's entries, fills or stops read (R4 #328, #330)";
-=======
-pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21", "1995-07-31"), ("scbrower_short", "1982-04-21", "1995-07-31"),
+    ("stad10_mwt", "1982-04-21", "1995-07-31"), ("rgc_im_sp_tbond", "1982-04-21", "1995-07-31"), ("mhs_us881011_2", "1983-02-15", "1995-07-31"),
     // lane F1D (R4 #330): Larry Williams S&P cards that enter or gap-fill at the &SP open
     ("lwlts_talon_bondfilter", "1982-04-21", "1995-07-31"), ("lwlts_gsv_sp", "1982-04-21", "1995-07-31"), ("lwlts_gsv_sp_monday", "1982-04-21", "1995-07-31"),
     ("lwlts_month_day1_sp_bonds", "1982-04-21", "1995-07-31"), ("lwlts_bonds_channel_bstop", "1982-04-21", "1995-07-31"), ("lwlts_bonds_channel_sstop", "1982-04-21", "1995-07-31")];
-pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open the opening-gap patterns read (R4 #328)";
->>>>>>> 20fbd992
+pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open this card's entries, fills or stops read (R4 #328, #330)";
 pub fn window(id: &str) -> Option<(String, String, &'static str)> {
     let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
         "outside the book's test window more than 5% of its trades reach the target and the stop on one day, which daily bars cannot order (R4 #240, #294 (1))"));

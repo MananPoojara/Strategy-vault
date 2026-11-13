@@ -426,11 +426,7 @@ const SWRL: &str = "John Sweeney, 'Reversing Your Losses', Technical Analysis of
 const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-<<<<<<< HEAD
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG) }
-=======
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_F1D) }
->>>>>>> 20fbd992
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
