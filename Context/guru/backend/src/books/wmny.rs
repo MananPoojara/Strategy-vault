@@ -8,7 +8,8 @@ use Status::*;
 
 pub const BOOK: &str = "wmny";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m"];
+pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m",
+    "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -92,14 +93,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Enter Long: ratio>opt4 AND signal>diff; Enter Short: ratio<opt5 AND signal<diff",
             "X|Close Long: ratio<opt6 AND signal<diff; Close Short: ratio>opt7 AND signal<diff (as printed)",
             "F|\"opt1 through opt 7 were 7, 16, 2, 0.4, 1, 0.3, and 0.6\"; \"a one-day delay on entry but exits on the same day as the day of the close signal\""],
-          "Series: NASDAQ_NEW_HIGHS / NASDAQ_NEW_LOWS = daily count of Nasdaq issues at 52-week highs / lows (eSignal x.nasd-h / x.nasd-l). Not in the vault: data gap. MetaStock EMA seeded with the first value [B]. An opposite entry while in a trade reverses at the next open.",
+          "Series: NASDAQ_NEW_HIGHS / NASDAQ_NEW_LOWS = daily count of Nasdaq issues at 52-week highs / lows (the article used eSignal x.nasd-h / x.nasd-l; the vault reads Norgate #NASHI / #NASLO, 2005-10-27 to 2020-09-04, lane F3, R4 #294 (2)). MetaStock EMA seeded with the first day of the series [B]. An opposite entry while in a trade reverses at the next open. Article test: QQQ; runs on other US indices, ETFs and stocks are a declared application.",
           c("n/a", "n/a", "", "", "QQQ ~mid-1999-2002: $1,000 -> +$20,000 (50% margin)")),
         d("wmny_nhnl_cci", "NH/NL ratio + CCI(6) system (Peterson, B)", "WM2002 p.71-81 · Trading Systems Using Multiple Indicators", "Long/Short", Live, false, &["NASDAQ_NEW_HIGHS", "NASDAQ_NEW_LOWS"],
           &["E|Long: (nhnlratio>.4 AND Alert(CCI(opt1)<opt5,opt4)) OR (signal>diff AND Alert(CCI(opt1)<opt5,opt4)); diff = Mov(ratio,7,E)-Mov(ratio,16,E), signal = Mov(diff,2,E)",
             "X|Close long: nhnlratio<.6 AND signal<diff AND CCI(opt1)>opt8",
             "E|Enter short: Alert(CCI(opt2)>opt7,opt6)", "X|Close short: nhnlratio>.6 AND signal>diff AND CCI(opt2)<opt9",
             "F|\"opt1=6, opt2=6, opt4=9, opt5=-140, opt6=4, opt7=30, opt8=180, and opt9=-130\"; \"Entries are at the open of the day following the signal, while positions are closed on the same day.\""],
-          "Same series as wmny_nhnl_ratio (data gap). CCI = MetaStock CCI (typical price, mean deviation). Long entry has priority when both entries fire [B].",
+          "Same series as wmny_nhnl_ratio (Norgate #NASHI / #NASLO, 2005-10-27 to 2020-09-04, lane F3). CCI = MetaStock CCI (typical price, mean deviation). Long entry has priority when both entries fire [B].",
           c("161", "65.2% (105 W / 56 L)", "avg win $1,755.16 / avg loss $500.14", "", "QQQ ~1999-2002: $1,000 -> $160,000 (50% margin); max consecutive W 14 / L 4")),
         d("wmny_pct_nh", "% new highs: 10-day SMA of NH/(NH+NL) crosses 30 up / 70 down (Hurley, Appel)", "WM2003 p.147-156 · When The Market Speaks, It Pays To Listen", "Long", Live, false, &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"],
           &["F|\"% new highs: A 10-day simple moving average of new 52-week highs divided by the total of new 52-week highs and new 52-week lows (NH / (NH+NL)).\"",
@@ -353,9 +354,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ratio: Vec<f64> = (0..n).map(|i| nh[i] / (nh[i] + nl[i])).collect();
             let a = id == "wmny_nhnl_ratio";
             let (e1, e2, e3) = if a { (u("opt1"), u("opt2"), u("opt3")) } else { (7, 16, 2) };
-            let (f1, f2) = (xavg(&ratio, e1), xavg(&ratio, e2));
+            // lane F3 (R4 #294 (2)): the Norgate Nasdaq new highs/lows start 2005-10-27, so the MetaStock EMAs are seeded on the
+            // first day of the series' last unbroken stretch that reaches `from` (an EMA seeded on a NaN would stay NaN)
+            // lead review: seeded after the last gap at or before `from`, so one missing day earlier does not end the series
+            let from_first = |v: &[f64], k: usize| -> Vec<f64> {
+                let s = v[..=from.min(v.len().saturating_sub(1))].iter().rposition(|y| !y.is_finite()).map_or(0, |g| g + 1).min(v.len());
+                let mut out = vec![f64::NAN; s]; out.extend(xavg(&v[s..], k)); out
+            };
+            let (f1, f2) = (from_first(&ratio, e1), from_first(&ratio, e2));
             let diff: Vec<f64> = (0..n).map(|i| f1[i] - f2[i]).collect();
-            let sig = xavg(&diff, e3);
+            let sig = from_first(&diff, e3);
             if a {
                 let (o4, o5, o6, o7) = (g("opt4"), g("opt5"), g("opt6"), g("opt7"));
                 open_in_close_out(x, from, to, |i| if ratio[i] > o4 && sig[i] > diff[i] { 1 } else if ratio[i] < o5 && sig[i] < diff[i] { -1 } else { 0 },

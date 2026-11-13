@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod jobs;
 mod connors;
 mod readiness;
@@ -327,8 +328,10 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
 /// Shared ordinary percentage account finalization, also exercised with frozen
 /// event fixtures. Source-account and fixed-unit report models remain separate.
 fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f64) -> Result<Run,String> {
+    // lane F1 (R4 #293 (2)): on a futures context each trade is priced in the contract held at entry (unadjusted)
+    let (trades,futures_close)=if futures::ctx_market(ctx).is_some() {let (t,c)=futures::raw_basis(ctx,trades)?;(t,Some(c))} else {(trades,None)};
     trade_validation::check_structure(&trades,from,to)?;
-    let mut equity = equity_curve(&ctx.c, &trades, from, to, cost);
+    let mut equity = equity_curve(futures_close.as_deref().unwrap_or(&ctx.c), &trades, from, to, cost);
     if equity.iter().any(|v|!v.is_finite()) {return Err("calculation_unavailable: Unsupported nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
     // Ruin (user request 2026-10-24): the account is wiped out on the first day equity reaches 0. The run stops at the
     // end of the trade that did it: later trades are dropped, equity stays 0, nothing is borrowed or refunded.
@@ -338,7 +341,7 @@ fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f
         trades.truncate(n+1);to=trades[n].exit_i;equity.truncate(to-from+1);
         trade_validation::check(&trades[..n],from,to,cost)?;
     } else {trade_validation::check(&trades,from,to,cost)?;}
-    let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
+    let bh = futures::buy_hold(ctx,from,to).unwrap_or_else(|| (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect());
     Ok(Run { trades, from, to, equity, bh,source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None })
 }
 
@@ -560,7 +563,7 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
         let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
         stats(ctx,&zero,0.)
     } else if costs.side_rate()==0. {s.clone()} else {
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(&ctx.c,&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(futures::marks(ctx,&run.trades).as_deref().unwrap_or(&ctx.c),&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None}; // lane F3: futures marks
         stats(ctx,&zero,0.)
     };
     for (key,source) in [("gross_total_return","total_return"),("gross_avg_trade","avg_trade"),("gross_win_rate","win_rate"),("gross_sharpe","sharpe"),("gross_max_dd","max_dd")] {s.insert(key,gross[source]);}
@@ -1608,7 +1611,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
         o.push_str("]}");
     }
-    let gross_equity=if let Some(a)=&run.option_account {a.gross[..run.equity.len()].to_vec()} else {run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
+    let gross_equity=if let Some(a)=&run.option_account {a.gross[..run.equity.len()].to_vec()} else {run.source_account.as_ref().map_or_else(||equity_curve(futures::marks(ctx,&run.trades).as_deref().unwrap_or(&ctx.c),&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
     let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
     if let Some(a)=&run.option_account {
@@ -2175,7 +2178,9 @@ fn main() {
         (Some(a), Some(b)) => println!("Volatility source {}: {} daily bars {} → {} ({:.1?}); market admission checks preserve the actual source identity",a.ticker, vix.len(), a.date, b.date, t0.elapsed()),
         _ => eprintln!("warning: no consistent volatility-index data in {vix_dir}; VIX strategies will be blocked"),
     }
-    let data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
+    let mut data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
+    // lane F1 (R4 #293): the US engine also serves Norgate continuous futures from futures/norgate-20200908 next to its price file
+    let futures_raw = if data.contains_key("SPX") { futures::load(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908"), &mut data) } else { BTreeMap::new() };
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
@@ -2186,6 +2191,9 @@ fn main() {
     if data.contains_key("NIFTY 50") {
         for (k, v) in load_extra(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/nse-fo-bhavcopy-20261113").to_string_lossy()) { extra.entry(k).or_insert(v); }
     }
+    extra.extend(futures_raw); // lane F1: the unadjusted futures series (RAW.*), per futures ticker
+    // lane F3 (R4 #294 (2)): Norgate US indices / Nasdaq breadth next to the US price file; an extra_data file of the same name wins
+    if data.contains_key("SPX") { for (k, v) in futures::load_indices(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908")) { extra.entry(k).or_insert(v); } }
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
     if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}

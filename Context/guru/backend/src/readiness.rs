@@ -89,6 +89,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
         ends.push(((0..=to).rev().find(|&i|ctx.lf[i].is_finite()),format!("the Liquidity Filter inputs (close x volume of {ticker} and its benchmark)")));
     }
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
+    if let Some((_,last,_))=books::mhstp::window(def.id) {ends.push((upto(&last),"the published window (Harris book test window, R4 #294 (1))".into()));} // lane F3
     // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
     if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}
     let Some((end,what))=ends.into_iter().filter_map(|(e,w)|Some((e?,w))).filter(|(e,_)|*e<to).min_by_key(|(e,_)|*e) else {return (to,None)};
@@ -491,7 +492,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if from >= ctx.r.len() || to >= ctx.r.len() || from > to || (from==to && !((def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id)) || crate::instrument_policy::reviewed_dema_index(def))) {
         return issue("needs_data", "No usable trading range is covered by the required data. Choose another period.");
     }
-    if ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high) {
+    let futures=crate::futures::ctx_market(ctx).is_some(); // lane F1 (#293): back-adjusted bars may be negative; the unadjusted ones must be positive
+    if (futures && (from..=to).any(|i| crate::futures::invalid_bar(ctx,i))) || (!futures && ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high)) {
         return issue("needs_data", "The selected period contains invalid or incomplete OHLC market prices. Results are withheld until the source data is corrected.");
     }
     if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
@@ -540,7 +542,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
     // lane K40 (decision #207): Luisi's literal-points option is SPX only; Blackman's gold season is GLD only
-    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
+    if let Some(note)=books::mhstp::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F3 (lead review): published window
+    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
         return issue("not_testable",note);
     }
     if let Some(note)=books::otvt::gap(def.id,ctx,from,to,p) {

@@ -8,7 +8,8 @@ use super::apwms::{a_minus_d, ema_a, moving_total, run_ls, sma, wma, NSE_AD, NYS
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["apsmts_pen", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apsmts_channel"];
+pub const REVIEWED: &[&str] = &["apsmts_pen", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apsmts_channel",
+    "apsmts_cats_dogs" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate $COMP / $NYA, independent reference titles-1030/F3w */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "apsmts";
@@ -78,11 +79,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|Default 25 days (\"the 25-day reversal system\", Table 9-1 and the 5-6 week rules p.135-136); p.n=4 = Table 9-1's short-term column."],
             "Book: NYSE Index 1970 - 11/17/1978 (Table 9-1, p.103): 4-day 290 trades (148 profitable), 136 points; 25-day 58 trades (25 profitable), 39 points. Honeywell 29-day and IBM 30-day long and short (Table 9-2). Long and short by default; p.side=1 long only.",
         ),
-        d("apsmts_cats_dogs", "Cats and dogs relative strength major trend indicator", "Ch 14 · Major trend systems", "Long/Short", NeedsData("needs weekly closes of the OTC (Nasdaq) Composite and the NYSE Composite Index (not in the vault)"), &[],
+        d("apsmts_cats_dogs", "Cats and dogs relative strength major trend indicator", "Ch 14 · Major trend systems", "Long/Short", Live, &["NASDAQ_COMP", "NYSE_COMP"],
             &["F|\"A relative strength ratio was calculated at the end of each trading week by dividing the closing level of the Over-the-Counter (OTC) Composite Index by the closing level of the NYSE Index.\" .20 exponential average of the ratio, rounded to two decimals; ties keep the current signal (p.182)",
               "E|\"A buy signal is rendered when the relative strength ratio ... crosses from below to above its .20 exponential average.\" (p.182)",
               "X|\"A sell (and, if you choose, sell short) signal is rendered when the relative strength ratio ... crosses from above to below its .20 exponential average.\" (p.183)"],
-            "Book: Table 14-1 (p.184), Value Line Composite traded 1972-79, 20 trades, +76.11/-33.09 points.",
+            "Book: Table 14-1 (p.184), Value Line Composite traded 1972-79, buy signals only (cash after a sell): 17 trades, +76.11/-33.09 points, $10,000 -> $16,439.33. Lane F3 (R4 #294 (2)): OTC (Nasdaq) Composite and NYSE Index weekly closes from the Norgate US indices (snapshot 8 Sep 2020, to 2020-09-04); week = Monday-Friday, signal and fill at the traded instrument's last close of the week. Readings: the .20 exponential average starts at the first weekly ratio [book silent]. Not rounded by default: the book rounds ratio and average to two decimals (p.182) on its NYSE Index of about 50-60, while Norgate's NYSE Composite is the rebased series (about 10x: 594.56 on 1972-01-03), so two decimals would be a different, coarser rule; unrounded, the buy/sell weeks reproduce most of Table 14-1 (lane F3 check); p.round = 1 rounds on Norgate's scale (labelled option). Default long only (Table 14-1); p.side = 0 adds the short sales (p.183). The Value Line Composite is not held: runs on US indices, ETFs and stocks are a declared application.",
         ),
         nt("apsmts_ttm", "Time-Trend-Momentum Trading System", "Ch 12-13 · Time-Trend-Momentum", "discretionary: \"at times signals may prove open to some subjectivity\" (p.138); double bottoms, \"clearly defined pattern of rising bottoms\", \"starts to turn down\" and the fail-safe \"unless you believe that a bull market is in effect\" (p.151) are judgement. Tables 12-1/12-2 (p.154-155) list 40 buys and 40 short sales on the NYSE Index 1970-79."),
         nt("apsmts_swing10wk", "10-week moving average swing system", "Ch 8 · 10-week swing", "discretionary: buy/sell codes rely on \"spikes\", \"shortly following\" and \"a bit of subjectivity\"; \"the 10-week moving average swing system does involve both some judgment\" (p.82). Tables 8-1/8-2 list NYSE trades 1966-79."),
@@ -125,6 +126,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "apsmts_chord" => vec![p("n", "Moving average weeks", 15., 3., 30., 1.), p("chord", "Chord weeks", 3., 1., 20., 1.), p("wd", "Weekly close: 0 Wednesday (book), 1 Friday", 0., 0., 1., 1.), side(1.)],
         "apsmts_ad_obos" | "apsmts_ad_obos_nse" => vec![p("n", "Moving total days", 10., 5., 20., 1.), p("level", "Overbought/oversold line", 2000., 500., 5000., 100.)],
         "apsmts_channel" => vec![p("n", "Reversal period (trading days)", 25., 2., 60., 1.), side(0.)],
+        "apsmts_cats_dogs" => vec![p("a", "Exponential constant", 0.2, 0.05, 0.5, 0.01), p("round", "Round ratio and average to two decimals (p.182, on the book's NYSE Index scale): 1 yes, 0 no", 0., 0., 1., 1.), side(1.)],
         _ => return None,
     })
 }
@@ -179,6 +181,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
     let daily: Vec<usize> = (0..x.r.len()).collect();
     let fin = |v: f64| v.is_finite();
     Some(match id {
+        "apsmts_cats_dogs" => {
+            // lane F3 (R4 #294 (2)), p.182-183: weekly OTC Composite / NYSE Index ratio vs its .20 exponential average
+            let (Some(nq), Some(ny)) = (x.series("NASDAQ_COMP"), x.series("NYSE_COMP")) else { return Some(vec![]) };
+            let wk = bars(x, 1);
+            let rd = |v: f64| if g("round") > 0.5 { (v * 100.0).round() / 100.0 } else { v };
+            let (a, mut e) = (g("a"), f64::NAN);
+            let mut st: Vec<(f64, f64)> = Vec::with_capacity(wk.len()); // (ratio, average) per week
+            for (k, &i) in wk.iter().enumerate() {
+                let start = if k == 0 { 0 } else { wk[k - 1] + 1 };
+                // the indices' weekly close: their last close inside the traded instrument's week
+                let r = (start..=i).rev().find(|&j| nq[j].is_finite() && ny[j].is_finite()).map_or(f64::NAN, |j| rd(nq[j] / ny[j]));
+                if r.is_finite() { e = if e.is_finite() { rd(e + a * (r - e)) } else { r }; }
+                st.push((r, e));
+            }
+            run_ls(x, &wk, from, to, lo, |k, _| {
+                let (r, e) = st[k];
+                if !(r.is_finite() && e.is_finite()) || r == e { None } // a tie keeps the current signal (p.182)
+                else if r > e { Some((1, "OTC/NYSE ratio above its .20 exponential average".into())) }
+                else { Some((-1, "OTC/NYSE ratio below its .20 exponential average".into())) }
+            })
+        }
         "apsmts_pen" => {
             let n = u("n");
             let ma = match g("kind").round() as i64 {

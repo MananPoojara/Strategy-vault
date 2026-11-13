@@ -9,7 +9,86 @@ pub const BOOK: &str = "mhstp";
 /// 1-minute bars (EP6). Admitted by ADMISSION_SPX.
 pub const SPX_PTS: &[&str] = &["mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"];
 
+/// Lane F3 (13 Nov 2026, R4 #293 (1), #294 (1)): the T-bond, crude, Swiss franc and silver patterns run on the Norgate continuous
+/// contract of their market only (futures::CARDS_F3 + the gate lists); signals and points on the back-adjusted bars.
+pub const FUTURES: &[&str] = &["mhs_ua830406_1", "mhs_ua830407_1", "mhs_ua830826_1", "mhs_ua830131_1", "mhs_ua830304_1", "mhs_ua830125_1",
+    "mhs_ua830418_1", "mhs_us800310_1", "mhs_us801701_1", "mhs_us810220_1", "mhs_us800111_1", "mhs_hd_rt_long", "mhs_cl840221_1", "mhs_cl850210_1",
+    "mhs_cl850919_1", "mhs_cl841206_1", "mhs_sf830520_1", "mhs_sf831011_3", "mhs_sf830519_1", "mhs_si830520_1", "mhs_si830630_1"];
+/// Lane F3 (R4 #294 (1)): the inter-market patterns: (id, logic on the SIGNAL market's bars, signal market, direction, points).
+/// The pattern forms on one contract and the position is taken in another (the card's contract, futures::CARDS_F3), Open of
+/// Tomorrow, target and stop in the traded contract's points (p.194-205). The signal market's back-adjusted bars are joined
+/// to the traded contract by exact date (a date either market lacks gives no signal).
+pub const INTER: &[(&str, &str, &str, f64, f64)] = &[
+    ("mhs_sp830128_2", "H2>C2&L0>L1&H0>H1&C0>L1&H1>C1&C2>L2&L1>H2&C1>C0", "&SP", 1.0, 1.0),
+    ("mhs_sp830107_2", "H2>C2&L0>H2&H0>H1&C0>C1&H1>C0&C2>L1&L1>L2&C1>L0", "&SP", 1.0, 1.0),
+    ("mhs_sp830825_2", "H2>L3&L2>H0&H1>L2&H0>L1&L3>H1&H3>H2&L1>L0", "&SP", 1.0, 2.0),
+    ("mhs_sp830405_2", "H1>L1&L2>L0&H0>H1&H2>H0&L1>L0", "&SP", 1.0, 1.0), // "H(1) > L(1)" as printed (p.200)
+    ("mhs_us881011_2", "C0>C3&C2>C1&C1>C0", "&ZB", 1.0, 10.0),
+    ("mhs_sf850419_2", "L1>L2&H1>H0&H2>L1&H0>L0&L0>H2", "&6S", -1.0, 20.0)];
+/// The signal market's O/H/L/C on the traded contract's dates (exact-date join; NaN where it has no bar), None if not loaded.
+fn signal_bars(x: &Ctx, sym: &str) -> Option<[Vec<f64>; 4]> {
+    let m = crate::futures::MARKETS.iter().find(|m| m.sym == sym)?;
+    let rows = crate::books::rotation::PRELOADED.get()?.get(&crate::futures::ticker(m))?;
+    let s = crate::second::align(sym, x.r, rows);
+    use crate::second::Field::*;
+    Some([s.exact(O), s.exact(H), s.exact(L), s.exact(C)])
+}
+/// One printed point in the contract's own quote: T-bond 1.00 of par, crude US$1.00 a barrel, silver 1 cent an ounce (Norgate
+/// quotes cents), Swiss franc 0.01 US$ per franc (the card's 1 point = $1,250 on 125,000 francs). 1 elsewhere (S&P points).
+fn point(x: &Ctx) -> f64 { if crate::futures::ctx_market(x).is_some_and(|m| m.sym == "&6S") { 0.01 } else { 1.0 } }
+/// #294 (1) / #240 / #243: over the whole Norgate history (1978-2020) more than 5% of these patterns' trades reach the target and
+/// the stop inside one daily bar with the open through neither, and no futures minutes exist to order them; inside the book's
+/// test window none do. Only that window is published (its first and last date, inclusive).
+pub const BOOK_WINDOW: &[(&str, &str, &str)] = &[("mhs_ua830418_1", "1983-02-15", "1999-01-07"), ("mhs_cl850919_1", "1984-02-15", "1999-01-07"),
+    ("mhs_cl841206_1", "1984-02-15", "1999-01-07"), ("mhs_us881011_2", "1983-02-15", "1999-01-07"), ("mhs_sf850419_2", "1983-02-15", "1999-01-07")];
+// "Historical Performance Results, Period 2/15/83 - 1/7/99" p.151, p.203, p.205; "2/15/84 - 1/7/99" p.167, p.169
+/// Lead review of F3 (13 Nov 2026): the PUBLISHED period itself (readiness::check + auto_start / auto_end), so the statistics,
+/// equity and buy-and-hold cover only it: a BOOK_WINDOW id its book window; an inter-market id from the first bar of its
+/// signal market (before it the pattern cannot form, e.g. &SP from 1982-04-21 for the S&P -> T-bond cards).
+pub fn window(id: &str) -> Option<(String, String, &'static str)> {
+    let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
+        "outside the book's test window more than 5% of its trades reach the target and the stop on one day, which daily bars cannot order (R4 #240, #294 (1))"));
+    if let Some(t) = INTER.iter().find(|t| t.0 == id) {
+        let m = crate::futures::MARKETS.iter().find(|m| m.sym == t.2);
+        let first = m.and_then(|m| crate::books::rotation::PRELOADED.get()?.get(&crate::futures::ticker(m))?.first().map(|r| r.date.clone()));
+        if let Some(f) = first {
+            w = Some(match w { Some((a, b, why)) => (a.max(f), b, why), None => (f, "9999-12-31".into(), "the pattern is read from another contract, whose data starts then") });
+        }
+    }
+    w
+}
+/// readiness::check: the run must lie inside `window` (auto_start / auto_end move it there).
+pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String> {
+    let (a, b, why) = window(id)?;
+    let (f, t) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
+    (f < a.as_str() || t > b.as_str()).then(|| format!("Results are published only from {a}{}: {why}.", if b.as_str() < "9999" { format!(" to {b}") } else { String::new() }))
+}
+
+fn note(id: &str) -> &'static str {
+    match &id[4..6] {
+        "ua" | "us" | "hd" => "Runs on the US T-Bond continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in T-bond points (1 point = 1.00 of par = $1,000), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. Norgate &ZB session coverage not stated (the card names the day session for UA patterns, incl. the evening session for US patterns).",
+        "cl" => "Runs on the NYMEX crude oil continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in crude points (1 point = $1.00 a barrel = $1,000), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        "sf" => "Runs on the IMM Swiss franc continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in franc points (1 point = 0.01 US$ per franc = $1,250), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        _ => "Runs on the COMEX silver continuous futures contract only (lane F3, R4 #293, #294): the pattern on the back-adjusted bars, the target and stop in silver points (1 point = 1 cent an ounce = $50; Norgate quotes cents), % per trade on the unadjusted entry price (R4 #301). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+    }
+}
+
+fn note_inter(id: &str) -> &'static str {
+    match id {
+        "mhs_us881011_2" => "Inter-market (lane F3, R4 #293, #294): the pattern on the US T-Bond continuous futures bars, the position in the S&P 500 continuous futures contract (the card runs only there), 10 S&P points target and stop, Open of Tomorrow (p.202-203). Both back-adjusted Norgate series, joined by exact date; % per trade on the S&P contract's unadjusted entry price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        "mhs_sf850419_2" => "Inter-market (lane F3, R4 #293, #294): the pattern on the Swiss franc continuous futures bars, the short position in the COMEX silver continuous futures contract (the card runs only there), 20 silver points (cents) target and stop, Open of Tomorrow (p.204-205). Both back-adjusted Norgate series, joined by exact date; % per trade on the silver contract's unadjusted entry price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
+        _ => "Inter-market (lane F3, R4 #293, #294): the pattern on the S&P 500 continuous futures bars, the long position in the US T-Bond continuous futures contract (the card runs only there), target and stop in T-bond points, Open of Tomorrow (p.194-201). Both back-adjusted Norgate series, joined by exact date; % per trade on the T-bond contract's unadjusted entry price. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor; Norgate &ZB session coverage not stated (the card names the day session).",
+    }
+}
+
 pub fn catalogue() -> Vec<StrategyDef> {
+    catalogue_book().into_iter().map(|mut d| {
+        if FUTURES.contains(&d.id) { d.status = Status::Live; d.notes = note(d.id); }
+        if INTER.iter().any(|t| t.0 == d.id) { d.status = Status::Live; d.notes = note_inter(d.id); }
+        d
+    }).collect()
+}
+fn catalogue_book() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };
     vec![
         d("mhs_ua830406_1", "UA830406-1 · Exact long · 1/1 pts · close", "Pattern Library · T-Bond (day session)", "Long", Status::NeedsData("Needs CBOT 30-year T-Bond futures daily OHLC (day session or incl. evening session as the pattern states; back-adjusted continuous, Feb 1983-Jan 1999). Targets/stops are in T-Bond points (1 point = $1,000) and cannot be carried to an equity index without inventing a conversion."),
@@ -180,6 +259,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "mhs_si830520_1" => vec![p("target","Profit target (points)",40.0,10.0,200.0,10.0), p("stop","Protective stop (points)",40.0,10.0,200.0,10.0)],
         "mhs_si830630_1" => vec![p("target","Profit target (points)",20.0,5.0,100.0,5.0), p("stop","Protective stop (points)",20.0,5.0,100.0,5.0)],
         "mhs_hd_rt_long" => vec![p("target","Profit target (points)",1.0,0.25,5.0,0.25), p("stop","Protective stop (points)",1.0,0.25,5.0,0.25)],
+        // lane F3: the inter-market patterns (points of the traded contract)
+        "mhs_sp830128_2" | "mhs_sp830107_2" | "mhs_sp830405_2" => vec![p("target","Profit target (points)",1.0,0.25,5.0,0.25), p("stop","Protective stop (points)",1.0,0.25,5.0,0.25)],
+        "mhs_sp830825_2" => vec![p("target","Profit target (points)",2.0,0.5,10.0,0.5), p("stop","Protective stop (points)",2.0,0.5,10.0,0.5)],
+        "mhs_us881011_2" => vec![p("target","Profit target (points)",10.0,2.5,50.0,2.5), p("stop","Protective stop (points)",10.0,2.5,50.0,2.5)],
+        "mhs_sf850419_2" => vec![p("target","Profit target (points)",20.0,5.0,100.0,5.0), p("stop","Protective stop (points)",20.0,5.0,100.0,5.0)],
         _ => return None,
     }).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243): the S&P patterns (lane K74, #277)
 }
@@ -213,12 +297,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "mhs_si830520_1" => ("H0>C1&L2>H0&H1>C2&C2>L2&L1>C0&C0>L0&H2>H1&C1>L1", -1.0, true),
         "mhs_si830630_1" => ("C4>C3&C6>C4&C7>C6&C3>C5", -1.0, true),
         "mhs_hd_rt_long" => ("L2>C1&L0>L1&C0>O0&C0>H2", 1.0, false),
-        _ => return None,
+        _ => match INTER.iter().find(|t| t.0 == id) { Some(t) => (t.1, t.3, true), None => return None },
+    };
+    let bars = match INTER.iter().find(|t| t.0 == id) {
+        Some(t) => match signal_bars(x, t.2) { Some(b) => b, None => return Some(vec![]) },
+        None => own(x),
     };
     let (pt, ps) = (g("pct_target"), g("pct_stop"));
     let (target, stop, pct) = if pt > 0. && ps > 0. { (pt, ps, true) } else { (g("target"), g("stop"), false) };
+    let (target, stop) = if pct { (target, stop) } else { (target * point(x), stop * point(x)) }; // lane F3: printed points in the quote
+    // lane F3 (#294 (1)): the book's test window only, for the patterns that are order-dependent outside it
+    let (from, to) = match BOOK_WINDOW.iter().find(|w| w.0 == id) {
+        Some(&(_, a, b)) => { let (f, t) = (from.max(x.r.partition_point(|r| r.date.as_str() < a)), to.min(x.r.partition_point(|r| r.date.as_str() <= b).saturating_sub(1))); if f > t || x.r[t].date.as_str() > b { return Some(vec![]); } (f, t) }
+        None => (from, to),
+    };
     // open entries: GTC target/stop placed with the order (p.63) -> active on the entry bar
-    Some(simulate_ep6(x, from, to, logic, dir, at_open, true, level_fn(dir, target, stop, pct), crate::intraday_ep6::on(id, p)))
+    Some(simulate_ep6(x, &bars, from, to, logic, dir, at_open, true, level_fn(dir, target, stop, pct), crate::intraday_ep6::on(id, p)))
 }
 
 // ---- pattern engine (one position per pattern; same code in mhstp/mhpst/mhart so each module stands alone) ----
@@ -232,9 +326,12 @@ fn parse(logic: &str) -> Vec<Conj> {
         (x, i, y, j)
     }).collect()).collect()
 }
-fn px(x: &Ctx, f: u8, i: usize) -> f64 { match f { b'O' => x.o[i], b'H' => x.h[i], b'L' => x.l[i], _ => x.c[i] } }
-fn signal(x: &Ctx, dnf: &[Conj], i: usize) -> bool {
-    dnf.iter().any(|c| c.iter().all(|&(a, ai, b, bi)| ai <= i && bi <= i && px(x, a, i - ai) > px(x, b, i - bi)))
+/// The pattern's bars as O/H/L/C columns: the traded context's own, or (inter-market, lane F3) the signal market's.
+type Bars = [Vec<f64>; 4];
+fn own(x: &Ctx) -> Bars { [x.o.clone(), x.h.clone(), x.l.clone(), x.c.clone()] }
+fn px(b: &Bars, f: u8, i: usize) -> f64 { b[match f { b'O' => 0, b'H' => 1, b'L' => 2, _ => 3 }][i] }
+fn signal(b: &Bars, dnf: &[Conj], i: usize) -> bool {
+    dnf.iter().any(|c| c.iter().all(|&(a, ai, f, bi)| ai <= i && bi <= i && px(b, a, i - ai) > px(b, f, i - bi)))
 }
 /// Fixed target/stop around the fill. Same bar: a gap through a level fills at the open; if the bar's range
 /// holds both levels the stop is assumed first (book silent; conservative).
@@ -250,10 +347,10 @@ fn exit_on(x: &Ctx, i: usize, dir: f64, tp: f64, sp: f64) -> Option<(f64, &'stat
 /// entry_bar_exits: target/stop already working on the open-entry bar (otherwise from the next bar).
 #[cfg(test)]
 fn simulate(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
-            levels: impl Fn(f64) -> (f64, f64)) -> Vec<Trade> { simulate_ep6(x, from, to, logic, dir, at_open, entry_bar_exits, levels, false) }
+            levels: impl Fn(f64) -> (f64, f64)) -> Vec<Trade> { simulate_ep6(x, &own(x), from, to, logic, dir, at_open, entry_bar_exits, levels, false) }
 /// `ep6` (lane K74, decisions #240/#243/#277): a bar whose range holds both the target and the stop while the open is through
 /// neither is walked on the real 1-minute path (intraday_ep6::stop_target); otherwise, and without minutes, exit_on.
-fn simulate_ep6(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
+fn simulate_ep6(x: &Ctx, bars: &Bars, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
             levels: impl Fn(f64) -> (f64, f64), ep6: bool) -> Vec<Trade> {
     let dnf = parse(logic);
     let mut out = vec![];
@@ -269,7 +366,7 @@ fn simulate_ep6(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open:
                 }
             }
         }
-        if cur.is_some() || !signal(x, &dnf, i) { continue; }
+        if cur.is_some() || !signal(bars, &dnf, i) { continue; }
         let (k, fill) = if at_open { if i >= to { continue; } (i + 1, x.o[i + 1]) } else { (i, x.c[i]) };
         if !fill.is_finite() { continue; }
         let (tp, sp) = levels(fill);
@@ -300,10 +397,10 @@ mod tests {
         // bar 0 = today; "C0>C1" true when today's close is above yesterday's
         let r = rows(&[(1., 2., 0.5, 1.), (1., 3., 0.5, 2.)]);
         let x = Ctx::new(&r, &r, &[]);
-        assert!(signal(&x, &parse("C0>C1"), 1));
-        assert!(!signal(&x, &parse("C1>C0"), 1));
-        assert!(!signal(&x, &parse("C0>C2"), 1)); // not enough history
-        assert!(signal(&x, &parse("C1>C0|H0>H1"), 1)); // OR group
+        assert!(signal(&own(&x), &parse("C0>C1"), 1));
+        assert!(!signal(&own(&x), &parse("C1>C0"), 1));
+        assert!(!signal(&own(&x), &parse("C0>C2"), 1)); // not enough history
+        assert!(signal(&own(&x), &parse("C1>C0|H0>H1"), 1)); // OR group
     }
     #[test]
     fn open_entry_target_stop_and_gap_fills() {
@@ -338,7 +435,7 @@ mod tests {
             .map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2020-01-0{}", i + 2), open: o, high: h, low: l, close: c, volume: None }).collect();
         let mut x = Ctx::new(&r, &r, &[]);
         // no minutes: the daily convention, stop first, marked
-        let t = simulate_ep6(&x, 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), true);
+        let t = simulate_ep6(&x, &own(&x), 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), true);
         assert!(t[0].exit_px == 90. && t[0].reason.ends_with(crate::intraday_ep6::Day::Convention.note()), "{t:?}");
         // minutes: the high comes first -> target
         let dir = std::env::temp_dir().join(format!("k74mhs{}", std::process::id()));
@@ -348,15 +445,47 @@ mod tests {
         let h = body.find('\n').unwrap() + 1;
         std::fs::write(dir.join("T.m1idx.csv"), format!("Date,offset,bytes\n2020-01-04,{},{}\n", h, body.len() - h)).unwrap();
         x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap())));
-        let t = simulate_ep6(&x, 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), true);
+        let t = simulate_ep6(&x, &own(&x), 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), true);
         assert!(t[0].exit_px == 110. && t[0].reason == format!("target{}", crate::intraday_ep6::Day::Minutes.note()), "{t:?}");
         // off (order = 0): unchanged daily rule
-        let t = simulate_ep6(&x, 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), false);
+        let t = simulate_ep6(&x, &own(&x), 0, 2, "C0>C1", 1., true, true, level_fn(1., 10., 10., false), false);
         assert!(t[0].exit_px == 90. && t[0].reason == "stop", "{t:?}");
         for id in SPX_PTS {
             assert!(crate::intraday_ep6::IDS.contains(id) && params(id).unwrap().iter().any(|d| d.key == "order"), "{id}");
             assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
         }
+    }
+    #[test]
+    fn f3_futures_points_window_and_home() {
+        // Swiss franc context: 1 printed point = 0.01 of the quote; a short at the close 0.70 -> target 0.69, stop 0.71
+        let r: Vec<Row> = [(0.71, 0.72, 0.70, 0.71), (0.70, 0.71, 0.69, 0.70), (0.70, 0.705, 0.688, 0.695)].iter().enumerate()
+            .map(|(i, &(o, h, l, c))| Row { ticker: "Swiss Franc (Norgate &6S)".into(), date: format!("1990-01-0{}", i + 2), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        assert_eq!(point(&x), 0.01);
+        let t = simulate(&x, 0, 2, "C1>C0", -1., false, false, level_fn(-1., 1. * point(&x), 1. * point(&x), false));
+        assert!(t[0].legs[0].px == 0.70 && (t[0].exit_px - 0.69).abs() < 1e-12 && t[0].reason == "target", "{t:?}");
+        // the book-window ids publish only 1983-02-15..1999-01-07 (#294 (1)): a context after the window gives no trades
+        let r2: Vec<Row> = (0..12).map(|i| Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: format!("2001-01-{:02}", i + 2), open: 100., high: 101., low: 99., close: 100. + (i % 3) as f64, volume: None }).collect();
+        let x2 = Ctx::new(&r2, &r2, &[]);
+        assert!(run("mhs_ua830418_1", &x2, 0, 11, &Params::new()).unwrap().is_empty());
+        // every futures card is home only on its contract; the inter-market cards on the traded one
+        for id in FUTURES.iter().chain(INTER.iter().map(|t| &t.0)) {
+            let d = catalogue().into_iter().find(|d| d.id == *id).unwrap();
+            assert!(d.status == Status::Live && crate::futures::home(id, "SPX").is_some(), "{id}");
+        }
+        assert!(crate::futures::home("mhs_sf850419_2", "Silver (Norgate &SI)").is_none() && crate::futures::home("mhs_sp830128_2", "US T-Bond (Norgate &ZB)").is_none());
+        // the published window is the run period itself (lead review): outside 1983-02-15..1999-01-07 readiness refuses, and
+        // auto_end stops a later run at the window's end
+        assert!(window_issue("mhs_ua830418_1", &x2, 0, 11).is_some_and(|n| n.contains("1983-02-15 to 1999-01-07")));
+        let r3: Vec<Row> = (0..300).map(|i| Row { ticker: "US T-Bond (Norgate &ZB)".into(), date: format!("{}-{:02}-{:02}", 1998 + i / 250, 1 + (i % 250) / 21, 1 + i % 21), open: 100., high: 101., low: 99., close: 100., volume: None }).collect();
+        let x3 = Ctx::new(&r3, &r3, &[]);
+        let d = catalogue().into_iter().find(|d| d.id == "mhs_ua830418_1").unwrap();
+        let (end, why) = crate::readiness::auto_end(&x3, &d, 0, 299, &Params::new());
+        assert!(x3.r[end].date.as_str() <= "1999-01-07" && x3.r[end + 1].date.as_str() > "1999-01-07" && why.is_some(), "{end}");
+        assert!(window_issue("mhs_ua830418_1", &x3, 0, end).is_none() && window_issue("mhs_ua830406_1", &x3, 0, 299).is_none());
+        // Ruggiero's S&P/T-Bond divergence (lane F3) runs only on the S&P contract; without the T-bond data it trades nothing
+        assert!(crate::futures::home("rgc_im_sp_tbond", "S&P 500 (Norgate &SP)").is_none() && crate::futures::home("rgc_im_sp_tbond", "SPX").is_some());
+        assert!(crate::books::rgcts::run("rgc_im_sp_tbond", &x2, 0, 11, &Params::new()).unwrap().is_empty());
     }
     #[test]
     fn catalogue_ids_unique_and_params_default_to_book() {
