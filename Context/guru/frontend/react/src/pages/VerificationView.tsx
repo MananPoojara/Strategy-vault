@@ -66,7 +66,7 @@ function TrackerBody({ t, sites, stale }: { t: Tracker; sites?: number; stale?: 
         <Kpi n={k.todo} label="To do" cls="st-todo" />
         <Kpi n={k.cant_test} label="Can't test on site" cls="st-cant_test" />
       </div>
-      {t.overview.notes.length > 0 && <div className="vt-notes">{t.overview.notes.map((n, i) => <p key={i} className="rp-small rp-muted">{n}</p>)}</div>}
+      {t.overview.notes.filter(n => !/good strateg/i.test(n)).length > 0 && <div className="vt-notes">{t.overview.notes.filter(n => !/good strateg/i.test(n)).map((n, i) => <p key={i} className="rp-small rp-muted">{n}</p>)}</div>}
 
       <div className="vt-cols">
         <AuthorBars t={t} active={bookAuthor} pick={a => { setBookAuthor(a); setFilters(f => ({ ...f, author: a, book: "" })); }} />
@@ -409,7 +409,7 @@ function ListRow({ r }: { r: TrackerRow }) {
   return (
     <tr>
       <td className="n rp-muted" data-label="#">{r.n}</td>
-      <td data-label="Strategy"><b>{r.strategy}</b>{r.good && <span className="vt-star" title="Good runs in the tracker"> {r.good}</span>}<br /><span className="rp-small">{r.version}</span>{r.type && <span className="rp-small rp-muted"> · {r.type}</span>}<br /><code className="rp-small rp-muted">{r.id}</code></td>
+      <td data-label="Strategy"><b>{r.strategy}</b><br /><span className="rp-small">{r.version}</span>{r.type && <span className="rp-small rp-muted"> · {r.type}</span>}<br /><code className="rp-small rp-muted">{r.id}</code></td>
       <td data-label="Author" className="rp-small">{r.author}<br /><span className="rp-muted">{r.book}</span></td>
       <td data-label="Status"><Status s={r.status} /></td>
       <td data-label="Result" className="rp-small vt-result">{r.result && <span title={r.result}>{r.result}</span>}<Report r={r.report} /></td>
