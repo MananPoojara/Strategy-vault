@@ -71,6 +71,11 @@ pub const MARKETS: &[Market] = &[
         source: "FINEX/ICE US Dollar Index futures: Downs's printed P&L (V.17:1 Figure 15: +0.50 index points on 5 contracts = $875 after $375 costs) implies US$500 per index point in 1987-96 (R4 #323 (2)); the later US$1,000 contract's start date is not established, so from 1996-08-01 (after the article's last printed month) no multiplier is given and US$ amounts are refused (R4 #324 M1); tick 0.01 of the book era" },
     // lane PF (Abel, S&C V21:10 Figure 3 portfolio): contract sizes from the exchange specifications (reference data); the Abel
     // system's stops are standard-deviation distances, so these multipliers only label the contract
+    // lane PF (Gibbs SPI day-of-week / breakout bond filters): SFE / ASX bond futures, quoted 100 - yield (A$; only their closes are read)
+    Market { sym: "&YYT", name: "ASX 3 Year Treasury Bond", tick: 0.01, usd: &[("1988-05-17", f64::NAN)],
+        source: "SFE/ASX 3-year Treasury bond futures, quoted 100 - yield; read only as a filter (closes), no US$ value is used" },
+    Market { sym: "&YXT", name: "ASX 10 Year Treasury Bond", tick: 0.005, usd: &[("1984-12-05", f64::NAN)],
+        source: "SFE/ASX 10-year Treasury bond futures, quoted 100 - yield; read only as a filter (closes), no US$ value is used" },
     // lane PF (Gibbs SPI systems, Guppy newsletters): the SPI contract (A$ per point; % returns do not depend on the currency)
     Market { sym: "&YAP", name: "ASX SPI 200", tick: 1., usd: &[("1983-02-16", 25.)],
         source: "SFE/ASX SPI 200 index futures, quoted in A$ (NOT US$: futures::NON_USD, so usd_per_point refuses it): the article's own A$25 per point ($1,500 = 60 points); the historic contract size (the 1983 All Ordinaries SPI may have been larger) is not checked (review PF2 M21); the 1983-2000 All Ordinaries SPI is spliced in by Norgate" },
@@ -429,17 +434,19 @@ pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
 }
 /// R4 #334 (lane PF): a card whose US$ rules need the contract's multiplier, on a contract where it is known only for a period
 /// (MARKETS NaN = unknown): only that period is published on that contract.
-const USD_WINDOW: &[(&str, &str, &str, &str)] = &[("andro_andromeda", "&DX", "1985-11-20", "1996-07-31")];
+/// (card, contract, first, last, why) - lane PF also uses it for a source-era window (scchvid, R4 #293 (4)).
+const USD_WINDOW: &[(&str, &str, &str, &str, &str)] = &[("andro_andromeda", "&DX", "1985-11-20", "1996-07-31", USD_WHY),
+    ("scchvid_ravi", "&SP", "1982-04-21", "1991-07-31", SCCHVID_WHY)];
+const SCCHVID_WHY: &str = "the article's reference deviations (6 and 4 S&P points, 'a 10-year average' of 1980s weekly data) are used literally on the S&P contract (R4 #293 (4)); they belong to the article's period (to July 1991), and later the smoothing constant 0.15 x s10 / 4 exceeds 1 on more and more weeks, so only that period is published";
 const USD_WHY: &str = "the contract's US$ per point is known only to 1996-07-31 (R4 #323/#324: US$500 per index point 1985-11..1996-07; the start of the later US$1,000 contract is not established), and this card's $4,000 risk limit and $10,000 profit exit need it (R4 #334)";
 /// The published run period of a card on ticker `t`, if it is limited to the book's window (BOOK_WINDOW) or to a known multiplier (USD_WINDOW).
 pub fn window(id: &str, t: &str) -> Option<(&'static str, &'static str)> {
     let s = of_ticker(t)?.sym;
-    BOOK_WINDOW.iter().chain(USD_WINDOW).find(|w| w.0 == id && w.1 == s).map(|w| (w.2, w.3))
+    BOOK_WINDOW.iter().map(|w| (w.0, w.1, w.2, w.3)).chain(USD_WINDOW.iter().map(|w| (w.0, w.1, w.2, w.3))).find(|w| w.0 == id && w.1 == s).map(|w| (w.2, w.3))
 }
 /// Why `window` limits the run (for readiness::auto_end's label and the refusal).
 pub fn window_why(id: &str, t: &str) -> &'static str {
-    let usd = of_ticker(t).is_some_and(|m| USD_WINDOW.iter().any(|w| w.0 == id && w.1 == m.sym));
-    if usd { USD_WHY } else { "the book's test window on this contract, R4 #314 (3)" }
+    of_ticker(t).and_then(|m| USD_WINDOW.iter().find(|w| w.0 == id && w.1 == m.sym)).map_or("the book's test window on this contract, R4 #314 (3)", |w| w.4)
 }
 /// readiness::check: the run must lie inside `window` (auto_start / auto_end move it there).
 pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String> {
@@ -447,7 +454,8 @@ pub fn window_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<String>
     let (a, b) = window(id, t)?;
     let (f, e) = (x.r.get(from)?.date.as_str(), x.r.get(to)?.date.as_str());
     if f < a || e > b {
-        if window_why(id, t) == USD_WHY { return Some(format!("Results are published only from {a} to {b} on {t}: {USD_WHY}.")); }
+        let why = window_why(id, t);
+        if !why.starts_with("the book's test window") { return Some(format!("Results are published only from {a} to {b} on {t}: {why}.")); }
     }
     window_issue_book(id, x, from, to)
 }
@@ -530,6 +538,10 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
     ("andro_andromeda", "&6S", ANDRO), ("andro_andromeda", "&CL", ANDRO), ("andro_andromeda", "&ZN", ANDRO), ("andro_andromeda", "&ZC", ANDRO),
     ("andro_andromeda", "&6J", ANDRO), ("andro_andromeda", "&DX", ANDRO), ("andro_andromeda", "&GE", ANDRO), ("andro_andromeda", "&CT", ANDRO),
     ("dgnl_spi_12_10", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 01/09/2000 p.5-6 (Testing SPI Breakouts, 12-day high / 10-day low): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("dgnl_spi_seasonal_q1", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 29/09/2000 p.13-14 (Seasonality And Trading, January-March dates): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("scchvid_ravi", "&SP", "Tushar Chande, Adapting Moving Averages To Market Volatility, S&C V.10:3 p.108-114: RAVI on weekly S&P closes with the article's 1980s reference deviations used literally on the Norgate continuous S&P 500 contract (R4 #293 (1), (4)), lane PF."),
+    ("dgnl_spi_dow_bonds", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 18/08/2000 p.25-26 (Disproving Random Walk In The SPI): the day-of-week open-to-close study with the 3-year / 10-year bond 5-day-high filter options, on the Norgate continuous SPI contract (R4 #293 (1)), lane PF."),
+    ("dgnl_spi_breakout", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 25/08/2000 p.8-9 (SPI Breakouts): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("dgnl_spi_dom", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 08/09/2000 p.20-22 (Day of the Month SPI rules): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("ftm_rg_intermarket", "&ZN", "Murray Ruggiero, What makes a system a winner, Futures Magazine May 2002 p.59: the silver / 10-year T-note intermarket rule on the Norgate continuous 10-year T-note contract with Norgate silver as the second market (R4 #293 (1)), lane PF."),
     ("scsaitta_volma", "&ZB", "Alex Saitta, A Price- And Volume-Based System, S&C V14:3 p.103-105: the T-bond 20-day moving average with the volume condition on the Norgate continuous T-bond contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
