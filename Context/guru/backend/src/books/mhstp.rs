@@ -56,7 +56,7 @@ pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight
 /// Lane PF: the same cap for other contracts' open changes, each with its own reason (first, last, why).
 const YAP_WHY: &str = "from January 1992 Norgate's SPI (&YAP) open is a session or vendor open (median gap 3-6 bp against 9-70 bp before; up to half the days open at the prior close), not the day-session open this card enters and exits at (R4 #333, as #330)";
 pub const OPEN_WINDOW_OTHER: &[(&str, &str, &str, &str)] = &[("dgnl_spi_dom", "1983-02-16", "1991-12-31", YAP_WHY), ("dgnl_spi_12_10", "1983-02-16", "1991-12-31", YAP_WHY),
-    ("dgnl_spi_seasonal_q1", "1983-02-16", "1991-12-31", YAP_WHY)];
+    ("dgnl_spi_seasonal_q1", "1983-02-16", "1991-12-31", YAP_WHY), ("dgnl_spi_breakout", "1983-02-16", "1991-12-31", YAP_WHY)];
 pub fn window(id: &str) -> Option<(String, String, &'static str)> {
     let mut w = BOOK_WINDOW.iter().find(|w| w.0 == id).map(|w| (w.1.to_string(), w.2.to_string(),
         "outside the book's test window more than 5% of its trades reach the target and the stop on one day, which daily bars cannot order (R4 #240, #294 (1))"));
