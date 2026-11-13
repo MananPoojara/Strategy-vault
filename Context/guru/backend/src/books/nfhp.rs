@@ -12,7 +12,7 @@ pub const SPX_PTS: &[&str] = &["nfhp_quadram_tf"];
 
 const METALS: &str = "Comex silver/gold futures, Swiss franc futures, US T-bill yield and CPI inflation (real T-bill rate); none in the vault";
 const TBOND: &str = "T-Bond / 10-year note futures, LME nickel, Dow Jones Utilities, Fidelity Select Chemicals (FSCHX) and Financial (FIDSX) prices; none in the vault";
-const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+pub const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
 const NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 
 const Q_ENTRY_CT: &[&str] = &[

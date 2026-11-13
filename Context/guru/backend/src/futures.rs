@@ -427,6 +427,7 @@ const DATA2: &[(&str, &[&str])] = &[("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2
     ("lwlts_talon_bondfilter", &["&ZB"]), ("lwlts_gsv_sp", &["&ZB"]), ("lwlts_gsv_sp_monday", &["&ZB"]), ("lwlts_month_day1_sp_bonds", &["&ZB"]),
     ("lwlts_bonds_channel_bstop", &["&ZB"]), ("lwlts_bonds_channel_sstop", &["&ZB"]),
     ("lwnl_bond_sp_9ma_1down", &["&ZB"]), ("lwnl_bond_sp_9ma_2down", &["&ZB"]), ("lwicw_bond_tdw_gold", &["&GC"]), ("lwicw_bond_tdom_gold", &["&GC"]),
+    ("nfmt_quadram_tbond", &["&ZB"]), // lane PF
     ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"])];
 /// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
 pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
@@ -545,6 +546,8 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
     ("andro_andromeda", "&6J", ANDRO), ("andro_andromeda", "&DX", ANDRO), ("andro_andromeda", "&GE", ANDRO), ("andro_andromeda", "&CT", ANDRO),
     ("dgnl_spi_12_10", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 01/09/2000 p.5-6 (Testing SPI Breakouts, 12-day high / 10-day low): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
     ("dgnl_spi_seasonal_q1", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 29/09/2000 p.13-14 (Seasonality And Trading, January-March dates): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),
+    ("nfhp_quadram_ct", "&SP", "Nelson Freeburg, Quadram (Ground-Up / TAG XVIII 2000, Fig. 44-46): countertrend mode with the book's $500 stops at its own $250 per point, on the Norgate continuous S&P 500 contract (R4 #293 (1), (4)), lane PF."),
+    ("nfmt_quadram_tbond", "&SP", "Nelson Freeburg, Mechanical Timing Systems (TAG 21, 1999) Fig. 41-43: the Quadram system with the T-Bond filter on the Norgate continuous S&P 500 contract, Norgate T-bonds as the filter market (R4 #293 (1), (4)), lane PF."),
     ("scchvid_ravi", "&SP", "Tushar Chande, Adapting Moving Averages To Market Volatility, S&C V.10:3 p.108-114: RAVI on weekly S&P closes with the article's 1980s reference deviations used literally on the Norgate continuous S&P 500 contract (R4 #293 (1), (4)), lane PF."),
     ("dgnl_spi_dow_bonds", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 18/08/2000 p.25-26 (Disproving Random Walk In The SPI): the day-of-week open-to-close study with the 3-year / 10-year bond 5-day-high filter options, on the Norgate continuous SPI contract (R4 #293 (1)), lane PF."),
     ("dgnl_spi_breakout", "&YAP", "A. Gibbs in Daryl Guppy's newsletter 25/08/2000 p.8-9 (SPI Breakouts): run on the Norgate continuous SPI contract, back-adjusted daily bars (R4 #293 (1)), lane PF."),

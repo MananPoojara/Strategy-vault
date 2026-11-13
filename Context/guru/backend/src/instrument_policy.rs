@@ -1452,7 +1452,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // "nftm_accutrack": admitted by lane K51 (EP4 second series, decision #223)
         // lane K74 (R4 #277 (3)): the Fig. 44 header reads "S&P 500 Futures (2 Lots; $250/pt; $150 S&C) Performance: 1982 to 2000", so the
         // test's $500 stops are exactly 2.0 points for the whole run (#240 (2) no longer holds); nfhp_quadram_tf: admitted on SPX only (nfhp::ADMISSION_SPX)
-        "nfhp_quadram_ct"=>"Held: the cash-index check fails (decision #179, lane K74). The book's $500 stops are exactly 2.0 S&P points (Building High-Performance Trading Systems Fig. 44 p.21: 'S&P 500 Futures (2 Lots; $250/pt) Performance: 1982 to 2000'), so the rule could run on the S&P 500 index (SPX) only, but SPX beats tradable SPY (with the points scaled to SPY's price) in both check windows (2014-2017: +0.146% vs +0.008% a trade; 2017-2020: +0.004% vs -0.033%): SPX's daily opens, highs and lows come from stale component prints, which a 2-point stop amplifies, and SPX is this rule's only home, so no results are published.",
+        // "nfhp_quadram_ct": runs on the Norgate S&P 500 futures contract (lane PF, R4 #293 (4); futures::CARDS_PF), where #179 does not apply
         "nfhp_quadram_ct_nse"|"nfhp_quadram_tf_nse"=>"Held: no exact conversion on NIFTY. The book's $500 initial and trailing stops are exactly 2.0 points of the S&P 500 futures it tested ($250 a point, Building High-Performance Trading Systems Fig. 44 p.21), so they mean what the book meant only on the S&P 500 index (decision #196(2)); on NIFTY 50 / NIFTYBANK 2 points is a different, much tighter stop, and the book gives no NIFTY amount.",
         // jhs35_spike35: admitted by lane K54 (SPX only, decision #229 (6))
         "pstc_20_40_75"=>"Held: needs option prices. The course trades this signal by buying long-dated call options (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those option prices, and a stock or index price cannot stand in for them. The course's table also reports the move in the underlying stock, and our independent check of the signal on the underlying matched with 0 differences, but the course's trade is the LEAPS, so the stock leg is not the course's result and is not published (decision #277 (6), lane K74).",
@@ -1979,7 +1979,7 @@ mod tests {
     fn la_singles_held_rules_have_plain_card_reasons() {
         use crate::books::{elcim, jhs35, nfhp, nftm, pstc};
         let all:Vec<StrategyDef>=elcim::catalogue().into_iter().chain(jhs35::catalogue()).chain(nfhp::catalogue()).chain(nftm::catalogue()).chain(pstc::catalogue()).collect();
-        for id in ["elcim_fi2", /* nftm_accutrack: admitted (K51, #223) */ "nfhp_quadram_ct", "nfhp_quadram_ct_nse", /* nfhp_quadram_tf: admitted SPX only (K74, #277 (3)) */ "nfhp_quadram_tf_nse", /* jhs35_spike35: admitted (K54, #229) */ "pstc_20_40_75"] {
+        for id in ["elcim_fi2", /* nftm_accutrack: admitted (K51, #223) */ /* nfhp_quadram_ct: futures card (lane PF) */ "nfhp_quadram_ct_nse", /* nfhp_quadram_tf: admitted SPX only (K74, #277 (3)) */ "nfhp_quadram_tf_nse", /* jhs35_spike35: admitted (K54, #229) */ "pstc_20_40_75"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
