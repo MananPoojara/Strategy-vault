@@ -3,6 +3,7 @@
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
 mod futures; // lane F1 (R4 #293): Norgate continuous futures
+mod spread; // lane P1: two-leg spread positions
 mod jobs;
 mod connors;
 mod readiness;
@@ -300,6 +301,8 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
     if books::hbqts::reviewed::is_dema_index(id) {return Err("QTS DEMA canonical unit reporting requires separate fee/slippage components through backtest_costs".into());}
     // options phase 2: option rules run on their own account (overlapping positions valued at the held contracts' prices)
     if let Some(pos)=options::positions(id,ctx,from,to,p) {return option_run(ctx,pos?,from,to,cost);}
+    // lane P1: two-leg spreads (books::vanvliet, books::ecqt on spread.rs), both legs entered and exited together on one account
+    if let Some(a)=spread::run(id,ctx,from,to,cost,p) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:futures::buy_hold(ctx,from,to).unwrap_or_else(||(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect()),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
     // lane K28: rotation rules hold several ETFs on one account (books::rotation), valued at each ETF's own close
     if let Some(a)=books::rotation::account(id,ctx,from,to,cost,p,books::rotation::PRELOADED.get().copied()) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
     // lane K56 (EP5): basket ranking rules hold several stocks of a vault basket on one account (books::rotation)
@@ -2184,9 +2187,13 @@ fn main() {
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let mut extra = load_extra(&extra_dir);
     extra.extend(futures_raw); // lane F1: the unadjusted futures series (RAW.*), per futures ticker
+    futures::leg2_series(data, &mut extra); // lane P1: the second leg of a two-contract spread (&NQ on the &ES context)
+    // lane P1: Chan's GLD/GDX pair reads GDX (Norgate, futures/norgate-us-etfs-20200908 next to the US price file) on the GLD context
+    if data.contains_key("GLD") { if let Some(m)=books::ecqt::gdx_series(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-etfs-20200908/GDX.csv")) {extra.entry(("GLD".into(),books::ecqt::GDX.into())).or_insert(m);} }
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
     if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}
+    for (k,m) in books::vanvliet::pair_series(&baskets) {extra.entry(k).or_insert(m);} // lane P1: the declared pairs' stock closes on the SPY / NIFTY 50 calendar
     println!("extra data: {} series from {extra_dir}", extra.len());
     // intraday phase 1: optional arg 5 = folder of <TICKER>.m1.csv / .m1idx.csv; missing = no minute data (results unchanged)
     let intraday_dir = args.get(5).cloned();
@@ -2801,6 +2808,16 @@ mod tests {
             if d.id=="prap1_raptor10" {
                 // lane K51: reads BENCH_HV100 (EP4); NIFTY 50 is its own benchmark, so there is no series and no run (books::prap1 tests)
                 assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                other_path += 1;
+                continue;
+            }
+            if spread::is_rule(d.id) {
+                // lane P1: two-leg spread account (spread.rs, books::vanvliet / books::ecqt tests, P1-1113w/p1_ref.py); on NIFTY 50 the
+                // pairs run only with the stock files loaded, the ES/NQ spread and GLD/GDX never
+                match backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()) {
+                    Ok(run) => assert!(d.id=="vvqmm_pairs" && run.option_account.is_some_and(|a|a.model==spread::MODEL) && run.equity.iter().all(|v|v.is_finite()),"{}",d.id),
+                    Err(e) => assert!(e.starts_with("needs_data") || e.starts_with("not_testable"),"{}: {e}",d.id),
+                }
                 other_path += 1;
                 continue;
             }

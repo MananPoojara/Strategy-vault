@@ -37,6 +37,11 @@ pub const MARKETS: &[Market] = &[
         source: "NYMEX light sweet crude oil futures: 1,000 barrels per contract (US$1.00 = US$1,000; 0.01 = US$10)" },
     Market { sym: "&ZB", name: "US T-Bond", tick: 1. / 32., usd: &[("1977-08-22", 1_000.)],
         source: "CBOT U.S. Treasury bond futures: US$100,000 face value, quoted in points of par (1 point = US$1,000; 1/32 = US$31.25)" },
+    // lane P1 (vvbats_spread, Van Vliet BATS ch.46): the E-mini legs of the ES/NQ ratio spread
+    Market { sym: "&ES", name: "E-mini S&P 500", tick: 0.25, usd: &[("1997-09-09", 50.)],
+        source: "CME E-mini S&P 500 futures: US$50 x the S&P 500 index since launch (9 Sep 1997); tick 0.25 index point = US$12.50" },
+    Market { sym: "&NQ", name: "E-mini Nasdaq-100", tick: 0.25, usd: &[("1999-06-21", 20.)],
+        source: "CME E-mini Nasdaq-100 futures: US$20 x the Nasdaq-100 index since launch (21 Jun 1999); tick 0.25 index point = US$5" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -126,8 +131,22 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
 
 /// Cards that run on one named continuous contract (#293 (1)): (strategy id, market symbol, instrument_policy basis).
 pub const CARDS: &[(&str, &str, &str)] = &[];
+/// Lane P1: two-leg spreads on two continuous contracts, run in the first contract's context.
+const CARDS_P1: &[(&str, &str, &str)] = &[("vvbats_spread", "&ES", "Benjamin Van Vliet, Building Automated Trading Systems (Academic Press 2007) ch.46 p.290-301 (Spreader_Example: spread = -1 x ES + 2 x NQ, z of the last 30 spread prices, |z| > 2 entry, target z = 0, stop 4 ES ticks): run on the Norgate E-mini S&P 500 continuous contract with the Norgate E-mini Nasdaq-100 contract as the second leg, joined by exact date, daily closes instead of bid/ask quotes (R4 #293 (1), #297), lane P1.")];
+/// (traded contract, second leg): the second leg's back-adjusted and unadjusted closes are attached to the traded contract's
+/// context as `<sym>.Close` / `<sym>.RAW.Close` (extra series: exact date, NaN where it has no bar).
+pub const LEG2: &[(&str, &str)] = &[("&ES", "&NQ")];
+pub fn leg2_series(data: &BTreeMap<String, Vec<Row>>, extra: &mut BTreeMap<(String, String), BTreeMap<String, f64>>) {
+    for (a, b) in LEG2 {
+        let (Some(ma), Some(mb)) = (MARKETS.iter().find(|m| m.sym == *a), MARKETS.iter().find(|m| m.sym == *b)) else { continue };
+        let (ta, tb) = (ticker(ma), ticker(mb));
+        let Some(rows) = data.get(&tb) else { continue };
+        extra.insert((ta.clone(), format!("{b}.Close")), rows.iter().map(|r| (r.date.clone(), r.close)).collect());
+        if let Some(raw) = extra.get(&(tb, "RAW.Close".to_string())).cloned() { extra.insert((ta, format!("{b}.RAW.Close")), raw); }
+    }
+}
 pub const LABEL: &str = "Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
-fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().find(|c| c.0 == id) }
+fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_P1).find(|c| c.0 == id) }
 pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { card(def.id).map(|c| c.2) }
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
