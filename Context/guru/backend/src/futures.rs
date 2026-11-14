@@ -231,6 +231,7 @@ pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("jkbwts_ez_bonder", 11, ""), ("konwv_bond", 5, ""), ("mhptdi_tdi", 5, ""),
     ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""), // lane PA1 (enabled at integration int-1114a)
     ("ltwr_waverider", 6, " They are held through those months (a stop that the open gaps through fills at the open); none of their fills is at an open there."), // lane PH
+    ("lwicw_bond_month_day1", 11, ""), ("lwicw_bond_month_day1_gold", 7, ""), // lane F1D m6 (R4 #331), added at integration int-1114i2
 ];
 /// Lane PF (F1C item 4): the same 1999-12..2000-10 open episode on Norgate &ZN (10-year T-note), measured the ZB-OPEN.md way
 /// (median |open - previous close| 0.5-1.5 ticks of 1/32 and 10-48% zero gaps in those months, vs 3-4.5 ticks and 0-10% in 1995-99).
