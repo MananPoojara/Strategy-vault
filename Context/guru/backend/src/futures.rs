@@ -236,12 +236,36 @@ pub const ZS_OPEN_NOTE: &str = "On Norgate &ZS, from 1999-11 to about 2007-12 th
 /// Lane PH (wdgig_pct3): Norgate &ZW (wheat), measured the same way: 27-30% of days open exactly at the previous close in 1998-07..2000,
 /// 12-26% to 2005, against 4-10% in 1995-98 (11-14% in 2006-07, 9-10% in 2008).
 pub const ZW_OPEN_NOTE: &str = "On Norgate &ZW, from 1998-07 to about 2005-12 the open often sits at the previous close (12-30% of days exactly equal in each half-year, against 4-10% in 1995-98), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
-pub const ZW_OPEN_CARDS: &[(&str, usize, &str)] = &[("wdgig_pct3", 118, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at an open there.")];
+pub const ZW_OPEN_CARDS: &[(&str, usize, &str)] = &[("wdgig_pct3", 118, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at an open there."),
+    // R4 #336 (lane PH): every live &ZW card that reads or fills at the open (counts: authors/ph/w/open_cards.out)
+    ("ch_bta2_adx30", 20, " They are held through those years (a stop that the open gaps through fills at the open); 20 of their fills are at the open price there."),
+    ("ch_bta2_adx_rising", 67, " They are held through those years (a stop that the open gaps through fills at the open); 66 of their fills are at the open price there."),
+    ("ch_bta2_cbo_inside", 95, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open price there."),
+    ("ch_bta2_cbo_ref", 53, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open price there."),
+    ("ch_bta2_cbo_trail5", 95, " They are held through those years (a stop that the open gaps through fills at the open); 6 of their fills are at the open price there."),
+    ("ch_bta2_cbo_volexit", 70, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open price there."),
+    ("ch_bta2_pullback", 56, " They are held through those years (a stop that the open gaps through fills at the open); 53 of their fills are at the open price there."),
+    ("scabeldiv_sma", 22, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open price there.")];
+/// R4 #336 (lane PH): Norgate &GE (Eurodollar) opens, measured with authors/ph/w/opencheck.py: the open equals the previous close on
+/// 16-58% of days in every year from 1993 (under 15% to 1988; 15-27% in 1989-92). Closes-only cards (scnbps_cross, scpged_weekly) get none.
+pub const GE_OPEN_NOTE: &str = "On Norgate &GE (Eurodollar), from 1993 the open equals the previous close on 16-58% of days in every year (under 15% to 1988), so open fills and open-based levels from 1993 may not be true opening prices; part of it may be the contract's one- or two-tick daily moves (labelled, R4 #336; the whole history is kept, as R4 #331).";
+pub const GE_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    ("ch_bta2_adx30", 85, " They are held through those years (a stop that the open gaps through fills at the open); 67 of their fills are at the open price there."),
+    ("ch_bta2_adx_rising", 230, " They are held through those years (a stop that the open gaps through fills at the open); 197 of their fills are at the open price there."),
+    ("ch_bta2_cbo_inside", 323, " They are held through those years (a stop that the open gaps through fills at the open); 13 of their fills are at the open price there."),
+    ("ch_bta2_cbo_ref", 125, " They are held through those years (a stop that the open gaps through fills at the open); 1 of their fills are at the open price there."),
+    ("ch_bta2_cbo_trail5", 285, " They are held through those years (a stop that the open gaps through fills at the open); 15 of their fills are at the open price there."),
+    ("ch_bta2_cbo_volexit", 205, " They are held through those years (a stop that the open gaps through fills at the open); 10 of their fills are at the open price there."),
+    ("ch_bta2_long_bomb", 36, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open price there."),
+    ("ch_bta2_pullback", 139, " They are held through those years (a stop that the open gaps through fills at the open); 124 of their fills are at the open price there."),
+    ("scabeldiv_sma", 73, " They are held through those years (a stop that the open gaps through fills at the open); 1 of their fills are at the open price there."),
+    ("andro_andromeda", 75, " Its orders all fill at the next open; 75 of those fills fall in those years."),
+    ("mhptdi_tdi", 59, " Its orders all fill at the next open; 59 of those fills fall in those years.")];
 pub const ZS_OPEN_CARDS: &[(&str, usize, &str)] = &[("ltwr_waverider", 39, " They are held through those years (a stop that the open gaps through fills at the open); 7 of their fills are at an open there.")];
 /// The card notes with every matching open-episode label appended (&ZB, &ZN, &ZC; unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
     let mut s = notes.to_string();
-    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC"), (ZM_OPEN_CARDS, ZM_OPEN_NOTE, "&ZM"), (ZS_OPEN_CARDS, ZS_OPEN_NOTE, "&ZS"), (ZW_OPEN_CARDS, ZW_OPEN_NOTE, "&ZW")] {
+    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC"), (ZM_OPEN_CARDS, ZM_OPEN_NOTE, "&ZM"), (ZS_OPEN_CARDS, ZS_OPEN_NOTE, "&ZS"), (ZW_OPEN_CARDS, ZW_OPEN_NOTE, "&ZW"), (GE_OPEN_CARDS, GE_OPEN_NOTE, "&GE")] {
         if let Some((_, n, extra)) = table.iter().find(|c| c.0 == id) {
             if !s.is_empty() { s.push(' '); }
             s += &format!("{note} {n} of this card's {sym} trades are affected.{extra}");
@@ -651,7 +675,7 @@ mod tests {
     #[test] fn non_usd_contract_has_no_usd_value() { let m = super::MARKETS.iter().find(|m| m.sym == "&YAP").unwrap(); assert!(super::usd_per_point(m, "2000-01-03").is_none()); } // review PF2 M20
     #[test] fn zb_open_label() { // R4 #331: every listed id is a live card; the label is appended only to them
         let ids: Vec<&str> = crate::books::catalogue().iter().map(|d| d.id).collect();
-        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS).chain(super::ZM_OPEN_CARDS).chain(super::ZS_OPEN_CARDS).chain(super::ZW_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
+        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS).chain(super::ZM_OPEN_CARDS).chain(super::ZS_OPEN_CARDS).chain(super::ZW_OPEN_CARDS).chain(super::GE_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
         let two = super::zb_open_notes("andro_andromeda", "x"); // a card on several contracts carries each label
         assert!(two.contains("this card's &ZN trades") && two.contains("this card's &ZC trades"));
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
