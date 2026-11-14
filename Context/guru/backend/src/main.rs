@@ -2807,6 +2807,16 @@ mod tests {
         let ctx = Ctx::new(rows, rows, &[]);
         let (mut compared, mut other_path) = (0, 0); // other_path: refused by design, ruin or invalid trades, each asserted below
         for d in connors::catalogue().iter().filter(|d| d.status == Status::Live && !d.needs_vix) {
+            if d.id == "apta_nhnl" {
+                // This source-specific NYSE breadth method is admitted only on SPX,
+                // not on this Nifty context without count inputs. Its SPX ledger
+                // has separate book-first reference comparisons; assert refusal here.
+                assert!(instrument_policy::check(d,"NIFTY 50",false).is_some());
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                assert_eq!(backtest_costs(&ctx,d.id,0,rows.len()-1,accounting::Costs::default(),&Params::new()).unwrap_err(), "Strategy implementation unavailable"); // bare calculator; HTTP readiness gives the instrument reason
+                other_path += 1;
+                continue;
+            }
             if books::lkqts::macs_candidate(d.id) {
                 // MACS needs the selected server-qualified RAW native series, so the generic path refuses it by design.
                 assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());

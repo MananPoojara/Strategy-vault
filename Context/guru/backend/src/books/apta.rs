@@ -304,7 +304,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "India mapping: NSE advances/declines, MACD of the traded Indian index.", None),
         d("apta_nhnl", "New highs / (new highs + new lows) 90% model", "Ch 6 · New high/new low indicator", Live, NHNL_SERIES, false,
             &["F|Ten-day arithmetic mean of daily NYSE new highs / (new highs + new lows), p.124.", "E|Buy at 90% or higher (p.124 prose); entry_strict=1 uses above 90% (Table 6.1 caption p.125).", "X|Sell strictly below the selected 90/85/80/75/70% (p.125); default 85%."],
-            "UNVERIFIED local-data application on SPX with Norgate NYSE 52-week counts; vendor methodology and the book's 1970-2004 results are not reproduced. Adapted: 2 unstated details: same-close fills and flat at selected start; nine immediately preceding valid observations warm the first average. No values or gaps are filled.", c("55 (sell <85%)", "49.1%", "", "21.0% invested", "S&P 500 1970-2004")),
+            "UNVERIFIED local-data application on SPX with the loaded NYSE 52-week counts. An independent source-derived reference matched 43 trade records across eight parameter/window comparisons on the checked configuration; this does not reproduce the book's 1970-2004 study or validate other input sources. The HTTP API requires at least two selected sessions. Adapted: 2 unstated details: same-close fills and flat at selected start; nine immediately preceding valid observations warm the first average. No values or gaps are filled.", c("55 (sell <85%)", "49.1%", "", "21.0% invested", "S&P 500 1970-2004")),
         d("apta_weekly_impulse", "Weekly Impulse Continuation Signal", "Ch 6 · Weekly Impulse Signal", NeedsData("weekly NYSE advances/declines measured week-close to week-close and issues traded (not a sum of daily data; not in extra_data)"), &[], false,
             &["F|(weekly advances - declines) / issues traded; six-week EMA (.286) (p.138)", "E|Buy when the average rises to 25% or higher (p.139)", "X|Sell when it falls below -5% (p.139); fills at the next Monday's close (p.140)"],
             "Needs series NYSE_WADV, NYSE_WDECL, NYSE_WISSUES.", c("", "", "+16.62%", "21.9% invested", "NYSE Index 1970-2003")),
@@ -704,7 +704,7 @@ mod tests {
         x.extra.insert("NYSE_NEW_LOWS".into(),vec![1.;30]);
         let def=catalogue().into_iter().find(|d| d.id=="apta_nhnl").unwrap();
         assert_eq!(family_of(def.id).unwrap().0,"apta_nhnl");
-        assert!(!crate::instrument_policy::reviewed_cash_rule(&def)); // independent ledger is still pending
+        assert!(!crate::instrument_policy::reviewed_cash_rule(&def)); // arbitrary selected runs are not individually certified
         assert!(crate::instrument_policy::check(&def,"SPX",false).is_none());
         for ticker in ["SPY","NDX","NIFTY 50","AAPL"] {assert!(crate::instrument_policy::check(&def,ticker,ticker=="AAPL").is_some());}
         let wrong=rows(&[100.; 30]); let mut wrong_ctx=Ctx::new(&wrong,&wrong,&[]);
