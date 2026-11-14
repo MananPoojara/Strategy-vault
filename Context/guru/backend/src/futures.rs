@@ -254,11 +254,41 @@ pub const ZC_OPEN_CARDS: &[(&str, usize, &str)] = &[
 pub const ZM_OPEN_NOTE: &str = "On Norgate &ZM, from 1999-12 to about 2007-12 the open often sits at the previous close (in most months 15-57% of days exactly equal, against 0-15% in 1995-99 and 0-14% from 2008), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
 pub const ZM_OPEN_CARDS: &[(&str, usize, &str)] = &[("ltwr_waverider", 42, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at an open there.")];
 pub const ZS_OPEN_NOTE: &str = "On Norgate &ZS, from 1999-11 to about 2007-12 the open often sits at the previous close (13-41% of days exactly equal in most months to 2003, 5-24% to 2007, against 0-10% in 1995-99 and 0-14% from 2008), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
+/// Lane PH (wdgig_pct3): Norgate &ZW (wheat), measured the same way: 27-30% of days open exactly at the previous close in 1998-07..2000,
+/// 12-26% to 2005, against 4-10% in 1995-98 (11-14% in 2006-07, 9-10% in 2008).
+pub const ZW_OPEN_NOTE: &str = "On Norgate &ZW, from 1998-07 to about 2005-12 the open often sits at the previous close (12-30% of days exactly equal in each half-year, against 4-10% in 1995-98), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
+pub const ZW_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    // R4 #336 (lane PH): every live &ZW card that reads or fills at the open; n = trades held through the episode; fills at the open's
+    // price = back-adjusted open + the trade's entry roll offset (review 4d49d05d B1; authors/ph/w/open_cards2.out)
+    ("wdgig_pct3", 118, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
+    ("ch_bta2_adx30", 20, " They are held through those years (a stop that the open gaps through fills at the open); 21 of their fills are at the open's price there."),
+    ("ch_bta2_adx_rising", 67, " They are held through those years (a stop that the open gaps through fills at the open); 104 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_inside", 95, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_ref", 53, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_trail5", 95, " They are held through those years (a stop that the open gaps through fills at the open); 6 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_volexit", 70, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open's price there."),
+    ("ch_bta2_pullback", 56, " They are held through those years (a stop that the open gaps through fills at the open); 57 of their fills are at the open's price there."),
+    ("scabeldiv_sma", 22, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open's price there.")];
+/// R4 #336 (lane PH): Norgate &GE (Eurodollar) opens, measured with authors/ph/w/opencheck.py: the open equals the previous close on
+/// 16-58% of days in every year from 1993 (under 15% to 1988; 15-27% in 1989-92). Closes-only cards (scnbps_cross, scpged_weekly) get none.
+pub const GE_OPEN_NOTE: &str = "On Norgate &GE (Eurodollar), from 1993 the open equals the previous close on 16-58% of days in every year (under 15% to 1988), while the close repeats the previous close on about half as many days (e.g. 2016: 44% against 15%), so most of it is the vendor's open, not tick size, and open fills and open-based levels from 1993 may not be true opening prices (labelled, R4 #336; the whole history is kept, as R4 #331).";
+pub const GE_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    ("ch_bta2_adx30", 85, " They are held through those years (a stop that the open gaps through fills at the open); 90 of their fills are at the open's price there."),
+    ("ch_bta2_adx_rising", 230, " They are held through those years (a stop that the open gaps through fills at the open); 356 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_inside", 323, " They are held through those years (a stop that the open gaps through fills at the open); 51 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_ref", 125, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_trail5", 285, " They are held through those years (a stop that the open gaps through fills at the open); 19 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_volexit", 205, " They are held through those years (a stop that the open gaps through fills at the open); 15 of their fills are at the open's price there."),
+    ("ch_bta2_long_bomb", 36, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
+    ("ch_bta2_pullback", 139, " They are held through those years (a stop that the open gaps through fills at the open); 151 of their fills are at the open's price there."),
+    ("scabeldiv_sma", 73, " They are held through those years (a stop that the open gaps through fills at the open); 19 of their fills are at the open's price there."),
+    ("andro_andromeda", 89, " Its orders all fill at the next open; 178 of its fills fall in those years."),
+    ("mhptdi_tdi", 70, " Its orders all fill at the next open; 138 of its fills fall in those years.")];
 pub const ZS_OPEN_CARDS: &[(&str, usize, &str)] = &[("ltwr_waverider", 39, " They are held through those years (a stop that the open gaps through fills at the open); 7 of their fills are at an open there.")];
 /// The card notes with every matching open-episode label appended (&ZB, &ZN, &ZC; unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
     let mut s = notes.to_string();
-    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC"), (ZM_OPEN_CARDS, ZM_OPEN_NOTE, "&ZM"), (ZS_OPEN_CARDS, ZS_OPEN_NOTE, "&ZS")] {
+    for (table, note, sym) in [(ZB_OPEN_CARDS, ZB_OPEN_NOTE, "&ZB"), (ZN_OPEN_CARDS, ZN_OPEN_NOTE, "&ZN"), (ZC_OPEN_CARDS, ZC_OPEN_NOTE, "&ZC"), (ZM_OPEN_CARDS, ZM_OPEN_NOTE, "&ZM"), (ZS_OPEN_CARDS, ZS_OPEN_NOTE, "&ZS"), (ZW_OPEN_CARDS, ZW_OPEN_NOTE, "&ZW"), (GE_OPEN_CARDS, GE_OPEN_NOTE, "&GE")] {
         if let Some((_, n, extra)) = table.iter().find(|c| c.0 == id) {
             if !s.is_empty() { s.push(' '); }
             s += &format!("{note} {n} of this card's {sym} trades are affected.{extra}");
@@ -653,7 +683,8 @@ const CARDS_PF: &[(&str, &str, &str)] = &[
 ];
 /// Lane PH: WaveRider on the manual's portfolio; CL CT GC HG NG 6S SI only inside the manual's window (BOOK_WINDOW), 6J KC GE held (HELD).
 const WR: &str = "longtermtrading.com (Alan Pryor), WaveRider System Manual v1.02a (2002) Sec. V-VI with the vendor's weekly trade lists (MoneyManagement/WR-W-*.xls, 21 commodities 1970-2002): run on this Norgate continuous contract of the manual's portfolio, weekly bars from the back-adjusted daily bars, US$ stops at the contract's US$ per point on the trade date (R4 #293 (1), (3), (4)), lane PH.";
-const CARDS_PH: &[(&str, &str, &str)] = &[("rfcfcp_dtdb", "&FESX", "Robert Fischer, Jens Fischer, Candlesticks, Fibonacci, and Chart Pattern Trading Tools (Wiley 2003) ch.4 p.45-51 (DJ EuroStoxx 50 futures, daily, 300-point swing, Table 4.1 Aug 2001 - Aug 2002): run on the Norgate EURO STOXX 50 continuous contract with the 300 points literal, back-adjusted daily bars (R4 #293 (1), (4)), lane PH."),("ltwr_waverider", "&ZC", WR), ("ltwr_waverider", "&CC", WR), ("ltwr_waverider", "&LE", WR), ("ltwr_waverider", "&HE", WR),
+const JC: &str = "J. Curtis package of TradeStation systems (USB HDD 1/TradeStation Systems & Indicators/J.Curtis Package of Systems for TS/Codes.rar -> Codes.txt): the block's code on the Norgate continuous contract of the market it is named for, back-adjusted daily bars (R4 #293 (1)), lane PH.";
+const CARDS_PH: &[(&str, &str, &str)] = &[("jcurt_jk23_jy", "&6J", JC), ("jcurt_jk26_bp", "&6B", JC),("wdgig_pct3", "&ZW", "William Dunnigan, Gains in Grains (1954; New Blueprints for Gains in Stocks and Grains Part IV p.107-111): the 1940 Percentage Wheat Method (3% swings, 1 1/4c penetration, stop-and-reverse as the book's March 1954 wheat record) on the Norgate wheat continuous contract, cents per bushel literal (R4 #293 (1), (4)), lane PH."),("rfcfcp_dtdb", "&FESX", "Robert Fischer, Jens Fischer, Candlesticks, Fibonacci, and Chart Pattern Trading Tools (Wiley 2003) ch.4 p.45-51 (DJ EuroStoxx 50 futures, daily, 300-point swing, Table 4.1 Aug 2001 - Aug 2002): run on the Norgate EURO STOXX 50 continuous contract with the 300 points literal, back-adjusted daily bars (R4 #293 (1), (4)), lane PH."),("ltwr_waverider", "&ZC", WR), ("ltwr_waverider", "&CC", WR), ("ltwr_waverider", "&LE", WR), ("ltwr_waverider", "&HE", WR),
     ("ltwr_waverider", "&ZS", WR), ("ltwr_waverider", "&SB", WR), ("ltwr_waverider", "&ZM", WR), ("ltwr_waverider", "&ZN", WR), ("ltwr_waverider", "&ZB", WR),
     ("ltwr_waverider", "&CL", WR), ("ltwr_waverider", "&CT", WR), ("ltwr_waverider", "&GC", WR), ("ltwr_waverider", "&HG", WR), ("ltwr_waverider", "&NG", WR),
     ("ltwr_waverider", "&6S", WR), ("ltwr_waverider", "&SI", WR)];
@@ -701,7 +732,7 @@ mod tests {
     #[test] fn non_usd_contract_has_no_usd_value() { let m = super::MARKETS.iter().find(|m| m.sym == "&YAP").unwrap(); assert!(super::usd_per_point(m, "2000-01-03").is_none()); } // review PF2 M20
     #[test] fn zb_open_label() { // R4 #331: every listed id is a live card; the label is appended only to them
         let ids: Vec<&str> = crate::books::catalogue().iter().map(|d| d.id).collect();
-        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS).chain(super::ZM_OPEN_CARDS).chain(super::ZS_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
+        for c in super::ZB_OPEN_CARDS.iter().chain(super::ZN_OPEN_CARDS).chain(super::ZC_OPEN_CARDS).chain(super::ZM_OPEN_CARDS).chain(super::ZS_OPEN_CARDS).chain(super::ZW_OPEN_CARDS).chain(super::GE_OPEN_CARDS) { assert!(ids.contains(&c.0), "{}", c.0); }
         let two = super::zb_open_notes("andro_andromeda", "x"); // a card on several contracts carries each label
         assert!(two.contains("this card's &ZN trades") && two.contains("this card's &ZC trades"));
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
