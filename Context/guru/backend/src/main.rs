@@ -3049,6 +3049,18 @@ mod optimizer_rank_minimum_tests {
 #[cfg(test)]
 mod connors_final_tests {
     use super::*;
+    #[test]
+    fn nhnl_longest_span_requires_nine_clean_days_after_gap() {
+        let r:Vec<Row>=(0..900).map(|i|Row{ticker:"SPX".into(),date:format!("{:04}-{:02}-{:02}",2000+i/250,i%250/21+1,i%21+1),open:100.,high:110.,low:99.,close:100.,volume:Some(1e6)}).collect();
+        let mut ctx=Ctx::new(&r,&r,&[]);
+        let mut highs=vec![9.;900]; highs[100]=f64::NAN; highs[700]=f64::NAN;
+        ctx.extra.insert("NYSE_NEW_HIGHS".into(),highs); ctx.extra.insert("NYSE_NEW_LOWS".into(),vec![1.;900]);
+        let d=books::apta::catalogue().into_iter().find(|d|d.id=="apta_nhnl").unwrap(); let p=Params::new();
+        let refuse=|f:usize,t:usize|readiness::check(&ctx,&d,f,t,&p);
+        let (s,e,_)=longest_span(&ctx,&d,0,899,&p,&r[0].date,&refuse).unwrap();
+        assert_eq!((s,e),(110,699)); // gap at 100, nine complete observations 101..109
+        assert_eq!(books::apta::run("apta_nhnl",&ctx,s,e,&p).unwrap()[0].legs[0].i,s);
+    }
     /// Longest gap-free span: NYSE-breadth style gaps inside the window move both ends to the longest stretch.
     #[test]
     fn longest_span_picks_the_longest_stretch_between_series_gaps() {
