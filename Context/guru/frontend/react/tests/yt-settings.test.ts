@@ -102,3 +102,15 @@ describe("YT settings panel", () => {
     expect([...idleKeys(groups, at({ nc_on: 0, atr_on: 1, hsl_on: 1, wd_on: 1 }))].sort()).toEqual(["candle_type", "upclose_n"]);
   });
 });
+
+it("keeps sections the engine names (Section » name) in the engine's order and never greys them", () => {
+  const s = (key: string, label: string, def = 0, max = 1): YtSetting => ({ key, label, def, min: 0, max, step: 1 });
+  const ps = [s("dead_stock", "Backtest parameter » Dead stock backtest (0 no, 1 yes: exit on the last bar)"), s("hard_stop", "Backtest parameter » Hard stoploss %", 0, 50),
+    s("st_point", "ST parameter » Daily ST calculation point (0 mid point, 1 close)"), s("rank_mode", "Ranking parameters » Ranking mode (0 none, 1 ROC)"),
+    s("flt", "Market filter parameter » Index filter (0 none, 1 on)")];
+  expect(groupSettings(ps).map(g => g.name)).toEqual(["Backtest parameter", "ST parameter", "Ranking parameters", "Market filter parameter"]);
+  expect(settingName(ps[0])).toBe("Dead stock backtest");
+  expect(settingOptions(ps[0]).map(o => o.text)).toEqual(["No", "Yes"]);
+  expect(settingGroup(ps[2])).toBe("ST parameter");
+  expect([...idleKeys(groupSettings(ps), () => 0)]).toEqual([]);
+});

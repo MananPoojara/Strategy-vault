@@ -6,7 +6,9 @@ mod connors;
 mod readiness;
 mod gate;
 mod accounting;
+mod yt_report;
 mod baskets;
+mod intraday;
 mod basket_portfolio;
 mod instrument_policy;
 mod trade_validation;
@@ -27,6 +29,17 @@ mod pristine_api;
 // Source-prefix loading and exact account work are serialized for this owner.
 // Metadata stays responsive, and concurrent requests receive a retry response.
 static PRISTINE_RESEARCH_SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// The optimization now running (the gateway runs one at a time): its strategy, combinations finished and total, read by
+/// /api/guru/<guru>/progress so the page can show a progress bar. Only a counter; no result depends on it.
+static OPT_PROGRESS: std::sync::Mutex<Option<(String, Arc<std::sync::atomic::AtomicUsize>, usize)>> = std::sync::Mutex::new(None);
+struct ProgressGuard;
+impl Drop for ProgressGuard { fn drop(&mut self) { if let Ok(mut p) = OPT_PROGRESS.lock() { *p = None; } } }
+fn progress_json() -> String {
+    match OPT_PROGRESS.lock().ok().and_then(|p| p.clone()) {
+        Some((id, done, total)) => format!("{{\"running\":true,\"id\":\"{}\",\"done\":{},\"total\":{}}}", esc(&id), done.load(std::sync::atomic::Ordering::Relaxed).min(total), total),
+        None => "{\"running\":false}".into(),
+    }
+}
 
 use connors::{Ctx, Params, Status, Trade};
 use std::collections::BTreeMap;
@@ -157,6 +170,7 @@ fn load_csv(path: &str) -> Result<BTreeMap<String, Vec<Row>>, String> {
     }
     Ok(out)
 }
+
 
 /// India VIX 1-minute files (Ticker,Date,Time,Expiry,Open,High,Low,Close,...[,Padding Flag])
 /// -> daily OHLC: open = first minute, high/low = extremes, close = last minute.
@@ -342,6 +356,8 @@ fn equity_curve(close: &[f64], trades: &[Trade], from: usize, to: usize, cost: f
 /// Starting capital for the YT whole-unit account: the `capital` setting (default 10,00,000, as in AmiBroker),
 /// or None for every other catalogue, which keeps the normalized percentage model.
 const YT_DEFAULT_CAPITAL: f64 = 1_000_000.0;
+/// The YT catalogue: its Rollover setting is the tradesheet's D1/E1 rate (% per 30 days held), not an engine charge.
+fn yt_money_account(q: &BTreeMap<String, String>) -> bool {q.get("_guru").map(String::as_str) == Some("yt")}
 fn yt_capital(q: &BTreeMap<String, String>) -> Result<Option<f64>, String> {
     if q.get("_guru").map(String::as_str) != Some("yt") {return Ok(None);}
     match q.get("capital").filter(|v| !v.is_empty()) {
@@ -355,11 +371,11 @@ fn yt_capital(q: &BTreeMap<String, String>) -> Result<Option<f64>, String> {
 /// account can pay for including the entry cost, leave the remainder as idle cash, and mark the position to
 /// each close. Returns the money equity per bar in [from, to] and the units bought per trade leg.
 #[derive(Debug)]
-struct WholeUnitAccount { equity: Vec<f64>, units: Vec<Vec<f64>>, entry_cash: Vec<f64>, gross_pnl: f64, turnover: f64 }
+struct WholeUnitAccount { equity: Vec<f64>, units: Vec<Vec<f64>>, entry_cash: Vec<f64>, exit_cash: Vec<f64>, gross_pnl: f64, turnover: f64 }
 fn whole_unit_account(ctx: &Ctx, trades: &[Trade], from: usize, to: usize, cost: f64, capital: f64) -> Result<WholeUnitAccount, String> {
     let close = &ctx.c;
     let mut equity = vec![capital; to - from + 1];
-    let (mut cash, mut next, mut units_all, mut entry_cash, mut gross_pnl, mut turnover) = (capital, from, Vec::new(), Vec::new(), 0.0, 0.0);
+    let (mut cash, mut next, mut units_all, mut entry_cash, mut exit_cash, mut gross_pnl, mut turnover) = (capital, from, Vec::new(), Vec::new(), Vec::new(), 0.0, 0.0);
     for t in trades {
         let start = t.legs[0].i;
         for k in next..start {equity[k - from] = cash;}
@@ -382,10 +398,37 @@ fn whole_unit_account(ctx: &Ctx, trades: &[Trade], from: usize, to: usize, cost:
         next = t.exit_i + 1;
         units_all.push(units);
         entry_cash.push(e0);
+        exit_cash.push(cash);
     }
     for k in next..=to {equity[k - from] = cash;}
     if equity.iter().any(|v| !v.is_finite() || *v <= 0.) {return Err("calculation_unavailable: Unsupported nonpositive or nonfinite whole-unit equity; no reset, clipping or invented funding is applied.".into());}
-    Ok(WholeUnitAccount { equity, units: units_all, entry_cash, gross_pnl, turnover })
+    Ok(WholeUnitAccount { equity, units: units_all, entry_cash, exit_cash, gross_pnl, turnover })
+}
+
+/// The Indicators lab's AmiBroker report of a YT run and its money summary: report trades are every trade (an open one
+/// marked at the last close) with the trade-list return per unit and the whole-unit account's money profit ÷ capital;
+/// years are 365-day years and exposure excludes the exit bar, as the lab's report (yt_report).
+fn yt_report_of(ctx:&Ctx,run:&Run,account:&WholeUnitAccount,capital:f64,costs:accounting::Costs)->(String,String) {
+    let trades:Vec<yt_report::ReportTrade>=run.trades.iter().enumerate().map(|(k,t)| yt_report::ReportTrade {
+        dir:t.dir,entry_i:t.legs[0].i,exit_i:t.exit_i,entry_px:t.legs[0].px,exit_px:t.exit_px,
+        ret:accounting::TradeLedger::amibroker(ctx,t,1.,costs).net_ret,profit:(account.exit_cash[k]-account.entry_cash[k])/capital,
+    }).collect();
+    let (years,exposure)=(yt_report::years(&ctx.r,run.from,run.to),yt_report::exposure(&trades,run.from,run.to));
+    let report=yt_report::report_json(&ctx.r,&run.equity,&trades,yt_report::car(&run.equity,years),exposure,run.equity.len() as f64/years,
+        &run.bh,yt_report::car(&run.bh,years),yt_report::DEFAULT_RATES);
+    let money=format!("{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"currency\":\"INR\"}}",num(capital),num(account.equity.last().copied().unwrap_or(capital)),num(account.turnover*costs.side_rate()));
+    (report,money)
+}
+
+/// One combination's row of AmiBroker's optimization result list (yt_report::SHEET_COLS), on the whole-unit account.
+fn yt_sheet_row(ctx:&Ctx,run:&Run,costs:accounting::Costs,capital:f64)->Result<Vec<f64>,String> {
+    let account=whole_unit_account(ctx,&run.trades,run.from,run.to,costs.side_rate(),capital)?;
+    let trades:Vec<yt_report::ReportTrade>=run.trades.iter().enumerate().map(|(k,t)| yt_report::ReportTrade {
+        dir:t.dir,entry_i:t.legs[0].i,exit_i:t.exit_i,entry_px:t.legs[0].px,exit_px:t.exit_px,
+        ret:accounting::TradeLedger::amibroker(ctx,t,1.,costs).net_ret,profit:(account.exit_cash[k]-account.entry_cash[k])/capital,
+    }).collect();
+    let (years,exposure)=(yt_report::years(&ctx.r,run.from,run.to),yt_report::exposure(&trades,run.from,run.to));
+    Ok(yt_report::sheet_row(&ctx.r,&run.equity,&trades,yt_report::car(&run.equity,years),exposure,run.equity.len() as f64/years,yt_report::DEFAULT_RATES,Some(capital)))
 }
 
 /// Zero-cost equity for the gross comparison, on the same account model as the run.
@@ -691,7 +734,7 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
         let issue=readiness::check(ctx,d,from,to,&p).or_else(||native_admission(ctx,d,from,to,&selected,st,q));
         let (mut status,note)=issue.as_ref().map_or(("ready","Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results."),|i| (i.status,i.note.as_str()));
-        let note=if let Some(roll)=costs.rollover_issue(){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
+        let note=if let Some(roll)=costs.rollover_issue_for(yt_money_account(q)){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
         format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\"}}",d.id,status,esc(&note))
     }).collect();
     Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){unit_exposure_report::costs_json(costs)}else{costs.json()},source_provenance(st,q)))
@@ -796,6 +839,12 @@ fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
 fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Option<readiness::Issue>{
     let Some(evidence)=selected.evidence() else {return instrument_policy::check(def,&ctx.r[0].ticker,false)};
     if let Some(issue)=instrument_policy::check_native(def,&ctx.r[0].ticker,evidence){return Some(issue);}
+    // Intraday rules read the symbol's 1-minute file: report a missing file instead of running to empty trades.
+    if instrument_policy::intraday_rule(def) {
+        if let Err(why)=intraday::available(q.get("ticker").map(String::as_str).unwrap_or("")) {
+            return Some(readiness::Issue{status:"needs_data",note:format!("Intraday data unavailable: {why}. The daily ieodfo series alone cannot run an intraday AFL; no results are published.")});
+        }
+    }
     if q.get("from").is_some_and(|f|!f.is_empty()&&f.as_str()<ctx.r[0].date.as_str()){return Some(readiness::Issue{status:"needs_data",note:format!("Selected start precedes admitted native source coverage beginning {}. No unsupported early history is filled; review source prefix exclusions and choose covered dates.",ctx.r[0].date)});}
     let last=&ctx.r.last().unwrap().date;
     if q.get("to").is_some_and(|t|!t.is_empty()&&t.as_str()>last.as_str()){return Some(readiness::Issue{status:"needs_data",note:format!("Selected end exceeds admitted native source coverage ending {last}. Later unsupported prices are unavailable; the requested end is not silently shortened.")});}
@@ -1173,7 +1222,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_research_profile(id)) {definitions.retain(|d|d.id==id);}
     let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|reviewed_single_session(d.id));
     let (ctx, from, to, _cost) = resolve_context_window(&held, q, single_session_catalogue)?;
-    let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
+    let costs=accounting::Costs::parse(q)?;costs.ensure_rollover_for(yt_money_account(q))?;
     let capital=yt_capital(q)?;
     let mut rows = Vec::new();
     for d in definitions.iter() {
@@ -1419,7 +1468,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if let Some(issue) = readiness::check(ctx, def, from, to, &p).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
-    costs.ensure_rollover()?;
+    costs.ensure_rollover_for(yt_money_account(q))?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
     let capital=yt_capital(q)?;
     let run = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?,costs.side_rate(),capital)?;
@@ -1476,7 +1525,9 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             // Money columns of the whole-unit account: units bought, their entry value and the account value at entry.
             let units:f64=account.units[i].iter().sum();
             let value:f64=t.legs.iter().zip(&account.units[i]).map(|(l,u)|u*l.px).sum();
-            row.pop();let _=write!(row,",\"units\":{},\"position_value\":{},\"entry_equity\":{}}}",num(units),num(value),num(account.entry_cash[i]));
+            // pnl: the account's money result of the trade (after costs); costs: entry and exit cost on those units
+            let costs_paid:f64=t.legs.iter().zip(&account.units[i]).map(|(l,u)|u*(l.px+t.exit_px)*costs.side_rate()).sum();
+            row.pop();let _=write!(row,",\"units\":{},\"position_value\":{},\"entry_equity\":{},\"pnl\":{},\"costs_paid\":{}}}",num(units),num(value),num(account.entry_cash[i]),num(account.exit_cash[i]-account.entry_cash[i]),num(costs_paid));
         }
         row
     }));
@@ -1543,6 +1594,11 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
         o.push_str("]}");
     }
+    // YT: the Indicators lab's AmiBroker report (yt_report), on the whole-unit account, every trade the open one included
+    let yt_report=match (&unit_account,run.whole_units) {
+        (Some(account),Some(capital)) if def.book.starts_with("yt_") => Some(yt_report_of(ctx,&run,account,capital,costs)),
+        _ => None,
+    };
     let gross_equity=run.source_account.as_ref().map_or_else(||gross_equity_of(ctx,&run),|a|a.days.iter().map(|d|d.gross).collect());
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
     let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:run.whole_units};
@@ -1554,6 +1610,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let basis=if run.whole_units.is_some(){"Whole-unit money account (see whole_unit_account): equity, total return, CAGR and drawdown follow AmiBroker-style whole units bought from the starting capital, with idle cash, marked to each close; CAGR counts 365-day years. Trade percentages are per unit. Net profit/closed_return_sum sums actual closed-trade net percentage returns. Gross equity/stats buy whole units on the same fills at zero cost. Ledger gross/fee/slippage returns are money amounts divided by the starting capital and reconcile net total_return. Open trades include modeled liquidation costs. No statutory tax schedule or verified futures roll events are supplied."}else{normalized_basis};
     let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}", stats_json(&financial_stats(ctx, &run, costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(basis));
     if def.book==books::chande::BOOK {o.pop();let _=write!(o,",\"experiment\":{}}}",experiment_json(id));}
+    if let Some((report,money))=&yt_report {o.pop();let _=write!(o,",\"report\":{report},\"money\":{money}}}");}
     if let Some(capital)=run.whole_units {
         o.pop();let _=write!(o,",\"whole_unit_account\":{{\"capital\":{},\"basis\":\"AmiBroker-style money account: starting capital {}; each entry buys the largest whole number of units the account can pay for including the entry cost, and the remainder stays as idle cash. Equity, CAGR and drawdown are on this account, marked to each close; CAGR counts 365-day years. Equity series are this money equity divided by the starting capital. Trade percentages are per unit, unchanged.\"}}}}",num(capital),num(capital));
     }
@@ -1622,7 +1679,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     if let Some(issue) = readiness::check(ctx, def, from, to, &base).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
-    costs.ensure_rollover()?;
+    costs.ensure_rollover_for(yt_money_account(q))?;
     // A requested grid may select a different volatility series than the base setting.
     if let Some(spec) = q.get("g.src") {
         for value in grid(spec)? {
@@ -1662,27 +1719,40 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         .filter(|s| !s.is_empty())
         .map(|s| dates.partition_point(|d| *d < s.as_str()))
         .filter(|&s| s > from + 20 && s + 20 < to);
+    // YT (the Indicators lab's optimizer): sheet=1 adds AmiBroker's 36 result-list columns per combination, table=1 the
+    // result table, and the trade floor is the lab's (10 % of the most trades of any combination)
+    let yt=def.book.starts_with("yt_");
+    let sheet_on=yt && capital.is_some() && q.get("sheet").is_some_and(|v| v == "1");
+    let sheet_n=if sheet_on {yt_report::SHEET_COLS.len()} else {0};
     let metrics_v = |p: &Params| -> Result<Vec<f64>,String> {
         if let Some(issue)=readiness::check(ctx,def,from,to,p){return Err(issue.note);}
         let full = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,p)?,costs.side_rate(),capital)?;
         let s = financial_stats(ctx, &full, costs);
+        let sheet = match (sheet_on,capital) {(true,Some(c)) => yt_sheet_row(ctx,&full,costs,c)?, _ => vec![]};
         let mut out: Vec<f64> = FULL_COLS.iter().map(|k| s[k]).collect();
         for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
             let r = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,a,b,costs,p)?,costs.side_rate(),capital)?;
             let s = financial_stats(ctx, &r, costs);
             out.extend(PART_COLS.iter().map(|k| s[k]));
         }
+        out.extend(sheet);
         Ok(out)
     };
-    let book_metrics=metrics_v(&Params::new())?;
+    let mut book_metrics=metrics_v(&Params::new())?;
+    book_metrics.truncate(book_metrics.len()-sheet_n);
     let serialize_stat:fn(f64)->String=if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::statistic_number}else{num};
     let metrics = book_metrics.iter().map(|v|serialize_stat(*v)).collect::<Vec<_>>().join(",");
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
+    let atr_order=yt && dims.iter().any(|(k,_)| *k=="atr_mult" || *k=="fav_mult");
+    let width=book_metrics.len()+sheet_n;
+    let done=Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    if let Ok(mut p)=OPT_PROGRESS.lock() {*p=Some((id.to_string(),done.clone(),combos));}
+    let _progress=ProgressGuard;
     // each row: parameter values, then FULL_COLS (and IS/OOS PART_COLS)
     let rows_v: Vec<Vec<f64>> = std::thread::scope(|sc| -> Result<Vec<Vec<f64>>,String> {
         let hs: Vec<_> = (0..threads)
             .map(|t| {
-                let (dims, base, metrics_v) = (&dims, &base, &metrics_v);
+                let (dims, base, metrics_v, done) = (&dims, &base, &metrics_v, &done);
                 sc.spawn(move || {
                     (t..combos)
                         .step_by(threads)
@@ -1694,7 +1764,15 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
                                 p.insert(key.to_string(), v);
                                 vals[j] = v;
                             }
+                            // YT, as the lab: with a Dual ATR multiple optimized, Initial × above Favour × is not run (an unranked row)
+                            let mult=|k:&str| p.get(k).copied().or_else(||connors::params(id).iter().find(|x|x.key==k).map(|x|x.def));
+                            if atr_order && matches!((mult("atr_mult"),mult("fav_mult")),(Some(i),Some(f)) if i>f) {
+                                vals.extend(std::iter::repeat_n(f64::NAN,width));
+                                done.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                                return Ok((k, vals));
+                            }
                             vals.extend(metrics_v(&p)?);
+                            done.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
                             Ok((k, vals))
                         })
                         .collect::<Result<Vec<_>,String>>()
@@ -1706,11 +1784,21 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         all.sort_by_key(|r| r.0);
         Ok(all.into_iter().map(|r| r.1).collect())
     })?;
+    // the sheet columns ride at the end of each row: [dims…, 36 values] apart, the rows as before
+    let (rows_v, sheet_v): (Vec<Vec<f64>>, Vec<Vec<f64>>) = rows_v.into_iter().map(|mut r| {
+        let tail = r.split_off(r.len() - sheet_n);
+        let mut sh = r[..dims.len()].to_vec(); sh.extend(tail);
+        (r, sh)
+    }).unzip();
     let col = |name: &str| dims.len() + FULL_COLS.iter().position(|c| *c == name).unwrap();
     // a setting must trade regularly: at least half the book setting's yearly rate, clamped to 1..5 trades a year, and 10 in total
     let yrs = years(ctx, from, to);
     let book_trades = book_metrics[FULL_COLS.iter().position(|c| *c == "trades").unwrap()];
-    let (per_year, min_trades) = optimizer_trade_requirement(book_trades, yrs);
+    let (per_year, min_trades) = if yt {
+        let most = rows_v.iter().map(|r| r[col("trades")]).filter(|v| v.is_finite()).fold(0.0_f64, f64::max);
+        let min = (0.10 * most).ceil().max(1.);
+        (min / yrs, min)
+    } else { optimizer_trade_requirement(book_trades, yrs) };
     // settings with identical results are one candidate, represented by the one with the fewest changes from the book
     let defs: Vec<f64> = dims.iter().map(|(k, _)| connors::params(id).iter().find(|p| p.key == *k).map_or(f64::NAN, |p| p.def)).collect();
     // Additive accounting columns must not change the historical outcome-
@@ -1729,8 +1817,13 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     }
     let dims_json: Vec<String> = dims.iter().map(|(k, v)| format!("{{\"key\":\"{k}\",\"values\":[{}]}}", v.iter().map(|x| serialize_stat(*x)).collect::<Vec<_>>().join(","))).collect();
     let fixed: Vec<String> = base.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), serialize_stat(*v))).collect();
+    let sheet_json = if sheet_on { format!(",\"sheet_cols\":[{}],\"sheet\":[{}]", yt_report::SHEET_COLS.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(","),
+        sheet_v.iter().map(row_s).collect::<Vec<_>>().join(",")) } else { String::new() };
+    const TABLE_KEYS: [&str; 10] = ["total_return", "exposure", "cagr", "max_dd", "mar", "trades", "win_rate", "profit_factor", "avg_trade", "sharpe"];
+    let table_json = if yt && q.get("table").is_some_and(|v| v == "1") { format!(",\"table_cols\":[{}],\"table\":[{}]", TABLE_KEYS.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(","),
+        rows_v.iter().map(|r| row_s(&r[..dims.len()].iter().copied().chain(TABLE_KEYS.iter().map(|k| r[col(k)])).collect())).collect::<Vec<_>>().join(",")) } else { String::new() };
     Ok(format!(
-        "{{\"id\":\"{id}\",\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":[{}],\"fixed\":{{{}}},\"cols\":[{}],\"book\":[{}],\"rank\":{rank_json},\"picked\":{{{}}},\"rows\":[{}],\"costs\":{},\"provenance\":{},\"experiment\":{}}}",
+        "{{\"id\":\"{id}\",\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":[{}],\"fixed\":{{{}}},\"cols\":[{}],\"book\":[{}],\"rank\":{rank_json},\"picked\":{{{}}},\"rows\":[{}],\"costs\":{},\"provenance\":{},\"experiment\":{}{sheet_json}{table_json}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::costs_json(costs)}else if books::hbiab_reviewed::reviewed(id){bandy_costs_json(costs)}else if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
     ))
@@ -1973,6 +2066,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/yt/run" => json(detail(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/yt/params" => json(Ok(params_json("yt")), &mut stream),
         "/api/guru/yt/optimize" => json(optimize(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/connors/progress" | "/api/guru/chande/progress" | "/api/guru/ross/progress" | "/api/guru/yt/progress" => json(Ok(progress_json()), &mut stream),
         "/api/notes" => match note_path(&q) {
             Ok(f) => respond(&mut stream, "200 OK", "text/plain; charset=utf-8", &std::fs::read(f).unwrap_or_default()),
             Err(e) => respond(&mut stream, "400 Bad Request", "text/plain", e.as_bytes()),
@@ -2131,6 +2225,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn yt_rollover_is_a_tradesheet_setting_not_an_engine_charge() {
+        let rollover=accounting::Costs{fees_bps:0.,slippage_bps:0.,rollover_bps:1.};
+        assert!(rollover.rollover_issue_for(true).is_none(),"YT: Rollover only sets the tradesheet's D1/E1");
+        assert!(rollover.rollover_issue_for(false).unwrap().contains("contract"),"other catalogues keep the block");
+        assert!(accounting::Costs::default().rollover_issue_for(false).is_none());
+    }
     #[test]
     fn yt_whole_unit_account_buys_whole_units_and_keeps_idle_cash() {
         // Closes 300, 310, 320, 330, 330 over 2023-01-01..2023-12-31 (364 days). Long entry at 300 (bar 0), exit at 330 (bar 3).

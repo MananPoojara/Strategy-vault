@@ -2,11 +2,13 @@ import { getMigrations } from 'better-auth/db/migration';
 import { readFile, readdir } from 'node:fs/promises';
 import { auth, pool } from './config.mjs';
 import { validateNoteKey } from './contracts.mjs';
+import { seedResearchYtsAdmin } from './research-yts.mjs';
 
 export async function bootstrap() {
   const migrations = await getMigrations(auth.options);
   await migrations.runMigrations();
-  await pool.query(await readFile(new URL('../../db/001-app.sql', import.meta.url), 'utf8').catch(() => readFile(new URL('../../../db/001-app.sql', import.meta.url), 'utf8')));
+  for (const file of ['001-app.sql', '003-research-yts.sql']) await pool.query(await readFile(new URL(`../../db/${file}`, import.meta.url), 'utf8').catch(() => readFile(new URL(`../../../db/${file}`, import.meta.url), 'utf8')));
+  if (await seedResearchYtsAdmin(pool)) console.info('Research YTS admin account created from the local environment file.');
   const email = process.env.VAULT_ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.VAULT_ADMIN_PASSWORD;
   if (email && password) {

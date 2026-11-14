@@ -1,0 +1,186 @@
+.lab-result .lwc { height: auto; margin-top: 10px; background: var(--panel); }
+/* Result metrics wrap with the available width. */
+/* One compact row of headline figures on a laptop; on narrow screens they wrap two or three to a row. */
+.lab-result .metrics { margin-top: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 136px), 1fr)); gap: 8px; border-top: 0; }
+/* Tiles wrap, so each carries its own rule instead of the house .metric + .metric left border. */
+.lab-result .metrics .metric, .lab-result .metrics .metric + .metric { padding: 12px; border: 1px solid var(--rule); border-left: 1px solid var(--rule); }
+.lab-result .metric b { font-size: 22px; overflow-wrap: anywhere; }
+.lab-legend { margin-top: 14px; }
+.lab-result-tables > :first-child { margin-top: 0; }
+.lab-monthly { margin-top: 12px; overflow-x: auto; }
+.lab-trades { margin-top: 12px; display: grid; gap: 8px; }
+.lab-trades .lab-row { justify-content: flex-end; }
+.lab-trades .box-h { margin: 0; font-size: 16px; }
+.lab-exec-strip { display: grid; gap: 6px; margin-top: 8px; }
+.lab-exec-strip .chip { font-size: 12px; }
+.lab-exec-strip ul.rnote { margin: 0; padding-left: 18px; }
+.lab-trades td details summary { cursor: pointer; color: var(--ink2); }
+.lab-trades td details { font-size: 12px; }
+
+.lab-result-charts { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; margin-top: 18px; }
+.lab-result-chart { margin: 0; min-width: 0; }
+.lab-chart-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.lab-chart-h h3 { margin: 0; font-size: 15px; color: var(--ink); }
+.lab-chart-h output { font-size: 12px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+[data-lab-chart="drawdown"] .lab-chart-h output { color: var(--red); }
+.lab-result-chart .lab-chart-sub { min-height: 20px; margin: 6px 0 0; }
+.lab-result-chart .lab-chart-sub .cap { margin: 0; }
+[data-lab-drawdown-worst] { font-variant-numeric: tabular-nums; }
+.lab-result .lab-result-chart .lwc { height: 300px; margin-top: 8px; }
+@media (max-width: 1100px) { .lab-result-charts { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+
+.lab-result .lab-chart-empty { display: grid; place-content: center; padding: 0 16px; text-align: center; color: var(--ink2); font-size: 13px; }
+/* Beside the rules the results column is narrow: stack equity and drawdown by the column's own width. */
+.lab-result { container-type: inline-size; }
+@container (max-width: 760px) { .lab-result-charts { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+
+/* AmiBroker Profit Table: compact cells, average row last. */
+.lab-monthly caption { caption-side: top; text-align: left; font-weight: 600; font-size: 14px; color: var(--ink); padding: 0 0 4px; }
+.lab-monthly .tbl td, .lab-monthly .tbl th { padding: 3px 6px; }
+.lab-monthly tfoot td { border-top: 1px solid var(--steel); font-weight: 600; }
+.lab-trades .lab-row .box-h { margin-right: auto; }
+.lab-pager { justify-content: flex-end; }
+/* The scale is a fact, not a control. */
+.lab-result-chart .lab-scale-note { color: var(--ink3); font-size: 11px; font-style: italic; }
+/* Drawdown axis text matches the equity chart (11 px, ink3, body font). */
+.lab-result [data-lab-drawdown] .bk-ax { font-family: inherit; font-size: 11px; fill: var(--ink3); }
+
+/* ---------- Finish for Results (same language as "Finish for Your idea" in rules.css) ----------
+   Theme tokens only, figures in Inter Numbers, controls 32px, no motion on things used constantly. */
+
+/* Tab strip: quiet underline tabs instead of folder tabs; the open view gets the theme accent. */
+[data-lab-results-tabs] .lab-settings-tabs { background: var(--card); border-color: var(--rule); border-radius: var(--r-box); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+[data-lab-results-tabs] .lab-stabs { gap: 2px; padding: 0 10px; background: color-mix(in srgb, var(--thead) 70%, var(--card)); border-bottom-color: var(--rule); border-radius: var(--r-box) var(--r-box) 0 0; }
+[data-lab-results-tabs] .lab-stabs [role=tab] { padding: 11px 14px 10px; border: 0; border-radius: 0; margin-bottom: -1px; font: 600 13px var(--font); color: var(--ink2); box-shadow: inset 0 -2px transparent; transition: color 150ms ease, box-shadow 150ms ease; }
+[data-lab-results-tabs] .lab-stabs [role=tab]:hover { color: var(--ink); box-shadow: inset 0 -2px var(--steel); }
+[data-lab-results-tabs] .lab-stabs [role=tab][aria-selected=true] { background: none; color: var(--ink); box-shadow: inset 0 -2px var(--blue); }
+[data-lab-results-tabs] .lab-stabs [role=tab]:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: -2px; }
+[data-lab-results-tabs] .lab-stab-panel { padding: 16px 18px 18px; gap: 14px; }
+@media (max-width: 600px) { [data-lab-results-tabs] .lab-stabs { padding: 0 4px; } [data-lab-results-tabs] .lab-stabs [role=tab] { padding: 10px 10px 9px; } [data-lab-results-tabs] .lab-stab-panel { padding: 12px; } }
+/* Each view is already inside the tab card: drop its own box frame so there is no box-in-a-box (Stats/report.css untouched). */
+.lab-page [data-lab-results-tabs] .lab-stab-panel > :is(.lab-result, .lab-result-tables, .lab-mc, .lab-explore, .lab-report) { margin: 0; padding: 0; border: 0; background: none; }
+/* the statistics follow the charts in the same tab: a hairline and a section gap instead of a second box */
+.lab-page [data-lab-results-tabs] .lab-stab-panel > .lab-report { margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--rule); }
+
+/* Shared table voice in the results: Archivo labels, Inter Numbers figures, compact rows. */
+.lab-page :is(.lab-result-tables, .lab-mc, .lab-explore) .tbl th { font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink2); padding: 9px 10px; }
+.lab-page :is(.lab-result-tables, .lab-mc, .lab-explore) .tbl td { padding: 7px 10px; }
+.lab-page :is(.lab-result-tables, .lab-mc, .lab-explore) .tbl td.n { font-family: 'Inter Numbers', var(--font); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.lab-page .lab-result-tables caption { caption-side: top; text-align: left; padding: 0 0 8px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+
+/* Tradesheet: title with a count pill, then one row of 32px controls. */
+.lab-trades { gap: 10px; }
+.lab-trades > .lab-row { gap: 8px 10px; }
+.lab-trades .box-h { font-size: 15px; gap: 8px; justify-content: flex-start; }
+.lab-trades .box-h small { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--card)); font: 600 12px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink2); }
+.lab-result-tables :is(.lab-trades > .lab-row, .lab-pager) :is(.dbtn.sm, .join.sm) { height: 32px; box-sizing: border-box; }
+.lab-result-tables :is(.lab-trades > .lab-row, .lab-pager) .dbtn.sm { padding: 0 12px; }
+.lab-result-tables .lab-trades > .lab-row .join.sm { border-color: var(--steel); }
+.lab-result-tables .lab-trades > .lab-row .join.sm .join-item { padding: 0 12px; }
+.lab-result-tables .dbtn:focus-visible, .lab-result-tables .join-item:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-result-tables :is(.dbtn, .join-item) { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, color 150ms ease, border-color 150ms ease; }
+.lab-result-tables .tlog { border-color: var(--rule); border-radius: var(--r-box); background: var(--card); }
+/* Light zebra so a long row is easy to follow across 14 columns; hover still wins. */
+.lab-result-tables [data-lab-trades] tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--thead) 55%, var(--card)); }
+.lab-result-tables [data-lab-trades] td:last-child { color: var(--ink2); }
+.lab-result-tables [data-lab-trades] tbody tr:hover td { background: var(--hover); }
+.lab-pager { gap: 10px; margin-top: 2px; }
+.lab-pager .cap { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-pager .dbtn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* Monthly YOY: year column, sign-tinted month cells (blank = no trade that month), Yr% set apart, Avg footer. */
+.lab-page .lab-monthly { margin-top: 0; border-radius: var(--r-box); }
+/* overflow visible: the wrapper scrolls and clips, so the sticky year column can stick */
+.lab-page .lab-monthly .tbl { table-layout: fixed; min-width: 860px; overflow: visible; border-color: var(--rule); }
+.lab-page .lab-monthly .tbl :is(th, td):first-child { width: 64px; }
+.lab-page .lab-monthly .tbl :is(th, td):last-child { width: 78px; }
+.lab-page .lab-monthly .tbl :is(td, th) { padding: 6px 8px; }
+.lab-page .lab-monthly .tbl th { text-align: right; }
+.lab-page .lab-monthly .tbl th:first-child { text-align: left; }
+.lab-page .lab-monthly .tbl td.n { font-size: 12.5px; }
+.lab-page .lab-monthly .tbl td.pos { background: color-mix(in srgb, var(--green) 9%, var(--card)); }
+.lab-page .lab-monthly .tbl td.neg { background: color-mix(in srgb, var(--red) 9%, var(--card)); }
+.lab-page .lab-monthly tbody td:first-child { position: sticky; left: 0; z-index: 1; background: var(--card); font: 700 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink); box-shadow: inset -1px 0 var(--rule); }
+.lab-page .lab-monthly thead th:first-child { position: sticky; left: 0; z-index: 2; }
+/* long histories scroll inside the card with the month header pinned (the corner cell above the sticky year column) */
+.lab-page .lab-monthly { max-height: min(72vh, 680px); overflow: auto; }
+.lab-page .lab-monthly thead th { position: sticky; top: 0; z-index: 2; }
+.lab-page .lab-monthly thead th:first-child { z-index: 3; }
+.lab-page .lab-monthly caption .dbtn { margin-left: 8px; vertical-align: middle; }
+.lab-page .lab-monthly .tbl :is(th, td):last-child { border-left: 1px solid var(--steel); font-weight: 700; }
+.lab-page .lab-monthly .tbl td.pos:last-child { background: color-mix(in srgb, var(--green) 16%, var(--card)); }
+.lab-page .lab-monthly .tbl td.neg:last-child { background: color-mix(in srgb, var(--red) 16%, var(--card)); }
+.lab-page .lab-monthly .tbl tfoot td { border-top: 2px solid var(--steel); border-bottom: 0; background: var(--thead); }
+.lab-page .lab-monthly .tbl tfoot td.n { font-weight: 700; background: var(--thead); }
+.lab-page .lab-monthly tfoot td:first-child { position: sticky; left: 0; z-index: 1; font-weight: 600; color: var(--ink2); }
+
+/* Money ledger: same frame as the tables above. */
+.lab-result-tables [data-lab-ledger] { border-color: var(--rule); }
+
+/* Equity & drawdown: tiles and charts as cards, chart titles as small labels with the live value beside them. */
+.lab-result .metrics .metric, .lab-result .metrics .metric + .metric { padding: 10px 12px; border-color: var(--rule); border-radius: var(--r-field); background: var(--card); }
+/* a label that wraps to two lines keeps its figure on the same baseline as the rest of the row */
+.lab-result .metrics .metric { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; }
+.lab-result .metric span { font-size: 12px; font-weight: 600; color: var(--ink2); }
+.lab-result .metric b { margin-top: 2px; font: 700 20px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.lab-result-chart { padding: 12px 14px 14px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-chart-h h3 { font: 700 12px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--ink2); }
+.lab-chart-h output { font: 600 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink); }
+.lab-result .lab-result-chart .lwc { border-radius: var(--r-field); overflow: hidden; }
+@media (max-width: 600px) { .lab-result-chart { padding: 10px; } }
+
+/* After the results: the 0-trade explanation and the jump to the chart. */
+.lab-page .lab-step[data-lab-step-results] > [data-lab-no-trades] { margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--rule); border-left: 3px solid var(--blue); border-radius: var(--r-field); background: var(--card); font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.lab-page .lab-step[data-lab-step-results] > [data-lab-no-trades] > p:first-child b { color: var(--ink); }
+.lab-page .lab-step[data-lab-step-results] > [data-lab-no-trades] li b { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-page .lab-step[data-lab-step-results] > [data-lab-no-trades] .dbtn.sm { height: 28px; padding: 0 10px; }
+.lab-page .lab-step[data-lab-step-results] > [data-lab-see-chart] { margin-top: 12px; height: 32px; padding: 0 14px; border-color: var(--blue); color: var(--blue); }
+.lab-page .lab-step[data-lab-step-results] > [data-lab-see-chart]:hover { background: color-mix(in srgb, var(--blue) 8%, var(--card)); }
+.lab-page .lab-step[data-lab-step-results] > [data-lab-see-chart]:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+/* Tradesheet columns: even spacing, dates centred beside their prices, numbers right-aligned, the header aligned with its column */
+.lab-result-tables [data-lab-trades] :is(th, td) { padding-inline: 14px; }
+.lab-result-tables [data-lab-trades] :is(th, td).c { text-align: center; }
+.lab-result-tables [data-lab-trades] :is(th, td).n { text-align: right; font-variant-numeric: tabular-nums; }
+.lab-result-tables [data-lab-trades] :is(th, td):first-child { padding-left: 16px; }
+.lab-result-tables [data-lab-trades] th { white-space: nowrap; }
+/* a thin rule between the entry pair and the exit pair, and before the results, so the groups read apart */
+.lab-result-tables [data-lab-trades] :is(th, td):nth-child(5), .lab-result-tables [data-lab-trades] :is(th, td):nth-child(7) { border-left: 1px solid var(--rule); }
+/* the research team's tradesheet: format, the template's costs (editable), Download TS — one row under the Tradesheet heading */
+.lab-ts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); background: color-mix(in srgb, var(--blue) 4%, var(--card)); }
+.lab-ts-k { font: 700 11px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+.lab-ts .dfield { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink2); }
+.lab-ts .dfield input[type=number] { width: 70px; }
+.lab-ts [data-lab-download-ts] { margin-left: auto; }
+/* Download all exits: the variants typed per exit, HSL / Profit booking, then the count and the button */
+.lab-ts-many { flex-basis: 100%; border-top: 1px solid var(--rule); padding-top: 8px; }
+.lab-ts-many > summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.lab-ts-vars { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; }
+.lab-ts-var { display: inline-flex; align-items: center; gap: 6px; }
+.lab-ts-var input[type=text] { width: 150px; }
+.lab-ts-stop { display: inline-flex; align-items: center; gap: 8px; }
+.lab-ts-vars [data-lab-download-many] { margin-left: auto; }
+.lab-ts-var.lab-off input[type=text] { opacity: .5; }
+.lab-ts-slot { display: inline-flex; }
+
+/* "?" help: in a tile's top-right corner and after chart titles; the explanation opens below it on hover or keyboard focus */
+.lab-result .metric .metric-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.help-q { position: relative; flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--rule); color: var(--ink2); font: 700 10px/1 var(--font); vertical-align: 2px; cursor: help; }
+.help-q:hover, .help-q:focus-visible { background: var(--ink2); color: var(--card); }
+.help-tip { position: absolute; z-index: 20; right: -6px; top: calc(100% + 6px); width: max-content; max-width: 240px; padding: 8px 10px; border-radius: 8px;
+  background: var(--ink); color: var(--card); font: 500 12px/1.45 var(--font); font-style: normal; letter-spacing: 0; text-align: left; white-space: normal;
+  opacity: 0; visibility: hidden; transform: translateY(-2px); transition: opacity 120ms ease-out, transform 120ms ease-out; pointer-events: none; }
+.lab-chart-title { display: inline-flex; align-items: center; gap: 6px; }
+.lab-chart-title .help-tip { right: auto; left: -6px; }
+.help-q:hover .help-tip, .help-q:focus-visible .help-tip { opacity: 1; visibility: visible; transform: none; }
+@media (prefers-reduced-motion: reduce) { .help-tip { transition: none; } }
+
+/* Results, dense pass: the lab's type contract with dashboard sizes (labels 12, body 14, tables 13, section titles 16), the
+   same tokens builder-studio.css scopes to Your idea; table rows on the 4/8 scale so a tradesheet reads like a sheet. */
+.lab-page[data-lab-page] [data-lab-results-tabs] { --lab-type-body: 14px; --lab-type-label: 12px; --lab-type-section: 16px; --lab-type-title: 18px; --fs-base: 14px; --fs-sm: 13px; --fs-xs: 12px; }
+.lab-page[data-lab-page] [data-lab-results-tabs] .tbl { --lab-type-body: 13px; --fs-base: 13px; }
+.lab-page[data-lab-page] [data-lab-results-tabs] .tbl td { padding-block: 4px; }
+.lab-page[data-lab-page] [data-lab-results-tabs] .tbl th { padding-block: 8px; }
+/* the headline figures stay the largest numbers in the view; chart legends sit at label size beside their captions */
+.lab-page[data-lab-page] [data-lab-results-tabs] .lab-result .metric b { font-size: 22px !important; }
+.lab-page[data-lab-page] [data-lab-results-tabs] .lab-legend { font-size: var(--lab-type-label) !important; }

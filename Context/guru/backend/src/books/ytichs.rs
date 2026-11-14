@@ -25,7 +25,7 @@
 //! - the turnover filter (off) reads OpenInt in the AFL, where the team stored turnover: here close x volume.
 #![allow(dead_code)]
 use crate::books::ytd7::ma;
-use crate::books::ytich::{backtest, lines, Lines, Sigs};
+use crate::books::ytich::{backtest, lines, Lines, Sigs, NULL};
 use crate::books::ytsw::{close_swing, compress, expand_last, supertrend, Bars};
 use crate::connors::{dmi, rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
@@ -341,10 +341,12 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, cash: &[bool], extra: &[bool], athc: &
         let entry = !pos
             && (s1 || s3)
             && tl[i] > bl[i]
+            // Close above a Null delayed line / cloud (the first bars of the data) is never true, as in ytich.rs
+            && delayed[i] != NULL
             && c[i] > delayed[i]
             && c[i] > maxs[i]
             && cash[i]
-            && (k.v != V::Cur || c[i] > cloud[i])
+            && (k.v != V::Cur || (cloud[i] != NULL && c[i] > cloud[i]))
             && extra[i]
             && athc[i]
             && !(rf && ds1[i]);

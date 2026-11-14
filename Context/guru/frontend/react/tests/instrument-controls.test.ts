@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { instrumentControls, instrumentTickers } from '../src/services/instrument-controls';
+import { instrumentControls, instrumentTickers, intradayMethod, isIntradayTicker, INTRADAY_DEFAULT } from '../src/services/instrument-controls';
 
 describe('compatible instrument controls', () => {
+  it('runs intraday AFLs only on the ieodfo F&O futures, never on the daily futures or the cash index', () => {
+    const policy = { allowed_types: ['futures'], requirement: 'intraday_futures' };
+    expect(intradayMethod(policy)).toBe(true);
+    expect(intradayMethod({ allowed_types: ['futures'], requirement: 'futures' })).toBe(false);
+    const controls = instrumentControls(policy, 'ytsti_st52_fresh_ls', 'yt_sti');
+    expect([controls.index, controls.futures, controls.stock, controls.basket, controls.etf]).toEqual([false, false, false, false, false]);
+    expect(controls.note).toContain('F&O futures symbol (ieodfo)');
+    expect(instrumentTickers(policy, [{ ticker: 'NIFTY 50' }], [], 'ytsti_st52_fresh_ls', 'yt_sti', [{ ticker: 'BANKNIFTY FUT' }])).toEqual([]);
+    expect(INTRADAY_DEFAULT).toBe('basket:ieodfo:BANKNIFTY');
+    expect([isIntradayTicker('basket:ieodfo:SBIN'), isIntradayTicker('basket:nse500:SBIN'), isIntradayTicker('BANKNIFTY FUT')]).toEqual([true, false, false]);
+  });
   it('offers Kora BuyShort only the Nifty 50 and Nifty Bank spot indices', () => {
     const policy = { allowed_types: ['index'] };
     const idx = [{ ticker: 'NIFTY 50' }, { ticker: 'NIFTYBANK' }, { ticker: 'NIFTYMIDCAP100' }], fut = [{ ticker: 'NIFTY FUT' }];

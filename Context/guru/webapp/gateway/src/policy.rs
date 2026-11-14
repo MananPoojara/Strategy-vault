@@ -36,6 +36,7 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/yt/run"
             | "guru/yt/params"
             | "guru/yt/optimize"
+            | "guru/yt/progress"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
@@ -43,6 +44,12 @@ pub fn is_optimization_path(path:&str)->bool {
 }
 pub fn can_optimize(role: &str) -> bool {
     matches!(role, "admin" | "researcher")
+}
+/// The Research YTS file upload route (`/api/app/research-yts/issues/{id}/files`), the one request allowed a large body.
+pub fn yts_upload_path(path: &str) -> bool {
+    path.strip_prefix("/api/app/research-yts/issues/")
+        .and_then(|rest| rest.strip_suffix("/files"))
+        .is_some_and(|id| !id.is_empty() && id.len() <= 16 && id.bytes().all(|b| b.is_ascii_digit()))
 }
 pub fn valid_query(query: Option<&str>) -> bool {
     query.map_or(true, |q| {
@@ -54,6 +61,14 @@ pub fn valid_query(query: Option<&str>) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn only_the_yts_file_upload_gets_a_large_body() {
+        assert!(yts_upload_path("/api/app/research-yts/issues/12/files"));
+        assert!(!yts_upload_path("/api/app/research-yts/issues/12/files/3"));
+        assert!(!yts_upload_path("/api/app/research-yts/issues/x/files"));
+        assert!(!yts_upload_path("/api/app/research-yts/issues//files"));
+        assert!(!yts_upload_path("/api/app/notes"));
+    }
+    #[test]
     fn engine_routes_are_allowlisted_and_read_only() {
         assert!(allowed_engine_path("tickers"));
         assert!(allowed_engine_path("ohlc"));
@@ -64,9 +79,10 @@ mod tests {
             assert!(allowed_engine_path(&format!("guru/ross/{route}")));
             assert!(allowed_engine_path(&format!("guru/chande/{route}")));
         }
-        for route in ["strategies","summary","readiness","run","params","optimize"] {
+        for route in ["strategies","summary","readiness","run","params","optimize","progress"] {
             assert!(allowed_engine_path(&format!("guru/yt/{route}")));
         }
+        assert!(!is_optimization_path("guru/yt/progress"));
         assert!(!allowed_engine_path("guru/yt/basket-run"));
         for owner in ["connors","ross","chande","yt"] {assert!(is_optimization_path(&format!("guru/{owner}/optimize")));}
         assert!(!is_optimization_path("guru/other/optimize"));

@@ -25,6 +25,8 @@ export interface VaultRuntimeContract {
     symbol: string;
   }[];
   removeSaved(key: string): void;
+  /** YT collections (book id → name) for the Research YTS page. */
+  ytCollections?(): { key: string; name: string; book: string }[];
 }
 declare global {
   interface Window {

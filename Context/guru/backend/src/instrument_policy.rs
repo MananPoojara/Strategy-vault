@@ -89,6 +89,17 @@ fn yt_old_topics_stock(book:&str,id:&str)->bool {
         "yt_nr7"=>ytnr7::IDS.contains(&id), "yt_vts"=>ytvts::IDS.contains(&id), "yt_nr"=>ytnr::IDS.contains(&id),
         "yt_rank"=>ytrank::IDS.contains(&id), "yt_ichs"=>ytichs::IDS.contains(&id), "yt_nes"=>ytnes::IDS.contains(&id),
         "yt_sws"=>ytsws::IDS.contains(&id), "yt_stk"=>ytstk::IDS.contains(&id), "yt_fsv"=>ytfsv::IDS.contains(&id),
+        "yt_gd"=>ytgd::IDS.contains(&id), "yt_2ds"=>yt2ds::IDS.contains(&id), "yt_sts"=>ytsts::IDS.contains(&id),
+        _=>false,
+    }
+}
+/// The Old Topics YT modules whose AFLs the team ran on both the Nifty / Bank Nifty indices and on stocks, one series at
+/// a time (no stock-universe ranking): an actual index or one actual stock.
+fn yt_old_topics_index_or_stock(book:&str,id:&str)->bool {
+    use crate::books::*;
+    match book {
+        "yt_tr"=>yttr::IDS.contains(&id), "yt_sr"=>ytsr::IDS.contains(&id), "yt_ds"=>ytds::IDS.contains(&id),
+        "yt_aj"=>ytaj::IDS.contains(&id), "yt_hh"=>ythh::IDS.contains(&id),
         _=>false,
     }
 }
@@ -101,7 +112,25 @@ fn yt_old_topics_spot(book:&str,id:&str)->bool {
         "yt_pin"=>ytpin::IDS.contains(&id), "yt_roc"=>ytroc::IDS.contains(&id), "yt_ui"=>ytui::IDS.contains(&id),
         "yt_d7"=>ytd7::IDS.contains(&id), "yt_eng"=>yteng::IDS.contains(&id), "yt_fst"=>ytfst::IDS.contains(&id),
         "yt_ich"=>ytich::IDS.contains(&id), "yt_ib"=>ytib::IDS.contains(&id),
+        "yt_hk"=>ythk::IDS.contains(&id), "yt_lh"=>ytlh::IDS.contains(&id), "yt_usd"=>ytusd::IDS.contains(&id),
+        "yt_st"=>ytst::IDS.contains(&id) || ytstp::IDS.contains(&id), "yt_rsi"=>ytrsi::IDS.contains(&id), "yt_vix"=>ytvix::IDS.contains(&id),
+        "yt_rgs"=>ytrgs::IDS.contains(&id), "yt_crs"=>ytcrs::IDS.contains(&id), "yt_chs"=>ytchs::IDS.contains(&id),
         _=>false,
+    }
+}
+/// The intraday YT modules: they read the 1-minute F&O futures bars and run only on the `ieodfo` daily carrier series.
+pub fn intraday_rule(def:&StrategyDef)->bool {
+    def.book=="yt_sti" && crate::books::ytsti::IDS.contains(&def.id)
+}
+const INTRADAY_NEEDED:&str="Needs intraday data: choose an F&O futures symbol (ieodfo).";
+const INTRADAY_BASIS:&str="YT strategy from the team's intraday AmiBroker AFLs (Old Topics folders; no book PDF available), coded as the AFL is written with the AFL's default settings. It trades intraday bars, so it runs only on an F&O futures symbol of the team's 1-minute IEOD F&O database (basket ieodfo: continuous futures, 1-minute bars to 07-02-2023, compressed to the AFL's timeframe); the daily ieodfo series carries the trades and each trade's note gives its intraday entry and exit times. Daily-only series (spot indices, the bhavcopy near-month futures, cash stocks) have no intraday bars and are not substitutes. Contract sizes, margins, roll-overs and the AFL's position sizing are not modelled. Not checked against the team's result workbooks.";
+/// Intraday rules need the ieodfo series; the ieodfo series (intraday F&O futures) is admitted for intraday rules only:
+/// no other method was reviewed for these continuous futures.
+fn intraday_issue(def:&StrategyDef,ticker:&str,intraday_series:bool)->Option<Issue> {
+    match (intraday_rule(def),intraday_series) {
+        (true,false)=>Some(Issue{status:"needs_data",note:format!("{INTRADAY_NEEDED} Selected {ticker} has no intraday bars. {INTRADAY_BASIS}")}),
+        (false,true)=>Some(Issue{status:"needs_data",note:format!("Selected {ticker} is an F&O futures series aggregated from the team's 1-minute IEOD database (ieodfo). It is admitted only for the intraday YT strategies; this method was not reviewed for these continuous futures, and they are not cash stocks or spot indices.")}),
+        _=>None,
     }
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
@@ -301,7 +330,9 @@ fn base_policy(def:&StrategyDef)->Policy {
         "yt_hol" if id==crate::books::ythol::ID || id==crate::books::ythol::SHORT_ID => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's Holidays AFLs (Ganesh Chaturthi long with the BASE 2 bull filter; President's Day short), not a book method. Daily OHLC rules are simulated on the selected actual index or ETF series; each team workbook (NIFTY 50, NIFTYBANK, NIFTYMIDCAP100) is reproduced trade for trade."),
         "yt_kr" if id==crate::books::ytkr::OPEN_CLOSE_LS => index("YT strategy from the team's Kora Reddy AFL BuyShort at Open or Close (no book PDF available). Unlike the other Kora strategies, the team ran it on the NSE cash (spot) indices: on actual NIFTY 50 (03-01-2000 to 31-03-2022) and NIFTY BANK (09-06-2005 to 31-03-2022) daily prices, with open buffer 0% and no commission, it reproduces all 40 rows of the team's optimization workbooks. Only those two indices are admitted; futures, other indices, ETFs and stocks are not substitutes."),
         "yt_kr" if crate::books::ytkr::IDS.contains(&id) => requirement("futures", &["futures"], "YT strategy from the team's Kora Reddy AFL (no book PDF available). The team tested it on NSE Nifty/BankNifty near-month futures; it runs only on the actual near-month futures daily series built from NSE F&O daily files (bhavcopy: official open/high/low/close, rolled after expiry, not back-adjusted). The cash index does not stand in for futures. Checked against the team's optimization tables and trade lists to 26-10-2021: BankNifty matches every row; Nifty differs only where 17 NSE daily files of Jul-Oct 2000 are missing. Contract sizes, margins and roll costs are not modelled."),
+        "yt_sti" if intraday_rule(def) => requirement("intraday_futures", &["futures"], INTRADAY_BASIS),
         b if yt_old_topics_stock(b, id) => stock("YT strategy from the team's AmiBroker AFLs (Old Topics folders; no book PDF available) written for individual stocks, coded as the AFL is written with the AFL's default settings and run on one actual stock at a time (the team ran these over NSE 500 / F&O stock universes; portfolio ranking, position limits and capital sharing are not modelled). The AFLs' market filter uses the market benchmark (NIFTY 50). Not checked against the team's result workbooks."),
+        b if yt_old_topics_index_or_stock(b, id) => requirement("index_or_stock", &["index","individual_stock"], "YT strategy from the team's AmiBroker AFLs (Old Topics folders; no book PDF available), coded as the AFL is written with the AFL's default settings. The team's AFLs work on one series at a time and were run on NSE Nifty / Bank Nifty spot indices and on stocks; it runs on an actual index series or on one actual stock at a time, daily bars. Portfolio ranking, position limits and capital sharing are not modelled. Not checked against the team's result workbooks. Futures and ETFs are not substitutes."),
         b if yt_old_topics_spot(b, id) => index("YT strategy from the team's AmiBroker AFLs (Old Topics folders; no book PDF available), coded as the AFL is written with the AFL's default settings. The team ran it on daily NSE index (spot) prices; it runs on an actual index series, daily bars. It has not been checked against the team's result workbooks. Futures, ETFs and stocks are not substitutes."),
         "yt_sw" if crate::books::ytsw::FUTURES_TOO.contains(&id) => requirement("index_or_futures", &["index","futures","individual_stock"], "YT strategy from the team's % Swing AFLs (no book PDF available), coded as the AFL is written. The team ran it on the NSE Nifty / Bank Nifty cash indices, on their near-month futures and on NSE 500 / F&O stocks; it runs on an actual index series, on the near-month futures series built from NSE F&O daily files (bhavcopy, rolled after expiry, not back-adjusted) or on one actual stock at a time. Daily bars, fills at the close; contract sizes, margins, roll costs and the team's portfolio limits are not modelled."),
         "yt_sw" if id==crate::books::ytsw::DIFF => requirement("index_or_stock", &["index","individual_stock"], "YT strategy from the team's % Swing AFLs (no book PDF available), coded as the AFL is written. The team ran it on the NSE Nifty / Bank Nifty cash indices and on F&O stocks; it runs on an actual index series or on one actual stock at a time, daily bars, fills at the close. The team's portfolio limits are not modelled; futures and ETFs are not substitutes."),
@@ -323,6 +354,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 }
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
+    if let Some(issue)=intraday_issue(def,ticker,false){return Some(issue);}
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=yt_kr_data_kind_issue(def,selected){return Some(issue);}
     if let Some(issue)=yt_spot_symbol_issue(def,ticker,selected){return Some(issue);}
@@ -338,6 +370,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
 /// source's historical adjusted-price basis or its original execution ticks.
 pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Option<Issue> {
     let p=policy(def);
+    if let Some(issue)=intraday_issue(def,ticker,evidence.intraday_futures()){return Some(issue);}
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(reason)=p.native_currency_constraint {
@@ -370,6 +403,7 @@ fn check_selected(p:Policy,ticker:&str,selected:&str)->Option<Issue> {
         "individual_stock" => ("needs_data","This method requires a validated individual stock from a source-qualified constituent basket. A cash index or ETF cannot stand in for its stock population."),
         "index" => ("needs_data","This method requires an actual index price series. A constituent stock or ETF is a different instrument."),
         "etf" => ("needs_data","This method requires real ETF prices. An index, including DJI in place of DIA, or an individual stock is not the ETF."),
+        "intraday_futures" => ("needs_data",INTRADAY_NEEDED),
         "futures" => ("needs_data","Actual dated futures contracts, contract-specific tick/point values, execution prices and roll history are required; cash-stock/index prices cannot replace them."),
         "options" => ("needs_data","Exact traded option contract/leg prices and validated option-position accounting are required; underlying prices cannot replace premiums."),
         "portfolio" => ("needs_data","Historical universe membership, required stock/asset data, cross-sectional selection and simultaneous portfolio accounting are unavailable. Independent symbol tests are not an aggregate portfolio."),
@@ -460,7 +494,7 @@ mod tests {
             assert!(check(&d,"NIFTY 50",false).unwrap().note.starts_with("Not available on index (spot) data"));
         }
         // % Swing and the Old Topics modules: spot indices; four % Swing rules also on the near-month futures series
-        for d in crate::connors::catalogue().into_iter().filter(|d| d.book.starts_with("yt_") && !["yt_kr","yt_mr","yt_jb","yt_hol"].contains(&d.book)) {
+        for d in crate::connors::catalogue().into_iter().filter(|d| d.book.starts_with("yt_") && !["yt_kr","yt_mr","yt_jb","yt_hol","yt_sti"].contains(&d.book)) {
             if yt_old_topics_stock(d.book,d.id) {
                 // stock AFLs: one actual stock at a time; an index or futures series is not a stock
                 assert_eq!(policy(&d).allowed_types,&["individual_stock"][..],"{}",d.id);
@@ -475,6 +509,23 @@ mod tests {
         // other futures methods stay held: the NSE index futures series is not their contract
         assert_eq!(check(&def("lwdg2_0105","lwdg2"),"NIFTY FUT",false).unwrap().status,"needs_data");
         assert_eq!(check(&def("radge_ma220","radge"),"BANKNIFTY FUT",false).unwrap().status,"needs_data");
+    }
+    #[test]
+    fn intraday_rules_run_only_on_the_ieodfo_futures_and_ieodfo_admits_nothing_else() {
+        let ieod=NativeEvidence::india_test_fixture(true);let stock=NativeEvidence::india_test_fixture(false);
+        for d in crate::books::ytsti::catalogue() {
+            assert!(intraday_rule(&d),"{}",d.id);
+            let p=policy(&d);assert_eq!((p.requirement,p.allowed_types),("intraday_futures",&["futures"][..]));
+            assert!(check_native(&d,"BANKNIFTY",&ieod).is_none(),"{}",d.id);
+            for issue in [check_native(&d,"SBIN",&stock).unwrap(),check(&d,"NIFTY 50",false).unwrap(),check(&d,"BANKNIFTY FUT",false).unwrap()] {
+                assert_eq!(issue.status,"needs_data");assert!(issue.note.starts_with("Needs intraday data: choose an F&O futures symbol (ieodfo)."),"{}",issue.note);
+            }
+        }
+        // the ieodfo futures are not stocks and do not stand in for the bhavcopy futures or spot series of other rules
+        for d in crate::connors::catalogue().into_iter().filter(|d|!intraday_rule(d)).filter(|d|d.book.starts_with("yt_")) {
+            let issue=check_native(&d,"SBIN",&ieod).unwrap();assert_eq!(issue.status,"needs_data","{}",d.id);assert!(issue.note.contains("ieodfo"),"{}",d.id);
+        }
+        assert!(check_native(&def("ytnr_long_basic","yt_nr"),"SBIN",&stock).is_none());
     }
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,

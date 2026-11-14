@@ -20,6 +20,11 @@ describe('real email authentication contract',()=>{
   expect(fetcher).toHaveBeenCalledOnce();
   const [url,init]=fetcher.mock.calls[0];expect(url).toBe('/api/auth/sign-in/email');expect(init.credentials).toBe('same-origin');expect(init.method).toBe('POST');expect(JSON.parse(init.body)).toEqual({email:'test@example.invalid',password:'  correct password  '});
  });
+ it('signs in by user ID when there is no @',async()=>{
+  const fetcher=vi.fn().mockResolvedValue(new Response('{}',{status:200}));
+  await signInEmail(' Kripalsinh ','123',fetcher);
+  const [url,init]=fetcher.mock.calls[0];expect(url).toBe('/api/auth/sign-in/username');expect(JSON.parse(init.body)).toEqual({username:'Kripalsinh',password:'123'});
+ });
  it.each([401,403,429,500])('does not accept a failed auth response (%s) or expose its server body',async status=>{
   const fetcher=vi.fn().mockResolvedValue(new Response('private server stack',{status}));
   await expect(signInEmail('test@example.invalid','wrong',fetcher)).rejects.toThrow(status===429?'Too many attempts':'Could not sign in');

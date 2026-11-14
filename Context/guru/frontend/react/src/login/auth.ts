@@ -14,13 +14,16 @@ export function safeLoginNext(raw: string | null, hash = '', origin = window.loc
     return url.pathname+url.search+url.hash;
   } catch {return '/';}
 }
-export async function signInEmail(email: string,password: string,fetcher: typeof fetch=fetch,signal?: AbortSignal): Promise<void> {
+/** Sign in with an email address, or with a user ID (anything without "@"). */
+export async function signInEmail(login: string,password: string,fetcher: typeof fetch=fetch,signal?: AbortSignal): Promise<void> {
+  const id=login.trim(),byEmail=id.includes('@');
   let response: Response;
   try {
-    response=await fetcher('/api/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),password}),signal});
+    response=await fetcher(byEmail?'/api/auth/sign-in/email':'/api/auth/sign-in/username',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(byEmail?{email:id,password}:{username:id,password}),signal});
   } catch(error) {
     if(signal?.aborted)throw error;
     throw new Error('Connection interrupted. Please try again.');
   }
-  if(!response.ok)throw new Error(response.status===429?'Too many attempts. Please wait a minute and try again.':'Could not sign in. Check your email and password.');
+  if(!response.ok)throw new Error(response.status===429?'Too many attempts. Please wait a minute and try again.':'Could not sign in. Check your user ID or email and password.');
 }

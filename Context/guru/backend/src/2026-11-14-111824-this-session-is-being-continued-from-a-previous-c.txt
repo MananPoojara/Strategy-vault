@@ -1,0 +1,2429 @@
+ ▐▛███▛█   Claude Code v2.1.323
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/Documents/Strategy-vault/Context/guru/backend/src
+
+
+✻ Conversation compacted (ctrl+o for history)
+
+
+● This is already in place. The live Research YTS account admin exists, is
+  active, has admin rights, and accepts the password you gave, admin@123.
+
+  Your request maps onto the build like this:
+
+  ┌───────────────────────────┬─────────────────────────────────────────────┐
+  │      What you asked       │                 What's live                 │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ Separate Research YTS     │ QAs sign in with their own username and     │
+  │ login                     │ password                                    │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ Admin account             │ username admin, password as you set         │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ Add, reset or deactivate  │ QA accounts panel, visible to admins only   │
+  │ QAs                       │                                             │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ Deactivated QA keeps      │ issues stay; the person is signed out and   │
+  │ history                   │ blocked                                     │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ Admin sees all QAs'       │ admin sees every issue; QAs see only their  │
+  │ issues                    │ own                                         │
+  └───────────────────────────┴─────────────────────────────────────────────┘
+
+  About "without a QA login": I read your instruction as replacing that idea
+  with this Research YTS admin account. So the app's own admin account
+  (Kripalsinh) doesn't get into Research YTS by itself; you sign in there as
+  admin. If you also want anyone logged into the app as an app admin to skip the
+  Research YTS sign-in, I can add that. With only one shared app account,
+  though, every QA would get admin access, so I'd advise against it.
+
+  To try it:
+  1. Hard-refresh the app (Ctrl+Shift+R), open Research YTS, and sign in as
+     admin.
+  2. Click QA accounts and add a QA.
+  3. Click Switch person, sign in as that QA, and report an issue.
+  4. Sign back in as admin to see it.
+
+※ recap: Goal: a Research YTS page where each QA logs YT strategy issues under their own login. It's live, with an `admin` account set up as you asked. Next: sign in as `admin`, add a QA, and file a test issue to confirm it works.
+  ⎿  Read Context/guru/frontend/react/tests/research-yts.test.tsx (118 lines)
+  ⎿  Referenced file Context/guru/webapp/tests/research-yts.test.mjs
+  ⎿  Read Context/guru/frontend/react/src/services/research-yts.ts (87 lines)
+  ⎿  Referenced file Context/guru/webapp/auth/src/research-yts.mjs
+  ⎿  Read Context/guru/webapp/db/003-research-yts.sql (55 lines)
+  ⎿  SessionStart:compact says: ◪ supermemory · 5 memories loaded for
+     Strategy-vault
+
+● Compacted while idle, before the prompt cache expired · turn off with 
+  "idleCompaction": false in settings.json
+
+❯ /exit                                                                         
+  ⎿  Catch you later!
+
+❯ do you know the location of that strategy status sheet ?                      
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Yes. It's on the share, in Jay's StrategyVault folder:
+
+  /run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/Jay/Jay_Files/St
+  rategyVault/Strategy Tradesheet Status.xlsx
+
+  On the network share the same location is
+  share/Jay/Jay_Files/StrategyVault/Strategy Tradesheet Status.xlsx.
+
+  I just checked it without changing anything. The file is there, 9.4 KB, last
+  modified 12 Nov at 17:40, and no one has it open right now.
+
+  This is one of the two share files I'm allowed to change, and only when you
+  ask. If you want it updated, for example with the Research YTS work or the
+  newly coded strategies, tell me what to change.
+
+※ recap: We're converting the team's AmiBroker strategies into Strategy Vault, and Research YTS with per-QA logins is now live. Next, tell me what to change in the Strategy Tradesheet Status sheet, or sign in to Research YTS as admin to test it. (disable recaps in /config)
+
+❯ I think I have added the intraday db location at                              
+  smb://192.168.4.50/share/Jay/Old%20Topics/Database Directory file. You can    
+  use that and code the other strategies that you can like supertrend,          
+  remaining candle range strategies.                                            
+  ⎿  UserPromptSubmit says: ◪ supermemory · recalled 1 new (139 tok) · 14 
+     already in context
+
+● Bash(cd
+      /home/aff49/.claude/projects/-home-aff49-Documents-Strategy-vault/memory/;
+      cat *.md | head -80; ls -la
+      "/run/user/1000/gvfs/smb-share:server=192.168.4.50,sha…)
+  ⎿  ---
+     name: database-choice-from-directory
+     description: "Pick the run database from jay-local/Database Directory.
+     … +78 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local;
+      S="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/Jay/Old
+      Topics/Database Directory.xlsx"; ls…)
+  ⎿  Error: Exit code 1
+     ls: cannot access 'Matches/Database Directory.xlsx': No such file or 
+     directory
+     -rw-rw-r-- 1 aff49 aff49 9777 Nov  4 18:55 Database Directory.xlsx
+     0c552ed7e49287f2fc1dc7611def0dc2  
+     /run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/Jay/Old 
+     Topics/Database Directory.xlsx
+     d340956711746d2be7f47680ba575171  Database Directory.xlsx
+     Traceback (most recent call last):
+       File "<stdin>", line 1, in <module>
+     ModuleNotFoundError: No module named 'openpyxl'
+
+● Bash(ls /home/aff49/Documents/Strategy-vault/ | head -30; ls -d
+      /home/aff49/Documents/Strategy-vault/{.venv,venv,scratch} 2>&1; which
+      python3; for p in /home/aff49/D…)
+  ⎿  Error: Exit code 1
+     AGENTS.md
+     Context
+     DATA OF OHLC - Copy.xlsx
+     DATA OF OHLC.xlsx
+     JAY SOFTWARE.xlsx
+     README.md
+     docs
+     idx_data.csv
+     jay-local
+     … +10 lines (ctrl+o to expand)
+
+● Bash(cat > /tmp/claude-1000/-home-aff49-Documents-Strategy-vault/5d89b2e4-5c44
+      -42c6-81b7-eabce42e397a/scratchpad/xlsx_dump.py <<'EOF'
+      import sys, zipfile, re, xml.et…)
+  ⎿  ## Sheet1
+     A1=Old Database Name | B1=Old Database Path | C1=Updated Database Name
+      | D1=Type | E1=Prices | F1=Use | G1=AUX | H1=Basket | I1=Updated Data
+     … +91 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/aff49/Documents/Strategy-vault
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO"; ls -la "$D"; ls "$D/IEOD_FO STOCKS-EODIEOD_UPDATED
+      TILL 07-02-20…)
+  ⎿  total 4049392
+     drwx------ 1 aff49 aff49          0 Aug 21  2024 .
+     drwx------ 1 aff49 aff49          0 Nov 12 15:37 ..
+     … +53 lines (ctrl+o to expand)
+
+● I've located the intraday database you added (the IEOD_FO STOCKS-EOD file for
+  07-02-2023, an AmiBroker database). Next I'm checking how the earlier
+  databases were converted and which Supertrend and Candle Range AFLs remain
+  uncoded. · summary
+
+● Bash(cd /home/aff49/Documents/Strategy-vault; ls jay-local/Data
+      jay-local/Data/baskets jay-local/Data/baskets/updated | head -40; ls
+      scripts | head -50; grep -rl -i…)
+  ⎿  jay-local/Data:
+     README.md
+     amibroker
+     … +28 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local/Data; cat README.md; ls
+      amibroker futures extra_usd | head -40; du -sh amibroker futures
+      baskets/* 2>/dev/null)
+  ⎿  # Local market data (jay-local, not in Git)
+
+     Derived data for strategy research and the Guru engine. Raw sources st
+     … +85 lines (ctrl+o to expand)
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local/Data/amibroker; ls
+      cp_updated_2026 | head; ls fo_updated_2024 | head; ls -la cp_updated_2026
+      | head -5; find .…)
+  ⎿  2
+     3
+     5
+     … +27 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local; ls _checks | head -80;
+      sed -n 1,80p _checks/build_basket.py)
+  ⎿  __pycache__
+     ab_read.py
+     build_all_baskets.sh
+     … +153 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local; ls; ls "Old Topics
+      AFL" | head -100)
+  ⎿  % Swing
+     Data
+     Database Directory.xlsx
+     … +54 lines (ctrl+o to expand)
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics AFL"; find
+      Supertrend "Candle Range Decrease and Volume Increase" -type f | sed 's/^/
+       /'; ls /hom…)
+  ⎿    Supertrend/Nifty SuperTrend Entry & ATR SL Exit For Index & Fo Datab
+     ase with ST(54) Filter.afl
+       Supertrend/Nifty SuperTrend Entry & Profit Booking or HARD SL or Tra
+     … +503 lines (ctrl+o to expand)
+
+● There are about 80 Supertrend AFL files, and some are already partly coded
+  (ytst.rs, ytcr.rs, ytcrs.rs). I'm checking which ones those cover so I only
+  code the missing ones.
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for f in ytst.rs ytcr.rs ytcrs.rs ytfst.rs ytfsv.rs; do echo "=== $f $(wc
+      -l <$f)"; sed…)
+  ⎿  === ytst.rs 1294
+     //! YT Strategies · Supertrend: the team's AmiBroker AFLs in "Old Topi
+     cs/Supertrend" that trade one series on daily
+     … +107 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      sed -n 40,80p ytst.rs | grep "^//!"; echo ----; grep -n "^//!" ytcr.rs |
+      sed -n 14,40p;…)
+  ⎿  ----
+     12://! Not coded separately: "Candle Range AFL_Sukun/Candle Range Decr
+     ease and Volume Increase.afl" is the original AFL
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      sed -n 28,45p ytst.rs; grep -n "fn strategies\|id:\|name:" ytcr.rs | head
+      -20; grep -rn…)
+  ⎿  //! Not coded (see each family's notes and the module's final report):
+      the hourly / 25-75 minute AFLs and the "ST
+     //! Fresh Running Buy-Sell Index Intraday" AFLs (intraday bars); "ST m
+     … +56 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/.claude/projects/-home-aff49-Documents-Strategy-vault/;
+      grep -o "Candles\? Range Short[^\"]\{0,300\}"
+      5d89b2e4-5c44-42c6-81b7-eabce42e397a.jsonl…)
+  ⎿        2 Candles Range Short Only:** these variants in Miscelleneous we
+     re skipped because the folder is already coded.\n     - **30 Min Break
+     out:** nothing coded (needs intraday); no UI card.\n     - Uncoded int
+     … +20 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/aff49/Documents/Strategy-vault
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics
+      AFL/Miscelleneous"; find . -iname "*candle*range*" | head; find . -ipath
+      "*candle*range*" -name "*…)
+  ⎿  ./Candles Range Decrease and Volume Increase
+     ./Candles Range Decrease and Volume Increase/Candles Range Decrease an
+     d Volume Increase (Short Only, With and Without Filter).afl
+     … +25 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/aff49/Documents/Strategy-vault
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      grep -n "fn family_of" -A80 ytst.rs | grep -E '"' | head -60)
+  ⎿  1100-    Some((d.id, d.name, "Supertrend"))
+     1145-        let tl = go(run, ALL, &r, &[("side", 1.0)]);
+     1158-        let t = go(run, ALL_ATR, &r, &[("side", 1.0)]);
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      grep -n '^pub const' ytst.rs; grep -n -o '\.afl[^"]*"\|[A-Za-z0-9
+      ,&%()_.-]*\.afl' ytst.…)
+  ⎿  40:pub const BOOK: &str = "yt_st";
+     41:pub const ALL: &str = "ytst_st_all";
+     42:pub const ALL_ATR: &str = "ytst_st_all_atr_exit";
+     … +49 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for k in "single trade" "trade below filter" "SMA BUY SELL"
+      "MultiTimeFrame" "Entry on A…)
+  ⎿  single trade                         atmcsa.rs dgmtt.rs ytsn.rs ytst.r
+     s
+     trade below filter
+     … +21 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      grep -n -i "not coded\|skipped\|5-1 Sell Buy\|V1\b\|V2\b" ytst.rs | head
+      -30; grep -n "y…)
+  ⎿  15://! - `VarSet(DV1, ..)` inside the AFLs' `ST()` function overwrites
+      the globals named by its string arguments (BPD1 =
+     28://! Not coded (see each family's notes and the module's final repor
+     … +63 lines (ctrl+o to expand)
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics
+      AFL/Supertrend"; cat "ST Fresh Running Buy-Sell Index Intraday/IEOD
+      INDEX_FO_EODIEOD/WatchLists/in…)
+  ⎿  INDEX IEOD FO
+     total 219590
+     drwx------ 1 aff49 aff49        0 Mar 15  2023 .
+     … +66 lines (ctrl+o to expand)
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023"; cat
+      "$D/WatchList…)
+  ⎿  CNX100_F1
+     CNXINFRA_F1
+     CNXIT_F1
+     … +124 lines (ctrl+o to expand)
+
+● Status: the intraday database has Bank Nifty futures (about 56 MB of intraday
+  bars), but its NIFTY file is almost empty. I'm looking for Nifty under another
+  symbol name and checking the bar size.
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023"; for
+      l in s n c m…)
+  ⎿  -rwx------ 1 aff49 aff49  3455348 Mar 15  2023 S&P500_F1
+     -rwx------ 1 aff49 aff49   964588 Mar 15  2023 S&P CNX NIFTY (INDEX)
+     -rwx------ 1 aff49 aff49  4099188 Mar 15  2023 NIFTYIT_F1
+     … +68 lines (ctrl+o to expand)
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023";
+      L=/home/aff49/Doc…)
+  ⎿  bc957993670034e1feb4fa3142c0b8cf  /run/user/1000/gvfs/smb-share:server
+     =192.168.4.50,share=share/DATABASE/Updated Intraday FO/IEOD_FO STOCKS-
+     EODIEOD_UPDATED TILL 07-02-2023/b/BANKNIFTY
+     … +15 lines (ctrl+o to expand)
+
+● Bash(B="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO"; ls -la "$B/IEOD_FO STOCKS-EODIEOD/n" 2>/dev/null |
+      grep -E " NIF…)
+  ⎿  -rwx------ 1 aff49 aff49 58522908 Mar 15  2023 NIFTY
+     total 806
+     drwx------ 1 aff49 aff49      0 Oct  4  2024 .
+     … +18 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src; grep -n
+      "^//!" books/yt30m.rs | head -30; grep -rn -i "intraday\|minute" main.rs
+      connors.rs 2>…)
+  ⎿  1://! YT Strategies · 30 Min Breakout: the team's AmiBroker AFLs in "O
+     ld Topics/30 Min Breakout"
+     2://! (30 MIN Breakout ANALYSIS/FINAL_06.12.2021: INTRADAY, POSITIONAL
+     … +60 lines (ctrl+o to expand)
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src; grep -n
+      "pub struct Ctx" -A25 connors.rs; grep -n "pub struct Bar\b\|pub struct
+      Bar {" -A12 *.…)
+  ⎿  204:pub struct Ctx<'a> {
+     205-    pub r: &'a [Row],
+     206-    pub o: Vec<f64>,
+     … +24 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src; grep -n
+      "pub struct Row" -A10 *.rs | head -14; grep -n "extra_data" main.rs |
+      head -10)
+  ⎿  main.rs:51:pub struct Row {
+     main.rs-52-    pub ticker: String,
+     main.rs-53-    pub date: String, // YYYY-MM-DD
+     … +12 lines (ctrl+o to expand)
+
+● The intraday Supertrend AFLs are blocked until the engine handles them, which
+  waits on a Nifty data question, so I'm starting on the daily-data strategies
+  now and checking how modules register first. · summary
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      grep -n "macro_rules! books" -A60 mod.rs | head -90; grep -n
+      "ytst\b\|ytst::" mod.rs ../…)
+  ⎿  19:macro_rules! books {
+     20-    ($($m:ident),*) => {
+     21-        $(pub mod $m;)*
+     … +91 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src; sed -n
+      90,140p instrument_policy.rs; grep -n "ichimoku_stocks\|yt_ichs\|stocks:"
+      ../../fronten…)
+  ⎿          "yt_rank"=>ytrank::IDS.contains(&id), "yt_ichs"=>ytichs::IDS.c
+     ontains(&id), "yt_nes"=>ytnes::IDS.contains(&id),
+             "yt_sws"=>ytsws::IDS.contains(&id), "yt_stk"=>ytstk::IDS.conta
+     … +125 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src; sed -n
+      60,90p instrument_policy.rs; grep -n "^pub fn\|^pub const\|^fn def"
+      books/ytcrs.rs; ls…)
+  ⎿          return Some(Issue{status:"needs_data",note:"QTS Figure A.7 pri
+     nted324 illustrates the S&P500 cash index. This review admits actual S
+     PX and the separately declared actual NIFTY 50 cash-index adaptation o
+     … +50 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru; grep -rn
+      "ytcrs_red_below_two_st\|ytst_gain_short_v3" --include=*.rs --include=*.js
+      --include=*.ts --inclu…)
+  ⎿  frontend/react/src/compat/runtime.js:1927:  ytcrs_red_below_two_st: {"
+     afl": "Consecutive Red in 5254 Empty Space/AFLs/5-2 5-4 Sell Red Candl
+     es.afl", "aflNote": "Coded from this AFL as written, with it
+     … +7 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      sed -n 18,60p ytcrs.rs; sed -n 148,175p ytcrs.rs)
+  ⎿  #![allow(dead_code)]
+     use crate::books::ytroc::{avg_of, backtest, gt, lt, st_daily, team_st,
+      Px};
+     … +68 lines (ctrl+o to expand)
+
+● Now I'll create two empty module stubs, ytstp.rs (the remaining Probability
+  AFLs) and ytsts.rs (Supertrend on stocks), and register them, so the coding
+  agents can work in separate files.
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for m in ytstp ytsts; do
+      book=$([ $m = ytstp ] && echo yt_st || echo yt_sts); fam=$([ $m…)
+  ⎿  mod.rs:39:books!(ws5, ats, coats, ss, hfm, lrd, oiss, otvt, rsi25, spm
+     t, btp, ptjdt, ptjmt, ptjopt, pctb, vixr, cwin, alpha, joe_ross, chand
+     e, radge, covel, sts
+     … +10 lines (ctrl+o to expand)
+  ⎿  Created books/ytstp.rs (+22 -0)
+       1 +//! YT Strategies · Supertrend: placeholder, filled in by the c
+         +oding work (see the module report).                            
+       2 +#![allow(dead_code)]                                           
+       3 +use crate::connors::{Ctx, ParamDef, Params, StrategyDef, Trade}
+         +;                                                              
+       4 +                                                               
+       5 +pub const BOOK: &str = "yt_st";                                
+       6 +pub const IDS: [&str; 0] = [];                                 
+       7 +                                                               
+       8 +pub fn catalogue() -> Vec<StrategyDef> {                       
+       9 +    Vec::new()                                                 
+      10 +}                                                              
+      11 +                                                               
+      12 +pub fn params(_id: &str) -> Option<Vec<ParamDef>> {            
+      13 +    None                                                       
+      14 +}                                                              
+      15 +                                                               
+      16 +pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &
+         +Params) -> Option<Vec<Trade>> {                                
+      17 +    None                                                       
+      18 +}                                                              
+      19 +                                                               
+      20 +pub fn family_of(_id: &str) -> Option<(&'static str, &'static s
+         +tr, &'static str)> {                                           
+      21 +    None                                                       
+      22 +}                                                              
+  ⎿  Created books/ytsts.rs (+22 -0)
+       1 +//! YT Strategies · Supertrend (Stocks): placeholder, filled in
+         + by the coding work (see the module report).                   
+       2 +#![allow(dead_code)]                                           
+       3 +use crate::connors::{Ctx, ParamDef, Params, StrategyDef, Trade}
+         +;                                                              
+       4 +                                                               
+       5 +pub const BOOK: &str = "yt_sts";                               
+       6 +pub const IDS: [&str; 0] = [];                                 
+       7 +                                                               
+       8 +pub fn catalogue() -> Vec<StrategyDef> {                       
+       9 +    Vec::new()                                                 
+      10 +}                                                              
+      11 +                                                               
+      12 +pub fn params(_id: &str) -> Option<Vec<ParamDef>> {            
+      13 +    None                                                       
+      14 +}                                                              
+      15 +                                                               
+      16 +pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &
+         +Params) -> Option<Vec<Trade>> {                                
+      17 +    None                                                       
+      18 +}                                                              
+      19 +                                                               
+      20 +pub fn family_of(_id: &str) -> Option<(&'static str, &'static s
+         +tr, &'static str)> {                                           
+      21 +    None                                                       
+      22 +}                                                              
+  ⎿  Updated books/mod.rs (+1 -1)
+      36      };
+      37  }
+      38  
+      39 -books!(ws5, ats, coats, ss, hfm, lrd, oiss, otvt, rsi25, spmt, 
+         -btp, ptjdt, ptjmt, ptjopt, pctb, vixr, cwin, alpha, joe_ross, c
+         -hande, radge, covel, ststw, hpetf, hmrw, tharp, afactor, r3r4, 
+         -mmft, lwlts, lwdg2, tcdt, tcsp, jt, kftsm, lbrtt, jc5dm, jchr1,
+         - jchr2, mhart, mhpst, mhstp, strmm, strtw, apta, apmacd, pbwts,
+         - putg, lebtc, lebcafm, stad, kets, jb624, jbudt, jb30d, jbsmsw,
+         - jbssf, jbcdt, ehrs, ehmd, ehmtc, tdperl, chbta2, chntt, bab80,
+         - baboops, rpdt, rpeo, hsta, hcta, jkbwts, jk36k, jkbk, jkzap, w
+         -dowf, wdnbp, wdgig, rgcts, rgtsec, rgstt, rgsh, gadm, aqrtf, lp
+         -gap, jmls, bwntd, bwtc1, bwtc2, stad2, apwms, apsmts, apoi, lwi
+         -cw, lwmdc, lwpro, lwrsr, lwmds, lwhtb, kfsc, kfbpm, kfst, tdnst
+         -a, tdnmtt, dlost, dlstfl, mbhfe, mbsot, mkits, mkfve, rwmts, hb
+         -qts, hbiab, dmast, dmst2, clfs, clomw, wwnc, bobb, elcim, eltfl
+         -, khtwg, cktwo, lwstc, lwppt, lwsss, lwmil, lwic6, lwcot, pstc,
+         - prap1, prap2, gb10, ecqt, rwtlc, swsp, dgmf, acatr, arebta, lb
+         -rvb, dgstt, mcmts, csadx, lg3k, aanwr, aanto, lgvp, lgtt30, lgs
+         -c, kpss, maetf, mahrs, lkqts, lkcpt, nftm, nfhp, nfgu, nfmt, nf
+         -pk, acbff, cbpst, chpbs, jhs35, jsdow, lbi12, mzwws, ndbrm, rjs
+         -pr, lwdtfo, lwcmc, lwad, lebsp, rjmil, rjtg, jhbct, wbmdd, tbpk
+         -, svmws, svtv2, svtvc, dvetf, bergsth, pstc08, tdwb, elee, elss
+         -s, dggw, dl10b, kfcd, dmtad, ramtm, jbcdt2, jbeft, jbhsms, kfge
+         -i, lebfut, lebws, tbabc, tbsyn, tdscal, prpr, elsgee, elsgss, j
+         -kofc, dgdwb, dgppt, dgmtt, ndtci, bllstr, stwds, cjlmom, masmt,
+         - sglr, lydetf, fejmma, mpts, mpmm, jtdpls, jswct, awab, cgtdd, 
+         -gfstsb, hkmmts, palets, sbma, lsgst, tkttl, zsms, kdta, vsbrw, 
+         -jtwl, sbcft, rbhetf, ckbtm, phbt, lydpes, hkcgdt, mpasi, jbcaf,
+         - cgift, elmts4, capttm, lebtcb, dgnl, mjthir, pwabal, jwbent, f
+         -cfail, ubvma, kfaber, gcplad, ddrvi, aatt, rhlss, mcstis, cmeod
+         -, mjzz, rcmm, sprfs, mlhpt, jscgf, mapsl, kwcci, stgdg, gh52w, 
+         -cghms, lswtv, ltan1, ltrsg, cpgap, atm00, atm01, atm02, atm03, 
+         -atm04, atm10, atmmisc, ftm, ctcn, mrina, tsx, atmcsa, atmrc, lw
+         -nl, wmny, sfo, ftm2, ltan2, stkch, ataa, t2w, s … [+807 chars] 
+      39 +books!(ws5, ats, coats, ss, hfm, lrd, oiss, otvt, rsi25, spmt, 
+         +btp, ptjdt, ptjmt, ptjopt, pctb, vixr, cwin, alpha, joe_ross, c
+         +hande, radge, covel, ststw, hpetf, hmrw, tharp, afactor, r3r4, 
+         +mmft, lwlts, lwdg2, tcdt, tcsp, jt, kftsm, lbrtt, jc5dm, jchr1,
+         + jchr2, mhart, mhpst, mhstp, strmm, strtw, apta, apmacd, pbwts,
+         + putg, lebtc, lebcafm, stad, kets, jb624, jbudt, jb30d, jbsmsw,
+         + jbssf, jbcdt, ehrs, ehmd, ehmtc, tdperl, chbta2, chntt, bab80,
+         + baboops, rpdt, rpeo, hsta, hcta, jkbwts, jk36k, jkbk, jkzap, w
+         +dowf, wdnbp, wdgig, rgcts, rgtsec, rgstt, rgsh, gadm, aqrtf, lp
+         +gap, jmls, bwntd, bwtc1, bwtc2, stad2, apwms, apsmts, apoi, lwi
+         +cw, lwmdc, lwpro, lwrsr, lwmds, lwhtb, kfsc, kfbpm, kfst, tdnst
+         +a, tdnmtt, dlost, dlstfl, mbhfe, mbsot, mkits, mkfve, rwmts, hb
+         +qts, hbiab, dmast, dmst2, clfs, clomw, wwnc, bobb, elcim, eltfl
+         +, khtwg, cktwo, lwstc, lwppt, lwsss, lwmil, lwic6, lwcot, pstc,
+         + prap1, prap2, gb10, ecqt, rwtlc, swsp, dgmf, acatr, arebta, lb
+         +rvb, dgstt, mcmts, csadx, lg3k, aanwr, aanto, lgvp, lgtt30, lgs
+         +c, kpss, maetf, mahrs, lkqts, lkcpt, nftm, nfhp, nfgu, nfmt, nf
+         +pk, acbff, cbpst, chpbs, jhs35, jsdow, lbi12, mzwws, ndbrm, rjs
+         +pr, lwdtfo, lwcmc, lwad, lebsp, rjmil, rjtg, jhbct, wbmdd, tbpk
+         +, svmws, svtv2, svtvc, dvetf, bergsth, pstc08, tdwb, elee, elss
+         +s, dggw, dl10b, kfcd, dmtad, ramtm, jbcdt2, jbeft, jbhsms, kfge
+         +i, lebfut, lebws, tbabc, tbsyn, tdscal, prpr, elsgee, elsgss, j
+         +kofc, dgdwb, dgppt, dgmtt, ndtci, bllstr, stwds, cjlmom, masmt,
+         + sglr, lydetf, fejmma, mpts, mpmm, jtdpls, jswct, awab, cgtdd, 
+         +gfstsb, hkmmts, palets, sbma, lsgst, tkttl, zsms, kdta, vsbrw, 
+         +jtwl, sbcft, rbhetf, ckbtm, phbt, lydpes, hkcgdt, mpasi, jbcaf,
+         + cgift, elmts4, capttm, lebtcb, dgnl, mjthir, pwabal, jwbent, f
+         +cfail, ubvma, kfaber, gcplad, ddrvi, aatt, rhlss, mcstis, cmeod
+         +, mjzz, rcmm, sprfs, mlhpt, jscgf, mapsl, kwcci, stgdg, gh52w, 
+         +cghms, lswtv, ltan1, ltrsg, cpgap, atm00, atm01, atm02, atm03, 
+         +atm04, atm10, atmmisc, ftm, ctcn, mrina, tsx, atmcsa, atmrc, lw
+         +nl, wmny, sfo, ftm2, ltan2, stkch, ataa, t2w, s … [+821 chars] 
+  ⎿  Updated instrument_policy.rs (+2 -2)
+      89          "yt_nr7"=>ytnr7::IDS.contains(&id), "yt_vts"=>ytvts::ID
+          S.contains(&id), "yt_nr"=>ytnr::IDS.contains(&id),
+      90          "yt_rank"=>ytrank::IDS.contains(&id), "yt_ichs"=>ytichs
+          ::IDS.contains(&id), "yt_nes"=>ytnes::IDS.contains(&id),
+      91          "yt_sws"=>ytsws::IDS.contains(&id), "yt_stk"=>ytstk::ID
+          S.contains(&id), "yt_fsv"=>ytfsv::IDS.contains(&id),
+      92 -        "yt_gd"=>ytgd::IDS.contains(&id), "yt_2ds"=>yt2ds::IDS.
+         -contains(&id),                                                 
+      92 +        "yt_gd"=>ytgd::IDS.contains(&id), "yt_2ds"=>yt2ds::IDS.
+         +contains(&id), "yt_sts"=>ytsts::IDS.contains(&id),             
+      93          _=>false,
+      94      }
+      95  }
+     ...
+      113          "yt_d7"=>ytd7::IDS.contains(&id), "yt_eng"=>yteng::IDS
+           .contains(&id), "yt_fst"=>ytfst::IDS.contains(&id),
+      114          "yt_ich"=>ytich::IDS.contains(&id), "yt_ib"=>ytib::IDS
+           .contains(&id),
+      115          "yt_hk"=>ythk::IDS.contains(&id), "yt_lh"=>ytlh::IDS.c
+           ontains(&id), "yt_usd"=>ytusd::IDS.contains(&id),
+      116 -        "yt_st"=>ytst::IDS.contains(&id), "yt_rsi"=>ytrsi::IDS
+          -.contains(&id), "yt_vix"=>ytvix::IDS.contains(&id),           
+      116 +        "yt_st"=>ytst::IDS.contains(&id) || ytstp::IDS.contain
+          +s(&id), "yt_rsi"=>ytrsi::IDS.contains(&id), "yt_vix"=>ytvix::I
+          +DS.contains(&id),                                             
+      117          "yt_rgs"=>ytrgs::IDS.contains(&id), "yt_crs"=>ytcrs::I
+           DS.contains(&id), "yt_chs"=>ytchs::IDS.contains(&id),
+      118          _=>false,
+      119      }
+
+● Both stubs build. Next I'm starting four coding agents in parallel, each
+  assigned its own file.
+
+● 4 background agents launched (↓ to manage)
+   ├ Code Candles Range Short Only
+   ├ Code Supertrend index AFLs
+   ├ Code Supertrend probability AFLs
+   └ Code Supertrend stock AFLs
+
+● I've read the Database Directory you updated, from the share and without
+  changing anything. Four agents are now coding the strategies that run on daily
+  data. The intraday Supertrend AFLs can't be coded yet, for two reasons.
+
+  The new intraday row. It's IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023,
+  intraday stock futures. I copied a few index files into
+  jay-local/Data/amibroker/ieod_fo_2023/ to check them; nothing on the share was
+  changed.
+  - Bank Nifty: 1-minute futures bars, 29 May 2007 to 7 Feb 2023, about 375 bars
+    a day. This is usable.
+  - Nifty: the NIFTY file in this updated database is empty (0 bars; it was
+    rewritten on 21 Aug 2024). The older sibling folder IEOD_FO STOCKS-EODIEOD
+    has a full NIFTY file (58 MB), but that database isn't in the Directory.
+    Your rule is not to substitute a database that isn't listed, so I haven't
+    used it.
+
+  The engine. It only handles daily bars; 30 Min Breakout was left uncoded for
+  the same reason. The 6 intraday Supertrend AFLs (hourly, 25, 60 and 75 minute,
+  and "Fresh Running Buy-Sell Index Intraday") need intraday support built into
+  the engine first. That's a bigger change, which I'll propose once the daily
+  work is done.
+
+  Being coded now (daily data), one agent per group:
+
+  ┌──────────────────────────────────────────┬────────────┬─────────────────┐
+  │                  Group                   │    File    │     Runs on     │
+  ├──────────────────────────────────────────┼────────────┼─────────────────┤
+  │ Candles Range Short Only                 │ ytcr.rs    │ one stock       │
+  ├──────────────────────────────────────────┼────────────┼─────────────────┤
+  │ Supertrend: all-time-high, scale-in,     │ ytst.rs    │ Nifty or Bank   │
+  │ high/low, bull/bear filter               │            │ Nifty spot      │
+  ├──────────────────────────────────────────┼────────────┼─────────────────┤
+  │ Supertrend probability (about 14 AFLs)   │ new        │ Nifty or Bank   │
+  │                                          │ ytstp.rs   │ Nifty spot      │
+  ├──────────────────────────────────────────┼────────────┼─────────────────┤
+  │ Supertrend monthly single trade, trade   │ new        │ one stock       │
+  │ below filter, SMA                        │ ytsts.rs   │                 │
+  └──────────────────────────────────────────┴────────────┴─────────────────┘
+
+  - Probability group: these go in the same Supertrend collection as the 4
+    probability AFLs already coded.
+  - Stock group: this becomes a new "Supertrend (Stocks)" collection. The team
+    ran these AFLs across a whole stock universe ranked by score. The engine
+    runs one stock at a time, so the ranking and the limit on open positions
+    won't be modelled, and the notes will say so.
+
+  I've registered the two new files so the agents can build them; the build
+  passes. When the agents finish, I'll add the strategies to the YT Strategies
+  page, run the tests, and ask you before rebuilding Docker.
+
+  One question: for Nifty intraday, can I use the older IEOD_FO STOCKS-EODIEOD
+  database? Or will you fix the NIFTY file in the updated one, or add Nifty
+  under another row?
+
+› Message from general-purpose
+  I added three new strategy ids to `Context/guru/backend/src/books/ytcr.rs`.
+  That is the only file I edited. `cargo test -j 2 books::ytcr` passes (10
+  tests, including 3 new ones), `cargo build -j 2` succeeds, and ytcr.rs adds no
+  new warnings. The `instrument_policy` tests also still pass (28), since that
+  file reads `ytcr::IDS`.
+
+  The two short AFLs and the long counterpart of the combined short AFL are
+  coded. The other two Long-only files in Miscelleneous are only param-range
+  copies of AFLs already coded, so I listed them in the notes instead.
+
+  **What was coded**
+  - I added `SHORT`, `SHORT_PLAIN` and `LONG_CHOICE` to `IDS` (now 7 entries)
+  and to `family_of`. The two shorts are built with `def_short`, which uses
+  `dir: "Short"`.
+  - The new ids run through a new function, `signals_close`, which feeds the
+  existing `amibt`. Shorts fill `Sig4.short`/`cover`, which `amibt` already
+  handles.
+  - The existing four ids still go through `signals` and their calculations are
+  unchanged.
+  - I rewrote the //! header to list what was added and what was not coded
+  separately, and why.
+  - Tests: one each for the short profit target filled at the close, the
+  upper-circuit delay, the no-entry case when the close equals the low, the
+  short hard stop, and the long version's target at the close, hard stop and LC
+  delay. The wave and smoke tests now also run the new ids, plus an ST-filter
+  smoke run.
+
+  **Rules, one line each**
+  - **`ytcr_short`**:
+    - Setup: the bar's range is below the previous bar's range, and its volume
+  is more than 20% above the previous bar's.
+    - Entry: on the next bar, short at the close if the close is below the setup
+  bar's low. No entry when low = close.
+    - Filter (default OFF): either monthly Supertrend (5 / 4, mid point) down,
+  or close below the daily MA(C,200).
+    - Cover at the close when the close is above the lowest low since entry +
+  2%, the low is below entry − 5%, the close is above entry + 2%, or the filter
+  turns up. A bar where high = close delays the cover to the next bar.
+  - **`ytcr_short_no_filter`**: the same short with no filter and no hard stop.
+  - **`ytcr_long_filter_choice`**: the long mirror of the short.
+    - Buy at the close when it is above the setup bar's high.
+    - Sell at the close on a 2% trailing stop, a 5% target on the high, a 2%
+  hard stop on the close, or the filter turning down.
+    - An LC bar delays the sell, also for a filter exit.
+    - Its rules differ from the existing long ids: the target fills at the
+  close, the filter is an exit rule, the filter type is OFF/ST/MA with ST 5/4
+  monthly, and the hard stop is 2%.
+
+  **For UI registration**
+
+  `ytcr_short`
+  - Name: Candle Range Decrease and Volume Increase Short (With and Without
+  Filter)
+  - AFL: `Miscelleneous/Candles Range Decrease and Volume Increase/Candles Range
+  Decrease and Volume Increase (Short Only, With and Without Filter).afl`
+  - aflNote: Short at the close below the setup bar's low (setup: range down,
+  volume up more than 20%), covered at the close on a 2% trail above the lowest
+  low, a 5% target on the low, a 2% hard stop or the optional ST/MA filter
+  turning up (default off).
+
+  `ytcr_short_no_filter`
+  - Name: Candle Range Decrease and Volume Increase Short (Without Filter)
+  - AFL: `Miscelleneous/Candles Range Decrease and Volume Increase/Without
+  filter/Candles Range Decrease and Volume Increase (Short Only,Without
+  Filter).afl`
+  - aflNote: The same short without filter or hard stop, covered at the close on
+  a 2% trail above the lowest low or a 5% target on the low.
+
+  `ytcr_long_filter_choice`
+  - Name: Candle Range Decrease and Volume Increase Long (With and Without
+  Filter)
+  - AFL: `Miscelleneous/Candles Range Decrease and Volume Increase/With
+  filter/Candles Range Decrease and Volume Increase (Long Only,With & Without
+  Filter).afl`
+  - aflNote: The long mirror of the short AFL: buy at the close above the setup
+  bar's high, sold at the close on a 2% trail, a 5% target on the high, a 2%
+  hard stop or the optional ST/MA filter turning down (default off).
+
+  **Not coded separately (listed in the module notes)**
+  - `Miscelleneous/.../Without filter/Candle Range Decrease and Volume
+  Increase_Long only.afl` is byte-identical (after CR stripping) to the Sukun
+  copy of the original AFL, which is already covered by `ytcr_original`.
+  - `Miscelleneous/.../With filter/Candle Range Decrease and Volume
+  Increase_Long only_WITH FLT+HSL.afl` is the Sukun WITH FLT+HSL AFL
+  (`ytcr_filter_hard_stop_low`) with only its Param ranges changed; the defaults
+  are the same.
+
+  **AFL quirks followed**
+  - The short AFL sets its hard stop from `HSL = BuyPrice[i] + ...` but never
+  assigns BuyPrice. I took it to hold AmiBroker's default trade price, the
+  close, so the stop is the entry close + 2%. This is my reading of AmiBroker's
+  behaviour and is stated in the notes; it is not checked against an AmiBroker
+  run.
+  - Every exit is at the close, including the profit target. The AFLs'
+  `Buffer_pct` (0.25) is declared but never used, so I left it out of the
+  params.
+  - An exit on a UC bar (short) or LC bar (long) waits for the next non-UC/LC
+  bar, filter exits included. The existing FLT ids let a down filter bypass that
+  wait; these AFLs do not.
+  - The defaults are the AFLs' own:
+    - Filter: OFF, the first item in its list.
+    - ST timeframe: monthly, the first item in its list.
+    - ST settings: period 5, factor 4, mid point.
+    - MA: MA(C,200), on daily bars.
+    - Stops: volume 20%, trail 2%, target 5%, hard stop 2% on the combined AFLs.
+  - I reused the `flt` key with the existing coding (1 ST, 2 MA, 3 off), default
+  3. `flt_tf` defaults to 3 (monthly) and applies only to the ST filter.
+  - The trailing level moves with the bar's own low (or high, for the long)
+  before the close is tested. The dead-stock toggle defaults to NO, as in the
+  AFL (toggle value 1).
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react/src/c
+      ompat; grep -n "^  ytcr_" runtime.js | cut -c1-400)
+  ⎿  1751:  ytcr_filter: {"afl": "Candle Range Decrease and Volume Increase
+     /Candle Range Decrease and Volume Increase_WITH FLT.afl", "aflNote": "
+     NIFTY 500 cash stocks (C&P database), daily, portfolios of 10 or 20 op
+     … +20 lines (ctrl+o to expand)
+
+● Agent "Code Candles Range Short Only" finished · 5m 27s
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react/src/c
+      ompat; sed -n 1927p runtime.js; sed -n 1959p runtime.js; cp runtime.js
+      /tmp/claude-1000…)
+  ⎿    ytcrs_red_below_two_st: {"afl": "Consecutive Red in 5254 Empty Space
+     /AFLs/5-2 5-4 Sell Red Candles.afl", "aflNote": "Coded from this AFL a
+     s written, with its default settings; the strategy's notes list the ot
+     … +8 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react/src/c
+      ompat; python3 -I - <<'EOF'
+      p='runtime.js'; s=open(p).read()…)
+  ⎿  1751:  ytcr_filter: {"afl": "Candle Range Decrease and Volume Increase
+     /Candle Range Decrea
+     1752:  ytcr_filter_hard_stop: {"afl": "Candle Range Decrease and Volum
+     … +11 lines (ctrl+o to expand)
+  ⎿  Updated ~/Documents/Strategy-vault/Context/guru/frontend/react/src/com
+     pat/runtime.js (+4 -1)
+      1641    usdinr: { name: 'USD INR', book: 'yt_usd', blurb: "Trade Ni
+            fty from USDINR: USDINR Supertrend entries (with index Supert
+            rend, hard SL and trailing-stop versions) and the USDINR / in
+            dex price-relative AFLs with PR, Supertrend and regime filter
+            s. Coded from the team's AFLs as written; daily spot index da
+            ta, with USDINR from the team's database (17-05-2004 to 14-02
+            -2022)." },
+      1642    bbands: { name: 'Bollinger Band', book: 'yt_bb', stocks: tr
+            ue, blurb: "Bollinger band breakouts on a 100-period average,
+             with and without a market filter. Coded from the team's stoc
+            k AFLs as written; runs on one stock at a time (RELIANCE by d
+            efault; pick another in Stock)." },
+      1643    gann: { name: 'Gann HiLo', book: 'yt_gann', stocks: true, b
+            lurb: "Gann HiLo regime systems with monthly Gann or Supertre
+            nd filters, long and short. Coded from the team's stock AFLs 
+            as written; runs on one stock at a time (RELIANCE by default;
+             pick another in Stock)." },
+      1644 -  candlerange: { name: 'Candle Range and Volume', book: 'yt_c
+           -r', stocks: true, blurb: "Buy when the candle range narrows w
+           -hile volume rises, with Supertrend filter and hard-stop versi
+           -ons. Coded from the team's stock AFLs as written; runs on one
+           - stock at a time (RELIANCE by default; pick another in Stock)
+           -." },                                                        
+      1644 +  candlerange: { name: 'Candle Range and Volume', book: 'yt_c
+           +r', stocks: true, blurb: "Buy (or short) when the candle rang
+           +e narrows while volume rises, with Supertrend or moving-avera
+           +ge filter and hard-stop versions. Coded from the team's stock
+           + AFLs as written; runs on one stock at a time (RELIANCE by de
+           +fault; pick another in Stock)." },                           
+      1645    nr7: { name: 'NR7', book: 'yt_nr7', stocks: true, blurb: "N
+            arrow-range-7, inside-bar and mother-bar entries with Supertr
+            end or lowest-low exits. Coded from the team's stock AFLs as 
+            written; runs on one stock at a time (RELIANCE by default; pi
+            ck another in Stock)." },
+      1646    tharpstocks: { name: 'Van Tharp (Stocks)', book: 'yt_vts', 
+            stocks: true, blurb: "Five Days Down, Five Five One W, two mo
+            ving averages with a gap, and Washout. Coded from the team's 
+            stock AFLs as written; runs on one stock at a time (RELIANCE 
+            by default; pick another in Stock)." },
+      1647    freshstvol: { name: 'Fresh ST Buy (Volume)', book: 'yt_fsv'
+            , stocks: true, blurb: "Fresh Supertrend buys confirmed by vo
+            lume, with RSI-crossover versions. Coded from the team's stoc
+            k AFLs as written; runs on one stock at a time (RELIANCE by d
+            efault; pick another in Stock)." },
+     ...
+      1752    ytcr_filter_hard_stop: {"afl": "Candle Range Decrease and V
+            olume Increase/Candle Range Decrease and Volume Increase_WITH
+             FLT+HSL.afl", "aflNote": "NIFTY 500 cash stocks (C&P databas
+            e), daily, portfolio of 20 open positions; only optimisation 
+            results were kept.", "sheet": "Candle Range Decrease and Volu
+            me Increase/Candle Range Decrease and Volume Increase_WITH FL
+            T Final-20 open.xlsx", "sheetNote": "Optimisation table only,
+             no trade list: <b>20 open with flt&hsl</b> (filter and hard 
+            stop, 20 open positions)."},
+      1753    ytcr_filter_hard_stop_low: {"afl": "Candle Range Decrease a
+            nd Volume Increase/Candle Range AFL_Sukun/Candle Range Decrea
+            se and Volume Increase_WITH FLT+HSL.afl", "aflNote": "NIFTY 5
+            00 cash stocks (C&P database), daily, portfolio of 10 open po
+            sitions; only optimisation results were kept.", "sheet": "Can
+            dle Range Decrease and Volume Increase/Candle Range AFL_Sukun
+            /Candle Range Decrease and Volume Increase_WITH FLT Final_10 
+            open.xlsx", "sheetNote": "Optimisation tables only, no trade 
+            list: <b>With HSL Optim Raw data</b>, <b>Optim Analysis for H
+            SL</b>, <b>Results 2 (With Hsl)</b> (hard stop, 10 open posit
+            ions)."},
+      1754    ytcr_original: {"afl": "Candle Range Decrease and Volume In
+            crease/Candle Range Decrease and Volume Increase-original.afl
+            ", "aflNote": "NIFTY 500 cash stocks (C&P database), daily, r
+            aw backtests and portfolios of 10 or 20 open positions.", "sh
+            eet": "Candle Range Decrease and Volume Increase/Candle Range
+             AFL_Sukun/Raw Backtested result on nifty 500 c&p.xlsx", "she
+            etNote": "Trade sheets <b>Sheet1</b>, <b>PENNY</b>, <b>PENNY5
+            0</b>: profit target 8%, trailing stop 4%, volume 30%, penny 
+            10/25/50; about 99% of team trades found; and 5 more workbook
+            s."},
+      1755 +  ytcr_short: {"afl": "Miscelleneous/Candles Range Decrease a
+           +nd Volume Increase/Candles Range Decrease and Volume Increase
+           + (Short Only, With and Without Filter).afl", "aflNote": "Code
+           +d from this AFL as written, with its default settings; the st
+           +rategy's notes list the other AFLs it covers.", "sheet": null
+           +, "sheetNote": "Not compared with the team's trade sheets (co
+           +ded only, 13-11-2026)."}                                     
+      1756 +  ytcr_short_no_filter: {"afl": "Miscelleneous/Candles Range 
+           +Decrease and Volume Increase/Without filter/Candles Range Dec
+           +rease and Volume Increase (Short Only,Without Filter).afl", "
+           +aflNote": "Coded from this AFL as written, with its default s
+           +ettings; the strategy's notes list the other AFLs it covers."
+           +, "sheet": null, "sheetNote": "Not compared with the team's t
+           +rade sheets (coded only, 13-11-2026)."}                      
+      1757 +  ytcr_long_filter_choice: {"afl": "Miscelleneous/Candles Ran
+           +ge Decrease and Volume Increase/With filter/Candles Range Dec
+           +rease and Volume Increase (Long Only,With & Without Filter).a
+           +fl", "aflNote": "Coded from this AFL as written, with its def
+           +ault settings; the strategy's notes list the other AFLs it co
+           +vers.", "sheet": null, "sheetNote": "Not compared with the te
+           +am's trade sheets (coded only, 13-11-2026)."}                
+      1758    ytd7_long: {"afl": "Double 7 Strategy/7 Days Lower Low and 
+            Higher High Based Buy & Sell (With & Without Filter) - Long o
+            nly.afl", "aflNote": "NSE cash stocks, daily: the team's chec
+            king runs after the error fixes (RELIANCE single stock, penny
+             stocks and a 10-open-position stock list).", "sheet": "Doubl
+            e 7 Strategy/7 Day Lower Low and Higher High_Old Work/After E
+            rror solving/7 Days Lower Low and Higher High Based Buy & Sel
+            l (With & Without Filter) - Long only.xlsx", "sheetNote": "Tr
+            ade sheets <b>2. Single Stock TL</b>, <b>2A Exit 1 HSL And PT
+            </b>, <b>2B Exit 2 ST daily filter</b>, <b>2C exit 3 ST Weekl
+            y</b>, <b>2E SMA</b>, <b>8. 10 Open TL</b> (RELIANCE and stoc
+            k lists; settings not recorded)."},
+      1759    ytd7_long_cd: {"afl": "Double 7 Strategy/7 Day LL, HH, CD/7
+             Days Lower Low and Higher High Based Buy & Sell (With & With
+            out Filter) - Long only with MA Filter.afl", "aflNote": "NIFT
+            Y daily bars (the workbook is named NIFTY) and stock portfoli
+            os with 10 or 20 open positions; only optimisation results we
+            re kept.", "sheet": "Double 7 Strategy/7 Day LL, HH, CD/7 Day
+            s Lower Low and Higher High Based Buy & Sell (With & Without 
+            Filter) - Long only- NIFTY.xlsx", "sheetNote": "Optimisation 
+            tables only, no trade list: <b>Nifty 200ma</b>, <b>NIfty 100m
+            a</b>, <b>Nifty 50ma</b> and their lowest low, highest high a
+            nd down-close variants; and 3 more optimisation workbooks."},
+      1760    ytd7_long_ma_st: {"afl": "Double 7 Strategy/7 Day LL, HH, C
+            D/7 Days Lower Low and Higher High Based Buy & Sell (With & W
+            ithout ST Filter) - Long only.afl", "aflNote": "NSE cash stoc
+            k portfolios with 10 or 20 open positions, daily; only optimi
+            sation results were kept.", "sheet": "Double 7 Strategy/7 Day
+             LL, HH, CD/optim/7 Days Lower Low and Higher High Based Buy 
+            & Sell (With & Without ST Filter) - Long only-optim working 1
+            .xlsx", "sheetNote": "Optimisation tables only, no trade list
+            : <b>LOWEST LOW PERIOD 10</b>, <b>PATCH FOR MA 10</b>, <b>Hig
+            hest High 10</b>, <b>LOWEST LOW 20 OPEN</b>, <b>MA 20 OPEN</b
+            >, <b>HIGHEST HIGH 20</b>; and 2 more optimisation workbooks.
+            "},
+
+● Candles Range is done: 3 new strategies, tests pass, and they're registered on
+  the page. The three Supertrend agents are still running.
+
+› Message from general-purpose
+  I filled `Context/guru/backend/src/books/ytsts.rs` with all five AFLs, one id
+  each. All checks pass with no warnings from the new file:
+  - `cargo test -j 2 books::ytsts`: 8 passed.
+  - `cargo build -j 2`: clean.
+  - `cargo test -j 2 instrument_policy`: 28 passed.
+  - `cargo test -j 2 catalogue`: 31 passed.
+
+  I only edited `ytsts.rs`. `ytst.rs`, `mod.rs`, `instrument_policy.rs` and the
+  frontend are untouched; the module only calls helpers that were already
+  `pub(crate)`.
+
+  **Collection card blurb ("Supertrend (Stocks)"):** The team's stock-universe
+  Supertrend AFLs: monthly-ST single-trade entries (with all-time-high-close and
+  daily-execution variants), trading below the monthly ST, and a 200-day SMA
+  buy/sell, each run on one actual stock's daily bars.
+
+  All runs are long only by default except the third ("below filter"), which
+  runs long and short. Every one trades at the close. AFL paths are relative to
+  `jay-local/Old Topics AFL/`.
+
+  **1. `ytsts_monthly_single_trade`: "ST Monthly Single Trade (Monthly ST Buy,
+  Daily ST 5,4 Exit)"**
+  - AFL: `Supertrend/ST monthly single trade long only WITH SQN/ST monthly
+  single trade long only WITH SQN.afl`
+  - aflNote: the team ran it as a portfolio backtest over an NSE cash stock
+  universe on daily bars, with the stock's own monthly ST as the filter (MAXIMUM
+  POSITION 20).
+  - Buy when the month-end close crosses above the previous bar's monthly
+  ST(5,1) down line, latched while the daily exit ST(5,4) stays up.
+  - Entry also needs Close > 50 and a 10-day average volume above 1 lakh.
+  - Sell when the exit ST or the monthly ST turns down. There is also a 5% hard
+  stop.
+  - An option swaps the exit ST for a 5% close swing.
+  - The AFL also defines Short/Cover. I kept them as side options and made long
+  only the default, as its title says.
+  - Needs volume.
+
+  **2. `ytsts_monthly_single_athc`: "ST Monthly Single Trade within ATHC − 8%,
+  Exit with Daily STs"**
+  - AFL: `Supertrend/ST monthly single trade within ATH-30%_Exit with ST
+  daily/ST monthly single trade long only  with 2 ST athc-30 pct WITH SQN n
+  ranking.afl`
+  - aflNote: the team ran it over a stock universe on daily bars, ranked by
+  PositionScore when a ranking mode was chosen (default NONE), with the stock's
+  own monthly ST as the filter.
+  - Same monthly cross as #1, using the close as the calculation point.
+  - The close must be within 8% of the highest close so far. The AFL's default
+  is 8, even though the folder name says 30.
+  - The turnover filter (Volume × Close above a yearly threshold) is on by
+  default: the toggle shows "NO" at 0, but the code applies the filter at 0.
+  - Buy needs the entry ST(5,2) or the exit ST(5,4) up.
+  - Sell when both daily STs are down or the monthly ST turns down.
+  - Needs volume.
+
+  **3. `ytsts_monthly_single_athc_daily`: "ST Monthly Single Trade, Daily
+  Execution, ATHC − 8% (Exit ST 5,4 / Monthly ST 5,1)"**
+  - AFL: `Supertrend/ST monthly single trade within ATH-30%_If in MONTHLY SELL,
+  exit with 54. If in MONTHLY buy, exit with 51/ST monthly single trade with 2
+  ST  execution on daily WITH ATHC -30 PCTl.afl`
+  - aflNote: the team ran it over a stock universe on daily bars with daily
+  execution against the stock's own monthly ST.
+  - Buy when the daily close crosses above last month's ST down line with the
+  entry ST up and the ATHC rule met.
+  - The buy latch clears when the exit ST turns down or ATR% exceeds twice its
+  value on the entry day.
+  - While the monthly ST is in sell: exit when both daily STs are down.
+  - While the monthly ST is in buy: exit when the close crosses below the
+  monthly ST up line.
+  - Turnover filter off by default; does not need volume.
+  - As written, the AFL's second latch (BUYSIG1) can never set. I kept it that
+  way.
+
+  **4. `ytsts_trade_below_monthly_st`: "ST Trade Below Monthly ST Filter (Long
+  Below, Short Above)"**
+  - AFL: `Supertrend/ST trade below supertrend monthly filter/ST trade below
+  filter - Copy.afl`
+  - aflNote: the team ran it over a stock universe on daily bars using the
+  stock's own monthly ST filter.
+  - Buy when the monthly ST is in sell and the entry ST is up.
+  - Sell when both daily STs are down or the monthly ST turns up.
+  - Short is mirrored: monthly ST in buy and entry ST down; cover when the entry
+  ST turns up or the monthly ST turns down.
+  - Default is long and short with reversal, because the AFL codes both sides
+  and gives no long-only hint.
+  - The AFL's short-latch reset contains `sellsig1=!1`, an assignment that
+  evaluates false. I kept that as written.
+  - Turnover filter on by default (the toggle reads "YES" at 0). Needs volume.
+
+  **5. `ytsts_sma_buy_sell`: "SMA Buy / Sell (Close vs 200-day SMA ± 1%)"**
+  - AFL: `Supertrend/SMA BUY SELL WITH ALL TIMEFRAME/SMA BUY SELL WITH ALL
+  TIMEFRAME.afl`
+  - aflNote: its header says "FOR NSE 500 … LONG ONLY WITH RANKING ON NSE 500";
+  the team ran it on NSE 500 stocks on daily bars.
+  - Buy when the close is more than 1% above the previous bar's 200-day MA.
+  - Sell when it is more than 1% below.
+  - Short is an option; long only by default. Does not need volume.
+
+  **Not coded or not modelled, and why**
+  - **Portfolio level:** PositionScore ranking, MaxOpenPositions, sizing and the
+  0.65 brokerage only choose between stocks or set money, so they are not
+  modelled. The SQN / R-multiple / risk-of-ruin custom backtester only reports
+  statistics. Every note says this, worded like the `ytichs.rs` notes.
+  - **"Single trade":** in these AFLs this is a per-stock latch (one entry per
+  monthly ST buy signal), and it is coded. None of the AFLs has a universe-wide
+  one-trade rule.
+  - **Foreign series:** the only foreign series is `Foreign("NSE500","C")` in
+  AFLs #2 and #3. It feeds a COMBINERSI value that no rule or ranking mode
+  reads, so nothing depends on it. No index data was needed, and nothing was
+  substituted.
+  - **Weekly filter timeframe:** not offered. Its month-close value comes from
+  `TimeFrameGetPrice`, and I could not confirm how that behaves on a partial
+  week. Monthly (default) and daily are offered.
+  - **SMA filter branch of #4:** not offered, because its monthly trend is never
+  expanded to daily bars.
+  - **Weekly/monthly SMA of #5:** not offered, because its distance test reads
+  the unexpanded MA. Only the daily SMA is coded.
+
+  **How AmiBroker behaviour was reproduced**
+  - The ST loop is the one already coded in `ytst.rs`.
+  - The monthly filter is the stock's own calendar-month ST, expanded to daily
+  bars with expandLast. Its down line exists only in down months and its up line
+  only in up months.
+  - The month-end close is taken on the bar before a new month, using the AFL's
+  day-1-to-5 test on the next bar.
+  - In `Cross()`, a missing value counts as -1e10 once both series have started.
+  MA() is empty until it has `n` values.
+  - The highest close so far stands in for `HHV(C,BarCount)`.
+  - Circuit bars are detected with Prec to 2 decimals. Signals are ExRem'd as in
+  the AFLs.
+  - The hard stop is checked from the bar after entry and fills at the stop
+  level, or at the open on a gap.
+  - No entry on the first bar (dead-stock setting NO).
+  - The turnover rule uses Volume × Close, as the AFLs do.
+
+  **Tests:** there is at least one test per id on synthetic data:
+  - #1 buys on the month-end bar where the monthly ST flips up and sells in the
+  later fall.
+  - #2 takes no trade at the default 8%, and trades at the flip with 50%.
+  - #3 enters on the daily cross, before the month-end flip.
+  - #4 buys only while the monthly ST is in sell and sells on the flip.
+  - #5 has an exact trade: buy at bar 210 at 102, sell at bar 211 at 98.
+
+  There are also tests for the hard-stop fill, the month-end and cross helpers,
+  and a run of every id.
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react; grep
+      -n "gapdown\|yt_gd" src/compat/runtime.js src/**/*.ts* tests/*.ts*
+      2>/dev/null | cut -…)
+  ⎿  src/compat/runtime.js:1655:  gapdown: { name: "Gap Down", book: 'yt_gd
+     ', stocks: true, blurb: "Same-day gap-down trades: buy a gap below yes
+     terday's low and sel
+
+● Agent "Code Supertrend stock AFLs" finished · 10m 42s
+
+› Message from general-purpose
+  I filled `Context/guru/backend/src/books/ytstp.rs` with 11 ids. All are long
+  only and run on one daily series. I edited no other file: `ytst.rs`, `mod.rs`,
+  `instrument_policy.rs` and the frontend are untouched, and no git commands
+  were run.
+
+  **Test/build:** `cargo test -j 2 books::ytstp` passes 8/8 (one or more
+  synthetic trade tests for every id, plus the shared smoke test). `cargo build
+  -j 2` finishes with no errors and no warnings from `ytstp.rs`; the crate's 39
+  other warnings come from other files.
+
+  **Ids for UI registration.** Paths are relative to `jay-local/Old Topics
+  AFL/`; `SLP` stands for `Supertrend/Supertrend Long_Based on Probabilty`.
+
+  1. **`ytstp_gain_short_v1`** — "Long after an x% Gain in a Virtual ST Short
+  (V1)"
+     - AFL: `SLP/Long if x% Gain in
+  Short/AFLs/Futures_Long_X%GainInShort_V1.afl`
+     - Rules: a virtual short opens on the ST1+ST2 sell while flat and closes on
+  the next ST1 buy. If it gained ≥5%, the long is bought. That gain stays in
+  force, so every later entry signal buys until the next virtual short closes.
+     - aflNote: coded as the AFL is written; the last virtual short's gain stays
+  in force until the next one closes.
+
+  2. **`ytstp_gain_short_v1_filter`** — "Long after an x% Gain in a Virtual ST
+  Short (V1 with Filter)"
+     - AFL: `SLP/Long if x% Gain in Short/AFLs/Futures_Long_X%GainInShort_With
+  Filter_V1.afl`
+     - Rules: one long per qualifying virtual short. A new virtual short opens
+  only when no qualifying gain is waiting. Optional weekly/monthly ST filter.
+     - aflNote: coded as the AFL is written; its loop differs from the no-filter
+  V1, so it has its own id.
+     - It also runs the exit test on the buy bar, so a same-bar sale is possible
+  with live HSL/PB or the TSL left from the previous trade.
+
+  3. **`ytstp_gain_short_v2`** — "Long at the n-th ST Buy after an x% Gain in a
+  Virtual ST Short (V2)"
+     - AFL: `SLP/Long if x% Gain in Short/AFLs/Futures_Long_X%inShort_V2.afl`
+     - Rules: after a virtual short gains ≥x%, buy at the n-th entry signal
+  (`entry_at`, default 1). Each sale ends the setup.
+     - aflNote: coded as the AFL is written; the short's change need not be
+  positive here.
+
+  4. **`ytstp_virtual_short_v1`** — "Long after a Virtual ST Short Loses x%
+  (Version 1, ST Cross)"
+     - AFL: `SLP/Long if x% Loss in Short/Version 1/SuperTrend Virtual
+  Short.afl`
+     - Rules: D1/D2 are the AFL's ST 5,1 and 5,2 on (H+L)/2. A virtual short
+  opens on Close crossing below D1, or when a long is sold. Buy on Close
+  crossing above D1 when the Close is more than 3% above the short's entry.
+  Optional monthly ST filter.
+     - Exit: before the Close has been above D2, sell when it is below both D1
+  and D2; after that, sell when it is below D2; also on the last bar.
+     - aflNote: coded as the AFL is written, including the shared reset of the
+  "above D2" flag when a virtual short opens during a long.
+
+  5. **`ytstp_loss_short_v2`** — "Long after n Virtual ST Shorts Lose x% (V2)"
+     - AFLs: `SLP/Long if x% Loss in
+  Short/AFLs/Futures_Long_X%LossinShort_with_STFilter_V2.afl`; with the filter
+  off it is `VirtualShortInLossandLong_ST_V2.afl`.
+     - Rules: count virtual shorts whose change is ≤ −5% (consecutive by
+  default). Buy at 2 such losses; the count restarts at the buy. Filter
+  timeframe default monthly.
+     - aflNote: coded as the AFL is written; with the filter off it gives the
+  same trades as the no-filter AFL.
+
+  6. **`ytstp_loss_short_v3`** — "Long at the n-th ST Buy after an x% Loss in a
+  Virtual ST Short (V3)"
+     - AFLs: `SLP/Long if x% Loss in
+  Short/AFLs/Futures_Long_X%LossinShort_with_STFilter_V3.afl`; with the filter
+  off it is `VirtualShortInLossandLong_ST_V3.afl`.
+     - Rules: the V2 gain loop with a loss rule (change ≤ −5%). The filter gates
+  the entries and also counts as the end of a counted signal.
+     - aflNote: coded as the AFL is written; filter timeframe default monthly.
+
+  7. **`ytstp_long_loss_nlosses`** — "Long after n Losing Virtual ST Longs, Then
+  n Trades or a Profit Target"
+     - AFL: `SLP/Long If X% Loss In
+  Long/AFLs/Post_STBasedLossesInLongTrades_NLosses_V1.afl`
+     - Rules: virtual longs run until n losses (default 0). Then real trades, up
+  to n long trades or an optional individual/cumulative profit target.
+     - aflNote: coded as the AFL is written; its filter only removes the Buy
+  flag, so a blocked trade still runs in the loop's state without trading.
+
+  8. **`ytstp_long_loss_drawdown`** — "Long after an x% Drawdown in Virtual ST
+  Longs, Then n Trades or a Profit Target"
+     - AFL: `SLP/Long If X% Loss In
+  Long/AFLs/Post_STBasedLossesInLongTrades_Drawdown_V2.afl`
+     - Rules: the same loop, but the virtual longs' running % total (reset when
+  above 0) must reach ≤ −5%. Here the filter does gate entry.
+     - aflNote: coded as the AFL is written.
+
+  9. **`ytstp_st_long_nloss`** — "Long for n Trades after n Losing Virtual ST
+  Longs (Range-Limited)"
+     - AFL: `SLP/Long If X% Loss In Long/AFLs/ST-LongTrade_NLoss.afl`
+     - Rules: entry when ST1 is in its bull phase; exit when neither ST is.
+  After n losing trades (virtual or real), take n real trades in a row; only
+  bars in the backtest range (`barinrange`) count.
+     - aflNote: coded as the AFL is written; the default `n_long_trades` of 0
+  takes no trade.
+
+  10. **`ytstp_st_long_nloss_sliding`** — "Long for n Trades after n Losing ST
+  Longs (Sliding Window)"
+      - AFL: `SLP/Long If X% Loss In
+  Long/AFLs/ST-LongTrade_NLoss_SlidingWindow.afl`
+      - Rules: no range check. The trade counter resets whenever the loss count
+  is ≥ n. The loss count resets only in non-consecutive mode.
+      - aflNote: coded as the AFL is written; set `n_long_trades` ≥ 1.
+
+  11. **`ytstp_st_long_nloss_sliding_alt`** — "Long for n Trades after n Losing
+  ST Longs (Sliding Window, Alternate)"
+      - AFL: `SLP/Long If X% Loss In
+  Long/AFLs/ST-LongTrade_NLoss_SlidingWindow_alternate.afl`
+      - Rules: range-limited; buys and sales never reset the loss count.
+      - aflNote: coded as the AFL is written; set `n_long_trades` ≥ 1.
+
+  **Defaults that produce no trades:** ids 9–11 use the AFLs' own default "Take
+  n long trades" of 0, which takes no trade. As instructed I kept that default
+  and said so in the notes. The UI needs `n_long_trades` ≥ 1 for these to show
+  anything.
+
+  **Not coded:**
+  - `jitinV1.afl` is the same loop as `ytstp_long_loss_nlosses` with the filter
+  off. Its Optimize() defaults are the same, and its "n long trades" Param has
+  default 0 even though its minimum is 1. Noted in that id's notes.
+  - `jitinV2.afl` is the same as `ytstp_long_loss_drawdown` with the filter off.
+  Noted in that id's notes.
+  - The intraday ST timeframe options are not offered. The main ST runs on its
+  own daily bars, as `ytst.rs` does; only the ST-LongTrade AFLs get their own
+  Daily/Weekly/Monthly choice (`st_tf`).
+  - The custom-backtester metrics and `_TRACE` output are reporting only.
+  - The ST-LongTrade AFLs' profit % and profit type Params are not used by their
+  loops.
+  - Nothing needed intraday bars.
+
+  **Adaptations and judgement calls:**
+  - I did not change `ytst.rs`. `prob_st` there is private, so I re-implemented
+  the same timeframe logic locally as `st_seen` (on `ytsn::sniper_st`). I reused
+  `ytsw::{compress, cross_up, cross_down}` and `ytwh::{bound, collect, Ev}`.
+  - Null handling: where an AFL compares after the timeframe shift
+  (`STBullPhase`), Null counts as false, so `NOT` of it is true. Where the value
+  is shifted after the comparison (STBuy/STSell, Version 1's `IsBull`), Null
+  passes neither side.
+  - A Buy and a Sell on the same bar (only possible in the V1 filter AFL) is
+  kept as a same-bar trade, assuming AmiBroker's AllowSameBarExit default.
+  - The TSL keeps its value between trades, as the AFLs' arrays do.
+● Agent "Code Supertrend probability AFLs" finished · 10m 42s
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react/src/c
+      ompat; python3 -I - <<'EOF'
+      import re…)
+  ⎿  Error: Exit code 1
+     1656:  supertrendstocks: { name: "Supertrend (Stocks)", book: 'yt_sts', 
+     stocks: 
+     1979:  ytstp_gain_short_v1: {"afl": "Supertrend/Supertrend Long_Based on 
+     Probabi
+     1980:  ytstp_gain_short_v1_filter: {"afl": "Supertrend/Supertrend 
+     Long_Based on 
+     1981:  ytstp_gain_short_v2: {"afl": "Supertrend/Supertrend Long_Based on 
+     Probabi
+     1982:  ytstp_virtual_short_v1: {"afl": "Supertrend/Supertrend Long_Based on
+     Prob
+     1983:  ytstp_loss_short_v2: {"afl": "Supertrend/Supertrend Long_Based on 
+     Probabi
+     1984:  ytstp_loss_short_v3: {"afl": "Supertrend/Supertrend Long_Based on 
+     Probabi
+     1985:  ytstp_long_loss_nlosses: {"afl": "Supertrend/Supertrend Long_Based 
+     on Pro
+     1986:  ytstp_long_loss_drawdown: {"afl": "Supertrend/Supertrend Long_Based 
+     on Pr
+     … +16 lines (ctrl+o to expand)
+
+● I left the trailing commas off the new lines. Fixing that:
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react/src/c
+      ompat; sed -i 's/(coded only, 13-11-2026)\."}$/(coded only,
+      13-11-2026)."},/' runtime.j…)
+  ⎿  syntax-ok
+     19
+  ⎿  Updated ~/Documents/Strategy-vault/Context/guru/frontend/react/src/com
+     pat/runtime.js (+19 -19)
+      1753    ytcr_filter_hard_stop: {"afl": "Candle Range Decrease and V
+            olume Increase/Candle Range Decrease and Volume Increase_WITH
+             FLT+HSL.afl", "aflNote": "NIFTY 500 cash stocks (C&P databas
+            e), daily, portfolio of 20 open positions; only optimisation 
+            results were kept.", "sheet": "Candle Range Decrease and Volu
+            me Increase/Candle Range Decrease and Volume Increase_WITH FL
+            T Final-20 open.xlsx", "sheetNote": "Optimisation table only,
+             no trade list: <b>20 open with flt&hsl</b> (filter and hard 
+            stop, 20 open positions)."},
+      1754    ytcr_filter_hard_stop_low: {"afl": "Candle Range Decrease a
+            nd Volume Increase/Candle Range AFL_Sukun/Candle Range Decrea
+            se and Volume Increase_WITH FLT+HSL.afl", "aflNote": "NIFTY 5
+            00 cash stocks (C&P database), daily, portfolio of 10 open po
+            sitions; only optimisation results were kept.", "sheet": "Can
+            dle Range Decrease and Volume Increase/Candle Range AFL_Sukun
+            /Candle Range Decrease and Volume Increase_WITH FLT Final_10 
+            open.xlsx", "sheetNote": "Optimisation tables only, no trade 
+            list: <b>With HSL Optim Raw data</b>, <b>Optim Analysis for H
+            SL</b>, <b>Results 2 (With Hsl)</b> (hard stop, 10 open posit
+            ions)."},
+      1755    ytcr_original: {"afl": "Candle Range Decrease and Volume In
+            crease/Candle Range Decrease and Volume Increase-original.afl
+            ", "aflNote": "NIFTY 500 cash stocks (C&P database), daily, r
+            aw backtests and portfolios of 10 or 20 open positions.", "sh
+            eet": "Candle Range Decrease and Volume Increase/Candle Range
+             AFL_Sukun/Raw Backtested result on nifty 500 c&p.xlsx", "she
+            etNote": "Trade sheets <b>Sheet1</b>, <b>PENNY</b>, <b>PENNY5
+            0</b>: profit target 8%, trailing stop 4%, volume 30%, penny 
+            10/25/50; about 99% of team trades found; and 5 more workbook
+            s."},
+      1756 -  ytcr_short: {"afl": "Miscelleneous/Candles Range Decrease a
+           -nd Volume Increase/Candles Range Decrease and Volume Increase
+           - (Short Only, With and Without Filter).afl", "aflNote": "Code
+           -d from this AFL as written, with its default settings; the st
+           -rategy's notes list the other AFLs it covers.", "sheet": null
+           -, "sheetNote": "Not compared with the team's trade sheets (co
+           -ded only, 13-11-2026)."}                                     
+      1757 -  ytcr_short_no_filter: {"afl": "Miscelleneous/Candles Range 
+           -Decrease and Volume Increase/Without filter/Candles Range Dec
+           -rease and Volume Increase (Short Only,Without Filter).afl", "
+           -aflNote": "Coded from this AFL as written, with its default s
+           -ettings; the strategy's notes list the other AFLs it covers."
+           -, "sheet": null, "sheetNote": "Not compared with the team's t
+           -rade sheets (coded only, 13-11-2026)."}                      
+      1758 -  ytcr_long_filter_choice: {"afl": "Miscelleneous/Candles Ran
+           -ge Decrease and Volume Increase/With filter/Candles Range Dec
+           -rease and Volume Increase (Long Only,With & Without Filter).a
+           -fl", "aflNote": "Coded from this AFL as written, with its def
+           -ault settings; the strategy's notes list the other AFLs it co
+           -vers.", "sheet": null, "sheetNote": "Not compared with the te
+           -am's trade sheets (coded only, 13-11-2026)."}                
+      1756 +  ytcr_short: {"afl": "Miscelleneous/Candles Range Decrease a
+           +nd Volume Increase/Candles Range Decrease and Volume Increase
+           + (Short Only, With and Without Filter).afl", "aflNote": "Code
+           +d from this AFL as written, with its default settings; the st
+           +rategy's notes list the other AFLs it covers.", "sheet": null
+           +, "sheetNote": "Not compared with the team's trade sheets (co
+           +ded only, 13-11-2026)."},                                    
+      1757 +  ytcr_short_no_filter: {"afl": "Miscelleneous/Candles Range 
+           +Decrease and Volume Increase/Without filter/Candles Range Dec
+           +rease and Volume Increase (Short Only,Without Filter).afl", "
+           +aflNote": "Coded from this AFL as written, with its default s
+           +ettings; the strategy's notes list the other AFLs it covers."
+           +, "sheet": null, "sheetNote": "Not compared with the team's t
+           +rade sheets (coded only, 13-11-2026)."},                     
+      1758 +  ytcr_long_filter_choice: {"afl": "Miscelleneous/Candles Ran
+           +ge Decrease and Volume Increase/With filter/Candles Range Dec
+           +rease and Volume Increase (Long Only,With & Without Filter).a
+           +fl", "aflNote": "Coded from this AFL as written, with its def
+           +ault settings; the strategy's notes list the other AFLs it co
+           +vers.", "sheet": null, "sheetNote": "Not compared with the te
+           +am's trade sheets (coded only, 13-11-2026)."},               
+      1759    ytd7_long: {"afl": "Double 7 Strategy/7 Days Lower Low and 
+            Higher High Based Buy & Sell (With & Without Filter) - Long o
+            nly.afl", "aflNote": "NSE cash stocks, daily: the team's chec
+            king runs after the error fixes (RELIANCE single stock, penny
+             stocks and a 10-open-position stock list).", "sheet": "Doubl
+            e 7 Strategy/7 Day Lower Low and Higher High_Old Work/After E
+            rror solving/7 Days Lower Low and Higher High Based Buy & Sel
+            l (With & Without Filter) - Long only.xlsx", "sheetNote": "Tr
+            ade sheets <b>2. Single Stock TL</b>, <b>2A Exit 1 HSL And PT
+            </b>, <b>2B Exit 2 ST daily filter</b>, <b>2C exit 3 ST Weekl
+            y</b>, <b>2E SMA</b>, <b>8. 10 Open TL</b> (RELIANCE and stoc
+            k lists; settings not recorded)."},
+      1760    ytd7_long_cd: {"afl": "Double 7 Strategy/7 Day LL, HH, CD/7
+             Days Lower Low and Higher High Based Buy & Sell (With & With
+            out Filter) - Long only with MA Filter.afl", "aflNote": "NIFT
+            Y daily bars (the workbook is named NIFTY) and stock portfoli
+            os with 10 or 20 open positions; only optimisation results we
+            re kept.", "sheet": "Double 7 Strategy/7 Day LL, HH, CD/7 Day
+            s Lower Low and Higher High Based Buy & Sell (With & Without 
+            Filter) - Long only- NIFTY.xlsx", "sheetNote": "Optimisation 
+            tables only, no trade list: <b>Nifty 200ma</b>, <b>NIfty 100m
+            a</b>, <b>Nifty 50ma</b> and their lowest low, highest high a
+            nd down-close variants; and 3 more optimisation workbooks."},
+      1761    ytd7_long_ma_st: {"afl": "Double 7 Strategy/7 Day LL, HH, C
+            D/7 Days Lower Low and Higher High Based Buy & Sell (With & W
+            ithout ST Filter) - Long only.afl", "aflNote": "NSE cash stoc
+            k portfolios with 10 or 20 open positions, daily; only optimi
+            sation results were kept.", "sheet": "Double 7 Strategy/7 Day
+             LL, HH, CD/optim/7 Days Lower Low and Higher High Based Buy 
+            & Sell (With & Without ST Filter) - Long only-optim working 1
+            .xlsx", "sheetNote": "Optimisation tables only, no trade list
+            : <b>LOWEST LOW PERIOD 10</b>, <b>PATCH FOR MA 10</b>, <b>Hig
+            hest High 10</b>, <b>LOWEST LOW 20 OPEN</b>, <b>MA 20 OPEN</b
+            >, <b>HIGHEST HIGH 20</b>; and 2 more optimisation workbooks.
+            "},
+     ...
+      1976    ytst_st_all_atr_exit: {"afl": "Supertrend/ST entry_Exit whe
+            n ATR gets doubled/ST ALL FOR INDIAN MKT with ATR exit condit
+            ion.afl", "aflNote": "Coded from this AFL as written, with it
+            s default settings; the strategy's notes list the other AFLs 
+            it covers.", "sheet": null, "sheetNote": "Not compared with t
+            he team's trade sheets (coded only, 12-11-2026)."},
+      1977    ytst_st_sell_buy_atr: {"afl": "Supertrend/Nifty SuperTrend 
+            Entry & ATR SL Exit For Index & Fo Database.afl", "aflNote": 
+            "Coded from this AFL as written, with its default settings; t
+            he strategy's notes list the other AFLs it covers.", "sheet":
+             null, "sheetNote": "Not compared with the team's trade sheet
+            s (coded only, 12-11-2026)."},
+      1978    ytst_st_sell_buy_pb: {"afl": "Supertrend/Nifty SuperTrend E
+            ntry & Profit Booking or HARD SL or Trail SL Exit.afl", "aflN
+            ote": "Coded from this AFL as written, with its default setti
+            ngs; the strategy's notes list the other AFLs it covers.", "s
+            heet": null, "sheetNote": "Not compared with the team's trade
+             sheets (coded only, 12-11-2026)."},
+      1979 -  ytstp_gain_short_v1: {"afl": "Supertrend/Supertrend Long_Ba
+           -sed on Probabilty/Long if x% Gain in Short/AFLs/Futures_Long_
+           -X%GainInShort_V1.afl", "aflNote": "Coded from this AFL as wri
+           -tten, with its default settings; the strategy's notes list th
+           -e other AFLs it covers.", "sheet": null, "sheetNote": "Not co
+           -mpared with the team's trade sheets (coded only, 13-11-2026).
+           -"}                                                           
+      1980 -  ytstp_gain_short_v1_filter: {"afl": "Supertrend/Supertrend 
+           -Long_Based on Probabilty/Long if x% Gain in Short/AFLs/Future
+           -s_Long_X%GainInShort_With Filter_V1.afl", "aflNote": "Coded f
+           -rom this AFL as written, with its default settings; the strat
+           -egy's notes list the other AFLs it covers.", "sheet": null, "
+           -sheetNote": "Not compared with the team's trade sheets (coded
+           - only, 13-11-2026)."}                                        
+      1981 -  ytstp_gain_short_v2: {"afl": "Supertrend/Supertrend Long_Ba
+           -sed on Probabilty/Long if x% Gain in Short/AFLs/Futures_Long_
+           -X%inShort_V2.afl", "aflNote": "Coded from this AFL as written
+           -, with its default settings; the strategy's notes list the ot
+           -her AFLs it covers.", "sheet": null, "sheetNote": "Not compar
+           -ed with the team's trade sheets (coded only, 13-11-2026)."}  
+      1982 -  ytstp_virtual_short_v1: {"afl": "Supertrend/Supertrend Long
+           -_Based on Probabilty/Long if x% Loss in Short/Version 1/Super
+           -Trend Virtual Short.afl", "aflNote": "Coded from this AFL as 
+           -written, with its default settings; the strategy's notes list
+           - the other AFLs it covers.", "sheet": null, "sheetNote": "Not
+           - compared with the team's trade sheets (coded only, 13-11-202
+           -6)."}                                                        
+      1983 -  ytstp_loss_short_v2: {"afl": "Supertrend/Supertrend Long_Ba
+           -sed on Probabilty/Long if x% Loss in Short/AFLs/Futures_Long_
+           -X%LossinShort_with_STFilter_V2.afl", "aflNote": "Coded from t
+           -his AFL as written, with its default settings; the strategy's
+           - notes list the other AFLs it covers.", "sheet": null, "sheet
+           -Note": "Not compared with the team's trade sheets (coded only
+           -, 13-11-2026)."}                                             
+      1984 -  ytstp_loss_short_v3: {"afl": "Supertrend/Supertrend Long_Ba
+           -sed on Probabilty/Long if x% Loss in Short/AFLs/Futures_Long_
+           -X%LossinShort_with_STFilter_V3.afl", "aflNote": "Coded from t
+           -his AFL as written, with its default settings; the strategy's
+           - notes list the other AFLs it covers.", "sheet": null, "sheet
+           -Note": "Not compared with the team's trade sheets (coded only
+           -, 13-11-2026)."}                                             
+      1985 -  ytstp_long_loss_nlosses: {"afl": "Supertrend/Supertrend Lon
+           -g_Based on Probabilty/Long If X% Loss In Long/AFLs/Post_STBas
+           -edLossesInLongTrades_NLosses_V1.afl", "aflNote": "Coded from 
+           -this AFL as written, with its default settings; the strategy'
+           -s notes list the other AFLs it covers.", "sheet": null, "shee
+           -tNote": "Not compared with the team's trade sheets (coded onl
+           -y, 13-11-2026)."}                                            
+      1986 -  ytstp_long_loss_drawdown: {"afl": "Supertrend/Supertrend Lo
+           -ng_Based on Probabilty/Long If X% Loss In Long/AFLs/Post_STBa
+           -sedLossesInLongTrades_Drawdown_V2.afl", "aflNote": "Coded fro
+           -m this AFL as written, with its default settings; the strateg
+           -y's notes list the other AFLs it covers.", "sheet": null, "sh
+           -eetNote": "Not compared with the team's trade sheets (coded o
+           -nly, 13-11-2026)."}                                          
+      1987 -  ytstp_st_long_nloss: {"afl": "Supertrend/Supertrend Long_Ba
+           -sed on Probabilty/Long If X% Loss In Long/AFLs/ST-LongTrade_N
+           -Loss.afl", "aflNote": "Coded from this AFL as written, with i
+           -ts default settings; the strategy's notes list the other AFLs
+           - it covers.", "sheet": null, "sheetNote": "Not compared with 
+           -the team's trade sheets (coded only, 13-11-2026)."}          
+      1988 -  ytstp_st_long_nloss_sliding: {"afl": "Supertrend/Supertrend
+           - Long_Based on Probabilty/Long If X% Loss In Long/AFLs/ST-Lon
+           -gTrade_NLoss_SlidingWindow.afl", "aflNote": "Coded from this 
+           -AFL as written, with its default settings; the strategy's not
+           -es list the other AFLs it covers.", "sheet": null, "sheetNote
+           -": "Not compared with the team's trade sheets (coded only, 13
+           --11-2026)."}                                                 
+      1989 -  ytstp_st_long_nloss_sliding_alt: {"afl": "Supertrend/Supert
+           -rend Long_Based on Probabilty/Long If X% Loss In Long/AFLs/ST
+           --LongTrade_NLoss_SlidingWindow_alternate.afl", "aflNote": "Co
+           -ded from this AFL as written, with its default settings; the 
+           -strategy's notes list the other AFLs it covers.", "sheet": nu
+           -ll, "sheetNote": "Not compared with the team's trade sheets (
+           -coded only, 13-11-2026)."}                                   
+      1990 -  ytsts_monthly_single_trade: {"afl": "Supertrend/ST monthly 
+           -single trade long only WITH SQN/ST monthly single trade long 
+           -only WITH SQN.afl", "aflNote": "Coded from this AFL as writte
+           -n, with its default settings; the strategy's notes list the o
+           -ther AFLs it covers.", "sheet": null, "sheetNote": "Not compa
+           -red with the team's trade sheets (coded only, 13-11-2026)."} 
+      1991 -  ytsts_monthly_single_athc: {"afl": "Supertrend/ST monthly s
+           -ingle trade within ATH-30%_Exit with ST daily/ST monthly sing
+           -le trade long only  with 2 ST athc-30 pct WITH SQN n ranking.
+           -afl", "aflNote": "Coded from this AFL as written, with its de
+           -fault settings; the strategy's notes list the other AFLs it c
+           -overs.", "sheet": null, "sheetNote": "Not compared with the t
+           -eam's trade sheets (coded only, 13-11-2026)."}               
+      1992 -  ytsts_monthly_single_athc_daily: {"afl": "Supertrend/ST mon
+           -thly single trade within ATH-30%_If in MONTHLY SELL, exit wit
+           -h 54. If in MONTHLY buy, exit with 51/ST monthly single trade
+           - with 2 ST  execution on daily WITH ATHC -30 PCTl.afl", "aflN
+           -ote": "Coded from this AFL as written, with its default setti
+           -ngs; the strategy's notes list the other AFLs it covers.", "s
+           -heet": null, "sheetNote": "Not compared with the team's trade
+           - sheets (coded only, 13-11-2026)."}                          
+      1993 -  ytsts_trade_below_monthly_st: {"afl": "Supertrend/ST trade 
+           -below supertrend monthly filter/ST trade below filter - Copy.
+           -afl", "aflNote": "Coded from this AFL as written, with its de
+           -fault settings; the strategy's notes list the other AFLs it c
+           -overs.", "sheet": null, "sheetNote": "Not compared with the t
+           -eam's trade sheets (coded only, 13-11-2026)."}               
+      1994 -  ytsts_sma_buy_sell: {"afl": "Supertrend/SMA BUY SELL WITH A
+           -LL TIMEFRAME/SMA BUY SELL WITH ALL TIMEFRAME.afl", "aflNote":
+           - "Coded from this AFL as written, with its default settings; 
+           -the strategy's notes list the other AFLs it covers.", "sheet"
+           -: null, "sheetNote": "Not compared with the team's trade shee
+           -ts (coded only, 13-11-2026)."}                               
+      1979 +  ytstp_gain_short_v1: {"afl": "Supertrend/Supertrend Long_Ba
+           +sed on Probabilty/Long if x% Gain in Short/AFLs/Futures_Long_
+           +X%GainInShort_V1.afl", "aflNote": "Coded from this AFL as wri
+           +tten, with its default settings; the strategy's notes list th
+           +e other AFLs it covers.", "sheet": null, "sheetNote": "Not co
+           +mpared with the team's trade sheets (coded only, 13-11-2026).
+           +"},                                                          
+      1980 +  ytstp_gain_short_v1_filter: {"afl": "Supertrend/Supertrend 
+           +Long_Based on Probabilty/Long if x% Gain in Short/AFLs/Future
+           +s_Long_X%GainInShort_With Filter_V1.afl", "aflNote": "Coded f
+           +rom this AFL as written, with its default settings; the strat
+           +egy's notes list the other AFLs it covers.", "sheet": null, "
+           +sheetNote": "Not compared with the team's trade sheets (coded
+           + only, 13-11-2026)."},                                       
+      1981 +  ytstp_gain_short_v2: {"afl": "Supertrend/Supertrend Long_Ba
+           +sed on Probabilty/Long if x% Gain in Short/AFLs/Futures_Long_
+           +X%inShort_V2.afl", "aflNote": "Coded from this AFL as written
+           +, with its default settings; the strategy's notes list the ot
+           +her AFLs it covers.", "sheet": null, "sheetNote": "Not compar
+           +ed with the team's trade sheets (coded only, 13-11-2026)."}, 
+      1982 +  ytstp_virtual_short_v1: {"afl": "Supertrend/Supertrend Long
+           +_Based on Probabilty/Long if x% Loss in Short/Version 1/Super
+           +Trend Virtual Short.afl", "aflNote": "Coded from this AFL as 
+           +written, with its default settings; the strategy's notes list
+           + the other AFLs it covers.", "sheet": null, "sheetNote": "Not
+           + compared with the team's trade sheets (coded only, 13-11-202
+           +6)."},                                                       
+      1983 +  ytstp_loss_short_v2: {"afl": "Supertrend/Supertrend Long_Ba
+           +sed on Probabilty/Long if x% Loss in Short/AFLs/Futures_Long_
+           +X%LossinShort_with_STFilter_V2.afl", "aflNote": "Coded from t
+           +his AFL as written, with its default settings; the strategy's
+           + notes list the other AFLs it covers.", "sheet": null, "sheet
+           +Note": "Not compared with the team's trade sheets (coded only
+           +, 13-11-2026)."},                                            
+      1984 +  ytstp_loss_short_v3: {"afl": "Supertrend/Supertrend Long_Ba
+           +sed on Probabilty/Long if x% Loss in Short/AFLs/Futures_Long_
+           +X%LossinShort_with_STFilter_V3.afl", "aflNote": "Coded from t
+           +his AFL as written, with its default settings; the strategy's
+           + notes list the other AFLs it covers.", "sheet": null, "sheet
+           +Note": "Not compared with the team's trade sheets (coded only
+           +, 13-11-2026)."},                                            
+      1985 +  ytstp_long_loss_nlosses: {"afl": "Supertrend/Supertrend Lon
+           +g_Based on Probabilty/Long If X% Loss In Long/AFLs/Post_STBas
+           +edLossesInLongTrades_NLosses_V1.afl", "aflNote": "Coded from 
+           +this AFL as written, with its default settings; the strategy'
+           +s notes list the other AFLs it covers.", "sheet": null, "shee
+           +tNote": "Not compared with the team's trade sheets (coded onl
+           +y, 13-11-2026)."},                                           
+      1986 +  ytstp_long_loss_drawdown: {"afl": "Supertrend/Supertrend Lo
+           +ng_Based on Probabilty/Long If X% Loss In Long/AFLs/Post_STBa
+           +sedLossesInLongTrades_Drawdown_V2.afl", "aflNote": "Coded fro
+           +m this AFL as written, with its default settings; the strateg
+           +y's notes list the other AFLs it covers.", "sheet": null, "sh
+           +eetNote": "Not compared with the team's trade sheets (coded o
+           +nly, 13-11-2026)."},                                         
+      1987 +  ytstp_st_long_nloss: {"afl": "Supertrend/Supertrend Long_Ba
+           +sed on Probabilty/Long If X% Loss In Long/AFLs/ST-LongTrade_N
+           +Loss.afl", "aflNote": "Coded from this AFL as written, with i
+           +ts default settings; the strategy's notes list the other AFLs
+           + it covers.", "sheet": null, "sheetNote": "Not compared with 
+           +the team's trade sheets (coded only, 13-11-2026)."},         
+     … 10 more lines (ctrl+o to expand)
+
+● Three of the four groups are done and registered: Candles Range, Supertrend
+  probability and Supertrend (Stocks). I'm waiting for the last agent, which is
+  adding the Supertrend index AFLs to ytst.rs.
+
+› Message from general-purpose
+  I added 8 new strategies to `Context/guru/backend/src/books/ytst.rs`, and it
+  is the only file I changed. `cargo test -j 2 books::ytst::` passes 19 of 19:
+  the 11 existing tests, 7 new ones and the smoke test over all 28 ids. `cargo
+  build -j 2` builds with no errors and no warnings from ytst.rs. Existing
+  strategy calculations are unchanged.
+
+  **New ids** (AFL paths are relative to `jay-local/Old Topics AFL/`):
+
+  1. **`ytst_athc_swing_pt`** — "ATHC Entry with % Close Swing or Profit Target
+  Exit" (Long)
+     - AFL: `Supertrend/ATH entry_Exit with %swing OR profit target/Entry on
+  ATHC and Exit below %Swing Or by ProfitTarget.afl`
+     - Rules: buy at the Close on a new all-time-high close (or while the ATHC
+  flag is on). Sell when the 10% close swing turns down, the flag goes off, or
+  the High reaches entry +5% (filled at the target). After a sale it does not
+  re-enter until the swing has been down.
+     - aflNote: Daily-bar, positional long-only AFL; run here on the daily
+  index.
+  2. **`ytst_athc_pct_swing_pt`** — "ATHC + 5% Entry with % Close Swing or
+  Profit Target Exit" (Long)
+     - AFL: `Supertrend/ATH+% entry_Exit with %swing OR profit target/Entry on
+  ATHC + 5% and Exit below %Swing Or by ProfitTarget.afl`
+     - Rules: the same as item 1, but the buy also needs a Close above a
+  trigger. The trigger is the first new-high Close ×1.05 and is cleared when the
+  swing turns down.
+     - aflNote: Daily-bar, positional long-only AFL.
+  3. **`ytst_athc_after_losses`** — "ATHC Entry after 2 Consecutive Losing Swing
+  Trades" (Long)
+     - AFL: `Supertrend/ATH entry after consec loss of ATH-%swing_Exit with
+  %swing OR profit target/ATHC entry After 2 consecutive losses and Exit below
+  %Swing Or by ProfitTarget.afl`
+     - Rules: the same as item 1, but it buys only after at least 2 consecutive
+  losing virtual trades. A virtual trade buys on the ATHC flag and sells when
+  the swing turns down. It counts as a loss if its profit is 3% or less after
+  0.65% brokerage each way.
+     - aflNote: Daily-bar, positional long-only AFL.
+  4. **`ytst_st52_scale_in_atr`** — "ST 5,2 Long with ATR(14) Scale-in, ST 5,2
+  and 5,4 Exit" (Long)
+     - AFL: `Supertrend/Entry when Closing is above 5,2_Scale-in with 14 days
+  ATR_Exit below 5,2 & 5,4/Entry when Closing is above 5,2_Scale-in with 14 days
+  ATR_Exit below 5,2 & 5,4.afl`
+     - Rules: buy 1 unit when ST(5,2) is up. Add a unit (5 at most) on a Close
+  above the last unit's Close + 1×ATR(14). Sell everything when ST(5,2) and
+  ST(5,4) are both down.
+     - aflNote: Daily-bar, positional long-only AFL.
+  5. **`ytst_st_high_low_breakout`** — "ST 5,1 Buy above the Flip High, Sell
+  below the Flip Low" (Long)
+     - AFL: `Supertrend/ST Buy Sell at High Low/ST Buy Sell at High Low -
+  Updated.afl`
+     - Rules: buy above the High +0.25% of the bar where ST(5,1) turned up, at
+  the Open +0.25% if it gapped above. Sell below the Low −0.25% of the bar where
+  it turned down, with a "running trade" flag.
+     - The copy under "ST Buy when HIGH above HIGH+0.25% & Sell when LOW below
+  LOW-0.25%" is byte-identical (same md5), so it is coded once.
+     - aflNote: Daily-bar, positional long-only AFL.
+  6. **`ytst_st51_bear_filter_atr`** — "ST 5,1 with Bearish ST 5,4 Filter: Short
+  Only or Long Only, ATR Target and Stop" (Long/Short, option `side`: 1 short
+  only by default, 2 long only)
+     - AFL: `Supertrend/Nifty SuperTrend Entry & ATR SL Exit For Index & Fo
+  Database with ST(54) Filter/For bear market (Long only & short only) (Ver3 If
+  NIFTY in ST sell, then buy on next day)/Nifty SuperTrend Short Only and Long
+  Only & ATR SL Exit For Index & Fo with ST Bear Filter.afl`
+     - Short only: short when the previous bar's ST(5,1) was up, the ST(5,4)
+  filter is down and the re-entry state is armed. Cover at entry −3×ATR(5), at
+  entry +1×ATR(5), or when the filter turns up.
+     - Long only: the mirror image; it buys when the previous bar's ST(5,1) was
+  down. Both STs are daily by default.
+     - aflNote: Written for spot Nifty (index & F&O database) on daily bars.
+  7. **`ytst_st51_bull_filter_short`** — "ST 5,1 Short Only with Bullish ST 5,4
+  Filter, ATR Target and Stop" (Short)
+     - AFL: `Supertrend/Nifty SuperTrend Entry & ATR SL Exit For Index & Fo
+  Database with ST(54) Filter/For bull market (Short only) (Ver3 If NIFTY in ST
+  sell, then buy on next day)/Nifty SuperTrend Short Only &  Index & Fo with ST
+  Bull Filter.AFL`
+     - Rules: short when the previous bar's ST(5,1) was up and the ST(5,4)
+  filter is up. Cover on the ATR(5) 3× target or 1× stop, or when the filter
+  turns down.
+     - If price gaps above the stop, the AFL covers at the Open minus the
+  buffer, and it is kept that way.
+     - aflNote: Written for spot Nifty (index & F&O database) on daily bars.
+  8. **`ytst_mtf_weekly_filter`** — "Multi-Timeframe ST: Weekly ST Filter, Daily
+  ST 5,1 Entry, ST 5,1 / 5,2 Exit" (Long)
+     - AFL: `Supertrend/MultiTime Frame Supertrend/MultiTimeFrame.afl`
+     - Rules: buy when the Close crosses above the daily ST(5,1) while the
+  weekly ST(5,1) filter is bullish. Sell below ST(5,1), or below ST(5,2) once
+  the Close has been above ST(5,2), or when the filter leaves its bull phase.
+     - It uses the AFL's own ST and the Ref/expandFirst filter path
+  (`ytsn::sniper_st` / `prob_st`). Options: bearish filter type, skip the filter
+  exit, "running" entry.
+     - aflNote: Daily-bar trading system with a weekly (or monthly) Supertrend
+  filter.
+
+  **Not coded:**
+  - **"Entry when Closing is above 5,1_Scale-in ... Exit below 5,1.afl"**:
+  despite its folder name it has no Supertrend. It is the stock-universe AFL
+  "Rajiv Shukla Ver1" (52-week-high and 200-day MA entry, 50% scale-out, ranked
+  by `PositionScore = RSI(14)`), so it is listed in the header as not coded.
+  - **MultiTimeFrame options**: the weekly/monthly entry timeframe and the
+  quarterly filter are not offered, because `compress` has no quarterly bars.
+  The daily entry timeframe is the AFL's default.
+  - **ATHC hard-stop %**: default 0 (off), not offered.
+
+  **Item 10 (confirmed, nothing added):**
+  - "ST 5-1 Sell Buy R&R" V1 and V2 are the same file. Each equals the root
+  "...Profit Booking or HARD SL or Trail SL Exit.afl" except it uses Param
+  instead of Optimize, so it is `ytst_st_sell_buy_pb`; the Stock AFL copy is
+  version 3 of that id.
+  - The Final/ copies are `ytst_st_sell_buy_atr`, without and with `flt54`. They
+  differ only in Optimize vs Param, and in one live `Buffer_prcnt` Param line.
+
+  **Adaptations and things you should know:**
+  - **Scale-in sizing (marked as an adaptation in the notes):** the AFL buys 20%
+  of the current equity per unit. Here one trade holds one leg per unit at 20%
+  of the trade's allocation (weight 0.2), and units not bought are idle cash.
+  This follows `ytrgs.rs` / `hbqts.rs`.
+  - **Null levels inside AFL loops count as -1e10**, as this module family
+  assumes. This changes behaviour in three places:
+    - **High/Low AFL:** while ST(5,1) is down there is no buy level, so "High
+  above the level" is always true. The AFL as written therefore buys at the Open
+  +0.25% on every flat bar of a down trend and sells on a break of the
+  down-flip Low. It is coded that way and said in the notes, but it is probably
+  not what the authors meant, so it is worth a look before you publish.
+    - **Scale-in:** ATR(14) has no value on the first 14 bars, so the first bars
+  of the data add a unit on every bar.
+    - **ATHC +5%:** a buy with no trigger set is possible only in a rare case (a
+  new high while the swing is down).
+  - **Same-bar buy and sell (High/Low AFL):** the backtester enters and ignores
+  that bar's sale, because the AFL does not set AllowSameBarExit
+  (`ytd7::fills`). I set its `entry_kind` to "stop".
+  - **Consecutive-loss count:** the AFL's `Cross(Ref(TrendUp1,-1), C)` is
+  computed exactly as "the bar the swing turns down, from bar 3"; the reasoning
+  is in the code comment. The brokerage 0.65 comes from the AFL's BROKERAGE
+  Param and is used only for this count.
+  - **MultiTimeFrame stale header:** the AFL's header says "N Red Candles" and
+  "5-2 5-4", but its code uses ST 5,1 and 5,2; the code is followed. On the
+  data's last bar the weekly filter has no value, so the filter exit fires
+  there.
+
+  Helpers reused, not duplicated: `ytsw::close_swing` / `cross_up`,
+  `ytnr7::athc`, `ytwh::hhv` / `loop_val` / `collect` / `Ev`, `ytd7::fills`,
+  `ytsn::sniper_st`, and ytst's own `tf_trend`, `st_daily`, `calc_on` and
+  `prob_st`. The `//!` header lists for coded and not coded are updated.
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react/src/c
+      ompat; python3 -I - <<'EOF'
+      p='runtime.js'; s=open(p).read()…)
+  ⎿  ok
+
+     Environment  jsdom was created 48 times · 21.03s total, 78% of tracked
+     … +5 lines (ctrl+o to expand)
+  ⎿  Updated ~/Documents/Strategy-vault/Context/guru/frontend/react/src/com
+     pat/runtime.js (+9 -1)
+      1654    twodayshort: { name: "13-3 AKA 2D Short", book: 'yt_2ds', s
+            tocks: true, blurb: "Month-start shorts: short a stock at the
+             close of the month's Nth trading day and cover N days later,
+             with candle-colour, ROC, RSI/ADX, Supertrend and % swing fil
+            ters and election-month skips. Coded from the team's AFLs as 
+            written (not compared with their trade sheets); runs on one s
+            tock at a time (RELIANCE by default; pick another in Stock)."
+             },
+      1655    gapdown: { name: "Gap Down", book: 'yt_gd', stocks: true, b
+            lurb: "Same-day gap-down trades: buy a gap below yesterday's 
+            low and sell at the close, or short a gap down after a strong
+             bullish candle. Coded from the team's AFLs as written (not c
+            ompared with their trade sheets); runs on one stock at a time
+             (RELIANCE by default; pick another in Stock)." },
+      1656    supertrendstocks: { name: "Supertrend (Stocks)", book: 'yt_
+            sts', stocks: true, blurb: "Monthly-Supertrend single-trade e
+            ntries (with all-time-high and daily-execution versions), tra
+            ding below or above the monthly Supertrend, and a 200-day SMA
+             buy/sell. Coded from the team's stock AFLs as written (not c
+            ompared with their trade sheets; portfolio ranking not modell
+            ed); runs on one stock at a time (RELIANCE by default; pick a
+            nother in Stock)." },
+      1657 -  supertrend: { name: "Supertrend", book: 'yt_st', blurb: "Si
+           -ngle- and two-Supertrend long/short systems, monthly-Supertre
+           -nd bull/bear regimes, buy-in-monthly-sell ATR target and stop
+           - systems, and longs after a virtual Supertrend short gained o
+           -r lost x%. Coded from the team's AFLs as written (not compare
+           -d with their trade sheets); daily spot index data." },       
+      1657 +  supertrend: { name: "Supertrend", book: 'yt_st', blurb: "Si
+           +ngle- and two-Supertrend long/short systems, all-time-high en
+           +tries with % swing or target exits, ATR scale-in, flip high/l
+           +ow breakouts, multi-timeframe and bull/bear-filtered ST 5,1 s
+           +ystems, monthly-Supertrend bull/bear regimes, buy-in-monthly-
+           +sell ATR target and stop systems, and longs after a virtual S
+           +upertrend short gained or lost x%. Coded from the team's AFLs
+           + as written (not compared with their trade sheets); daily spo
+           +t index data." },                                            
+      1658    rsi: { name: "RSI", book: 'yt_rsi', blurb: "RSI crossovers,
+             RSI-trailing entries and exits, and RSI setups filtered by S
+            upertrend, moving average, % swing or all-time-high close. Co
+            ded from the team's AFLs as written (not compared with their 
+            trade sheets); daily spot index data." },
+      1659    triplersi: { name: "Tripple RSI", book: 'yt_tr', blurb: "Bu
+            y when the daily RSI crosses up while the monthly and weekly 
+            RSI are above 60, or on a daily/weekly RSI cross; exits on RS
+            I or price trails, a hard stop or a 20% swing. Coded from the
+             team's AFLs as written (not compared with their trade sheets
+            ); daily spot index or one stock." },
+      1660    stochrsi: { name: "Stochastic+RSI System", book: 'yt_sr', b
+            lurb: "Long when the Stochastic %K (or the internal bar stren
+            gth) and the RSI cross their thresholds together, with option
+            al stop, target, RSI-drop, Supertrend or ATR exits. Coded fro
+            m the team's AFLs as written (not compared with their trade s
+            heets); daily spot index or one stock." },
+     ...
+      1976    ytst_st_all_atr_exit: {"afl": "Supertrend/ST entry_Exit whe
+            n ATR gets doubled/ST ALL FOR INDIAN MKT with ATR exit condit
+            ion.afl", "aflNote": "Coded from this AFL as written, with it
+            s default settings; the strategy's notes list the other AFLs 
+            it covers.", "sheet": null, "sheetNote": "Not compared with t
+            he team's trade sheets (coded only, 12-11-2026)."},
+      1977    ytst_st_sell_buy_atr: {"afl": "Supertrend/Nifty SuperTrend 
+            Entry & ATR SL Exit For Index & Fo Database.afl", "aflNote": 
+            "Coded from this AFL as written, with its default settings; t
+            he strategy's notes list the other AFLs it covers.", "sheet":
+             null, "sheetNote": "Not compared with the team's trade sheet
+            s (coded only, 12-11-2026)."},
+      1978    ytst_st_sell_buy_pb: {"afl": "Supertrend/Nifty SuperTrend E
+            ntry & Profit Booking or HARD SL or Trail SL Exit.afl", "aflN
+            ote": "Coded from this AFL as written, with its default setti
+            ngs; the strategy's notes list the other AFLs it covers.", "s
+            heet": null, "sheetNote": "Not compared with the team's trade
+             sheets (coded only, 12-11-2026)."},
+      1979 +  ytst_athc_swing_pt: {"afl": "Supertrend/ATH entry_Exit with
+           + %swing OR profit target/Entry on ATHC and Exit below %Swing 
+           +Or by ProfitTarget.afl", "aflNote": "Coded from this AFL as w
+           +ritten, with its default settings; the strategy's notes list 
+           +the other AFLs it covers.", "sheet": null, "sheetNote": "Not 
+           +compared with the team's trade sheets (coded only, 13-11-2026
+           +)."},                                                        
+      1980 +  ytst_athc_pct_swing_pt: {"afl": "Supertrend/ATH+% entry_Exi
+           +t with %swing OR profit target/Entry on ATHC + 5% and Exit be
+           +low %Swing Or by ProfitTarget.afl", "aflNote": "Coded from th
+           +is AFL as written, with its default settings; the strategy's 
+           +notes list the other AFLs it covers.", "sheet": null, "sheetN
+           +ote": "Not compared with the team's trade sheets (coded only,
+           + 13-11-2026)."},                                             
+      1981 +  ytst_athc_after_losses: {"afl": "Supertrend/ATH entry after
+           + consec loss of ATH-%swing_Exit with %swing OR profit target/
+           +ATHC entry After 2 consecutive losses and Exit below %Swing O
+           +r by ProfitTarget.afl", "aflNote": "Coded from this AFL as wr
+           +itten, with its default settings; the strategy's notes list t
+           +he other AFLs it covers.", "sheet": null, "sheetNote": "Not c
+           +ompared with the team's trade sheets (coded only, 13-11-2026)
+           +."},                                                         
+      1982 +  ytst_st52_scale_in_atr: {"afl": "Supertrend/Entry when Clos
+           +ing is above 5,2_Scale-in with 14 days ATR_Exit below 5,2 & 5
+           +,4/Entry when Closing is above 5,2_Scale-in with 14 days ATR_
+           +Exit below 5,2 & 5,4.afl", "aflNote": "Coded from this AFL as
+           + written, with its default settings; the strategy's notes lis
+           +t the other AFLs it covers.", "sheet": null, "sheetNote": "No
+           +t compared with the team's trade sheets (coded only, 13-11-20
+           +26)."},                                                      
+      1983 +  ytst_st_high_low_breakout: {"afl": "Supertrend/ST Buy Sell 
+           +at High Low/ST Buy Sell at High Low - Updated.afl", "aflNote"
+           +: "Coded from this AFL as written, with its default settings;
+           + the strategy's notes list the other AFLs it covers.", "sheet
+           +": null, "sheetNote": "Not compared with the team's trade she
+           +ets (coded only, 13-11-2026)."},                             
+      1984 +  ytst_st51_bear_filter_atr: {"afl": "Supertrend/Nifty SuperT
+           +rend Entry & ATR SL Exit For Index & Fo Database with ST(54) 
+           +Filter/For bear market (Long only & short only) (Ver3 If NIFT
+           +Y in ST sell, then buy on next day)/Nifty SuperTrend Short On
+           +ly and Long Only & ATR SL Exit For Index & Fo with ST Bear Fi
+           +lter.afl", "aflNote": "Coded from this AFL as written, with i
+           +ts default settings; the strategy's notes list the other AFLs
+           + it covers.", "sheet": null, "sheetNote": "Not compared with 
+           +the team's trade sheets (coded only, 13-11-2026)."},         
+      1985 +  ytst_st51_bull_filter_short: {"afl": "Supertrend/Nifty Supe
+           +rTrend Entry & ATR SL Exit For Index & Fo Database with ST(54
+           +) Filter/For bull market (Short only) (Ver3 If NIFTY in ST se
+           +ll, then buy on next day)/Nifty SuperTrend Short Only &  Inde
+           +x & Fo with ST Bull Filter.AFL", "aflNote": "Coded from this 
+           +AFL as written, with its default settings; the strategy's not
+           +es list the other AFLs it covers.", "sheet": null, "sheetNote
+           +": "Not compared with the team's trade sheets (coded only, 13
+           +-11-2026)."},                                                
+      1986 +  ytst_mtf_weekly_filter: {"afl": "Supertrend/MultiTime Frame
+           + Supertrend/MultiTimeFrame.afl", "aflNote": "Coded from this 
+           +AFL as written, with its default settings; the strategy's not
+           +es list the other AFLs it covers.", "sheet": null, "sheetNote
+           +": "Not compared with the team's trade sheets (coded only, 13
+           +-11-2026)."},                                                
+      1987    ytstp_gain_short_v1: {"afl": "Supertrend/Supertrend Long_Ba
+            sed on Probabilty/Long if x% Gain in Short/AFLs/Futures_Long_
+            X%GainInShort_V1.afl", "aflNote": "Coded from this AFL as wri
+            tten, with its default settings; the strategy's notes list th
+            e other AFLs it covers.", "sheet": null, "sheetNote": "Not co
+            mpared with the team's trade sheets (coded only, 13-11-2026).
+            "},
+      1988    ytstp_gain_short_v1_filter: {"afl": "Supertrend/Supertrend 
+            Long_Based on Probabilty/Long if x% Gain in Short/AFLs/Future
+            s_Long_X%GainInShort_With Filter_V1.afl", "aflNote": "Coded f
+            rom this AFL as written, with its default settings; the strat
+            egy's notes list the other AFLs it covers.", "sheet": null, "
+            sheetNote": "Not compared with the team's trade sheets (coded
+             only, 13-11-2026)."},
+      1989    ytstp_gain_short_v2: {"afl": "Supertrend/Supertrend Long_Ba
+            sed on Probabilty/Long if x% Gain in Short/AFLs/Futures_Long_
+            X%inShort_V2.afl", "aflNote": "Coded from this AFL as written
+            , with its default settings; the strategy's notes list the ot
+            her AFLs it covers.", "sheet": null, "sheetNote": "Not compar
+            ed with the team's trade sheets (coded only, 13-11-2026)."},
+
+● Agent "Code Supertrend index AFLs" finished · 18m 14s
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/frontend/react;
+      export PATH=$HOME/.nvm/versions/node/v24.22.1/bin:$PATH; npx vitest run
+      2>&1 | grep -E "Tes…)
+  ⎿   Test Files  48 passed (48)
+           Tests  385 passed (385)
+     test tests::equity_equals_compounded_trade_returns ... FAILED
+     … +4 lines (ctrl+o to expand)
+  ⎿  (timeout 10m)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend; sed -n
+      2735,2760p src/main.rs; timeout 600 cargo test -j 2
+      equity_equals_compounded 2>&1 | grep -A…)
+  ⎿          let ctx = Ctx::new(rows, rows, &[]);
+             for d in connors::catalogue().iter().filter(|d| d.status == St
+     atus::Live && !d.needs_vix) {
+     … +32 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend; cp
+      src/main.rs /tmp/claude-1000/-home-aff49-Documents-Strategy-vault/5d89b2e4
+      -5c44-42c6-81b7-eabce…)
+  ⎿                  let raw = connors::run(d.id, &ctx, 0, rows.len()-1, &P
+     arams::new()).unwrap_or_else(|| panic!("NONE {}", d.id));
+     NONE lkqts_macs
+
+● All four groups are coded: 27 new strategies, with tests passing and every
+  strategy registered on the YT Strategies page. Docker hasn't been rebuilt yet,
+  so they aren't live; I need your OK first.
+
+  What was added (every strategy is coded from its AFL as written and has not
+  been checked against the team's trade sheets):
+
+  ┌───────────────────────────────┬─────┬──────────────────────────┐
+  │          Collection           │ New │         Runs on          │
+  ├───────────────────────────────┼─────┼──────────────────────────┤
+  │ Candle Range and Volume       │ 3   │ one stock                │
+  ├───────────────────────────────┼─────┼──────────────────────────┤
+  │ Supertrend                    │ 8   │ Nifty or Bank Nifty spot │
+  ├───────────────────────────────┼─────┼──────────────────────────┤
+  │ Supertrend (probability AFLs) │ 11  │ Nifty or Bank Nifty spot │
+  ├───────────────────────────────┼─────┼──────────────────────────┤
+  │ Supertrend (Stocks), new card │ 5   │ one stock                │
+  └───────────────────────────────┴─────┴──────────────────────────┘
+
+  - Candle Range and Volume: the two Short Only AFLs, plus the "Long Only, With
+    & Without Filter" AFL, whose rules differ from the long versions already
+    coded. The other two long files in Miscelleneous are copies of AFLs already
+    coded.
+  - Supertrend:
+    - three all-time-high-close entries with a % swing or profit-target exit;
+    - an ATR scale-in system (Supertrend 5,2 entry, exit below 5,2 and 5,4);
+    - a breakout above the high of the bar where the Supertrend turned up;
+    - the bull-filter and bear-filter Supertrend 5,1 systems;
+    - the multi-timeframe AFL.
+  - Probability AFLs: they appear in the same Supertrend collection. jitinV1 and
+    jitinV2 are the same rules as two of them with the filter off, so they
+    weren't coded separately.
+  - Supertrend (Stocks):
+    - three monthly Supertrend single-trade AFLs;
+    - "trade below filter";
+    - the 200-day SMA buy/sell.
+    - The team ran these across a whole stock universe ranked by score. Here
+      they run one stock at a time, so the ranking and the open-position limit
+      aren't modelled, and the notes say so.
+
+  Worth a look before anyone relies on these:
+  - Three probability strategies show no trades at their defaults. These are the
+    ST-LongTrade NLoss ones (range-limited, sliding window and alternate). The
+    AFLs default "Take n long trades" to 0, so the page needs it set to 1 or
+    more.
+  - The Supertrend high/low breakout probably doesn't behave as its authors 
+    meant. Read exactly as written, while the Supertrend is down there is no buy
+    level. The AFL then buys at the open + 0.25% on every flat bar. I kept it
+    as written and said so in the notes.
+  - Scale-in sizing is an adaptation. The AFL buys 20% of current equity per
+    unit; here each unit is 20% of the trade's allocation. This is marked in the
+    notes.
+  - One AFL wasn't coded: "Entry when Closing is above 5,1_Scale-in". Despite
+    its folder name, it has no Supertrend. It is a 52-week-high stock-universe
+    system ranked by RSI.
+
+  Tests:
+  - Frontend: typecheck clean; React tests 385 of 385 pass.
+  - Rust: 1,205 of 1,206 pass. The one failure is
+    equity_equals_compounded_trade_returns, which fails on lkqts_macs. Neither
+    this work nor any change in this session touches that module, so I left it
+    alone.
+
+  Still not coded: the 6 intraday Supertrend AFLs. That needs intraday support
+  in the engine and your answer on which database to use for Nifty (my earlier
+  question).
+
+  Shall I rebuild Docker (engine and frontend) so these go live?
+
+  Files to git add:
+  - New:
+    - Context/guru/backend/src/books/ytstp.rs
+    - Context/guru/backend/src/books/ytsts.rs
+  - Changed:
+    - Context/guru/backend/src/books/ytst.rs
+    - Context/guru/backend/src/books/ytcr.rs
+    - Context/guru/backend/src/books/mod.rs
+    - Context/guru/backend/src/instrument_policy.rs
+    - Context/guru/frontend/react/src/compat/runtime.js
+
+❯ - what are the strategies which are remaining to be coded ?                   
+  ⎿  UserPromptSubmit says: ◪ supermemory · recalled 3 new (187 tok) · 12 
+     already in context
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for f in yt*.rs; do awk -v f=$f '/^\/\/!/{ if (tolower($0) ~ /not
+      coded|none is coded|no…)
+  ⎿  yt2ds.rs:    and commission are portfolio settings and are not modelle
+     d.
+     yt2ds.rs:
+     … +159 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for f in yt*.rs; do awk -v f=$f '!/^\/\/!/{exit} { t=substr($0,5); if (t ~
+      /^(Not coded|…)
+  ⎿  yt2ds.rs: Not coded:
+     yt2ds.rs: - the ROC / RSI "ranking" (PositionScore) only chooses betwe
+     en stocks in AmiBroker's portfolio backtest and is not
+     … +71 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for f in yt*.rs; do printf "%s: %s\n" $f "$(head -2 $f | tr '\n' ' ' | cut
+      -c1-150)"; do…)
+  ⎿  ytds.rs: //! YT Strategies · Date Sum (Odd / Even): the team's AmiBrok
+     er AFLs in "Old Topics/Miscelleneous/Buy when Date's sum //! is Odd nu
+     mber" and "Old Top
+     … +12 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      grep -l -i "Advance Decline\|Price Relative\|nth Candle\|Narrow Range
+      ,ORB\|Narrow Range…)
+  ⎿  mrina.rs
+     stad.rs
+     yt2ds.rs
+     … +14 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src/books;
+      for k in "Advance Decline" "Price Relative" "nth Candle" "Narrow Range
+      ,ORB" "Channeling…)
+  ⎿  ## Advance Decline
+     ## Price Relative
+     ytusd.rs:2://! or BANKNIFTY in some runs) from signals on USDINR: a Su
+     … +20 lines (ctrl+o to expand)
+
+● Status: I've collected the "not coded" notes from every module. Now I'm
+  checking the last few folders: Advance Decline Ratio, Long Using Price
+  Relative and the intraday ones.
+
+● Bash(cd /home/aff49/.claude/projects/-home-aff49-Documents-Strategy-vault/;
+      grep -o "Advance Decline[^\"]\{0,250\}"
+      5d89b2e4-5c44-42c6-81b7-eabce42e397a.jsonl | sort…)
+  ⎿  Advance Decline\
+     Advance Decline\\|Price Relative\\|nth Candle\\|Narrow Range ,ORB\\|Na
+     rrow Range, ORB\\|Buy at Open or Close\
+     … +21 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/aff49/Documents/Strategy-vault
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics AFL"; find
+      "Advance Decline Ratio" "Long Using Price Relative" "Intraday Buy Sell on
+      nth Candle" "…)
+  ⎿    Long Using Price Relative/Long using Price Relative and Average - C.
+     afl
+       Intraday Buy Sell on nth Candle/intraday nth cadle buy sell afl.afl
+     … +17 lines (ctrl+o to expand)
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics AFL"; grep
+      -n -i "foreign\|tickername\s*=" "Long Using Price Relative/"*.afl | head
+      -5; grep -n -i…)
+  ⎿  70:relativeSymbolClose = Foreign(priceRelativeWith, "C");
+     72:     //tickerName = ParamStr("Ticker Name","NIFTY 50");
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics AFL"; grep
+      -n -i "priceRelativeWith\s*=" "Long Using Price Relative/"*.afl; grep -n
+      -i "~Advances\…)
+  ⎿  54:priceRelativeWith = ParamStr("Price Relative with", "NIFTY BANK");
+     85://SetForeign(tickerName);
+     96:AdvanceDaily = Foreign("~Advances", "C");
+
+● About 55 AFL files are still uncoded. Two can be coded now, about 43 need
+  intraday bars, 10 need data the engine doesn't have yet, and 6 can't be coded
+  as written. The rest of the topic folders are fully coded, apart from
+  duplicate copies and plot-only files.
+
+  1. Can be coded now
+
+  - Rajiv Shukla Ver1, in the Supertrend folder ("Entry when Closing is above
+    5,1_Scale-in…"). Despite the folder name it has no Supertrend: it's a
+    52-week-high and 200-day MA stock system with a 50% scale-out. It would join
+    Supertrend (Stocks), one stock at a time, without the RSI ranking.
+  - Long Using Price Relative (1 AFL). It trades a series against its price
+    relative to Nifty Bank, and we have the index data for that.
+
+  2. Need intraday bars (blocked on engine intraday support and your answer
+  about the Nifty database)
+
+  ┌─────────────────────────────────┬──────┬────────────────────┐
+  │             Folder              │ AFLs │    Bars needed     │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ 30 Min Breakout                 │ 23   │ 30-minute          │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ Supertrend                      │ 6    │ 25, 60, 75-minute  │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ Gap Down                        │ 6    │ 1-minute           │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ 13-3 2D Short                   │ 4    │ hourly             │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ RSI                             │ 4    │ hourly or intraday │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ Intraday Buy Sell on nth Candle │ 1    │ intraday           │
+  ├─────────────────────────────────┼──────┼────────────────────┤
+  │ Intraday Narrow Range, ORB      │ 1    │ intraday           │
+  └─────────────────────────────────┴──────┴────────────────────┘
+
+  - Supertrend: the 2 "Fresh/Running Buy-Sell Index Intraday" AFLs plus 4 Nifty
+    and Bank Nifty hourly-filter AFLs.
+  - Gap Down: 5 intraday gap-down buys with time or confirmation conditions,
+    plus 1 shock-system short.
+  - RSI: "Fast Slow RSI" (2) and "RSI - Index" (2).
+
+  3. Need data the engine doesn't have yet
+
+  - Advance Decline Ratio (8 distinct AFLs; the folder has 11 files, 3 of them
+    copies). They read market breadth, the number of advancing and declining
+    stocks each day. I could build that from the local NSE 500 stock data, but
+    it wouldn't be exactly the team's AmiBroker breadth series.
+  - Tripple RSI, the 2 "(FO)" AFLs. They read the futures database's Aux2 field,
+    which is in the AmiBroker files but not loaded by the engine. One of them
+    also reads tomorrow's value.
+
+  4. Can't be coded as written
+
+  - Bollinger Band, 3 AFLs: they depend on an include library ("parmar") that
+    isn't in the folders.
+  - RSI, 2 "New_RSI_Threshold_Long_TSL" AFLs: same missing library.
+  - Stochastic + RSI "Combined Version" (1): it uses variables it never defines,
+    so AmiBroker itself would stop with an error.
+
+  If you can find the parmar library files, those 5 could be coded.
+
+  Not counted: plot and export files ("data to excel", "ATR PLOT", "DualPlot", a
+  BB plot stub), which have no trading rules.
+
+  Other open items, not new strategies:
+  - USD INR is missing 109 days of USDINR data.
+  - The AJ 75-minute question is still open.
+  - The portfolio-level ranking and open-position limits in the stock AFLs
+    aren't modelled; each one runs on one stock at a time.
+
+  Shall I code the two in group 1 now, and build the breadth series for Advance
+  Decline Ratio?
+
+❯ have you checked this db IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023       
+  Z:\DATABASE\Updated Intraday FO\IEOD_FO STOCKS-EODIEOD_UPDATED TILL           
+  07-02-2023    IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023    Intraday      
+  Intraday Stock Future Prices    Use to Run on Intraday Future stock prices    
+          Z:\DATABASE\Updated Intraday FO\IEOD_FO STOCKS-EODIEOD_UPDATED TILL   
+  07-02-2023 that I have mentioned in                                           
+  smb://192.168.4.50/share/DATABASE/Database Directory.xlsx file for intraday   
+  data ? don't make any changes in any share folder or file                     
+
+● Bash(S="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Database Directory.xlsx"; ls -la "$S"; python3 -I
+      /tmp/claude-1000/-home-aff49-Documen…)
+  ⎿  -rwx------ 1 aff49 aff49 8918 Nov 12 15:37 /run/user/1000/gvfs/smb-sha
+     re:server=192.168.4.50,share=share/DATABASE/Database Directory.xlsx
+     ## Sheet1
+     … +9 lines (ctrl+o to expand)
+
+● That file has the same intraday row I read yesterday from the copy in Jay/Old
+  Topics. I'm now checking the database more fully, reading straight from the
+  share without writing anything.
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local/_checks; D="/run/user/1
+      000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE/Updated
+      Intraday FO/IEOD_FO…)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ if that db size is less than 5 gb then make a copy of it in local(with the    
+  other databases location of our project) and then work upon it.               
+  ⎿  UserPromptSubmit says: ◪ supermemory · recalled 1 new (159 tok) · 14 
+     already in context
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023";
+      timeout 600 du -s…)
+  ⎿  7.84 GB
+     604
+     /dev/nvme0n1p2  468G   86G  358G  20% /
+
+● User answered Claude's questions:
+  ⎿  · The intraday database IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023 is 
+     7.84 GB on the share (604 files), above your 5 GB limit, so I haven't 
+     copied it. The local disk has 358 GB free. How should I get it locally? → 
+     Copy only needed symbols (Recommended)
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023"; cd
+      "$D/WatchLists…)
+  ⎿  IEOD_FO.tls: 482 symbols
+     CURRENT F&O STOCKS.tls: 191 symbols
+     FO STOCKS C&P.tls: 494 symbols
+     … +6 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/aff49/Documents/Strategy-vault
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics XLSX"
+      2>/dev/null && for d in "30 Min Breakout" "Gap Down" "13-3_AKA 2D Short"
+      "RSI" "Intraday Buy…)
+  ⎿  ## 30 Min Breakout
+     ## Gap Down
+     ## 13-3_AKA 2D Short
+     … +4 lines (ctrl+o to expand)
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics XLSX"; ls |
+      head -50; find . -iname "*.xls*" | grep -i -E "intra|30
+      min|hourly|ieod|nth|orb|fast s…)
+  ⎿  % Swing
+     52 Week High
+     Anti Turtle
+     … +65 lines (ctrl+o to expand)
+
+● Bash(cd "/home/aff49/Documents/Strategy-vault/jay-local/Old Topics AFL"; for f
+      in "Gap Down" "13-3_AKA 2D Short" "RSI" "Intraday Buy Sell on nth Candle"
+      "Intraday Na…)
+  ⎿  ## Gap Down
+       INTRADAY GAP DOWN BUY.afl | 9 STOCK;6 INDEX;
+       INTRADAY GAP DOWN SHORT WHEN PREVIOUS BULLISH CANDLE.afl | 5 INDEX;4
+     … +61 lines (ctrl+o to expand)
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local; ls
+      Data/baskets/updated/; find . -maxdepth 4 -iname "*nifty*50*.txt" -o
+      -maxdepth 4 -iname "*nifty50*" | head…)
+  ⎿  allfo
+     index.csv
+     nse500
+     … +4 lines (ctrl+o to expand)
+
+● I'm copying the intraday index symbols from the INDEX_IEOD watchlist, plus
+  RELIANCE, into the ieod_fo_2023 folder; this only reads the share and changes
+  nothing there. · summary
+
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023";
+      L=/home/aff49/Doc…)
+  ⎿  copied 76 symbols, 43 MB; missing []
+     101M
+     /home/aff49/Documents/Strategy-vault/jay-local/Data/amibroker/ieod
+     _fo_2023
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/jay-local/_checks; L=/home/aff49/
+      Documents/Strategy-vault/jay-local/Data/amibroker/ieod_fo_2023; python3 -I
+      - "$L" <<'EO…)
+  ⎿  BANKNIFTY                2007-05-29 -> 2023-02-07   3891 days  1-min
+     MINIFTY_F1               2008-01-01 -> 2013-01-31   1258 days  1-min
+     CNXIT_F1                 2007-05-28 -> 2015-11-06   2095 days  1-min
+     … +70 lines (ctrl+o to expand)
+
+● RELIANCE shows 0 bars. Checking why:
+
+● Bash(L=/home/aff49/Documents/Strategy-vault/jay-local/Data/amibroker/ieod_fo_2
+      023; ls -la "$L/r/";
+      D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/D…)
+  ⎿  total 12
+     drwxrwxr-x  2 aff49 aff49 4096 Nov 14 10:06 .
+     drwxrwxr-x 13 aff49 aff49 4096 Nov 14 10:06 ..
+     … +15 lines (ctrl+o to expand)
+
+● RELIANCE is empty in this database too, rewritten on 21 Aug 2024 like NIFTY.
+  Checking how many symbols were emptied that way:
+● Bash(D="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD_UPDATED TILL 07-02-2023"; find
+      "$D" -mindep…)
+  ⎿  AUTOMOBILES.tls,BANKING.tls,CHEMICALS & ORGANICS.tls,CONSUMER GOODS.tl
+     s,ELECTRICAL EQUIPMENT.tls,ENERGY & POWER.tls,ENTERTAINMENT & MEDIA.tl
+     s,FINANCIAL SERVICES.tls,FMCG.tls,INDEX_IEOD.tls,index.txt,INFRASTRUCT
+     … +10 lines (ctrl+o to expand)
+
+  Wrote 1 memory (ctrl+o to expand)
+
+● Bash(echo "- [Intraday FO database](intraday-fo-database.md) — 1-min IEOD DB
+      7.84 GB; copy needed symbols only; NIFTY & RELIANCE empty in it" >>
+      /home/aff49/.claude/…)
+  ⎿  (No output)
+
+● Yes, I've checked it. It's the database named in DATABASE/Database 
+  Directory.xlsx; that row matches the copy in Jay/Old Topics. It holds 1-minute
+  F&O futures up to 7 Feb 2023. It's 7.84 GB (604 files), over your 5 GB limit,
+  so I copied only the symbols the intraday AFLs need. Nothing on the share was
+  changed.
+
+  Copied to jay-local/Data/amibroker/ieod_fo_2023/ (about 100 MB): the
+  database's index watchlist, Bank Nifty, FinNifty, RELIANCE and the watchlist
+  files.
+
+  ┌─────────────────────────┬──────────────────────────┬─────────────┐
+  │         Symbol          │      1-minute data       │    Days     │
+  ├─────────────────────────┼──────────────────────────┼─────────────┤
+  │ BANKNIFTY               │ 29 May 2007 → 7 Feb 2023 │ 3,891       │
+  ├─────────────────────────┼──────────────────────────┼─────────────┤
+  │ FINNIFTY                │ 11 Jan 2021 → 7 Feb 2023 │ 516         │
+  ├─────────────────────────┼──────────────────────────┼─────────────┤
+  │ MINIFTY_F1 (Mini Nifty) │ Jan 2008 → Jan 2013      │ 1,258       │
+  ├─────────────────────────┼──────────────────────────┼─────────────┤
+  │ CNXIT_F1, NIFTYIT_F1    │ 2007 → 2020              │ about 3,200 │
+  ├─────────────────────────┼──────────────────────────┼─────────────┤
+  │ NIFTY                   │ empty, 0 bars            │ 0           │
+  ├─────────────────────────┼──────────────────────────┼─────────────┤
+  │ RELIANCE                │ empty, 0 bars            │ 0           │
+  └─────────────────────────┴──────────────────────────┴─────────────┘
+
+  - Unusable symbols: the sector indices, the India VIX file and the
+    government-bond indices have only one day each (8 Sep 2020).
+  - Damaged files: NIFTY and RELIANCE are the only symbols damaged. Both were
+    rewritten on 21 Aug 2024 as empty files. All the other F&O stock files I
+    looked at are intact, 2007 to 2023.
+  - Where they're intact: the older sibling database IEOD_FO STOCKS-EODIEOD has
+    both files in full (about 58 MB each). It isn't in the Directory, so I
+    haven't used it.
+
+  What can run on this database once the engine has intraday support:
+  - Bank Nifty: the 6 intraday Supertrend AFLs and "RSI - Index".
+  - Nifty: nothing yet, because the file is empty.
+  - F&O stocks: Gap Down, 2D Short intraday, 30 Min Breakout, the nth candle AFL
+    and Narrow Range ORB. These need stock files copied. All current F&O stocks
+    come to 5.11 GB, so I'd copy a chosen list.
+
+  I've saved the database's location, its 5 GB copy rule and the two empty files
+  in memory, so I don't re-check them next time.
+
+  Two decisions for you:
+  1. NIFTY and RELIANCE: may I copy them from the older IEOD_FO STOCKS-EODIEOD
+     database? Or will you fix those two files in the updated one?
+  2. F&O stocks: which ones should I copy for the stock intraday AFLs? For
+     example, the Nifty 50 F&O stocks (roughly 0.7 GB), or a list you give me.
+
+❯ doesn't the "IEOD_FO STOCKS-EODIEOD" an eod data instead of an intraday data  
+  ? Just copy all the F&O stocks files                                          
+  ⎿  UserPromptSubmit says: ◪ supermemory · recalled 9 new (470 tok) · 6 already
+      in context
+
+● Checking the older database's NIFTY file locally first, in a separate folder:
+
+● Bash(O="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/DATABASE
+      /Updated Intraday FO/IEOD_FO STOCKS-EODIEOD";
+      T=/home/aff49/Documents/Strategy-vault/ja…)
+  ⎿  1463043 bars (2007, 1, 2, 9, 56) -> (2023, 2, 7, 15, 29) days 3989
+     2007 248 intraday days, 0 one-bar days
+     2008 246 intraday days, 0 one-bar days
+     … +15 lines (ctrl+o to expand)
+
+● The older file is intraday data, not end-of-day: about 1.46 million one-minute
+  bars from 2007 to 2023. I've copied it to a check folder without using it,
+  and I'm now copying the F&O stock files from the updated database in the
+  background. · summary
+
+● Bash(cat > /tmp/claude-1000/-home-aff49-Documents-Strategy-vault/5d89b2e4-5c44
+      -42c6-81b7-eabce42e397a/scratchpad/copy_ieod_fo.py <<'EOF'
+      import os,sys,shutil,time…)
+  ⎿  Running in the background (↓ to manage)
+
+  Wrote 1 memory (ctrl+o to expand)
+
+● No, it's intraday too. I copied its NIFTY file to a local check folder
+  (jay-local/Data/amibroker/ieod_fo_old_check/) and read it there. It has
+  1,463,043 one-minute bars, every trading day from 2 Jan 2007 to 7 Feb 2023,
+  with no one-bar (EOD) days. Both databases have "EODIEOD" in their names, so
+  the name doesn't tell them apart. The older one has a complete NIFTY and
+  RELIANCE; the updated one has those two files empty.
+
+  The copy of all F&O stock files is running in the background:
+  - What: the database's IEOD_FO watchlist, 482 symbols and about 7.7 GB. The
+    list includes stocks that have since left F&O, so backtests aren't limited
+    to today's survivors.
+  - Where: jay-local/Data/amibroker/ieod_fo_2023/, next to the other local
+    databases.
+  - Safety: it only reads the share. Each file is written as a .part file first,
+    so an interrupted copy leaves no half-written files.
+
+  I'll let you know when it finishes. RELIANCE will still be empty, because it's
+  empty in this database too.
+
+  So far I haven't used the older NIFTY and RELIANCE. Should I use them from
+  IEOD_FO STOCKS-EODIEOD to fill those two gaps?
+
+● Background command "Copy all F&O stock files from the intraday DB locally"
+completed (exit code 0)
+  ⎿  UserPromptSubmit says: ◪ supermemory · recall failed: Supermemory 
+     unreachable (network) — continuing without memory.
+
+● Bash(tail -2 /tmp/claude-1000/-home-aff49-Documents-Strategy-vault/5d89b2e4-5c
+      44-42c6-81b7-eabce42e397a/tasks/bfoqx8teu.output;
+      L=/home/aff49/Documents/Strategy-vaul…)
+  ⎿  [exited with code 0]
+     7.3G
+     /home/aff49/Documents/Strategy-vault/jay-local/Data/amibroker/ieod
+     _fo_2023
+     … +2 lines (ctrl+o to expand)
+
+● Bash(grep -E "DONE|Error|Traceback" /tmp/claude-1000/-home-aff49-Documents-Str
+      ategy-vault/5d89b2e4-5c44-42c6-81b7-eabce42e397a/tasks/bfoqx8teu.output |
+      cut -c1-300;…)
+  ⎿  DONE 482 symbols 7.68 GB missing [] in 160s
+     watchlist 482 size mismatches/missing 0 []
+
+● The copy finished. All 482 F&O stock symbols (7.68 GB) are now in
+  jay-local/Data/amibroker/ieod_fo_2023/. Every file is the same size as on the
+  share, no .part files were left behind, and nothing on the share was changed.
+
+  That folder now holds the whole updated intraday database, apart from a few
+  odd index files. It has 1-minute bars up to 7 Feb 2023 for Bank Nifty,
+  FinNifty and the F&O stocks. NIFTY and RELIANCE are still empty in this
+  database.
+
+  Next step: add intraday support to the engine so the intraday AFLs can run,
+  about 43 files in all:
+  - Bank Nifty: the 6 intraday Supertrend AFLs and "RSI - Index".
+  - F&O stocks: Gap Down, 2D Short intraday, 30 Min Breakout, nth candle and
+    Narrow Range ORB.
+
+  That is a larger change: loading intraday bars into the engine, building
+  25/30/60/75-minute candles from the 1-minute data, and showing intraday trades
+  on the page.
+
+  Still open: should I use the older IEOD_FO STOCKS-EODIEOD database (also
+  1-minute, 2007 to 2023) for NIFTY and RELIANCE?
+
+❯ use the older IEOD_FO STOCKS-EODIEOD. add intraday support to the engine      
+  ⎿  UserPromptSubmit says: ◪ supermemory · recalled 5 new (290 tok) · 10 
+     already in context
+
+● First I'll set up the intraday data folder: the updated database, with NIFTY
+  and RELIANCE taken from the older one.
+
+● Bash(set -e; O="/run/user/1000/gvfs/smb-share:server=192.168.4.50,share=share/
+      DATABASE/Updated Intraday FO/IEOD_FO STOCKS-EODIEOD";
+      A=/home/aff49/Documents/Strategy-…)
+  ⎿  match
+     match
+     7.4G    /home/aff49/Documents/Strategy-vault/jay-local/Data/intraday
+     /dev/nvme0n1p2  468G   94G  351G  22% /
+
+● Now looking at the engine's trade and request structures so I can brief the
+  agent precisely:
+
+● Bash(cd /home/aff49/Documents/Strategy-vault/Context/guru/backend/src; grep -n
+      "pub struct Trade" -A16 connors.rs; grep -n
+      "VAULT_BASKET_DATA_ROOT\|VAULT_[A-Z_]*ROOT…)
+  ⎿  382:pub struct Trade {
+     383-    pub dir: f64, // +1 long, -1 short
+     384-    pub legs: Vec<Leg>,
+     … +25 lines (ctrl+o to expand)
+● Both NIFTY and RELIANCE are now in place from the older database, with
+  matching checksums, and every symbol in the fo_1min folder is hard-linked to
+  the local copies at no extra disk cost. Next I'm handing the engine's intraday
+  support to an agent with a fixed design. · summary
+
+● Agent(Add intraday support to engine)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+  Wrote 1 memory (ctrl+o to expand)
+
+● The intraday data is ready, and an agent is now adding intraday support to the
+  engine.
+
+  Data, done and checked:
+  - NIFTY and RELIANCE come from the older IEOD_FO STOCKS-EODIEOD database.
+    They're in jay-local/Data/amibroker/ieod_fo_old/, and their md5 matches the
+    share.
+  - jay-local/Data/intraday/fo_1min/ is the engine's intraday folder. It holds
+    all 482 F&O stocks, Bank Nifty, FinNifty and now NIFTY and RELIANCE, all
+    1-minute bars up to 7 Feb 2023.
+  - Its files are hard links to the local copies, so it takes no extra disk
+    space. A README there records where each file came from.
+
+  Engine intraday support, in progress. The design:
+  1. Daily series. A new symbol group, ieodfo, gets daily bars built from the
+     1-minute data (for example BANKNIFTY or SBIN). That way charts and
+     statistics use the same futures prices the intraday trades fill at.
+  2. Reader. A new engine module reads the AmiBroker 1-minute files directly, so
+     there's no 40 GB CSV conversion. It builds 25, 30, 60 or 75-minute candles
+     from the 09:15 session start.
+  3. Trades. Trades sit on their entry and exit days, at the intraday fill
+     prices, and the trade note shows the entry and exit times.
+  4. Admission. Intraday strategies run only on ieodfo futures symbols. On any
+     other symbol the page says intraday data is needed.
+  5. Docker. A new read-only mount for the intraday folder. I'll add one line to
+     the local .env and ask you before rebuilding.
+  6. Pilot strategy. One AFL, coded end to end and test-run on real Bank Nifty
+     data: "LONG & Short Intraday in Nifty FO by ST(52) with FRESH Entry".
+
+  Once the pilot works, I'll code the remaining intraday AFLs (Supertrend,
+  RSI-Index, Gap Down, 2D Short, 30 Min Breakout, nth candle, ORB) in parallel
+  on top of it.
+
+● Agent "Add intraday support to engine" failed: Agent terminated early due to
+an API error: You've hit your weekly limit · resets Nov 16, 11:30am
+(Asia/Kolkata) (error type rate_limit, HTTP 429, request id
+req_011Ch2HZB5oCwkWzM974LU3w, model sent to the API: claude-opus-5-5)
+  ⎿  UserPromptSubmit says: ◪ supermemory · recalled 3 new (187 tok) · 12 
+     already in context
+  ⎿  You've hit your weekly limit · resets Nov 16, 11:30am (Asia/Kolkata)
+     /usage-credits to finish what you’re working on.

@@ -1,0 +1,127 @@
+/* Research YTS: QA issue log for the YT Strategies pages. Uses the app's theme tokens (styles.css). */
+.yts { padding-bottom: 48px; }
+.yts-hero .lede { max-width: 62ch; }
+.yts-muted { color: var(--ink3); font-size: 13px; margin: 6px 0; }
+.yts-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0 6px; font-size: 14px; color: var(--ink2); }
+.yts-who input { margin-left: 6px; font: inherit; padding: 5px 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); width: 200px; max-width: 60vw; }
+.yts-totals { margin: 10px 0 18px; }
+.yts-cols { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 22px; align-items: start; }
+.yts-side { display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); overflow: hidden; position: sticky; top: 76px; max-height: calc(100vh - 96px); overflow-y: auto; }
+.yts-side a { display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px; color: var(--ink); text-decoration: none; font-size: 14px; border-bottom: 1px solid var(--rule); }
+.yts-side a:last-child { border-bottom: 0; }
+.yts-side a:hover { background: var(--hover); }
+.yts-side a.on { background: var(--blue); color: #fff; }
+.yts-side b { font-variant-numeric: tabular-nums; color: var(--red); font-weight: 700; }
+.yts-side a.on b { color: #fff; }
+.yts-main { min-width: 0; }
+.yts-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.yts-head h2 { margin: 0; font-size: 22px; }
+.yts-head h2 small { font-weight: 500; color: var(--ink2); font-size: 15px; }
+.yts-primary { display: inline-block; border: 0; border-radius: var(--r-field); background: var(--blue); color: #fff; font: inherit; font-weight: 600; padding: 8px 14px; cursor: pointer; text-decoration: none; }
+.yts-primary:disabled { opacity: .55; cursor: default; }
+.yts-primary:focus-visible, .yts-chips button:focus-visible, .yts-link:focus-visible { box-shadow: var(--ring); outline: 0; }
+.yts-primary.danger { background: var(--red); }
+.yts-link { border: 0; background: none; padding: 0; color: var(--blue); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.yts-link.danger { color: var(--red); }
+.yts-tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin-bottom: 10px; }
+.yts-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink2); margin-bottom: 10px; min-width: 0; }
+.yts-field > span { font-weight: 600; }
+.yts-field select, .yts-field input, .yts-field textarea, .yts-search input, .yts-note { font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--steel); border-radius: var(--r-field); padding: 7px 9px; max-width: 100%; }
+.yts-field textarea { resize: vertical; min-height: 80px; }
+.yts-tools .yts-field { margin-bottom: 0; max-width: 100%; }
+.yts-tools .yts-field select { max-width: min(520px, 100%); }
+.yts-search input { width: 260px; max-width: 100%; }
+.yts-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.yts-chips button { font: inherit; font-size: 13px; border: 1px solid var(--steel); background: var(--card); color: var(--ink2); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+.yts-chips button.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+.yts-chips button:disabled:not(.on) { opacity: .5; cursor: default; }
+.yts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.yts-row a { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--rule); border-left: 4px solid var(--steel); border-radius: var(--r-box); background: var(--card); color: var(--ink); text-decoration: none; }
+.yts-row.sev-high a { border-left-color: var(--red); }
+.yts-row a:hover { background: var(--hover); }
+.yts-row-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.yts-title { font-size: 16px; }
+.yts-meta { font-size: 13px; color: var(--ink2); overflow-wrap: anywhere; }
+.yts-cat { color: var(--ink2); }
+.yts-id { margin-left: auto; color: var(--ink3); font-variant-numeric: tabular-nums; }
+.yts-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; border: 1px solid currentColor; }
+.yts-badge.st-open { color: var(--red); }
+.yts-badge.st-in_progress { color: #b26a00; }
+.yts-badge.st-fixed { color: var(--green); }
+.yts-badge.st-not_issue { color: var(--ink3); }
+.yts-badge.sev, .yts-badge.sev-high { color: var(--red); }
+.yts-badge.sev-normal { color: var(--ink2); }
+.yts-badge.sev-low { color: var(--ink3); }
+.yts-pager { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 14px; }
+.yts-pager button { font: inherit; border: 1px solid var(--steel); background: var(--card); border-radius: var(--r-field); padding: 5px 12px; cursor: pointer; color: var(--ink); }
+.yts-pager button:disabled { opacity: .45; cursor: default; }
+.yts-form, .yts-one { border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); padding: 16px 18px; }
+.yts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 14px; }
+.yts-one-title { margin: 10px 0 8px; font-size: 22px; overflow-wrap: anywhere; }
+.yts-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 16px; margin: 0 0 10px; }
+.yts-facts dt { font-size: 12px; color: var(--ink3); text-transform: uppercase; letter-spacing: .04em; }
+.yts-facts dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.yts-facts a, .yts-links a { color: var(--blue); font-weight: 600; }
+.yts-links { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 10px; font-size: 14px; }
+.yts-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-field); padding: 10px 12px; margin: 6px 0; }
+.yts-actions { display: flex; gap: 16px; align-items: center; margin: 8px 0; }
+.yts-status, .yts-history { margin-top: 18px; border-top: 1px solid var(--rule); padding-top: 12px; }
+.yts-status h3, .yts-history h3 { margin: 0 0 8px; font-size: 15px; }
+.yts-note { width: 100%; box-sizing: border-box; }
+.yts-history ol { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.yts-history li { border-left: 3px solid var(--steel); padding-left: 10px; }
+.yts-history li.ev-comment { border-left-color: var(--blue); }
+.yts-history li.ev-status { border-left-color: var(--green); }
+.yts-history li.ev-deleted { border-left-color: var(--red); }
+.yts-inline { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 8px; }
+.yts-inline .yts-field { width: 100%; }
+.yts-problem { color: var(--red); font-size: 14px; margin: 8px 0; }
+@media (max-width: 860px) {
+  .yts-cols { grid-template-columns: 1fr; }
+  .yts-side { position: static; max-height: 260px; }
+  .yts-search input { width: 100%; }
+  .yts-search { flex: 1 1 100%; }
+}
+.crumbs .back + .back { margin-left: 18px; } /* "Report an issue" beside "Back to strategies" on YT strategy pages */
+/* With the extra "Research YTS" tab the top navigation keeps each label on one line. */
+.topnav a, .topbar .wordmark { white-space: nowrap; }
+.yts-gate { max-width: 420px; }
+.yts-gate h2 { margin: 0 0 6px; font-size: 22px; }
+.yts-small-form { margin: 0 0 14px; }
+.yts-ok { color: var(--green); font-size: 14px; margin: 8px 0; }
+.yts-badge.st-admin { color: var(--blue); margin-left: 8px; }
+.yts-who .yts-link { font-size: 14px; }
+.yts-accounts h2 { font-size: 22px; margin: 6px 0; }
+.yts-accounts h3 { margin: 0 0 8px; font-size: 16px; }
+.yts-accounts .yts-form { margin: 12px 0 16px; }
+.yts-check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink2); }
+.yts-acct { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); }
+.yts-acct.off { opacity: .65; }
+.yts-acct-actions { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.yts-inline-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.yts-inline-row input { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); }
+/* General issues: the strategy picker and the list of strategies on the issue */
+.yts-picker { border: 1px solid var(--rule); border-radius: var(--r-box); padding: 10px 12px 4px; margin: 0 0 12px; min-width: 0; }
+.yts-picker legend { font-weight: 600; font-size: 13px; color: var(--ink2); padding: 0 4px; }
+.yts-picker-all { display: flex; gap: 14px; flex-wrap: wrap; padding-bottom: 8px; font-size: 13px; }
+.yts-picker-list { list-style: none; margin: 8px 0 0; padding: 6px 8px; max-height: 260px; overflow-y: auto; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); }
+.yts-picker-list li { padding: 3px 0; }
+.yts-picked { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.yts-picked li { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; border: 1px solid var(--steel); border-radius: 999px; padding: 2px 4px 2px 10px; background: var(--card); max-width: 100%; overflow-wrap: anywhere; }
+.yts-picked button { border: 0; background: none; color: var(--ink3); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.yts-general-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin: 0 0 12px; font-size: 14px; }
+.yts-general-list ul { margin: 4px 0 0; padding-left: 18px; }
+.yts-general-list a { color: var(--blue); font-weight: 600; }
+/* Photos and files */
+.yts-files { border: 1px dashed var(--steel); border-radius: var(--r-box); padding: 10px 12px; margin: 0 0 12px; }
+.yts-files-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 14px; }
+.yts-file-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.yts-file-list li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; overflow-wrap: anywhere; }
+.yts-file-list .yts-muted { margin: 0; }
+.yts-attach { margin: 16px 0; }
+.yts-thumbs { list-style: none; margin: 0 0 10px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.yts-thumbs li { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--rule); border-radius: var(--r-box); padding: 6px; background: var(--card); min-width: 0; }
+.yts-thumbs img { display: block; width: 100%; height: 120px; object-fit: contain; background: var(--hover); border-radius: 4px; }
+.yts-thumbs .yts-muted { margin: 0; font-size: 12px; }
+.yts-file-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.yts-thumbs .yts-actions { display: flex; gap: 12px; font-size: 13px; margin: 0; }

@@ -7,6 +7,7 @@ import {UnitExposureNotice} from '../components/UnitExposureNotice';
 import {RulesVisualGuide} from "../components/RulesVisualGuide";
 import {useLayoutEffect, useMemo, useState} from "react";
 import {prepareStrategyReport, REPORT_TABS, type ReportTabId} from "../services/strategy-report-layout";
+import {YtDownloadSlot, YtOptimizeDownloadSlot, YtOptimizeSlot, YtResultsSlot} from "../features/yt-results/bridge";
 // These presenters preserve reviewed rules, admission notices, charts and exports.
 // The React-owned page boundary remounts when the immutable result revision changes.
 export function AuthorPage({ snapshot }: { snapshot: ViewSnapshot }) {
@@ -56,6 +57,10 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
     />,
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
     "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,
+    "yt-results": <YtResultsSlot />,
+    "yt-optimize": <YtOptimizeSlot />,
+    "yt-download": <YtDownloadSlot />,
+    "yt-optimize-download": <YtOptimizeDownloadSlot />,
   }} />;
 }
 export function OptimizationPage({ snapshot }: { snapshot: ViewSnapshot }) {
@@ -63,6 +68,8 @@ export function OptimizationPage({ snapshot }: { snapshot: ViewSnapshot }) {
   return <ResearchMarkup html={snapshot.html} slots={{
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
     "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,
+    "yt-optimize": <YtOptimizeSlot />,
+    "yt-optimize-download": <YtOptimizeDownloadSlot />,
   }} />;
 }
 export function ReadingPage({ snapshot }: { snapshot: ViewSnapshot }) {

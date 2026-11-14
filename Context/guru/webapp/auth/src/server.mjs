@@ -6,10 +6,14 @@ import { auth, pool, allowedOrigins } from './config.mjs';
 import { bootstrap } from './bootstrap.mjs';
 import { validateNoteKey, validateTheme, roleAllows, ROLES, validateSavedView, validateAnnotation } from './contracts.mjs';
 import { createBookLibrary, registerBookLibrary } from './book-library.mjs';
+import { registerResearchYts, MAX_FILE_BYTES, YTS_UPLOAD } from './research-yts.mjs';
 
 await bootstrap();
 export const app = new Hono();
-app.use('*', bodyLimit({ maxSize: 1024 * 1024, onError: c => c.json({ error: 'Request too large' }, 413) }));
+// Requests are limited to 1 MB, except a Research YTS file upload (one file of up to 10 MB per request).
+const smallBody = bodyLimit({ maxSize: 1024 * 1024, onError: c => c.json({ error: 'Request too large' }, 413) });
+const fileBody = bodyLimit({ maxSize: MAX_FILE_BYTES + 64 * 1024, onError: c => c.json({ error: `Files can be up to ${MAX_FILE_BYTES / 1024 / 1024} MB.` }, 413) });
+app.use('*', (c, next) => (c.req.method === 'POST' && YTS_UPLOAD.test(c.req.path) ? fileBody : smallBody)(c, next));
 app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Cache-Control', 'no-store');
@@ -37,6 +41,7 @@ app.use('/api/app/*', async (c, next) => {
   await next();
 });
 registerBookLibrary(app, await createBookLibrary());
+registerResearchYts(app, { pool }); // QA issues on the YT Strategies pages (Research YTS)
 app.get('/api/app/me', async c => {
   const user = c.get('user');
   const settings = await pool.query('SELECT theme,last_view FROM vault_settings WHERE user_id = $1', [user.id]);
@@ -97,7 +102,7 @@ app.post('/api/app/admin/users', async c => {
   const user = c.get('user');
   if (!roleAllows(user.role,'admin')) return c.json({ error: 'Administrator access required' },403);
   const body = await c.req.json();
-  if (typeof body.name !== 'string' || body.name.trim().length < 1 || body.name.length > 100 || typeof body.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email) || typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 128 || !ROLES.has(body.role)) return c.json({ error: 'Provide a name, valid email, role and password of 12–128 characters.' },400);
+  if (typeof body.name !== 'string' || body.name.trim().length < 1 || body.name.length > 100 || typeof body.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email) || typeof body.password !== 'string' || body.password.length < 3 || body.password.length > 128 || !ROLES.has(body.role)) return c.json({ error: 'Provide a name, valid email, role and password of 3–128 characters.' },400);
   const email = body.email.trim().toLowerCase();
   if ((await pool.query('SELECT id FROM "user" WHERE email=$1',[email])).rowCount) return c.json({ error: 'An account with this email already exists.' },409);
   const created = await auth.api.signUpEmail({ body: { name: body.name.trim(), email, password: body.password } });

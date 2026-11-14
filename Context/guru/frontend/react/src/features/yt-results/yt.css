@@ -1,0 +1,26 @@
+/* YT page placement of the lab's results (the lab page's own grid spacing is not there). */
+.lab-page.yt-results { display: grid; gap: 10px; margin-top: 14px; }
+.lab-page.yt-optimize { display: grid; gap: 10px; margin-top: 12px; }
+.lab-page.yt-optimize > .cap { margin: 0; }
+.yt-results .lab-opt-back { margin: 0; }
+/* The Results box's sub-tabs, as the lab's: an underlined tab row. */
+.yt-rtabs-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--rule); }
+.yt-rtabs-list [role=tab] { margin: 0 0 -1px; padding: 8px 12px; border: 0; background: none; color: var(--ink2); font: inherit; font-weight: 600; cursor: pointer; box-shadow: inset 0 -2px transparent; }
+.yt-rtabs-list [role=tab]:hover { color: var(--ink); box-shadow: inset 0 -2px var(--steel); }
+.yt-rtabs-list [role=tab][aria-selected=true] { color: var(--ink); box-shadow: inset 0 -2px var(--blue); }
+.yt-rtabs-list [role=tab]:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: -2px; }
+.yt-rtabs [role=tabpanel] { display: grid; gap: 12px; }
+.yt-rtabs [role=tabpanel][hidden] { display: none; }
+.yt-results .lab-results-tabs > .box-h { margin-bottom: 0; }
+.yt-optimize tr.yt-now td { color: var(--ink2); }
+/* "Download backtest results" at the bottom right of the strategy's header box, beside the YT label. */
+.yt-box-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.yt-box-foot > .lab-label { margin-bottom: 0; }
+.yt-box-foot > [data-react-slot="yt-download"] { margin-left: auto; }
+.yt-downloads { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+/* Run optimization: a small bar with the engine's count of combinations done. */
+.oprog { display: flex; align-items: center; gap: 10px; margin: 8px 0; max-width: 560px; }
+.oprog-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--rule); overflow: hidden; min-width: 120px; }
+.oprog-bar > i { display: block; height: 100%; background: var(--blue); transition: width .4s ease; }
+.oprog-t { font-size: 12px; color: var(--ink2); white-space: nowrap; }
+@media (max-width: 640px) { .oprog { flex-wrap: wrap; } .oprog-t { white-space: normal; } }

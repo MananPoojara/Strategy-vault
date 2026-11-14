@@ -82,7 +82,9 @@ async fn session(app: &App, headers: &HeaderMap) -> Result<Session, Response> {
 async fn proxy(app: &App, url: String, request: Request<Body>, timeout: Duration) -> Response {
     let (parts, body) = request.into_parts();
     let book_file=parts.uri.path().starts_with("/api/app/books/files/");
-    let bytes = match to_bytes(body, 1024 * 1024).await {
+    // A Research YTS file upload carries one file of up to 10 MB; every other request stays within 1 MB.
+    let limit = if parts.method == Method::POST && policy::yts_upload_path(parts.uri.path()) { 10 * 1024 * 1024 + 64 * 1024 } else { 1024 * 1024 };
+    let bytes = match to_bytes(body, limit).await {
         Ok(bytes) => bytes,
         Err(_) => return error(StatusCode::PAYLOAD_TOO_LARGE, "Request too large."),
     };
@@ -168,6 +170,7 @@ async fn proxy(app: &App, url: String, request: Request<Body>, timeout: Duration
         header::SET_COOKIE,
         header::LOCATION,
         header::RETRY_AFTER,
+        header::CONTENT_DISPOSITION,
     ] {
         for value in headers.get_all(&name) {
             result.headers_mut().append(name.clone(), value.clone());

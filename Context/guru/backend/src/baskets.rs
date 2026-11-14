@@ -20,11 +20,15 @@ impl Market {
 pub struct NativeEvidence {
     market:Market,membership_kind:String,membership_source:String,membership_source_sha:String,
     mapped_index:&'static str,adjustment_status:String,
+    /// `ieodfo`: the daily carrier of the 1-minute F&O futures (IEOD) database, typed as futures with intraday data.
+    intraday_futures:bool,
 }
 impl NativeEvidence {
     pub fn market(&self)->Market {self.market}
     pub fn currency(&self)->&'static str {self.market.currency()}
-    pub fn asset_type(&self)->&'static str {"individual_stock"}
+    pub fn asset_type(&self)->&'static str {if self.intraday_futures {"futures"} else {"individual_stock"}}
+    /// The series is the daily aggregate of the F&O futures 1-minute database (basket `ieodfo`); intraday bars exist.
+    pub fn intraday_futures(&self)->bool {self.intraday_futures}
     pub fn membership_kind(&self)->&str {&self.membership_kind}
     pub fn mapped_index(&self)->&'static str {self.mapped_index}
     pub fn adjustment_status(&self)->&str {&self.adjustment_status}
@@ -33,7 +37,11 @@ impl NativeEvidence {
     pub fn source_price_units_verified(&self)->bool {false}
     #[cfg(test)]
     pub(crate) fn us_test_fixture()->Self {
-        Self{market:Market::UnitedStates,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:"a".repeat(64),mapped_index:"SPX",adjustment_status:"not_independently_verified".into()}
+        Self{market:Market::UnitedStates,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:"a".repeat(64),mapped_index:"SPX",adjustment_status:"not_independently_verified".into(),intraday_futures:false}
+    }
+    #[cfg(test)]
+    pub(crate) fn india_test_fixture(intraday_futures:bool)->Self {
+        Self{market:Market::India,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:String::new(),mapped_index:"NIFTY 50",adjustment_status:"not_independently_verified".into(),intraday_futures}
     }
     fn json(&self)->String {
         format!("\"trusted_market\":\"{}\",\"currency\":\"{}\",\"asset_type\":\"{}\",\"timeframe\":\"D\",\"membership_kind\":\"{}\",\"membership_source\":\"{}\",\"membership_source_sha256\":{},\"mapped_index\":\"{}\",\"adjustment_status\":\"{}\",\"source_price_units_verified\":false,\"historical_membership_verified\":false,\"corporate_actions_independently_verified\":false",
@@ -42,7 +50,8 @@ impl NativeEvidence {
     }
 }
 fn native_evidence<'a>(basket:&str,optional:impl Fn(&str)->Option<&'a str>)->Result<NativeEvidence,String> {
-    let legacy_index=match basket {"nse500"|"nifty50"|"midcap100"|"allfo"=>Some("NIFTY 50"),_=>None};
+    // ieodfo: continuous F&O futures aggregated from the team's 1-minute IEOD database (typed futures, not stocks).
+    let legacy_index=match basket {"nse500"|"nifty50"|"midcap100"|"allfo"|"ieodfo"=>Some("NIFTY 50"),_=>None};
     let us_index=match basket {
         "us_sp500"|"us_sp500_past"=>Some("SPX"),"us_nasdaq100"|"us_nasdaq100_past"=>Some("NDX"),
         "us_dow30"|"us_dow30_past"=>Some("DJI"),"us_russell2000"|"us_russell2000_past"=>Some("RUT"),_=>None,
@@ -69,7 +78,7 @@ fn native_evidence<'a>(basket:&str,optional:impl Fn(&str)->Option<&'a str>)->Res
     let membership_source=optional("membership_source").unwrap_or("Legacy Indian native watchlist source; see source provenance");
     let membership_source_sha=optional("membership_source_sha256").unwrap_or("");
     if !text_safe(membership_source)||explicit_us&&(!valid_sha(membership_source_sha)||optional("membership_source").is_none())||!membership_source_sha.is_empty()&&!valid_sha(membership_source_sha){return Err("Native membership source and exact source SHA-256 are required".into());}
-    Ok(NativeEvidence{market,membership_kind:membership_kind.into(),membership_source:membership_source.into(),membership_source_sha:membership_source_sha.to_ascii_lowercase(),mapped_index,adjustment_status:adjustment_status.into()})
+    Ok(NativeEvidence{market,membership_kind:membership_kind.into(),membership_source:membership_source.into(),membership_source_sha:membership_source_sha.to_ascii_lowercase(),mapped_index,adjustment_status:adjustment_status.into(),intraday_futures:basket=="ieodfo"})
 }
 
 #[derive(Default)]
@@ -318,6 +327,16 @@ mod tests {
         assert_eq!(c.entries.keys().cloned().collect::<std::collections::BTreeSet<_>>(),expected);
         let key=c.entries.keys().find(|key|key.ends_with(":RELIANCE")).unwrap();let rows=c.rows(key).unwrap();assert!(rows.len()>1000);assert_eq!(rows[0].ticker,"RELIANCE");
         assert!(c.provenance_json(key).unwrap().contains("quote_accuracy_independently_verified\":false"));
+    }
+    #[test]
+    fn ieodfo_is_the_intraday_futures_carrier_not_a_stock(){
+        let f=fixture();let index=fs::read_to_string(f.0.join("index.csv")).unwrap();
+        assert!(!Catalogue::load(&f.0).unwrap().native_evidence("basket:nifty50:RELIANCE").unwrap().intraday_futures());
+        fs::write(f.0.join("index.csv"),index.replace("nifty50,","ieodfo,")).unwrap();
+        let c=Catalogue::load(&f.0).unwrap();let e=c.native_evidence("basket:ieodfo:RELIANCE").unwrap();
+        assert_eq!((e.asset_type(),e.intraday_futures(),e.market()),("futures",true,Market::India));
+        assert_eq!(c.rows("basket:ieodfo:RELIANCE").unwrap()[0].ticker,"RELIANCE");
+        assert!(c.tickers_json()[0].contains("\"asset_type\":\"futures\""));
     }
     fn us_index(f:&Fixture,basket:&str,symbol:&str)->String {
         let old=fs::read_to_string(f.0.join("index.csv")).unwrap();

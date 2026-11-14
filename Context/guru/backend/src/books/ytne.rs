@@ -107,36 +107,62 @@ pub fn catalogue() -> Vec<StrategyDef> {
     ]
 }
 
+/// Settings in the AFLs' own Parameters window order and sections (BACKTEST PARAMETER, ST PARAMETER, RANKING PARAMETERS,
+/// MARKET FILTER PARAMETER); "Section » name" labels name the panel section. Each AFL declares a different set:
+/// all six have DEAD STOCK BACKTEST; the four with a filter also declare Hard Stoploss %, Penny Stock Price and TURNOVER
+/// Filter, which none of their Buy or Sell lines read; the expiry index-filter and re-entry AFLs also declare the
+/// RANKING PARAMETERS, which set AmiBroker's PositionScore (the order among several symbols), not the signals of one index.
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     if !IDS.contains(&id) {
         return None;
     }
-    let mut v = vec![
-        p("st_point", "Daily ST calculation point (0 mid point, 1 close, 2 pivot (H+L+C)/3, 3 average of mid point, pivot and close, 4 3-day MA: the AFL's misspelt test makes it the mid point, 5 5-day MA of the close)", 0.0, 0.0, 5.0, 1.0),
-        p("entry_period", "ST period for entry", 5.0, 1.0, 20.0, 1.0),
-        p("entry_factor", "ST factor for entry", 2.0, 1.0, 20.0, 1.0),
-        p("exit_period", "ST period for exit", 5.0, 1.0, 20.0, 1.0),
-        p("exit_factor", "ST factor for exit", 4.0, 1.0, 20.0, 1.0),
-        p("diff", "% difference below the previous reference close", 1.0, if id == EXPIRY { 0.0 } else { 0.05 }, 20.0, 0.25),
-    ];
-    if id == FIVE_DAY_FLT {
-        v.push(p("entry_day", "Entry day: reference bar this many trading days before the month's last trading day", 5.0, 1.0, 10.0, 1.0));
-    }
+    let filtered = id != EXPIRY && id != MONTH_END;
+    let mut v = Vec::new();
     if id == REENTRY {
-        v.push(p("min_profit", "Minimum profit % (re-entries continue until a trade reaches it)", 5.0, 1.0, 15.0, 1.0));
-        v.push(p("comm", "Brokerage % used by the AFL's own trade loop", 0.65, 0.01, 1.0, 0.01));
+        v.push(p("comm", "Backtest parameter » Brokerage % used by the AFL's own trade loop", 0.65, 0.01, 1.0, 0.01));
     }
-    if id != EXPIRY && id != MONTH_END {
-        let what = if id == REENTRY { "Filter on the traded index's own bars (0 none, 1 on: the AFL's STOCK choice)" } else { "Index filter (0 none, 1 on: uses the traded index itself in place of the AFL's NSENIFTY / NSE500 / BANKNIFTY)" };
+    v.push(p("dead_stock", "Backtest parameter » Dead stock backtest (0 no, 1 yes: no entry on the last bar of the data, and an open trade exits there)", 0.0, 0.0, 1.0, 1.0));
+    if filtered {
+        v.extend([
+            p("hard_stop", "Backtest parameter » Hard stoploss % (declared in the AFL; its Buy and Sell do not use it)", 0.0, 0.0, 50.0, 1.0),
+            p("penny", "Backtest parameter » Penny stock price (declared in the AFL; its Buy and Sell do not use it)", 0.0, 0.0, 100.0, 1.0),
+            p("turnover", "Backtest parameter » Turnover filter (0 no, 1 yes: the AFL computes it, but its Buy and Sell do not use it)", 0.0, 0.0, 1.0, 1.0),
+        ]);
+    }
+    if id == FIVE_DAY_FLT {
+        v.push(p("entry_day", "Backtest parameter » Entry day: reference bar this many trading days before the month's last trading day", 5.0, 1.0, 10.0, 1.0));
+    }
+    v.extend([
+        p("st_point", "ST parameter » Daily ST calculation point (0 mid point, 1 close, 2 pivot (H+L+C)/3, 3 average of mid point, pivot and close, 4 3-day MA: the AFL's misspelt test makes it the mid point, 5 5-day MA of the close)", 0.0, 0.0, 5.0, 1.0),
+        p("entry_period", "ST parameter » ST period for entry", 5.0, 1.0, 20.0, 1.0),
+        p("entry_factor", "ST parameter » ST factor for entry", 2.0, 1.0, 20.0, 1.0),
+        p("exit_period", "ST parameter » ST period for exit", 5.0, 1.0, 20.0, 1.0),
+        p("exit_factor", "ST parameter » ST factor for exit", 4.0, 1.0, 20.0, 1.0),
+        p("diff", "ST parameter » % difference below the previous reference close", 1.0, if id == EXPIRY { 0.0 } else { 0.05 }, 20.0, 0.25),
+    ]);
+    if id == REENTRY {
+        v.push(p("min_profit", "ST parameter » Minimum profit % (re-entries continue until a trade reaches it)", 5.0, 1.0, 15.0, 1.0));
+    }
+    if id == EXPIRY_FLT || id == REENTRY {
+        v.extend([
+            p("rank_mode", "Ranking parameters » Ranking mode (0 none, 1 ROC, 2 RSI, 3 STD, 4 ROC/STD, 5 volatility, 6 positive close, 7 swing)", 0.0, 0.0, 7.0, 1.0),
+            p("rank_roc", "Ranking parameters » ROC period for ranking / number of positive closes (orders several symbols; no effect on one index)", 10.0, 1.0, 400.0, 1.0),
+            p("rank_rsi", "Ranking parameters » RSI period for ranking (orders several symbols; no effect on one index)", 14.0, 10.0, 1000.0, 1.0),
+            p("rank_std", "Ranking parameters » STD period for ranking (orders several symbols; no effect on one index)", 14.0, 10.0, 1000.0, 1.0),
+            p("rank_swing", "Ranking parameters » Swing period (orders several symbols; no effect on one index)", 180.0, 10.0, 1000.0, 1.0),
+        ]);
+    }
+    if filtered {
+        let what = if id == REENTRY { "Market filter parameter » Filter on the traded index's own bars (0 none, 1 on: the AFL's STOCK choice)" } else { "Market filter parameter » Index filter (0 none, 1 on: uses the traded index itself in place of the AFL's NSENIFTY / NSE500 / BANKNIFTY)" };
         v.extend([
             p("flt", what, 0.0, 0.0, 1.0, 1.0),
-            p("flt_type", "Filter type (0 Supertrend, 1 SMA)", 0.0, 0.0, 1.0, 1.0),
-            p("flt_tf", "Filter timeframe (0 monthly, 1 weekly, 2 daily)", 0.0, 0.0, 2.0, 1.0),
-            p("flt_period", "Filter ST period", 5.0, 0.0, 20.0, 1.0),
-            p("flt_factor", "Filter ST factor", 1.0, 0.0, 20.0, 1.0),
-            p("flt_point", "Filter ST calculation point (0 mid point, 1 close, 2 pivot: gives the close unless the daily point is the pivot, as in the AFL)", 0.0, 0.0, 2.0, 1.0),
-            p("sma", "Filter SMA period", 200.0, 1.0, 300.0, 1.0),
+            p("flt_type", "Market filter parameter » Filter type (0 Supertrend, 1 SMA)", 0.0, 0.0, 1.0, 1.0),
+            p("flt_tf", "Market filter parameter » Filter timeframe (0 monthly, 1 weekly, 2 daily)", 0.0, 0.0, 2.0, 1.0),
+            p("flt_period", "Market filter parameter » Filter ST period", 5.0, 0.0, 20.0, 1.0),
+            p("flt_factor", "Market filter parameter » Filter ST factor", 1.0, 0.0, 20.0, 1.0),
+            p("flt_point", "Market filter parameter » Filter ST calculation point (0 mid point, 1 close, 2 pivot: gives the close unless the daily point is the pivot, as in the AFL)", 0.0, 0.0, 2.0, 1.0),
+            p("sma", "Market filter parameter » Filter SMA period", 200.0, 1.0, 300.0, 1.0),
         ]);
     }
     Some(v)
@@ -296,7 +322,10 @@ pub(crate) fn signals(id: &str, x: &Ctx, p: &Params) -> Option<(Vec<bool>, Vec<b
     let calc = stcal(x, g("st_point").round() as i64);
     let (t1, _) = supertrend(&calc, &x.h, &x.l, c, gu("entry_period"), g("entry_factor"), g("entry_factor"));
     let (t2, _) = supertrend(&calc, &x.h, &x.l, c, gu("exit_period"), g("exit_factor"), g("exit_factor"));
-    let both_down: Vec<bool> = (0..n).map(|i| t1[i] == -1 && t2[i] == -1).collect();
+    // DEAD STOCK BACKTEST = YES: deadstockbuysig = BarIndex() != LastValue(BarIndex()), deadstocksellsig on the last bar
+    let dead = g("dead_stock").round() == 1.0;
+    let last = |i: usize| dead && i + 1 == n;
+    let both_down: Vec<bool> = (0..n).map(|i| (t1[i] == -1 && t2[i] == -1) || last(i)).collect();
     let (ev, start) = match id {
         EXPIRY => (expiry_days(x, false), 1),
         EXPIRY_FLT | REENTRY => (expiry_days(x, true), 1),
@@ -312,7 +341,7 @@ pub(crate) fn signals(id: &str, x: &Ctx, p: &Params) -> Option<(Vec<bool>, Vec<b
     let first_guard = matches!(id, EXPIRY_FLT | REENTRY);
     let buysig: Vec<bool> = (0..n).map(|i| lc[i] < lc1[i] - lc1[i] * diff / 100.0 && (!first_guard || c[0] != lc1[i])).collect();
     if id == EXPIRY || id == MONTH_END {
-        let buy = (0..n).map(|i| buysig[i] && t1[i] == 1 && i != 0).collect();
+        let buy = (0..n).map(|i| buysig[i] && t1[i] == 1 && i != 0 && !last(i)).collect();
         return Some((buy, both_down));
     }
     let (fb, fs) = filter(x, &g);
@@ -321,7 +350,7 @@ pub(crate) fn signals(id: &str, x: &Ctx, p: &Params) -> Option<(Vec<bool>, Vec<b
     let bar30 = matches!(id, MONTH_END_FLT | FIVE_DAY_FLT);
     let sell_flt = id != MONTH_END_FLT;
     let sell: Vec<bool> = (0..n).map(|i| (both_down[i] || (sell_flt && fs[i])) && !loc[i]).collect();
-    let base: Vec<bool> = (0..n).map(|i| t1[i] == 1 && fb[i] && i != 0 && !upc[i] && (!bar30 || i > 30)).collect();
+    let base: Vec<bool> = (0..n).map(|i| t1[i] == 1 && fb[i] && i != 0 && !last(i) && !upc[i] && (!bar30 || i > 30)).collect();
     let buy = if id == REENTRY {
         let dbuy: Vec<bool> = (0..n).map(|i| buysig[i] && base[i]).collect();
         let ps = probsig(c, &dbuy, &sell, &t1, &fb, g("comm"), g("min_profit"));
@@ -497,6 +526,33 @@ mod tests {
         // the guarded Index Filter version needs a second expiry after the first; same entry here
         let t2 = run(EXPIRY_FLT, &x, 0, 79, &Params::new()).unwrap();
         assert_eq!(t2.first().map(|t| t.legs[0].i), t.first().map(|t| t.legs[0].i));
+    }
+
+    #[test]
+    fn dead_stock_yes_sells_on_the_last_bar_and_never_buys_there() {
+        let d = weekdays((2022, 1, 3), 300, &[]);
+        let closes: Vec<f64> = (0..300).map(|k| 100.0 + 15.0 * ((k as f64) / 9.0).sin() + k as f64 * 0.05).collect();
+        let r = rows(&d, &closes);
+        let x = Ctx::new(&r, &r, &[]);
+        let yes: Params = [("dead_stock".to_string(), 1.0)].into_iter().collect();
+        for id in IDS {
+            let (b0, s0) = signals(id, &x, &Params::new()).unwrap();
+            let (b1, s1) = signals(id, &x, &yes).unwrap();
+            assert!(!b1[299] && s1[299], "{id}"); // AFL deadstockbuysig / deadstocksellsig on LastValue(BarIndex())
+            assert_eq!(&b0[..299], &b1[..299], "{id}"); // no other bar changes
+            assert_eq!(&s0[..299], &s1[..299], "{id}");
+        }
+    }
+
+    #[test]
+    fn settings_follow_the_afl_parameters_window() {
+        let sections = |id: &str| params(id).unwrap().iter().map(|p| p.label.split(" » ").next().unwrap().to_string())
+            .fold(Vec::<String>::new(), |mut v, s| { if v.last() != Some(&s) { v.push(s); } v });
+        assert_eq!(sections(EXPIRY), ["Backtest parameter", "ST parameter"]);
+        assert_eq!(sections(MONTH_END_FLT), ["Backtest parameter", "ST parameter", "Market filter parameter"]);
+        assert_eq!(sections(REENTRY), ["Backtest parameter", "ST parameter", "Ranking parameters", "Market filter parameter"]);
+        let keys: Vec<&str> = params(REENTRY).unwrap().iter().map(|p| p.key).collect();
+        assert_eq!(&keys[..5], ["comm", "dead_stock", "hard_stop", "penny", "turnover"]);
     }
 
     #[test]

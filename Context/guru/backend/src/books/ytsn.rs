@@ -16,12 +16,15 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_sn";
 pub const SNIPER: &str = "ytsn_sniper";
-pub const IDS: [&str; 1] = [SNIPER];
+/// The older Sniper version, rebuilt from the team's own trade sheets: its AFL is not in the folder. Six team sheets
+/// (three "STR Exit" and two "% Swing" workbooks, plus "Nifty 9,1 9,6") differ from SNIPER.afl in two exit rules.
+pub const SNIPER_OLD: &str = "ytsn_sniper_old";
+pub const IDS: [&str; 2] = [SNIPER, SNIPER_OLD];
 
 const NULL: f64 = -1e10;
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef {
+    let current = StrategyDef {
         id: SNIPER,
         name: "Sniper (Monthly ST Cross)",
         group: "YT Strategies · Sniper System",
@@ -47,40 +50,94 @@ pub fn catalogue() -> Vec<StrategyDef> {
         ],
         notes: "SNIPER.afl (Sniper System / New Optims), coded as the AFL is written. On the daily entry time frame the entry can never fire (Cross(C, ST) and C < ST on the same bar), as written. ParamList defaults are list indices: entry ST time frame 12 = Monthly, exit ST time frames 10 = Daily, ST average 5 = (High+Low)/2, entry type 0 = Daily Cross. The time-frame list's 'Default' and minute entries are not matched by the AFL's getTimeframe, so on daily data they are the daily chart (option 0 here). The higher-time-frame lines are shifted forward one bar with Ref(x, 1), so on a period's last trading day they already use that period's close (look-ahead of the next bar's date only, as in the AFL). HSL % and PB % default 0 (below their declared minimum 5), % swing 0 and number of days 0 (the counter is tested after it is incremented, so 0 never fires), ST exit off: with the defaults the AFL only exits on the last bar, shown here as an open position. The turnover filter uses open interest and is off by default; penny filter 0. The <parmar/...> includes are not available and do not drive the signals.",
         claim: None,
-    }]
+    };
+    let old = StrategyDef {
+        id: SNIPER_OLD,
+        name: "Sniper (Older Version, Rebuilt)",
+        rules: &[
+            "F|Entry rules exactly as SNIPER.afl (monthly Supertrend on (H+L)/2, same options and filters); opens on the Nifty 9,1 9,6 sheet's settings: Supertrend 5 with factor 1, entry only at month end",
+            "E|Buy at the Close",
+            "X|ST exit (older rule, on by default with daily ST1 9/1 and ST2 9/6), until the close has been above ST2: the close crossing below the daily ST1 line, or closing below ST2 (SNIPER.afl needs the close below both)",
+            "X|% swing exit (older rule): the close more than the swing % below the highest HIGH since entry (SNIPER.afl uses the highest close)",
+            "X|Other exits as SNIPER.afl: hard stop %, profit booking %, a number of bars; all off by default",
+        ],
+        notes: "Rebuilt from the team's trade sheets, not from an AFL: the older Sniper AFL is not in the team's folder. It is SNIPER.afl with two exit rules changed, each a setting (1 = the older rule, 0 = SNIPER.afl's): until the ST2 flag is set (the close above ST2), the ST exit fires on a new cross of the close below ST1 (it was not below on the previous bar) or on a close below ST2 (SNIPER.afl: below both); setting 1 is a plain ST1-or-ST2 rule, kept for comparison, and the % swing trails from the highest high of the bars after entry, starting from the entry close (SNIPER.afl: the highest close). These two rules were inferred from the 'STR Exit' and 'Month End - % Swing' workbooks, whose trades SNIPER.afl does not reproduce. Its default settings are the 'Nifty 9,1 9,6' sheet's (entry only at month end, entry factor 1, ST exit on with ST1 9/1 and ST2 9/6), so the default run shows the older exits; with SNIPER.afl's defaults every exit is off and both versions give the same single trade.",
+        group: "YT Strategies · Sniper System",
+        session: 0,
+        dir: "Long",
+        status: Status::Live,
+        needs_volume: false,
+        needs_vix: false,
+        needs_series: &[],
+        book: BOOK,
+        claim: None,
+    };
+    vec![current, old]
 }
 
-const AVG: &str = "ST average value (0 close, 1 open, 2 high, 3 low, 4 (O+C)/2, 5 (H+L)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4)";
+const AVG_ENTRY: &str = "ST entry parameters » ST average value (0 close, 1 open, 2 high, 3 low, 4 (O+C)/2, 5 (H+L)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4)";
+const AVG_ST1: &str = "ST1 exit parameters » ST average value (0 close, 1 open, 2 high, 3 low, 4 (O+C)/2, 5 (H+L)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4)";
+const AVG_ST2: &str = "ST2 exit parameters » ST average value (0 close, 1 open, 2 high, 3 low, 4 (O+C)/2, 5 (H+L)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4)";
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    if id != SNIPER {
+    if id != SNIPER && id != SNIPER_OLD {
         return None;
     }
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    // in SNIPER.afl's Parameters window order and sections ("Section » name"); each ST average value sits with its own
+    // Supertrend, as in the AFL
     Some(vec![
-        p("entry_tf", "Entry ST time frame (0 daily: the AFL's Default / minute / Daily choices on daily data, 1 weekly, 2 monthly)", 2.0, 0.0, 2.0, 1.0),
-        p("entry_period", "Entry Supertrend period", 5.0, 1.0, 100.0, 1.0),
-        p("entry_avg", AVG, 5.0, 0.0, 7.0, 1.0),
-        p("entry_factor", "Entry ST factor", 2.0, 1.0, 50.0, 0.5),
-        p("entry_type", "Take entry at (0 daily cross, 1 daily cross with month end, 2 only month end)", 0.0, 0.0, 2.0, 1.0),
-        p("exit_bars", "Number of days for exit (0 off)", 0.0, 0.0, 500.0, 1.0),
-        p("pct_swing", "% swing below the highest close since entry (0 off)", 0.0, 0.0, 26.0, 1.0),
-        p("exit_live", "Exit using HSL / PB at (0 close, 1 live: the level, or the open if it gaps past)", 0.0, 0.0, 1.0, 1.0),
-        p("hsl_pct", "Hard stop loss % (0 off)", 0.0, 0.0, 30.0, 5.0),
-        p("pb_pct", "Profit booking % (0 off)", 0.0, 0.0, 30.0, 5.0),
-        p("exit_buffer", "Exit buffer % on a gap past the HSL / PB level", 0.0, 0.0, 100.0, 0.01),
-        p("st_exit", "ST exit (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
-        p("st1_tf", "Exit ST1 time frame (0 daily, 1 weekly, 2 monthly)", 0.0, 0.0, 2.0, 1.0),
-        p("st1_period", "Exit Supertrend period 1", 5.0, 3.0, 9.0, 2.0),
-        p("st1_factor", "Exit ST factor 1", 1.0, 1.0, 6.0, 1.0),
-        p("st1_avg", AVG, 5.0, 0.0, 7.0, 1.0),
-        p("st2_tf", "Exit ST2 time frame (0 daily, 1 weekly, 2 monthly)", 0.0, 0.0, 2.0, 1.0),
-        p("st2_period", "Exit Supertrend period 2", 5.0, 3.0, 9.0, 2.0),
-        p("st2_factor", "Exit ST factor 2", 2.0, 1.0, 6.0, 1.0),
-        p("st2_avg", AVG, 5.0, 0.0, 7.0, 1.0),
-        p("penny", "Penny price filter (buy only above this close)", 0.0, 0.0, 100.0, 1.0),
-    ])
+        p("penny", "Backtest parameter » Penny stock price (buy only above this close)", 0.0, 0.0, 100.0, 1.0),
+        p("turnover", "Backtest parameter » Turnover filter (0 no, 1 yes: the AFL needs open interest above its yearly threshold; an index has no open interest, so no entry)", 0.0, 0.0, 1.0, 1.0),
+        p("dead_stock", "Backtest parameter » Dead stock backtest (0 no, 1 yes: no entry on the last bar of the data, where an open trade exits; always on in the AFL)", 1.0, 0.0, 1.0, 1.0),
+        p("entry_tf", "ST entry parameters » ST time frame (0 daily: the AFL's Default / minute / Daily choices on daily data, 1 weekly, 2 monthly)", 2.0, 0.0, 2.0, 1.0),
+        p("entry_period", "ST entry parameters » Supertrend period", 5.0, 1.0, 100.0, 1.0),
+        p("entry_avg", AVG_ENTRY, 5.0, 0.0, 7.0, 1.0),
+        p("entry_factor", "ST entry parameters » ST factor", 2.0, 1.0, 50.0, 0.5),
+        p("entry_type", "ST entry parameters » Take entry at (0 daily cross, 1 daily cross with month end, 2 only month end)", 0.0, 0.0, 2.0, 1.0),
+        p("exit_bars", "Exit parameters » Number of days for exit (0 off)", 0.0, 0.0, 500.0, 1.0),
+        p("pct_swing", "Exit parameters » % swing below the highest close since entry (0 off)", 0.0, 0.0, 26.0, 1.0),
+        p("exit_live", "Exit parameters » Exit using HSL / PB at (0 close, 1 live: the level, or the open if it gaps past)", 0.0, 0.0, 1.0, 1.0),
+        p("hsl_pct", "Exit parameters » HSL % (0 off)", 0.0, 0.0, 30.0, 5.0),
+        p("pb_pct", "Exit parameters » PB % (0 off)", 0.0, 0.0, 30.0, 5.0),
+        p("exit_buffer", "Exit parameters » Exit buffer % on a gap past the HSL / PB level", 0.0, 0.0, 100.0, 0.01),
+        p("st_exit", "ST1 exit parameters » ST toggle: ST1 and ST2 exit (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
+        p("st1_tf", "ST1 exit parameters » ST time frame (0 daily, 1 weekly, 2 monthly)", 0.0, 0.0, 2.0, 1.0),
+        p("st1_period", "ST1 exit parameters » Supertrend period 1", 5.0, 3.0, 9.0, 2.0),
+        p("st1_factor", "ST1 exit parameters » ST factor 1", 1.0, 1.0, 6.0, 1.0),
+        p("st1_avg", AVG_ST1, 5.0, 0.0, 7.0, 1.0),
+        p("st2_tf", "ST2 exit parameters » ST time frame (0 daily, 1 weekly, 2 monthly)", 0.0, 0.0, 2.0, 1.0),
+        p("st2_period", "ST2 exit parameters » Supertrend period 2", 5.0, 3.0, 9.0, 2.0),
+        p("st2_factor", "ST2 exit parameters » ST factor 2", 2.0, 1.0, 6.0, 1.0),
+        p("st2_avg", AVG_ST2, 5.0, 0.0, 7.0, 1.0),
+    ]
+    .into_iter()
+    .chain(if id == SNIPER_OLD {
+        vec![
+            p("st_exit_rule", "Older version » ST exit rule (0 below ST1 AND ST2, SNIPER.afl; 1 below ST1 OR ST2; 2 a new cross below ST1 OR below ST2, older)", 2.0, 0.0, 2.0, 1.0),
+            p("swing_from", "Older version » % swing measured from (1 highest high since entry, older; 0 highest close, SNIPER.afl)", 1.0, 0.0, 1.0, 1.0),
+        ]
+    } else {
+        vec![]
+    })
+    .map(|mut d| {
+        // the older version opens on its own sheet's settings (Sniper System/STR Exit, "Nifty 9,1 9,6": month-end entry
+        // on a monthly 5/1 Supertrend, ST exit on with ST1 9/1 and ST2 9/6), so its default run shows the older exits;
+        // with SNIPER.afl's defaults every exit is off and both versions give the same single trade
+        if id == SNIPER_OLD {
+            if let Some(&(_, v)) = OLD_DEFAULTS.iter().find(|(k, _)| *k == d.key) {
+                d.def = v;
+            }
+        }
+        d
+    })
+    .collect())
 }
+
+/// Defaults of the older version that differ from SNIPER.afl's (the "Nifty 9,1 9,6" sheet's settings).
+/// (ST1 factor 1 is already SNIPER.afl's default.)
+pub const OLD_DEFAULTS: [(&str, f64); 6] =
+    [("entry_type", 2.0), ("entry_factor", 1.0), ("st_exit", 1.0), ("st1_period", 9.0), ("st2_period", 9.0), ("st2_factor", 6.0)];
 
 /// The AFL's Supertrend on bars (o, h, l, c): returns (ST line, close < line); None where the line is Null.
 pub(crate) fn sniper_st(o: &[f64], h: &[f64], l: &[f64], c: &[f64], period: usize, factor: f64, avg: i64) -> (Vec<Option<f64>>, Vec<Option<bool>>) {
@@ -178,8 +235,10 @@ pub(crate) fn long_entry(x: &Ctx, p: &dyn Fn(&str) -> f64) -> Vec<bool> {
         2 => cross_opt(&close_m, &line),
         _ => monthly,
     };
-    let penny = p("penny");
-    (0..n).map(|i| i + 1 != n && x.h[i] != x.c[i] && x.c[i] > penny && final_sig[i]).collect()
+    // LongEntry = DeadstockBuySig AND Turnover AND NOT UC AND Close > PennyFlt AND the entry signal. Turnover on reads
+    // OpenInt > Volsig: an index series has no open interest (0 in AmiBroker), so the filter allows no entry.
+    let (penny, dead, turnover) = (p("penny"), p("dead_stock").round() == 1.0, p("turnover").round() == 1.0);
+    (0..n).map(|i| (!dead || i + 1 != n) && !turnover && x.h[i] != x.c[i] && x.c[i] > penny && final_sig[i]).collect()
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -197,6 +256,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let v = |z: Option<f64>| z.unwrap_or(NULL);
     let (hsl_pct, pb_pct, live, buf) = (g("hsl_pct"), g("pb_pct"), gi("exit_live") == 1, g("exit_buffer"));
     let (exit_bars, swing, st_on_exit) = (gi("exit_bars"), g("pct_swing"), gi("st_exit") == 1);
+    // the older version's two exit rules (SNIPER.afl itself: AND rule, highest close)
+    let rule = if id == SNIPER_OLD { gi("st_exit_rule") } else { 0 };
+    let swing_high = id == SNIPER_OLD && gi("swing_from") == 1;
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = Vec::new();
     // position: entry bar, HSL, PB, bar counter, ST exit flags, trailing high close
@@ -208,7 +270,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let sl_hit = hsl_pct > 0.0 && (if live { l[i] } else { c[i] }) < v(hsl);
             let pb_hit = pb_pct > 0.0 && (if live { h[i] } else { c[i] }) > v(pb);
             counter += 1;
-            if v(c1[i]) < v(l1[i]) && !flag52 && v(c2[i]) < v(l2[i]) {
+            let (below1, below2) = (v(c1[i]) < v(l1[i]), v(c2[i]) < v(l2[i]));
+            // rule 2: the close crossing below ST1 on this bar (it was not below on the previous bar)
+            let cross1 = below1 && !(v(c1[i - 1]) < v(l1[i - 1]));
+            let fire = match rule { 1 => below1 || below2, 2 => cross1 || below2, _ => below1 && below2 };
+            if !flag52 && fire {
                 st_exit = true;
             }
             if v(c2[i]) > v(l2[i]) && !flag52 {
@@ -217,8 +283,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if v(c2[i]) < v(l2[i]) && flag52 {
                 st_exit = true;
             }
-            if c[i] > trail {
-                trail = c[i];
+            let top = if swing_high { h[i] } else { c[i] };
+            if top > trail {
+                trail = top;
             }
             let swing_hit = swing > 0.0 && c[i] < trail - trail * 0.01 * swing;
             let bars_hit = counter == exit_bars;
@@ -254,7 +321,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             pb = if pb_pct > 0.0 { Some(c[i] * (1.0 + pb_pct * 0.01)) } else { None };
             counter = 0;
             st_exit = false;
-            trail = c[i];
+            trail = c[i]; // both rules start from the entry close; the older one then takes each later bar's high
         }
     }
     if let Some(e) = pos {
@@ -264,10 +331,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    if id != SNIPER {
-        return None;
+    match id {
+        SNIPER => Some((SNIPER, "Sniper (Monthly ST Cross)", "Sniper System")),
+        SNIPER_OLD => Some((SNIPER_OLD, "Sniper (Older Version, Rebuilt)", "Sniper System")),
+        _ => None,
     }
-    Some((SNIPER, "Sniper (Monthly ST Cross)", "Sniper System"))
 }
 
 #[cfg(test)]
@@ -369,6 +437,20 @@ mod tests {
     }
 
     #[test]
+    fn turnover_filter_blocks_entries_and_settings_follow_the_afl_sections() {
+        let c = swing_series();
+        let r = rows(&weekdays((2020, 1, 1), c.len()), &c);
+        let x = Ctx::new(&r, &r, &[]);
+        let on = |kv: &[(&str, f64)]| run(SNIPER, &x, 0, c.len() - 1, &params_of(kv)).unwrap();
+        assert!(!on(&[("entry_tf", 1.0)]).is_empty());
+        assert!(on(&[("entry_tf", 1.0), ("turnover", 1.0)]).is_empty()); // OpenInt is 0 on an index
+        let ps = params(SNIPER).unwrap();
+        let section = |k: &str| ps.iter().find(|p| p.key == k).unwrap().label.split(" » ").next().unwrap().to_string();
+        assert_eq!((section("entry_avg"), section("st1_avg"), section("st2_avg")), ("ST entry parameters".into(), "ST1 exit parameters".into(), "ST2 exit parameters".into()));
+        assert_eq!(&ps.iter().map(|p| p.key).collect::<Vec<_>>()[..3], ["penny", "turnover", "dead_stock"]);
+    }
+
+    #[test]
     fn hard_stop_live_fills_at_gap_open() {
         let c = swing_series();
         let d = weekdays((2020, 1, 1), c.len());
@@ -399,6 +481,61 @@ mod tests {
         // no exits on by default: at most one trade, open at the end
         assert!(t.len() <= 1);
         assert!(t.iter().all(|t| t.open && t.exit_i == 499));
+    }
+
+    /// `kv` plus SNIPER.afl's values for the keys whose defaults the older version changes (unless `kv` sets them).
+    fn afl_defaults<'a>(kv: &[(&'a str, f64)]) -> Vec<(&'a str, f64)> {
+        let afl = params(SNIPER).unwrap();
+        let mut out: Vec<(&str, f64)> = OLD_DEFAULTS
+            .iter()
+            .filter(|(k, _)| !kv.iter().any(|(q, _)| q == k))
+            .map(|(k, _)| (*k, afl.iter().find(|d| d.key == *k).unwrap().def))
+            .collect();
+        out.extend_from_slice(kv);
+        out
+    }
+
+    #[test]
+    fn older_version_defaults_are_its_sheet_settings() {
+        let (cur, old) = (params(SNIPER).unwrap(), params(SNIPER_OLD).unwrap());
+        let def = |ps: &Vec<ParamDef>, k: &str| ps.iter().find(|d| d.key == k).unwrap().def;
+        for (k, v) in OLD_DEFAULTS {
+            assert_eq!(def(&old, k), v, "{k}");
+            assert_ne!(def(&cur, k), v, "{k} already SNIPER.afl's default");
+        }
+        assert_eq!(def(&cur, "st_exit"), 0.0); // SNIPER.afl itself is unchanged
+    }
+
+    #[test]
+    fn older_version_with_both_rules_off_is_sniper_afl() {
+        let c = swing_series();
+        let r = rows(&weekdays((2020, 1, 1), c.len()), &c);
+        let x = Ctx::new(&r, &r, &[]);
+        for kv in [vec![("entry_tf", 1.0), ("pct_swing", 5.0)], vec![("entry_tf", 1.0), ("st_exit", 1.0), ("st1_factor", 1.0), ("st2_factor", 3.0)]] {
+            let cur = run(SNIPER, &x, 0, c.len() - 1, &params_of(&kv)).unwrap();
+            let mut off = afl_defaults(&kv);
+            off.extend([("st_exit_rule", 0.0), ("swing_from", 0.0)]);
+            let old = run(SNIPER_OLD, &x, 0, c.len() - 1, &params_of(&off)).unwrap();
+            let key = |t: &Vec<Trade>| t.iter().map(|t| (t.legs[0].i, t.exit_i, t.exit_px.to_bits())).collect::<Vec<_>>();
+            assert_eq!(key(&cur), key(&old), "{kv:?}");
+        }
+    }
+
+    #[test]
+    fn older_rules_exit_no_later_than_sniper_afl() {
+        // highs 1% above the close: a trail from the highest high is higher, so its swing exit comes no later; the older
+        // ST rule fires whenever the close is below ST2 (and on a new ST1 break), so it comes no later than the AND rule
+        let c = swing_series();
+        let r = rows(&weekdays((2020, 1, 1), c.len()), &c);
+        let x = Ctx::new(&r, &r, &[]);
+        for kv in [vec![("entry_tf", 1.0), ("pct_swing", 5.0)], vec![("entry_tf", 1.0), ("st_exit", 1.0), ("st1_factor", 1.0), ("st2_factor", 3.0)]] {
+            let cur = run(SNIPER, &x, 0, c.len() - 1, &params_of(&kv)).unwrap();
+            let old = run(SNIPER_OLD, &x, 0, c.len() - 1, &params_of(&afl_defaults(&kv))).unwrap();
+            assert_eq!(cur[0].legs[0].i, old[0].legs[0].i);
+            assert!(old[0].exit_i <= cur[0].exit_i, "{kv:?}");
+        }
+        let swing = |id| run(id, &x, 0, c.len() - 1, &params_of(&afl_defaults(&[("entry_tf", 1.0), ("pct_swing", 5.0)]))).unwrap()[0].exit_i;
+        assert!(swing(SNIPER_OLD) < swing(SNIPER)); // 1% highs make the older trail fire earlier here
     }
 
     #[test]

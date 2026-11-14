@@ -30,6 +30,8 @@ services:
       VAULT_ADMIN_EMAIL: ${VAULT_ADMIN_EMAIL}
       VAULT_ADMIN_NAME: ${VAULT_ADMIN_NAME}
       VAULT_ADMIN_PASSWORD: ${VAULT_ADMIN_PASSWORD}
+      RESEARCH_YTS_ADMIN_USERNAME: ${RESEARCH_YTS_ADMIN_USERNAME:-admin}
+      RESEARCH_YTS_ADMIN_PASSWORD: ${RESEARCH_YTS_ADMIN_PASSWORD:-}
       VAULT_NOTES_DIR: /app/import-notes
       VAULT_BOOKS_DIR: /app/books
       VAULT_BOOK_MANIFEST: /app/book-index.json
@@ -65,9 +67,11 @@ services:
     environment:
       VAULT_BASKET_DATA_DIR: /basket-data
       VAULT_FUTURES_CSV: /data/futures_daily.csv
+      INTRADAY_DATA_DIR: /intraday-data/fo_1min
     volumes:
       - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
       - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'
+      - '${VAULT_INTRADAY_DATA_ROOT:-/home/server/.cache/strategy-vault/intraday-data}:/intraday-data:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
     mem_limit: 1g

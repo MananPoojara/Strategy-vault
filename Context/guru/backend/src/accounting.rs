@@ -23,6 +23,13 @@ impl Costs {
         (self.rollover_bps>0.).then_some("Rollover costs require verified futures contract identities, expiry/roll dates, held quantities and traded roll prices. The loaded cash/index OHLC does not provide a supported roll-event mapping; no roll dates or charges are invented.")
     }
     pub fn ensure_rollover(self)->Result<(),String>{self.rollover_issue().map_or(Ok(()),|note|Err(format!("needs_data: {note}")))}
+    /// Rollover for one catalogue. YT: the Rollover setting is the team tradesheet's rollover rate (D1 = +x%, E1 = -x%
+    /// per 30 days held), applied by the sheet's own formulas, so the engine neither blocks nor charges it. Every other
+    /// catalogue keeps the block.
+    pub fn rollover_issue_for(self,yt:bool)->Option<String>{
+        if yt {None} else {self.rollover_issue().map(str::to_owned)}
+    }
+    pub fn ensure_rollover_for(self,yt:bool)->Result<(),String>{self.rollover_issue_for(yt).map_or(Ok(()),|note|Err(format!("needs_data: {note}")))}
     pub fn json(self)->String{
         format!("{{\"fees_bps\":{},\"slippage_bps\":{},\"rollover_bps\":{},\"total_side_bps\":{},\"taxes\":null,\"rolls\":null,\"basis\":\"User-entered execution fees and slippage, each in bps per side of deployed normalized allocation. Fees are not a verified statutory tax schedule.\",\"rollover_status\":\"No verified contract roll-event mapping\",\"slippage_status\":\"User-entered return deduction; fill prices are not rewritten\",\"money_status\":\"No position quantities or monetary sizing supplied; monetary P&L and taxes remain unavailable\",\"open_trade_cost_basis\":\"Legacy equity includes estimated exit costs on marked-open trades\"}}",num(self.fees_bps),num(self.slippage_bps),num(self.rollover_bps),num(self.fees_bps+self.slippage_bps))
     }

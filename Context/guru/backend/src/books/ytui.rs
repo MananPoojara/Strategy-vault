@@ -165,9 +165,12 @@ fn ulcer_cross(x: &Ctx, src: i64, hh_p: usize, smooth: usize, ema: bool, len: us
         3 => x.l.clone(),
         _ => x.c.clone(),
     };
-    let sv: Vec<Option<f64>> = s.iter().map(|&v| Some(v)).collect();
-    // HHV over 0 bars (the own-or-fresh AFL default) is taken as empty
-    let hh: Vec<Option<f64>> = (0..n).map(|i| window_opt(&sv, i, hh_p).map(|w| w.into_iter().fold(f64::MIN, f64::max))).collect();
+    // HHV over 0 bars (the own-or-fresh AFL default) is taken as empty. Like AmiBroker's HHV, the first bars of the
+    // data use the bars available so far until the full period exists (this sets the bar where the signal line
+    // starts, which the AFL treats as a cross).
+    let hh: Vec<Option<f64>> = (0..n)
+        .map(|i| if hh_p == 0 { None } else { Some(s[(i + 1).saturating_sub(hh_p)..=i].iter().copied().fold(f64::MIN, f64::max)) })
+        .collect();
     let dd2: Vec<Option<f64>> = (0..n).map(|i| hh[i].filter(|&h| h != 0.0).map(|h| (100.0 * (s[i] - h) / h).powi(2))).collect();
     let sm = smooth.max(1);
     let ulcer: Vec<Option<f64>> = (0..n).map(|i| window_opt(&dd2, i, sm).map(|w| (w.iter().sum::<f64>() / sm as f64).sqrt())).collect();
@@ -257,8 +260,11 @@ impl<'a> Eng<'a> {
         let n = x.c.len();
         let xth = g("xth").round().max(0.0) as usize;
         let k = xth + 1;
-        let llv = (0..n).map(|i| if (xth == 0 && xth_null_when_off) || i + 1 < k { None } else { Some(x.l[i + 1 - k..=i].iter().copied().fold(f64::MAX, f64::min)) }).collect();
-        let hhv = (0..n).map(|i| if (xth == 0 && xth_null_when_off) || i + 1 < k { None } else { Some(x.h[i + 1 - k..=i].iter().copied().fold(f64::MIN, f64::max)) }).collect();
+        // Xth-candle stop levels: LLV(L, xth+1) / HHV(H, xth+1). Like AmiBroker's LLV/HHV (and the Ulcer HHV in
+        // `ulcer_cross`), the first bars of the data use the bars available so far until the full period exists,
+        // instead of being empty. With xth 0 the level is empty when the AFL leaves it Null (`xth_null_when_off`).
+        let llv = (0..n).map(|i| if xth == 0 && xth_null_when_off { None } else { Some(x.l[(i + 1).saturating_sub(k)..=i].iter().copied().fold(f64::MAX, f64::min)) }).collect();
+        let hhv = (0..n).map(|i| if xth == 0 && xth_null_when_off { None } else { Some(x.h[(i + 1).saturating_sub(k)..=i].iter().copied().fold(f64::MIN, f64::max)) }).collect();
         let none = vec![None; n];
         Eng {
             x,
@@ -717,14 +723,30 @@ mod tests {
     const SMALL: [(&str, f64); 3] = [("hh_period", 3.0), ("smooth", 2.0), ("sig_len", 3.0)];
 
     #[test]
+    fn xth_levels_use_the_bars_available_at_the_start() {
+        let r = swing_rows();
+        let x = Ctx::new(&r, &r, &[]);
+        let g = |k: &str| if k == "xth" { 3.0 } else { 0.0 };
+        let e = Eng::new(&x, &g, true);
+        // LLV/HHV(4): bars 0..2 use the bars so far (AmiBroker), bar 3 on uses the full 4 bars
+        assert_eq!(e.llv[0], Some(x.l[0]));
+        assert_eq!(e.hhv[2], Some(x.h[2]));
+        assert_eq!(e.llv[5], Some(x.l[2]));
+        let off = |_: &str| 0.0;
+        assert_eq!(Eng::new(&x, &off, true).llv[0], None);
+        assert_eq!(Eng::new(&x, &off, false).llv[4], Some(x.l[4]));
+    }
+
+    #[test]
     fn ulcer_cross_marks_the_drop_and_recovery() {
         let r = swing_rows();
         let x = Ctx::new(&r, &r, &[]);
         let (lx, sx) = ulcer_cross(&x, 0, 3, 2, false, 3, false);
         let first_s = sx.iter().position(|&b| b).unwrap();
         let first_l = lx.iter().position(|&b| b).unwrap();
-        // the signal's first bar (index 2 + 1 + 2 = 5) gives the initial state (flat rally: ulcer 0 <= signal 0)
-        assert_eq!(first_l, 5);
+        // HHV uses the bars available so far, so the signal's first bar is index 1 + 2 = 3 (smoothing 2, signal 3);
+        // it gives the initial state (flat rally: ulcer 0 <= signal 0)
+        assert_eq!(first_l, 3);
         assert!(first_s >= 15 && first_s <= 17, "{first_s}");
         // HHV over 0 bars: nothing
         let (lx0, sx0) = ulcer_cross(&x, 0, 0, 2, false, 3, false);

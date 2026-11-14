@@ -1,10 +1,16 @@
 import {bandyAccountMethod} from "./bandy-source-account";
 import {unitExposureMethod} from './unit-exposure-report';
-export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string }
+export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string; requirement?: string }
+
+/** Intraday YT AFLs run on the 1-minute F&O futures data only: the daily `basket:ieodfo:*` carrier series. */
+export const intradayMethod = (policy?: InstrumentPolicy) => policy?.requirement === 'intraday_futures';
+export const INTRADAY_DEFAULT = 'basket:ieodfo:BANKNIFTY';
+export const isIntradayTicker = (ticker?: string) => String(ticker || '').startsWith('basket:ieodfo:');
 
 /** A visible ETF button must remain a valid route choice alongside supported indices. */
 export function instrumentTickers<T extends {ticker: string}>(policy: InstrumentPolicy | undefined, indices: T[], etfs: T[], id?:string, book?:string, futures: T[] = []): T[] {
   const controls = instrumentControls(policy,id,book);
+  if (intradayMethod(policy)) return [];
   if (unitExposureMethod(id,book)) return controls.index ? indices.filter(t=>['SPX','NIFTY 50'].includes(t.ticker)) : [];
   if (krSpotMethod(id,book)) return controls.index ? indices.filter(t=>KR_SPOT.includes(t.ticker)) : [];
   return [...(controls.index ? indices : []), ...(controls.etf ? etfs : []), ...(controls.futures ? futures : [])];
@@ -21,6 +27,8 @@ export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?
     const stock=policy?.execution_scope==='single_symbol_stock_price_research'&&types.length===1&&types[0]==='individual_stock';
     return {index:false,stock,basket:false,etf:false,futures:false,note:`Second Order Breakout uses declared single-stock percentage research on actual stock prices. ${stock?'Choose an admitted Stock above':'The current policy does not admit a Stock'}; baskets and position limits are unavailable. Original performance and volatility-based quantities are not certified.`};
   }
+  if (intradayMethod(policy)) return {index:false,stock:false,basket:false,etf:false,futures:false,
+    note:'This intraday AFL needs 1-minute bars: choose an F&O futures symbol (ieodfo) above. Spot indices, the daily near-month futures, cash stocks and baskets have no intraday bars.'};
   if (krSpotMethod(id,book)) return {index:types.includes('index'),stock:false,basket:false,etf:false,futures:false,
     note:'The team ran this Kora Reddy rule on the NSE spot indices, not futures: it reproduces their workbooks on Nifty 50 and Nifty Bank. Other indices, futures, ETFs and stock baskets are not admitted.'};
   if (unitExposureMethod(id,book)) return {index:types.length===1 && types[0]==='index'

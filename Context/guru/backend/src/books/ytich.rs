@@ -14,7 +14,8 @@
 //! AmiBroker behaviour followed: the AFL loops run only over the bars AmiBroker loads, the run's range plus the longest
 //! line period before its start (QuickAFL), so the loop's state starts there: with Profit Booking % 0 the first trade
 //! of the loop keeps the AFL's starting target PT = 0 and exits on the next bar. While a line the loop reads is still
-//! Null (warm-up at the start of the history) no setup, entry or exit is taken. Null propagates through arithmetic and
+//! Null (warm-up at the start of the history) no setup, entry or exit is taken; the delayed line gates only the entry,
+//! the one place the AFLs read it. HHV / LLV use the bars available so far on the first bars of the data, as AmiBroker's do. Null propagates through arithmetic and
 //! Max/Min. Both match the team's NIFTY trade lists; fills at the close unless the AFL sets the sell or
 //! cover price; the backtester exits first and then enters on the same bar; trade prices are kept inside the bar's
 //! low-high range (AmiBroker's default price bound check), which matters for the AFLs' gap prices.
@@ -209,19 +210,18 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 // ---------------------------------------------------------------- lines
 
 /// AmiBroker's Null (EMPTY) as a loop element reads it.
-const NULL: f64 = -1e10;
+pub(crate) const NULL: f64 = -1e10;
 const BIG: f64 = 9_999_999.0;
 
-/// (HHV(H, n) + LLV(L, n)) / 2, Null until n bars exist.
+/// (HHV(H, n) + LLV(L, n)) / 2. Like AmiBroker's HHV / LLV (and the Ulcer HHV in ytui.rs), the first n - 1 bars of the
+/// data use the bars available so far instead of being Null.
 fn mid_hl(h: &[f64], l: &[f64], n: usize) -> Vec<Option<f64>> {
     let n = n.max(1);
     (0..h.len())
         .map(|i| {
-            if i + 1 < n {
-                return None;
-            }
-            let hh = h[i + 1 - n..=i].iter().cloned().fold(f64::MIN, f64::max);
-            let ll = l[i + 1 - n..=i].iter().cloned().fold(f64::MAX, f64::min);
+            let lo = (i + 1).saturating_sub(n);
+            let hh = h[lo..=i].iter().cloned().fold(f64::MIN, f64::max);
+            let ll = l[lo..=i].iter().cloned().fold(f64::MAX, f64::min);
             Some((hh + ll) / 2.0)
         })
         .collect()
@@ -380,8 +380,10 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
     let tlup = |i: usize| tl[i] > bl[i] && tl[i - 1] <= bl[i - 1];
     let tldn = |i: usize| tl[i] < bl[i] && tl[i - 1] >= bl[i - 1];
     let bf = |i: usize| h[i] != c[i] && c[i] > 0.0;
-    // no setup, entry or exit while a line the loop reads is still Null (warm-up bars)
-    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL) && (v == Ver3 || delayed[i] != NULL) && (!v.cur() || cloud[i] != NULL);
+    // no setup, entry or exit while a line the loop reads is still Null (warm-up bars). The setups and exits read only
+    // the turning / base lines and the cloud; the delayed line is read only by the entry, so a setup can form before
+    // it exists (Close vs a Null delayed line is never true)
+    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL) && (!v.cur() || cloud[i] != NULL);
     // the loop starts at `from` (see run), so its state, including the first trade's target PT = 0, starts there
     for i in from.max(1)..n {
         dsl = if chk { dsl + 1 } else { 0 };
@@ -432,6 +434,7 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
         }
         let normal = !pos
             && bf(i)
+            && (v == Ver3 || delayed[i] != NULL)
             && match v {
                 Ver1 | HslPt => (s1 || s3) && tl[i] > bl[i] && c[i] > delayed[i],
                 Ver2 => s1 && c[i] > maxs[i] && tl[i] > bl[i] && c[i] > delayed[i],
@@ -533,8 +536,10 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
     let tlup = |i: usize| tl[i] > bl[i] && tl[i - 1] <= bl[i - 1];
     let tldn = |i: usize| tl[i] < bl[i] && tl[i - 1] >= bl[i - 1];
     let sf = |i: usize| l[i] != c[i] && c[i] > 0.0;
-    // no setup, entry or exit while a line the loop reads is still Null (warm-up bars)
-    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL) && (v == Ver3 || delayed[i] != NULL);
+    // no setup, entry or exit while a line the loop reads is still Null (warm-up bars). The setups and exits read only
+    // the turning / base lines and the cloud; the delayed line is read only by the entry, so a setup can form before
+    // it exists (Close vs a Null delayed line is never true)
+    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL);
     // the loop starts at `from` (see run), so its state, including the first trade's target PT = 0, starts there
     for i in from.max(1)..n {
         dsl = if chk { dsl + 1 } else { 0 };
@@ -573,6 +578,7 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
         }
         let normal = !pos
             && sf(i)
+            && (v == Ver3 || delayed[i] != NULL)
             && match v {
                 Ver1 | HslPt => (s1 || s3) && tl[i] < bl[i] && c[i] < delayed[i],
                 Ver2 => s1 && c[i] < mins[i] && tl[i] < bl[i] && c[i] < delayed[i],
@@ -756,12 +762,14 @@ mod tests {
         let c = [9.0, 11.0, 13.0, 12.0];
         let ln = lines(&h, &l, &c, 1, 2, 3, 1);
         assert_eq!(ln.tl, vec![9.0, 10.5, 12.5, 11.5]);
-        assert_eq!(ln.bl, vec![NULL, 10.0, 11.5, 12.0]);
-        // span A = (TL + BL) / 2, span B = 3-bar mid (Null on bars 0-1): max / min Null until both exist
-        assert_eq!(ln.maxs, vec![NULL, NULL, 12.0, 11.75]);
-        assert_eq!(ln.mins, vec![NULL, NULL, 11.0, 11.5]);
+        // the first bars use the bars available so far (AmiBroker's HHV / LLV): BL bar 0 = (10 + 8) / 2
+        assert_eq!(ln.bl, vec![9.0, 10.0, 11.5, 12.0]);
+        // span A = (TL + BL) / 2 = 9, 10.25, 12, 11.75; span B = 3-bar mid so far = 9, 10, 11, 11.5
+        assert_eq!(ln.maxs, vec![9.0, 10.25, 12.0, 11.75]);
+        assert_eq!(ln.mins, vec![9.0, 10.0, 11.0, 11.5]);
+        // Ref(.., -1) is still Null on bar 0
         assert_eq!(ln.delayed, vec![NULL, 9.0, 11.0, 13.0]);
-        assert_eq!(ln.cloud, vec![NULL, NULL, NULL, 12.0]);
+        assert_eq!(ln.cloud, vec![NULL, 9.0, 10.25, 12.0]);
     }
 
     #[test]
@@ -773,6 +781,17 @@ mod tests {
         }
         for id in [VER1, VER2, VER3, HSLPT, FWD_CLOSE] {
             assert_eq!(go(id, &rows(&DN), &[("side_version", 1.0), ("profit_pct", 50.0), ("hard_sl_pct", 50.0)]), vec![(3, 98.0, 6, 96.0, -1.0)], "{id}");
+        }
+    }
+
+    #[test]
+    fn setup_forms_before_the_delayed_line_and_the_entry_waits_for_it() {
+        // delayed 4 bars: Null on bars 0-3. The TL / BL cross on bar 3 (close above the cloud) sets the setup, as the
+        // AFLs' setup step reads no delayed line; the entry needs Close > delayed, which is never true while it is Null,
+        // so the buy comes on bar 4 (104 > delayed 100) and the TL / BL cross down on bar 6 sells at the close
+        // (the team's ICHIMOKU 2,23,44,16 trade of 28-01-2000 on NIFTY data from 03-01-2000)
+        for id in [VER1, VER2, FWD_CLOSE] {
+            assert_eq!(go(id, &rows(&UP), &[("dl_prds", 4.0), ("profit_pct", 50.0), ("hard_sl_pct", 50.0)]), vec![(4, 104.0, 6, 104.0, 1.0)], "{id}");
         }
     }
 

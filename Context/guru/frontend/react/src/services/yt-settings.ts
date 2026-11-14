@@ -5,11 +5,23 @@
  * Choices come from the label. "Name::A|B|C" lists values 1, 2, 3 (the YT Holidays event list). Otherwise a trailing
  * bracket that numbers every value from min to max, e.g. "Days exit (0 = off, 1 = on)" or
  * "Filter timeframe (0 monthly, 1 weekly, 2 daily)", becomes a dropdown; text after ":" in an item is a note.
+ *
+ * Sections: a label "Section » name" puts the setting in that section (the AFL's own Parameters window sections, in the
+ * engine's order); other settings are sorted into sections by their wording.
  */
 
 export interface YtSetting { key: string; label: string; def: number; min: number; max: number; step: number }
 export interface YtOption { value: number; text: string }
-export interface YtGroup { name: string; settings: YtSetting[] }
+export interface YtGroup { name: string; settings: YtSetting[]; /** a section the engine named ("Section » name") */ named?: boolean }
+
+const SECTION = " » ";
+/** The section a label names, and the label without it. */
+function sectionOf(label: string): { section: string | null; rest: string } {
+  const i = label.indexOf(SECTION);
+  return i < 0 ? { section: null, rest: label } : { section: label.slice(0, i).trim(), rest: label.slice(i + SECTION.length) };
+}
+/** The setting with its section prefix taken off the label. */
+const bare = (s: YtSetting): YtSetting => (s.label.includes(SECTION) ? { ...s, label: sectionOf(s.label).rest } : s);
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -38,8 +50,8 @@ function topLevelItems(text: string): string[] {
   return out.map(s => s.trim()).filter(Boolean);
 }
 
-function bracketOptions(s: YtSetting): YtOption[] | null {
-  const b = lastBracket(s.label);
+function bracketOptions(setting: YtSetting): YtOption[] | null {
+  const s = bare(setting), b = lastBracket(s.label);
   if (!b || !Number.isInteger(s.min) || !Number.isInteger(s.max) || s.step !== 1) return null;
   const items: [number, string][] = [];
   for (const item of topLevelItems(b.inner)) {
@@ -59,15 +71,15 @@ function bracketOptions(s: YtSetting): YtOption[] | null {
 }
 
 /** The values of a choice setting with their names, or [] for a number setting. */
-export function settingOptions(s: YtSetting): YtOption[] {
-  const listed = s.label.split("::")[1];
+export function settingOptions(setting: YtSetting): YtOption[] {
+  const s = bare(setting), listed = s.label.split("::")[1];
   if (listed !== undefined) return listed.split("|").filter(Boolean).map((text, i) => ({ value: i + 1, text }));
   return bracketOptions(s) ?? [];
 }
 
 /** The label without its list of choices. */
-export function settingName(s: YtSetting): string {
-  const name = s.label.split("::")[0];
+export function settingName(setting: YtSetting): string {
+  const s = bare(setting), name = s.label.split("::")[0];
   if (s.label.includes("::")) return name;
   const b = bracketOptions(s) && lastBracket(name);
   return b ? name.slice(0, b.start).trim() : name;
@@ -97,6 +109,8 @@ const GROUPS: [string, (n: string, k: string) => boolean][] = [
 export const GROUP_ORDER = ["Entry", "Filter", "Candle exit", "Dual ATR exit", "Exit", "Stop loss", "Strategy settings"];
 
 export function settingGroup(s: YtSetting): string {
+  const named = sectionOf(s.label).section;
+  if (named) return named;
   const n = settingName(s);
   return GROUPS.find(([, test]) => test(n, s.key))?.[0] ?? "Strategy settings";
 }
@@ -105,7 +119,10 @@ export function settingGroup(s: YtSetting): string {
 export function groupSettings(ps: YtSetting[]): YtGroup[] {
   const by = new Map<string, YtSetting[]>();
   for (const s of ps) { const g = settingGroup(s); by.set(g, [...(by.get(g) ?? []), s]); }
-  return GROUP_ORDER.filter(g => by.has(g)).map(name => ({ name, settings: by.get(name)! }));
+  // sections the engine named come first, in the engine's order (the AFL's Parameters window); then the worded ones
+  const named = [...new Set(ps.map(s => sectionOf(s.label).section).filter((x): x is string => !!x))];
+  return [...named.map(name => ({ name, settings: by.get(name)!, named: true })),
+    ...GROUP_ORDER.filter(g => by.has(g) && !named.includes(g)).map(name => ({ name, settings: by.get(name)! }))];
 }
 
 /**
@@ -115,6 +132,7 @@ export function groupSettings(ps: YtSetting[]): YtGroup[] {
 export function idleKeys(groups: YtGroup[], value: (key: string) => number): Set<string> {
   const idle = new Set<string>();
   for (const g of groups) {
+    if (g.named) continue; // an AFL section is a list of independent settings, not one switched feature
     const [head, ...rest] = g.settings;
     if (head && rest.length && isSwitch(head) && Math.round(value(head.key)) === 0) rest.forEach(s => idle.add(s.key));
   }

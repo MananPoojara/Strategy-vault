@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { username } from 'better-auth/plugins';
 import pg from 'pg';
 
 for (const key of ['DATABASE_URL', 'BETTER_AUTH_SECRET', 'VAULT_PUBLIC_URL', 'VAULT_INTERNAL_TOKEN']) {
@@ -13,9 +14,11 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: [...allowedOrigins],
   database: pool,
-  emailAndPassword: { enabled: true, minPasswordLength: 12, maxPasswordLength: 128, autoSignIn: false },
+  emailAndPassword: { enabled: true, minPasswordLength: 3, maxPasswordLength: 128, autoSignIn: false },
   user: { additionalFields: { role: { type: 'string', required: true, defaultValue: 'researcher', input: false } } },
   session: { expiresIn: 86400 * 7, updateAge: 86400, cookieCache: { enabled: false } },
-  rateLimit: { enabled: true, window: 60, max: 40, customRules: { '/sign-in/email': { window: 60, max: 10 } } },
+  rateLimit: { enabled: true, window: 60, max: 40, customRules: { '/sign-in/email': { window: 60, max: 10 }, '/sign-in/username': { window: 60, max: 10 } } },
+  // sign-in with a user ID (e.g. Kripalsinh) as well as an email; user IDs match case-insensitively
+  plugins: [username({ minUsernameLength: 3, maxUsernameLength: 30 })],
   advanced: { ipAddress: { ipAddressHeaders: ['x-vault-client-ip'] }, cookiePrefix: 'strategy-vault', useSecureCookies: publicURL.startsWith('https:') },
 });
