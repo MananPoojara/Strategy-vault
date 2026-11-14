@@ -865,10 +865,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
         v.push(StrategyDef { id, name, group: "Market Timing · TRIN", session: 7, dir: "Long", status: Live, needs_volume: false, needs_vix: false, needs_series: &["TRIN"], book: "stc9", rules,
             notes: "TRIN = the exchange's Arms index (advancing ÷ declining issues) ÷ (advancing ÷ declining volume), daily close: NSE breadth for Indian indices, NYSE for US ones (NYSE data ends 2020-02-10). Buy on the close of the trigger day [Book silent: as every Session 7 rule].", claim });
     }
-    v.push(StrategyDef { id: "lev_calls", name: "Leveraged ETF Call Options", group: "Options", session: 8, dir: "Long", status: NotTestable("needs option chains"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
-        notes: "On the next-to-last 1-2-3-4-5 scale-in buy ½ position of the 2nd ITM front-month call, the other ½ on the final scale-in; exit RSI(2) > 50.", claim: None });
-    v.push(StrategyDef { id: "busted", name: "Busted Options Program", group: "Options", session: 8, dir: "Short", status: NotTestable("needs earnings + option chains"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
-        notes: "SPX < 200 SMA; stock misses earnings and opens ≥ 15% lower; sell 1st/2nd OTM next-month call (premium ≥ $1); hold to expiry, stop at 2× premium.", claim: None });
+    v.push(StrategyDef { id: "lev_calls", name: "Leveraged ETF Call Options", group: "Options", session: 8, dir: "Long", status: NotTestable("requires the selected 2x/3x equity ETF's own option contracts and underlying history; expiry and execution conventions need review"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
+        notes: "Session 8 p.8: buy half a front-month second-ITM call on the next-to-last scale-in and the other half of the same contract on the final signal; exit at RSI 50. Session 7 pp.7–9 specify 2x/3x equity ETFs and RSI(2) > 50; no particular ETF ticker is named. The current SPY/QQQ/IWM and Indian index option caches are not leveraged-ETF chains.", claim: None });
+    v.push(StrategyDef { id: "busted", name: "Busted Options Program", group: "Options", session: 8, dir: "Short", status: NotTestable("requires dated earnings misses and the selected stock's own option contracts, plus reviewed execution and expiry handling"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
+        notes: "Session 8 pp.10–12: SPX below 200-day MA; a stock misses earnings and opens at least 15% lower; sell a first/second OTM next-month call for at least $1; expiry or discretionary early exit at very low option value, with a stop at twice the premium received. Indian stock-option records exist in the source bhavcopies but are not loaded by this card; an index option cannot replace a stock option.", claim: None });
  
     v.extend(crate::books::catalogue());
     v
