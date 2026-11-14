@@ -199,6 +199,7 @@ pub fn macd_run(x: &Ctx, from: usize, to: usize, m: &Macd) -> Vec<Trade> {
 // ------------------------------------------------------------------ catalogue
 
 const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+pub const NHNL_SERIES: &[&str] = &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 const NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 
 fn breadth<'a>(x: &'a Ctx, nse: bool) -> Option<(&'a [f64], &'a [f64])> {
@@ -301,9 +302,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             c("24", "75%", "+9.4% winners / -2.6% losers", "18.3% invested", "NYSE Index 1970-2004")),
         d("apta_breadth_macd_nse", "MACD-filtered Breadth Thrust · NSE breadth", "Ch 8 · Converting the Daily Breadth Thrust Model", Live, NSE, false, IMPULSE_MACD,
             "India mapping: NSE advances/declines, MACD of the traded Indian index.", None),
-        d("apta_nhnl", "New highs / (new highs + new lows) 90% model", "Ch 6 · New high/new low indicator", NeedsData("daily NYSE new 52-week highs and new lows (not in extra_data)"), &[], false,
-            &["F|Ten-day simple average of NH/(NH+NL) (p.124)", "E|\"Buy ... when the ten-day average ... reaches 90%\" (p.124)", "X|Sell when it falls below 90/85/80/75/70% (choice; Table 6.1 p.125)"],
-            "Needs series NYSE_NH, NYSE_NL.", c("55 (sell <85%)", "49.1%", "", "21.0% invested", "S&P 500 1970-2004")),
+        d("apta_nhnl", "New highs / (new highs + new lows) 90% model", "Ch 6 · New high/new low indicator", Live, NHNL_SERIES, false,
+            &["F|Ten-day arithmetic mean of daily NYSE new highs / (new highs + new lows), p.124.", "E|Buy at 90% or higher (p.124 prose); entry_strict=1 uses above 90% (Table 6.1 caption p.125).", "X|Sell strictly below the selected 90/85/80/75/70% (p.125); default 85%."],
+            "UNVERIFIED local-data application on SPX with Norgate NYSE 52-week counts; vendor methodology and the book's 1970-2004 results are not reproduced. Adapted: 2 unstated details: same-close fills and flat at selected start; nine immediately preceding valid observations warm the first average. No values or gaps are filled.", c("55 (sell <85%)", "49.1%", "", "21.0% invested", "S&P 500 1970-2004")),
         d("apta_weekly_impulse", "Weekly Impulse Continuation Signal", "Ch 6 · Weekly Impulse Signal", NeedsData("weekly NYSE advances/declines measured week-close to week-close and issues traded (not a sum of daily data; not in extra_data)"), &[], false,
             &["F|(weekly advances - declines) / issues traded; six-week EMA (.286) (p.138)", "E|Buy when the average rises to 25% or higher (p.139)", "X|Sell when it falls below -5% (p.139); fills at the next Monday's close (p.140)"],
             "Needs series NYSE_WADV, NYSE_WDECL, NYSE_WISSUES.", c("", "", "+16.62%", "21.9% invested", "NYSE Index 1970-2003")),
@@ -353,7 +354,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "apta_breadth_impulse_nse" => ("apta_impulse", "Daily Breadth Impulse", "NSE breadth"),
         "apta_breadth_macd" => ("apta_impulse", "Daily Breadth Impulse", "MACD-filtered · NYSE breadth"),
         "apta_breadth_macd_nse" => ("apta_impulse", "Daily Breadth Impulse", "MACD-filtered · NSE breadth"),
-        "apta_nhnl" | "apta_weekly_impulse" | "apta_ad_roc" => ("apta_breadth", "Breadth models", ""),
+        "apta_nhnl" => ("apta_nhnl", "NYSE New High / New Low", ""),
+        "apta_weekly_impulse" | "apta_ad_roc" => ("apta_breadth", "Breadth models", ""),
         "apta_trin" | "apta_vix35" | "apta_mrv" => ("apta_vol", "Sentiment and volatility", ""),
         "apta_macd" | "apta_macd_judgement" | "apta_macd_fullsell" => ("apta_macd", "MACD", ""),
         "apta_patterns" | "apta_ma_channels" => ("apta_charts", "Chart reading", ""),
@@ -370,6 +372,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "apta_triple_mom" => vec![p("r1", "ROC 1 days", 5., 2., 10., 1.), p("r2", "ROC 2 days", 15., 10., 20., 1.), p("r3", "ROC 3 days", 25., 20., 40., 1.), p("level", "Sum crosses %", 4., 0., 10., 0.5)],
         "apta_roc15" => vec![p("n", "ROC days", 15., 5., 30., 1.), p("level", "Crosses %", 0., -2., 2., 0.5)],
         "apta_six_best" | "apta_six_worst" => vec![p("may_day", "May date (last trading day on or before)", 4., 1., 15., 1.)],
+        "apta_nhnl" => vec![p("exit", "Sell strictly below % (70, 75, 80, 85, 90)",85.,70.,90.,5.), p("entry_strict", "Entry: 0 at/above 90%, 1 above 90%",0.,0.,1.,1.)],
         "apta_breadth_impulse" | "apta_breadth_impulse_nse" => impulse(),
         "apta_breadth_macd" | "apta_breadth_macd_nse" => {
             let mut v = impulse();
@@ -399,6 +402,21 @@ pub fn impulse_ema(a: &[f64], d: &[f64], n: usize) -> Vec<f64> {
     ema_first(&r, n)
 }
 
+/// Requires actual, nonnegative daily counts and a positive denominator, including the warm-up.
+pub fn nhnl_input_issue(x: &Ctx, from: usize, to: usize) -> Option<&'static str> {
+    if from < 9 || from > to || to >= x.r.len() { return Some("Requires nine actual consecutive count observations before the selected start."); }
+    let (Some(h),Some(l))=(x.series(NHNL_SERIES[0]),x.series(NHNL_SERIES[1])) else {return Some("Requires NYSE new-high and new-low count series.")};
+    if (from-9..=to).any(|i| !h.get(i).zip(l.get(i)).is_some_and(|(&a,&b)| a.is_finite() && b.is_finite() && a>=0. && b>=0. && a.fract()==0. && b.fract()==0. && (a+b).is_finite() && a+b>0.)) {
+        return Some("Missing or invalid NYSE counts in the selected interval or its nine-bar warm-up; no values are filled.");
+    }
+    None
+}
+pub fn nhnl_params_issue(p: &Params) -> Option<&'static str> {
+    let exit=p.get("exit").copied().unwrap_or(85.);
+    let strict=p.get("entry_strict").copied().unwrap_or(0.);
+    if ![70.,75.,80.,85.,90.].contains(&exit) || ![0.,1.].contains(&strict) {Some("Choose a printed exit level and entry equality option.")} else {None}
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() {
@@ -410,6 +428,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let daily: Vec<usize> = (0..x.r.len()).collect();
     let on = |v: f64| v.is_finite();
     Some(match id {
+        "apta_nhnl" => {
+            if x.native_market.is_some() || !x.r.first().is_some_and(|r| r.ticker=="SPX") { return None; }
+            if nhnl_input_issue(x, from, to).is_some() || nhnl_params_issue(p).is_some() { return None; }
+            let h=x.series(NHNL_SERIES[0])?; let l=x.series(NHNL_SERIES[1])?;
+            let mut out=Vec::new(); let mut cur:Option<Trade>=None;
+            for i in from..=to {
+                // Compensated summation reduces drift on threshold ties; no rounding or epsilon.
+                let (mut sum,mut correction)=(0.0,0.0);
+                for j in i-9..=i { let v=h[j]/(h[j]+l[j]); let y=v-correction; let t=sum+y; correction=(t-sum)-y; sum=t; }
+                let avg=sum/10.;
+                if let Some(mut t)=cur.take() {
+                    if avg<g("exit")/100. {t.exit_i=i;t.exit_px=c[i];t.signal_i=i;t.reason="new-high ratio below exit level".into();out.push(t);} else {cur=Some(t);}
+                } else if i<to && if g("entry_strict")>=1. {avg>0.9} else {avg>=0.9} {cur=Some(mk(i,c[i]));}
+            }
+            if let Some(mut t)=cur {t.exit_i=to;t.exit_px=c[to];t.signal_i=to;t.reason="open".into();t.open=true;out.push(t);}
+            out
+        }
         "apta_ma200_dji" | "apta_ma100_dji" => {
             // exact-tie safe window sum (apwms::sma): a close equal to the average is not "above" or "below" it (p.48); the
             // running sum of connors::sma drifts by 1e-14 and turned decimal ties into trades (fixed 2026-10-24, authors/appel)
@@ -602,6 +637,65 @@ mod tests {
     fn rows(cl: &[f64]) -> Vec<Row> {
         cl.iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("{:04}-{:02}-{:02}", 2000 + i / 336, 1 + (i / 28) % 12, 1 + i % 28),
             open: c, high: c, low: c, close: c, volume: None }).collect()
+    }
+    #[test]
+    fn nhnl_selected_start_equality_and_strict_exit() {
+        let mut r = rows(&[100.; 25]); for row in &mut r {row.ticker="SPX".into();}
+        let mut x = Ctx::new(&r, &r, &[]);
+        // Exactly 90% for the first ten bars, then 80%. Flat at selected start.
+        let mut highs = vec![9.; 25];
+        let mut lows = vec![1.; 25];
+        for i in 10..25 { highs[i]=8.; lows[i]=2.; }
+        x.extra.insert("NYSE_NEW_HIGHS".into(), highs);
+        x.extra.insert("NYSE_NEW_LOWS".into(), lows);
+        let t=run("apta_nhnl", &x, 9, 24, &Params::new()).unwrap();
+        assert_eq!(t.len(),1);
+        assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].open),(9,15,false)); // 85% at 14 is not below
+        let t=run("apta_nhnl", &x, 9, 24, &Params::from([("entry_strict".into(),1.)])).unwrap();
+        assert!(t.is_empty()); // caption > 90%, not equality
+        for (level,exit,open) in [(90.,10,false),(85.,15,false),(80.,24,true),(75.,24,true),(70.,24,true)] {
+            let t=run("apta_nhnl",&x,9,24,&Params::from([("exit".into(),level)])).unwrap();
+            assert_eq!((t[0].exit_i,t[0].open),(exit,open),"{level}");
+        }
+        // A selected start with nine valid observations begins flat even if a prior buy was possible.
+        let t=run("apta_nhnl", &x, 10, 24, &Params::new()).unwrap();
+        assert!(t.is_empty());
+    }
+    #[test]
+    fn nhnl_refuses_missing_or_invalid_warmup_and_window() {
+        let mut r=rows(&[100.; 25]); for row in &mut r {row.ticker="SPX".into();} let mut x=Ctx::new(&r,&r,&[]);
+        x.extra.insert("NYSE_NEW_HIGHS".into(),vec![9.;25]);
+        x.extra.insert("NYSE_NEW_LOWS".into(),vec![1.;25]);
+        assert!(run("apta_nhnl",&x,8,24,&Params::new()).is_none());
+        x.extra.get_mut("NYSE_NEW_HIGHS").unwrap()[4]=f64::NAN;
+        assert!(run("apta_nhnl",&x,10,24,&Params::new()).is_none());
+        assert!(run("apta_nhnl",&x,14,24,&Params::new()).is_some());
+        x.extra.get_mut("NYSE_NEW_LOWS").unwrap()[18]=0.;
+        x.extra.get_mut("NYSE_NEW_HIGHS").unwrap()[18]=0.;
+        assert!(run("apta_nhnl",&x,14,24,&Params::new()).is_none());
+        x.extra.get_mut("NYSE_NEW_HIGHS").unwrap()[18]=8.5;
+        assert!(run("apta_nhnl",&x,14,24,&Params::new()).is_none());
+    }
+    #[test]
+    fn nhnl_admission_is_spx_only_and_readiness_checks_the_warmup() {
+        let mut r=rows(&[100.; 30]); for row in &mut r {row.ticker="SPX".into();}
+        let mut x=Ctx::new(&r,&r,&[]);
+        x.extra.insert("NYSE_NEW_HIGHS".into(),vec![9.;30]);
+        x.extra.insert("NYSE_NEW_LOWS".into(),vec![1.;30]);
+        let def=catalogue().into_iter().find(|d| d.id=="apta_nhnl").unwrap();
+        assert_eq!(family_of(def.id).unwrap().0,"apta_nhnl");
+        assert!(!crate::instrument_policy::reviewed_cash_rule(&def)); // independent ledger is still pending
+        assert!(crate::instrument_policy::check(&def,"SPX",false).is_none());
+        for ticker in ["SPY","NDX","NIFTY 50","AAPL"] {assert!(crate::instrument_policy::check(&def,ticker,ticker=="AAPL").is_some());}
+        let wrong=rows(&[100.; 30]); let mut wrong_ctx=Ctx::new(&wrong,&wrong,&[]);
+        wrong_ctx.extra.insert("NYSE_NEW_HIGHS".into(),vec![9.;30]); wrong_ctx.extra.insert("NYSE_NEW_LOWS".into(),vec![1.;30]);
+        assert!(run("apta_nhnl",&wrong_ctx,9,29,&Params::new()).is_none());
+        assert!(crate::instrument_policy::metadata_json(&def).contains("\"independent_selected_ledger_checked\":false"));
+        assert!(crate::readiness::check(&x,&def,9,29,&Params::new()).is_none());
+        x.extra.get_mut("NYSE_NEW_HIGHS").unwrap()[4]=f64::NAN;
+        assert_eq!(crate::readiness::check(&x,&def,10,29,&Params::new()).unwrap().status,"needs_data");
+        assert!(crate::readiness::check(&x,&def,14,29,&Params::new()).is_none());
+        assert_eq!(crate::readiness::check(&x,&def,14,29,&Params::from([("exit".into(),82.)])).unwrap().status,"not_testable");
     }
     #[test]
     fn ema_is_seeded_by_the_simple_average_and_uses_2_over_n_plus_1() {

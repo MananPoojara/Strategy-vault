@@ -174,6 +174,10 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="apta" && def.id=="apta_nhnl" {
+        if let Some(note)=books::apta::nhnl_params_issue(p) {return issue("not_testable",note);}
+        if let Some(note)=books::apta::nhnl_input_issue(ctx,from,to) {return issue("needs_data",note);}
+    }
     // user-held NSE breadth / TRIN mappings: the hold note wins over any data-coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
     // decisions #177/#179: a withdrawn (rule, ticker) pair shows its tradable-vs-cash reason, never a coverage message
