@@ -173,7 +173,50 @@ mod short_course_readiness_tests {
     }
 }
 
+#[cfg(test)]
+mod chaikin_candidate_readiness_tests {
+    use super::*;
+    fn rows(ticker: &str) -> Vec<crate::Row> {
+        (0..30).map(|i| crate::Row { ticker:ticker.into(), date:format!("2020-{:02}-{:02}", i/25+1, i%25+1), open:100., high:101., low:99., close:100., volume:None }).collect()
+    }
+    #[test]
+    fn only_reviewed_symbols_with_valid_prefix_and_warmup_are_accepted() {
+        let d=books::nkms2::catalogue().into_iter().find(|d|d.id==books::nkms2::CHAIKIN_ID).unwrap();
+        for ticker in ["SPY", "NIFTY 50"] {
+            let r=rows(ticker); let x=Ctx::new(&r,&r,&[]);
+            assert_eq!(check(&x,&d,19,29,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&x,&d,20,29,&Params::new()).is_none());
+        }
+        let r=rows("SPX");let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"not_testable");
+        let r=rows("SPY");let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::from([("reverse".into(),0.)])).unwrap().status,"not_testable");
+        let mut r=rows("SPY");r[5].date=r[4].date.clone();let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"needs_data");
+        let mut r=rows("SPY");r[2].high=f64::NAN;let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"needs_data");
+        let mut r=rows("SPY");for v in &mut r {v.high=100.;v.low=100.;}let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"needs_data");
+    }
+}
+
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book == books::nkms2::BOOK && def.id == books::nkms2::CHAIKIN_ID {
+        if !p.is_empty() { return issue("not_testable", "This source candidate accepts no alternate calculation, side or execution settings."); }
+        let Some(first) = ctx.r.first() else { return issue("needs_data", "No price history supplied."); };
+        if ctx.native_market.is_some() || !matches!(first.ticker.as_str(), "NIFTY 50" | "SPY") {
+            return issue("not_testable", "R4 #353 limits this unverified research candidate to actual NIFTY 50 and SPY contexts; other symbols, stocks and baskets require separate review.");
+        }
+        if from < 20 || from >= to || to >= ctx.r.len() {
+            return issue("needs_data", "The first signal needs 21 actual bars: ten seed ranges, ten more bars for ROC and a prior ROC for comparison.");
+        }
+        if ctx.r[..=to].iter().any(|r| r.ticker != first.ticker || !crate::baskets::valid_date(&r.date) || !r.open.is_finite() || r.open <= 0.0 || r.open < r.low || r.open > r.high) || ctx.r[..=to].windows(2).any(|w|w[0].date >= w[1].date) {
+            return issue("needs_data", "Price history has invalid opens or dates, mixed symbols or duplicate/out-of-order observations; no bars are replaced or dropped.");
+        }
+        if books::nkms2::chaikin_volatility(&ctx.h[..=to], &ctx.l[..=to], &ctx.c[..=to]).is_err() {
+            return issue("needs_data", "Actual high, low or close history is invalid, or the volatility calculation has a zero denominator; no prices or signals are filled.");
+        }
+    }
     // user-held NSE breadth / TRIN mappings: the hold note wins over any data-coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
     // decisions #177/#179: a withdrawn (rule, ticker) pair shows its tradable-vs-cash reason, never a coverage message
