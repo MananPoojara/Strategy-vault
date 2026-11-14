@@ -440,7 +440,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let avg=sum/10.;
                 if let Some(mut t)=cur.take() {
                     if avg<g("exit")/100. {t.exit_i=i;t.exit_px=c[i];t.signal_i=i;t.reason="new-high ratio below exit level".into();out.push(t);} else {cur=Some(t);}
-                } else if i<to && if g("entry_strict")>=1. {avg>0.9} else {avg>=0.9} {cur=Some(mk(i,c[i]));}
+                } else if if g("entry_strict")>=1. {avg>0.9} else {avg>=0.9} {cur=Some(mk(i,c[i]));}
             }
             if let Some(mut t)=cur {t.exit_i=to;t.exit_px=c[to];t.signal_i=to;t.reason="open".into();t.open=true;out.push(t);}
             out
@@ -660,6 +660,26 @@ mod tests {
         // A selected start with nine valid observations begins flat even if a prior buy was possible.
         let t=run("apta_nhnl", &x, 10, 24, &Params::new()).unwrap();
         assert!(t.is_empty());
+    }
+    #[test]
+    fn nhnl_terminal_bar_entry_is_reported_as_open() {
+        let mut r=rows(&[100.; 12]); for row in &mut r {row.ticker="SPX".into();} r[11].close=103.;r[11].open=103.;r[11].high=103.;r[11].low=103.;
+        let mut x=Ctx::new(&r,&r,&[]);
+        let mut highs=vec![8.;12]; let mut lows=vec![2.;12];
+        // Nine ratios of 8/9 followed by 1.0 reach 90% on the terminal bar;
+        // the preceding average is below 90%.
+        highs[11]=10.; lows[11]=0.;
+        for i in 2..11 {highs[i]=8.; lows[i]=1.;}
+        x.extra.insert("NYSE_NEW_HIGHS".into(),highs);x.extra.insert("NYSE_NEW_LOWS".into(),lows);
+        let trades=run("apta_nhnl",&x,10,11,&Params::new()).unwrap();
+        assert_eq!(trades.len(),1);let t=&trades[0];
+        assert_eq!((t.legs[0].i,t.signal_i,t.exit_i,t.open),(11,11,11,true));
+        assert_eq!((t.legs[0].px,t.exit_px),(103.,103.));
+        assert_eq!(t.reason,"open");
+        let account=crate::normalized_run(&x,trades,10,11,0.).unwrap();
+        assert_eq!(account.trades.len(),1);assert!(account.trades[0].open);
+        assert_eq!(account.trades[0].legs[0].i,11);
+        assert!(run("apta_nhnl",&x,10,11,&Params::from([("entry_strict".into(),1.)])).unwrap().is_empty());
     }
     #[test]
     fn nhnl_refuses_missing_or_invalid_warmup_and_window() {
