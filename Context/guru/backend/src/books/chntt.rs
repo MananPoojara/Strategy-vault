@@ -29,8 +29,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. The rule to open long positions. If the close of today and yesterday are both above the VIDYA of today, then buy tomorrow on a buy stop order. Place the order 1 tick above today's high.\" (p.181)",
             "E|\"2. The rule to short positions. If the close of today and the close of yesterday are both below the VIDYA of today, then sell tomorrow on a sell stop order. Place the order 1 tick below today's low.\" (p.181-183)",
             "X|\"We won't use any specific exit strategy in testing the model, which means a long entry signal will exit a short trade and vice versa.\" (p.183)",
-            "X|\"$1,500 initial stop\" (p.183), in futures contract dollars; not used on indices (see the note: the literal Swiss franc run is held under R4 #240)."],
-            "Printed pp.179-189; reviewed order/stop pages pp.180-183 are PDF spreads 101-102. Unsmoothed RSI9 implies |CMO|=|Su-Sd|/(Su+Sd) over 9 changes and t=0.1. One source contract tick is not a generic 0.01 cash-index point. The closing-basis suggestion for stocks does not define a replacement for the dollar stop. Historical runner retained for inspection; no prepared result or source-performance claim. Lane PH (14 Nov 2026, D1 RULE UNCHECKED row ch_vidya, R4 #293 (4)): the book's contract is Swiss franc futures (Tables 8.2-8.4), held as Norgate &6S. Run literally there (1 tick 0.0001, the US$1,500 stop = 0.012 at US$125,000 per 1.00; reference authors/ph/w/ph_vid.py) it gives 30 closed trades / 43% won on 5/83-5/88 (book 33 / 36%) and 29 / 34% on 6/88-4/93 (book 27 / 37%), but 11.8% of its 1979-2020 trades (8.2%, 5 of 61, inside the two book windows) enter and reach the stop on one daily bar or meet a stop and an opposite entry stop on one bar, which daily bars cannot order, and no Swiss franc minute bars exist (R4 #240, limit 5%): the &6S run is held, so this card keeps only its existing declared application on indices."),
+            "X|\"$1,500 initial stop\" (p.183), per Swiss franc contract (US$125,000 per 1.00 -> 0.012 points), live from the entry fill"],
+            "Printed pp.179-189; reviewed order/stop pages pp.180-183 are PDF spreads 101-102. Unsmoothed RSI9 implies |CMO|=|Su-Sd|/(Su+Sd) over 9 changes and t=0.1. One source contract tick is not a generic 0.01 cash-index point. The closing-basis suggestion for stocks does not define a replacement for the dollar stop. Historical runner retained for inspection; no prepared result or source-performance claim. Lane PH (14 Nov 2026, D1 RULE UNCHECKED row ch_vidya, R4 #293 (1), (3), (4); review REV-PH 51debbb9 B1/m1): runs only on the book's contract, Swiss franc futures (Norgate &6S, back-adjusted daily bars), with one tick (0.0001) and the US$1,500 initial stop (0.012 at US$125,000 per 1.00) literal; it has no index, ETF or stock application. Fills (own daily-bar engine, vidya_sim): stops the open is through fill at the open (the held stop first, then the entry), then the bar runs open -> the extreme nearer the open -> the other extreme -> close and each stop fills where the path reaches it; the initial stop is live from the entry fill, also on the entry bar. #240: 17 of 360 trades 1979-2020 (4.7%; 0 in both book blocks) give different fills in the other path order. Book check (R4 #168, Tables 8.2-8.3, CSI #39 perpetual contract, $50 commissions): 5/83-5/88 30 closed / 43% won / +$33,750 vs 33 / 36% / +$23,400; 6/88-4/93 29 / 34% / +$48,437 vs 27 / 37% / +$49,775: both pass -> VERIFIED. &6S opens: open = previous close on 16% of days in 1998 only (no #330/#331 episode). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
         d("ch_ntt_to_buy", "Thrust oscillator buy signal (NYSE breadth)", "Ch 6 · Market thrust", "Long", Live, NYSE, to_rules,
             concat!("Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal (extra_data NYSE_ADV_DEC, 1965-03-01..2020-02-10). ", TO_READ!())),
         d("ch_ntt_to_buy_nse", "Thrust oscillator buy signal (NSE breadth)", "Ch 6 · Market thrust", "Long", Live, NSE, to_rules,
@@ -104,6 +104,59 @@ pub(crate) fn abs_cmo(c: &[f64], n: usize) -> Vec<f64> {
 }
 
 /// VIDYA_t = A*C + (1-A)*VIDYA_{t-1}, A = t*|CMO|; seeded with the close of the bar before the first CMO.
+/// Lane PH (review REV-PH 51debbb9 B1): the VIDYA system's own daily-bar fills. At the open the held position's initial stop, then
+/// the pending entry stop, fill if the open is through them; then the bar runs open -> the extreme nearer the open -> the other
+/// extreme -> close and every live stop fills at its level in the order the path reaches it (the shared chbta2 run_sys always
+/// takes the held stop first, which misprices a reversal whose entry stop lies nearer the open). The initial stop is live from
+/// the entry fill (also on the entry bar); an opposite entry reverses. Entry stops live for one bar.
+fn vidya_sim(x: &Ctx, from: usize, to: usize, v: &[f64], tick: f64, stop: f64) -> Vec<Trade> {
+    let mk = |d: f64, ei: usize, ep: f64, xi: usize, xp: f64, why: &str, open: bool| Trade { dir: d, legs: vec![crate::connors::Leg { i: ei, px: ep, w: 1. }],
+        exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: "stop", signal_i: xi, open, exits: vec![] };
+    let (mut out, mut pos, mut pend) = (vec![], None::<(f64, usize, f64)>, None::<(f64, f64)>);
+    let st = |p: &(f64, usize, f64)| if stop > 0. { p.2 - p.0 * stop } else { f64::NAN };
+    for i in from..=to {
+        if i > from {
+            let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            if let Some(p) = pos { let s = st(&p); if (p.0 > 0. && o <= s) || (p.0 < 0. && o >= s) { out.push(mk(p.0, p.1, p.2, i, o, "Initial stop", false)); pos = None; } }
+            if let Some((d, lv)) = pend {
+                if pos.map_or(true, |p| p.0 != d) && ((d > 0. && o >= lv) || (d < 0. && o <= lv)) {
+                    if let Some(p) = pos.take() { out.push(mk(p.0, p.1, p.2, i, o, "Opposite stop entry · reversal", false)); }
+                    pos = Some((d, i, o)); pend = None;
+                }
+            }
+            let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
+            let mut prev = o;
+            for &q in &path[1..] {
+                loop {
+                    let up = q > prev;
+                    let hit = |lv: f64| lv.is_finite() && if up { prev < lv && lv <= q } else { prev > lv && lv >= q };
+                    let ex = pos.map(|p| st(&p)).filter(|&s| hit(s) && pos.is_some_and(|p| (p.0 < 0.) == up));
+                    let en = pend.filter(|&(d, lv)| (d > 0.) == up && pos.map_or(true, |p| p.0 != d) && hit(lv)).map(|e| e.1);
+                    // the level the path reaches first; a tie fills the exit first
+                    let first_ex = match (ex, en) { (Some(a), Some(b)) => (if up { a <= b } else { a >= b }), (Some(_), None) => true, (None, Some(_)) => false, _ => break };
+                    if first_ex {
+                        let p = pos.take().unwrap(); let s = ex.unwrap();
+                        out.push(mk(p.0, p.1, p.2, i, s, "Initial stop", false)); prev = s;
+                    } else {
+                        let (d, lv) = pend.take().unwrap();
+                        if let Some(p) = pos.take() { out.push(mk(p.0, p.1, p.2, i, lv, "Opposite stop entry · reversal", false)); }
+                        pos = Some((d, i, lv)); prev = lv;
+                    }
+                }
+                prev = q;
+            }
+        }
+        pend = None;
+        if i < to && i > 0 && v[i].is_finite() {
+            let cur = pos.map_or(0., |p| p.0);
+            let d = if x.c[i] > v[i] && x.c[i - 1] > v[i] { 1. } else if x.c[i] < v[i] && x.c[i - 1] < v[i] { -1. } else { 0. };
+            if d != 0. && d != cur { pend = Some((d, if d > 0. { x.h[i] + tick } else { x.l[i] - tick })); }
+        }
+    }
+    if let Some(p) = pos { out.push(mk(p.0, p.1, p.2, to, x.c[to], "open", true)); }
+    out
+}
+
 pub(crate) fn vidya(c: &[f64], n: usize, t: f64) -> Vec<f64> {
     let cmo = abs_cmo(c, n);
     let mut v = vec![f64::NAN; c.len()];
@@ -129,15 +182,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| (g(k).round().max(1.)) as usize;
     Some(match id {
         "ch_ntt_vidya_cmo" => {
-            let (v, tick) = (vidya(&x.c, u("cmo_n"), g("t").clamp(0., 0.5)), g("tick").max(0.));
-            let entry = |i: usize, _: f64| {
-                if i == 0 { return [None, None]; }
-                let o = if x.c[i] > v[i] && x.c[i - 1] > v[i] { Some((1., Kind::Stop(x.h[i] + tick))) }
-                    else if x.c[i] < v[i] && x.c[i - 1] < v[i] { Some((-1., Kind::Stop(x.l[i] - tick))) } else { None };
-                [o, None]
-            };
-            run_sys(x, from, to, &Sys { entry: &entry, exit_close: &none_exit, exit_open: &none_exit, trail: &no_trail,
-                stop_pts: g("stop_pts").max(0.), oneway: false })
+            // lane PH (R4 #293 (1), (3)): on the book's Swiss franc contract the defaults are the contract's tick and the book's
+            // US$1,500 initial stop in points on the run's first day (p.183); elsewhere 0.01 and no stop, as before
+            let fut = crate::futures::ctx_market(x);
+            let set = |k: &str| p.contains_key(k) || fut.is_none();
+            let tick = if set("tick") { g("tick").max(0.) } else { fut.map_or(0.01, |m| m.tick) };
+            let stop = if set("stop_pts") { g("stop_pts").max(0.) } else { crate::futures::usd_points(x, from, 1500.).unwrap_or(0.) };
+            let v = vidya(&x.c, u("cmo_n"), g("t").clamp(0., 0.5));
+            vidya_sim(x, from, to, &v, tick, stop)
         }
         "ch_ntt_to_buy" | "ch_ntt_to_buy_nse" => {
             let names = if id == "ch_ntt_to_buy" { NYSE } else { NSE };
@@ -170,6 +222,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vidya_sim_fills_in_path_order() {
+        // review REV-PH 51debbb9 B1. Bar 1 closes above VIDYA 99 twice -> buy stop 101.51; bar 2 gaps over it (long at the open 101.6,
+        // stop 5 -> 96.6) and closes below VIDYA 103 twice -> short stop 100.99. Bar 3 falls 101.2 -> 95: the short entry (nearer the
+        // open) reverses the long at 100.99 before the long's stop 96.6 is reached; the short (stop 105.99) is marked at the close.
+        let b = [(100., 100.2, 99.8, 100.), (100.5, 101.5, 100.4, 101.), (101.6, 102., 101., 101.2), (101.1, 101.2, 95., 95.5)];
+        let r: Vec<crate::Row> = b.iter().enumerate().map(|(i, &(o, h, l, c))| crate::Row { ticker: "X".into(), date: format!("1990-01-{:02}", i + 2), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = vidya_sim(&x, 0, 3, &[f64::NAN, 99., 103., f64::NAN], 0.01, 5.);
+        assert_eq!(t.len(), 2);
+        assert!(t[0].dir == 1. && t[0].legs[0].px == 101.6 && (t[0].exit_px - 100.99).abs() < 1e-9 && t[0].exit_i == 3, "{:?}", (t[0].legs[0].px, t[0].exit_px));
+        assert!(t[1].dir == -1. && (t[1].legs[0].px - 100.99).abs() < 1e-9 && t[1].open && t[1].exit_px == 95.5);
+    }
+
     use super::*;
     #[test]
     fn vidya_matches_table_3_7_with_t_half() {
