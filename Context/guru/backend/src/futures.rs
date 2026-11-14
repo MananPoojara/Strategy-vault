@@ -236,31 +236,33 @@ pub const ZS_OPEN_NOTE: &str = "On Norgate &ZS, from 1999-11 to about 2007-12 th
 /// Lane PH (wdgig_pct3): Norgate &ZW (wheat), measured the same way: 27-30% of days open exactly at the previous close in 1998-07..2000,
 /// 12-26% to 2005, against 4-10% in 1995-98 (11-14% in 2006-07, 9-10% in 2008).
 pub const ZW_OPEN_NOTE: &str = "On Norgate &ZW, from 1998-07 to about 2005-12 the open often sits at the previous close (12-30% of days exactly equal in each half-year, against 4-10% in 1995-98), so open fills in those years are not true opening prices (the whole history is kept, as R4 #331).";
-pub const ZW_OPEN_CARDS: &[(&str, usize, &str)] = &[("wdgig_pct3", 118, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at an open there."),
-    // R4 #336 (lane PH): every live &ZW card that reads or fills at the open (counts: authors/ph/w/open_cards.out)
-    ("ch_bta2_adx30", 20, " They are held through those years (a stop that the open gaps through fills at the open); 20 of their fills are at the open price there."),
-    ("ch_bta2_adx_rising", 67, " They are held through those years (a stop that the open gaps through fills at the open); 66 of their fills are at the open price there."),
-    ("ch_bta2_cbo_inside", 95, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open price there."),
-    ("ch_bta2_cbo_ref", 53, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open price there."),
-    ("ch_bta2_cbo_trail5", 95, " They are held through those years (a stop that the open gaps through fills at the open); 6 of their fills are at the open price there."),
-    ("ch_bta2_cbo_volexit", 70, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open price there."),
-    ("ch_bta2_pullback", 56, " They are held through those years (a stop that the open gaps through fills at the open); 53 of their fills are at the open price there."),
-    ("scabeldiv_sma", 22, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open price there.")];
+pub const ZW_OPEN_CARDS: &[(&str, usize, &str)] = &[
+    // R4 #336 (lane PH): every live &ZW card that reads or fills at the open; n = trades held through the episode; fills at the open's
+    // price = back-adjusted open + the trade's entry roll offset (review 4d49d05d B1; authors/ph/w/open_cards2.out)
+    ("wdgig_pct3", 118, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
+    ("ch_bta2_adx30", 20, " They are held through those years (a stop that the open gaps through fills at the open); 21 of their fills are at the open's price there."),
+    ("ch_bta2_adx_rising", 67, " They are held through those years (a stop that the open gaps through fills at the open); 104 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_inside", 95, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_ref", 53, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_trail5", 95, " They are held through those years (a stop that the open gaps through fills at the open); 6 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_volexit", 70, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open's price there."),
+    ("ch_bta2_pullback", 56, " They are held through those years (a stop that the open gaps through fills at the open); 57 of their fills are at the open's price there."),
+    ("scabeldiv_sma", 22, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open's price there.")];
 /// R4 #336 (lane PH): Norgate &GE (Eurodollar) opens, measured with authors/ph/w/opencheck.py: the open equals the previous close on
 /// 16-58% of days in every year from 1993 (under 15% to 1988; 15-27% in 1989-92). Closes-only cards (scnbps_cross, scpged_weekly) get none.
-pub const GE_OPEN_NOTE: &str = "On Norgate &GE (Eurodollar), from 1993 the open equals the previous close on 16-58% of days in every year (under 15% to 1988), so open fills and open-based levels from 1993 may not be true opening prices; part of it may be the contract's one- or two-tick daily moves (labelled, R4 #336; the whole history is kept, as R4 #331).";
+pub const GE_OPEN_NOTE: &str = "On Norgate &GE (Eurodollar), from 1993 the open equals the previous close on 16-58% of days in every year (under 15% to 1988), while the close repeats the previous close on about half as many days (e.g. 2016: 44% against 15%), so most of it is the vendor's open, not tick size, and open fills and open-based levels from 1993 may not be true opening prices (labelled, R4 #336; the whole history is kept, as R4 #331).";
 pub const GE_OPEN_CARDS: &[(&str, usize, &str)] = &[
-    ("ch_bta2_adx30", 85, " They are held through those years (a stop that the open gaps through fills at the open); 67 of their fills are at the open price there."),
-    ("ch_bta2_adx_rising", 230, " They are held through those years (a stop that the open gaps through fills at the open); 197 of their fills are at the open price there."),
-    ("ch_bta2_cbo_inside", 323, " They are held through those years (a stop that the open gaps through fills at the open); 13 of their fills are at the open price there."),
-    ("ch_bta2_cbo_ref", 125, " They are held through those years (a stop that the open gaps through fills at the open); 1 of their fills are at the open price there."),
-    ("ch_bta2_cbo_trail5", 285, " They are held through those years (a stop that the open gaps through fills at the open); 15 of their fills are at the open price there."),
-    ("ch_bta2_cbo_volexit", 205, " They are held through those years (a stop that the open gaps through fills at the open); 10 of their fills are at the open price there."),
-    ("ch_bta2_long_bomb", 36, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open price there."),
-    ("ch_bta2_pullback", 139, " They are held through those years (a stop that the open gaps through fills at the open); 124 of their fills are at the open price there."),
-    ("scabeldiv_sma", 73, " They are held through those years (a stop that the open gaps through fills at the open); 1 of their fills are at the open price there."),
-    ("andro_andromeda", 75, " Its orders all fill at the next open; 75 of those fills fall in those years."),
-    ("mhptdi_tdi", 59, " Its orders all fill at the next open; 59 of those fills fall in those years.")];
+    ("ch_bta2_adx30", 85, " They are held through those years (a stop that the open gaps through fills at the open); 90 of their fills are at the open's price there."),
+    ("ch_bta2_adx_rising", 230, " They are held through those years (a stop that the open gaps through fills at the open); 356 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_inside", 323, " They are held through those years (a stop that the open gaps through fills at the open); 51 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_ref", 125, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_trail5", 285, " They are held through those years (a stop that the open gaps through fills at the open); 19 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_volexit", 205, " They are held through those years (a stop that the open gaps through fills at the open); 15 of their fills are at the open's price there."),
+    ("ch_bta2_long_bomb", 36, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
+    ("ch_bta2_pullback", 139, " They are held through those years (a stop that the open gaps through fills at the open); 151 of their fills are at the open's price there."),
+    ("scabeldiv_sma", 73, " They are held through those years (a stop that the open gaps through fills at the open); 19 of their fills are at the open's price there."),
+    ("andro_andromeda", 89, " Its orders all fill at the next open; 178 of its fills fall in those years."),
+    ("mhptdi_tdi", 70, " Its orders all fill at the next open; 138 of its fills fall in those years.")];
 pub const ZS_OPEN_CARDS: &[(&str, usize, &str)] = &[("ltwr_waverider", 39, " They are held through those years (a stop that the open gaps through fills at the open); 7 of their fills are at an open there.")];
 /// The card notes with every matching open-episode label appended (&ZB, &ZN, &ZC; unchanged for other cards).
 pub fn zb_open_notes(id: &str, notes: &str) -> String {
