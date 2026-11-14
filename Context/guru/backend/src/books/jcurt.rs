@@ -54,7 +54,7 @@ Daily cash indices (instrument swap). Fills: market orders at the next open. Ind
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    id.starts_with("jcurt_").then(|| (match id { J24 => J24, J31 => J31, _ => "jcurt_other" }, "J.Curtis package", "code"))
+    id.starts_with("jcurt_").then(|| (match id { J24 => J24, J31 => J31, J23 => J23, J26 => J26, _ => "jcurt_other" }, "J.Curtis package", "code"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -76,8 +76,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (ml, mh) = (sma(&x.l, g("input1", d1).max(1.) as usize), sma(&x.h, g("input2", d2).max(1.) as usize));
             for i in first_ok(x.c.len(), from, &[&ml, &mh])..to {
                 let mut q = vec![];
-                if x.l[i] > mh[i] { q.push(ord(K::Buy, Ty::Mkt, "L > Average(H,45)")); }
-                if x.h[i] < ml[i] { q.push(ord(K::Short, Ty::Mkt, "H < Average(L,45)")); }
+                if x.l[i] > mh[i] { q.push(ord(K::Buy, Ty::Mkt, "L > Average(H,Input2)")); }
+                if x.h[i] < ml[i] { q.push(ord(K::Short, Ty::Mkt, "H < Average(L,Input1)")); }
                 s.bar(x, i + 1, &q);
             }
         }
