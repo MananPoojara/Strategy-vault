@@ -205,6 +205,18 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if let Some(note)=books::apta::nhnl_params_issue(p) {return issue("not_testable",note);}
         if let Some(note)=books::apta::nhnl_input_issue(ctx,from,to) {return issue("needs_data",note);}
     }
+    if def.book == books::bstar_candidate::BOOK && def.id == books::bstar_candidate::ID {
+        if !p.is_empty() { return issue("not_testable", "This source candidate accepts no alternate settings."); }
+        if ctx.native_market.is_some() || !ctx.r.first().is_some_and(|r| matches!(r.ticker.as_str(), "NIFTY 50" | "SPY")) {
+            return issue("not_testable", "This unverified candidate currently accepts actual NIFTY 50 and SPY contexts only; stocks, other indices and baskets need separate input review.");
+        }
+        if from < 35 || from >= to || to >= ctx.r.len() {
+            return issue("needs_data", "The first crossover requires 36 actual closes, including 12 fully defined price-excess values and their prior comparison.");
+        }
+        if books::bstar_candidate::signals(ctx, from, to).is_err() {
+            return issue("needs_data", "Close history is invalid, unordered or mixed, or decimal precision exceeds the supported range; no observations are filled or rounded.");
+        }
+    }
     if def.book == books::nkms2::BOOK && def.id == books::nkms2::CHAIKIN_ID {
         if !p.is_empty() { return issue("not_testable", "This source candidate accepts no alternate calculation, side or execution settings."); }
         let Some(first) = ctx.r.first() else { return issue("needs_data", "No price history supplied."); };
@@ -1207,5 +1219,33 @@ mod auto_end_tests { // auto-end (24 Oct 2026): data that ends before the reques
         assert_eq!(end,379);assert!(note.unwrap().starts_with(&format!("Ended {}: daily volume figures for SPX end then.",r[379].date)));
         assert!(check(&ctx,&d,0,end,&p).map_or(true,|i|!i.note.contains("Required volume")));
         assert_eq!(auto_end(&ctx,&def("vixr_cvr2"),0,399,&p),(399,None));
+    }
+}
+
+#[cfg(test)]
+mod star_candidate_readiness_tests {
+    use super::*;
+    fn rows(ticker:&str)->Vec<crate::Row> {
+        (0..45).map(|i|crate::Row {ticker:ticker.into(),date:format!("2020-{:02}-{:02}",i/25+1,i%25+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect()
+    }
+    #[test]
+    fn scope_warmup_and_inputs_are_checked_without_admitting_other_symbols() {
+        let d=books::bstar_candidate::catalogue().into_iter().next().unwrap();
+        for ticker in ["NIFTY 50","SPY"] {
+            let r=rows(ticker);let x=Ctx::new(&r,&r,&[]);
+            assert_eq!(check(&x,&d,34,44,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&x,&d,35,44,&Params::new()).is_none());
+            assert_eq!(check(&x,&d,35,44,&Params::from([("side".into(),1.)])).unwrap().status,"not_testable");
+        }
+        for ticker in ["SPX","NIFTYBANK","RELIANCE"] {
+            let r=rows(ticker);let x=Ctx::new(&r,&r,&[]);
+            assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"not_testable");
+        }
+        let r=rows("NIFTY 50");let mut x=Ctx::new(&r,&r,&[]);x.native_market=Some(crate::baskets::Market::India);
+        assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"not_testable");
+        let mut r=rows("NIFTY 50");r[5].date=r[4].date.clone();let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"needs_data");
+        let mut r=rows("SPY");r[5].close=f64::NAN;let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"needs_data");
     }
 }

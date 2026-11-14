@@ -1026,6 +1026,10 @@ const PAIRS_BASIS:&str="Pairs trade of two actual stocks (books::vanvliet on the
 const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the US stocks of a vault basket on the SPY calendar (default: every stock in the vault that was ever in the index, us_sp500_past / us_dow30_past, membership dates not known, decision #239; option: today's members; atm04_mtpg: the column's 18 named stocks) and each trade is one of those stocks. SPY is the calendar and the benchmark, never a stand-in for the stocks. India is withheld: the NSE basket is the 2026 member list, and a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). A ranking on these baskets instead of the author's universe is a declared application.";
 fn base_policy(def:&StrategyDef)->Policy {
     if def.book=="apta" && def.id=="apta_nhnl" {return index("Appel pp.124-125: SPX only with actual NYSE new-high/new-low counts. Scoped independent reference comparisons matched 43 trade records; the original book study and arbitrary selected runs are not certified.");}
+    if def.book==crate::books::bstar_candidate::BOOK && def.id==crate::books::bstar_candidate::ID {
+        let mut p=requirement("declared_index_timing", &["index", "etf"], "Star and Navarte source crossover; R4 #357. Isolated candidate on actual NIFTY 50 and SPY only, subject to history checks; other instruments need independent review.");
+        p.market_adaptation=true; return p;
+    }
     if def.book==crate::books::nkms2::BOOK && def.id==crate::books::nkms2::CHAIKIN_ID {
         let mut p=requirement("declared_index_timing", &["index", "etf"], "Equis MS72PRFT.DTA record 93 and MetaStock 7.2 Chaikin example; R4 #353. Actual NIFTY 50 and SPY only, subject to history checks; other indices, ETFs, stocks and baskets remain unreviewed.");
         p.market_adaptation=true; return p;
@@ -1622,7 +1626,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
         json.push_str(&format!(",\"source_convention\":\"{}\",\"source_profile\":\"{}\",\"numeric_convention\":\"{}\",\"selected_account_checks\":\"Fixed AAPL/RELIANCE full-prefix source states/events and all20 pairs matched unchanged exact references with zero mismatches. Fixed AAPL1990-01-01..2001-12-31 and RELIANCE2001-01-01..2010-12-31: MACS and TIAR each matched four ordinary normalized-account cases (fees/slippage0/0 and3/2bps per side, rollover0) and16 direct production-function responses (detail, readiness, selected summary, singleton optimizer) against unchanged source/account references with zero mismatches (combined32responses/eightaccounts). Selected API states and earlier full-prefix source evidence have separate scope. HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Every requested run still needs its own source/data/account checks; data readiness alone does not certify account support. Shared-author mechanical checks are not blind independence. Data readiness alone does not prove account support.\",\"normalized_account_model\":\"sequential_full_allocation_price_returns\"",escape(crate::books::lkqts::macs_source_convention()),crate::books::lkqts::MACS_SOURCE_PROFILE,crate::books::lkqts::MACS_RAW_NUMERIC_CONVENTION));
     }
     let reviewed=reviewed_cash_rule(def)||reviewed_dema_index(def)||(def.book=="apta" && def.id=="apta_nhnl"); // source read; checked samples do not certify arbitrary selections
-    let ledger_checked=reviewed && !(def.book=="apta" && def.id=="apta_nhnl") && !(def.book==crate::books::nkms2::BOOK && def.id==crate::books::nkms2::CHAIKIN_ID);
+    let ledger_checked=reviewed && !(def.book=="apta" && def.id=="apta_nhnl") && !(def.book==crate::books::nkms2::BOOK && def.id==crate::books::nkms2::CHAIKIN_ID) && !(def.book==crate::books::bstar_candidate::BOOK && def.id==crate::books::bstar_candidate::ID);
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,ledger_checked));
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
@@ -1723,6 +1727,15 @@ mod tests {
                 && !(new_entry && !NEW_IDS.contains(&d.id)) && !(!new_entry && NEW_IDS.contains(&d.id))) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
+                if d.book == crate::books::bstar_candidate::BOOK && d.id == crate::books::bstar_candidate::ID {
+                    let p=policy(d);
+                    assert_eq!(p.requirement,"declared_index_timing");
+                    assert_eq!(p.allowed_types,&["index","etf"]);
+                    assert!(p.market_adaptation && p.preferred_basket.is_none());
+                    assert!(metadata_json(d).contains("\"independent_selected_ledger_checked\":false"));
+                    assert_eq!(crate::gate::get(d.id).unwrap().allowed,Some(&["NIFTY 50","SPY"][..]));
+                    continue;
+                }
                 if d.book == crate::books::nkms2::BOOK && d.id == crate::books::nkms2::CHAIKIN_ID {
                     let p=policy(d);
                     assert_eq!(p.requirement,"declared_index_timing");
