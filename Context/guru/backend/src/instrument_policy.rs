@@ -1026,6 +1026,10 @@ const PAIRS_BASIS:&str="Pairs trade of two actual stocks (books::vanvliet on the
 const BASKET_BASIS:&str="Stock-basket ranking (books::rotation EP5, lane K56; user rule: rankings run on baskets, decision #20): the rule ranks the US stocks of a vault basket on the SPY calendar (default: every stock in the vault that was ever in the index, us_sp500_past / us_dow30_past, membership dates not known, decision #239; option: today's members; atm04_mtpg: the column's 18 named stocks) and each trade is one of those stocks. SPY is the calendar and the benchmark, never a stand-in for the stocks. India is withheld: the NSE basket is the 2026 member list, and a ranking over 20 years of today's members is dominated by survivorship bias (#239 (2)). A ranking on these baskets instead of the author's universe is a declared application.";
 fn base_policy(def:&StrategyDef)->Policy {
     if def.book=="apta" && def.id=="apta_nhnl" {return index("Appel pp.124-125: SPX only with actual NYSE new-high/new-low counts. Scoped independent reference comparisons matched 43 trade records; the original book study and arbitrary selected runs are not certified.");}
+    if def.book==crate::books::nkms2::BOOK && def.id==crate::books::nkms2::CHAIKIN_ID {
+        let mut p=requirement("declared_index_timing", &["index", "etf"], "Equis MS72PRFT.DTA record 93 and MetaStock 7.2 Chaikin example; R4 #353. Actual NIFTY 50 and SPY only, subject to history checks; other indices, ETFs, stocks and baskets remain unreviewed.");
+        p.market_adaptation=true; return p;
+    }
     if let Some(basis)=crate::futures::card_basis(def) {return requirement("futures",&["futures"],basis);} // lane F1 (R4 #293): the named continuous contract
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
@@ -1618,7 +1622,8 @@ pub fn metadata_json(def:&StrategyDef)->String {
         json.push_str(&format!(",\"source_convention\":\"{}\",\"source_profile\":\"{}\",\"numeric_convention\":\"{}\",\"selected_account_checks\":\"Fixed AAPL/RELIANCE full-prefix source states/events and all20 pairs matched unchanged exact references with zero mismatches. Fixed AAPL1990-01-01..2001-12-31 and RELIANCE2001-01-01..2010-12-31: MACS and TIAR each matched four ordinary normalized-account cases (fees/slippage0/0 and3/2bps per side, rollover0) and16 direct production-function responses (detail, readiness, selected summary, singleton optimizer) against unchanged source/account references with zero mismatches (combined32responses/eightaccounts). Selected API states and earlier full-prefix source evidence have separate scope. HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Every requested run still needs its own source/data/account checks; data readiness alone does not certify account support. Shared-author mechanical checks are not blind independence. Data readiness alone does not prove account support.\",\"normalized_account_model\":\"sequential_full_allocation_price_returns\"",escape(crate::books::lkqts::macs_source_convention()),crate::books::lkqts::MACS_SOURCE_PROFILE,crate::books::lkqts::MACS_RAW_NUMERIC_CONVENTION));
     }
     let reviewed=reviewed_cash_rule(def)||reviewed_dema_index(def)||(def.book=="apta" && def.id=="apta_nhnl"); // source read; checked samples do not certify arbitrary selections
-    json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed && !(def.book=="apta" && def.id=="apta_nhnl")));
+    let ledger_checked=reviewed && !(def.book=="apta" && def.id=="apta_nhnl") && !(def.book==crate::books::nkms2::BOOK && def.id==crate::books::nkms2::CHAIKIN_ID);
+    json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,ledger_checked));
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
     if let Some(label)=schwager_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Schwager block
@@ -1712,12 +1717,22 @@ mod tests {
             const SHARED:&[&str]=&["kets","phbt","stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge"]; // radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             // R4 #309 (6): ids admitted by a second, newer entry in a book that already had other routes (lanes R2B/R2E, R4 #297):
             // the newer entry must admit only these ids, and the book's other routes must not admit them.
-            const NEW_IDS:&[&str]=&["sbma_p73_rsi34","fejmma_barnes_5pct","kfsc_stoch"];
+            const NEW_IDS:&[&str]=&["sbma_p73_rsi34","fejmma_barnes_5pct","kfsc_stoch",crate::books::nkms2::CHAIKIN_ID];
             let new_entry=admitted.iter().all(|d|NEW_IDS.contains(&d.id));
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)
                 && !(new_entry && !NEW_IDS.contains(&d.id)) && !(!new_entry && NEW_IDS.contains(&d.id))) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
+                if d.book == crate::books::nkms2::BOOK && d.id == crate::books::nkms2::CHAIKIN_ID {
+                    let p=policy(d);
+                    assert_eq!(p.requirement,"declared_index_timing");
+                    assert_eq!(p.allowed_types,&["index","etf"]);
+                    assert!(p.market_adaptation && p.preferred_basket.is_none());
+                    assert!(metadata_json(d).contains("\"independent_selected_ledger_checked\":false"));
+                    let g=crate::gate::get(d.id).unwrap();
+                    assert_eq!(g.allowed,Some(&["NIFTY 50","SPY"][..]));
+                    continue; // the separately scoped readiness tests check each symbol and its history
+                }
                 let p=policy(d);assert_eq!(p.requirement,"index_etf_or_stock","{}",d.id);assert!(p.market_adaptation,"{}",d.id);
                 assert!(metadata_json(d).contains(&format!("\"declared_application\":\"{}\"",a.label)),"{}",d.id);
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {

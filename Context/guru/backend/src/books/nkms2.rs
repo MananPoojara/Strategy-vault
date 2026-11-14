@@ -21,10 +21,11 @@ use crate::connors::Status::{Live, NeedsData, NotTestable};
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "nkms2";
+pub const CHAIKIN_ID: &str = "nkms2_volatility_breakout_chaikin";
 /// Admitted ids (authors/niksan-k2/admission/nkms2_ref.py (header)). Not admitted although Live: nkms2_rsi_trailing_exit
 /// (its trades depend on whether an opposite Enter signal closes the open position, a System Tester setting the record
 /// does not store; authors/niksan-k2/admission/alt-check.txt).
-pub const REVIEWED: &[&str] = &["nkms2_swing_index" /* lane K74, #244 (2) / #277 */, "nkms2_relative_momentum_index" /* lane K60, #244 (3) */, "nkms2_landis_reversal", "nkms2_linear_regression_crossover", "nkms2_long_sell_short_sale_5_day", "nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_meisels_overbought_oversold", "nkms2_modified_momentum", "nkms2_momentum", "nkms2_new_relative_volatility_index", "nkms2_oscillator_composite", "nkms2_pattern_trading_system_1", "nkms2_pattern_trading_system_2", "nkms2_pattern_trading_system_3", "nkms2_pattern_trading_system_4", "nkms2_pattern_trading_system_5", "nkms2_pattern_trading_system_6", "nkms2_percentage_crossover_3pct", "nkms2_short_term_range_rejection", "nkms2_small_triangle_breakout", "nkms2_starcband_system", "nkms2_stochastic_oscillator_system", "nkms2_stochrsi", "nkms2_ultimate_oscillator", "nkms2_volatility_breakout_standard", "nkms2_volatility_stop", "nkms2_volume_trading_system"];
+pub const REVIEWED: &[&str] = &[CHAIKIN_ID, "nkms2_swing_index" /* lane K74, #244 (2) / #277 */, "nkms2_relative_momentum_index" /* lane K60, #244 (3) */, "nkms2_landis_reversal", "nkms2_linear_regression_crossover", "nkms2_long_sell_short_sale_5_day", "nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_meisels_overbought_oversold", "nkms2_modified_momentum", "nkms2_momentum", "nkms2_new_relative_volatility_index", "nkms2_oscillator_composite", "nkms2_pattern_trading_system_1", "nkms2_pattern_trading_system_2", "nkms2_pattern_trading_system_3", "nkms2_pattern_trading_system_4", "nkms2_pattern_trading_system_5", "nkms2_pattern_trading_system_6", "nkms2_percentage_crossover_3pct", "nkms2_short_term_range_rejection", "nkms2_small_triangle_breakout", "nkms2_starcband_system", "nkms2_stochastic_oscillator_system", "nkms2_stochrsi", "nkms2_ultimate_oscillator", "nkms2_volatility_breakout_standard", "nkms2_volatility_stop", "nkms2_volume_trading_system"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const GROUP: &str = "NIKSAN MetaStock pack · Equis PS system tests (MS72PRFT.DTA, part 2)";
@@ -35,9 +36,16 @@ static NK: Book = Book { id: BOOK, sys: SYS, fml: FML, conv: CONV, cat: OnceLock
 /// Records run by hand-written code (ValueWhen / PREV); only the `side` parameter.
 const HAND: &[&str] = &["nkms2_macd_histogram_1", "nkms2_macd_histogram_2", "nkms2_percentage_crossover_3pct", "nkms2_volatility_stop", "nkms2_swing_index" /* lane K74 */];
 
-pub fn catalogue() -> Vec<StrategyDef> { NK.catalogue() }
+pub fn catalogue() -> Vec<StrategyDef> {
+    let mut defs = NK.catalogue();
+    if let Some(d) = defs.iter_mut().find(|d| d.id == CHAIKIN_ID) {
+        d.notes = "Unverified declared application; adapted: two unstated details (R4 #353). EMA10 begins with the simple mean of the first ten observed high-low ranges; trades fill at the signal-bar close with no delay. The Equis MS72PRFT.DTA record 93 uses Vol(10,10) and the four displayed signals; MetaStock 7.2 manual, Custom Indicator Examples / Volatility Chaikin, defines percent ROC of the EMA. The indicator uses all valid supplied history from its first bar, while the selected trading window starts flat; earlier signals do not create positions. A final-bar entry remains open. Opposite entries take priority. Exact MetaStock 7.2 numeric parity and any original study have not been established. NIFTY 50 and SPY only, subject to actual price-history checks; other contexts remain held.";
+    }
+    defs
+}
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { NK.family_of(id) }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    if id == CHAIKIN_ID { return Some(vec![]); }
     if HAND.contains(&id) {
         SYS.iter().find(|s| s.id == id && s.status == Status::Live)?;
         return Some(vec![ParamDef { key: "side", label: "Sides traded: 0 = both as stored, 1 = long side only, -1 = short side only", def: 0., min: -1., max: 1., step: 1. }, msws::REVERSE_PARAM]);
@@ -49,6 +57,16 @@ fn lookup(n: &str) -> Option<String> { NK.fml_lookup(n) }
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let s = SYS.iter().find(|s| s.id == id)?;
     if s.status != Status::Live || from >= to || to >= x.r.len() { return None; }
+    if id == CHAIKIN_ID {
+        if !p.is_empty() || from < 20 || x.native_market.is_some() { return None; }
+        let first = x.r.first()?;
+        if !matches!(first.ticker.as_str(), "NIFTY 50" | "SPY") ||
+            x.r[..=to].iter().any(|r| r.ticker != first.ticker || !crate::baskets::valid_date(&r.date) || !r.open.is_finite() || r.open <= 0.0 || r.open < r.low || r.open > r.high) ||
+            x.r[..=to].windows(2).any(|w| w[0].date >= w[1].date) { return None; }
+        let v = chaikin_volatility(&x.h[..=to], &x.l[..=to], &x.c[..=to]).ok()?;
+        let sig = chaikin_signals(&v, &x.c[..=to]);
+        return Some(msws::simulate(x, from, to, &sig, EXEC_DEFAULT));
+    }
     let side = p.get("side").copied().unwrap_or(0.0).round() as i32;
     let fl: &dyn Fn(&str) -> Option<String> = &lookup;
     let mut eng = Eng::new(x, fl);
@@ -59,6 +77,47 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         msws::signals(&mut eng, [0, 1, 2, 3].map(|k| e[k].as_deref()), &map, side).ok()?
     };
     Some(msws::simulate_conv(x, from, to, &sig, s.exec, msws::reverse_on(p)))
+}
+
+// R4 #353: method-specific candidate; never alter the common MetaStock EMA implementation.
+// The first EMA is the average of ten observed ranges, exposed at index 9.
+// Index 19 is the first 10-period ROC; index 20 is the first comparison.
+pub fn chaikin_volatility(high: &[f64], low: &[f64], close: &[f64]) -> Result<Vec<f64>, &'static str> {
+    if high.len() != low.len() || high.len() != close.len() { return Err("unequal price arrays"); }
+    let n = high.len();
+    let mut ema = vec![f64::NAN; n];
+    let mut vol = vec![f64::NAN; n];
+    let mut sum = 0.0;
+    for i in 0..n {
+        let (h, l, c) = (high[i], low[i], close[i]);
+        if !h.is_finite() || !l.is_finite() || !c.is_finite() || l <= 0.0 || c <= 0.0 || h < l || c < l || c > h {
+            return Err("invalid HLC observation");
+        }
+        let range = h - l;
+        if i < 10 { sum += range; if !sum.is_finite() { return Err("range overflow"); } }
+        if i == 9 { ema[i] = sum / 10.0; }
+        if i >= 10 { ema[i] = ema[i-1] + (2.0/11.0) * (range-ema[i-1]); }
+        if i >= 19 {
+            let base = ema[i-10];
+            if !base.is_finite() || base == 0.0 { return Err("zero or undefined ROC denominator"); }
+            vol[i] = 100.0 * (ema[i] - base) / base;
+            if !vol[i].is_finite() { return Err("undefined volatility"); }
+        }
+    }
+    Ok(vol)
+}
+fn chaikin_signals(v: &[f64], c: &[f64]) -> msws::Sig {
+    let mut sig = msws::Sig { el: vec![false; v.len()], xl: vec![false; v.len()], es: vec![false; v.len()], xs: vec![false; v.len()] };
+    for i in 1..v.len() {
+        if !v[i].is_finite() || !v[i-1].is_finite() { continue; }
+        let (up, down) = (v[i] > v[i-1], v[i] < v[i-1]);
+        let (rise, fall) = (c[i] > c[i-1], c[i] < c[i-1]);
+        sig.el[i] = up && rise;
+        sig.xl[i] = down || fall;
+        sig.es[i] = up && fall;
+        sig.xs[i] = down || rise;
+    }
+    sig
 }
 
 // ------------------------------------------------------------------ hand-written ValueWhen / PREV records
@@ -179,6 +238,73 @@ mod tests {
         (0..400).map(|i| { let t = i as f64; let c = 100. + 10. * (t / 9.).sin() + 6. * (t / 23.).cos() + t * 0.02;
             Row { ticker: "T".into(), date: format!("D{i:04}"), open: c - 0.4 * (t / 5.).sin(), high: c + 1.2 + 0.3 * (t / 3.).cos(), low: c - 1.1 - 0.2 * (t / 4.).sin(), close: c, volume: Some(1000. + 300. * (t / 7.).sin() + if i % 6 == 0 { 2500. } else { 0. }) } }).collect()
     }
+    // Record 93: mathematical fixtures, not market data. Independently check the SMA seed,
+    // first ROC and each stored strict-comparison condition including ties and reversals.
+    #[test]
+    fn chaikin_seed_roc_and_signals_follow_record_93() {
+        let mut ranges = vec![2.0; 20];
+        ranges.extend([4.0, 5.0, 1.0]);
+        let high: Vec<f64> = ranges.iter().map(|r| 100.0 + r).collect();
+        let low = vec![100.0; ranges.len()];
+        let mut close = vec![100.5; ranges.len()];
+        close[20] = 101.0; close[21] = 100.25; close[22] = 100.25;
+        let vol = chaikin_volatility(&high, &low, &close).unwrap();
+        assert!(vol[..19].iter().all(|v| v.is_nan()));
+        assert_eq!(vol[19], 0.0);
+        assert!((vol[20] - 100.0 * (4.0/11.0) / 2.0).abs() < 1e-12);
+        let sig = chaikin_signals(&vol, &close);
+        assert!(sig.el[20] && sig.xs[20]);
+        assert!(sig.es[21] && sig.xl[21]);
+        assert!(!sig.el[22] && !sig.es[22] && sig.xl[22] && sig.xs[22]); // equal close cannot enter; falling volatility closes either side
+    }
+
+    #[test]
+    fn chaikin_opposite_signal_reverses_with_same_close_fill() {
+        let r: Vec<Row> = (0..3).map(|i| Row { ticker: "fixture".into(), date: format!("2020-01-0{}", i+1), open: 100., high: 102., low: 99., close: 100. + i as f64, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let signals = msws::Sig { el: vec![true, false, false], xl: vec![false, true, false], es: vec![false, true, false], xs: vec![false, false, false] };
+        let trades = msws::simulate(&x, 0, 2, &signals, EXEC_DEFAULT);
+        assert_eq!(trades.len(), 2);
+        assert_eq!((trades[0].dir, trades[0].legs[0].i, trades[0].exit_i, trades[0].exit_px), (1., 0, 1, 101.));
+        assert_eq!((trades[1].dir, trades[1].legs[0].i, trades[1].legs[0].px, trades[1].open), (-1., 1, 101., true));
+    }
+
+    #[test]
+    fn chaikin_final_bar_entry_is_open_and_prefix_precedes_flat_window() {
+        // Constant range produces no signal on bar 20; the final wider range and
+        // higher close produce the sole long entry on bar 21.
+        let mut r: Vec<Row> = (0..22).map(|i| Row { ticker:"SPY".into(), date:format!("2020-01-{:02}",i+1), open:100.5, high:102., low:100., close:100.5, volume:None }).collect();
+        r[21].high=104.; r[21].close=101.;
+        let x=Ctx::new(&r,&r,&[]);
+        let trades=run(CHAIKIN_ID,&x,20,21,&Params::new()).unwrap();
+        assert_eq!(trades.len(),1);
+        assert!(trades[0].open);
+        assert_eq!((trades[0].dir,trades[0].legs[0].i,trades[0].legs[0].px,trades[0].exit_i,trades[0].exit_px),(1.,21,101.,21,101.));
+        assert!(run(CHAIKIN_ID,&x,19,21,&Params::new()).is_none());
+    }
+
+    #[test]
+    fn chaikin_terminal_opposite_signal_remains_open_after_reversal() {
+        let r: Vec<Row>=(0..3).map(|i|Row{ticker:"fixture".into(),date:format!("2020-01-0{}",i+1),open:100.,high:102.,low:99.,close:100.+i as f64,volume:None}).collect();
+        let x=Ctx::new(&r,&r,&[]);
+        let sig=msws::Sig{el:vec![true,false,false],xl:vec![false,false,true],es:vec![false,false,true],xs:vec![false,false,false]};
+        let t=msws::simulate(&x,0,2,&sig,EXEC_DEFAULT);
+        assert_eq!(t.len(),2);
+        assert!(!t[0].open && t[0].exit_i==2 && t[1].open && t[1].dir == -1. && t[1].legs[0].i==2);
+    }
+
+    #[test]
+    fn chaikin_refuses_invalid_inputs_and_zero_roc_base() {
+        let low = vec![100.0; 25];
+        let close = vec![100.0; 25];
+        assert!(chaikin_volatility(&low, &low, &close).is_err());
+        let mut high = vec![101.0; 25];
+        high[12] = f64::NAN;
+        assert!(chaikin_volatility(&high, &low, &close).is_err());
+        high[12] = 99.0;
+        assert!(chaikin_volatility(&high, &low, &close).is_err());
+    }
+
     /// Lane K60: RMI(C,n,1) is RSI(n) (manual p.511) and RMI(C,n,m) is the RSI of m-bar changes, by hand on a short series.
     #[test]
     fn rmi_is_the_rsi_of_m_bar_changes() {
@@ -213,9 +339,10 @@ mod tests {
     fn every_live_record_parses_runs_and_trades() {
         let r = rows(); let x = Ctx::new(&r, &r, &[]);
         let live: Vec<&Sys> = SYS.iter().filter(|s| s.status == Status::Live).collect();
-        assert_eq!(live.len(), 29); // + nkms2_relative_momentum_index (lane K60), nkms2_swing_index (lane K74)
+        assert_eq!(live.len(), 30); // + nkms2_relative_momentum_index (lane K60), nkms2_swing_index (lane K74)
         let mut trading = 0;
         for s in &live {
+            if s.id == CHAIKIN_ID { continue; } // tested by the scoped Chaikin readiness and signal tests
             let t = run(s.id, &x, 50, r.len() - 1, &Params::new()).unwrap_or_else(|| panic!("{} did not run", s.id));
             if t.len() >= 2 { trading += 1; }
             assert!(params(s.id).is_some(), "{}", s.id);
@@ -268,7 +395,7 @@ const SYS: &[Sys] = &[
     Sys { id: "nkms2_swing_index", name: r##"PS Swing Index"##, group: GROUP, family: ("nkms2_swing_index", r##"PS Swing Index"##), page: "MS72PRFT.DTA record index 88 (0-based)", status: Live, f: [Some(r##"Swing(3)>0"##), Some(r##"Swing(3)<0"##), Some(r##"Swing(3)<0"##), Some(r##"Swing(3)>0"##)], exec: EXEC_DEFAULT, notes: r##"Lane K74 (decisions #244 (2), #277): [labelled reading] MetaStock's Swing(limit move) is read as Wilder's Swing Index (New Concepts in Technical Trading Systems p.88-92, wwnc): SI = 50 x N / R x K / L, N = (C - C1) + 0.5(C - O) + 0.25(C1 - O1), K = the larger of |H - C1| and |L - C1|, R from Wilder's table, L = the limit move (3). The record compares SI only with 0, and R > 0 whenever K > 0 and L = 3 > 0, so the sign of SI is the sign of N (0 when K = 0): the futures limit move cannot change a signal and needs no index equivalent. Computed exactly on the printed decimals (6C - 3C1 - 2O - O1 = 4N)."## },
     Sys { id: "nkms2_ultimate_oscillator", name: r##"PS Ultimate Oscillator"##, group: GROUP, family: ("nkms2_ultimate_oscillator", r##"PS Ultimate Oscillator"##), page: "MS72PRFT.DTA record index 91 (0-based)", status: Live, f: [Some(r##"Ult(7,14,28)>Ref(Ult(7,14,28),-1)"##), Some(r##"Ult(7,14,28)<Ref(Ult(7,14,28),-1)"##), Some(r##"Ult(7,14,28)<Ref(Ult(7,14,28),-1)"##), Some(r##"Ult(7,14,28)>Ref(Ult(7,14,28),-1)"##)], exec: EXEC_DEFAULT, notes: r##""## },
     Sys { id: "nkms2_vertical_horizontal_filter", name: r##"PS Vertical Horizontal Filter"##, group: GROUP, family: ("nkms2_vertical_horizontal_filter", r##"PS Vertical Horizontal Filter"##), page: "MS72PRFT.DTA record index 92 (0-based)", status: NotTestable(r##"rules not fully defined (decision #244): uses VHF(C,21), the built-in Vertical Horizontal Filter; its calculation is printed neither in the record nor in the MetaStock 8 manual ('predefined'; the Interpretation chapter, Pro 8.0 manual p.533, describes it in words only). Not coded."##), f: [Some(r##"Cross(VHF(C,21),.3) AND LinRegSlope(C,21)>0"##), Some(r##"Cross(.75,VHF(C,21)) OR Cross(0,LinRegSlope(C,21))"##), Some(r##"Cross(VHF(C,21),.3) AND LinRegSlope(C,21)<0"##), Some(r##"Cross(.75,VHF(C,21)) OR Cross(LinRegSlope(C,21),0);"##)], exec: EXEC_DEFAULT, notes: r##""## },
-    Sys { id: "nkms2_volatility_breakout_chaikin", name: r##"PS Volatility Breakout (Chaikin)"##, group: GROUP, family: ("nkms2_volatility_breakout_chaikin", r##"PS Volatility Breakout (Chaikin)"##), page: "MS72PRFT.DTA record index 93 (0-based)", status: NotTestable(r##"rules not fully defined (decision #244): uses Vol(10,10), MetaStock's built-in Chaikin's Volatility; its exact definition is not printed (the Interpretation chapter, Pro 8.0 manual p.533, describes it in words only; the vault holds mstt_chaikin_s_volatility for the same reason). Not coded."##), f: [Some(r##"Vol(10,10)>Ref(Vol(10,10),-1) AND C>Ref(C,-1)"##), Some(r##"Vol(10,10)<Ref(Vol(10,10),-1) OR C<Ref(C,-1)"##), Some(r##"Vol(10,10)>Ref(Vol(10,10),-1) AND C<Ref(C,-1)"##), Some(r##"Vol(10,10)<Ref(Vol(10,10),-1) OR C>Ref(C,-1)"##)], exec: EXEC_DEFAULT, notes: r##""## },
+    Sys { id: "nkms2_volatility_breakout_chaikin", name: r##"PS Volatility Breakout (Chaikin)"##, group: GROUP, family: ("nkms2_volatility_breakout_chaikin", r##"PS Volatility Breakout (Chaikin)"##), page: "MS72PRFT.DTA record index 93 (0-based)", status: Live, f: [Some(r##"Vol(10,10)>Ref(Vol(10,10),-1) AND C>Ref(C,-1)"##), Some(r##"Vol(10,10)<Ref(Vol(10,10),-1) OR C<Ref(C,-1)"##), Some(r##"Vol(10,10)>Ref(Vol(10,10),-1) AND C<Ref(C,-1)"##), Some(r##"Vol(10,10)<Ref(Vol(10,10),-1) OR C>Ref(C,-1)"##)], exec: EXEC_DEFAULT, notes: r##"Adapted, two unstated details (R4 #353): the 10-period EMA of high minus low begins with the first 10 observed ranges averaged on bar 10; the 10-period percent rate of change is then compared with its previous value. Trade at the signal bar close with no delay. These readings are not verified MetaStock 7.2 output; Equis record 93 supplies no market or results. Actual NIFTY 50 and SPY only, subject to data checks; no stock, basket, futures or SPX results are admitted."## },
     Sys { id: "nkms2_volatility_breakout_standard", name: r##"PS Volatility Breakout (Standard)"##, group: GROUP, family: ("nkms2_volatility_breakout_standard", r##"PS Volatility Breakout (Standard)"##), page: "MS72PRFT.DTA record index 94 (0-based)", status: Live, f: [Some(r##"v1:=Std(Log(C/Ref(C,-1)),10)*Sqrt(365)*100;  v1>Ref(v1,-1) AND C>Ref(C,-1)"##), Some(r##"v1:=Std(Log(C/Ref(C,-1)),10)*Sqrt(365)*100;  v1<Ref(v1,-1) OR C<Ref(C,-1)"##), Some(r##"v1:=Std(Log(C/Ref(C,-1)),10)*Sqrt(365)*100;  v1>Ref(v1,-1) AND C<Ref(C,-1)"##), Some(r##"v1:=Std(Log(C/Ref(C,-1)),10)*Sqrt(365)*100;  v1<Ref(v1,-1) OR C>Ref(C,-1)"##)], exec: EXEC_DEFAULT, notes: r##""## },
     Sys { id: "nkms2_volatility_stop", name: r##"PS Volatility Stop"##, group: GROUP, family: ("nkms2_volatility_stop", r##"PS Volatility Stop"##), page: "MS72PRFT.DTA record index 95 (0-based)", status: Live, f: [Some(r##"hstop:=Min(Ref(C,-1)+(ATR(4)*2),If(Ref(H,-1)>PREV,C*2,PREV)); lstop:=Max(Ref(C,-1)-(ATR(4)*2),If(Ref(L,-1)<PREV,0,PREV));  BarsSince(C>hstop)>BarsSince(C<lstop)"##), Some(r##"hstop:=Min(Ref(C,-1)+(ATR(4)*2),If(Ref(H,-1)>PREV,C*2,PREV)); lstop:=Max(Ref(C,-1)-(ATR(4)*2),If(Ref(L,-1)<PREV,0,PREV));  BarsSince(C>hstop)<BarsSince(C<lstop)"##), Some(r##"hstop:=Min(Ref(C,-1)+(ATR(4)*2),If(Ref(H,-1)>PREV,C*2,PREV)); lstop:=Max(Ref(C,-1)-(ATR(4)*2),If(Ref(L,-1)<PREV,0,PREV));  BarsSince(C>hstop)<BarsSince(C<lstop)"##), Some(r##"hstop:=Min(Ref(C,-1)+(ATR(4)*2),If(Ref(H,-1)>PREV,C*2,PREV)); lstop:=Max(Ref(C,-1)-(ATR(4)*2),If(Ref(L,-1)<PREV,0,PREV));  BarsSince(C>hstop)>BarsSince(C<lstop)"##)], exec: EXEC_DEFAULT, notes: r##"Run by hand-written code: PREV = the variable's own value on the previous bar (MetaStock 8 manual p.246); [reading] each stop is undefined while ATR(4) is undefined and PREV = 0 on its first defined bar (the manual gives no start value). As stored, Enter Long fires when the close last broke BELOW the lower stop more recently than ABOVE the upper stop."## },
     Sys { id: "nkms2_volume_trading_system", name: r##"PS Volume Trading System"##, group: GROUP, family: ("nkms2_volume_trading_system", r##"PS Volume Trading System"##), page: "MS72PRFT.DTA record index 96 (0-based)", status: Live, f: [Some(r##"C>Ref(C,-1) AND V>Ref(V,-1)"##), Some(r##"C<Ref(C,-1) AND V>Ref(V,-1)"##), Some(r##"C<Ref(C,-1) AND V>Ref(V,-1)"##), Some(r##"C>Ref(C,-1) AND V>Ref(V,-1)"##)], exec: EXEC_DEFAULT, notes: r##""## },
@@ -278,7 +405,14 @@ const SYS: &[Sys] = &[
 // Admission only for the module REVIEWED lists (authors/niksan-k2/admission/nkms2_ref.py (header)); kept in one block to merge.
 // Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book=="nkms2" && crate::books::nkms2::reviewed(def.id),
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="nkms2" && def.id != CHAIKIN_ID && crate::books::nkms2::reviewed(def.id),
     label: "Equis MetaStock System Tester samples stored in the NIKSAN formula pack, with no market, notes or results; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, trade at the close.",
     basis: "NIKSAN MetaStock formula pack, MS72PRFT.DTA (Equis PS System Tester records 54-96)",
+};
+
+// Scoped candidate only; does not widen the original nkms2 admission.
+pub const ADMISSION_CHAIKIN: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book==BOOK && def.id==CHAIKIN_ID && reviewed(def.id),
+    label: "Unverified declared application, actual NIFTY 50 and SPY only. Adapted: two unstated details: 10-range SMA EMA initialization and signal-bar close fills without delay. Not verified MetaStock output or a reproduced source study.",
+    basis: "MS72PRFT.DTA record 93 and MetaStock 7.2 manual, Custom Indicator Examples, Volatility Chaikin; R4 #353.",
 };

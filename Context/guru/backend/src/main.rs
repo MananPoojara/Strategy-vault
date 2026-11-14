@@ -2817,6 +2817,20 @@ mod tests {
                 other_path += 1;
                 continue;
             }
+            if d.book==books::nkms2::BOOK && d.id==books::nkms2::CHAIKIN_ID {
+                // The real prefix is needed for the first ROC comparison. Keep the
+                // normal accounting assertion, starting at its first eligible bar.
+                let start=20;
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                for cost in [0.0, 0.0005] {
+                    let run=backtest(&ctx,d.id,start,rows.len()-1,cost,&Params::new()).unwrap();
+                    let want:f64=run.trades.iter().map(|t|1.0+t.ret(cost)).product();
+                    let got=*run.equity.last().unwrap();
+                    assert!((got / want - 1.0).abs()<1e-9,"{} cost {}: equity {} vs trades {}",d.id,cost,got,want);
+                    compared+=1;
+                }
+                continue;
+            }
             if books::lkqts::macs_candidate(d.id) {
                 // MACS needs the selected server-qualified RAW native series, so the generic path refuses it by design.
                 assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
