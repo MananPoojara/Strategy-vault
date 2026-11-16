@@ -90,7 +90,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Read: sell short at the close of the day the RSI rises to 51 or more (below 51 the day before) while the close is below the 200-day SMA",
               "X|Read: cover at the close of the first day the RSI closes above 54 (stop), the close is above the previous day's high (trailing stop), or the RSI falls to 32 or less (target)",
               EOD],
-            "Adapted: 2 unstated details (lane R2, 16 Nov 2026, R4 #297/#339; the mirror of sbma_p73_rsi34 with the same readings). Unstated in the book: (1) the RSI period; vault reading: 14 days, Wilder's RSI as StockCharts plots it (the book's charts are StockCharts, p.4; p.rsi sets any period); (2) when an index 'rallies back to the 51 RSI'; vault reading: the first close at or above 51 after a close below it. Fills at the signal close (the book's end-of-day rule, p.63; p.fill = 1: next open). Runs on indices, ETFs and stocks, US and India, as a declared application (the book says 'stock index'); shorts are hypothetical on cash indices. No results printed."),
+            "Adapted: 4 unstated details (lane R2, 16 Nov 2026, R4 #297/#339; the mirror of sbma_p73_rsi34 with the same first two readings). Unstated in the book: (1) the RSI period; vault reading: 14 days, Wilder's RSI as StockCharts plots it (the book's charts are StockCharts, p.4; p.rsi sets any period); (2) when an index 'rallies back to the 51 RSI'; vault reading: the first close at or above 51 after a close below it; (3) the trailing stop 'the previous day's high of day': vault reading: a close above it; (4) 'cover at the 32 RSI': vault reading: the first close with RSI at or below 32 (the stop 'a close over the 54 RSI' is read as RSI above 54). Fills at the signal close (the book's end-of-day rule, p.63; p.fill = 1: next open). Runs on indices, ETFs and stocks, US and India, as a declared application (the book says 'stock index'); shorts are hypothetical on cash indices. No results printed."),
     ]
 }
 
@@ -409,5 +409,5 @@ pub const R2B_REVIEWED: &[&str] = &["sbma_p73_rsi34", "sbma_p73_rsi51_short"];
 pub const ADMISSION_R2B: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && R2B_REVIEWED.contains(&def.id),
     label: "Steve and Holly Burns give this stock-index rule without a test or an RSI period; runs on indices, ETFs and stocks, US and India, are a declared application with the readings stated on the card.",
-    basis: "Steve & Holly Burns, Moving Averages 101 (2015), Ch.10 p.73; R4 #297; independent check authors/titles-1030/R2Bw/r2b_ref.py",
+    basis: "Steve & Holly Burns, Moving Averages 101 (2015), Ch.10 p.73; R4 #297/#339; independent checks authors/titles-1030/R2Bw/r2b_ref.py (sbma_p73_rsi34) and authors/relax-339/R2/w/ref.py (sbma_p73_rsi51_short)",
 };
