@@ -21,7 +21,7 @@ fn def(id: &'static str, name: &'static str, group: &'static str, status: Status
     StrategyDef { id, name, group, session: 0, dir: "Long/Short", status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-pub fn catalogue() -> Vec<StrategyDef> {
+fn catalogue_raw() -> Vec<StrategyDef> {
     vec![
         def(ABP, "Aberration Plus (80-bar 2-sigma band, stepped MA exits)", "Aberration Plus (Open Code.txt)", Status::Live, &[
             "F|\"Avg.Out = Average(Close,Length)\"; Avg.Out2..5 = Average(Close, Length - int(Length/8)*k), k=1..4 (Length 80 -> 80/70/60/50/40); \"Sigma = Abb.stddev(Close,Length)*2\"; \"Vol.av = (Sigma+Sigma[1]+Sigma[2])/3\"",
@@ -58,6 +58,13 @@ The stop entries sit relative to the next bar's own open, so they become live af
             "E|\"if ProbHigh < HighTrigger and Time > (Sess1StartTime + 100) ... then Buy Next Bar at close limit\" (ProbHigh = ZProbability(High of Data2, 52), HighTrigger .02)",
             "X|\"If DayTrade = \"Y\" and MarketPosition = 1 and Time >= (Sess1EndTime - 15) then Sell this Bar Close\""], ""),
     ]
+}
+
+/// Lane D2 (16 Nov 2026, R4 #340, #339): Fitschen's Aztec (mode 2, all market orders) runs on the Norgate E-mini S&P 500 contract
+/// (futures::CARDS_D2) with BigPointValue = the contract's US$ per point; UNVERIFIED, 4 labelled unstated details.
+const NOTE_AZT_FUT: &str = "[Declared adaptation, R4 #340; UNVERIFIED, 4 unstated details, R4 #339] The vendor code names no market and no point value. Unstated: (1) the market; vault reading: the Norgate E-mini S&P 500 continuous contract (back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11); (2) BigPointValue; vault reading: US$50 per index point, the contract multiplier, so the code's US$300 floors are 6 points; (3) the run mode; vault reading: the code's default mode 2 (trend filter), whose every order is a next-bar market order (mode 1 uses stop orders and is not published); (4) the first bar; vault reading: the first bar after the 70-bar warm-up. Abb.stddev, the entry and exit rules are as in the Open Code.txt quotes. Fills at the next open (clamp_open). Same-day order (#240): none, no stop or limit is used.";
+pub fn catalogue() -> Vec<StrategyDef> {
+    catalogue_raw().into_iter().map(|mut d| { if d.id == AZT { d.status = Status::Live; d.notes = NOTE_AZT_FUT; } d }).collect()
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -139,7 +146,8 @@ fn aberration_plus(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
 
 fn aztec(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
-    let bpv = g("bpv", 1.);
+    // lane D2: on a futures contract BigPointValue is the contract multiplier
+    let bpv = crate::futures::ctx_market(x).and_then(|m| crate::futures::usd_per_point(m, &x.r[from.min(x.r.len() - 1)].date)).unwrap_or_else(|| g("bpv", 1.));
     let n = x.c.len();
     let mut s = Sim::new();
     let mut mp_prev = 0i8;
