@@ -73,9 +73,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nt("sbma_x_10e50e_rsi", "10/50-day EMA crossover with RSI exits ($PCLN)", "Ch. 9 · Moving average crossover systems", "Long/Short",
             "exits 'as price became oversold at 30 RSI' / 'as the RSI went over 70' use an RSI whose period the book never states; the book calls it discretionary (p.65)",
             &["E|Short as the 10 day EMA crossed under the 50 day EMA, long as it crossed back over (p.65)", "X|Cover at 30 RSI, sell above 70 RSI (p.65)"], "The crossover-only version is sbma_x_10e50e."),
-        nt("sbma_p73_200_rsi65", "Break of the 200-day SMA with RSI 65 target", "Ch. 10 · Combining moving averages with other indicators", "Long",
-            "target is 'the 65 RSI' with no RSI period; the trailing stop applies only 'If it trends' (judgement)",
-            &["E|\"Enter on a break and close above the 200 day SMA, stop loss is a close back under the 200 day. If it trends the trailing stop could be a close back under the 10 day EMA with a target of the 65 RSI\" (p.73)"], "Not testable."),
+        d("sbma_p73_200_rsi65", "Break of the 200-day SMA with RSI 65 target", "Ch. 10 · Combining moving averages with other indicators", "Long", Status::Live,
+            &["E|\"Enter on a break and close above the 200 day SMA, stop loss is a close back under the 200 day. If it trends the trailing stop could be a close back under the 10 day EMA with a target of the 65 RSI\" (p.73)",
+              "E|Read: buy at the close of the first day that closes above the 200-day SMA after a close at or below it",
+              "X|Read: sell at the close of the first day after entry that closes under the 200-day SMA (stop) or with the RSI at or above 65 (target)",
+              EOD],
+            "Adapted: 4 unstated details (lane R2, 16 Nov 2026, R4 #297/#339). Unstated in the book: (1) the RSI period; vault reading: 14 days, Wilder's RSI as StockCharts plots it (p.rsi sets any period); (2) what a 'break' is; vault reading: the first close above the 200-day SMA after a close at or below it; (3) 'the 65 RSI' as the target: sell at the close of the first day with RSI at or above 65, checked from the day after entry; (4) the trailing stop (a close under the 10-day EMA) applies only 'if it trends', which the book does not define: it is not modelled, so every trade exits on the 200-day stop or the RSI target. Fills at the signal close (the book's end-of-day rule, p.63; p.fill = 1: next open). Runs on indices, ETFs and stocks, US and India, as a declared application (the book says 'stock' and 'index' in the same page). No results printed."),
         nt("sbma_p73_50_bounce", "Bounce off the 50-day SMA", "Ch. 10 · Combining moving averages with other indicators", "Long",
             "'bounces off the 50 day SMA' is chart judgement; target 70 RSI has no period",
             &["E|\"Enter a stock as it bounces off the 50 day SMA. Stop loss is a close back under the 50 day SMA. Trailing stop in a trend is a close under the 10 day EMA. Target is the 70 RSI.\" (p.73)"], "Not testable."),
@@ -112,7 +115,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
             ("sbma_single", "Burns single moving averages (not testable)", ""),
         "sbma_p73_rsi34" => ("sbma_p73_rsi34", "Burns index RSI 34 pullback above the 200-day SMA", "RSI 14"),
         "sbma_p73_rsi51_short" => ("sbma_p73_rsi51_short", "Burns index RSI 51 rally below the 200-day SMA (short)", "RSI 14"),
-        "sbma_p73_200_rsi65" | "sbma_p73_50_bounce" =>
+        "sbma_p73_200_rsi65" => ("sbma_p73_200_rsi65", "Burns 200-day SMA break with RSI 65 target", "RSI 14"),
+        "sbma_p73_50_bounce" =>
             ("sbma_p73", "Burns entry/exit strategies p.73 (not testable)", ""),
         _ => return None,
     })
@@ -147,7 +151,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "sbma_sma50_long" => Some(vec![p("ma", "SMA length", 50., 10., 250., 5.), fill]),
         "sbma_sma200_short" => Some(vec![p("ma", "SMA length", 200., 50., 300., 10.), fill]),
-        "sbma_p73_rsi34" | "sbma_p73_rsi51_short" => Some(vec![p("rsi", "RSI period (vault reading 14; the book gives none)", 14., 2., 50., 1.), p("ma", "SMA length", 200., 50., 300., 10.), fill]),
+        "sbma_p73_rsi34" | "sbma_p73_rsi51_short" | "sbma_p73_200_rsi65" => Some(vec![p("rsi", "RSI period (vault reading 14; the book gives none)", 14., 2., 50., 1.), p("ma", "SMA length", 200., 50., 300., 10.), fill]),
         _ => None,
     }
 }
@@ -217,6 +221,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         positions(x, from, to, next_open, |i, pos| {
             if !m[i].is_finite() { return None; }
             if pos == 0. && c[i] > m[i] { Some(1.) } else if pos > 0. && c[i] < m[i] { Some(0.) } else { None }
+        })
+    } else if id == "sbma_p73_200_rsi65" { // lane R2 batch 2 (R4 #297/#339)
+        let (m, r) = (sma(c, len("ma")), crate::connors::rsi(c, len("rsi")));
+        positions(x, from, to, next_open, |i, pos| {
+            if i == 0 || !m[i].is_finite() || !m[i - 1].is_finite() || !r[i].is_finite() { return None; }
+            if pos == 0. && c[i] > m[i] && c[i - 1] <= m[i - 1] { Some(1.) }
+            else if pos > 0. && (c[i] < m[i] || r[i] >= 65.) { Some(0.) } else { None }
         })
     } else if id == "sbma_p73_rsi51_short" { // lane R2 (R4 #297/#339): mirror of the RSI 34 rule
         let (m, r, h) = (sma(c, len("ma")), crate::connors::rsi(c, len("rsi")), &x.h);
@@ -404,7 +415,7 @@ mod next_reviewed_scope_tests {
     }
 }
 
-pub const R2B_REVIEWED: &[&str] = &["sbma_p73_rsi34", "sbma_p73_rsi51_short"];
+pub const R2B_REVIEWED: &[&str] = &["sbma_p73_rsi34", "sbma_p73_rsi51_short", "sbma_p73_200_rsi65"];
 // Lane R2B (13 Nov 2026, R4 #297): the p.73 index RSI pullback with its two labelled readings (RSI 14, 'at 34' = first close at or below).
 pub const ADMISSION_R2B: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && R2B_REVIEWED.contains(&def.id),
