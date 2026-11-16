@@ -38,6 +38,14 @@ it('a benchmark that ends before the strategy is withheld with a reason, never s
   expect(benchmarkFor(run, null).note).toBe('Benchmark price coverage is missing.');
 });
 
+it('a run ending a day past the benchmark\'s last bar still gets the benchmark, with its real dates', () => {
+  const benchmarkFor = new Function('VaultReport', `${part(' function benchmarkFor(', ' function benchmarkHTML(')};return benchmarkFor;`)(VaultReport);
+  const lag = benchmarkFor({dates: [...dates.slice(0, 4), '2026-10-13'], stats: {}}, prices(dates.slice(0, 4)));
+  expect(lag.note).toBeNull();
+  expect([lag.b.from, lag.b.to]).toEqual(['2026-10-07', '2026-10-12']);
+  expect(benchmarkFor({dates: [...dates.slice(0, 4), '2026-10-30'], stats: {}}, prices(dates.slice(0, 4))).b).toBeNull();
+});
+
 it('optimiser trades export carries the Net Profit display and report link of the optimised run', async () => {
   const optTrades = part('async function optTrades(', '\nconst setLine');
   const defaultDisplay = {value: 0.5, reportMode: 'default run'};
