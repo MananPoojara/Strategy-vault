@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "kets";
 /// Admitted ids (authors/katz/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
+pub const REVIEWED: &[&str] = &["kets_macd_sig_open", "kets_rsi_div_open", "kets_macd_div_open" /* lane D2, R4 #340/#343 */, "kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// No orders before this bar: the book's price files began ~6 months (about 120 bars) before its first trade
@@ -35,6 +35,7 @@ enum M {
     HhllStop,               // ch5 T6
     Vb { long_only: bool, adx: bool }, // ch5 T7, T8, T10, T12
     StochObos, RsiObos, StochSig, StochDiv, // ch7
+    MacdSig, RsiDiv, MacdDiv, // ch7 Tests 10, 16, 19 (lane D2, R4 #340/#343: lengths not printed, CD defaults labelled)
     Seas(u8), Lunar(u8),    // ch8 / ch9: 1 momentum, 2 crossover, 3 + confirmation, 4 + confirmation & inversion
     Cycle,                  // ch10
     RandSes,                // ch13 T1-T3: random entries + SES
@@ -128,6 +129,12 @@ static TESTS: &[T] = &[
     t!("kets_stoch_div_stop", "Fast %K / price divergence · stop (Test 15)", G7, M::StochDiv, Stop, "Long/Short", "pp.149-150 (PDF 162-163)",
         [("len", "Fast %K length", 25., 5., 25., 1.), ("lb", "Divergence look-back", 15., 15., 25., 5.)], Some(("", "", "IS $-3,008 / OOS $-2,179", "", "36-futures portfolio; ROA IS -9.8% / OOS -19.9% (Table 7-3)"))),
     // ---------------------------------------------------------------- Chapter 8
+    t!("kets_macd_sig_open", "MACD / 9-bar signal-line cross · next open (Test 10)", G7, M::MacdSig, Open, "Long/Short", "p.148 (PDF 161)",
+        [("fast", "MACD fast EMA (CD default; book grid 3-15)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (CD default; book grid 10-40)", 26., 10., 40., 1.)], Some(("", "", "IS $-1,808 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_rsi_div_open", "RSI / price divergence · next open (Test 16)", G7, M::RsiDiv, Open, "Long/Short", "p.149 (PDF 162)",
+        [("len", "RSI length (CD default; book grid 5-25)", 14., 5., 25., 1.), ("lb", "Divergence look-back (book grid 15-25; CD-style 20)", 20., 15., 25., 5.)], Some(("", "", "IS $-2,278 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_macd_div_open", "MACD / price divergence · next open (Test 19)", G7, M::MacdDiv, Open, "Long/Short", "p.150 (PDF 163)",
+        [("fast", "MACD fast EMA (CD default; book grid 3-15)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (CD default; book grid 10-40)", 26., 10., 40., 1.), ("lb", "Divergence look-back (book grid 15-25; CD-style 20)", 20., 15., 25., 5.)], Some(("", "", "IS $1,393 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
     t!("kets_seas_xo_open", "Seasonal crossover · next open (Test 1)", G8, M::Seas(2), Open, "Long/Short", "pp.159-170 (PDF 172-183)",
         [("avglen", "Moving-average length", 20., 5., 20., 5.), ("disp", "Displacement (bars ahead)", 5., 0., 20., 1.)], Some(("", "40-43% (all orders)", "IS $-1,127 / OOS $-300", "", "36-futures portfolio; ROA IS -9.7% / OOS -5.8% (Table 8-3)"))),
     t!("kets_seas_xo_limit", "Seasonal crossover · limit (Test 2)", G8, M::Seas(2), Limit, "Long/Short", "pp.159-170 (PDF 172-183)",
@@ -257,6 +264,12 @@ fn model_rules(m: M) -> &'static [&'static str] {
         M::StochObos => &["E|Lane's original Fast %K (x11mod01.c osctype 1). Buy when %K crosses above 20 (%K[t] >= 20 and %K[t-1] < 20); sell when %K crosses below 80 (%K[t] < 80, %K[t-1] >= 80) (pp.141-146)"],
         M::RsiObos => &["E|Classic RSI (RsiOsc type 1). Buy when RSI crosses above 30; sell when RSI crosses below 70 (p.147)"],
         M::StochSig => &["E|Lane's Slow %K (osctype 2) and a 3-bar simple moving average of it as signal line; buy when Slow %K crosses above the signal line, sell when it crosses below (p.147)"],
+        M::MacdSig => &["E|Classic MACD = EMA(close, fast) - EMA(close, slow) crosses above its 9-bar EMA signal line: buy; crosses below: sell short (x11mod01.c model 2, osctype 4; p.148)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised fast 3-15 and slow 10-40 and does not print the winners: (1) fast EMA 12, (2) slow EMA 26 (the CD's defaults). Printed, not choices: the 9-bar EMA signal line, the next-open entry (Test 10) and the Standard Exit Strategy."],
+        M::RsiDiv => &["E|Over the look-back lb: lowest close at bar i and lowest classic RSI (RsiOsc type 1) at bar j. Buy if i < today and i > today-6, j > today-lb+1, i-j > 4 and RSI turns up (RSI[t] >= RSI[t-1] < RSI[t-2]); otherwise sell short on the mirror (highest close / highest RSI, RSI turns down) (p.149, x11mod01.c model 3, osctype 3)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised RSI 5-25 and look-back 15-25 and does not print the winners: (1) RSI length 14 (the CD's default), (2) look-back 20. Printed, not choices: the divergence algorithm, the next-open entry (Test 16) and the Standard Exit Strategy."],
+        M::MacdDiv => &["E|The same divergence rule as the RSI test on the classic MACD line (EMA fast - EMA slow of closes) (p.150, x11mod01.c model 3, osctype 4)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 3 card-specific details] The book optimised fast 3-15, slow 10-40 and look-back 15-25 and does not print the winners: (1) fast EMA 12, (2) slow EMA 26 (the CD's defaults), (3) look-back 20. Printed, not choices: the divergence algorithm, the next-open entry (Test 19) and the Standard Exit Strategy."],
         M::StochDiv => &["E|Over the look-back lb: lowest close at bar i and lowest Fast %K at bar j. Buy if i < today and i > today-6, j > today-lb+1, i-j > 4 and %K turns up (%K[t] >= %K[t-1] < %K[t-2]) (pp.148-149, x11mod01.c model 3)",
             "E|Otherwise sell on the mirror image (highest close / highest %K, %K turns down)"],
         M::Seas(k) | M::Lunar(k) => {
@@ -349,7 +362,7 @@ fn rules_of() -> &'static Vec<(&'static [&'static str], &'static str)> {
 }
 
 const NT_MA: &str = "the book never prints the optimised moving-average lengths of these tests (only ROA%/$TRD in Tables 6-3 and 6-6), so the default rule cannot be stated without inventing it";
-const NT_OSC: &str = "the book never prints the optimised oscillator lengths / look-back of these tests (only ROA%/$TRD in Table 7-3), so the default rule cannot be stated without inventing it";
+const NT_OSC: &str = "the book never prints the optimised oscillator lengths / look-back of these tests (only ROA%/$TRD in Table 7-3); lane D2 (R4 #343) runs the next-open Tests 10, 16 and 19 as kets_macd_sig_open, kets_rsi_div_open and kets_macd_div_open with the CD's default lengths labelled; the limit and stop variants stay held";
 
 macro_rules! off {
     ($id:expr, $name:expr, $g:expr, $dir:expr, $st:expr, $rules:expr, $notes:expr) => {
@@ -444,6 +457,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
             M::RsiObos => ("kets_rsi_obos", "RSI overbought/oversold"),
             M::StochSig => ("kets_stoch_sig", "Stochastic signal line"),
             M::StochDiv => ("kets_stoch_div", "Stochastic divergence"),
+            M::MacdSig => ("kets_macd_sig", "MACD signal-line cross"),
+            M::RsiDiv => ("kets_rsi_div", "RSI divergence"),
+            M::MacdDiv => ("kets_macd_div", "MACD divergence"),
             M::Seas(1) => ("kets_seas_mom", "Seasonal momentum"),
             M::Seas(2) => ("kets_seas_xo", "Seasonal crossover"),
             M::Seas(3) => ("kets_seas_conf", "Seasonal crossover + confirmation"),
@@ -1005,6 +1021,30 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             drive(x, from, to, WARM, false, t.ord, false, ses, &atr50, |cb, _| {
                 let s = if obos { if cross_up(&osc, &lov, cb) { 1 } else if cross_dn(&osc, &hiv, cb) { -1 } else { 0 } }
                     else if cross_up(&osc, &sig, cb) { 1 } else if cross_dn(&osc, &sig, cb) { -1 } else { 0 };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::MacdSig => {
+            let m: Vec<f64> = { let (f, sl) = (xavg(&x.c, u("fast")), xavg(&x.c, u("slow"))); (0..n).map(|i| f[i] - sl[i]).collect() };
+            let sig = xavg(&m, 9);
+            drive(x, from, to, WARM, false, t.ord, false, ses, &atr50, |cb, _| {
+                let s = if cross_up(&m, &sig, cb) { 1 } else if cross_dn(&m, &sig, cb) { -1 } else { 0 };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::RsiDiv | M::MacdDiv => {
+            let osc: Vec<f64> = if t.m == M::RsiDiv { rsi_k(&x.c, u("len")) } else { let (f, sl) = (xavg(&x.c, u("fast")), xavg(&x.c, u("slow"))); (0..n).map(|i| f[i] - sl[i]).collect() };
+            let lb = u("lb").max(2);
+            drive(x, from, to, WARM.max(lb + 1), false, t.ord, false, ses, &atr50, |cb, _| {
+                let lim = cb as i64 - lb as i64 + 1;
+                let (i, j) = (lowest_bar(&x.c, lb, cb) as i64, lowest_bar(&osc, lb, cb) as i64);
+                let c = cb as i64;
+                let mut s = 0;
+                if i < c && i > c - 6 && j > lim && i - j > 4 && turns_up(&osc, cb) { s = 1; }
+                else {
+                    let (i, j) = (highest_bar(&x.c, lb, cb) as i64, highest_bar(&osc, lb, cb) as i64);
+                    if i < c && i > c - 6 && j > lim && i - j > 4 && turns_dn(&osc, cb) { s = -1; }
+                }
                 (s, std_stop(cb, s))
             })
         }
