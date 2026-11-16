@@ -12,7 +12,7 @@ use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, 
 
 pub const BOOK: &str = "kdta";
 /// Admitted ids (authors/kirkpatrick/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */];
+pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
@@ -62,6 +62,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|\"entering a buy at 6% below the previous bar close\" (Active Trader Magazine, long-only, p.387): buy limit at 0.94 x yesterday's close",
             "X|\"and exiting on the next open\""],
           "Limit fills when the day's low reaches it, at the limit or the open if the day opens below it. Book: 18 stocks 1992-2002, gain equal to buy-and-hold with 17% market exposure (no table). Run on the indices."),
+        d("kdta_two_bar", "Two-bar breakout (Active Trader)", "Ch 17 · Short-term patterns (p.382)", "Long/Short", Live, false, &[],
+          &["E|\"the next day buy on a stop one tick above today's high if (1) today's low is less than yesterday's low; (2) today's high is less than yesterday's high; and (3) today's close is less than today's open\" (p.382); the sell side is just the opposite (sell stop one tick below today's low if the low and high are higher than yesterday's and the close is above the open)",
+            "X|\"Exit on a stop at the then-current day's low\" (long; the high for shorts) (p.382)",
+            "A|Four unstated details, each a labelled reading (R4 #339/#343): (1) 'one tick' = the instrument's tick (decision #57); (2) the exit stop is placed each day at that completed day's low (high), for the next day, so it can move down (up) as well as up; (3) no exit stop is active on the entry day itself, the first stop is placed at the entry day's low (high) at its close; (4) an opposite signal while a position is held fills at its stop and reverses the position, the exit stop and that stop being on the same side. Engine conventions (labelled, not counted): stops fill at their price or at the open when the bar opens through them; one position at a time."],
+          "Active Trader Magazine pattern quoted in Kirkpatrick and Dahlquist ch.17 p.382; no table or trade count is printed, so there is no #168 comparison. Run on indices, ETFs and stocks as a declared application."),
     ];
     for nse in [false, true] {
         let ad = if nse { NSE_AD } else { NYSE_AD };
@@ -128,9 +133,6 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let nt = |id, name, group, dir, why, rules| d(id, name, group, dir, NotTestable(why), false, &[], rules, "");
     let nd = |id, name, group, dir, why, rules| d(id, name, group, dir, NeedsData(why), false, &[], rules, "");
     v.extend([
-        nt("kdta_two_bar", "Two-bar breakout (Active Trader)", "Ch 17 · Short-term patterns (p.382)", "Long/Short",
-           "the exit \"on a stop at the then-current day's low\" can be read as the entry day's low or a stop trailed to each new day's low; the book gives nothing to decide (and 'one tick' has no index equivalent stated)",
-           &["E|\"the next day buy on a stop one tick above today's high if (1) today's low is less than yesterday's low; (2) today's high is less than yesterday's high; and (3) today's close is less than today's open\" (p.382)", "X|\"Exit on a stop at the then-current day's low. The sell side is just the opposite.\""]),
         nt("kdta_crabel_inside", "Crabel inside-bar open breakouts", "Ch 17 · Inside bar (p.383-384)", "Long/Short",
            "no exit is stated for any of Crabel's inside-bar tests (only winning percentages: 68%, 74%, 80%, 90%)",
            &["E|\"buying at the next opening, if it occurred above the inside bar close and selling at the next opening, if it occurred below the inside bar close\" (p.383)", "E|Four-day pattern: Day 2 higher low, Day 3 inside, Day 4 opens below mid-range and close of the inside day -> sell (p.384)"]),
@@ -203,6 +205,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kdta_apple_v2" => ("kdta_apple", "K&D Apple-a-Day system", "22/20 long only, 2% stop"),
         "kdta_may_oct" => ("kdta_calendar", "K&D seasonal", "May-October"),
         "kdta_pullback6" => ("kdta_short_term", "K&D short-term patterns", "6% pullback"),
+        "kdta_two_bar" => ("kdta_short_term", "K&D short-term patterns", "Two-bar breakout"),
         "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" | "kdta_plurality" => ("kdta_breadth", "K&D breadth systems", mkt),
         "kdta_arms265" | "kdta_arms_ext" | "kdta_arms10ma" => ("kdta_arms", "K&D Arms Index systems", mkt),
         _ if id.starts_with("kdta_") => ("kdta_other", "K&D cited rules (not testable)", ""),
@@ -221,6 +224,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kdta_apple_sar" => vec![p("buy_weeks", "Buy: close above the high of the past N weeks", 20.0, 4.0, 52.0, 1.0), p("sell_weeks", "Sell: close below the low of the past N weeks", 20.0, 4.0, 52.0, 1.0)],
         "kdta_apple_v2" => vec![p("buy_weeks", "Buy: close above the high of the past N weeks", 22.0, 4.0, 52.0, 1.0), p("sell_weeks", "Trailing exit: close below the low of the past N weeks", 20.0, 4.0, 52.0, 1.0), p("stop_pct", "Protective stop below entry (%)", 2.0, 0.5, 10.0, 0.5)],
         "kdta_may_oct" => vec![p("shorts", "Short from May 15 (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
+        "kdta_two_bar" => vec![p("tick", "Offset 'one tick' in ticks of the instrument", 1.0, 0.0, 10.0, 1.0)],
         "kdta_pullback6" => vec![p("pct", "Buy limit below yesterday's close (%)", 6.0, 1.0, 15.0, 0.5)],
         "kdta_adline" => vec![p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_ad1018" => vec![p("level", "One-day advances/declines level", 1.018, 0.5, 2.0, 0.001), p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
@@ -408,6 +412,57 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if first_on_after(x, i, 10, 1) && d != 1 { Some((1, "October 1".into())) }
                 else if first_on_after(x, i, 5, 15) && d == 1 { Some((if shorts { -1 } else { 0 }, "May 15".into())) } else { None }
             })
+        }
+        "kdta_two_bar" => {
+            // lane D3 (PASS 3): stop entries one tick beyond the signal bar, exit stop at the completed day's low (high), same-side stops only
+            let off = g("tick").max(0.0) * x.market_tick();
+            let mut out: Vec<Trade> = vec![];
+            let mut cur: Option<Trade> = None;
+            let (mut buy, mut sell, mut xs): (Option<f64>, Option<f64>, Option<f64>) = (None, None, None);
+            for i in from..=to {
+                if i > from {
+                    let (o, h, l) = (x.o[i], x.h[i], x.l[i]);
+                    // sells: exit stop of a long first (it is the higher), then a short entry; buys likewise for a short
+                    let mut sells: Vec<(f64, bool)> = vec![];
+                    let mut buys: Vec<(f64, bool)> = vec![];
+                    if cur.as_ref().is_some_and(|t| t.dir > 0.0) { if let Some(s) = xs { sells.push((s, true)); } }
+                    if cur.as_ref().is_some_and(|t| t.dir < 0.0) { if let Some(s) = xs { buys.push((s, true)); } }
+                    if let Some(s) = sell { sells.push((s, false)); }
+                    if let Some(s) = buy { buys.push((s, false)); }
+                    sells.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                    buys.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                    for (s, is_exit) in sells {
+                        let hit = o <= s || l <= s;
+                        if !hit { continue; }
+                        let px = if o <= s { o } else { s };
+                        if is_exit { if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = px; t.reason = "stop at the day's low".into(); t.signal_i = i - 1; out.push(t); } }
+                        else if cur.as_ref().map_or(true, |t| t.dir > 0.0) {
+                            if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = px; t.reason = "reversed by the sell stop".into(); t.signal_i = i - 1; out.push(t); }
+                            let mut t = new_trade(-1.0, i, px, "stop"); t.signal_i = i - 1; cur = Some(t);
+                        }
+                    }
+                    for (s, is_exit) in buys {
+                        let hit = o >= s || h >= s;
+                        if !hit { continue; }
+                        let px = if o >= s { o } else { s };
+                        if is_exit { if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = px; t.reason = "stop at the day's high".into(); t.signal_i = i - 1; out.push(t); } }
+                        else if cur.as_ref().map_or(true, |t| t.dir < 0.0) {
+                            if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = px; t.reason = "reversed by the buy stop".into(); t.signal_i = i - 1; out.push(t); }
+                            let mut t = new_trade(1.0, i, px, "stop"); t.signal_i = i - 1; cur = Some(t);
+                        }
+                    }
+                }
+                // orders for the next bar, from this bar's completed range
+                if i == to { break; }
+                buy = None; sell = None;
+                if i >= 1 {
+                    if x.l[i] < x.l[i - 1] && x.h[i] < x.h[i - 1] && x.c[i] < x.o[i] { buy = Some(x.h[i] + off); }
+                    if x.h[i] > x.h[i - 1] && x.l[i] > x.l[i - 1] && x.c[i] > x.o[i] { sell = Some(x.l[i] - off); }
+                }
+                xs = cur.as_ref().map(|t| if t.dir > 0.0 { x.l[i] } else { x.h[i] });
+            }
+            finish(&mut out, cur, x, to);
+            out
         }
         "kdta_pullback6" => {
             let k = 1.0 - g("pct") / 100.0;
