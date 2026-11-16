@@ -269,6 +269,9 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
         while st.first < orders.len() && orders[st.first].from + 64 < j {
             st.first += 1;
         }
+        // several live orders can trigger on one bar: the one the price reaches first fills (nearest the open; a gap fills at the
+        // open = distance 0; a close fill comes last), not the first in list order (E5, 2026-11-16)
+        let mut best: Option<(f64, &Ord, f64)> = None;
         for od in &orders[st.first..] {
             if od.from > j {
                 break;
@@ -294,6 +297,10 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 }
             };
             let Some(px) = px else { continue };
+            let dist = if matches!(od.fill, Fill::Close) { f64::INFINITY } else { (px - o[j]).abs() };
+            if best.map_or(true, |b| dist < b.0) { best = Some((dist, od, px)); }
+        }
+        if let Some((_, od, px)) = best {
             let kind = match od.fill { Fill::Close => "close", Fill::Open => "open", Fill::Stop(_) => "stop" };
             let risk = if od.stop.is_finite() { (px - od.stop).abs() } else { 0.0 };
             let mut p = Pos { dir: od.dir, i: j, px, stop: od.stop, risk, half: None, why_half: String::new(), kind, od: crate::intraday_ep6::Day::Plain };
@@ -304,7 +311,6 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
             } else {
                 st.pos = Some(p);
             }
-            break;
         }
         };
     // ---- EP6 (lane K59, #243): the minute walk of one bar. Open: an exit-on-open, the trailing stop, gaps through the stop /
@@ -1099,6 +1105,21 @@ mod tests {
         let r = rows(&[(105.0, 110.0, 100.0, 100.5), (100.2, 104.0, 99.0, 103.0), (103.0, 104.0, 102.0, 103.5)]);
         let x = Ctx::new(&r, &r, &[]);
         assert!(run("btp2_10pct_oops_long", &x, 0, 2, &Params::from([("path".to_string(), 0.0)])).unwrap().is_empty());
+    }
+
+    #[test]
+    fn two_live_buy_stops_the_lower_level_fills_first() {
+        // E5: the older order sits higher (105), the newer one lower (102); the bar opens at 100 and runs to 106: price reaches 102 first
+        let r = rows(&[(100.0, 100.0, 100.0, 100.0), (100.0, 106.0, 99.5, 105.5)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let o = |lv: f64, setup: usize| Ord { dir: 1.0, fill: Fill::Stop(lv), setup, from: 1, last: 1, stop: 95.0, arm: f64::NAN };
+        let t = sim(&x, vec![o(105.0, 0), o(102.0, 0)], &Ex::default(), 0, 1);
+        assert_eq!(t[0].legs[0].px, 102.0);
+        // an order the bar gaps through fills at the open before any level above it
+        let r = rows(&[(100.0, 100.0, 100.0, 100.0), (104.0, 106.0, 103.5, 105.5)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = sim(&x, vec![o(105.0, 0), o(102.0, 0)], &Ex::default(), 0, 1);
+        assert_eq!(t[0].legs[0].px, 104.0);
     }
 
     #[test]
