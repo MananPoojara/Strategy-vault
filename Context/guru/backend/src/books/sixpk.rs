@@ -12,7 +12,7 @@
 use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "sixpk";
-pub const REVIEWED: &[&str] = &["sixpk_seb_classic", "sixpk_storsi", "sixpk_cmo3"];
+pub const REVIEWED: &[&str] = &["sixpk_seb_classic", "sixpk_storsi", "sixpk_cmo3", "sixpk_masterblaster" /* lane B1, R4 #339 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const READ: &str = "F|Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated in the source: (1) what 'the SMA confirms the direction of the signal' means; vault reading: buys only when the signal close is above the SMA, short sales only when it is below (labelled option sma_mode = 1: the SMA higher / lower than the day before); (2) when a cover fills ('Cover the long position if there is a close above ...'); vault reading: at the next open, like the entries ('Buy the opening after ...'); labelled option cover = 1: at that close. A cover signal is also the opposite entry signal, so when the filter allows it the position reverses at the same open. Flat at the start of the window; no order for the bar after the window; the open position at the window end is marked at the last close. No stop (p.3: 'Stops ... can and should be used', none given). The source prints no results.";
 
@@ -38,11 +38,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|\"StoRSI = Mov( ( RSI(8) - LLV( RSI(8) ,8 ) ) / ( ( HHV( RSI(8) ,8) ) - LLV(RSI(8),8) ),3,E) *100\"; RSI = Wilder's (first average = mean of the first 8 changes); Mov(..,3,E) = exponential average, alpha 2/(3+1), started from the mean of its first 3 values; a day whose 8-day RSI range is zero has no value and the average waits for the next value",
             READ,
         ]),
-        d("sixpk_masterblaster", "3 · MasterBlaster (FibCMO & SEB)", Status::NotTestable(AMB), &[
+        d("sixpk_masterblaster", "3 · MasterBlaster (FibCMO & SEB)", Status::Live, &[
             "F|\"Initiate trades only if the 34 sma confirms the direction of the signal\"",
             "E|\"Buy the opening after the FibCMO closes below the trigger of '-34'.\" / \"Sell short the opening after FibCMO closes above the trigger of '+34'.\"",
             "X|\"Cover the long position if there is a close above the upper standard error band.\" / short: \"close below the lower standard error band\"",
             "F|\"FibCMO = CMO3+CMO5+CMO8/3\" (operator precedence also unresolved: (CMO3+CMO5+CMO8)/3 or CMO3+CMO5+CMO8/3)",
+            "F|SEB for the covers as for SEB Classic: lin. reg:8; 2 std. err.; 3sma. CMO(n) = 100 x (sum of up close changes - sum of down close changes) / (their total) over the last n changes (Chande, as CMO3 above); FibCMO is undefined when any of the three has no change",
+            "F|Adapted: 4 unstated details (lane B1, 16 Nov 2026, R4 #339); UNVERIFIED. Unstated in the source: (1) what 'the SMA confirms the direction of the signal' means; vault reading: buys only when the signal close is above the 34-day SMA, short sales only when it is below (option sma_mode = 1: the SMA higher / lower than the day before); (2) when a cover fills; vault reading: at the next open, like the entries (option cover = 1: at the signal close); (3) the printed 'CMO3+CMO5+CMO8/3' read as the average (CMO3+CMO5+CMO8)/3, which keeps the +/-34 triggers on the CMO scale; (4) CMO(5) and CMO(8) as Chande's CMO over 5 and 8 changes (published definition https://www.investopedia.com/terms/c/chandemomentumoscillator.asp: CMO = (sH - sL) / (sH + sL) x 100 over N periods, sums of higher / lower closes; grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md).",
         ]),
         d("sixpk_awesome", "4 · AWEsome (MovAvg Osc)", Status::NotTestable(AMB), &[
             "F|\"Initiate trades only if the 21 sma confirms the direction of the signal\"; AWE = Mov(Mov(C,3,S)-Mov(C,13,S),3,S)",
@@ -70,12 +72,13 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "sixpk_seb_classic" => Some(("sixpk_seb_classic", "Six-Pack SEB Classic", "34-SMA filter")),
         "sixpk_storsi" => Some(("sixpk_storsi", "Six-Pack StoRSI 10/90", "21-SMA filter")),
         "sixpk_cmo3" => Some(("sixpk_cmo3", "Six-Pack CMO3 +/-21", "34-SMA filter")),
+        "sixpk_masterblaster" => Some(("sixpk_masterblaster", "Six-Pack MasterBlaster", "34-SMA filter")),
         _ => id.starts_with("sixpk_").then_some(("sixpk_six_pack", "Six-Pack Trading System", "Not testable")),
     }
 }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let (f, trig) = match id { "sixpk_seb_classic" => (34., 0.), "sixpk_storsi" => (21., 10.), "sixpk_cmo3" => (34., 21.), _ => return None };
+    let (f, trig) = match id { "sixpk_seb_classic" => (34., 0.), "sixpk_storsi" => (21., 10.), "sixpk_cmo3" => (34., 21.), "sixpk_masterblaster" => (34., 0.), _ => return None };
     let mut v = vec![p("sma", "Trend filter SMA, days (book)", f, 2., 200., 1.),
         p("sma_mode", "'SMA confirms the direction': 0 = close above (buys) / below (shorts) the SMA; 1 = SMA rising / falling", 0., 0., 1., 1.),
         p("cover", "Cover fill: 0 = next open (like the entries); 1 = the signal close", 0., 0., 1., 1.)];
@@ -145,8 +148,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if u + d > 0. { let v = 100. * (u - d) / (u + d); (v < -t, v > t) } else { (false, false) }
             }).unzip()
         }
+        "sixpk_masterblaster" => {
+            let cmo = |i: usize, k: usize| -> f64 {
+                if i < k { return f64::NAN; }
+                let (mut u, mut d) = (0., 0.);
+                for j in i + 1 - k..=i { let z = c[j] - c[j - 1]; if z > 0. { u += z } else { d -= z } }
+                if u + d > 0. { 100. * (u - d) / (u + d) } else { f64::NAN }
+            };
+            (0..n).map(|i| { let f = (cmo(i, 3) + cmo(i, 5) + cmo(i, 8)) / 3.; (f < -34., f > 34.) }).unzip()
+        }
         _ => return None,
     };
+    // covers: MasterBlaster covers on the SEB bands (book: 'close above the upper standard error band'), the others on their entry levels
+    let (clo, chi): (Vec<bool>, Vec<bool>) = if id == "sixpk_masterblaster" {
+        let (mut lr, mut se) = (vec![f64::NAN; n], vec![f64::NAN; n]);
+        for i in 7..n { let (a, b) = lr_ste(c, i, 8); lr[i] = a; se[i] = b; }
+        let (m, s) = (sma(&lr, 3), sma(&se, 3));
+        (0..n).map(|i| (c[i] < m[i] - 2. * s[i], c[i] > m[i] + 2. * s[i])).unzip()
+    } else { (lo.clone(), hi.clone()) };
     let ok = |i: usize, d: f64| -> bool {
         if !ma[i].is_finite() { return false; }
         // SMA[i] - SMA[i-1] = (C[i] - C[i-n]) / n: its sign from the two closes (exact, no rounding of two averages)
@@ -161,7 +180,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         if i == to { break; }
         let side = cur.as_ref().map_or(0., |t| t.dir);
-        let cover = (side > 0. && hi[i]) || (side < 0. && lo[i]);
+        let cover = (side > 0. && chi[i]) || (side < 0. && clo[i]);
         if cover && cover_close {
             let mut t = cur.take().unwrap(); t.exit_i = i; t.exit_px = c[i]; t.signal_i = i; t.reason = "cover: signal close".into(); out.push(t);
         }
