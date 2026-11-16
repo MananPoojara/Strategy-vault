@@ -21,7 +21,7 @@ pub fn home(id: &str, ticker: &str) -> Option<String> {
 }
 const FUT: &str = "the named futures contract's daily history (continuously linked, non-adjusted front/next-month contracts as in the book); the vault has no futures data";
 
-pub fn catalogue() -> Vec<StrategyDef> {
+fn catalogue_raw() -> Vec<StrategyDef> {
     use Status::*;
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef {
         id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim,
@@ -323,6 +323,67 @@ pub fn catalogue() -> Vec<StrategyDef> {
     ]
 }
 
+/// Lane D2 (16 Nov 2026, R4 #340, #339): the commodity, currency and bond seasonals run on the Norgate continuous contract of
+/// the market (futures::CARDS_D2), a declared adaptation of the named contract month; always UNVERIFIED.
+pub const FUT_D2: &[&str] = &[
+    "hcta_30_year_bond_feb_short",
+    "hcta_30_year_bond_apr_long",
+    "hcta_30_year_bond_jun_long",
+    "hcta_30_year_bond_nov_short",
+    "hcta_british_pound_mar_long",
+    "hcta_british_pound_may_short",
+    "hcta_british_pound_jun_long",
+    "hcta_british_pound_sep_long",
+    "hcta_british_pound_dec_short",
+    "hcta_cattle_may_short",
+    "hcta_cattle_jun_long",
+    "hcta_cocoa_mar_short",
+    "hcta_cocoa_jun_long",
+    "hcta_cocoa_jul_short",
+    "hcta_cocoa_aug_long",
+    "hcta_cocoa_sep_short",
+    "hcta_cocoa_nov_long",
+    "hcta_coffee_may_short",
+    "hcta_coffee_aug_long",
+    "hcta_copper_may_short",
+    "hcta_copper_dec_long",
+    "hcta_corn_jun_short",
+    "hcta_corn_oct_long",
+    "hcta_crude_oil_feb_long",
+    "hcta_crude_oil_apr_long",
+    "hcta_crude_oil_sep_short",
+    "hcta_euro_jan_short",
+    "hcta_euro_mar_short",
+    "hcta_euro_sep_long",
+    "hcta_euro_oct_long",
+    "hcta_lean_hogs_nov_long",
+    "hcta_natural_gas_feb_long",
+    "hcta_natural_gas_jul_long",
+    "hcta_silver_feb_short",
+    "hcta_silver_may_short",
+    "hcta_silver_oct_short",
+    "hcta_soybeans_feb_long",
+    "hcta_soybeans_jun_short",
+    "hcta_soybeans_oct_long",
+    "hcta_sugar_feb_short",
+    "hcta_sugar_nov_short",
+    "hcta_swiss_franc_aug_long",
+    "hcta_swiss_franc_nov_long",
+    "hcta_swiss_franc_dec_short",
+    "hcta_wheat_jan_short",
+    "hcta_wheat_jun_long",
+    "hcta_yen_feb_long",
+    "hcta_yen_mar_short",
+    "hcta_yen_oct_short"];
+macro_rules! d2note { () => { "[Declared adaptation, R4 #340; UNVERIFIED, 3 unstated details, R4 #339] The Almanac trades the contract month named in the entry rule (Top Percentage Plays, p.126-127). The vault does not hold single contract months; it runs the same calendar rule (Nth trading day of the month, close; fixed hold in trading days, close) on the Norgate continuous contract of that market: back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11. Unstated in the book: (1) the contract month held on each date; vault reading: the continuous contract; (2) the count of 'trading days'; vault reading: this contract's own daily bars (a day without a Norgate bar is not counted); (3) the book's dollar profit per contract; vault reading: point P&L on the back-adjusted series, % of the unadjusted entry close. Not the book's contract, so no #168 comparison counts as verification; the book's figures stay in the claim line as reported. Close-only rule, no stops: no same-day order question (#240: 0 trades)." }; }
+const NOTE_D2: &str = d2note!();
+/// WTI crude's unadjusted front-month close was negative on 2020-04-20 (-37.63): no % return exists for a trade held across it, and the engine refuses the whole run, so the two crude trades that span it end 2019-12-31.
+pub const CAP_2019: &[&str] = &["hcta_crude_oil_feb_long", "hcta_crude_oil_apr_long"];
+const NOTE_D2_CAP: &str = concat!(d2note!(), " Run period capped at 2019-12-31: the Norgate WTI front-month close was negative on 2020-04-20, which no percentage return can price (the engine refuses a run that holds across it).");
+pub fn catalogue() -> Vec<StrategyDef> {
+    catalogue_raw().into_iter().map(|mut d| { if FUT_D2.contains(&d.id) { d.status = Status::Live; d.notes = if CAP_2019.contains(&d.id) { NOTE_D2_CAP } else { NOTE_D2 }; } d }).collect()
+}
+
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "hcta_sp_jan_long" => ("hcta_sp", "S&P 500 seasonal trades", "January long"),
@@ -468,6 +529,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if n == 0 || from > to || to >= n {
         return Some(vec![]);
     }
+    // lane D2: the two WTI trades that span 2020-04-20 end at the last bar of 2019 (CAP_2019)
+    let to = if CAP_2019.contains(&id) { x.r.iter().rposition(|r| r.date.as_str() <= "2019-12-31").map_or(to, |c| c.min(to)) } else { to };
+    if from > to { return Some(vec![]); }
     let td = p.get("td").copied().unwrap_or(td0).round().max(1.0) as usize;
     let hold = p.get("hold").copied().unwrap_or(hold0).round().max(1.0) as usize;
     let mut out: Vec<Trade> = vec![];
