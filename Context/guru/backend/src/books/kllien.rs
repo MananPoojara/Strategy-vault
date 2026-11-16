@@ -11,6 +11,7 @@ pub const REVIEWED: &[&str] = &["klhpt_cci_right", "kldst_perfect_order"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const CCI_NOTE: &str = "[Declared readings] CCI(20) = (typical price - its 20-day average) / (0.015 x mean absolute deviation), typical price = (high + low + close) / 3. An excursion is a run of closes with CCI above +100 (short: below -100); the prior peak is the highest (lowest) CCI of the last finished excursion. In a later excursion the first close whose CCI is beyond that peak enters at the close; one entry per excursion. Stop = the signal candle's low (high); risk R = entry - stop (no trade if R = 0). Half is sold at entry + R, the stop on the rest then moves to the entry price from the next bar, and the rest is sold at entry + 2R. Limits fill at the level or a better open; stops at the level or a worse open; when a bar touches both the stop and a target the stop is taken first (the order inside the bar is unknown). Daily bars (the book: daily or hourly).";
+const MA_NOTE: &str = "Declared adaptation (R4 #339/#340, lane D1 pass 2), always UNVERIFIED: the setup is written for currency pairs on hourly and daily charts (\"works best on hourly and daily charts\"); run on the daily bars of the Norgate AUD, GBP and CHF futures (back-adjusted), one pip = 0.0001 of the quote, no costs, the book prints no results. Four labelled readings: (1) MACD is the built-in 12/26/9 MACD line = EMA(12) - EMA(26) of closes (EMA alpha 2/(n+1), seeded with the first close; definition kept in authors/relax-339/D1/w/macd_def.txt, from https://en.wikipedia.org/wiki/MACD); 'crosses to positive' = the line crosses above zero, each cross arms at most one entry; (2) all conditions are read at the daily close and the order is filled at the next open; the closest SMA is the nearer of the 50 and 100 SMA, the 10 pips are measured from the close; (3) 'five-bar low from entry' = the lowest low (short: highest high) of the signal bar and the four before it; (4) the exit of the second half (and of the whole position if the 2R target is not yet reached) is a daily close 10 pips back through the 50 SMA, filled at that close. Daily stops follow the module's convention: the open beyond the stop fills at the open, otherwise a path strictly beyond it fills at the stop, the stop before the target within one bar, the breakeven stop from the next bar after the half is taken.";
 const PO_NOTE: &str = "[Declared readings] Perfect order up = 10-day > 20-day > 50-day > 100-day > 200-day simple averages of closes (down: the reverse). The formation day is the first close in perfect order. If the order holds on that close and the next four, and the 14-day ADX rose on the fourth (\"ADX pointing upward\"; the 'ideally greater than 20' wish is not applied), buy (sell) at the open of the fifth candle after the formation. Stop = the formation day's low (high), from the entry bar. Exit at the next open after the first close when the perfect order no longer holds (the book's examples exit 'when prices open'). One position at a time; a new trade needs a new formation.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -29,7 +30,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. Look for a currency pair with moving averages in perfect order. 2. Look for ADX pointing upward, ideally greater than 20. 3. Buy five candles after the initial formation of the perfect order (if it still holds)\" (p.139)",
             "X|\"4. The initial stop is the low on the day of the initial crossover for longs and the high for shorts. 5. Exit the position when the perfect order no longer holds\" (p.139); same rule in Day Trading the Currency Market (2005) Ch.8"], PO_NOTE),
         nt("klhpt_momo", "Five-minute momo trade", "Part 2 Setup 1 (p.20-26)", "klhpt", pips, &["E|\"Go long 10 pips above the 20-period EMA\" on 5-minute charts with the MACD histogram turning positive"]),
-        nt("klhpt_ma_macd", "Moving average MACD combo (50/100 SMA)", "Part 2 Setup 3 (p.34-40)", "klhpt", pips, &["E|\"Once the price has broken above the closest SMA by 10 pips or more, enter long if MACD crosses to positive within the last five bars\""]),
+        d("klhpt_ma_macd", "Moving average MACD combo (50/100 SMA), daily currency futures", "Part 2 Setup 3 (p.34-36)", "klhpt", Live,
+          &["F|\"1) Wait for the currency to trade above both the 50 SMA and 100 SMA.\" (short: below both; \"Do not take the trade if the price is simply trading between the 50 SMA and 100 SMA\")",
+            "E|\"2) Once the price has broken above the closest SMA by 10 pips or more, enter long if MACD crosses to positive within the last five bars, otherwise wait for the next MACD signal.\" (p.33-34)",
+            "X|\"3) Initial stop set at five-bar low from entry. 4) Exit half of the position at two times risk; move stop to breakeven. 5) Exit second half when price breaks below 50 SMA by 10 pips.\" (short mirrored, p.34)"], MA_NOTE),
         nt("klhpt_rsi_coaster", "RSI rollercoaster", "Part 2 Setup 4 (p.41-48)", "klhpt", "the stop is 'the swing low' with no definition of the swing, and the first target is half of that risk", &["E|\"RSI reading must be less than 30. Wait for an up candle to form and close with an RSI reading greater than 30. Go long at market on the open of the next candle\""]),
         nt("klhpt_pure_fade", "Pure fade (3/2/1 SD Bollinger bands)", "Part 2 Setup 5 (p.49-55)", "klhpt", "hourly charts only, and the stop is the swing low minus 10 pips", &["E|\"After one candle closes fully within the 2SD-1SD BB zone, buy at market\""]),
         nt("klhpt_memory", "The memory of price", "Part 2 Setup 6 (p.56-67)", "klhpt", "the up-move, its retrace and the swing points are picked on the chart; the position is added to at a loss", &["E|\"Enter short half the position when price rallies to the swing high\""]),
@@ -47,6 +51,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "klhpt_cci_right" => ("klhpt_cci_right", "Lien & Schlossberg CCI trade", "daily"),
         "kldst_perfect_order" => ("kldst_perfect_order", "Lien perfect order", "10/20/50/100/200"),
+        "klhpt_ma_macd" => ("klhpt_ma_macd", "Lien & Schlossberg MA MACD combo", "50/100 SMA, MACD 12/26/9"),
         _ if id.starts_with("klhpt_") || id.starts_with("kldst_") || id.starts_with("kldtc_") => ("kllien_nt", "Lien (held)", "-"),
         _ => return None,
     })
@@ -61,6 +66,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
+        "klhpt_ma_macd" => vec![],
         "klhpt_cci_right" => vec![p("len", "CCI length", 20., 5., 50., 1.), p("level", "CCI zone level", 100., 50., 200., 10.)],
         "kldst_perfect_order" => vec![p("wait", "Candles after the formation before entry", 5., 1., 20., 1.)],
         _ if id.starts_with("klhpt_") || id.starts_with("kldst_") || id.starts_with("kldtc_") => vec![],
@@ -188,6 +194,74 @@ fn run_cci_ep6(x: &Ctx, from: usize, to: usize, n: usize, lv: f64, on: bool) -> 
     out
 }
 
+/// One pip of the currency quote (0.0001): the book's "10 pips" buffers on the Norgate AUD, GBP and CHF futures (D1 pass 2, R4 #340).
+const PIP: f64 = 0.0001;
+fn ema_tx(v: &[f64], n: usize) -> Vec<f64> {
+    let a = 2.0 / (n as f64 + 1.0);
+    let mut o: Vec<f64> = Vec::with_capacity(v.len());
+    for (i, &p) in v.iter().enumerate() { o.push(if i == 0 { p } else { o[i - 1] + a * (p - o[i - 1]) }); }
+    o
+}
+/// Lien & Schlossberg Setup 3 (p.34-36) on daily bars: price beyond both the 50 and 100 SMA and 10 pips past the closest one, a MACD cross
+/// within the last five bars, stop = five-bar extreme, half out at 2R then breakeven, rest out on a close 10 pips back through the 50 SMA.
+fn run_ma_macd(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    let c = &x.c;
+    let (s50, s100) = (sma_exact(c, 50), sma_exact(c, 100));
+    let (e12, e26) = (ema_tx(c, 12), ema_tx(c, 26));
+    let m: Vec<f64> = (0..c.len()).map(|i| e12[i] - e26[i]).collect();
+    let cross = |j: usize, d: f64| j >= 1 && if d > 0. { m[j - 1] <= 0. && m[j] > 0. } else { m[j - 1] >= 0. && m[j] < 0. };
+    let (mut out, mut cur) = (vec![], None::<(Trade, f64, f64, bool, Vec<(usize, f64, f64)>)>); // trade, initial stop, risk, half taken, exits
+    let (mut pend, mut used) = (None::<(f64, f64, usize)>, None::<usize>); // order (dir, stop, cross bar), the cross already traded
+    for i in from.max(100)..=to {
+        if cur.is_none() {
+            if let Some((d, stop, cj)) = pend.take() {
+                let e = x.o[i];
+                if (e - stop) * d > 0. {
+                    used = Some(cj);
+                    cur = Some((Trade { dir: d, legs: vec![Leg { i, px: e, w: 1. }], exit_i: i, exit_px: e, reason: String::new(), entry_kind: "open", signal_i: i - 1, open: false, exits: vec![] }, stop, (e - stop) * d, false, vec![]));
+                }
+            }
+        }
+        pend = None;
+        if let Some((mut t, stop, r, done, mut ex)) = cur.take() {
+            let (d, e) = (t.dir, t.legs[0].px);
+            let (o, h, l, cl) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            let s = if done { e } else { stop };
+            let beyond = |p: f64| if d > 0. { p < s } else { p > s };
+            let t1 = e + d * 2. * r;
+            let mut fin = None::<(f64, &str)>;
+            if beyond(o) { fin = Some((o, if done { "breakeven stop after the first target" } else { "stop: five-bar extreme" })); }
+            else if beyond(if d > 0. { l } else { h }) { fin = Some((s, if done { "breakeven stop after the first target" } else { "stop: five-bar extreme" })); }
+            else {
+                let mut done2 = done;
+                if !done && (if d > 0. { h >= t1 } else { l <= t1 }) { ex.push((i, if (d > 0. && o >= t1) || (d < 0. && o <= t1) { o } else { t1 }, 0.5)); done2 = true; }
+                let back = if d > 0. { cl < s50[i] - 10. * PIP } else { cl > s50[i] + 10. * PIP };
+                if back { fin = Some((cl, "close 10 pips back through the 50 SMA")); }
+                else if i < to { cur = Some((t.clone(), stop, r, done2, ex.clone())); }
+            }
+            if let Some((px, why)) = fin {
+                if ex.is_empty() { t.exit_px = px; } else { ex.push((i, px, 0.5)); t.exit_px = ex.iter().map(|q| q.1 * q.2).sum::<f64>(); t.exits = ex; }
+                t.exit_i = i; t.signal_i = i; t.reason = why.into(); out.push(t);
+            } else if i == to {
+                if ex.is_empty() { t.exit_px = cl; } else { ex.push((i, cl, 0.5)); t.exit_px = ex.iter().map(|q| q.1 * q.2).sum::<f64>(); t.exits = ex; }
+                t.exit_i = i; t.signal_i = i; t.reason = "open".into(); t.open = true; out.push(t);
+            }
+        }
+        if cur.is_none() && i < to && i >= from && s100[i].is_finite() {
+            for d in [1., -1.] {
+                let (hi, lo) = (s50[i].max(s100[i]), s50[i].min(s100[i]));
+                let ok = if d > 0. { c[i] > hi + 10. * PIP } else { c[i] < lo - 10. * PIP };
+                if !ok { continue; }
+                if let Some(cj) = (i - 4..=i).rev().find(|&j| cross(j, d)).filter(|&j| used != Some(j)) {
+                    let stop = if d > 0. { x.l[i - 4..=i].iter().cloned().fold(f64::INFINITY, f64::min) } else { x.h[i - 4..=i].iter().cloned().fold(f64::NEG_INFINITY, f64::max) };
+                    pend = Some((d, stop, cj));
+                }
+            }
+        }
+    }
+    out
+}
+
 fn run_po(x: &Ctx, from: usize, to: usize, wait: usize) -> Vec<Trade> {
     let c = &x.c;
     let m: Vec<Vec<f64>> = [10, 20, 50, 100, 200].iter().map(|&n| sma_exact(c, n)).collect();
@@ -227,6 +301,7 @@ fn run_po(x: &Ctx, from: usize, to: usize, wait: usize) -> Vec<Trade> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "klhpt_ma_macd" { return (from < to && to < x.r.len()).then(|| run_ma_macd(x, from, to)); } // futures card (futures.rs CARDS_D1), not an index/ETF admission
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
