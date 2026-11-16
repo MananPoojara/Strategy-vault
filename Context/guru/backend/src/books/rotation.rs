@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 pub static PRELOADED: OnceLock<&'static BTreeMap<String, Vec<Row>>> = OnceLock::new();
 
 pub const IDS: &[&str] = &["alpha_dyn_treasuries", "alpha_rising_assets", "fbrs_combo_top3", "fgitc_rotation", "fgtofd_sector_tilt", "kfgei_alloc_combined",
-    "kfgei_alloc_corr", "kfgei_alloc_rar", "kfgei_alloc_vol", "stv7_bull_someplace", "stv7_sell_in_may", "maetf_small_large", "maetf_eafe_sp"]; // + lane D1 pass 2 (R4 #340: IWM / SPY and EFA / SPY stand in for the Russell and EAFE indexes) + lane K54 (decision #229 (5), (10))
+    "kfgei_alloc_corr", "kfgei_alloc_rar", "kfgei_alloc_vol", "stv7_bull_someplace", "stv7_sell_in_may"]; // + lane K54 (decision #229 (5), (10))
 pub fn is_rotation(id: &str) -> bool { IDS.contains(&id) }
 pub const ANCHOR: &str = "SPY";
 pub const SECTORS: &[&str] = &["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"];
@@ -86,37 +86,6 @@ fn events(id: &str, x: &Ctx, u: &U, from: usize, to: usize, p: &Params) -> (Vec<
                 if (m == "04" || m == "10") && u.all(&[k]) {
                     let a = if m == "04" { 1 } else { 0 };
                     ev.push(Ev { k, open: false, hold: vec![(a, 1.)], why: format!("{} held {}", name(a), if a == 1 { "May-October (bought at April's last close)" } else { "November-April (bought at October's last close)" }) });
-                }
-            }
-            (ev, true)
-        }
-        "maetf_small_large" => {
-            // u = [IWM, SPY]: on each year's last trading day hold whichever returned more over that calendar year, for the next year
-            let ye: Vec<usize> = (0..n).filter(|&k| year_end(x, k)).collect();
-            for j in 1..ye.len() {
-                let (k, b) = (ye[j], ye[j - 1]);
-                if !u.all(&[k, b]) { continue; }
-                let (r0, r1) = (ret(&u.c[0], k, k - b), ret(&u.c[1], k, k - b));
-                let a = if r0 > r1 { 0 } else { 1 };
-                ev.push(Ev { k, open: false, hold: vec![(a, 1.)], why: format!("{} returned more in {} (IWM {}, SPY {}); held the next calendar year", name(a), &x.r[k].date[..4], pct(r0), pct(r1)) });
-            }
-            (ev, true)
-        }
-        "maetf_eafe_sp" => {
-            // u = [EFA, SPY]: month-end ratio R = EFA / SPY; start in SPY; to EFA when R is more than 15% above its trough, back to SPY when R is 15% or more below its peak
-            let (mut asset, mut ext) = (usize::MAX, 0.0f64);
-            for &k in &me {
-                if !u.all(&[k]) { continue; }
-                let r = u.c[0][k] / u.c[1][k];
-                if asset == usize::MAX {
-                    (asset, ext) = (1, r);
-                    ev.push(Ev { k, open: false, hold: vec![(1, 1.)], why: "start: the S&P 500 (the book's own state from 6/30/2001)".into() });
-                } else if asset == 1 {
-                    ext = ext.min(r);
-                    if r > ext * 1.15 { ev.push(Ev { k, open: false, hold: vec![(0, 1.)], why: format!("the S&P 500 lags EFA by more than 15%: EFA/SPY {r:.4} vs trough {ext:.4}") }); (asset, ext) = (0, r); }
-                } else {
-                    ext = ext.max(r);
-                    if r <= ext * 0.85 { ev.push(Ev { k, open: false, hold: vec![(1, 1.)], why: format!("EFA lags the S&P 500 by 15% or more: EFA/SPY {r:.4} vs peak {ext:.4}") }); (asset, ext) = (1, r); }
                 }
             }
             (ev, true)
@@ -314,8 +283,6 @@ pub fn account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params,
         let data = data.ok_or("needs_data: the loaded price file is not available to the rotation")?;
         let names: Vec<&'static str> = match id {
             "stv7_sell_in_may" => vec!["SPY", if p.get("sector").copied().unwrap_or(0.) >= 0.5 { "XLV" } else { "XLP" }],
-            "maetf_small_large" => vec!["IWM", "SPY"],
-            "maetf_eafe_sp" => vec!["EFA", "SPY"],
             "alpha_rising_assets" => RISING.to_vec(),
             "alpha_dyn_treasuries" => TREASURY.to_vec(),
             "fgitc_rotation" => COUNTRIES.to_vec(),

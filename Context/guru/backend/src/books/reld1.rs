@@ -68,21 +68,4 @@ mod tests {
             }
         }
     }
-    /// Futures card (pass 2): VAULT_FUT=<data/futures/norgate-20200908> D1_OUT=<csv> cargo test --release d1_fut_dump -- --ignored
-    #[test]
-    #[ignore]
-    fn d1_fut_dump() {
-        use std::io::Write;
-        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("D1_OUT").unwrap()).unwrap());
-        let mut data = std::collections::BTreeMap::new();
-        crate::futures::load(std::path::Path::new(&std::env::var("VAULT_FUT").unwrap()), &mut data);
-        for t in data.keys().filter(|t| ["(Norgate &6A)", "(Norgate &6B)", "(Norgate &6S)"].iter().any(|s| t.ends_with(s))).cloned().collect::<Vec<_>>() {
-            let rows = &data[&t];
-            let x = Ctx::new(rows, rows, &[]);
-            for z in crate::books::run("klhpt_ma_macd", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
-                let ex: Vec<String> = z.exits.iter().map(|e| format!("{}@{}x{}", rows[e.0].date, e.1, e.2)).collect();
-                writeln!(f, "{t},{},{},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason, z.open, ex.join(";")).unwrap();
-            }
-        }
-    }
 }
