@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { ChartPopup } from "./ChartPopup";
 import { ProvisionalStrip, Segmented } from "./ui";
 import type { InstrumentOption } from "./instruments";
-import type { ChartRange, Market, Timeframe } from "./types";
+import { RANGE_BUTTONS, type ChartRange, type Market, type Timeframe } from "./types";
 import "./library.css";
 import "./chart-timeframes.css";
 
@@ -12,7 +12,7 @@ const MARKETS: { value: Market; label: string }[] = [
 const TF_LABEL: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 const TF_SHORT: Record<string, string> = { D: "1D", W: "1W", M: "1M", Q: "3M", Y: "1Y" };
 const QUICK_TF = ["D", "W", "M"];
-const RANGES: ChartRange[] = ["1Y", "3Y", "All"];
+const RANGES: ChartRange[] = RANGE_BUTTONS;
 
 export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timeframes, onTf, range, onRange, provisionalNote, chartWorkspace = false, children }: {
   market: Market; onMarket(m: Market): void; options: InstrumentOption[]; ticker: string; onTicker(t: string): void;

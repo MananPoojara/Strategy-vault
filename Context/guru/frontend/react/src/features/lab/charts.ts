@@ -42,9 +42,10 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
   });
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     // A resize changes the bars shown; keep the time range the user (or the preset) chose.
-    const range = chart.timeScale().getVisibleRange?.();
+    // bar positions, not dates: dates stop at the last bar and would drop the empty space after it
+    const ts = chart.timeScale(), logical = ts.getVisibleLogicalRange?.(), range = logical ? null : ts.getVisibleRange?.();
     chart.resize(el.clientWidth, resizeHeight ? el.clientHeight || height : height);
-    if (range) chart.timeScale().setVisibleRange(range);
+    if (logical && ts.setVisibleLogicalRange) ts.setVisibleLogicalRange(logical); else if (range) ts.setVisibleRange(range);
   });
   observer?.observe(el);
   let disposed = false;

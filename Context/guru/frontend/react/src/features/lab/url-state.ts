@@ -1,9 +1,9 @@
 import { resolveRoute } from "../../app/routes";
-import type { ChartRange, Market } from "./types";
+import { RANGE_BUTTONS, type ChartRange, type Market } from "./types";
 
 export interface LabQuery { region: Market; tk: string; tf: string; range: ChartRange; customize: string; strategy: string; published: string }
 // region is never omitted: the research region may differ from the default, so a shared India link must say so.
-const DEFAULTS: Partial<LabQuery> = { tk: "", tf: "D", range: "3Y", customize: "", strategy: "", published: "" };
+const DEFAULTS: Partial<LabQuery> = { tk: "", tf: "D", range: "Auto", customize: "", strategy: "", published: "" };
 
 export function readLabQuery(hash = location.hash): LabQuery {
   const q = resolveRoute(hash).query;
@@ -13,7 +13,7 @@ export function readLabQuery(hash = location.hash): LabQuery {
     region: region === "us" || region === "gl" ? region : "in",
     tk: q.get("tk") ?? "",
     tf: q.get("tf") || "D",
-    range: range === "1Y" || range === "All" ? range : "3Y",
+    range: range && (RANGE_BUTTONS as string[]).concat("3Y").includes(range) ? range as ChartRange : "Auto",
     customize: q.get("customize") ?? "",
     strategy: q.get("strategy") ?? "",
     published: q.get("published") ?? "",

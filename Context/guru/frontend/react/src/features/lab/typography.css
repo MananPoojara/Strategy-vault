@@ -48,7 +48,7 @@ body:has(.lab-page[data-lab-page]) .topbar .status { font-size: 14px; }
   line-height: 1.4 !important;
   font-variant-numeric: tabular-nums;
 }
-.lab-page[data-lab-page] :is(label,legend,small,.cap,.dfield,.lab-param-k,.lab-ts-k,.lab-label,.lab-mode-help,.lab-caps,.rnote,.lab-report-constants,.lab-datestrip-axis,.lab-datestrip-key,.lab-prow > span,.lab-ind-group,.lab-indicator-values,.lab-plot-y,.lab-report-axis,.bk-ax,.bk-minlab text,svg text) {
+.lab-page[data-lab-page] :is(label,legend,small,.cap,.dfield,.lab-param-k,.lab-ts-k,.lab-label,.lab-mode-help,.lab-caps,.rnote,.lab-report-constants,.lab-datestrip-axis,.lab-datestrip-key,.lab-prow > span,.lab-ind-group,.lab-indicator-values,.lab-plot-y,.lab-report-axis,.bk-ax,.bk-minlab text,svg:not(.lab-draw-layer):not(.lab-draw-rail svg) text) {
   font-size: var(--lab-type-label) !important;
   font-weight: 400 !important;
   line-height: 1.5 !important;

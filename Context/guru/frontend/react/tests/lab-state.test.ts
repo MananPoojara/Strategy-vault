@@ -8,7 +8,7 @@ const ind = (id: string) => cat.indicators.find((i) => i.id === id)!;
 const start = () => initialLabState(readLabQuery("#/indicators?tk=NIFTY%2050"));
 
 it("starts from the query; a missing region falls back to the research region", () => {
-  expect(start()).toMatchObject({ market: "in", ticker: "NIFTY 50", tf: "D", range: "3Y", chips: [], row: null, tried: 0 });
+  expect(start()).toMatchObject({ market: "in", ticker: "NIFTY 50", tf: "D", range: "Auto", chips: [], row: null, tried: 0 });
   expect(initialLabState(readLabQuery("#/indicators"), "us").market).toBe("us");
   expect(initialLabState(readLabQuery("#/indicators?region=gl")).market).toBe("gl");
 });

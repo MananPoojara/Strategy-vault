@@ -2,6 +2,7 @@ import { portfolioIdentity } from "./portfolio-model";
 import { MAX_PANES, MAX_PRICE_OVERLAYS } from "./catalogue";
 import { canonicalJson, newStrategySpec } from "./spec-model";
 import { withSideExits } from "./execution-model";
+import { autoPivotPeriod, PERIOD_LEVELS } from "./bars";
 import type { EditorState } from "./SavedStrategies";
 import type { LabQuery } from "./url-state";
 import type { Chip } from "./Workbench";
@@ -32,7 +33,8 @@ export function labReducer(state: LabState, action: LabAction): LabState {
     case "market":
       return action.market === state.market ? state : { ...state, market: action.market, ticker: "", chips: [], placements: {}, row: null, lastRun: null };
     case "ticker": return { ...state, ticker: action.ticker, lastRun: null };
-    case "tf": return { ...state, tf: action.tf };
+    // pivots left on TradingView's Auto period follow the chart: monthly levels on 1D, yearly above it
+    case "tf": return { ...state, tf: action.tf, chips: state.chips.map((c) => (PERIOD_LEVELS[c.id] && c.params?.period === autoPivotPeriod(state.tf) ? { ...c, params: { ...c.params, period: autoPivotPeriod(action.tf) } } : c)) };
     case "range": return { ...state, range: action.range };
     // every spec entering the editor has its Supertrend exits on its own side (execution-model withSideExits)
     case "spec": return { ...state, spec: withSideExits(action.spec) };
@@ -42,6 +44,7 @@ export function labReducer(state: LabState, action: LabAction): LabState {
       const { indicator } = action;
       const key = `c${state.nextChip}`;
       const params = Object.fromEntries(indicator.params.map((p) => [p.key, p.default]));
+      if (PERIOD_LEVELS[indicator.id] && "period" in params) params.period = autoPivotPeriod(state.tf); // TradingView: Pivots Timeframe Auto
       let chips = [...state.chips, { key, id: indicator.id, params }];
       const placements = { ...state.placements, [key]: indicator.placement };
       const cap = indicator.placement === "price" ? MAX_PRICE_OVERLAYS : MAX_PANES;

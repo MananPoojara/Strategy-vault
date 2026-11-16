@@ -266,7 +266,7 @@ it("draws horizontal and trend lines by press and drag with a live preview; line
   await ptr("pointerdown", 40, 30, host.querySelector('[data-i="1"][data-part="line"]')!);
   await ptr("pointermove", 50, 40); await ptr("pointerup", 50, 40);
   expect(saved()[1]).toEqual({ kind: "t", a: [d[5], 400], b: [d[2], 300] });
-  await ptr("pointerdown", 20, 30, host.querySelector('[data-i="1"][data-part="b"]')!);
+  await ptr("pointerdown", 20, 30, host.querySelector('[data-i="1"][data-part="p1"]')!);
   await ptr("pointermove", 30, 50); await ptr("pointerup", 30, 50);
   expect(saved()[1]).toEqual({ kind: "t", a: [d[5], 400], b: [d[3], 500] });
   expect(host.querySelector("[data-lab-draw-selected]")!.textContent).toContain("Delete removes it");
@@ -277,6 +277,59 @@ it("draws horizontal and trend lines by press and drag with a live preview; line
   await press("[data-lab-draw-clear]");
   expect(host.querySelector("[data-lab-draw-clear]")).toBeNull();
   expect(host.querySelectorAll("[data-lab-drawing]")).toHaveLength(0);
+});
+
+it("TradingView's drawing toolbar: fly-outs with sections and shortcuts, the last tool shown, Stay in drawing mode, Lock, Hide and Remove", async () => {
+  localStorage.removeItem("lab.drawings|in|NIFTY 50|D"); localStorage.removeItem("lab.drawPrefs");
+  const onChipRemove = vi.fn();
+  const host = await mount(<Workbench {...props} chips={chips.slice(0, 2)} onChipRemove={onChipRemove} />);
+  await flush();
+  const saved = () => JSON.parse(localStorage.getItem("lab.drawings|in|NIFTY 50|D") ?? "[]");
+  const press = async (sel: string) => { await act(async () => host.querySelector<HTMLButtonElement>(sel)!.click()); await flush(); };
+  const key = (init: KeyboardEventInit) => act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init })); });
+  const ptr = async (type: string, x: number, y: number, el: Element = host.querySelector("[data-lab-draw-layer]")!) =>
+    act(async () => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y })); });
+  const rail = host.querySelector('[role="toolbar"][aria-label="Drawing tools"]')!;
+  expect([...rail.querySelectorAll(":scope > [data-lab-slot]")].map((s) => s.getAttribute("data-lab-slot"))).toEqual(["cursors", "lines", "fib", "patterns", "forecast", "shapes", "text", "magnet", "hide", "remove"]);
+  // the arrow opens the Lines fly-out: section header, names and shortcuts; Esc closes it
+  const lines = host.querySelector('[data-lab-slot="lines"] [role="menu"]')!;
+  expect(lines.hasAttribute("hidden")).toBe(true);
+  await press('[data-lab-slot="lines"] .lab-draw-more');
+  expect(lines.hasAttribute("hidden")).toBe(false);
+  expect(lines.querySelector(".lab-flyout-head")!.textContent).toBe("LINES");
+  expect(lines.querySelector('[data-lab-draw="t"]')!.textContent).toBe("Trend lineAlt+T");
+  await key({ key: "Escape" });
+  expect(lines.hasAttribute("hidden")).toBe(true);
+  // choosing a tool makes it the group button's tool; Alt+H picks the horizontal line
+  await press('[data-lab-draw="ray"]');
+  expect(host.querySelector('[data-lab-draw-group="lines"]')!.getAttribute("aria-label")).toBe("Ray");
+  await key({ key: "h", code: "KeyH", altKey: true });
+  expect(host.querySelector('[data-lab-draw-group="lines"]')!.getAttribute("aria-label")).toBe("Horizontal line");
+  expect(host.querySelector("[data-lab-draw-hint]")!.textContent).toContain("Move to a price and click");
+  // Stay in drawing mode: the tool stays for the next line
+  await press("[data-lab-draw-stay]");
+  await ptr("pointerdown", 20, 10); await ptr("pointerup", 20, 10);
+  await ptr("pointerdown", 20, 20); await ptr("pointerup", 20, 20);
+  expect(saved()).toEqual([{ kind: "h", price: 100 }, { kind: "h", price: 200 }]);
+  expect(host.querySelector("[data-lab-draw-hint]")).not.toBeNull();
+  await key({ key: "Escape" });
+  expect(JSON.parse(localStorage.getItem("lab.drawPrefs")!).stay).toBe(true);
+  // Lock all drawings: a locked line does not move
+  await press("[data-lab-draw-lock]");
+  await ptr("pointerdown", 20, 10, host.querySelector('[data-i="0"][data-part="line"]')!); await ptr("pointermove", 20, 40); await ptr("pointerup", 20, 40);
+  expect(saved()[0]).toEqual({ kind: "h", price: 100 });
+  await press("[data-lab-draw-lock]");
+  // Hide drawings hides them; Hide all shows them again after a second click
+  await press('[data-lab-hide="drawings"]');
+  expect(host.querySelectorAll("[data-lab-drawing]")).toHaveLength(0);
+  await press('[data-lab-hide="drawings"]');
+  expect(host.querySelectorAll("[data-lab-drawing]")).toHaveLength(2);
+  // Remove: drawings & indicators
+  expect(host.querySelector("[data-lab-remove-all]")!.textContent).toBe("Remove 2 drawings & 2 indicators");
+  await press("[data-lab-remove-all]");
+  expect(saved()).toEqual([]);
+  expect(onChipRemove.mock.calls.map(([k]) => k)).toEqual(["c1", "c2"]);
+  localStorage.removeItem("lab.drawPrefs");
 });
 
 it("oscillator panes draw TradingView's threshold levels (Stochastic 80 / 20); the Properties window edits or removes them", async () => {

@@ -111,7 +111,7 @@
 .lab-page[data-lab-page="indicators"] > header .lab-label { margin: 0; font-size: 11px; }
 .lab-draw-layer { position: absolute; left: 0; top: 0; width: 100%; z-index: 2; overflow: hidden; pointer-events: none; touch-action: none; }
 .lab-draw-layer.on { pointer-events: all; cursor: crosshair; }
-.lab-draw-layer .lab-draw-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: move; }
+.lab-draw-layer .lab-draw-hit { stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke; cursor: move; } /* a path hit target only hits along its outline */
 .lab-draw-layer .lab-draw-end { pointer-events: all; cursor: grab; }
 .lab-draw-layer.on .lab-draw-hit, .lab-draw-layer.on .lab-draw-end { pointer-events: none; }
 .lab-workbench .lab-fullscreen { display:grid; place-items:center; width:32px; height:32px; padding:5px; }
@@ -199,3 +199,31 @@
 @media (max-width: 700px) { .lab-workbench .lab-chart-footer { flex-wrap: wrap; padding-left: 40px; } .lab-workbench .lab-chart-footer > span { flex-basis: 100%; margin: 0; padding: 0 0 2px; white-space: normal; } }
 /* no drawing rail (Renko, Kagi…): the range row lines up with the chart's left edge */
 .lab-workbench .lab-chart-body:has(> .lab-draw-rail[hidden]) ~ .lab-chart-footer { padding-left: 12px; }
+/* TradingView: a dropped drawing's end handles show on hover or when selected */
+.lab-draw-layer .lab-draw-end.idle { opacity: 0; }
+.lab-draw-layer g:hover > .lab-draw-end.idle { opacity: 1; }
+.lab-draw-layer .lab-draw-hit.area { fill: transparent; stroke: none; pointer-events: all; }
+.lab-draw-layer.on .lab-draw-hit.area { pointer-events: none; }
+/* TradingView: the Vol row sits under the OHLC row, the indicator names below it */
+.lab-legend-tv:has(> .lab-legend-vol) + .lab-chart-indicators { top: 50px; }
+/* TradingView's drawing toolbar: a group button shows its last tool, its small arrow (or a long press) opens the fly-out */
+.lab-workbench .lab-draw-rail hr { width: 24px; margin: 3px 0; border: 0; border-top: 1px solid var(--rule); }
+.lab-draw-slot { position: relative; }
+.lab-workbench .lab-draw-rail .lab-draw-more { position: absolute; right: -4px; top: 0; width: 9px; height: 36px; padding: 0; opacity: 0; }
+.lab-workbench .lab-draw-rail .lab-draw-more svg { width: 5px; height: 9px; stroke-width: 1.4; }
+.lab-draw-slot:hover > .lab-draw-more, .lab-workbench .lab-draw-rail .lab-draw-more[aria-expanded=true], .lab-draw-more:focus-visible { opacity: 1; }
+.lab-flyout { position: fixed; z-index: 1001; min-width: 230px; max-height: 80vh; overflow-y: auto; padding: 4px 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); box-shadow: 0 4px 18px rgb(0 0 0 / .18); }
+.lab-flyout-head { margin: 0; padding: 8px 14px 4px; color: var(--ink3); font: 600 10.5px var(--font); letter-spacing: .04em; }
+.lab-workbench .lab-draw-rail .lab-flyout button { display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 14px; border-radius: 0; color: var(--ink); font: 500 13px var(--font); text-align: left; }
+.lab-workbench .lab-draw-rail .lab-flyout button[aria-checked=true] { color: var(--blue); }
+.lab-flyout kbd { margin-left: auto; color: var(--ink3); font: 500 11px var(--font); }
+/* TradingView's Icons fly-out: a grid of icon buttons under full-width category headers */
+.lab-draw-layer.locked .lab-draw-hit, .lab-draw-layer.locked .lab-draw-end { pointer-events: none; }
+.lab-draw-layer.erase .lab-draw-hit, .lab-draw-layer.erase .lab-draw-end { cursor: pointer; }
+.lab-draw-text { position: absolute; z-index: 4; min-width: 120px; min-height: 26px; padding: 3px 6px; border: 1px solid var(--blue); border-radius: 3px; background: var(--card); font: 14px var(--font); resize: both; transform: translateY(-100%); }
+/* TradingView's cursors: Dot, Arrow (no crosshair lines, set on the chart), Demonstration (a highlight), Eraser */
+.lab-cursor-dot .lwc { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Ccircle cx='6' cy='6' r='3' fill='%23787B86' stroke='white'/%3E%3C/svg%3E") 6 6, crosshair; }
+.lab-cursor-arrow .lwc, .lab-cursor-eraser .lwc { cursor: default; }
+.lab-cursor-demo .lwc { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='20' cy='20' r='18' fill='%23F2364533' stroke='%23F23645' stroke-opacity='.5'/%3E%3C/svg%3E") 20 20, default; }
+/* TradingView: the toolbar never makes the chart shorter; it is as tall as the chart and scrolls when its buttons do not fit */
+.lab-workbench .lab-draw-rail { contain: size; align-self: stretch; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }

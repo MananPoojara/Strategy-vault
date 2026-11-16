@@ -4,7 +4,9 @@ export type SavedMarket = Market | "crypto";
 export type Role = "admin" | "researcher" | "viewer";
 /** 'D' | 'W' | 'M' | 'Q' | 'Y' | '<n>D' (2–63). */
 export type Timeframe = string;
-export type ChartRange = "1Y" | "3Y" | "All";
+/** TradingView's date-range buttons (1M … All); "Auto" is its default zoom (6 px a bar, the latest bars); "3Y" stays for older links. */
+export type ChartRange = "Auto" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "3Y" | "5Y" | "All";
+export const RANGE_BUTTONS: ChartRange[] = ["1M", "3M", "6M", "YTD", "1Y", "5Y", "All"];
 
 export interface ForeignDisclosure { ticker: string; type: string; alignment: "same_date" | "prior_date"; fixup: boolean; first: string; last: string; uses?: {path:string;source:string;source_scope?:"portfolio_member";alignment:"same_date"|"prior_date";fixup:boolean}[] }
 export interface Provisional { provisional?: true; provisional_note?: string }

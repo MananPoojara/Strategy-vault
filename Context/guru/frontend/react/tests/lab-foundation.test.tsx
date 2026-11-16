@@ -28,7 +28,7 @@ it("shows one YT Strategies link, no 'soon' placeholder, and marks the open cust
 });
 
 it("reads the page query with defaults and writes it without losing other keys", () => {
-  expect(readLabQuery("#/indicators")).toEqual({ region: "in", tk: "", tf: "D", range: "3Y", customize: "", strategy: "", published: "" });
+  expect(readLabQuery("#/indicators")).toEqual({ region: "in", tk: "", tf: "D", range: "Auto", customize: "", strategy: "", published: "" });
   expect(readLabQuery("#/indicators?region=gl&tk=CRYPTO%3ABTCUSD&tf=W&range=All").region).toBe("gl");
   expect(readLabQuery("#/indicators?region=xx").region).toBe("in");
   expect(labHash("/indicators", { tk: "NIFTY 50", customize: "" }, "#/indicators?region=us&customize=rsi2_4"))

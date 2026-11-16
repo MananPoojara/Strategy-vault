@@ -63,9 +63,11 @@ export const zonePairs = (outputs: string[]) =>
   outputs.flatMap((o) => { const m = /^(.*)_top$/.exec(o); return m && outputs.includes(`${m[1]}_bottom`) ? [m[1]] : []; });
 
 export function rangeStart(dates: string[], range: ChartRange): string | null {
-  if (range === "All" || !dates.length) return null;
+  if (range === "All" || range === "Auto" || !dates.length) return null;
   const last = new Date(`${dates[dates.length - 1]}T00:00:00Z`);
-  last.setUTCFullYear(last.getUTCFullYear() - (range === "1Y" ? 1 : 3));
+  if (range === "YTD") last.setUTCMonth(0, 1);
+  else if (range.endsWith("M")) last.setUTCMonth(last.getUTCMonth() - Number(range.slice(0, -1)));
+  else last.setUTCFullYear(last.getUTCFullYear() - Number(range.slice(0, -1)));
   const from = last.toISOString().slice(0, 10);
   return dates.find((d) => d >= from) ?? null;
 }
@@ -125,4 +127,39 @@ export function strongWeakLines(outputs: string[], series: Record<string, (numbe
     return [{ from, to: last, price, text: `${strong ? "Strong" : "Weak"} ${high ? "High" : "Low"}`, up: !high, dotted: false, above: high, solid: true, atEnd: true }];
   };
   return [...line(series.trailing_high?.[k], true), ...line(series.trailing_low?.[k], false)];
+}
+
+/** Indicators whose levels hold for a whole period (week, month, year): drawn as TradingView's Pivot Points Standard. */
+export const PERIOD_LEVELS: Record<string, Record<string, string>> = {
+  pivots_std: { p: "P", r1: "R1", r2: "R2", r3: "R3", r4: "R4", r5: "R5", s1: "S1", s2: "S2", s3: "S3", s4: "S4", s5: "S5" },
+  cpr: { pivot: "P", bc: "BC", tc: "TC" },
+};
+/** TradingView's Pivots Timeframe "Auto" on daily and longer charts: 1M on 1D, 12M above it (period 2 month, 4 year). */
+export const autoPivotPeriod = (tf: string) => (tf === "D" ? 2 : 4);
+export interface LevelLine { from: number; to: number; price: number; text: string }
+/** One flat line per level per period, the period running from its first bar to the next period's first bar, labelled
+ *  "P (23593.95)" at its left end; only the last `back` periods (TradingView "Number of pivots back", 15). */
+export function periodLevelLines(id: string, outputs: string[], series: Record<string, (number | null)[]>, dates: string[], px: Ohlc, back = 15): LevelLine[] {
+  const names = PERIOD_LEVELS[id];
+  // the levels come from daily bars (TradingView takes the period's high, low and close from the days, whatever the chart's
+  // timeframe): a period starts on the chart bar that holds its first day (a week or month bar is dated its last day)
+  const at = { get: (d: string) => { let lo = 0, hi = px.d.length; while (lo < hi) { const m = (lo + hi) >> 1; if (px.d[m] < d) lo = m + 1; else hi = m; } return lo < px.d.length ? lo : undefined; } };
+  if (!names) return [];
+  const key = outputs.find((o) => names[o]);
+  if (!key) return [];
+  const starts: number[] = []; // dates indexes where a new period's levels begin
+  dates.forEach((_, k) => { if (series[key][k] !== (k ? series[key][k - 1] : undefined) && typeof series[key][k] === "number") starts.push(k); });
+  const out: LevelLine[] = [];
+  starts.slice(-back).forEach((k, n, all) => {
+    // the current period runs on past the latest bar for as many bars as the period before it (TradingView draws it to the period's end)
+    const from = at.get(dates[k]), next = all[n + 1], prev = all[n - 1];
+    const to = next !== undefined ? at.get(dates[next]) : from === undefined ? undefined
+      : Math.max(px.d.length - 1, prev !== undefined ? from + (from - (at.get(dates[prev]) ?? from)) : px.d.length - 1);
+    if (from === undefined || to === undefined) return;
+    for (const o of outputs) {
+      const price = series[o]?.[k];
+      if (names[o] && typeof price === "number") out.push({ from, to, price, text: `${names[o]} (${price.toFixed(2)})` });
+    }
+  });
+  return out;
 }
