@@ -55,10 +55,14 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
         if start==Fill::Close {if k==x {pts.push((k,c(k)));} continue;} // entered at this close: nothing after it on this bar
         if start==Fill::Open&&end==Fill::Close {pts.push((k,l(k)));pts.push((k,h(k)));continue;}
         // part of a bar: 1-minute bars between the fill(s) when they exist, else only the fill prices
-        let inside=|m:&[crate::intraday::Bar1],from:usize,px:f64|m.iter().skip(from).position(|b|b.l<=px&&px<=b.h).map(|j|j+from);
+        // the minute that traded at px; else (a fill price between two ticks, e.g. a 3%-below-close limit, or a price the minutes jump over) the first
+        // minute whose open lies beyond px from the previous close; None = no minute path, the fill prices only
+        // returns (minute, gap): gap = no minute traded at px, the minute opened beyond it (its whole range lies after a start fill)
+        let inside=|m:&[crate::intraday::Bar1],from:usize,px:f64|m.iter().skip(from).position(|b|b.l<=px&&px<=b.h).map(|j|(j+from,false)).or_else(||
+            (from.max(1)..m.len()).find(|&j|(m[j-1].c-px)*(m[j].o-px)<0.).map(|j|(j,true)));
         let minute=ctx.minutes.and_then(|m|m.day(&ctx.r[k].date)).and_then(|m|{
-            let (lo,mut p)=match start {Fill::At(px)=>(inside(&m,0,px)?+1,vec![px]),_=>(0,vec![])};
-            let hi=match end {Fill::At(px)=>{let j=inside(&m,lo.saturating_sub(1),px)?;p.push(px);j.max(lo)},_=>m.len()};
+            let (lo,mut p)=match start {Fill::At(px)=>{let (j,gap)=inside(&m,0,px)?;(if gap {j} else {j+1},vec![px])},_=>(0,vec![])};
+            let hi=match end {Fill::At(px)=>{let j=inside(&m,lo.saturating_sub(1),px)?.0;p.push(px);j.max(lo)},_=>m.len()};
             for b in &m[lo..hi] {p.push(b.l);p.push(b.h);}
             Some(p)
         });
@@ -232,6 +236,30 @@ mod tests {
         pair(ex(&x,&one(1.,1,106.,"stop",3,110.,3)),(99./106.-1.,115./106.-1.));
         // a day without minutes (bar 3) falls back to the daily rule
         pair(ex(&x,&one(1.,2,103.,"close",3,107.,3)),(107./103.-1.,107./103.-1.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn fill_price_between_ticks_still_finds_its_minute(){
+        // E5: a limit at 105.5 (e.g. 3% under a close) lies in no minute's range: the price jumped from 104.5 to 106; the minutes after the jump count
+        let dir=std::env::temp_dir().join(format!("mae-gap-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,104.5,103,104.5\n2020-01-02,09:31,106,106.2,105.9,106\n2020-01-02,09:32,106,108,105.9,107\n2020-01-02,09:33,107,107.5,105.6,105.7\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,105.5,"stop",1,100.,1)),(0.,108./105.5-1.)); // the daily fallback would give (100/105.5-1, 0)
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn gap_minute_own_high_counts_after_a_fill_inside_the_gap(){
+        // review 1116d: the minute that opens beyond the fill (106, high 110) lies wholly after the fill; its own high is the MFE
+        let dir=std::env::temp_dir().join(format!("mae-gap2-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,104.5,103,104.5\n2020-01-02,09:31,106,110,105.9,106\n2020-01-02,09:32,106,107,105.9,106.5\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,105.5,"stop",1,100.,1)),(0.,110./105.5-1.));
         let _=std::fs::remove_dir_all(&dir);
     }
     #[test]
