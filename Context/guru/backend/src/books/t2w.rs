@@ -98,7 +98,7 @@ const CTSN: &str = "Manual: 'The Crouching Tiger System' (tradingsystemsthatwork
 const OOPSN: &str = "Manual: 'The Oops 1-2-3 Trading Systems' (scanned, read visually). Rules 1-3 are evaluated on the prior close, the gap on today's open; the buy (sell short) stop at the prior low (high) fills at that price when the bar trades back to it (the open is beyond it by the gap rule); valid that day only. 'Gaps more than 1%' = open below prior low x (1 - 1%) (input PcntGap p.27: 'more than 1% below the previous low'). Exit: close >= 5MA (<= for shorts) -> next open; can fire on the entry bar's close. Index systems were tested on the S&P 500 E-mini (@ES.D, 09/11/97-05/01/09, 1 contract): here the cash index (instrument swap; cash-index gaps differ from ES day-session gaps). Equity systems: S&P 500 members 01/01/95-05/01/09, $10,000 per trade, compiled over all 500 stocks: here per NSE basket ticker.";
 const STEN: &str = "Manual: 'Swing Traders Edge - System Manual'. Limit 3% below the close for the next day only (ATI example: 60.79 -> 58.96). Exit can trigger on the fill day's close. HV(100) = sample stdev of ln returns x sqrt(252) x 100 (book gives no formula; the examples' table header says '20 Day HV' while rule 6 says 100 - rule text kept). Rule 7 is in US dollars: on NSE tickers the money flow is converted with series USDINR (INR per USD, needed; not in the vault yet -> data gap). Book results are a 10-slot portfolio over a US stock universe ranked by 4-day % drop (t2w_ste_portfolio) - not reproducible per ticker.";
 const RVTN: &str = "Manual: 'The ReVersal Twelve (RVT) Trading System'. Limit 8% below the close, placed before the next open (next day only). Rule 5 threshold 5,000,000 is dollars ('average daily money flow of at least $5,000,000', p.3) -> USDINR conversion on NSE (series needed). Wilder RSI(3). No stop (FAQ: 'stops harm the overall performance'). Book prints no statistics.";
-const PR1N: &str = "Manual: 'The PR1 Portfolio Trading System' (scanned). Predictive RSI 50 band = the price at which today's RSI(2) would read 50, from yesterday's Wilder averages: C[1] + (n-1)(AvgDown[1]-AvgUp[1]); limit = the price at which tomorrow's RSI(2) is half today's: C - (n-1)(AvgUp(100-R)/R - AvgDown) [the manual names the indicator but prints no formula; inversion of Wilder RSI, TradeStation's RSI]. 'Drop by half (50%)' read as RSI(2) <= 0.5 x yesterday (input RSIDrop 0.5 = 'minimum amount RSI must fall'). Liquidity $4,000,000 -> USDINR series on NSE. Book results are a 10-slot portfolio (t2w_pr1_portfolio). Declared adaptation (R4 #339/#340, lane D1), always UNVERIFIED: the manual scans US stocks, none are held, so the per-stock setup runs on the US ETFs SPY, QQQ, MDY, IWM and DIA (dollar-volume filter in US$ directly). Four labelled readings: (1) the 2-day predictive RSI 50 band is the price at which today's Wilder RSI(2) would read 50, from yesterday's averages (the manual names the indicator, prints no formula); (2) 'drop by half' = RSI(2) <= 0.5 x yesterday; (3) the limit price is the price at which tomorrow's RSI(2) is half of today's (inversion of Wilder RSI, filled at min(open, limit) if the open or the low reaches it, next day only); (4) the stock universe is replaced by the five ETFs. Small samples (about 25 trades per ETF).";
+const PR1N: &str = "Manual: 'The PR1 Portfolio Trading System' (scanned). Predictive RSI 50 band = the price at which today's RSI(2) would read 50, from yesterday's Wilder averages: C[1] + (n-1)(AvgDown[1]-AvgUp[1]); limit = the price at which tomorrow's RSI(2) is half today's: C - (n-1)(AvgUp(100-R)/R - AvgDown) [the manual names the indicator but prints no formula; inversion of Wilder RSI, TradeStation's RSI]. 'Drop by half (50%)' read as RSI(2) <= 0.5 x yesterday (input RSIDrop 0.5 = 'minimum amount RSI must fall'). Book results are a 10-slot portfolio (t2w_pr1_portfolio).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status: Status::Live,
@@ -209,13 +209,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "E|\"enter a limit order 8% below the close before the market opens the next morning\"",
           "X|\"6. The close of the 3 day RSI is above 55\" -> \"market order to exit the entire position at the next open\""],
         RVTN, None)));
-    v.push(StrategyDef { needs_volume: true, ..d("t2w_pr1", "PR1 setup (per stock)", "PR1 Portfolio Trading System", "Long",
+    v.push(StrategyDef { status: Status::NotTestable("a per-stock method of a stock-universe portfolio (index and ETF series cannot stand in for the stock universe); the \"2 day predictive RSI 50 band\" is never printed (solving RSI backwards for the band and for the limit is our formula, not the vendor's); six or more unstated readings are needed (band, half-drop test, limit inversion, universe, dollar-volume currency, ETF liquidity). Lane D1 pass 2 coded it on SPY/QQQ/MDY/IWM/DIA (0 mismatches against a reference) and held it again on review"), ..usd(d("t2w_pr1", "PR1 setup (per stock)", "PR1 Portfolio Trading System", "Long",
         &["F|\"1. The 20 day price/volume average liquidity must be greater than $4,000,000. 2. The close must be greater than the 200 day simple moving average. 3. The 14 day ADX must be greater than 25.\" (p.3)",
           "F|\"4. The high of the day must be less than the 2 day predictive RSI 50 band\"",
           "E|\"5. The 2 day RSI must drop by half (50%) since yesterday\"",
           "E|\"a limit order for the next day at that price\" = the price where RSI(2) would fall another 50% (\"Limit orders are placed for the next day only\")",
           "X|\"The 2 period RSI closes above 60\" -> \"market order to exit the position at the open of the next trading day\""],
-        PR1N, None) });
+        PR1N, None)) });
     let port = |id, name, group, why: &'static str, rules| StrategyDef { id, name, group, session: 0, dir: "Long", status: Status::NeedsData(why),
         needs_volume: true, needs_vix: false, needs_series: &[], book: BOOK, rules, notes: why, claim: None };
     v.push(port("t2w_ste_portfolio", "STE 10-slot portfolio", "Swing Traders Edge",
@@ -394,8 +394,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             Some(limit_sim(x, from, to, 1, &|i| sig(i).then(|| c[i] * (1.0 - lim / 100.0)), &|i| r3[i] > ex, 0.0, "RSI(3) > exit level · next open"))
         }
         "t2w_pr1" => {
-            // R4 #339/#340 (lane D1): US ETFs / indices only (gate `allowed`), so price x volume is already in US dollars
-            let mf = sma(&x.r.iter().map(|r| r.volume.map_or(f64::NAN, |v| v * r.close)).collect::<Vec<f64>>(), 20);
+            let Some(mf) = money_flow_usd(x, 20) else { return Some(vec![]) };
             let n = 2;
             let (au, ad) = rsi_avgs(c, n);
             let r2 = rsi(c, n);
