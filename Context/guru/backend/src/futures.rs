@@ -105,6 +105,17 @@ pub const MARKETS: &[Market] = &[
     // lane D2 (16 Nov 2026, R4 #340): Euro FX, the hcta Euro seasonals (Norgate &6E starts with the euro in 1999)
     Market { sym: "&6E", name: "Euro FX", tick: 0.0001, usd: &[("1998-01-01", 125_000.)],
         source: "CME Euro FX futures: 125,000 euros per contract (1.00 = US$125,000; 0.0001 = US$12.50)" },
+    // lane D3 (16 Nov 2026, R4 #340): Nikkei 225 USD futures (stad9_djnikkei Data1) and the foreign index futures that stad9_iic reads as Data2-Data7
+    Market { sym: "&NKD", name: "Nikkei 225 (USD)", tick: 5., usd: &[("1990-09-25", 5.)],
+        source: "CME Nikkei 225 futures (US$ denominated): US$5 x the Nikkei 225 index, tick 5 index points (US$25)" },
+    Market { sym: "&SXF", name: "S&P/TSX 60", tick: 0.05, usd: &[("1999-09-07", f64::NAN)],
+        source: "Montreal Exchange S&P/TSX 60 index futures, quoted in C$ index points; read only as Data2 closes by stad9_iic, no US$ value is used (futures::NON_USD)" },
+    Market { sym: "&FCE", name: "CAC 40", tick: 0.5, usd: &[("1988-08-18", f64::NAN)],
+        source: "Euronext Paris CAC 40 index futures, quoted in index points (EUR); read only as Data2 closes by stad9_iic, no US$ value is used (futures::NON_USD)" },
+    Market { sym: "&FDAX", name: "DAX", tick: 0.5, usd: &[("1999-01-04", f64::NAN)],
+        source: "Eurex DAX index futures, quoted in index points (EUR); read only as Data2 closes by stad9_iic, no US$ value is used (futures::NON_USD)" },
+    Market { sym: "&LFT", name: "FTSE 100", tick: 0.5, usd: &[("1994-10-11", f64::NAN)],
+        source: "ICE Futures Europe FTSE 100 index futures, quoted in index points (GBP); read only as Data2 closes by stad9_iic, no US$ value is used (futures::NON_USD)" },
 ];
 
 pub fn ticker(m: &Market) -> String { format!("{} (Norgate {})", m.name, m.sym) }
@@ -117,7 +128,7 @@ pub fn is_futures(t: &str) -> bool { of_ticker(t).is_some() }
 pub fn ctx_market(x: &Ctx) -> Option<&'static Market> { x.r.first().and_then(|r| of_ticker(&r.ticker)) }
 /// US$ per 1.00 of the quote on `date` (the multiplier in force on the trade date, #293 (3)).
 /// Contracts whose `usd` row is NOT in US$ (review PF2 ca66231c M20): no US$ conversion is made for them.
-pub const NON_USD: &[&str] = &["&YAP", "&FESX"];
+pub const NON_USD: &[&str] = &["&YAP", "&FESX", "&SXF", "&FCE", "&FDAX", "&LFT"];
 /// A NaN entry ends a known period: from that date the multiplier is unknown (None), so US$ rules fail closed (R4 #324 M1).
 pub fn usd_per_point(m: &Market, date: &str) -> Option<f64> {
     if NON_USD.contains(&m.sym) { return None; }
@@ -520,10 +531,12 @@ const DATA2: &[(&str, &[&str])] = &[("mpasi_cp_sp_ma12", &["&GE"]), ("ch_bta2_go
     ("lwmdc_bond_gold30", &["&GC"]), ("lwmdc_bond_gold30_vb", &["&GC"]), ("lwmdc_bond_gold30_vb_nr", &["&GC"]),
     ("lwnl_sp_hornbrook_im", &["&6B", "&CL", "&GC"]), ("lwicw_sp_oops_bonds", &["&ZB"]), ("lwicw_sp_tdw_bonds", &["&ZB"]), ("lwicw_sp_tdom_bonds", &["&ZB"]), ("lwicw_sp_month_day1_bonds", &["&ZB"]), ("lwicw_bond_month_day1_gold", &["&GC"]), ("lwnl_bond_sp_9ma_1down", &["&ZB"]), ("lwnl_bond_sp_9ma_2down", &["&ZB"]), ("lwicw_bond_tdw_gold", &["&GC"]), ("lwicw_bond_tdom_gold", &["&GC"]),
     ("nfmt_quadram_tbond", &["&ZB"]),
-    ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"])];
+    ("lwlts_tdm18_gold_bonds", &["&GC"]), ("lwlts_tdm22_gold_bonds", &["&GC"]), ("lwlts_tdm12_sell_gold_bonds", &["&GC"]),
+    ("stad9_iic", &["&SXF", "&FCE", "&FDAX", "&FESX", "&NKD", "&LFT"])];
 /// readiness::check: a Data2 card whose second contract is not loaded is refused (needs_data), never shown as a 0-trade run.
 pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
     ctx_market(x)?;
+    if id == "stad9_djnikkei" && x.series("DJ_INDUSTRIAL").is_none() { return Some("This card reads the Dow Jones Industrial Average close (Norgate $DJI) as a second data series, and it is not loaded; no result is published.".into()); }
     let (_, syms) = DATA2.iter().find(|d| d.0 == id)?;
     let miss: Vec<String> = syms.iter().filter(|s| rows(s).is_none()).filter_map(|s| MARKETS.iter().find(|m| m.sym == *s).map(ticker)).collect();
     (!miss.is_empty()).then(|| format!("This card reads {} as a second data series, and it is not loaded; no result is published.", miss.join(", ")))
@@ -570,7 +583,7 @@ const WTC: &str = "Market Analytics, William Tell Coffee Trading System (WT Coff
 const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH).chain(CARDS_D2).chain(CARDS_R1) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH).chain(CARDS_D2).chain(CARDS_R1).chain(CARDS_D3) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
@@ -697,6 +710,8 @@ const HCTA: &str = "Jeffrey A. Hirsch & John L. Person, Commodity Trader's Alman
 const AZTL: &str = "Keith Fitschen, Aztec (Open Code.txt, TradeStation code from the research share 'TradeStation Systems & Indicators'): the code names no market; declared adaptation (R4 #340) on the Norgate E-mini S&P 500 continuous contract, BigPointValue US$50 (R4 #293 (1), (3))";
 const PRCP: &str = "Martin J. Pring, The All-Season Investor (1992) p.101: the printed two-leg rule (3-month commercial-paper yield below its 12-month average and the S&P Composite above its 12-month average); declared adaptation (R4 #340) on the Norgate S&P 500 continuous contract with the Norgate Eurodollar contract (&GE) as the money-market rate, 100 minus its close (R4 #293 (1))";
 const CARDS_D2: &[(&str, &str, &str)] = &[("mpasi_cp_sp_ma12", "&SP", PRCP), ("tscom_aztec", "&ES", AZTL), ("hcta_30_year_bond_feb_short", "&ZB", HCTA), ("hcta_30_year_bond_apr_long", "&ZB", HCTA), ("hcta_30_year_bond_jun_long", "&ZB", HCTA), ("hcta_30_year_bond_nov_short", "&ZB", HCTA), ("hcta_british_pound_mar_long", "&6B", HCTA), ("hcta_british_pound_may_short", "&6B", HCTA), ("hcta_british_pound_jun_long", "&6B", HCTA), ("hcta_british_pound_sep_long", "&6B", HCTA), ("hcta_british_pound_dec_short", "&6B", HCTA), ("hcta_cattle_may_short", "&LE", HCTA), ("hcta_cattle_jun_long", "&LE", HCTA), ("hcta_cocoa_mar_short", "&CC", HCTA), ("hcta_cocoa_jun_long", "&CC", HCTA), ("hcta_cocoa_jul_short", "&CC", HCTA), ("hcta_cocoa_aug_long", "&CC", HCTA), ("hcta_cocoa_sep_short", "&CC", HCTA), ("hcta_cocoa_nov_long", "&CC", HCTA), ("hcta_coffee_may_short", "&KC", HCTA), ("hcta_coffee_aug_long", "&KC", HCTA), ("hcta_copper_may_short", "&HG", HCTA), ("hcta_copper_dec_long", "&HG", HCTA), ("hcta_corn_jun_short", "&ZC", HCTA), ("hcta_corn_oct_long", "&ZC", HCTA), ("hcta_crude_oil_feb_long", "&CL", HCTA), ("hcta_crude_oil_apr_long", "&CL", HCTA), ("hcta_crude_oil_sep_short", "&CL", HCTA), ("hcta_euro_jan_short", "&6E", HCTA), ("hcta_euro_mar_short", "&6E", HCTA), ("hcta_euro_sep_long", "&6E", HCTA), ("hcta_euro_oct_long", "&6E", HCTA), ("hcta_lean_hogs_nov_long", "&HE", HCTA), ("hcta_natural_gas_feb_long", "&NG", HCTA), ("hcta_natural_gas_jul_long", "&NG", HCTA), ("hcta_silver_feb_short", "&SI", HCTA), ("hcta_silver_may_short", "&SI", HCTA), ("hcta_silver_oct_short", "&SI", HCTA), ("hcta_soybeans_feb_long", "&ZS", HCTA), ("hcta_soybeans_jun_short", "&ZS", HCTA), ("hcta_soybeans_oct_long", "&ZS", HCTA), ("hcta_sugar_feb_short", "&SB", HCTA), ("hcta_sugar_nov_short", "&SB", HCTA), ("hcta_swiss_franc_aug_long", "&6S", HCTA), ("hcta_swiss_franc_nov_long", "&6S", HCTA), ("hcta_swiss_franc_dec_short", "&6S", HCTA), ("hcta_wheat_jan_short", "&ZW", HCTA), ("hcta_wheat_jun_long", "&ZW", HCTA), ("hcta_yen_feb_long", "&6J", HCTA), ("hcta_yen_mar_short", "&6J", HCTA), ("hcta_yen_oct_short", "&6J", HCTA)];
+const STAD9N: &str = "Omega Research, STAD Vol 9 (1999) ch.7 p.82-84 (Hans Stimming, DJ vs. Nikkei): the printed signal 'If Close[1] of Data2 < Close of Data2 Then Buy Next Bar at Open Else Sell Next Bar at Open', always in the market. DECLARED ADAPTATION (R4 #340), UNVERIFIED: the book trades the Nikkei 225 index (Data1) with the Dow Jones (Data2) from 1/1/98; the vault holds no Nikkei cash index, so this card trades the Norgate Nikkei 225 Dollar continuous futures (&NKD, the same index, 1990-2020, back-adjusted daily bars) and reads the Dow Jones Industrial Average close from Norgate $DJI as Data2. Four unstated details (honest count, R4 #339/#343), each a labelled reading: (1) a contract date without a Dow bar keeps the last Dow bar and Close[1] stays the Dow bar before it (TradeStation Data2; 8 of 7,558 dates are holidays, and the 4 dates after the Dow file ends on 2020-09-04 are excluded: no signal); (2) a Dow bar older than 5 contract bars is missing data: no signal; (3) the run starts at the first bar with two Dow bars; (4) one unit, no costs. The reversal fills at the next &NKD session open (US$ Globex hours, not the Tokyo open): part of the adaptation. The book prints no trade count or profit (61% profitable only, from an image), so there is no #168 comparison. Market entries at the open with no stop: no same-day order question (#240 = 0).";
+const CARDS_D3: &[(&str, &str, &str)] = &[("stad9_djnikkei", "&NKD", STAD9N)];
 /// Lane R1-1116 (R4 #297/#339): Chan's two printed seasonal futures trades, each on its own Norgate continuous contract.
 const CARDS_R1: &[(&str, &str, &str)] = &[
     ("ecqt_rb_seasonal", "&RB", "Ernest Chan, Quantitative Trading (Wiley 2009) ch.7 p.149 (RB, buy at the close of April 13, sell at the close of April 25, per-year table 1995-2008): run on the Norgate RBOB gasoline continuous contract (from 2005-10-03), signals and point P&L on the back-adjusted series, 42,000 gallons per contract (R4 #293 (1)-(3)), lane R1-1116."),
