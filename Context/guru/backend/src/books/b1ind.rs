@@ -7,7 +7,7 @@ use crate::connors::Ctx;
 
 const NAN: f64 = f64::NAN;
 pub const IDS: &[&str] = &["nkms_dynamic_momentum_index_1", "nkms_dynamic_momentum_index_2", "nkms_dynamic_momentum_index_3",
-    "nkms2_intraday_momentum_index", "nkms2_projection_oscillator_1", "nkms2_projection_oscillator_2",
+    "nkms2_intraday_momentum_index", "nkms2_polarized_fractal_efficiency", "nkms2_projection_oscillator_1", "nkms2_projection_oscillator_2",
     "nkms2_relative_volatility_index_1", "nkms2_relative_volatility_index_2", "nkms2_vertical_horizontal_filter"];
 pub fn has(id: &str) -> bool { IDS.contains(&id) }
 
@@ -15,15 +15,17 @@ pub fn has(id: &str) -> bool { IDS.contains(&id) }
 pub fn note(id: &str) -> &'static str {
     match id {
         "nkms_dynamic_momentum_index_1" | "nkms_dynamic_momentum_index_2" | "nkms_dynamic_momentum_index_3" =>
-            "Unverified declared application; adapted: 4 unstated details (R4 #339). DMI() is MetaStock's built-in Dynamic Momentum Index (Chande & Kroll, S&C 05/1993), named but not defined in the record. Definition used: the book form, an RSI whose length is INT(14 / volatility index) bounded to 5..30, volatility index = 5-bar standard deviation / its 10-bar average (published page https://www.MotiveWave.com/studies/dynamic_momentum_index.htm: sdPeriod 5, avSdPeriod 10, rsiPeriod 14, upLimit 30, loLimit 5). The MetaStock forum code (https://forum.metastock.com/posts/m145458-Dynamic-Momentum-Index--DMI) is a different implementation (Vt = Stdev/avg x 10 as the period, exponential sums) and its text gives bounds 3 to 30; the vault follows the MotiveWave / Chande bound of 5. Text copies: authors/relax-339/B1/w/. Unstated in the source: (1) INT(14 / vi), truncated; (2) the lower bound 5 (not 3); (3) the RSI is the simple sums of up and down changes over that variable length (no Wilder smoothing); (4) population standard deviation. Fills are the MetaStock tester default stored in the record (trade price close, no delay), not a reading.",
+            "Unverified declared application; adapted: 3 unstated details (R4 #339). DMI() is MetaStock's built-in Dynamic Momentum Index (Chande & Kroll), named but not defined in the record. Formula text (grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md), page https://www.luxalgo.com/library/concept/dynamic-momentum-index.md: sd = stdev(close,5); Vi = sd / SMA(sd,10); TD = int(14 / Vi), clamped to 5..30; DMI = RSI(close, TD). (The MetaStock forum code https://forum.metastock.com/posts/m145458-Dynamic-Momentum-Index--DMI is a different implementation and gives bounds 3 to 30; the vault follows the 5..30 of the markdown page.) Unstated in the source: (1) the RSI at the variable length TD is read as the simple sums of up and down close changes over the last TD bars, 100 x up / (up + down), no Wilder smoothing (the page says only RSI(close, TD) and notes platforms differ here); (2) population standard deviation; (3) a zero volatility index or no change over the window is undefined. Fills are the MetaStock tester default stored in the record (close, no delay), not a reading.",
         "nkms2_intraday_momentum_index" =>
-            "Unverified declared application; adapted: 2 unstated details (R4 #339). IMI(14) is Chande's Intraday Momentum Index: 100 x sum of up candle bodies (close - open) / (sum of up bodies + sum of down bodies) over 14 bars (published definition: https://www.luxalgo.com/library/indicator/3CufgHsc-intrady-momentum-index/, copy in authors/relax-339/B1/w/luxalgo_imi.txt). Unstated in the source: (1) simple sums over the 14 bars, no smoothing; (2) a window with no body at all is undefined. Reads the open, so results start where real opens begin.",
+            "Unverified declared application; adapted: 0 unstated details beyond the fills (R4 #339). IMI(14) is Chande's Intraday Momentum Index, named but not defined in the record. Formula text (grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md), pages https://ta-lib.org/functions/imi.html and https://doc.stocksharp.com/en/topics/api/indicators/list_of_indicators/intraday_momentum_index: upsum = sum of (close - open) over bars with close > open; downsum = sum of (open - close) over bars with close <= open, over the last 14 bars; IMI = 100 x upsum / (upsum + downsum); 50 when both sums are zero (StockSharp). Reads the open, so results start where real opens begin. Fills are the MetaStock tester default stored in the record.",
+        "nkms2_polarized_fractal_efficiency" =>
+            "Unverified declared application; adapted: 2 unstated details (R4 #339). PFE(C,34,3) is Hannula's Polarized Fractal Efficiency, named but not defined in the record. Formula text (grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md, page https://www.luxalgo.com/library/concept/polarized-fractal-efficiency.md): direct = sqrt((close - close[n])^2 + n^2); path = sum over n steps of sqrt((close[i] - close[i+1])^2 + 1); raw = 100 x direct / path, negative when close < close[n]; PFE = EMA(raw, m), with n = 34 and m = 3 read from PFE(C,34,3). Unstated in the source: (1) the EMA is seeded with the first raw value; (2) Lowest() / Highest() without a period are read as the expanding minimum / maximum of the smoothed PFE since its first value (no look-ahead). Fills are the MetaStock tester default stored in the record.",
         "nkms2_projection_oscillator_1" | "nkms2_projection_oscillator_2" =>
-            "Unverified declared application; adapted: 4 unstated details (R4 #339). ProjOsc(n,3) is Widner's Projection Oscillator: 100 x (C - lower band) / (upper band - lower band); the bands slide each bar's high / low of the last n bars forward along the regression slope of the highs / lows (published definitions: https://www.prorealcode.com/prorealtime-indicators/projection-oscillator and https://www.luxalgo.com/library/concept/projection-bands.md, copies in authors/relax-339/B1/w/; the ProRealCode listing writes the lower band as low[i] - i x slope(low) with a minus sign and loops i = 1..n, while LuxAlgo and Widner slide the lows with a plus sign; the vault follows the plus sign). Unstated in the source: (1) the bar offset j runs 0..n-1 over the n-bar window; (2) slopes are least-squares over the same n bars; (3) the second argument 3 is a simple 3-bar smoothing of the oscillator; (4) a zero-width band is undefined. Reads H and L, so results start where real highs and lows begin.",
+            "Unverified declared application; adapted: 2 unstated details (R4 #339). ProjOsc(n,3) is Widner's Projection Oscillator, named but not defined in the record. Formula text (grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md), page https://www.luxalgo.com/library/concept/projection-bands.md: m_high / m_low = regression slopes of the highs / lows over the last n bars; Upper = max over i in 0..n-1 of (high[t-i] + i x m_high); Lower = min over i in 0..n-1 of (low[t-i] + i x m_low); PO = 100 x (close - Lower) / (Upper - Lower). The ProRealCode listing https://www.prorealcode.com/prorealtime-indicators/projection-oscillator writes the lower band with a minus sign (low[i] - i x SlopeLow) and loops i = 1..n; the vault follows the plus sign and 0..n-1 of the markdown page. Unstated in the source: (1) the second argument 3 of ProjOsc(n,3) is read as a simple 3-bar smoothing of PO; (2) a zero-width band is undefined. Reads H and L, so results start where real highs and lows begin. Fills are the MetaStock tester default stored in the record.",
         "nkms2_relative_volatility_index_1" | "nkms2_relative_volatility_index_2" =>
-            "Unverified declared application; adapted: 3 unstated details (R4 #339). RVI(14) is Dorsey's Relative Volatility Index: an RSI with the 10-bar standard deviation of the close in place of the price change (published page https://motivewave.com/studies/relative_volatility_index.htm, default input close, sdPeriod 10, SMMA 14; copy in authors/relax-339/B1/w/): the standard deviation is the up value on up-close bars and the down value on down-close bars, each smoothed over 14 (Wilder 13/14 weighting), RVI = 100 x U / (U + D). Unstated in the source: (1) the 1993 close-based version, not the 1995 high/low version; (2) Wilder smoothing seeded with the mean of the first 14 values; (3) population standard deviation.",
+            "Unverified declared application; adapted: 2 unstated details (R4 #339). RVI(14) is Dorsey's Relative Volatility Index (1993 version), named but not defined in the record. Formula text (grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md), page https://ta-lib.org/functions/rvi.html: S = standard deviation of the last 10 closes; U = S on bars with close > previous close, else 0; D = S on bars with close < previous close, else 0; Up = RMA(U,14), Down = RMA(D,14) (Wilder smoothing seeded with the simple average of the first 14 inputs); RVI = 100 x Up / (Up + Down), 50 when Up + Down = 0. Unstated in the source: (1) population (not sample) standard deviation; (2) RVI(14) read as smoothing 14 with the page's default standard-deviation window 10. Fills are the MetaStock tester default stored in the record.",
         "nkms2_vertical_horizontal_filter" =>
-            "Unverified declared application; adapted: 2 unstated details (R4 #339). VHF(C,21) = (highest close - lowest close over 21 bars) / sum of 21 absolute close changes (White; published page https://motivewave.com/studies/vertical_horizontal_filter.htm, copy in authors/relax-339/B1/w/). Unstated in the source: (1) the 21-bar window includes the current bar with 21 changes; (2) LinRegSlope(C,21) is the least-squares slope of the 21 closes against time.",
+            "Unverified declared application; adapted: 1 unstated detail (R4 #339). VHF(C,21) is Adam White's Vertical Horizontal Filter, named but not defined in the record. Formula text (grep proof in authors/relax-339/B1/w/FORMULA-EVIDENCE.md), page https://ta-lib.org/functions/vhf.html: num = MAX(C[t-n+1..t]) - MIN(C[t-n+1..t]); den = sum of |C[j] - C[j-1]| for j = t-n+1..t; VHF = num / den, 0 for a window of identical closes; n = 21. Unstated in the source: (1) LinRegSlope(C,21) is the least-squares slope of the last 21 closes against time. Fills are the MetaStock tester default stored in the record.",
         _ => "",
     }
 }
@@ -56,7 +58,7 @@ pub fn imi(o: &[f64], c: &[f64], n: usize) -> Vec<f64> {
     (0..c.len()).map(|i| if i + 1 < n { NAN } else {
         let (mut u, mut d) = (0.0, 0.0);
         for j in i + 1 - n..=i { if c[j] > o[j] { u += c[j] - o[j]; } else if c[j] < o[j] { d += o[j] - c[j]; } }
-        if u + d > 0.0 { 100.0 * u / (u + d) } else { NAN } }).collect()
+        if u + d > 0.0 { 100.0 * u / (u + d) } else { 50.0 } }).collect() // StockSharp / TA-Lib page: 50 when both sums are zero
 }
 pub fn dmi(c: &[f64]) -> Vec<f64> {
     let n = c.len();
@@ -72,6 +74,19 @@ pub fn dmi(c: &[f64]) -> Vec<f64> {
         for j in i + 1 - td..=i { let ch = c[j] - c[j - 1]; if ch > 0.0 { u += ch } else { d -= ch } }
         if u + d > 0.0 { 100.0 * u / (u + d) } else { NAN }
     }).collect()
+}
+/// LuxAlgo markdown (w/ev/luxalgo_pfe.md): direct = sqrt((C - C[n])^2 + n^2); path = sum over n steps of sqrt((C[i]-C[i+1])^2 + 1);
+/// raw = 100 x direct / path, negative when C < C[n]; PFE = EMA(raw, m), seeded with the first raw value (labelled reading).
+pub fn pfe(c: &[f64], n: usize, s: usize) -> Vec<f64> {
+    let len = c.len();
+    let raw: Vec<f64> = (0..len).map(|i| if i < n { NAN } else {
+        let dc = c[i] - c[i - n];
+        let path: f64 = (i + 1 - n..=i).map(|j| (1.0 + (c[j] - c[j - 1]).powi(2)).sqrt()).sum();
+        (if dc < 0.0 { -100.0 } else { 100.0 }) * (dc * dc + (n * n) as f64).sqrt() / path }).collect();
+    let a = 2.0 / (s as f64 + 1.0);
+    let mut out = vec![NAN; len]; let mut prev = NAN;
+    for i in 0..len { if fin(raw[i]) { prev = if fin(prev) { prev + a * (raw[i] - prev) } else { raw[i] }; out[i] = prev; } }
+    out
 }
 pub fn projosc(h: &[f64], l: &[f64], c: &[f64], n: usize, s: usize) -> Vec<f64> {
     let (sh, sl) = (slope(h, n), slope(l, n));
@@ -95,14 +110,14 @@ pub fn rvi(c: &[f64], sdn: usize, n: usize) -> Vec<f64> {
         else if cnt == n { su += xu; sdd += xd; u[i] = su / n as f64; d[i] = sdd / n as f64; }
         else { u[i] = (u[i - 1] * (n as f64 - 1.0) + xu) / n as f64; d[i] = (d[i - 1] * (n as f64 - 1.0) + xd) / n as f64; }
     }
-    (0..len).map(|i| if fin(u[i]) && u[i] + d[i] > 0.0 { 100.0 * u[i] / (u[i] + d[i]) } else { NAN }).collect()
+    (0..len).map(|i| if !fin(u[i]) { NAN } else if u[i] + d[i] > 0.0 { 100.0 * u[i] / (u[i] + d[i]) } else { 50.0 }).collect() // TA-Lib: 50 when Up + Down = 0
 }
 pub fn vhf(c: &[f64], n: usize) -> Vec<f64> {
     (0..c.len()).map(|i| if i < n { NAN } else {
         let w = &c[i + 1 - n..=i];
         let (hi, lo) = (w.iter().copied().fold(f64::MIN, f64::max), w.iter().copied().fold(f64::MAX, f64::min));
         let s: f64 = (i + 1 - n..=i).map(|j| (c[j] - c[j - 1]).abs()).sum();
-        if s > 0.0 { (hi - lo) / s } else { NAN } }).collect()
+        if s > 0.0 { (hi - lo) / s } else { 0.0 } }).collect() // TA-Lib: 0 for a window of identical closes
 }
 
 fn sig(el: Vec<bool>, xl: Vec<bool>, es: Vec<bool>, xs: Vec<bool>) -> Sig { Sig { el, xl, es, xs } }
@@ -132,6 +147,13 @@ pub fn signals(id: &str, x: &Ctx) -> Option<Sig> {
             let xl2: Vec<bool> = (0..n).map(|i| fin(vu[i]) && fin(m200[i]) && vu[i] > m200[i] && cross(&m200, c)[i]).collect();
             let xs2: Vec<bool> = (0..n).map(|i| fin(vd[i]) && fin(m200[i]) && vd[i] < m200[i] && cross(c, &m200)[i]).collect();
             sig(eu.clone(), or(&ed, &xl2), ed.clone(), or(&eu, &xs2))
+        }
+        "nkms2_polarized_fractal_efficiency" => {
+            let p = pfe(c, 34, 3);
+            let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+            let v1: Vec<f64> = p.iter().map(|&q| { if !fin(q) { return NAN; } lo = lo.min(q); hi = hi.max(q); if hi > lo { (q - lo) / (hi - lo) } else { NAN } }).collect();
+            let (a, b) = (up(&v1, 0.5), dn(&v1, 0.5));
+            sig(a.clone(), or(&b, &up(&v1, 0.8)), b, or(&a, &dn(&v1, 0.2)))
         }
         "nkms2_projection_oscillator_1" => {
             let v = projosc(&x.h, &x.l, c, 8, 3); let t = sma(&v, 3);
