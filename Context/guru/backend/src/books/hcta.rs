@@ -21,7 +21,7 @@ pub fn home(id: &str, ticker: &str) -> Option<String> {
 }
 const FUT: &str = "the named futures contract's daily history (continuously linked, non-adjusted front/next-month contracts as in the book); the vault has no futures data";
 
-pub fn catalogue() -> Vec<StrategyDef> {
+fn catalogue_raw() -> Vec<StrategyDef> {
     use Status::*;
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef {
         id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim,
@@ -321,6 +321,77 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"Place stops above the highest-high point of the initial Doji Candle\" (p.8)"],
             "Mirror of hcta_hcd.", None),
     ]
+}
+
+/// Lane D2 (16 Nov 2026, R4 #340, #339): the commodity, currency and bond seasonals run on the Norgate continuous contract of
+/// the market (futures::CARDS_D2), a declared adaptation of the named contract month; always UNVERIFIED.
+pub const FUT_D2: &[&str] = &[
+    "hcta_30_year_bond_feb_short",
+    "hcta_30_year_bond_apr_long",
+    "hcta_30_year_bond_jun_long",
+    "hcta_30_year_bond_nov_short",
+    "hcta_british_pound_mar_long",
+    "hcta_british_pound_may_short",
+    "hcta_british_pound_jun_long",
+    "hcta_british_pound_sep_long",
+    "hcta_british_pound_dec_short",
+    "hcta_cattle_may_short",
+    "hcta_cattle_jun_long",
+    "hcta_cocoa_mar_short",
+    "hcta_cocoa_jun_long",
+    "hcta_cocoa_jul_short",
+    "hcta_cocoa_aug_long",
+    "hcta_cocoa_sep_short",
+    "hcta_cocoa_nov_long",
+    "hcta_coffee_may_short",
+    "hcta_coffee_aug_long",
+    "hcta_copper_may_short",
+    "hcta_copper_dec_long",
+    "hcta_corn_jun_short",
+    "hcta_corn_oct_long",
+    "hcta_crude_oil_feb_long",
+    "hcta_crude_oil_apr_long",
+    "hcta_crude_oil_sep_short",
+    "hcta_euro_jan_short",
+    "hcta_euro_mar_short",
+    "hcta_euro_sep_long",
+    "hcta_euro_oct_long",
+    "hcta_lean_hogs_nov_long",
+    "hcta_natural_gas_feb_long",
+    "hcta_natural_gas_jul_long",
+    "hcta_silver_feb_short",
+    "hcta_silver_may_short",
+    "hcta_silver_oct_short",
+    "hcta_soybeans_feb_long",
+    "hcta_soybeans_jun_short",
+    "hcta_soybeans_oct_long",
+    "hcta_sugar_feb_short",
+    "hcta_sugar_nov_short",
+    "hcta_swiss_franc_aug_long",
+    "hcta_swiss_franc_nov_long",
+    "hcta_swiss_franc_dec_short",
+    "hcta_wheat_jan_short",
+    "hcta_wheat_jun_long",
+    "hcta_yen_feb_long",
+    "hcta_yen_mar_short",
+    "hcta_yen_oct_short"];
+macro_rules! d2note { () => { "[Declared adaptation, R4 #340; UNVERIFIED, 4 unstated details, R4 #339] The Almanac trades the contract month named in the entry rule (Top Percentage Plays, p.126-127). The vault does not hold single contract months, so the contract month is the declared adaptation (not counted as a detail); it runs the same calendar rule (Nth trading day of the month, close; fixed hold in trading days, close) on the Norgate continuous contract of that market (Norgate symbol {SYM}): back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11. Unstated in the book: (1) the count of 'trading days' for the hold; vault reading: this contract's own daily bars (a day without a Norgate bar is not counted); (2) the numbering of the Nth trading day; vault reading: day 1 is the first Norgate bar of the calendar month; (3) the book's dollar profit per contract; vault reading: point P&L on the back-adjusted series, % of the unadjusted entry close; (4) a trade still open at the end of the data; vault reading: marked open at the last close, not forced shut. The book's own data are 'continuously linked, non-adjusted front-month contracts' (p.126-127), so it too trades a continuous front-month series, but the entry names a contract month. Not the book's contract, so no #168 comparison counts as verification; the book's figures stay in the claim line as reported. Close-only rule, no stops: no same-day order question (#240: 0 trades)." }; }
+const NOTE_D2: &str = d2note!();
+const NOTE_HOGS: &str = " Lean hogs: the Norgate &HE series before lean-hog futures began (1996) is the live-hog history quoted at the lean-hog level (88.85 cents on 1990-06-01 when live hogs traded near 60), so trades before 1996 are on the live-hog contract, not on lean hogs.";
+const NOTE_CL: &str = " Run ends 2020-04-17 (futures::POSITIVE_RAW_ONLY, R4 #316/#326): the Norgate WTI front-month close was negative on 2020-04-20, which no percentage return can price.";
+/// Per-card notes: the shared text with the card's Norgate symbol (the market of its futures::CARDS_D2 tuple) filled in.
+fn notes_d2(id: &str) -> &'static str {
+    static N: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
+    N.get_or_init(|| FUT_D2.iter().map(|&i| {
+        let sym = crate::futures::card_markets(i).first().copied().unwrap_or("?");
+        let mut s = NOTE_D2.replace("{SYM}", sym);
+        if i == "hcta_lean_hogs_nov_long" { s.push_str(NOTE_HOGS); }
+        if i == "hcta_crude_oil_feb_long" || i == "hcta_crude_oil_apr_long" { s.push_str(NOTE_CL); }
+        (i, &*Box::leak(s.into_boxed_str()))
+    }).collect()).iter().find(|n| n.0 == id).map_or(NOTE_D2, |n| n.1)
+}
+pub fn catalogue() -> Vec<StrategyDef> {
+    catalogue_raw().into_iter().map(|mut d| { if FUT_D2.contains(&d.id) { d.status = Status::Live; d.notes = notes_d2(d.id); } d }).collect()
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {

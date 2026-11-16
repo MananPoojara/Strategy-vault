@@ -21,7 +21,7 @@ macro_rules! d {
     };
 }
 
-pub fn catalogue() -> Vec<StrategyDef> {
+fn catalogue_raw() -> Vec<StrategyDef> {
     use Status::*;
     vec![
         StrategyDef { id: "mpasi_sp_ma12", name: "S&P 12-month moving-average crossover (stock leg of the stage model), long or cash", group: "Ch.5, 9 (p.101-105, 185-190)",
@@ -48,24 +48,49 @@ pub fn catalogue() -> Vec<StrategyDef> {
     ]
 }
 
+/// Lane D2 (16 Nov 2026, R4 #340, #339): the printed two-leg rule (p.101), with the 3-month commercial-paper yield replaced by the
+/// Norgate 3-month Eurodollar rate, on the Norgate S&P 500 continuous contract (futures::CARDS_D2).
+pub const CP_ID: &str = "mpasi_cp_sp_ma12";
+const CP_NOTE: &str = "[Declared adaptation, R4 #340; UNVERIFIED, 2 declared substitutions and 4 unstated details, R4 #339/#343] The book's rule needs the 3-month commercial-paper yield and the S&P Composite. The vault holds neither series as such. Substitutions: (1) the commercial-paper yield is replaced by the 3-month Eurodollar rate = 100 minus the Norgate Eurodollar (&GE) continuous-contract close, the nearest real money-market rate we hold (book: commercial paper; 1982-02 onward only); 100 minus the futures close is a FORWARD 3-month rate (the rate for a quarter starting at the contract's expiry, not the spot rate), and it is taken from the back-adjusted continuous series, so its level is shifted at each roll and only its change against its own 12-month average is meaningful; (2) the S&P Composite is replaced by the Norgate S&P 500 (&SP) continuous contract, back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11. Unstated card-specific choices (R4 #343, 4): (a) the month end is the last trading day of the month (the last bar of the data never counts); (b) the S&P 12-month average includes the signal month; (c) the rate's 12-month average includes the signal month; (d) both averages are simple averages of month-end values. Printed, so not choices: the S&P leg counts at-or-above (p.105) and the rate leg strictly below (p.101). Engine conventions, labelled not counted: the fill is the month-end close, one position, the 12-month warm-up. Long when both legs are favorable at a month end, otherwise cash. The book prints no results for this rule. Close-only rule: no same-day order question (#240: 0 trades), clamp_open false.";
+fn catalogue_all() -> Vec<StrategyDef> {
+    let mut v = catalogue_raw();
+    v.push(StrategyDef { id: CP_ID, name: "S&P 12-month MA and 3-month rate below its 12-month average (Pring p.101), long or cash", group: "Ch.5 (p.101)",
+        session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
+        rules: &["E|\"Favorable periods for equity ownership under this approach require the yield on three-month commercial paper to be below its 12-month average and for the S&P Composite to be above its 12-month moving average.\" (p.101): buy at the month-end close when both hold",
+                 "X|\"All other conditions are regarded as unfavorable\" (p.101): sell to cash at the month-end close",
+                 "F|[Labelled reading, R4 #340] rate = 100 - Norgate Eurodollar close (&GE) in place of commercial paper; S&P = Norgate &SP continuous contract; monthly closes, simple 12-month averages"],
+        notes: CP_NOTE, claim: None });
+    v
+}
+pub fn catalogue() -> Vec<StrategyDef> { catalogue_all() }
+
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    if id == CP_ID { return Some(("mpasi_cp", "Pring All-Season Investor (S&P and rate)", "p.101 two-leg rule")); }
     if id == "mpasi_sp_ma12" { return Some(("mpasi_ma", "Pring All-Season Investor", "S&P 12-month MA")); }
     id.starts_with("mpasi_").then_some(("mpasi_nt", "Pring All-Season Investor (not testable)", "-"))
 }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == "mpasi_sp_ma12").then(|| vec![ParamDef { key: "n", label: "MA length (months)", def: 12., min: 2., max: 36., step: 1. }])
+    (id == "mpasi_sp_ma12" || id == CP_ID).then(|| vec![ParamDef { key: "n", label: "MA length (months)", def: 12., min: 2., max: 36., step: 1. }])
 }
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if id != "mpasi_sp_ma12" || from > to || to >= x.r.len() { return None; }
+    if (id != "mpasi_sp_ma12" && id != CP_ID) || from > to || to >= x.r.len() { return None; }
     let n = p.get("n").copied().unwrap_or(12.).round().max(1.) as usize;
     let ends = crate::books::mpts::period_ends(x, true);
     let idx: Vec<usize> = (0..x.c.len()).filter(|&i| ends[i]).collect();
     let ma = sma(&idx.iter().map(|&i| x.c[i]).collect::<Vec<_>>(), n);
+    // lane D2: the rate leg. rate = 100 - Eurodollar close on each month-end bar (the Eurodollar bar of that date, else its last earlier bar)
+    let rate_ok: Vec<bool> = if id == CP_ID {
+        let Some(ge) = crate::futures::rows("&GE") else { return Some(vec![]) }; // no Eurodollar loaded: futures::data2_issue refuses the card before any run is shown
+        let rate = crate::second::align("&GE", x.r, ge).carried(crate::second::Field::C).into_iter().map(|c| 100. - c).collect::<Vec<f64>>();
+        let rv: Vec<f64> = idx.iter().map(|&i| rate[i]).collect();
+        let rma = sma(&rv, n);
+        (0..idx.len()).map(|k| rv[k].is_finite() && rma[k].is_finite() && rv[k] < rma[k]).collect()
+    } else { vec![true; idx.len()] };
     let (mut out, mut cur, mut last) = (vec![], None::<Trade>, None::<bool>);
     for (k, &i) in idx.iter().enumerate() {
         if i > to { break; }
         if !ma[k].is_finite() { continue; }
-        let bull = x.c[i] >= ma[k];
+        let bull = x.c[i] >= ma[k] && rate_ok[k];
         let change = last.is_some_and(|b| b != bull);
         last = Some(bull);
         if i < from || !change { continue; }

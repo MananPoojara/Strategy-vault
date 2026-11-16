@@ -23,7 +23,7 @@ pub const REVIEWED: &[&str] = &["lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lw
     "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp", "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp",
     "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
     "lwlts_outside_down", "lwlts_outside_down_xthu", "lwlts_3up_tue_sell", "lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9",
-    "lwlts_month_day1", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20"];
+    "lwlts_month_day1", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20", "lwlts_close_65pct"];
 pub const SPX_POINTS: &[&str] = &["lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lwlts_mon_gap_close", "lwlts_mon_gap_next_close", "lwlts_mon_gap_6close",
     "lwlts_talon_sp", "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp", "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp",
     "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
@@ -335,8 +335,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Short-term high: a high with lower highs on both sides, inside days ignored (p.16-17)", "E|3-bar MA of lows (highs) as entry, 3-bar MA of highs (lows) as target, in the swing trend"], ""),
         off!("lwlts_eom_sp", "S&P end-of-month: third-to-last trading day, 6 sessions", "Ch 10 · Month-end", "Long", NotTestable("Only an equity chart (Fig. 10.4) with no trade figures. Its legend reads \"Buy on open @ 4 trading days starting at 1st day of each month. Exit on close\", which can mean one 4-day hold from the first trading day or four separate one-day trades; the book does not say which, and the bond text rule (third-to-last day, six sessions, $1,500) differs from the Fig. 10.3 legend (fifth-to-last day open to the close of the third day of the next month, no stop)."),
             &["E|Bonds: \"bought one contract ... on the third to the last trading day of each month and held for six trading sessions ... or taking a loss of $1,500\" (p.152)"], ""),
-        off!("lwlts_close_65pct", "Buy on the close in the upper 65% of the range (Fig. 15.3)", "Ch 15 · Bad habits", "Long", NotTestable("'With a stop for protection' (p.238) but the stop size and test window are not printed, and the trade counts in the table are inconsistent (533, 334, 537, 199, 178)."),
-            &["E|Buy market on close if the close is in the upper 65% of the day's range; exit 5, 10, 15, 20, 25 days later"], ""),
+        live!("lwlts_close_65pct", "Buy on the close in the upper 65% of the day's range, exit N days later (Fig. 15.3)", "Ch 15 · Bad habits", "Long",
+            &["E|\"Buy market on close if the close is in the upper 65% of the day's range; exit 5, 10, 15, 20, 25 days later\" (p.238, Fig. 15.3)",
+              "X|Exit on the close N days later, N = 5, 10, 15, 20 or 25 (the printed holding periods; default 10, p.hold sets any)",
+              "A|Unstated in the book (lane R2, 16 Nov 2026, R4 #297/#339: 4 unstated details, UNVERIFIED): (1) 'upper 65% of the range' = the close is at or above the day's low plus 35% of the range, on a day with a range; (2) the stop 'for protection' (p.238) has no size: no stop is modelled; (3) the holding period: 10 days, one of the five printed (p.hold); (4) one position at a time: a signal while a trade is open is skipped (the book prints 533 / 334 / 537 / 199 / 178 trades without saying how they overlap)."],
+            "Fig. 15.3 (p.238): the chapter's 'bad habit' example, printed as five holding-period results whose trade counts are not consistent, no window and no per-trade figures usable here, so there is no #168 check. Entry and exit both at the close: no intraday order (#240: 0%). It reads the day's high and low, so SPX/DJI/NDX start at their real opens (clamp_open). Window edges follow the shared lwlts simulator: no entry on the first bar of the data, and a signal on a window's last close opens a trade marked open. Percentage returns; runs on indices, ETFs and stocks as a declared application of a book that used S&P futures.", None),
         off!("lwlts_sp_daytrade_stops", "S&P day-trading system with $500/$1,500/$6,000 stops (Fig. 15.5-15.7)", "Ch 15 · Stops", "Long/Short", NotTestable("The entry and exit rules of this system are not given (p.241)."), &["X|Only the stop differs between the three printouts"], ""),
     ]
 }
@@ -416,7 +419,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwlts_bonds_channel" | "lwlts_ma_cross_futures" => f("lwlts_other", "Other futures studies", "Needs futures data"),
         "lwlts_bonds_8day" => f("lwlts_b8", "Bonds: close above 8 days ago", "$850 stop / $3,500 target"),
         "lwlts_smash_day" | "lwlts_specialist_trap" | "lwlts_swing_points" => f("lwlts_patterns", "Chart patterns", "Not testable"),
-        "lwlts_close_65pct" | "lwlts_sp_daytrade_stops" => f("lwlts_other", "Other studies", "Not testable"),
+        "lwlts_close_65pct" => f("lwlts_close65", "Buy the close in the upper 65% of the range", "Hold N days"),
+        "lwlts_sp_daytrade_stops" => f("lwlts_other", "Other studies", "Not testable"),
         _ => None,
     }
 }
@@ -491,6 +495,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "lwlts_outside_down" | "lwlts_outside_down_xthu" | "lwlts_3up_tue_sell" | "lwlts_oops_buy" | "lwlts_oops_sell_thu" | "lwlts_oops_buy_ma9" | "lwlts_oops_sell_ma9" =>
             vec![stop(2000.0), day0(1.0), pt()],
         "lwlts_month_day1" => vec![stop(1500.0), day0(0.0), p("skip_jfo", "Skip January, February, October (non-default)", 0.0, 0.0, 1.0, 1.0), pt()],
+        "lwlts_close_65pct" => vec![p("hold", "Exit on the close N days after entry (printed: 5, 10, 15, 20, 25; default 10)", 10.0, 1.0, 60.0, 1.0)],
         "lwlts_hh1" | "lwlts_hh5" | "lwlts_hh10" | "lwlts_hh15" | "lwlts_hh20" =>
             vec![p("hold", "Exit on the close N days after entry", 13.0, 1.0, 30.0, 1.0), stop(3500.0), day0(1.0), pt()],
         _ => return None,
@@ -981,6 +986,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if td[i] == 1 && i > 0 && !(skip && matches!(m, "01" | "02" | "10")) { (Some(Ent::Open), None) } else { none }
             })
         }
+        "lwlts_close_65pct" => simulate(x, from, to, &cfg, |i| if h[i] > l[i] && c[i] - l[i] >= 0.35 * (h[i] - l[i]) { (Some(Ent::Close), None) } else { none }),
         "lwlts_hh1" | "lwlts_hh5" | "lwlts_hh10" | "lwlts_hh15" | "lwlts_hh20" => {
             let n: usize = id["lwlts_hh".len()..].parse().ok()?;
             simulate(x, from, to, &cfg, |i| {

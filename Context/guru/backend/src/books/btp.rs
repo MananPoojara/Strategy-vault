@@ -269,6 +269,10 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
         while st.first < orders.len() && orders[st.first].from + 64 < j {
             st.first += 1;
         }
+        // several live SAME-direction orders can trigger on one bar: the one the price reaches first fills (nearest the open; a gap fills at
+        // the open = distance 0; a close fill comes last), not the first in list order (E5, 2026-11-16). Long and short orders on one bar
+        // (Turtle Thrusts) keep the first in list order (lead ruling R4 #341).
+        let mut cands: Vec<(f64, &Ord, f64)> = Vec::new();
         for od in &orders[st.first..] {
             if od.from > j {
                 break;
@@ -294,6 +298,12 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 }
             };
             let Some(px) = px else { continue };
+            let dist = if matches!(od.fill, Fill::Close) { f64::INFINITY } else { (px - o[j]).abs() };
+            cands.push((dist, od, px));
+        }
+        let mixed = cands.iter().any(|c| c.1.dir != cands[0].1.dir);
+        let best = if mixed { cands.first().copied() } else { cands.iter().copied().fold(None, |b: Option<(f64, &Ord, f64)>, c| if b.map_or(true, |b| c.0 < b.0) { Some(c) } else { b }) };
+        if let Some((_, od, px)) = best {
             let kind = match od.fill { Fill::Close => "close", Fill::Open => "open", Fill::Stop(_) => "stop" };
             let risk = if od.stop.is_finite() { (px - od.stop).abs() } else { 0.0 };
             let mut p = Pos { dir: od.dir, i: j, px, stop: od.stop, risk, half: None, why_half: String::new(), kind, od: crate::intraday_ep6::Day::Plain };
@@ -304,7 +314,6 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
             } else {
                 st.pos = Some(p);
             }
-            break;
         }
         };
     // ---- EP6 (lane K59, #243): the minute walk of one bar. Open: an exit-on-open, the trailing stop, gaps through the stop /
@@ -1099,6 +1108,36 @@ mod tests {
         let r = rows(&[(105.0, 110.0, 100.0, 100.5), (100.2, 104.0, 99.0, 103.0), (103.0, 104.0, 102.0, 103.5)]);
         let x = Ctx::new(&r, &r, &[]);
         assert!(run("btp2_10pct_oops_long", &x, 0, 2, &Params::from([("path".to_string(), 0.0)])).unwrap().is_empty());
+    }
+
+    #[test]
+    fn two_live_same_side_stops_the_level_reached_first_fills() {
+        // E5: the older order sits higher (105), the newer one lower (102); the bar opens at 100 and runs to 106: price reaches 102 first
+        let o = |dir: f64, lv: f64| Ord { dir, fill: Fill::Stop(lv), setup: 0, from: 1, last: 1, stop: if dir > 0.0 { 95.0 } else { 115.0 }, arm: f64::NAN };
+        let up = rows(&[(100.0, 100.0, 100.0, 100.0), (100.0, 106.0, 99.5, 105.5)]);
+        let x = Ctx::new(&up, &up, &[]);
+        assert_eq!(sim(&x, vec![o(1.0, 105.0), o(1.0, 102.0)], &Ex::default(), 0, 1)[0].legs[0].px, 102.0);
+        // a gap through both levels: both fill at the open, the older order (list order) wins and fills at the open
+        let gap = rows(&[(100.0, 100.0, 100.0, 100.0), (106.0, 107.0, 105.5, 106.5)]);
+        let x = Ctx::new(&gap, &gap, &[]);
+        assert_eq!(sim(&x, vec![o(1.0, 105.0), o(1.0, 102.0)], &Ex::default(), 0, 1)[0].legs[0].px, 106.0);
+        // a gap through one level only: the open fill is nearest
+        let g1 = rows(&[(100.0, 100.0, 100.0, 100.0), (104.0, 106.0, 103.5, 105.5)]);
+        let x = Ctx::new(&g1, &g1, &[]);
+        assert_eq!(sim(&x, vec![o(1.0, 105.0), o(1.0, 102.0)], &Ex::default(), 0, 1)[0].legs[0].px, 104.0);
+        // equal levels: list order is kept (the first order's stop 99.8 is hit on the entry bar, the second's 90 is not)
+        let x = Ctx::new(&up, &up, &[]);
+        let t = sim(&x, vec![Ord { stop: 99.8, ..o(1.0, 102.0) }, Ord { stop: 90.0, ..o(1.0, 102.0) }], &Ex::default(), 0, 1);
+        assert_eq!((t[0].legs[0].px, t[0].exit_px), (102.0, 99.8));
+        // sells: the HIGHER level is reached first when the bar falls from the open
+        let dn = rows(&[(100.0, 100.0, 100.0, 100.0), (100.0, 100.5, 94.0, 94.5)]);
+        let x = Ctx::new(&dn, &dn, &[]);
+        assert_eq!(sim(&x, vec![o(-1.0, 96.0), o(-1.0, 98.0)], &Ex::default(), 0, 1)[0].legs[0].px, 98.0);
+        // a long and a short order on one bar: list order, as before (the farther long level 105 is listed first and wins over the nearer short 98)
+        let both = rows(&[(100.0, 100.0, 100.0, 100.0), (100.0, 106.0, 97.0, 100.0)]);
+        let x = Ctx::new(&both, &both, &[]);
+        let t = sim(&x, vec![o(1.0, 105.0), o(-1.0, 98.0)], &Ex::default(), 0, 1);
+        assert_eq!((t[0].dir, t[0].legs[0].px), (1.0, 105.0));
     }
 
     #[test]

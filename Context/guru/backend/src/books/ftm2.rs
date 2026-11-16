@@ -99,10 +99,11 @@ fn defs() -> Vec<S> {
             rules: &["E|\"we are defining n as the length of the current dominant cycle\"; \"Buy at highest(high,value1) + 1 point stop; Sell at lowest(low,value1) - 1 point stop\" (200111 PDF 63, p.61; 200112 PDF 56, p.56)"],
             notes: "Published (Japanese yen, 16 years): net $121,587, 124 trades, 40%, avg $980.54, DD -$12,969.50.", claim: None },
         S { id: "ftm2_rg_yen_tbill", name: "Intermarket yen / T-bill divergence system", group: G_RGG, dir: "Long/Short",
-            status: NeedsData("needs Japanese yen and 3-month T-bill futures (daily)"),
+            status: Status::Live, // lane D2 (R4 #340): Norgate &6J with Norgate &GE (Eurodollar) in place of T-bill futures, futures::CARDS_D2
             rules: &["E|\"If T-bill futures are in an uptrend and the yen is falling, we buy the yen. If T-bill futures are in a downtrend and the yen is rising, we sell the yen\"; trend = close above / below a simple MA; \"a four-day moving average for the yen and a 20-day moving average for T-bills\" (200111 PDF 64, p.62)",
-                     "E|Code: \"If close < Average(close,TrMk) and close of Data(2) > Average(close,IntMk) of Data(2) then buy at open\" (mirror sell); TrMk 4, IntMk 20 (200112 PDF 56, p.56)"],
-            notes: "Stop-and-reverse (opposite signal).", claim: None },
+                     "E|Code: \"If close < Average(close,TrMk) and close of Data(2) > Average(close,IntMk) of Data(2) then buy at open\" (mirror sell); TrMk 4, IntMk 20 (200112 PDF 56, p.56)",
+                     "X|The article prints no separate exit: \"If T-bill futures are in a downtrend and the yen is rising, we sell the yen\" - the opposite signal closes the position and reverses it (stop-and-reverse, as the card reads it); no stop or target (200111 PDF 64, p.62)"],
+            notes: "[Declared adaptation, R4 #340; UNVERIFIED, R4 #339/#343: 1 declared substitution and 4 unstated card-specific details] The article trades the Japanese yen with 3-month T-bill futures as Data2. Substitution: Data2 is the Norgate Eurodollar contract (&GE), the nearest short-rate future we hold (no T-bill futures); the yen is the Norgate yen continuous contract (&6J), back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11. The article prints only 'buy' and 'sell' orders, so the position is stop-and-reverse (opposite signal), as the card reads it. Unstated: (1) both simple averages include the signal bar's close (4 bars for the yen, 20 for Data2); (2) the averages and comparisons use the back-adjusted closes; (3) the Data2 average runs on Data2's own bars and its close is carried to the yen's dates (the day's bar, else the last earlier one); (4) when neither condition holds the position is kept. Engine conventions, labelled not counted: the signal on a close fills at the next bar's open ('buy at open'), one position, warm-up from the first full 20-bar average. The magazine prints 1987-1/2001-9, 222 trades, $141,625 (200111 PDF 64, p.62), a different contract and data, so it is not a #168 comparison. No stops or targets: no same-day order question (#240: 0 trades). Fills at the open: clamp_open.", claim: None },
         S { id: "ftm2_rg_game_model", name: "Game-theory combined model (channel / triple MA / intermarket by ADX trend mode)", group: G_RGG, dir: "Long/Short",
             status: NotTestable("the code calls adaptivetrendmode(25,15,65) and hilbertcycle((H+L)/2), whose formulas are not printed (adaptive ADX of half the Hilbert dominant cycle); it also needs yen and T-bill futures (Data(2))"),
             rules: &["F|\"If ADX > 25 and Mode = 0 then Mode = 1; If ADX < 15 and Mode > 0 then Mode = 0; If Mode = 1 and ADX > 65 then Mode = 0.5; If Mode = 0.5 and ADX[1] < 25 and ADX > 25 then Mode = 1\" (200112 PDF 55, p.55)",
@@ -192,7 +193,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ftm2_rg_santa" => ("ftm2_rg_seas", "Ruggiero seasonals", "Santa Claus rally"),
         "ftm2_rg_santa_up" => ("ftm2_rg_seas", "Ruggiero seasonals", "Santa · up years only"),
         "ftm2_rg_seasonal_fut" => ("ftm2_rg_seas", "Ruggiero seasonals", "Corn / T-notes · data missing"),
-        "ftm2_rg_adaptive_cbo" | "ftm2_rg_yen_tbill" | "ftm2_rg_game_model" => ("ftm2_rg_game", "Ruggiero game-theory robot", ""),
+        "ftm2_rg_yen_tbill" => ("ftm2_rg_yen_tbill", "Ruggiero yen / T-bill intermarket rule", "4-day yen / 20-day Data2 (Norgate &GE)"),
+        "ftm2_rg_adaptive_cbo" | "ftm2_rg_game_model" => ("ftm2_rg_game", "Ruggiero game-theory robot", ""),
         "ftm2_dm_skew" => ("ftm2_dm", "McNicholl moving skewness", ""),
         "ftm2_mm_macd_r1" => ("ftm2_mm", "Meissner refined MACD", "MACD-R1"),
         "ftm2_mm_macd_r2" => ("ftm2_mm", "Meissner refined MACD", "MACD-R2"),
@@ -219,6 +221,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ftm2_mm_macd_r2" => { let mut v = macd(); v.push(p("level", "Crossing level, % of price", 1.5, 0.5, 3.5, 0.5)); v }
         "ftm2_ac_vote" => vec![p("a", "Short average ('two-day')", 2., 1., 20., 1.), p("b", "Longer average ('five-day')", 5., 2., 30., 1.),
                                p("ma", "Close vs N-day average ('40-day')", 40., 5., 100., 5.), p("ext", "High/low order look-back ('50 days')", 50., 5., 100., 5.)],
+        "ftm2_rg_yen_tbill" => vec![],
         _ => return None,
     })
 }
@@ -238,8 +241,37 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "ftm2_mm_macd_r1" => macd_r(x, from, to, u("fast").max(1), u("slow").max(2), u("sig").max(1), u("conf").max(1), g("target"), None),
         "ftm2_mm_macd_r2" => macd_r(x, from, to, u("fast").max(1), u("slow").max(2), u("sig").max(1), u("conf").max(1), g("target"), Some(g("level"))),
         "ftm2_ac_vote" => vote(x, from, to, u("a").max(1), u("b").max(1), u("ma").max(1), u("ext").max(2)),
+        "ftm2_rg_yen_tbill" => yen_tbill(x, from, to),
         _ => return None,
     })
+}
+
+/// Ruggiero's yen / T-bill intermarket rule (Futures Magazine 200111 p.62, code 200112 p.56): yen close below its 4-day average and Data2
+/// (here the Norgate Eurodollar contract) above its 20-day average -> buy at the next open; the mirror -> sell short; stop and reverse.
+/// Lane D2 (R4 #340): Data2 = &GE; a missing second contract shows nothing (futures::data2_issue refuses the card first).
+fn yen_tbill(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    let Some(ge) = crate::futures::rows("&GE") else { return vec![] };
+    if crate::futures::ctx_market(x).is_none() { return vec![]; }
+    let d2 = crate::second::align("&GE", x.r, ge);
+    let bc = d2.carried(crate::second::Field::C);
+    let ba = d2.own(|r| crate::connors::sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), 20));
+    let a = crate::connors::sma(&x.c, 4);
+    let (mut out, mut cur) = (vec![], None::<Trade>);
+    for t in 0..to {
+        if t < from || !a[t].is_finite() || !bc[t].is_finite() || !ba[t].is_finite() { continue; }
+        let (up, dn) = (x.c[t] > a[t] && bc[t] < ba[t], x.c[t] < a[t] && bc[t] > ba[t]); // dn = yen falling and Data2 rising: buy
+        let e = t + 1;
+        let pos = cur.as_ref().map_or(0., |c| c.dir);
+        if dn && pos <= 0. {
+            if let Some(c) = cur.take() { out.push(fin(c, e, x.o[e], t, "reverse")); }
+            cur = Some(mk(1., e, x.o[e], t, "open"));
+        } else if up && pos >= 0. {
+            if let Some(c) = cur.take() { out.push(fin(c, e, x.o[e], t, "reverse")); }
+            cur = Some(mk(-1., e, x.o[e], t, "open"));
+        }
+    }
+    mark_open(&mut out, cur, x, to);
+    out
 }
 
 /// Zamansky & Goldcamp N-day close breakout with N/2 close exit; all orders at the next open; reversals allowed.

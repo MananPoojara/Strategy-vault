@@ -27,6 +27,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ],
             notes: "Designed for E-mini futures on 1-minute bars (YM/NQ/ES), gap measured at 9:29 ET against the futures' prior close. Here: cash index open vs prior close, fills on the daily bar. Default parameter set is the documents' own performance report (YM, 10 contracts, 30 days): min gap 9, max gap 150, stop 95% of gap; target margin not listed there, so the program's stated zero-default (full gap fill) applies. The chart screenshots show an undocumented input list (930,1610,10,9,140,...) whose order is unknown; not used. Take1stHalf/SetBackHalfBE two-lot exits are optional and not modelled. Same-day stop+target = stop first. DJI/SPX cash opens before ~1999 are often stale (open = prior close), so few gaps there.",
             claim: claim("26", "88.46%", "$578.63 (10 YM contracts)", "intraday", "30 days to 2007, YM futures, report image") },
+        StrategyDef { id: "lpgap_fade_spx", name: "Opening Gap Strategy · fade the gap, SPX 1-minute adaptation", group: "Opening Gap Strategy",
+            session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
+            rules: &[
+                "F|\"Gaps are created when the opening price is greater or lower than yesterday's closing price\"; \"enter a long position on gaps down or a short position on gaps up\" (Gap Strategy doc); GapSizeMin 9 / GapSizeMax 150 points and Stop Percent 95% of the gap are the printed performance report's settings (Instructions Table, report image)",
+                "E|\"The program enters a trade at TimeToStart\" (930 = the open) at the open price of the session's first minute",
+                "X|Target = the gap size (\"Target is Gap Size if both [margin inputs] are set to 0\") = yesterday's close; stop = 95% of the gap beyond the entry; \"exit the trade either at target, at a specified stop loss or at the end of day\" (Gap Strategy doc)",
+            ],
+            notes: "Declared adaptation (R4 #339/#340, lane D1), always UNVERIFIED: the documents describe E-mini futures (the report: 10 YM contracts, 30 days to 2007, 26 trades, 88.46%); here the real SPX 1-minute bars (2008-; real opens from 2014, clamp_open) with the gap points literal in S&P points, no costs, one lot (the two-lot Take1stHalf / SetBackHalfBE options are not modelled). Unstated or open details, each a labelled reading: (1) the instrument: the report's points are Dow points on YM; the same 9 / 150-point gap band and 95% stop are applied to SPX points (the documents give no S&P report); (2) the gap reference: the futures gap is measured at 9:29 ET against the futures' prior close; here the first SPX minute's open against the prior SPX daily close; (3) TimeToClose: the session's last 1-minute close; (4) the stop and target both work from the first minute (orders are generated intrabar at the entry); inside a minute the price runs open, the nearer extreme, the farther extreme, close, a stop or limit fills at its level. Not the old daily-bar card lpgap_fade (no admitted instrument, unchanged).",
+            claim: None },
         StrategyDef { id: "lpgap_novice_pro", name: "Novice vs professional gaps", group: "Opening Gap Strategy", session: 0, dir: "Long/Short",
             status: Status::NotTestable("discretionary: 'several down bars' / 'several up bars' and overbought/oversold are never quantified"),
             needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
@@ -40,6 +49,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     match id {
         "lpgap_fade" => Some(("lpgap", "Opening Gap Strategy", "Fade to prior close")),
         "lpgap_novice_pro" => Some(("lpgap", "Opening Gap Strategy", "Novice vs professional · discretionary")),
+        "lpgap_fade_spx" => Some(("lpgap", "Opening Gap Strategy", "Fade to prior close · SPX 1-minute")),
         _ => None,
     }
 }
@@ -47,6 +57,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
+        "lpgap_fade_spx" => Some(vec![p("gap_min", "GapSizeMin (S&P points; report 9)", 9.0, 0.0, 200.0, 1.0), p("gap_max", "GapSizeMax (S&P points; report 150)", 150.0, 10.0, 1000.0, 10.0),
+            p("stop_pct", "StopLossByPct (% of gap; report 95)", 95.0, 5.0, 200.0, 5.0)]),
         "lpgap_fade" => Some(vec![
             p("gap_min", "GapSizeMin (points)", 9.0, 0.0, 200.0, 1.0),
             p("gap_max", "GapSizeMax (points)", 150.0, 10.0, 1000.0, 10.0),
@@ -62,7 +74,40 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     }
 }
 
+pub const SPX: &[&str] = &["lpgap_fade_spx"];
+/// The gap fade on the real SPX minutes: entry at the first minute's open when |open - prior daily close| is inside the band,
+/// target = the prior close, stop = `stop_pct` of the gap beyond the entry, both live from the first minute, out at the last close.
+fn fade_minutes(x: &Ctx, from: usize, to: usize, gmin: f64, gmax: f64, spct: f64) -> Vec<Trade> {
+    use crate::books::n1intra::{minute, Ord};
+    #[derive(Clone)]
+    struct S { pos: Option<f64>, x: Option<(f64, &'static str)> }
+    let mut out = vec![];
+    for i in from.max(1)..=to {
+        let Some(m) = crate::intraday_w2b::day(x, i) else { continue };
+        let (o, pc) = (m[0].o, x.c[i - 1]);
+        let (gap, size) = (o - pc, (o - pc).abs());
+        if gap == 0.0 || size < gmin || size > gmax { continue; }
+        let d = if gap < 0.0 { 1.0 } else { -1.0 };
+        let (tgt, stp) = (o + d * size, o - d * size * spct / 100.0);
+        let orders = |s: &S| -> Vec<Ord> { if s.x.is_some() { vec![] } else { vec![Ord { up: d > 0.0, lv: tgt, tag: 1 }, Ord { up: d < 0.0, lv: stp, tag: 2 }] } };
+        let fill = |s: &mut S, t: u8, px: f64| { s.x = Some((px, if t == 1 { "target" } else { "stop" })); };
+        let mut st = S { pos: Some(o), x: None };
+        for q in &m {
+            minute(q, &mut st, &orders, &fill, d < 0.0);
+            if st.x.is_some() { break; }
+        }
+        let (xp, why) = st.x.unwrap_or((m[m.len() - 1].c, "end of day"));
+        out.push(crate::intraday::day_trade(d, i, o, i, xp, why, "open", false));
+    }
+    out
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "lpgap_fade_spx" {
+        if to >= x.c.len() || from > to { return None; }
+        let g = |k: &str| super::jb624::getp(id, p, k);
+        return Some(fade_minutes(x, from, to, g("gap_min"), g("gap_max"), g("stop_pct")));
+    }
     let defs = params(id)?;
     if from >= to || to >= x.r.len() {
         return None;

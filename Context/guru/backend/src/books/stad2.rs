@@ -221,7 +221,7 @@ fn oq(a: A, p: P, qty: f64, tag: &'static str) -> O { O { qty, ..o(a, p, tag) } 
 
 /// Built-in stops in points (0 = off).
 #[derive(Clone, Copy, Default)]
-struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool }
+struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool, dtr_short: f64 /* lane D3: $ risk trailing amount for shorts when it differs (0 = same as dtr) */, entry_close: bool /* lane D3: entries 'this bar on close': the entry bar's own range is not favourable excursion */ }
 #[derive(Clone, Copy)]
 struct Cfg { max_ent: usize, ss: SetStops, minute: bool, ep6: bool } // ep6: EP6 (#243, lane K62) resolver on for the id
 /// `minute` (lane K58, decision #240): each bar's stop/limit orders are walked on the day's real 1-minute bars instead of the
@@ -411,11 +411,12 @@ impl<'a> Eng<'a> {
         if self.pos == 0 { return; }
         let ss = self.cfg.ss;
         let (e, d) = (self.entry_px(), self.pos as f64);
-        let fav = if self.pos == 1 { self.x.h[i] - e } else { e - self.x.l[i] };
+        let fav = if ss.entry_close && self.entry_i() == i { 0.0 } else if self.pos == 1 { self.x.h[i] - e } else { e - self.x.l[i] };
         if fav > self.mfe { self.mfe = fav; }
         let xa = if self.pos == 1 { A::Xl } else { A::Xs };
         if ss.be > 0.0 && self.mfe >= ss.be { nx.push(o(xa, P::Stop(e), "Breakeven")); }
-        if ss.dtr > 0.0 { nx.push(o(xa, P::Stop(e + d * (self.mfe - ss.dtr)), "$ Risk Trailing")); }
+        let dtr = if self.pos == -1 && ss.dtr_short > 0.0 { ss.dtr_short } else { ss.dtr };
+        if dtr > 0.0 { nx.push(o(xa, P::Stop(e + d * (self.mfe - dtr)), "$ Risk Trailing")); }
         if ss.ppct > 0.0 && self.mfe >= ss.pfloor && self.mfe > 0.0 { nx.push(o(xa, P::Stop(e + d * self.mfe * (1.0 - ss.ppct / 100.0)), "% Risk Trailing")); }
     }
 }
@@ -787,7 +788,7 @@ fn defs_b() -> Vec<Def> {
         crate::books::n1intra2::MIN],
       "Vol 7 ch.3 p.47-53. Book: 10-minute IBM/AMZN/LU/BA, 1/12-2/1/99 (with a money management stop the code does not print), too short to compare. Runs on SPY and SPX minutes (declared application); the NIFTY 50 and NIFTYBANK minute results are withdrawn (decisions #231/#234: NSE cash-index minutes are dominated by stale component prices). No costs in the vault's run. Cash-index shorts are hypothetical.", ("stad7_idbo", "Intraday Breakout", "Vol 7")),
     d("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7 · Support/Resistance", "Long",
-      NeedsData("Needs weekly Treasury bond (Data2) and Treasury bill (Data3) futures aligned to the traded index; no bond/bill futures in the vault."),
+      NeedsData("Held (lane D2, 16 Nov 2026, R4 #340/#240): the printed rule is complete and Norgate holds the S&P 500 (&SP), T-bond (&ZB) and Eurodollar (&GE, for the bills) futures, but run that way 9 of the 78 trades to the 1995-07-31 open-price limit (R4 #330), 11.5%, have a bar where a long position's exit stop and the buy stop are both touched and the order inside the bar cannot be known (no futures minutes), over the 5% of R4 #240."),
       &["E|Close Data2 > XAverage(Close,30) Data2 and Close Data3 > XAverage(Close,30) Data3 and SlowK(9) crosses above 30: buy stop at Close + .30*ATR for 5 bars (Vol 7 p.55 code)",
         "X|ExitLong at EntryPrice - 1.5*ATR stop; after SlowK > 70: ExitLong at Lowest(Low,2)[1] stop"],
       "Vol 7 ch.3 p.54-60. Book: 57% profitable, win/loss 1.43, PF 1.88.", ("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7")),
@@ -877,12 +878,13 @@ fn defs_b() -> Vec<Def> {
       NotTestable("Short-side code is not printed ('analogous ... included on the STAD 9 CD', p.74). The printed long code uses the previous bar's high while the prose uses the naked-close bar's extreme, so the mirror is not unambiguous."),
       &["E|Close below both EMAs and above the previous bar's high: sell 1 point below the low of the naked-close bar (prose p.71)"],
       "Vol 9 ch.6 p.71-80.", ("stad9_skinny", "Skinny Dipper", "Vol 9 short")),
-    d("stad9_djnikkei", "DJ vs. Nikkei (intermarket example)", "Vol 9 · Strategies", "Long/Short",
-      NeedsData("The traded market is the Nikkei 225 ('Insert in Data1 the Nikkei Index since 1/1/98 and in Data2 the Dow Jones', Vol 9 p.82), which the vault does not hold. The DJI second series exists (EP4), but no other market stands in for the traded leg (lane K52; EWJ tracks the MSCI Japan index, not the Nikkei)."),
-      &["E|Close[1] of Data2 < Close of Data2: Buy next bar at Open; else Sell next bar at Open (Vol 9 p.82)"],
-      "Vol 9 ch.7 p.82-84 (Hans Stimming). Book: Nikkei since 1/1/98: 61% profitable.", ("stad9_iic", "International Index Composite", "DJ vs Nikkei")),
+    d("stad9_djnikkei", "DJ vs. Nikkei (intermarket example)", "Vol 9 · Strategies", "Long/Short", Live,
+      &["E|Close[1] of Data2 < Close of Data2: Buy next bar at Open; else Sell next bar at Open (Vol 9 p.82)",
+        "X|No separate exit: the opposite signal (Sell / Buy next bar at Open) reverses the position (Vol 9 p.82)",
+        "A|Declared adaptation (R4 #340, UNVERIFIED): the book trades the Nikkei 225 index (Data1) with the Dow Jones (Data2) from 1/1/98; the vault holds no Nikkei cash index, so Data1 = the Norgate Nikkei 225 Dollar continuous futures (&NKD, the same index, from 1990, filled at its session open) and Data2 = the Dow Jones Industrial Average close (Norgate $DJI). Four unstated details: (1) a contract date without a Dow bar keeps the last Dow bar and Close[1] stays the Dow bar before it (TradeStation Data2); (2) a Dow bar older than 5 contract bars is missing data: no signal, and none after the Dow file ends (2020-09-04); (3) the run starts at the first bar with two Dow bars; (4) one unit, no costs"],
+      "Vol 9 ch.7 p.82-84 (Hans Stimming). Book: Nikkei since 1/1/98: 61% profitable (System Report image, trades and profit not printed).", ("stad9_iic", "International Index Composite", "DJ vs Nikkei")),
     d("stad9_iic", "International Index Composite", "Vol 9 · Strategies", "Long/Short",
-      NeedsData("Needs six aligned foreign index streams (TSE 300, CAC 40, DAX, MIBTel, Nikkei, FTSE 100) as Data2-Data7."),
+      NeedsData("HELD (lane D3, 16 Nov 2026, R4 #339/#343): the rule is printed, and Norgate futures could stand in for the six foreign indices (the MIBTel is not held), but it needs more than 4 card-specific unstated details (AverageFC definition, '1 point' as a tick, printed 9/18 versus the optimised 10/9, composite start and Data2 carry, cross tie). The engine branch and the reference (authors/relax-339/D3/w/iic_ref.py) are kept, not published."),
       &["F|Composite = weighted average of the closes of Data2-Data7 (weights .49/.07/.09/.02/.22/.11) (Vol 9 p.86-87)",
         "E|AverageFC(Composite,9) crosses above AverageFC(Composite,18): Buy next bar at Close + 1 point stop; crosses below: Sell at Close - 1 point stop"],
       "Vol 9 ch.7 p.81-89. Book (S&P 500, optimised 10/9): 81% winners.", ("stad9_iic", "International Index Composite", "Composite")),
@@ -1179,6 +1181,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad6_parvol" => vec![p("acc", "Parabolic acceleration", 0.03, 0.01, 0.1, 0.01), p("volavg", "Volume average length", 5., 2., 20., 1.), p("pcntdiff", "Entry fraction of SAR move", 0.3, 0., 1., 0.05), p("setuplen", "Setup window bars", 4., 1., 10., 1.)],
         "stad6_vwm" => vec![p("momlen", "Momentum length", 5., 2., 20., 1.), p("avglen", "XAverage length", 20., 5., 50., 1.), p("atrlen", "ATR length", 5., 2., 20., 1.), p("atrpcnt", "ATR fraction", 0.25, 0., 1., 0.05), p("setuplen", "Setup length bars", 5., 1., 15., 1.)],
         "stad7_dma" => vec![p("len", "Average length", 9., 3., 30., 1.)],
+        "stad9_djnikkei" => vec![],
+        "stad9_iic" => vec![p("fast", "FastLength (printed default 9; the book's optimised report: 10)", 9., 2., 40., 1.), p("slow", "SlowLength (printed default 18; optimised: 9)", 18., 2., 60., 1.),
+            p("w2", "Weight Data2 (TSE 300 -> TSX 60)", 0.49, 0., 1., 0.01), p("w3", "Weight Data3 (CAC 40)", 0.07, 0., 1., 0.01), p("w4", "Weight Data4 (DAX)", 0.09, 0., 1., 0.01),
+            p("w5", "Weight Data5 (MIBTel -> EURO STOXX 50)", 0.02, 0., 1., 0.01), p("w6", "Weight Data6 (Nikkei)", 0.22, 0., 1., 0.01), p("w7", "Weight Data7 (FTSE 100)", 0.11, 0., 1., 0.01),
+            p("tick", "Offset '1 point' in ticks of the traded instrument", 1., 0., 10., 1.)],
         "stad7_dow" => vec![p("len", "Length: bars for the new high (code 50; book table 3)", 50., 2., 200., 1.), p("confirm", "Confirm: bars to find all three confirmations (code 10; book table 6)", 10., 1., 50., 1.),
             p("atrs", "ATRStop: trailing stop ATR multiple", 5., 0.5, 15., 0.5), p("atrlen", "ATRLen", 10., 2., 50., 1.)],
         "stad7_stsr" => vec![p("buylev", "Buy level", 0.3, 0.1, 0.5, 0.05), p("selllev", "Sell level", 0.7, 0.5, 0.9, 0.05), p("exitlen", "Trailing stop bars", 2., 1., 10., 1.)],
@@ -1260,7 +1267,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         _ => return None,
     };
-    if !matches!(id, "stad6_tenbar" | "stad6_asi" | "stad13_tripleplay") { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
+    if !matches!(id, "stad6_tenbar" | "stad6_asi" | "stad13_tripleplay" | "stad9_djnikkei" | "stad9_iic") { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
     crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
     Some(v)
 }
@@ -1287,10 +1294,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let ep6 = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K62)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let u = |k: &str| g(k).max(1.0).round() as usize;
-    let usd = |k: &str| g(k) / (g("bpv") * g("qty"));
+    // lane D3 (R4 #340): the book's futures test of stad6_dmachan (British Pound): the Format-dialog dollar stops at the contract's $ per point, '1 point' = one tick (#57)
+    let fut_pv = if matches!(id, "stad6_dmachan" | "stad13_dmarl" | "stad12_shifty") { crate::futures::ctx_market(x).and_then(|m| crate::futures::usd_per_point(m, &x.r[from.min(x.r.len().saturating_sub(1))].date)) } else { None };
+    let usd = |k: &str| match fut_pv { Some(v) => g(k) / v, None => g(k) / (g("bpv") * g("qty")) };
     let (o_, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
-    let pt = g("point");
+    let pt = if fut_pv.is_some() { x.market_tick() } else { g("point") };
     let tr = true_range(x);
     let rg = rng(x);
     let nxo = |i: usize| if i + 1 < n { o_[i + 1] } else { c[i] };
@@ -1502,6 +1511,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let med: Vec<f64> = (0..n).map(|i| (h[i] + l[i]) / 2.0).collect();
             let (ua, la, ea) = (shift(&sma(h, al), dp), shift(&sma(l, al), dp), shift(&sma(&med, al), dp));
             let mut cf = cfg(); cf.ss.sl = usd("mm_usd"); cf.ss.be = usd("be_usd"); cf.ss.dtr = usd("dtr_usd");
+            // the book's British Pound test (p.38): only the money-management stop changes, $200 -> $900
+            if fut_pv.is_some() { cf.ss.entry_close = true; }
+            if fut_pv.is_some() && !p.contains_key("mm_usd") { cf.ss.sl = 900.0 / fut_pv.unwrap_or(1.0); }
             run_ts(x, from, to, al + dp + 1, cf, |i, st, now, nx| {
                 let rlb = med[i] > h[i - 1] && rg[i] > rg[i - 1];
                 let rls = med[i] < l[i - 1] && rg[i] > rg[i - 1];
@@ -1659,6 +1671,40 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if st.pos == -1 { if st.bse(i) == 0 { pl = l[i]; } if l[i] < pl { pl = l[i]; }
                     nx.push(o(A::Xs, P::Stop(e + a[i] * pa), "Protective")); nx.push(o(A::Xs, P::Stop(pl + a[i] * ta), "Trailing")); }
                 lord_p = lord; sord_p = sord;
+            })
+        }
+        "stad9_djnikkei" => {
+            // lane D3 (R4 #340): Data1 = Norgate &NKD, Data2 = the Dow close (extra series DJ_INDUSTRIAL, NaN on dates without a Dow bar)
+            // TradeStation Data2: a date without a Dow bar keeps the last Dow bar, and Close[1] stays the Dow bar before it
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let ds = x.series("DJ_INDUSTRIAL").map(|v| v.to_vec()).unwrap_or_else(|| vec![f64::NAN; n]);
+            let last_dow = ds.iter().rposition(|v| v.is_finite()).unwrap_or(0); // nothing after the Dow file ends
+            let (mut cur, mut prev, mut gap) = (f64::NAN, f64::NAN, 0usize);
+            run_ts(x, from, to, 0, cfg(), |i, _st, _now, nx| {
+                // a carried Dow bar older than CAP (5) Data1 bars is missing data, not a signal (second::CAP, #223 (1))
+                if ds[i].is_finite() { prev = cur; cur = ds[i]; gap = 0; } else { gap += 1; }
+                if i <= last_dow && prev.is_finite() && cur.is_finite() && gap <= crate::second::CAP {
+                    if prev < cur { nx.push(o(A::Buy, P::Mkt, "Dow up: Buy")); } else { nx.push(o(A::Sell, P::Mkt, "Dow not up: Sell")); }
+                }
+            })
+        }
+        "stad9_iic" => {
+            // lane D3 (R4 #340): Data2-Data7 = Norgate futures of six foreign indices (back-adjusted closes, carried on Data1 dates)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let mut cs = vec![];
+            for sym in ["&SXF", "&FCE", "&FDAX", "&FESX", "&NKD", "&LFT"] {
+                let Some(rows) = crate::futures::rows(sym) else { return Some(vec![]) };
+                cs.push(crate::second::align(sym, x.r, rows).carried(crate::second::Field::C));
+            }
+            let w = [g("w2"), g("w3"), g("w4"), g("w5"), g("w6"), g("w7")];
+            let den: f64 = w.iter().sum();
+            let comp: Vec<f64> = (0..n).map(|i| if (den - 1.0).abs() < 1e-9 && cs.iter().all(|s| s[i].is_finite()) { (0..6).map(|k| w[k] * cs[k][i]).sum::<f64>() / den } else { f64::NAN }).collect();
+            let (fa, sa) = (sma(&comp, u("fast")), sma(&comp, u("slow")));
+            let off = g("tick").max(0.0) * x.market_tick();
+            run_ts(x, from, to, 1, cfg(), |i, _st, _now, nx| {
+                if i == 0 { return; }
+                if fa[i] > sa[i] && fa[i - 1] <= sa[i - 1] { nx.push(o(A::Buy, P::Stop(c[i] + off), "Composite Buy")); }
+                if fa[i] < sa[i] && fa[i - 1] >= sa[i - 1] { nx.push(o(A::Sell, P::Stop(c[i] - off), "Composite Sell")); }
             })
         }
         "stad7_dow" => {
@@ -2255,10 +2301,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "stad12_shifty" => {
-            let (fa, sa) = (sma(c, u("fast")), sma(c, u("slow")));
+            // lane D3 (R4 #340): the book's crude-oil test (p.104-106): 40 / 80, Dllr Risk Trailing $1,000 long and $500 short
+            let cru = fut_pv.is_some();
+            let (fast, slow) = if cru && !p.contains_key("fast") { (40usize, 80usize) } else { (u("fast"), u("slow")) };
+            let (fa, sa) = (sma(c, fast), sma(c, slow));
             let mut cf = cfg(); cf.ss.dtr = usd("dtr_usd");
+            if cru && !p.contains_key("dtr_usd") { let pv = fut_pv.unwrap_or(1.0); cf.ss.dtr = 1000.0 / pv; cf.ss.dtr_short = 500.0 / pv; }
             let (mut tcu, mut lcu, mut tco, mut lco) = (0.0, 0.0, 0.0, 0.0);
-            run_ts(x, from, to, u("slow").max(u("fast")) + 1, cf, |i, st, now, nx| {
+            run_ts(x, from, to, slow.max(fast) + 1, cf, |i, st, now, nx| {
                 if c[i] > sa[i] { nx.push(o(A::Buy, P::Stop(fa[i] + pt), "Shifty Buy")); }
                 if xunder(c, &fa, i) { lcu = tcu; tcu = c[i]; }
                 if tcu < lcu && st.pos == 1 { nx.push(o(A::Xl, P::Stop(fa[i] - pt), "Lower cross")); } else if xunder(c, &sa, i) { now.push(o(A::Xl, P::Mkt, "Below slow")); }
@@ -2340,9 +2390,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "stad13_dmarl" => {
-            let (ln, dp) = (u("len"), g("disp").round() as usize);
+            // lane D3 (R4 #340): the book's Coffee test (p.56): StopLoss $3,000, BreakevenFloor $3,000, DllrRiskTrailing $5,000, DMAvgLength 50, Displacement 10
+            let cof = fut_pv.is_some();
+            let dflt = |k: &str, v: f64| if cof && !p.contains_key(k) { v } else { g(k) };
+            let (ln, dp) = (dflt("len", 50.).max(1.0).round() as usize, dflt("disp", 10.).round() as usize);
             let (ub, lb) = (shift(&sma(h, ln), dp), shift(&sma(l, ln), dp));
             let mut cf = cfg(); cf.ss.sl = usd("sl_usd"); cf.ss.be = usd("be_usd"); cf.ss.dtr = usd("dtr_usd");
+            if cof { for (k, v) in [("sl_usd", 3000.0), ("be_usd", 3000.0), ("dtr_usd", 5000.0)] { if !p.contains_key(k) { let q = v / fut_pv.unwrap_or(1.0); match k { "sl_usd" => cf.ss.sl = q, "be_usd" => cf.ss.be = q, _ => cf.ss.dtr = q } } } }
             run_ts(x, from, to, ln + dp + 1, cf, |i, _st, _now, nx| {
                 let med = (h[i] + l[i]) / 2.0;
                 if med > h[i - 1] && rg[i] > rg[i - 1] && c[i] > ub[i] { nx.push(o(A::Buy, P::Stop(h[i] + pt), "Range Leader Buy")); }
@@ -2632,7 +2686,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 69); // + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 70); // + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 
