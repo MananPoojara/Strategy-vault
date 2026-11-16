@@ -19,6 +19,9 @@ macro_rules! def {
     };
 }
 
+const RB_NOTE: &str = "[R1-1116, R4 #297/#339: adapted, 1 unstated detail (the contract), UNVERIFIED] The book buys the May RB contract; the vault holds only the Norgate RBOB gasoline continuous contract (&RB, from 2005-10-03, so the book's 1995-2005 years are not testable; the book's 2006-2008 years are), with signals and point P&L on the back-adjusted series (R4 #293). Entry at the close of the first trading day on or after April 13, exit at the close of the last trading day on or before April 25 (the holiday rules as printed); one contract; no costs. Book: every year since 1995 profitable (Table p.149, 1995-2008, 2007-08 actual trading as 2 x QU). Norgate's RBOB series starts after the book's unleaded contract was replaced by RBOB (2006).";
+const NG_NOTE: &str = "[R1-1116, R4 #297/#339: adapted, 1 unstated detail (the contract), UNVERIFIED] The book buys the June NG contract; the vault holds only the Norgate Henry Hub natural gas continuous contract (&NG, front month, rolled by the vendor), so the position is in the front contract of the day, not the June contract: the month spread is not the book's. Entry at the close of the first trading day on or after February 25, exit at the close of the last trading day on or before April 15 (the holiday rules as printed); one contract; no costs. Book: profitable 14 consecutive years 1995-2008 (table p.150).";
+
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
     vec![
@@ -57,15 +60,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|hold one month (month-end to month-end) (p.147)"],
             "Published: avg annual return -0.9167, Sharpe -0.1055 (as printed, S&P 500 list of Nov 2007, p.147)."),
         def!("ecqt_rb_seasonal", "Gasoline futures spring trade", "Ch.7 · Seasonal", "Long",
-            NeedsData("NYMEX RB May unleaded-gasoline futures contract daily settlements 1995-2008 (no futures in the vault; an Indian index is not a gasoline contract)"),
+            Live,
             &["E|\"buy 1 contract of RB ... that expires in May at the close of April 13 (or the following trading day if it is a holiday)\" (p.149)",
               "X|\"and sell it at the close of April 25 (or the previous trading day if it is a holiday)\" (p.149)"],
-            "Published P&L per contract 1995-2008: every year positive (1995 $1,037 ... 2008* $4,741; *actual trading as 2 x QU) (p.149)."),
+            RB_NOTE),
         def!("ecqt_ng_seasonal", "Natural gas futures spring trade", "Ch.7 · Seasonal", "Long",
-            NeedsData("NYMEX NG June natural-gas futures contract daily settlements 1995-2008 (no futures in the vault)"),
+            Live,
             &["E|\"long a June contract of NYMEX natural gas futures (Symbol: NG) at the close of February 25 (or the following trading day if it is a holiday)\" (p.150)",
               "X|\"exit this position on April 15 (or the previous trading day if it is a holiday)\" (p.150)"],
-            "Published P&L 1995-2008, profitable 14 consecutive years (1995 $1,970 ... 2008* $10,137) (p.150)."),
+            NG_NOTE),
         def!("ecqt_gs_regime_ml", "GS regime switch via perceptron (Example 7.1)", "Ch.7 · Regime switching", "Long/Short",
             NotTestable("the trade decision is a perceptron's weighting of rule/holding-period combinations trained on a moving window in Alphacet Discovery; the weights and training window are not given (p.122-125)"),
             &["E|R3: 1-day % change >= 1 AND 10-day moving low >= Low -> 1; % change >= -1 AND 10-day moving high <= High -> -1 (Fig 7.2, p.124)",
@@ -79,6 +82,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    if id == "ecqt_rb_seasonal" { return Some(("ecqt_rb_seasonal", "Chan gasoline futures spring trade (Apr 13 - Apr 25)", "")); }
+    if id == "ecqt_ng_seasonal" { return Some(("ecqt_ng_seasonal", "Chan natural gas futures spring trade (Feb 25 - Apr 15)", "")); }
     if id == PAIR { return Some((PAIR, "Chan GLD/GDX pair z-score (Example 3.6)", "2 / 1")); } // lane P1: a strategy of its own
     let d = catalogue().into_iter().find(|d| d.id == id)?;
     Some(("ecqt", "Chan · Quantitative Trading", d.name))
@@ -150,7 +155,47 @@ fn pair(x: &Ctx, from: usize, to: usize, p: &Params) -> Result<Vec<crate::option
     }
     Ok(out.into_iter().filter(|q| q.entry_i >= from).collect())
 }
-pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> { None }
+/// R1-1116: Chan p.149-150: long at the close of the first session on or after (m1, d1), out at the close of the last session on or
+/// before (m2, d2), once a year. A year the series does not cover from its entry date is skipped.
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    let (e, q) = match id { "ecqt_rb_seasonal" => ("04-13", "04-25"), "ecqt_ng_seasonal" => ("02-25", "04-15"), _ => return None };
+    if !p.is_empty() || from > to || to >= x.r.len() { return None; }
+    let md = |i: usize| &x.r[i].date[5..10];
+    let yr = |i: usize| &x.r[i].date[0..4];
+    let mut pos = super::tselhs::Book::new();
+    for i in from.max(1)..to {
+        // i = the first session of its year on or after the entry date (the session before is in another year or earlier than it)
+        if md(i) < e || md(i) > q || (yr(i - 1) == yr(i) && md(i - 1) >= e) { continue; }
+        let mut j = i;
+        while j + 1 < x.r.len() && yr(j + 1) == yr(i) && md(j + 1) <= q { j += 1; }
+        // a gap in the data (a series that starts mid-season, a missing stretch) is not a holiday: both ends must be within 6 calendar days
+        let gap = |k: usize, md_: &str| (super::sctraub::days(&x.r[k].date) - super::sctraub::days(&format!("{}-{}", yr(k), md_))).abs();
+        if gap(i, e) > 6 || gap(j, q) > 6 { continue; }
+        pos.enter(1., i, x.c[i], "close");
+        if j <= to { pos.exit(j, x.c[j], "seasonal exit date"); } else { break; }
+    }
+    Some(pos.done(to, x.c[to]))
+}
+#[cfg(test)]
+mod r1_tests {
+    use super::*;
+    use crate::Row;
+    fn row(d: &str, c: f64) -> Row { Row { ticker: "T".into(), date: d.into(), open: c, high: c, low: c, close: c, volume: None } }
+    #[test]
+    fn seasonal_dates_with_holidays() {
+        // 2009-04-13 missing (a holiday): the next session is the entry; 2009-04-25 a Saturday: the last session on or before is the 24th
+        let r = vec![row("2009-04-10", 1.), row("2009-04-14", 2.), row("2009-04-20", 3.), row("2009-04-24", 5.), row("2009-04-27", 9.), row("2010-04-13", 4.), row("2010-04-23", 6.), row("2010-04-26", 7.)];
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("ecqt_rb_seasonal", &x, 0, 7, &Params::new()).unwrap();
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].exit_px), (1, 3, 5.));
+        assert_eq!((t[1].legs[0].i, t[1].exit_i), (5, 6));
+        assert!(run("ecqt_ng_seasonal", &x, 0, 7, &Params::new()).unwrap().is_empty());
+        assert!(run("ecqt_rb_seasonal", &x, 0, 7, &Params::from([("x".to_string(), 1.)])).is_none());
+        let open = run("ecqt_rb_seasonal", &x, 0, 2, &Params::new()).unwrap(); // the run ends before the exit date: open
+        assert!(open.len() == 1 && open[0].open && open[0].exit_i == 2);
+    }
+}
 
 #[cfg(test)]
 mod tests {

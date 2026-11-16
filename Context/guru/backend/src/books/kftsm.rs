@@ -199,13 +199,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
         // ------------------------------------------------ Not testable
         d("kftsm_mptdi", "MPTDI step-weighted average", "Ch 8 · Applications of single trends", "Long/Short", NotTestable("Table 8.1 gives steps only for gold in points; no table for any index"), &["F|Table 8.1 MPTDI variables for gold (p.272)"], "Futures-specific table."),
         d("kftsm_mart", "Mart's Master Trading Formula", "Ch 8 · Applications of single trends", "Long/Short", NotTestable("the smoothing-constant lookup table and band formula are not printed"), &["E|\"look up a smoothing constant in a modified log-scale table\" (p.276)"], ""),
-        d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", "Long/Short", NotTestable("smoothing constant not given (only 'less than a 20-day equivalent')"), &["E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)"], ""),
+d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", "Long/Short", Live, &[
+            "F|\"Substituting the log of the price to account for growth, he applied an exponential smoothing three times using the same smoothing constant.\" (p.273)",
+            "E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)",
+            "X|\"a sell signal followed a two-day decline in the trendline\" (p.273)",
+        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) the smoothing period, 'less than a 20-day equivalent when 2/(n + 1) is used': vault reading n = 10 (p.period; alpha = 2/(n+1), all three averages seeded at the first log close); (2) the order and fill: vault reading = at the close of the second consecutive rise (fall); (3) whether the sell signal exits or reverses: vault reading = stop-and-reverse (always in the market after the first signal, as the chapter's other trend systems); (4) a day that is neither a second rise nor a second fall (one up one down, or an exact tie): vault reading = hold the position. Declared application on index, ETF and stock daily closes. The book prints no result for it."),
         d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", NotTestable("N weeks not given"), &["E|\"Buy if the closing price on Friday exceeds the highest closing price of the past N weeks\" (p.178)"], ""),
         d("kftsm_4wk_final3m", "Four-Week Rule, final three months", "Ch 5 · N-day breakout", "Long/Short", NeedsData("individual futures contracts with delivery months"), &["E|Plot the four-week high/low from 3 months before delivery, 2.5% stop, exit the last day of the month before delivery (p.177)"], ""),
         d("kftsm_dunnigan", "Dunnigan thrust / one-way formula", "Ch 4 · Dunnigan", "Long/Short", NotTestable("'predetermined percentage' and thrust size per market not given"), &["E|Two of four patterns followed by a thrust (p.121-122)"], ""),
         d("kftsm_nofri", "Nofri congestion-phase system", "Ch 4 · Nofri", "Long/Short", NotTestable("congestion area needs judgement ('almost unchanged', 'adequate time has elapsed')"), &["E|In a congestion range after two closes in the same direction take the opposite position on the close; exit the next close (p.124)"], ""),
         d("kftsm_regression_channel", "Regression channel breakout", "Ch 4 · Channel breakout", "Long/Short", NotTestable("minimum swing value (MSV) and 'within 15%' entries not fixed"), &["E|Trend turns when the close breaks the projected regression channel (p.132-133)"], ""),
-        d("kftsm_moving_channel", "Moving channel (midpoint + range)", "Ch 4 · Moving channels", "Long/Short", NotTestable("n and the scaling factor w are not given"), &["E|Long when P > M + (M - M[1]) + wR (p.135)"], ""),
+d("kftsm_moving_channel", "Moving channel (midpoint + range)", "Ch 4 · Moving channels", "Long/Short", Live, &[
+            "F|\"the average of the high, low, and close to designate the center of the channel ... the upper and lower bands are constructed using the average daily range. The midpoint of the price move M and range R can be calculated over the past n days\" (p.135); the bands forecast for the next day: U(t+1) = M(t) + (M(t) - M(t-1)) + w R(t), L(t+1) = M(t) + (M(t) - M(t-1)) - w R(t)",
+            "E|\"A long position is taken when the new price P(t+1) > U(t+1); a short is taken when P(t+1) < L(t+1).\" (p.135)",
+            "X|The profit objective is optional (\"If a channel profit objective is needed\", 2wR beyond the band): not coded; the position is held until the opposite band is broken",
+        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) n, the number of days: vault reading n = 20 (p.n); (2) the scaling factor w: vault reading w = 1.0 (p.w); (3) how a band break is traded: vault reading = a stop order at the band computed on the prior day's data, filled at the band, or at the open when the open is already beyond it; (4) the exit: vault reading = stop-and-reverse at the opposite band (always in the market after the first break; the optional profit objective is not coded). Stated and read literally: M = n-day average of (high + low + close)/3, R = n-day average of (high - low). If one bar breaks both bands, the band nearer the open is taken (the order within the bar is unknown, counted for #240 in the gate text). Declared application on index, ETF and stock daily bars."),
         d("kftsm_momentum_fade", "Momentum extremes fade", "Ch 9 · Momentum", "Long/Short", NotTestable("bands 'selected visually'; no span or threshold given"), &["E|Aggressive / minor / major confirmation entries; exit when momentum reaches zero (p.315-316)"], ""),
         d("kftsm_macd_threshold", "MACD crossover with thresholds", "Ch 9 · MACD", "Long/Short", NotTestable("thresholds 'based on observing the MACD movement for less than one year' on one chart"), &["E|Sell only after MACD above +2.00, buy only below -2.00 (p.318-319)"], ""),
         d("kftsm_holiday", "Pre-holiday strategy (Fosback)", "Ch 10 · Seasonality", "Long", NotTestable("'major holiday' list not defined"), &["E|\"bought two days prior to a major holiday and exited on the day prior to the holiday\" (p.374)"], ""),
@@ -246,6 +254,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kftsm_raschke_first_cross" => Some(("kftsm_raschke_first_cross", "First Cross with Kaufman exit", "")),
         "kftsm_outside_day" => Some(("kftsm_outside_day", "Outside day with outside close", "")),
         "kftsm_fc_bb_abx" => Some(("kftsm_fc_bb_abx", "Two-band half-position profit taking", "")),
+        "kftsm_trix" => Some(("kftsm_trix", "Hutson log triple smoothing (two-day rule)", "")),
+        "kftsm_moving_channel" => Some(("kftsm_moving_channel", "Moving channel breakout", "")),
         _ => None,
     };
     if reviewed.is_some() { return reviewed; }
@@ -266,6 +276,23 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         s if s.starts_with("kftsm_") => (s_static(s), "Kaufman TSM", ""),
         _ => return None,
     })
+}
+/// R1-1116: Kaufman p.135 moving channel. M = n-day mean of (H+L+C)/3, R = n-day mean of (H-L); bands for the next day
+/// M(t) + (M(t)-M(t-1)) +/- w R(t); a stop at the band, filled at the band or at the open when the open is beyond it; always reversed.
+fn moving_channel(x: &Ctx, from: usize, to: usize, n: usize, w: f64) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let tp: Vec<f64> = (0..c.len()).map(|i| (h[i] + l[i] + c[i]) / 3.).collect();
+    let rg: Vec<f64> = (0..c.len()).map(|i| h[i] - l[i]).collect();
+    let (m, r) = (sma(&tp, n), sma(&rg, n));
+    let mut b = Bk::new(x, from, to);
+    for i in from.max(n + 1)..=to {
+        let (ub, lb) = (m[i - 1] + (m[i - 1] - m[i - 2]) + w * r[i - 1], m[i - 1] + (m[i - 1] - m[i - 2]) - w * r[i - 1]);
+        let eps = 1e-9 * ub.abs().max(1.); // a band equal to the high or low to rounding is a touch, not a break (prices have 2-4 decimals)
+        let (up, dn) = (h[i] > ub + eps, l[i] < lb - eps);
+        let go_long = match (up, dn) { (true, false) => true, (false, true) => false, (true, true) => (o[i] - ub).abs() <= (o[i] - lb).abs(), _ => continue };
+        if go_long { b.go(i, 1, o[i].max(ub), "stop", "upper channel band broken"); } else { b.go(i, -1, o[i].min(lb), "stop", "lower channel band broken"); }
+    }
+    b.done()
 }
 fn s_static(s: &str) -> &'static str {
     catalogue().into_iter().find(|d| d.id == s).map_or("kftsm_other", |d| d.id)
@@ -292,6 +319,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_vol_breakout" => vec![p("length", "ATR period", 20., 2., 100., 1.), p("factor", "Volatility factor k", 3., 0.5, 5., 0.1), p("vlag", "1 = previous bar's ATR (text), 0 = include today (CD Ch08)", 1., 0., 1., 1.)],
         "kftsm_raschke_first_cross" => vec![p("osc1", "Fast MA", 3., 2., 10., 1.), p("osc2", "Slow MA", 10., 5., 30., 1.), p("ntrend", "Oscillator smoothing", 16., 5., 40., 1.), p("vfilter", "Trend reach filter", 0., 0., 100., 1.)],
         "kftsm_keltner" => vec![p("period", "Average period", 10., 2., 50., 1.)],
+        "kftsm_trix" => vec![p("period", "Smoothing period n (alpha = 2/(n+1); book: under 20)", 10., 2., 19., 1.)],
+        "kftsm_moving_channel" => vec![p("n", "Midpoint / range days n", 20., 10., 250., 1.), p("w", "Range scaling factor w", 1., 1., 5., 0.1)],
         "kftsm_parabolic" => vec![p("afmin", "Starting AF", 0.02, 0.01, 0.1, 0.01), p("afinc", "AF increment", 0.02, 0.01, 0.1, 0.01), p("afmax", "Maximum AF", 0.2, 0.05, 0.5, 0.01)],
         "kftsm_outside_day" => vec![p("length", "Prior range (days)", 1., 1., 5., 1.), p("hold", "Exit on the close N days after entry", 3., 1., 10., 1.), p("stop_ref", "Stop: 0 outside day's extreme (text), 1 prior range (CD code)", 0., 0., 1., 1.)],
         "kftsm_donchian_4wk" => vec![p("weeks", "Calendar weeks", 4., 1., 12., 1.)],
@@ -501,7 +530,7 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
             return Some(format!("Unknown Kaufman TSM parameter: {key}"));
         };
         let integer = matches!(key.as_str(), "period" | "lag" | "kind" | "printed" | "rev" |
-            "len1" | "len2" | "len3" | "length" | "vlag" | "osc1" | "osc2" | "ntrend" |
+            "len1" | "len2" | "len3" | "length" | "n" | "vlag" | "osc1" | "osc2" | "ntrend" |
             "length1" | "length2" | "length3" | "hold" | "stop_ref" | "weeks" | "per2" |
             "fast" | "slow" | "fstoch" | "holddays" | "day" | "exit_day" | "in_month" | "out_month");
         if !value.is_finite() || value < def.min || value > def.max || (integer && value.fract() != 0.) {
@@ -775,6 +804,19 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kftsm_multi_tf" => multi_tf(x, from, to, u("fast").max(1), u("slow").max(2), g("overbot"), g("oversold")),
         "kftsm_month_end" => month_end(x, from, to, u("day").min(1), u("exit_day").max(1)),
         "kftsm_hirsch" => hirsch(x, from, to, g("in_month").round() as i64, g("out_month").round() as i64),
+        "kftsm_trix" => {
+            // R1-1116: Hutson (p.273): log price, one smoothing constant, three times; two-day rise = buy, two-day fall = sell (reverse).
+            let a = 2. / (u("period").max(1) as f64 + 1.);
+            let lc: Vec<f64> = c.iter().map(|v| v.ln()).collect();
+            let s3 = expo(&expo(&expo(&lc, a), a), a);
+            let mut b = Bk::new(x, from, to);
+            for i in from.max(2)..=to {
+                if s3[i] > s3[i - 1] && s3[i - 1] > s3[i - 2] { b.at_close(i, 1, "two-day rise of the triple smoothing"); }
+                else if s3[i] < s3[i - 1] && s3[i - 1] < s3[i - 2] { b.at_close(i, -1, "two-day decline of the triple smoothing"); }
+            }
+            b.done()
+        }
+        "kftsm_moving_channel" => moving_channel(x, from, to, u("n").max(2), g("w")),
         _ => return None,
     })
 }
@@ -1354,6 +1396,29 @@ mod tests {
         assert!(ts[0].open);assert_eq!(ts[0].exit_px,124.);assert_eq!(ts[0].entry_kind,"open");
     }
     #[test]
+    fn r1_trix_and_moving_channel() {
+        let r = super::super::sctraub::tests::bars(900);
+        let x = Ctx::new(&r, &r, &[]);
+        let tx = run("kftsm_trix", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(tx.len() > 5 && tx.windows(2).all(|w| w[1].legs[0].i == w[0].exit_i && w[1].dir == -w[0].dir) && tx.last().unwrap().open);
+        assert!(validate("kftsm_trix", &Params::from([("period".into(), 20.)])).is_some()); // the book says under 20
+        let mc = run("kftsm_moving_channel", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(mc.len() > 5 && mc.iter().all(|t| t.entry_kind == "stop" || t.entry_kind == "close"));
+        assert!(mc.windows(2).all(|w| w[1].dir == -w[0].dir && w[1].legs[0].i == w[0].exit_i));
+        assert!(crate::books::ADMISSIONS.iter().all(|a| !a.label.contains('"')));
+        for id in ["kftsm_trix", "kftsm_moving_channel"] { assert!((ADMISSION_R1.reviewed)(&catalogue().into_iter().find(|d| d.id == id).unwrap()), "{id}"); }
+    }
+    #[test]
+    fn moving_channel_fills_at_the_band_or_the_open() {
+        let mut r = rows(40);
+        for i in 0..40 { r[i].open = 100.; r[i].high = 101.; r[i].low = 99.; r[i].close = 100.; }
+        // flat bars: M constant, M(t)-M(t-1) = 0, R = 2: U = 102, L = 98 (w = 1); bar 30 gaps up through U, bar 35 trades through L
+        r[30].open = 104.; r[30].high = 105.; r[30].low = 103.; r[30].close = 104.;
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("kftsm_moving_channel", &x, 0, 39, &Params::from([("n".into(), 10.)])).unwrap();
+        assert_eq!(t[0].dir, 1.); assert_eq!(t[0].legs[0].i, 30); assert_eq!(t[0].legs[0].px, 104.); // the open is beyond the band
+    }
+    #[test]
     fn first_cross_rejects_inverted_oscillator_lengths() {
         assert!(validate("kftsm_raschke_first_cross",&Params::from([("osc1".into(),10.),("osc2".into(),5.)])).is_some());
     }
@@ -1368,3 +1433,10 @@ mod tests {
         assert!(run("kftsm_adapt_rsi",&x,0,49,&Params::new()).unwrap().is_empty());
     }
 }
+
+// Instrument admission: lane R1-1116 (R4 #297/#339): Hutson triple smoothing and the Kaufman moving channel, each with 4 labelled unstated details.
+pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "kftsm_trix" | "kftsm_moving_channel"),
+    label: "Kaufman describes both rules on futures and stocks without naming a market; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 4 unstated details each (n or w, the fill, the exit, the in-between day), labelled on the card.",
+    basis: "New Trading Systems and Methods 4th ed. p.273 (triple smoothing), p.135 (moving channel); R4 #297/#339; independent check authors/relax-339/R1/w/r1_ref.py",
+};
