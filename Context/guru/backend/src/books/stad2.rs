@@ -221,7 +221,7 @@ fn oq(a: A, p: P, qty: f64, tag: &'static str) -> O { O { qty, ..o(a, p, tag) } 
 
 /// Built-in stops in points (0 = off).
 #[derive(Clone, Copy, Default)]
-struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool, entry_close: bool /* lane D3: entries 'this bar on close': the entry bar's own range is not favourable excursion */ }
+struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool, dtr_short: f64 /* lane D3: $ risk trailing amount for shorts when it differs (0 = same as dtr) */, entry_close: bool /* lane D3: entries 'this bar on close': the entry bar's own range is not favourable excursion */ }
 #[derive(Clone, Copy)]
 struct Cfg { max_ent: usize, ss: SetStops, minute: bool, ep6: bool } // ep6: EP6 (#243, lane K62) resolver on for the id
 /// `minute` (lane K58, decision #240): each bar's stop/limit orders are walked on the day's real 1-minute bars instead of the
@@ -415,7 +415,8 @@ impl<'a> Eng<'a> {
         if fav > self.mfe { self.mfe = fav; }
         let xa = if self.pos == 1 { A::Xl } else { A::Xs };
         if ss.be > 0.0 && self.mfe >= ss.be { nx.push(o(xa, P::Stop(e), "Breakeven")); }
-        if ss.dtr > 0.0 { nx.push(o(xa, P::Stop(e + d * (self.mfe - ss.dtr)), "$ Risk Trailing")); }
+        let dtr = if self.pos == -1 && ss.dtr_short > 0.0 { ss.dtr_short } else { ss.dtr };
+        if dtr > 0.0 { nx.push(o(xa, P::Stop(e + d * (self.mfe - dtr)), "$ Risk Trailing")); }
         if ss.ppct > 0.0 && self.mfe >= ss.pfloor && self.mfe > 0.0 { nx.push(o(xa, P::Stop(e + d * self.mfe * (1.0 - ss.ppct / 100.0)), "% Risk Trailing")); }
     }
 }
@@ -1294,7 +1295,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let u = |k: &str| g(k).max(1.0).round() as usize;
     // lane D3 (R4 #340): the book's futures test of stad6_dmachan (British Pound): the Format-dialog dollar stops at the contract's $ per point, '1 point' = one tick (#57)
-    let fut_pv = if matches!(id, "stad6_dmachan" | "stad13_dmarl") { crate::futures::ctx_market(x).and_then(|m| crate::futures::usd_per_point(m, &x.r[from.min(x.r.len().saturating_sub(1))].date)) } else { None };
+    let fut_pv = if matches!(id, "stad6_dmachan" | "stad13_dmarl" | "stad12_shifty") { crate::futures::ctx_market(x).and_then(|m| crate::futures::usd_per_point(m, &x.r[from.min(x.r.len().saturating_sub(1))].date)) } else { None };
     let usd = |k: &str| match fut_pv { Some(v) => g(k) / v, None => g(k) / (g("bpv") * g("qty")) };
     let (o_, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
@@ -2300,10 +2301,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "stad12_shifty" => {
-            let (fa, sa) = (sma(c, u("fast")), sma(c, u("slow")));
+            // lane D3 (R4 #340): the book's crude-oil test (p.104-106): 40 / 80, Dllr Risk Trailing $1,000 long and $500 short
+            let cru = fut_pv.is_some();
+            let (fast, slow) = if cru && !p.contains_key("fast") { (40usize, 80usize) } else { (u("fast"), u("slow")) };
+            let (fa, sa) = (sma(c, fast), sma(c, slow));
             let mut cf = cfg(); cf.ss.dtr = usd("dtr_usd");
+            if cru && !p.contains_key("dtr_usd") { let pv = fut_pv.unwrap_or(1.0); cf.ss.dtr = 1000.0 / pv; cf.ss.dtr_short = 500.0 / pv; }
             let (mut tcu, mut lcu, mut tco, mut lco) = (0.0, 0.0, 0.0, 0.0);
-            run_ts(x, from, to, u("slow").max(u("fast")) + 1, cf, |i, st, now, nx| {
+            run_ts(x, from, to, slow.max(fast) + 1, cf, |i, st, now, nx| {
                 if c[i] > sa[i] { nx.push(o(A::Buy, P::Stop(fa[i] + pt), "Shifty Buy")); }
                 if xunder(c, &fa, i) { lcu = tcu; tcu = c[i]; }
                 if tcu < lcu && st.pos == 1 { nx.push(o(A::Xl, P::Stop(fa[i] - pt), "Lower cross")); } else if xunder(c, &sa, i) { now.push(o(A::Xl, P::Mkt, "Below slow")); }
