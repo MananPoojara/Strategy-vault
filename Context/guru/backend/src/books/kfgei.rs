@@ -43,10 +43,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|\"If the long position is closed out because of either profits or losses, the system will not reenter the market again before the next January.\" (p.209)",
         ], concat!("Readings: 'beginning of the year' = the open of the year's first trading day [book silent on the order type]; loss and profit are checked on weekly closes like the other Ch 6 systems (p.189) and filled at that close (p.daily=1 checks every daily close). The book gives no year-end exit, so a position that hits neither level is carried into the next year; Table 6-12 agrees: US 1971 = +10.8% (= buy and hold) and 1972 = +4.0% (the carried 1971 position reaching +15% early in 1972). Book (Table 6-12, p.210): US 1971-95 total 248%, 5.1% a year, yearly sd 9%; yearly returns include no trade list. ",
             "Cash earns nothing, no commissions. India: NIFTY indices (instrument swap).")),
-        d("kfgei_fx_hedge", "Currency hedge on the 10-week breakout", "Ch 4 · How to profit from periods of strength in foreign currencies", NeedsData("weekly exchange rates (DEM, JPY, GBP, CHF per USD) and the foreign index in USD; the vault has no FX series"), &[
+        d("kfgei_fx_hedge", "Currency hedge on the 10-week breakout", "Ch 4 · How to profit from periods of strength in foreign currencies", Live, /* lane D2 (R4 #340): Norgate &DX, futures::CARDS_D2 */ &[
             "E|\"Hedge the currency of your foreign stock investment when its price moves above the 10-week high\" (p.121)",
             "X|\"'unhedge' (lift the hedge) when the currency price moves below the 10-week low.\" (p.121)",
-        ], "Book: German mark 1976-95, 20 trades, 60% profitable, avg +5.48% (Table 4-4, p.123); Japanese yen 18 trades, 83%, avg +9.45% (Table 4-5, p.124). The price is the foreign-exchange quote in units per dollar (p.121)."),
+        ], "[Declared adaptation, R4 #340; UNVERIFIED, R4 #339/#343: 1 declared substitution and 3 unstated card-specific details] The book hedges a foreign stock investment's currency when the currency's price (foreign-exchange units per dollar, so a rising price = a stronger dollar, p.121) goes above its 10-week high, and lifts the hedge below the 10-week low. The vault holds no spot exchange rates, so the price is the Norgate US Dollar Index continuous contract (&DX, back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11), the nearest held measure of the dollar against foreign currencies; the card is long the dollar index while the hedge is on (the hedge is a short foreign currency = long dollar), a substitution for the book's DEM, JPY, GBP and CHF quotes: one dollar index stands in for all four currencies (the book tests each against the dollar separately, Tables 4-4 and 4-5), so no per-currency result is reproduced. Unstated: (1) the breakout is tested on the week's close against the highest high (and, for the exit, the lowest low) of the previous 10 weeks (weekly highs and lows, not weekly closes); (2) the 10 weeks are the ten before the signal week (the signal week is not in its own window); (3) a week ends on its last trading day, the fill is that day's close. Engine conventions, labelled not counted: one position, warm-up of 10 weeks. Book: German mark 1976-95, 20 trades, 60% profitable, avg +5.48% (Table 4-4, p.123); Japanese yen 18 trades, 83%, avg +9.45% (Table 4-5, p.124): other markets and data, so not a #168 comparison. Close-only rule, no stops: #240 0 trades."),
         d("kfgei_world_b", "System B on an equally weighted US / Japan / Germany portfolio", "Ch 6 · Diversification applied to trading methods", NeedsData("Nikkei 225 and FAZ (German) index history; the engine runs one instrument per strategy"), &[
             "E|\"If we kept each country allocation at one-third, and we traded each market using system B ... the result ... is given in Table 6-11.\" (p.207)",
         ], "Book (Table 6-11, p.208): 1971-95 total 623%, 8.2% a year, sd 13%, risk-adjusted 0.63 (buy and hold 706%, 8.7%, 16%, 0.54). Also Table 6-12: 50% B + 50% UC portfolio 396%, 6.6% a year."),
@@ -91,12 +91,13 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let hl = p("hl", "Breakout level: 1 = weekly highs/lows (text), 0 = weekly closes (table heading)", 1., 0., 1., 1.);
     Some(match id {
         "kfgei_sys_a" => vec![p("weeks", "Breakout weeks", 18., 2., 60., 1.), hl],
+        "kfgei_fx_hedge" => vec![p("weeks", "Breakout weeks", 10., 2., 60., 1.), p("hl", "Breakout test: 0 = weekly closes, 1 = weekly highs/lows", 1., 0., 1., 1.)],
         "kfgei_sys_b" => vec![p("weeks", "Breakout weeks", 10., 2., 60., 1.), p("dd", "Exit drawdown from the trade's highest price (%)", 7., 1., 30., 0.5), hl,
             p("peak", "Highest price: 0 = daily highs (text), 1 = weekly closes", 0., 0., 1., 1.)],
         "kfgei_sys_e" => vec![p("ma", "Average of weekly closes (weeks)", 40., 5., 100., 1.), p("weeks", "Stop at the high/low of the past N weeks", 5., 1., 30., 1.)],
         "kfgei_uc" => vec![p("loss", "Loss exit (%)", 3., 0.5, 20., 0.5), p("profit", "Profit exit (%)", 15., 1., 50., 1.),
             p("daily", "Check exits on: 0 = weekly closes, 1 = daily closes", 0., 0., 1., 1.)],
-        "kfgei_fx_hedge" | "kfgei_world_b" | "kfgei_alloc_vol" | "kfgei_alloc_rar" | "kfgei_rel_strength" => vec![],
+        "kfgei_world_b" | "kfgei_alloc_vol" | "kfgei_alloc_rar" | "kfgei_rel_strength" => vec![],
         "kfgei_alloc_corr" | "kfgei_alloc_combined" => vec![p("corr", "Correlation sampling: 0 = the three yearly returns (default), 1 = 36 monthly returns", 0., 0., 1., 1.)], // lane K54: books::rotation
         _ => return None,
     })
@@ -140,7 +141,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut out = vec![];
     let mut cur: Option<Trade> = None;
     match id {
-        "kfgei_sys_a" | "kfgei_sys_b" => {
+        "kfgei_sys_a" | "kfgei_sys_b" | "kfgei_fx_hedge" => {
+            if id == "kfgei_fx_hedge" && crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
             let w = weekly(x, to);
             let n = u("weeks").max(1);
             let use_hl = g("hl") >= 0.5;
@@ -158,8 +160,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if i < from { continue; }
                 match cur {
                     Some(_) => {
-                        if id == "kfgei_sys_a" && w.c[k] < lo(bl, k - n, k) {
-                            close_out(&mut out, &mut cur, i, w.c[k], i, "weekly close below the 18-week low");
+                        if id != "kfgei_sys_b" && w.c[k] < lo(bl, k - n, k) {
+                            close_out(&mut out, &mut cur, i, w.c[k], i, &format!("weekly close below the {n}-week low"));
                         } else if id == "kfgei_sys_b" && w.c[k] < peak * (1. - dd) {
                             close_out(&mut out, &mut cur, i, w.c[k], i, "weekly close more than 7% below the trade's highest price");
                         }
