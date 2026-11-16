@@ -13,7 +13,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         id, name, group, session: 0, dir, status: Status::NeedsData(why), needs_volume: false, needs_vix: false, needs_series: &[],
         book: BOOK, rules, notes, claim: None,
     };
-    vec![
+    let mut v = vec![
         d("maetf_one_decision", "One-decision portfolio (annual rebalance)", "Ch 7 · The one-decision portfolio (p.115-129)", "Long",
             "needs monthly total returns of the REIT mutual-fund average, Russell 2000 Value, Lehman (Barclays) Aggregate fixed-income index and 90-day Treasury bills; not in the vault (it has S&P 500 price data only)",
             &["E|\"20 percent S&P 500, 20 percent REITs, 10 percent small-cap value, 20 percent investment-grade bonds, 30 percent cash (90-day U.S. Treasury bills)\" (p.118)",
@@ -22,6 +22,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("maetf_small_large", "Small- vs large-cap yearly switch (Russell 2000 / Russell 1000)", "Ch 8 · When to live large (p.138-143)", "Long",
             "needs Russell 1000 and Russell 2000 total-return index history (from 1979); the vault's IWM starts 2000 and has no Russell 1000, and the engine runs one ticker at a time",
             &["E|\"Invest for the coming year in whichever of the two alternatives returned more in the previous year.\" (p.138)",
+              "X|Each year-end the choice is repeated: hold whichever returned more over the calendar year just ended, switch if the winner changed (p.139)",
               "F|\"On the last trading day of the year, calculate the total returns for each of these indexes. Take whichever of the two returned more as your investment selection for the coming year.\" (p.139)"],
             "Book: 1980-3/2006, 19 of 27 selections correct, 15.3%/yr vs 13.1% (R1000) and 12.6% (R2000), max drawdown -21% (Table 8.1, p.140-141)."),
         d("maetf_growth_value", "Growth vs value relative-strength switch (10% rule)", "Ch 9 · Boring bargains or hot prospects? (p.151-173)", "Long",
@@ -32,7 +33,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("maetf_eafe_sp", "EAFE vs S&P 500 switch (15% rule)", "Ch 10 · When is it safe to drink the water? (p.181-187)", "Long",
             "needs MSCI EAFE (US$) total-return history; not in the vault",
             &["E|\"when the S&P 500 index lags the EAFE by more than 15 percent, it is time to invest abroad. Conversely, when the EAFE lags the S&P 500 by 15 percent or more, invest in the United States.\" (p.181-182)",
-              "F|Measured from the latest peak or trough of the EAFE/S&P 500 ratio (Figure 10.4, p.183)"],
+              "F|Measured from the latest peak or trough of the EAFE/S&P 500 ratio (Figure 10.4, p.183)",
+              "X|Switch back to the other market when the ratio has moved 15% against the holding from its latest extreme (Figure 10.3-10.4, p.182-183)"],
             "Book: trade list in Tables 10.2a/b (p.184-185), 9 of 17 switches successful."),
         d("maetf_rising_rates", "Out of stocks while 10-year yields are rising", "Ch 11 · An indicator of rising interest rates (p.196-197)", "Long",
             "needs monthly average 10-year constant-maturity Treasury yields (Federal Reserve H.15); Treasury yield data is not in the vault",
@@ -56,7 +58,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|25%: EFA if the Chapter 10 model favors foreign stocks; else SPY unless \"the yield curve is inverted or interest rates are rising\", then money market (p.227-228)",
               "E|25%: the growth/value model of Chapter 9 picks the style ETF (p.228-230)"],
             "Book results: Table 13.3 and p.231-232."),
-    ]
+    ];
+    // Lane D1 pass 2 (R4 #339/#340): the two switches whose rule is exact and price-only run on the held ETF stand-ins (rotation account, SPY calendar).
+    for x in &mut v {
+        match x.id {
+            "maetf_small_large" => { x.status = Status::Live; x.notes = "Declared adaptation (R4 #339/#340, lane D1), always UNVERIFIED: the book switches between the Russell 2000 and Russell 1000 total-return indexes (1980-2006); here IWM (the Russell 2000 tracker, from May 2000) against SPY. Four labelled readings: (1) SPY (S&P 500) replaces the Russell 1000, which is not held; (2) price returns replace total returns (held series carry no dividends); (3) the switch is made at the last trading day's close of the year; (4) the first selection is the first year-end with a full calendar year of both ETFs behind it (end 2001). Small sample: 25 yearly decisions, 9 switches of holding on one pair."; }
+            "maetf_eafe_sp" => { x.status = Status::Live; x.notes = "Declared adaptation (R4 #339/#340, lane D1), always UNVERIFIED: the book uses the MSCI EAFE and S&P 500 indexes from 1970; here EFA (the EAFE ETF the book itself names, from Aug 2001) and SPY. Four labelled readings: (1) EFA price replaces the EAFE index; (2) the ratio EFA/SPY is checked at each month's last close and the switch is filled at that close; (3) the run starts in the S&P 500 with the first extreme taken from the first month-end both ETFs exist; (4) '15 percent' is multiplicative on the ratio (more than 1.15 x its trough to move to EFA, 0.85 x its peak or less to move back). Small sample: 5 switches in 25 years. Start state: the book is in the S&P 500 from 6/30/2001 (Point B, reached from a peak in 2/2000 that our data does not cover); EFA starts 27 Aug 2001, so our run starts in the S&P 500 at the 31 Aug 2001 month-end with its own first extreme. In the book's printed overlap (Table 10.2a, p.184) EAFE is favored from 6/30/2002 and no switch back is printed to the end of the book data in 2005/06; ours switches to EFA on 31 May 2002 (a month earlier, EFA instead of the index and our own trough) and also holds it until Oct 2008."; }
+            _ => {}
+        }
+    }
+    v
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {

@@ -36,4 +36,36 @@ mod tests {
             }
         }
     }
+    /// Daily-bar cards (pass 2): VAULT_US=<us_data.csv> D1_DAILY="id:ticker,id:ticker" D1_OUT=<csv> cargo test --release d1_daily_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn d1_daily_dump() {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("D1_OUT").unwrap()).unwrap());
+        let all = crate::load_csv(&std::env::var("VAULT_US").unwrap()).unwrap();
+        for it in std::env::var("D1_DAILY").unwrap().split(',') {
+            let (id, t) = it.split_once(':').unwrap();
+            let rows = all.get(t).unwrap();
+            let x = Ctx::new(rows, rows, &[]);
+            for z in crate::books::run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "{id},{t},{},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason, z.open).unwrap();
+            }
+        }
+    }
+    /// Rotation cards (pass 2): VAULT_US=<us_data.csv> D1_IDS="id,id" D1_OUT=<csv> cargo test --release d1_rot_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn d1_rot_dump() {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("D1_OUT").unwrap()).unwrap());
+        let all = crate::load_csv(&std::env::var("VAULT_US").unwrap()).unwrap();
+        let spy = all.get("SPY").unwrap();
+        let x = Ctx::new(spy, spy, &[]);
+        for id in std::env::var("D1_IDS").unwrap().split(',') {
+            let a = crate::books::rotation::account(id, &x, 0, spy.len() - 1, 0., &Params::new(), Some(&all)).unwrap().unwrap();
+            for z in &a.trades {
+                writeln!(f, "{id},{},{},{},{},{},{}", z.reason.split(':').next().unwrap(), spy[z.legs[0].i].date, z.legs[0].px, spy[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
 }
