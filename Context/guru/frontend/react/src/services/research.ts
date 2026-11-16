@@ -87,7 +87,11 @@ export interface ShareBatch {
 export interface ShareInventory {
   schema: number; generated_at: string;
   listing: { file: string; date: string; root: string; files: number; bytes: number; folders: number; folders_method: string;
-    top_folders: { name: string; files: number; bytes: number }[]; duplicate_copies: number; unique_files: number };
+    top_folders: { name: string; files: number; bytes: number }[]; duplicate_copies: number; unique_files: number;
+    /** Optional (make_share_inventory.py --coverage): what the listing does and does not cover, and the NAS volume it sits on. */
+    coverage?: { top_level: string[]; listed: number; unreadable: string[];
+      volume: { size_bytes: number; used_bytes: number; free_bytes: number; as_of: string; note: string };
+      shares?: { name: string; bytes: number; entries: number; complete: boolean }[] } };
   compare: null | { base: string; base_date: string; base_files: number; base_bytes: number; added: number; removed: number; size_changed: number;
     added_bytes: number; removed_bytes: number; added_sample: string[]; removed_sample: string[]; changed_sample: string[] };
   types: { id: string; label: string; group: string; rule: string; files: number; bytes: number }[];
@@ -141,12 +145,19 @@ const IST: Intl.DateTimeFormatOptions = { timeZone: "Asia/Kolkata" };
 export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { ...IST, day: "numeric", month: "short", year: "numeric" });
 export const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { ...IST, hour: "2-digit", minute: "2-digit", hour12: false });
 export const fmtStamp = (iso: string) => `${fmtDate(iso)}, ${fmtTime(iso)}`;
-/** Sizes as Windows Explorer shows them: 1 GB = 1024³ bytes. */
+/** Binary sizes (1 GiB = 1024³ bytes, what Windows Explorer shows as "GB"), labelled as such. */
 export function fmtBytes(n: number) {
-  const u = ["bytes", "KB", "MB", "GB", "TB"];
+  const u = ["bytes", "KiB", "MiB", "GiB", "TiB"];
   let i = 0, x = n;
   while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
   return i ? `${x.toLocaleString("en-IN", { maximumFractionDigits: x < 10 ? 2 : 1 })} ${u[i]}` : `${n.toLocaleString("en-IN")} bytes`;
+}
+/** Decimal size (1 TB = 10¹² bytes, what a NAS or disk label shows), with the binary figure in brackets: "2.35 TB (2.14 TiB)". */
+export function fmtBytesBoth(n: number) {
+  const d = ["bytes", "KB", "MB", "GB", "TB"];
+  let i = 0, x = n;
+  while (x >= 1000 && i < d.length - 1) { x /= 1000; i++; }
+  return i ? `${x.toLocaleString("en-IN", { maximumFractionDigits: x < 10 ? 2 : 1 })} ${d[i]} (${fmtBytes(n)})` : fmtBytes(n);
 }
 /** One CSV cell: quoted when it holds a comma, quote or line break; text that Excel would run as a formula gets a leading '. */
 export function csvCell(v: string | number) {
