@@ -38,7 +38,7 @@ pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "ats_cvr1" | "ats_trin_thrust" | "ats_padi" => matches!(ticker, "SPX" | "SPY"),
         "ats_cvr2" | "ats_cvr3" => matches!(ticker, "SPX" | "SPY" | "NIFTY 50"),
-        "ats_trin_thrust_nse" | "ats_padi_nse" => ticker == "NIFTY 50",
+        "ats_trin_thrust_nse" | "ats_padi_nse" => matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100"), // R4 #340
         "ats_hv_thrust" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
         // CVR I reads the VIX open: US instruments with the CBOE VIX only (India VIX open = previous close)
         "ats_cvr_equities" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "QQQ" | "IWM" | "MDY" | "SMH" | "DIA"),

@@ -32,7 +32,7 @@ pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// NYSE-breadth and CVR rules: actual SPX / SPY; CVR II and III (VIX close/high/low, scale-free thresholds) also
 /// NIFTY 50 with India VIX. NSE-breadth versions (declared adaptation): NIFTY 50 only.
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
-    reviewed_daily(id) && if id.ends_with("_nse") { ticker == "NIFTY 50" } else {
+    reviewed_daily(id) && if id.ends_with("_nse") { matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100") } else {
         matches!(ticker, "SPX" | "SPY") || (ticker == "NIFTY 50" && matches!(id, "ptjmt_cvr2" | "ptjmt_cvr3"))
     }
 }

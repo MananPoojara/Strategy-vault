@@ -29,7 +29,7 @@ pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "hfm_chadtp" => matches!(ticker, "SPX" | "SPY"),
-        "hfm_chadtp_nse" => ticker == "NIFTY 50",
+        "hfm_chadtp_nse" => matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100"), // R4 #340
         // the book's signal is NASDAQ 100 vs S&P 500 cash; it traded S&P futures and showed the same signal on the DJIA.
         // D1 CUD-06 (decision 186): the same NDX-vs-SPX signal also trades QQQ, IWM, MDY and US stocks (declared application;
         // US stocks are admitted in instrument_policy::hfm_otvt_symbol_issue). India would need a different signal: not run.
