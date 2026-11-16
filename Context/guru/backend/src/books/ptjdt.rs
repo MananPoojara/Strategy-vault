@@ -83,9 +83,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d(ADX, "15-Minute ADX Breakout", "15-Minute ADX Breakout Method", "Long/Short", Status::Live, SERIES, ADX_RULES, ADX_NOTE),
         d(ADX_EQ, "15-Minute ADX Breakout · equities (HV100 ≥ 40, price > $40)", "Trading the 15-Minute ADX Breakout Method with Equities", "Long/Short", Status::Live, SERIES, ADX_EQ_RULES, ADX_EQ_NOTE),
         d(SPM, "S&P Momentum Day-Trading System", "S&P Momentum Day-Trading System", "Long/Short",
-          Status::NotTestable("needs the full 20-minute bar series (SMA20 and RSI3 on 20-minute bars, stop entries off the previous bar); exit is the undefined 2-for-1 Money Management Method"),
-          &[], SPM_RULES,
-          "Cannot be reduced to per-day values: the setup, the two-bar entry window and the stop all live on the 20-minute bar series. The exit refers to the 2-for-1 Money Management Method (June 1996 PTJ), not defined in this book. Book examples: June 1998 S&P futures, May 4-18 1998, no stats."),
+          Status::Live, &[], SPM_RULES,
+          "Declared adaptation (R4 #339/#340, lane D1): run on the real 20-minute bars built from the held 1-minute files (SPY, SPX, NIFTY 50, NIFTYBANK), session-aligned, one continuous series (indicators carry across days), always UNVERIFIED; the book's June 1998 S&P futures examples carry no statistics. Four unstated details, each a labelled reading: (1) indicator definitions: 'the 20-period moving average' is the simple average of the bar closes and the three-period RSI is TradeStation's RSI (Wilder smoothing) of the closes, a bar 'trading above' the average = its close above it; (2) the entry order: the buy stop is re-pegged on each of the two bars to the then previous bar's high + 1 tick (0.01 US, 0.05 NSE, decision #57), a signal counts only when flat at its bar's close and each signal fills once; (3) the protective stop is the previous bar's low at the fill (the book: 'near' it), it works from the minute after the fill; (4) the book leaves the profit exit to the trader ('2-for-1 Money Management Method', June 1996 PTJ, not printed here): the vault exits at the day's last 1-minute close. Minute path: stops fill at their level or at the minute's open when it opens through it; inside a minute open, nearer extreme, farther extreme, close."),
         d(FRONT, "Front Running the S&P's (momentum index)", "Front Running the S&P's", "Long/Short", Status::NotTestable("discretionary; needs a stock universe"), &[], FRONT_RULES,
           "A market-direction indicator, not a system: the book forbids mechanical use and gives no entry or exit. Index = '+' sum (price-weighted) of the 12-16 highest 14-day-RSI stocks over $40, rebuilt weekly. Example: Bloomberg index 'FAST', April 14-21 1998."),
         d(TORP, "Torpedoes (Jeff Cooper)", "Torpedoes", "Long", Status::NotTestable("rules not fully defined: the buy comes 'if the overall market begins to bounce back', in 'the strongest stock(s)', which the article calls 'a bit subjective', and the exit is to let profits run (Torpedoes, Jeff Cooper, PTJ Jan 1997, book p.41-44); it would also need the prices of a list of market-leading stocks through the day"), &[], TORP_RULES,
@@ -94,6 +93,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    if id == SPM { return None; } // lane D1: runs in reld1.rs on the minute path
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let mut v = vec![
         p("adx_n", "ADX / DI period (daily)", 14.0, 5.0, 30.0, 1.0),
