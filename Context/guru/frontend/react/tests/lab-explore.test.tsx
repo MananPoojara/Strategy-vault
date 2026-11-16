@@ -73,12 +73,12 @@ it("Explore: OHLCV, one column per indicator the rules read, Entry / Exit as 0/1
   // the chart's indicators are not columns; the rules' are (EMA in the entry, RSI in the exit, each once)
   const chips: Chip[] = [{ key: "c1", id: "or_range", params: {} }];
   const spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: "crosses_above", rhs: { s: "ema", p: { length: 9 } } }] },
-    exit: { any: [{ lhs: { s: "rsi", p: { length: 14 } }, op: ">", rhs: { value: 70 } }, { lhs: { s: "rsi", p: { length: 14 }, offset: 1 }, op: ">", rhs: { value: 80 } }] } } as ExplorePanelProps["spec"];
+    exit: { any: [{ lhs: { s: "rsi" }, op: ">", rhs: { value: 70 } }, { lhs: { s: "rsi", p: { length: 14 }, offset: 1 }, op: ">", rhs: { value: 80 } }] } } as ExplorePanelProps["spec"];
   const p = props({ chips, loadSeries, spec });
   const host = await mount(<ExplorePanel {...p} />);
   await click(host.querySelector('[data-lab-action="explore"]'));
   await flush();
-  expect(loadSeries).toHaveBeenCalledTimes(2); // RSI once although two rules read it
+  expect(loadSeries).toHaveBeenCalledTimes(2); // RSI once although two rules read it (one left at the default length)
   expect(loadSeries).toHaveBeenCalledWith(expect.objectContaining({ id: "ema", tf: "D", p: { length: 9 } }));
   expect(heads(host, "explore")).toEqual(["Symbol", "Date", "Open", "High", "Low", "Close", "Volume", "EMA(9)", "Entry", "Exit"]); // the instrument first, Volume after OHLC
   expect(table(host, "explore")[0]).toEqual(["NIFTY 50", "01-01-2024", "1.00", "2.00", "0.50", "1.50", "100", "1.23", "0", "0"]);

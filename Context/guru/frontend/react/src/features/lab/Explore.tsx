@@ -137,8 +137,11 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
       // every line of each indicator the rules read, loaded once per setting (Ichimoku: tenkan, kijun, span_a, span_b, as AmiBroker's TL, SL and cloud)
       const seen = new Set<string>();
       const shown = ruleIndicators(spec, catalogue).flatMap((o) => {
-        const { out: _out, ...s } = o as { s: string; p?: Record<string, number>; out?: string; tf?: string }, ind = catalogue.indicators.find((i) => i.id === s.s), key = JSON.stringify([s.s, s.p, s.tf]);
-        if (!ind || seen.has(key)) return [];
+        const { out: _out, ...r } = o as { s: string; p?: Record<string, number>; out?: string; tf?: string }, ind = catalogue.indicators.find((i) => i.id === r.s);
+        if (!ind) return [];
+        // a rule left at the defaults stores no settings: fill them so the column reads RSI(14), not RSI
+        const s = { ...r, p: { ...Object.fromEntries(ind.params.map((x) => [x.key, x.default])), ...r.p } }, key = JSON.stringify([s.s, s.p, s.tf]);
+        if (seen.has(key)) return [];
         seen.add(key);
         return [{ s, ind, label: operandLabel(s as Operand, catalogue).replace(ind.name, shortName(ind)) }];
       });
