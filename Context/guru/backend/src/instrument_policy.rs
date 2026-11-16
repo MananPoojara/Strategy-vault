@@ -1515,7 +1515,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ch_pbs_cbpb_trail3: admitted on SPX only with the workshop's $1,500 / $500 = 3.00-point initial stop (lane K74, R4 #277; chpbs::ADMISSION_SPX)
         // ---- end Chande block
         // ---- Joe Krutsinger block (26 Oct 2026, lane B): held Live rules
-        "jkbwts_gettess30"=>"Held: no exact conversion. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop (p.12-13) over 01/05/87-12/26/97, a test that spans the contract's change from $500 to $250 a point (Nov 1997): $4,000 is 8 points before and 16 after, so no single exact point amount exists (decisions #196(2), #240 (2)).",
+        "jkbwts_gettess30"=>"Held: no exact conversion. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop (p.12-13) over 01/05/87-12/26/97, a test that spans the contract's change from $500 to $250 a point (Nov 1997): $4,000 is 8 points before and 16 after, so no single exact point amount exists on a cash index (decisions #196(2), #240 (2)). Held on SPX, SPY, NDX, DJI and the other cash contexts; the card runs only on the Norgate S&P 500 contract, 1982-04-21..1995-07-31 (mhstp::OPEN_WINDOW), where $4,000 = 8.0 points (lane D3, R4 #340).",
         // ---- end Joe Krutsinger held
         // ---- Murray Ruggiero block (26 Oct 2026, lane B): held Live rules
         "rgt_taylor"=>"Held: incomplete system. Ruggiero prints the Taylor trading code as a shell that is 'missing two patterns ... plus several filters' for the reader to complete (Traders' Secrets p.181-182), and its declared buy and sell filters are unused in the printed code; testing the shell would not be the author's system.",
