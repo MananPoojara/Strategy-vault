@@ -42,14 +42,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"You could have gone long the T-Bond when it bounced off the lower band, with a close stop\" (p.55-58)"], "Printed pp.54-58."),
         nt("ch_ntt_linreg", "Linear regression slope / r-squared", "Ch 2 · Linear regression", "Entry is 'when the slope first becomes significantly positive' with no exit ('you may choose to take profits, tighten your stops, or take an antitrend position').",
             &["E|\"You could open a long position when the slope first becomes significantly positive.\" (p.25)"], "Printed pp.19-48 (r2 critical values 0.40/0.20/0.13/0.08 for 10/20/30/50 days)."),
-        nt("ch_ntt_qstick_zero", "Qstick zero crossing", "Ch 4 · Qstick", "Order price/time is 'the next day' without an order type, the exit is 'go short ... or close out your long', and the length is 8 days (formula) or 20 days (daily intermediate) with no single choice.",
-            &["E|\"When Qstick is negative and then becomes positive, you can go long the next day. When Qstick is positive and becomes negative, you can go short the next day or close out your long position.\" (p.77)"], "Printed pp.73-91."),
+        d("ch_ntt_qstick_zero", "Qstick zero crossing", "Ch 4 · Qstick", "Long/Short", Live, &[], &["F|Qstick = the n-bar average of (close - open) (Ch 4; 8 days in the formula, 20 in the daily intermediate example)", "E|\"When Qstick is negative and then becomes positive, you can go long the next day.\" (p.77)", "X|\"When Qstick is positive and becomes negative, you can go short the next day or close out your long position.\" (p.77)"], "[R1-1116, R4 #297/#339/#343/#344: adapted, 3 unstated details, UNVERIFIED] Unstated in the book: (1) the length: 8 days (the formula) or 20 (the daily intermediate example), vault reading n = 8 (p.n); (2) the sell: 'go short ... or close out your long': vault reading = reverse to short; (3) the crossing: previous Qstick at or below zero and today's above (buy), previous at or above and today's below (sell). The order 'the next day' fills at the next bar's open, so SPX, DJI and NDX results start where their real opens begin (clamp_open). Holding until the opposite signal is part of the printed reverse rule, not counted (R4 #344). Engine conventions, labelled and not counted: a signal fills at the stated bar's price (the close, or the next bar's open where the book says 'the next day'), one position at a time, indicators start at their first full lookback. Declared application: daily bars of indices, ETFs and stocks (the book's examples are futures and stocks). The book prints no result for this rule."),
         nt("ch_ntt_qstick_ma", "Qstick and its moving average", "Ch 4 · Qstick", "Only a chart reading of crossovers; no order type or exit.",
             &["E|\"A buy signal occurs when the shorter average crosses above the longer one.\" (p.76-77)"], "Printed pp.76-79."),
-        nt("ch_ntt_cmo_ma", "CMO and its 10-day SMA", "Ch 5 · CMO", "Offered as 'you could buy ... and sell'; whether a sell exits or reverses and the fill are not given.",
-            &["E|\"You could buy when the CMO crossed above its average, and sell when it fell below its moving average.\" (p.114)"], "Printed pp.94-119."),
-        nt("ch_ntt_cmo_zero", "Average CMO zero crossing", "Ch 5 · CMO", "'You would buy when the CMO turned positive, and sell when the CMO turned negative' has no order type or fill.",
-            &["E|CMO_A = (CMO5 + CMO10 + CMO20)/3; \"buy when the CMO turned positive, and sell when the CMO turned negative\" (p.113)"], "Printed p.113."),
+        d("ch_ntt_cmo_ma", "CMO and its 10-day SMA", "Ch 5 · CMO", "Long/Short", Live, &[], &["F|CMO(n) as on p.94-; its 10-day simple moving average (p.114)", "E|\"You could buy when the CMO crossed above its average\" (p.114)", "X|\"and sell when it fell below its moving average.\" (p.114)"], "[R1-1116, R4 #297/#339/#343/#344: adapted, 4 unstated details, UNVERIFIED] Stated: buy when the CMO crosses above its 10-day moving average, sell when it falls below it (p.114). Unstated: (1) the CMO length: not given for this example, vault reading n = 10 (p.n); (2) the CMO definition: Chande's, 100 x (Su - Sd) / (Su + Sd) over the last n closes' changes; (3) a cross = the CMO at or below its average the day before and above it today (sell: the mirror); (4) the sell reverses to short. Holding until the opposite signal is part of the printed reverse rule, not counted (R4 #344). Close-only. Engine conventions, labelled and not counted: a signal fills at the stated bar's price (the close, or the next bar's open where the book says 'the next day'), one position at a time, indicators start at their first full lookback. Declared application: daily bars of indices, ETFs and stocks (the book's examples are futures and stocks). The book prints no result for this rule."),
+        d("ch_ntt_cmo_zero", "Average CMO zero crossing", "Ch 5 · CMO", "Long/Short", Live, &[], &["F|CMO_A = (CMO5 + CMO10 + CMO20)/3 (p.113); CMO(n) = 100 x (sum of up changes - sum of down changes) / (sum of up + sum of down) over the last n closes", "E|\"You would buy when the CMO turned positive\" (p.113)", "X|\"and sell when the CMO turned negative\" (p.113)"], "[R1-1116, R4 #297/#339/#343/#344: adapted, 3 unstated details, UNVERIFIED] Stated: CMO_A is the mean of the 5-, 10- and 20-day CMOs; buy when it turns positive, sell when it turns negative (p.113). Unstated: (1) the CMO definition: Chande's, 100 x (Su - Sd) / (Su + Sd) with Su and Sd the sums of the up and down close-to-close changes of the last n closes (the book's own indicator, as used by ch_ntt_vidya_cmo); (2) 'turned' = the previous value at or below zero and today's above (buy), at or above and below (sell); (3) the sell reverses to short (no exit is printed). Holding until the opposite signal is part of the printed reverse rule, not counted (R4 #344). Close-only. Engine conventions, labelled and not counted: a signal fills at the stated bar's price (the close, or the next bar's open where the book says 'the next day'), one position at a time, indicators start at their first full lookback. Declared application: daily bars of indices, ETFs and stocks (the book's examples are futures and stocks). The book prints no result for this rule."),
         nt("ch_ntt_stochrsi", "StochRSI 0.2/0.8 signals", "Ch 5 · StochRSI", "Several alternative rules (buy above 0.80 or around 0.2, reverse or close, 0.50 midline, 3-day confirmation) with no single order type or exit.",
             &["E|\"you can buy when it rises above 0.80 and sell when it falls below 0.20. You can then close your position (or reverse) when the values fall below 0.80 or rise above 0.20. Or, you can trade only when the stochRSI falls below 0.50 or rises above 0.50.\" (p.129)"], "Printed pp.124-133."),
         nt("ch_ntt_to_short_term", "Thrust oscillator 5-day SMA vs 5-day EMA", "Ch 6 · Market thrust", "Two alternative triggers ('first turns up ... or crosses above') and no order type; the strategy is only 'suggested' by a chart.",
@@ -85,6 +82,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("tick", "Stop-entry offset (1 tick)", 0.01, 0., 5., 0.01), p("stop_pts", "Initial stop, index points (0 = off)", 0., 0., 50., 1.)],
         "ch_ntt_to_buy" | "ch_ntt_to_buy_nse" => vec![p("sma", "TO SMA days", 21., 5., 50., 1.), p("ema", "EMA of the SMA days", 13., 5., 30., 1.),
             p("level", "Oversold level", -0.3, -0.6, 0., 0.05), p("months", "Hold, calendar months (book: 3/6/12/24)", 3., 1., 24., 1.)],
+        "ch_ntt_qstick_zero" => vec![p("n", "Qstick days (book: 8 or 20)", 8., 2., 50., 1.)],
+        "ch_ntt_cmo_ma" => vec![p("n", "CMO days (book: not given)", 10., 2., 50., 1.)],
+        "ch_ntt_cmo_zero" => vec![],
         _ => return None,
     })
 }
@@ -216,8 +216,48 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ex = |i: usize, q: &Pos| (x.r[i].date >= add_months(&x.r[q.i].date, m)).then(|| format!("{m} calendar months after entry · close"));
             run_sys(x, from, to, &Sys { entry: &entry, exit_close: &ex, exit_open: &none_exit, trail: &no_trail, stop_pts: 0., oneway: false })
         }
+        "ch_ntt_qstick_zero" | "ch_ntt_cmo_zero" | "ch_ntt_cmo_ma" => {
+            let n = x.r.len();
+            let (v, w): (Vec<f64>, Vec<f64>) = match id {
+                "ch_ntt_qstick_zero" => { let k = u("n"); (sma(&(0..n).map(|i| x.c[i] - x.o[i]).collect::<Vec<_>>(), k), vec![0.; n]) }
+                "ch_ntt_cmo_zero" => {
+                    let c5 = cmo_signed(&x.c, 5); let c10 = cmo_signed(&x.c, 10); let c20 = cmo_signed(&x.c, 20);
+                    ((0..n).map(|i| (c5[i] + c10[i] + c20[i]) / 3.).collect(), vec![0.; n])
+                }
+                _ => { let m = cmo_signed(&x.c, u("n")); let a = sma(&m, 10); (m, a) }
+            };
+            let next_open = id == "ch_ntt_qstick_zero";
+            let mut sig = vec![0i8; n];
+            for i in 1..n {
+                if !(v[i].is_finite() && v[i - 1].is_finite() && w[i].is_finite() && w[i - 1].is_finite()) { continue; }
+                if v[i - 1] <= w[i - 1] && v[i] > w[i] { sig[i] = 1; } else if v[i - 1] >= w[i - 1] && v[i] < w[i] { sig[i] = -1; }
+            }
+            let mut out: Vec<Trade> = vec![];
+            let mut cur: Option<Trade> = None;
+            for i in from..=to {
+                let dir = match sig[i] { 1 => 1., -1 => -1., _ => continue };
+                if cur.as_ref().map_or(false, |t| t.dir == dir) { continue; }
+                let (fi, px) = if next_open { if i + 1 > to { continue; } (i + 1, x.o[i + 1]) } else { (i, x.c[i]) };
+                if let Some(mut t) = cur.take() { t.exit_i = fi; t.exit_px = px; t.signal_i = i; t.reason = "opposite signal".into(); out.push(t); }
+                if !next_open && i == to { continue; } // a close signal on the last bar only closes
+                cur = Some(Trade { dir, legs: vec![crate::connors::Leg { i: fi, px, w: 1. }], exit_i: fi, exit_px: px, reason: String::new(), entry_kind: if next_open { "open" } else { "close" }, signal_i: i, open: false, exits: vec![] });
+            }
+            if let Some(mut t) = cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+            out
+        }
         _ => return None,
     })
+}
+
+/// Signed CMO over n close changes: 100 x (Su - Sd) / (Su + Sd) (0 when flat). NaN before n changes.
+fn cmo_signed(c: &[f64], n: usize) -> Vec<f64> {
+    let mut out = vec![f64::NAN; c.len()];
+    for i in n..c.len() {
+        let (mut u, mut d) = (0., 0.);
+        for k in i + 1 - n..=i { let m = c[k] - c[k - 1]; if m > 0. { u += m } else { d -= m } }
+        out[i] = if u + d > 0. { 100. * (u - d) / (u + d) } else { 0. };
+    }
+    out
 }
 
 #[cfg(test)]
@@ -282,4 +322,11 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "ch_ntt_to_buy", // R4 #306: ch_ntt_to_buy_nse withheld (NSE mapping of a NYSE level)
     label: "Chande & Kroll's thrust-oscillator buy (DJIA, NYSE breadth) on daily bars of the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (gate list, R4 #306): NYSE breadth; not on Indian instruments or single stocks. Exit = the book's 3-month horizon (Table 6.2), a labelled reading. Adapted: 2 unstated details.",
     basis: "The New Technical Trader p.143-159, Table 6.2 p.157; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};
+
+// Instrument admission: lane R1-1116 second pass (R4 #339/#343/#344): three Chande indicator rules with 3-4 labelled unstated details each.
+pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "ch_ntt_qstick_zero" | "ch_ntt_cmo_zero" | "ch_ntt_cmo_ma"),
+    label: "Chande & Kroll's Qstick and CMO rules are shown on futures and stocks; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 3-4 unstated details per card (length or CMO definition, the crossing reading, a sell reverses to short), labelled on each card.",
+    basis: "The New Technical Trader p.77 (Qstick), p.113-114 (CMO); R4 #297/#339/#343/#344; independent check authors/relax-339/R1/w/chntt_ref.py",
 };
