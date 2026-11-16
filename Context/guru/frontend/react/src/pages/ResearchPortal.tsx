@@ -546,7 +546,7 @@ function ShareBody({ d }: { d: ShareInventory }) {
         {c.backtested != null && <Stat n={c.backtested} label="Backtested" cls="ok" />}
       </div>
       {cov && <p className="rp-small rp-muted" data-share-volume>
-        The NAS volume at 192.168.4.50 holds {fmtBytesBoth(cov.volume.size_bytes)} ({fmtBytesBoth(cov.volume.used_bytes)} used) across all its shares{others.length ? ` (${[L.root.split("\\").pop(), ...others.map(x => x.name)].join(", ")})` : ""}; the research share is {fmtBytesBoth(L.bytes)} of it.
+        The NAS volume at 192.168.4.50 holds {fmtBytesBoth(cov.volume.size_bytes)}, of which {fmtBytesBoth(cov.volume.used_bytes)} is used, across all its shares{others.length ? ` (${[L.root.split("\\").pop(), ...others.map(x => x.name)].join(", ")})` : ""}; the research share is {fmtBytesBoth(L.bytes)} of it.
         {others.length > 0 && <> Measured by read-only scans: {[{ name: "research", bytes: L.bytes, complete: true }, ...others].map(x => `${x.name} ${fmtBytesBoth(x.bytes)}${x.complete ? "" : " so far (scan not finished)"}`).join("; ")}.</>}
         {" "}The share size comes from the listing; SMB reports one size for the whole volume, so it cannot be read per share. Volume read {fmtStamp(cov.volume.as_of)}.
       </p>}
