@@ -99,9 +99,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("kfsc_channel", "Trend channel trading", "Ch 6 · Channels and bands", "Long/Short", NotTestable("channels are hand-drawn; 'buy in the lower zone' uses 20-25% zones of a drawn channel (p.91-96)"), &[
             "E|\"buy in the lower zone of the channel and sell in the upper zone of the channel\" (p.93)",
         ], ""),
-        d("kfsc_regression_band", "Rolling regression bands", "Ch 6 · Channels and bands", "Long/Short", NotTestable("band width ('standard deviation of the price changes') and the exit are not given exactly (p.102-104)"), &[
-            "F|\"If you calculate a new 60-day regression every day and look only at the last point on the regression bands\" (p.103)",
-        ], ""),
+        d("kfsc_regression_band", "Rolling regression bands", "Ch 6 · Channels and bands", "Long/Short", Live, &[
+            "F|\"If you calculate a new 60-day regression every day and look only at the last point on the regression bands\" (p.103): centre = the end point of the 60-day least-squares line of closes; bands = 2 standard deviations (p.102-103)",
+            "E|Bands are traded like the percentage and Bollinger bands: buy on a penetration of the lower band, sell short on a penetration of the upper band (p.97, p.100)",
+            "X|Exit at the centre of the band (p.98, p.100-101)",
+        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) the standard deviation: 'the standard deviation of the price changes in the same manner as Bollinger bands' (p.102-103) is ambiguous; vault reading = the standard error of the regression (residuals of the 60 closes about the fitted line, n - 2 degrees of freedom, as Excel STEYX); (2) the trading rule is not repeated for this chart: vault reading = the countertrend rule of the percentage and Bollinger bands (enter on a close strictly beyond a band, exit when the close reaches the centre, short exposure allowed); (3) the fill: the completed daily close, no stop or limit; (4) one position at a time, the first signal needs 60 closes. Declared application on daily bars of indices, ETFs and stocks, US and India. The book prints no result for this configuration."),
         d("kfsc_stops", "Support-level and volatility stops", "Ch 8/17 · Risk control", "Long/Short", NotTestable("exit rules only (support levels by eye; 2x/3x range targets need an entry the book does not give)"), &[
             "X|\"A stop-loss must not be closer than 1½ times the current volatility\" (p.120); \"Profit target = entry price + (2 × daily range); Stop-loss = entry price − (3 × daily range)\" (p.248-249)",
         ], ""),
@@ -134,6 +136,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "kfsc_pct_band" => ("kfsc_bands", "Countertrend bands (Short Course)", "5% band"),
         "kfsc_bollinger" => ("kfsc_bands", "Countertrend bands (Short Course)", "Bollinger 20/2"),
+        "kfsc_regression_band" => ("kfsc_regression_band", "Rolling regression bands (Short Course)", ""),
         "kfsc_macd" | "kfsc_dsm" => ("kfsc_momentum", "Momentum trend (Short Course)", ""),
         s if s.starts_with("kfsc_") => (s_static(s), "Kaufman Short Course", ""),
         _ => return None,
@@ -148,6 +151,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "kfsc_pct_band" => vec![p("period", "Selected source MA period", 20., 20., 20., 1.), p("pct", "Selected band (%): upper MA×1.05, lower MA/1.05", 5., 5., 5., 1.)],
         "kfsc_bollinger" => vec![p("period", "Selected source MA / sample-SD period", 20., 20., 20., 1.), p("nsd", "Selected price-level sample SDs (literal Excel formula)", 2., 2., 2., 1.)],
+        "kfsc_regression_band" => vec![p("period", "Regression days (book: 60)", 60., 20., 120., 1.), p("nsd", "Band width in standard errors (book: 2)", 2., 1., 3., 0.5)],
         "kfsc_two_ma" => vec![p("slow", "Selected example slow SMA", 80., 80., 80., 1.), p("fast", "Selected example fast SMA", 10., 10., 10., 1.)],
         "kfsc_macd" => vec![p("alpha_fast", "Literal printed fast smoothing (formula conflict)", 0.0476, 0.0476, 0.0476, 0.0001), p("alpha_slow", "Literal printed slow smoothing (formula conflict)", 0.0243, 0.0243, 0.0243, 0.0001), p("alpha_signal", "Literal printed MACD signal smoothing", 0.10, 0.10, 0.10, 0.01)],
         "kfsc_stoch" => vec![p("period", "Stochastic days N", 10., 3., 40., 1.), p("prior", "Range: 0 = N days to today (Fig 15.2 numbers), 1 = N days before today (prose)", 0., 0., 1., 1.), p("over", "Overbought line", 80., 50., 95., 1.), p("under", "Oversold line", 20., 5., 50., 1.)],
@@ -419,6 +423,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let up: Vec<f64> = (0..n).map(|i| ma[i] + k * sd_sample(c, pn, i)).collect();
             let lo: Vec<f64> = (0..n).map(|i| ma[i] - k * sd_sample(c, pn, i)).collect();
             band_ct(x, from, to, &lo, &ma, &up)
+        }
+        "kfsc_regression_band" => {
+            let (pn, k) = (u("period").max(3), g("nsd"));
+            let (mut mid, mut up, mut lo) = (vec![f64::NAN; n], vec![f64::NAN; n], vec![f64::NAN; n]);
+            for i in pn - 1..n {
+                let w = &c[i + 1 - pn..=i];
+                let (m, xm) = (pn as f64, (pn as f64 - 1.) / 2.);
+                let ym = w.iter().sum::<f64>() / m;
+                let sxx: f64 = (0..pn).map(|j| (j as f64 - xm).powi(2)).sum();
+                let sxy: f64 = (0..pn).map(|j| (j as f64 - xm) * (w[j] - ym)).sum();
+                let b = sxy / sxx;
+                let end = ym + b * (pn as f64 - 1. - xm);
+                let sse: f64 = (0..pn).map(|j| (w[j] - (ym + b * (j as f64 - xm))).powi(2)).sum();
+                let se = (sse / (m - 2.)).sqrt();
+                mid[i] = end; up[i] = end + k * se; lo[i] = end - k * se;
+            }
+            band_ct(x, from, to, &lo, &mid, &up)
         }
         "kfsc_two_ma" => {
             // direction of an N-day average = sign of c[i] - c[i-N] (exact; avoids running-sum noise on flat days)
@@ -725,4 +746,11 @@ pub const ADMISSION_STOCH: crate::instrument_policy::Admission = crate::instrume
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "kfsc_stoch",
     label: "Kaufman's stochastic timing rule (p.219) on daily bars of indices, ETFs and stocks, US and India; every market is read as 'sideways' (both signals taken) because the book's trend test is undefined. Adapted: 2 unstated details, labelled on the card.",
     basis: "A Short Course in Technical Trading p.216-222, Fig 15.2; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};
+
+// Instrument admission: lane R1-1116 (R4 #297/#339): rolling regression bands with 4 labelled unstated details.
+pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "kfsc_regression_band",
+    label: "The book shows the chart on one stock and names no test; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 4 unstated details (the standard deviation, the trading rule, the fill, one position), labelled on the card.",
+    basis: "Kaufman, A Short Course in Technical Trading p.102-104 (PDF 115-117), trading rule p.97-101; R4 #297/#339; independent check authors/relax-339/R1/w/kfsc_ref.py",
 };
