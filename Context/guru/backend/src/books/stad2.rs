@@ -880,14 +880,13 @@ fn defs_b() -> Vec<Def> {
     d("stad9_djnikkei", "DJ vs. Nikkei (intermarket example)", "Vol 9 · Strategies", "Long/Short", Live,
       &["E|Close[1] of Data2 < Close of Data2: Buy next bar at Open; else Sell next bar at Open (Vol 9 p.82)",
         "X|No separate exit: the opposite signal (Sell / Buy next bar at Open) reverses the position (Vol 9 p.82)",
-        "A|Declared adaptation (R4 #340, UNVERIFIED): the book trades the Nikkei 225 index (Data1) with the Dow Jones (Data2) from 1/1/98; the vault holds no Nikkei cash index, so Data1 = the Norgate Nikkei 225 Dollar continuous futures (&NKD, the same index, from 1990) and Data2 = the Dow Jones Industrial Average close (Norgate $DJI). Unstated: Data2 is carried on Nikkei-futures dates without a Dow bar (TradeStation Data2; the Dow bar before is Close[1]); the run starts at the first bar with two Dow bars; one unit, no costs."],
+        "A|Declared adaptation (R4 #340, UNVERIFIED): the book trades the Nikkei 225 index (Data1) with the Dow Jones (Data2) from 1/1/98; the vault holds no Nikkei cash index, so Data1 = the Norgate Nikkei 225 Dollar continuous futures (&NKD, the same index, from 1990, filled at its session open) and Data2 = the Dow Jones Industrial Average close (Norgate $DJI). Four unstated details: (1) a contract date without a Dow bar keeps the last Dow bar and Close[1] stays the Dow bar before it (TradeStation Data2); (2) a Dow bar older than 5 contract bars is missing data: no signal, and none after the Dow file ends (2020-09-04); (3) the run starts at the first bar with two Dow bars; (4) one unit, no costs"],
       "Vol 9 ch.7 p.82-84 (Hans Stimming). Book: Nikkei since 1/1/98: 61% profitable (System Report image, trades and profit not printed).", ("stad9_iic", "International Index Composite", "DJ vs Nikkei")),
-    d("stad9_iic", "International Index Composite", "Vol 9 · Strategies", "Long/Short", Live,
-      &["X|Exit = the opposite stop order (reversal; Last Bar Exit only) (Vol 9 p.87-88)",
-        "F|Composite = weighted average of the closes of Data2-Data7 (weights .49/.07/.09/.02/.22/.11, check that they sum to 1) (Vol 9 p.86-87)",
-        "E|AverageFC(Composite,9) crosses above AverageFC(Composite,18): Buy next bar at Close + 1 Point stop; crosses below: Sell next bar at Close - 1 Point stop (Vol 9 p.87); exit = the opposite stop (Last Bar Exit only)",
-        "A|Declared adaptation (R4 #340, UNVERIFIED): Data1 = Norgate E-mini S&P 500 continuous futures (&ES, S&P 500 index) in place of the S&P 500 index; Data2-Data7 = the Norgate continuous futures of TSX 60 (&SXF, for the TSE 300), CAC 40 (&FCE), DAX (&FDAX), EURO STOXX 50 (&FESX, nearest held index to the MIBTel, weight .02) , Nikkei 225 USD (&NKD) and FTSE 100 (&LFT), back-adjusted closes carried on E-mini dates (TradeStation Data2). Unstated: (1) AverageFC read as the simple average of the last Length Composite values; (2) the Composite exists only from the first bar on which all six streams have a bar; (3) '1 Point' = one tick of the traded contract (decision #57); (4) lengths 9/18 are the printed defaults, the book's report used the optimised 10/9 (parameter option)."],
-      "Vol 9 ch.7 p.81-89. Book (S&P 500, optimised 10/9): 81% winners (System Report image, trades not printed).", ("stad9_iic", "International Index Composite", "Composite")),
+    d("stad9_iic", "International Index Composite", "Vol 9 · Strategies", "Long/Short",
+      NeedsData("HELD (lane D3, 16 Nov 2026, R4 #339/#343): the rule is printed, and Norgate futures could stand in for the six foreign indices (the MIBTel is not held), but it needs more than 4 card-specific unstated details (AverageFC definition, '1 point' as a tick, printed 9/18 versus the optimised 10/9, composite start and Data2 carry, cross tie). The engine branch and the reference (authors/relax-339/D3/w/iic_ref.py) are kept, not published."),
+      &["F|Composite = weighted average of the closes of Data2-Data7 (weights .49/.07/.09/.02/.22/.11) (Vol 9 p.86-87)",
+        "E|AverageFC(Composite,9) crosses above AverageFC(Composite,18): Buy next bar at Close + 1 point stop; crosses below: Sell at Close - 1 point stop"],
+      "Vol 9 ch.7 p.81-89. Book (S&P 500, optimised 10/9): 81% winners.", ("stad9_iic", "International Index Composite", "Composite")),
     d("stad9_swinger", "Swinger", "Vol 9 · Strategies", "Long/Short", Live,
       &["F|PriceOsc = PriceOscillator(Close,5,20) (Average(5) - Average(20)); AvgFilter = Average(Close,50) (Vol 9 p.93-94 code)",
         "E|PriceOsc > PriceOsc[1] and PriceOsc < 0 and Close > AvgFilter: Buy next bar at market",
@@ -1678,11 +1677,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             // TradeStation Data2: a date without a Dow bar keeps the last Dow bar, and Close[1] stays the Dow bar before it
             if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
             let ds = x.series("DJ_INDUSTRIAL").map(|v| v.to_vec()).unwrap_or_else(|| vec![f64::NAN; n]);
+            let last_dow = ds.iter().rposition(|v| v.is_finite()).unwrap_or(0); // nothing after the Dow file ends
             let (mut cur, mut prev, mut gap) = (f64::NAN, f64::NAN, 0usize);
             run_ts(x, from, to, 0, cfg(), |i, _st, _now, nx| {
                 // a carried Dow bar older than CAP (5) Data1 bars is missing data, not a signal (second::CAP, #223 (1))
                 if ds[i].is_finite() { prev = cur; cur = ds[i]; gap = 0; } else { gap += 1; }
-                if prev.is_finite() && cur.is_finite() && gap <= crate::second::CAP {
+                if i <= last_dow && prev.is_finite() && cur.is_finite() && gap <= crate::second::CAP {
                     if prev < cur { nx.push(o(A::Buy, P::Mkt, "Dow up: Buy")); } else { nx.push(o(A::Sell, P::Mkt, "Dow not up: Sell")); }
                 }
             })
@@ -2681,7 +2681,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 71); // + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 70); // + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 
