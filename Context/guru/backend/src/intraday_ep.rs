@@ -90,7 +90,7 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
     "acbff_rsi_5min", "atm04_60min", "jmls_bar_breakout", "jmls_ma_cross_30m"];
 /// Rules whose time filter is a US Eastern clock time the book gives no NSE equivalent for: SPY and SPX only.
 pub const US: &[&str] = &["jmls_ls_model"];
-pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) || PA1.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) || D1.contains(&id) }
+pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) || PA1.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) }
 pub fn us_id(id: &str) -> bool { US.contains(&id) }
 pub fn book(b: &str) -> bool { matches!(b, "stkch" | "atm03" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts" | "jr_tbtm" | "scchem" | "sckzthr" | "clomw" | "lpgap") }
 // ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
@@ -170,8 +170,6 @@ pub const PA1_SPX: &[&str] = crate::books::sckzthr::INTRA;
 // ---- end lane PA1 block
 // ---- lane D1 block (16 Nov 2026; authors/relax-339/D1/FINAL.md; R4 #339/#340): S&P-point minute rules, SPX only, always UNVERIFIED
 pub const D1_SPX: &[&str] = &["clomw_early_range_breakout", "lpgap_fade_spx"];
-/// No fixed amount: all four minute tickers (PTJ S&P Momentum on 20-minute bars).
-pub const D1: &[&str] = &["ptjdt_sp_momentum"];
 // ---- end lane D1 block
 // ---- lane K75 block (11 Nov 2026, R4 #279 (2); authors/titles-1030/K75.tsv)
 /// Daily rules that read the first-hour / last-hour series built from the real 1-minute bars (intraday::session_series):

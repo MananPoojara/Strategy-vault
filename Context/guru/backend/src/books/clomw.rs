@@ -55,7 +55,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let orders = |s: &S| -> Vec<Ord> {
             let mut v = vec![];
             if let Some((d, ep)) = s.pos { if s.xon { v.push(Ord { up: d > 0.0, lv: ep + d * tgt, tag: 3 }); v.push(Ord { up: d < 0.0, lv: ep - d * stp, tag: 4 }); } }
-            if s.entry_on { if s.used & 1 == 0 { v.push(Ord { up: true, lv: bpt, tag: 1 }); } if s.used & 2 == 0 { v.push(Ord { up: false, lv: spt, tag: 2 }); } }
+            if s.n == 0 { if s.used & 1 == 0 { v.push(Ord { up: true, lv: bpt, tag: 1 }); } if s.used & 2 == 0 { v.push(Ord { up: false, lv: spt, tag: 2 }); } }
             v
         };
         let fill = |s: &mut S, t: u8, px: f64| match t {
