@@ -787,7 +787,7 @@ fn defs_b() -> Vec<Def> {
         crate::books::n1intra2::MIN],
       "Vol 7 ch.3 p.47-53. Book: 10-minute IBM/AMZN/LU/BA, 1/12-2/1/99 (with a money management stop the code does not print), too short to compare. Runs on SPY and SPX minutes (declared application); the NIFTY 50 and NIFTYBANK minute results are withdrawn (decisions #231/#234: NSE cash-index minutes are dominated by stale component prices). No costs in the vault's run. Cash-index shorts are hypothetical.", ("stad7_idbo", "Intraday Breakout", "Vol 7")),
     d("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7 · Support/Resistance", "Long",
-      NeedsData("Needs weekly Treasury bond (Data2) and Treasury bill (Data3) futures aligned to the traded index; no bond/bill futures in the vault."),
+      NeedsData("Held (lane D2, 16 Nov 2026, R4 #340/#240): the printed rule is complete and Norgate holds the S&P 500 (&SP), T-bond (&ZB) and Eurodollar (&GE, for the bills) futures, but run that way 9 of the 78 trades to the 1995-07-31 open-price limit (R4 #330), 11.5%, have a bar where a long position's exit stop and the buy stop are both touched and the order inside the bar cannot be known (no futures minutes), over the 5% of R4 #240."),
       &["E|Close Data2 > XAverage(Close,30) Data2 and Close Data3 > XAverage(Close,30) Data3 and SlowK(9) crosses above 30: buy stop at Close + .30*ATR for 5 bars (Vol 7 p.55 code)",
         "X|ExitLong at EntryPrice - 1.5*ATR stop; after SlowK > 70: ExitLong at Lowest(Low,2)[1] stop"],
       "Vol 7 ch.3 p.54-60. Book: 57% profitable, win/loss 1.43, PF 1.88.", ("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7")),
