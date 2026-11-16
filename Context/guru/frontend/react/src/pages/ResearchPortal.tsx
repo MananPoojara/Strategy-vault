@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import "./ResearchPortal.css";
 import { VerificationView } from "./VerificationView";
 import {
-  research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, csvCell, ago, dayKey, readHashParams, hashWith,
+  research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
   type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareInventory, type ShareSource, type Site, type Strategy,
   type TimelineItem, type Verdict,
 } from "../services/research";
@@ -531,20 +531,25 @@ function ShareBody({ d }: { d: ShareInventory }) {
   const unnamed = d.kinds.filter(k => k.kind !== "author").reduce((a, k) => a + k.sources, 0);
   const strategiesOnSources = d.sources.reduce((a, s) => a + s.strategies, 0);
   const listed = fmtDate(L.date);
+  const cov = L.coverage;
   return (
     <section className="rp-share">
       <h1>Research share</h1>
       <p className="rp-muted">What <code>{L.root}</code> holds, counted file by file from the read-only listing of <b>{fmtStamp(L.date)}</b>, and what Claude has done with it so far.</p>
       <div className="rp-stats">
         <Stat n={L.files} label="Files" cls="team" />
-        <div className="rp-stat team" title={`${L.bytes.toLocaleString("en-IN")} bytes`}><b>{fmtBytes(L.bytes)}</b><span>Total size</span></div>
+        <div className="rp-stat team" title={`${L.bytes.toLocaleString("en-IN")} bytes`}><b>{fmtBytesBoth(L.bytes)}</b><span>Total size</span></div>
         <Stat n={L.folders} label="Folders" cls="team" />
         <Stat n={people} label="Named authors (people)" cls="todo" />
         <Stat n={unnamed} label="Unnamed sources (company, website, magazine…)" cls="todo" />
         {c.strategies != null && <Stat n={c.strategies} label="Strategies found" cls="held" />}
         {c.backtested != null && <Stat n={c.backtested} label="Backtested" cls="ok" />}
       </div>
+      {cov && <p className="rp-small rp-muted" data-share-volume>
+        The NAS volume at 192.168.4.50 is {fmtBytesBoth(cov.volume.size_bytes)}, {fmtBytesBoth(cov.volume.used_bytes)} used, shared with the other shares on this NAS (e.g. share); the research share is {fmtBytesBoth(L.bytes)} of it. SMB reports one size for the whole volume, so it cannot be read per share. Volume read {fmtStamp(cov.volume.as_of)}.
+      </p>}
       <div className="rp-checks">
+        {cov && <Check ok={cov.listed >= cov.top_level.length - cov.unreadable.length}>Whole share covered: {cov.listed === cov.top_level.length - cov.unreadable.length ? `all ${cov.listed} top-level folders and files` : `${cov.listed} of ${cov.top_level.length} top-level entries`} are in the listing{cov.unreadable.length ? ` (${cov.unreadable.join(", ")}${cov.unreadable.includes("#recycle") ? ", the share's recycle bin," : ""} ${cov.unreadable.length > 1 ? "are" : "is"} not readable to this account)` : ""}.</Check>}
         <Check ok={typeSum === L.files && typeBytes === L.bytes}>Every file is in exactly one resource type: {d.types.length} types add up to {num(typeSum)} files and {typeBytes.toLocaleString("en-IN")} bytes (listing: {num(L.files)} files, {L.bytes.toLocaleString("en-IN")} bytes).</Check>
         <Check ok={srcSum === L.files && kindSum === L.files}>Every file has exactly one source: {num(d.sources.length)} sources in {d.kinds.length} kinds add up to {num(srcSum)} files.</Check>
         {c.strategies != null && <Check ok={strategiesOnSources + c.unmatched.strategies === c.strategies}>Strategies: {num(strategiesOnSources)} sit on a share source + {num(c.unmatched.strategies)} whose site author has no matching share name = {num(c.strategies)} on the site.</Check>}
@@ -564,7 +569,7 @@ function ShareBody({ d }: { d: ShareInventory }) {
 
       <h2 className="rp-section">How these numbers are counted</h2>
       <div className="rp-panel rp-how">
-        <p><b>The listing.</b> One read-only <code>find</code> run over the whole share on {fmtStamp(L.date)} ({L.file}): every file with its size. Nothing on the share is changed. Folders: {L.folders_method}. Sizes are shown as Windows Explorer shows them (1 GB = 1024³ bytes); hover a size for the exact bytes.</p>
+        <p><b>The listing.</b> One read-only <code>find</code> run over the whole share on {fmtStamp(L.date)} ({L.file}): every file with its size. Nothing on the share is changed. Folders: {L.folders_method}. Sizes are binary (1 GiB = 1024³ bytes, shown by Windows Explorer as GB); the share total also shows decimal TB. Hover a size for the exact bytes.</p>
         <p><b>Copies.</b> {num(L.duplicate_copies)} of the {num(L.files)} files are extra copies (same file name and size somewhere else, mostly the USB HDD backups); every count on this page includes them, so the totals match what Explorer shows. Without the copies: {num(L.unique_files)} files.</p>
         <p><b>Resource types.</b> {d.rules.types}</p>
         <table className="rp-table rp-rules-table">
