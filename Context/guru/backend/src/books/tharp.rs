@@ -57,7 +57,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             Status::NotTestable("duplicate of ss_turtle_soup (decision #277, lane K74: the same 20-day-low false breakout, live from Street Smarts); rules not fully defined: no profit exit (\"some trades will last 2 to 3 hours, others will last days\", Systems Development Workbook p.75); the entry idea runs in the vault as ss_turtle_soup"),
             &["E|Today makes a 20-day low; the previous low was not within the last 5 days; buy stop 8 ticks above the previous 20-day low, good today only (Workbook p.75)", "X|If filled, GTC sell stop just under today's low (Workbook p.75)"], "Exit rule missing."),
         make("tharp_110day_breakout", "110-day breakout, weekly-volatility stop", "Super Trader ch. 13 · Simple system idea", "Long",
-            Status::NotTestable("multiple of weekly volatility for the stop is not given (\"something as simple as\")"),
+            Status::NotTestable("an illustration (\"something as simple as\", p.213): more than 4 details are unstated (breakout test, the weekly-volatility formula and its averaging, the stop multiple, the initial stop, the fill/stop-check convention, re-entry on the exit bar), so it is held under R4 #339 (lane R2, 16 Nov 2026)"),
             &["E|Buy on a 110-day channel breakout (Super Trader p.213)", "X|Weekly volatility as worst-case exit, trailed from the close; 1% risk (Super Trader p.213)"], "Stop multiple unspecified (TYW p.258 suggests 0.7-2x weekly volatility as a range, not a rule)."),
     ]
 }
