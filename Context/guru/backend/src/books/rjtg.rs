@@ -6,17 +6,17 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rjtg";
 
-const NOTE: &str = "[R1 pass 3, 16 Nov 2026, R4 #339/#343/#344: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) X and Y: the worked example X = 20, Y = 3 (p.186-190) is used, the book says they may be anything that fits the logic (p.x, p.y); (2) the protective stop: the book sets one on every trade but never gives its size, so none is applied and a trade ends only on the reverse setup; (3) 'average close' = the simple average of the last X closes; (4) averages equal to rounding (relative 1e-9) are neither rising nor falling, so no setup. The reverse itself is printed. Fills at the next open (p.187), so SPX, DJI and NDX results start where their real opens begin (clamp_open). Book market: eight futures (Bonds, Swiss Franc, D-Mark, Eurodollar, Crude Oil, Wheat, JY, 10-Year Notes; p.188-189), test period and the X/Y used for the printed results not stated. \
+const NOTE: &str = "Book market: eight futures (Bonds, Swiss Franc, D-Mark, Eurodollar, Crude Oil, Wheat, JY, 10-Year Notes; p.188-189), test period and the X/Y used for the printed results not stated. \
 Defaults X=20, Y=3 are the book's only numbers (the worked example, p.186-190: 'For example, if X = 20 and Y = 3'); the book says X and Y may be anything that fits the logic. \
 Runs on the indices (instrument swap). Signals on the close, fills at the next open (p.187 'buy on the open the next day'). Always in once the first setup fires; a same-direction setup while already in that direction is ignored. \
-Not applied (detail 2): the book's 'set protective stop' ('unless the market goes against the position too far', p.186, 190) - its size is never stated, so no number can be copied; trades end only on the reverse setup.";
+NOT APPLIED: the book's 'set protective stop' ('unless the market goes against the position too far', p.186, 190) - its size is never stated, so no number can be copied; trades end only on the reverse setup.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes| StrategyDef {
         id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None,
     };
     vec![
-        d("rjtg_simple", "A Simple Trading Method (rising average + pullback, stop and reverse)", "Ch.13 The System · A Simple Trading Method", "Long/Short", Status::Live, &[
+        d("rjtg_simple", "A Simple Trading Method (rising average + pullback, stop and reverse)", "Ch.13 The System · A Simple Trading Method", "Long/Short", Status::NotTestable("the book uses a protective stop on every trade but never gives its size, and X=20 / Y=3 are only its worked example; running it without the stop would change the book's rule, and the vault does not invent one"), &[
             "E|Buys: \"1. Requires the average close of X days to be greater than the same average close Y days ago. 2. Requires the close to be less than the close Y days ago. 3. Requires the close to be greater than the close Y + X days ago. If these three conditions are met, the method will buy on the open the next day.\" (p.187)",
             "E|Sells: \"1. Requires the average close of X days to be less than the same average close Y days ago. 2. Requires the close to be greater than the close Y days ago. 3. Requires the close to be less than the close Y + X days ago. If these three conditions are met, the method will sell on the open the next day.\" (p.187)",
             "X|\"This is a trend-following method and reverses. There are no exit rules other than a reversing situation and a set protective stop.\" (p.186) - reverse at the next open on the opposite setup.",
@@ -99,9 +99,3 @@ mod tests {
         assert_eq!((ts[0].dir, ts[0].legs[0].i, ts[0].legs[0].px), (1.0, 31, 125.5));
     }
 }
-
-pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "rjtg_simple",
-    label: "The book tests eight futures; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 4 unstated details (X and Y, no protective stop, the simple average, equal averages), labelled on the card.",
-    basis: "Ryan Jones, The Trading Game ch.13 p.186-190; R4 #297/#339/#343/#344; independent check authors/relax-339/R1/w/rjtg_ref.py",
-};
