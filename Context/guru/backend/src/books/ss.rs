@@ -48,7 +48,7 @@ pub const STOCK_ALSO: &[&str] = &["ss_turtle_soup_plus_one", "ss_holy_grail", "s
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "ss_ad_market_buster" => matches!(ticker, "SPX" | "SPY"),
-        "ss_ad_market_buster_nse" => ticker == "NIFTY 50",
+        "ss_ad_market_buster_nse" => matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100"), // R4 #340
         _ if STOCK_SHOWN.contains(&id) => true,
         _ => reviewed_daily(id) && matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
     }

@@ -802,8 +802,8 @@ mod tests {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+5);}r};
         let ok=|r:&Vec<crate::Row>,id:&str|{let mut ctx=Ctx::new(r,r,r);for s in definition(id).needs_series {ctx.extra.insert(s.to_string(),vec![1.0;r.len()]);}check(&ctx,&definition(id),0,4,&Params::new()).map(|i|i.status)};
         for &id in books::ptjmt::REVIEWED_DAILY {
-            if id.ends_with("_nse") { // held for every symbol and period (NSE breadth, 2026-10-21)
-                for (t,y) in [("SPY","1991"),("SPX","2013"),("SPX","2014"),("SPY","2013")] {assert_eq!(ok(&mk(t,y),id),Some("needs_data"),"{id}");}
+            if id.ends_with("_nse") { // R4 #340: no longer held; the readiness check adds no VIX-year or stale-open refusal (symbol scope is in instrument_policy, the NSE series are in the data)
+                for (t,y) in [("SPY","1991"),("SPX","2013"),("SPX","2014"),("SPY","2013")] {assert_eq!(ok(&mk(t,y),id),None,"{id}");}
                 continue;
             }
             let cvr=id.starts_with("ptjmt_cvr");

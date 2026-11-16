@@ -42,7 +42,7 @@ pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "spmt_vix2" | "spmt_vix7" => matches!(ticker, "SPX" | "SPY"),
         "spmt_vix200" | "spmt_vix4" | "spmt_vix8" | "spmt_short_vix53" | "spmt_short_vix101" | "spmt_trin_1" | "spmt_trin_2"
-        | "spmt_trin_3" | "spmt_trin_4" | "spmt_trin_5" | "spmt_nyse_adv" => matches!(ticker, "SPX" | "SPY" | "NIFTY 50"),
+        | "spmt_trin_3" | "spmt_trin_4" | "spmt_trin_5" | "spmt_nyse_adv" => matches!(ticker, "SPX" | "SPY" | "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100"), // R4 #340
         _ => true,
     }
 }
