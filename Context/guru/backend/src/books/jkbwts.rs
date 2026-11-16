@@ -479,6 +479,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "jkbwts_gettess30" => {
             let n = u("consec");
+            // lane D3 (R4 #340): on the Norgate &SP contract the $4,000 stop is converted at the multiplier in force (US$500 per point in the capped window)
+            let stop = if crate::futures::ctx_market(x).is_some() { crate::futures::usd_points(x, from, g("stop_usd"))? } else { stop };
             sim(x, from, to, stop, false, |i, pos, _| {
                 let mut v = vec![];
                 if let Some(p) = pos { if o[i + 1] > p.px { v.push(exit(1, Ty::Mkt, 0.0, "Open of tomorrow > EntryPrice")); } }
