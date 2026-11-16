@@ -5,7 +5,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rpdt";
 /// Admitted ids (authors/pardo/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["rpdt_ma_xover", "rpdt_range_bo", "rpdt_ma_timefilter"];
+pub const REVIEWED: &[&str] = &["rpdt_ma_xover", "rpdt_range_bo", "rpdt_ma_timefilter", "rpdt_3day_hl", "rpdt_5dh_ma_asym"]; // last two: lane R2 (16 Nov 2026, R4 #297/#339)
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn def(id: &'static str, name: &'static str, group: &'static str, status: Status, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
@@ -34,12 +34,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"The model sells at the open when MA1 has been lower than MA2 for 2 days.\" (p.86)",
             "X|Buy and sell reverse each other: the printed Swiss franc trade list alternates Buy/Sell with the position always on (Figure 6-3, p.87)",
         ], "Same rule appears in the 2008 edition (p.159-161, 'a 12-day midpoint moving average'); the 1992 text defines it as the moving average of midpoints. Strict > and <. The book's example market (Swiss franc futures 6/1989-12/1991) is not in the vault, so no book comparison. Run on the index."),
-        def("rpdt_3day_hl", "3-day high / 3-day low symmetrical example", "Ch 2 · Step 1", NotTestable("not testable: only the two signal conditions are given ('a buy signal occurs when the price rises through a 3-day high and a sell signal occurs when the price breaks through a 3-day low'); the book does not say whether the sell signal exits or reverses, the order type, or whether today's bar is in the 3-day window"), &[
+        def("rpdt_3day_hl", "3-day high / 3-day low symmetrical example (always in)", "Ch 2 · Step 1", Live, &[
             "E|\"a buy signal occurs when the price rises through a 3-day high and a sell signal occurs when the price breaks through a 3-day low. This is a symmetrical trading system.\" (p.9)",
-        ], "Illustration of a symmetrical system; no exit rule stated."),
-        def("rpdt_5dh_ma_asym", "5-day high buy / 5x20 MA sell asymmetrical example", "Ch 2 · Step 1", NotTestable("not testable: an illustration of an asymmetrical system with one buy and one sell condition; exits, reversal and order types are not stated"), &[
+            "X|The sell signal ends the long and the buy signal ends the short (symmetrical system; vault reading: they reverse, see the next line)",
+            "A|Unstated in the book (lane R2, 16 Nov 2026, R4 #297/#339: 3 unstated details, UNVERIFIED): (1) the 3-day high / low = the highest high / lowest low of the 3 completed bars before today (today's bar is not in the window); (2) the order type: the signal is a close beyond that level (strictly above / below) and the order fills at the next open (the book's own market-on-open convention, p.15-16); (3) exit versus reverse: the sell signal closes the long and goes short, the buy signal closes the short and goes long (a symmetrical system is always in the market, as the book's other examples, p.13). Window length p.n (3 = the book).",
+        ], "Illustration of a symmetrical system on page 9 with no results printed (Pardo, 1992). Unverified: three labelled readings. Closes and next-open fills only, so no intraday order is needed (#240: 0%). Book traded futures; run on the index with percentage returns, shorts hypothetical."),
+        def("rpdt_5dh_ma_asym", "5-day high buy / 5x20 MA sell asymmetrical example (always in)", "Ch 2 · Step 1", Live, &[
             "E|\"a buy signal occurs when a 5-day high is broken, and a sell signal occurs when a 5-day moving average falls below a 20-day moving average. This is an asymmetrical trading system.\" (p.9)",
-        ], "Illustration only."),
+            "X|The sell signal (5-day average below the 20-day) ends the long; the buy signal ends the short (vault reading: they reverse, see the next line)",
+            "A|Unstated in the book (lane R2, 16 Nov 2026, R4 #297/#339: 4 unstated details, UNVERIFIED): (1) the 5-day high = the highest high of the 5 completed bars before today; broken = today's close above it; (2) the order type: both signals are read at the close and fill at the next open (market-on-open, p.15-16); (3) the sell signal is the 5-day simple average of closes crossing below the 20-day one (it was above or equal the day before, below now), reading 'falls below' as the crossing day; (4) exit versus reverse: the buy signal closes a short and goes long, the sell signal closes a long and goes short (always in the market); on a day when both signals occur nothing changes. Lengths p.n (5), p.fast (5), p.slow (20).",
+        ], "Illustration of an asymmetrical system on page 9 with no results printed (Pardo, 1992). Unverified: four labelled readings. Closes and next-open fills only (#240: 0%). Book traded futures; run on the index with percentage returns, shorts hypothetical."),
         def("rpdt_entry_examples", "Example entry rules (RSI < 20, close > yesterday's close + 50% range, ...)", "Ch 3 · Entries and exits", NotTestable("not testable: a list of example entry rules with no exits (only the 5/20 crossover gets an exit example, which is rpdt_ma_xover)"), &[
             "E|\"1. The 5-day moving average crosses from below to above the 20-day moving average. 2. The relative strength index is below 20. 3. The daily close rises by 1%, and the weekly close rises by 1%. 4. Today's close is higher than yesterday's close plus 50% of the daily range. 5. Today's close is higher than the previous 4 closes.\" (p.32-33)",
             "X|\"Close out a long position when the 5-day moving average crosses from above to below the 20-day moving average.\" (p.33)",
@@ -52,7 +56,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "rpdt_ma_xover" => ("rp_ma", "Pardo two moving-average crossover", "1992 · 5/20 MOO"),
         "rpdt_range_bo" => ("rp_range", "Pardo yesterday's-range breakout", "1992 · 125% both sides"),
         "rpdt_ma_timefilter" => ("rp_ma_tf", "Pardo MA crossover with 2-day time filter", "3/12 midpoint"),
-        "rpdt_3day_hl" | "rpdt_5dh_ma_asym" | "rpdt_entry_examples" => ("rp_examples", "Pardo illustrative rules", "not testable"),
+        "rpdt_3day_hl" => ("rp_3dhl", "Pardo 3-day high / low breakout", "1992 · close beyond, next open, always in"),
+        "rpdt_5dh_ma_asym" => ("rp_asym", "Pardo asymmetrical 5-day high / 5x20 MA", "1992 · close, next open, always in"),
+        "rpdt_entry_examples" => ("rp_examples", "Pardo illustrative rules", "not testable"),
         _ => return None,
     })
 }
@@ -61,6 +67,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
         "rpdt_ma_xover" => Some(vec![p("fast", "MA1 length x (closes)", 5., 1., 20., 1.), p("slow", "MA2 length y (closes, y >= 2x; book test used 40)", 20., 2., 120., 5.)]),
+        "rpdt_3day_hl" => Some(vec![p("n", "High / low window (completed bars; the book: 3)", 3., 1., 60., 1.)]),
+        "rpdt_5dh_ma_asym" => Some(vec![p("n", "High window (completed bars; the book: 5)", 5., 1., 60., 1.), p("fast", "Short average (closes; the book: 5)", 5., 1., 20., 1.), p("slow", "Long average (closes; the book: 20)", 20., 2., 120., 1.)]),
         "rpdt_range_bo" => Some(vec![p("mult", "Breakout as a multiple of yesterday's range (both sides)", 1.25, 0.25, 3., 0.05)]),
         "rpdt_ma_timefilter" => Some(vec![p("fast", "MA1 length (closes)", 3., 1., 10., 1.), p("slow", "MA2 length (midpoints)", 12., 4., 40., 1.), p("days", "Days the cross must hold", 2., 1., 5., 1.)]),
         _ => None,
@@ -85,6 +93,8 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
     match id {
         "rpdt_ma_xover" => check(&s, p, &["fast", "slow"], true),
         "rpdt_ma_timefilter" => check(&s, p, &["fast", "slow", "days"], false),
+        "rpdt_3day_hl" => check(&s, p, &["n"], false),
+        "rpdt_5dh_ma_asym" => check(&s, p, &["n", "fast", "slow"], false),
         _ => check(&s, p, &[], false),
     }
 }
@@ -158,6 +168,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let m2 = avg(&mid, sl);
             let held = |i: usize, s: f64| i + 1 >= d && (i + 1 - d..=i).all(|j| m1[j].is_finite() && m2[j].is_finite() && (if s > 0. { above(m1[j], m2[j]) } else { above(m2[j], m1[j]) }));
             sar_next_open(x, from, to, |i| if held(i, 1.) { 1 } else if held(i, -1.) { -1 } else { 0 }, "MA1 vs midpoint MA2 held 2 days")
+        }
+        "rpdt_3day_hl" => {
+            let n = g("n") as usize;
+            sar_next_open(x, from, to, |i| {
+                if i < n { return 0 }
+                let (hh, ll) = (x.h[i - n..i].iter().cloned().fold(f64::MIN, f64::max), x.l[i - n..i].iter().cloned().fold(f64::MAX, f64::min));
+                if x.c[i] > hh { 1 } else if x.c[i] < ll { -1 } else { 0 }
+            }, "3-day high / low break")
+        }
+        "rpdt_5dh_ma_asym" => {
+            let (n, f, sl) = (g("n") as usize, g("fast") as usize, g("slow") as usize);
+            let (a, b) = (avg(&x.c, f), avg(&x.c, sl));
+            sar_next_open(x, from, to, |i| {
+                if i < n || i == 0 { return 0 }
+                let buy = x.c[i] > x.h[i - n..i].iter().cloned().fold(f64::MIN, f64::max);
+                let sell = a[i].is_finite() && b[i].is_finite() && a[i - 1].is_finite() && b[i - 1].is_finite() && above(b[i], a[i]) && !above(b[i - 1], a[i - 1]);
+                if buy == sell { 0 } else if buy { 1 } else { -1 }
+            }, "5-day high break / MA cross")
         }
         _ => return None,
     })

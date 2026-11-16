@@ -85,9 +85,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Read: sell at the close of the first day the RSI closes below 30 (stop), the close is below the previous day's low (trailing stop), or the RSI reaches 50 or more (target)",
               EOD],
             "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated in the book: (1) the RSI period; vault reading: 14 days, Wilder's RSI as StockCharts plots it (the book's charts are StockCharts, p.4; p.rsi sets any period); (2) when an index 'is at a 34 RSI'; vault reading: the first close at or below 34 after a close above it (the RSI rarely prints exactly 34). Fills at the signal close (the book's end-of-day rule, p.63; p.fill = 1: next open). Runs on indices, ETFs and stocks, US and India, as a declared application (the book says 'stock index'). No results printed."),
-        nt("sbma_p73_rsi51_short", "Index rally to RSI 51 below the 200-day SMA (short)", "Ch. 10 · Combining moving averages with other indicators", "Short",
-            "every threshold is an RSI level (51 / 54 / 32) and the book never states the RSI period",
-            &["E|\"You take a short position in a stock index as it rallies back to the 51 RSI, but the market is under the 200 day SMA. Your stop loss is a close over the 54 RSI. Your trailing stop is the previous day's high of day. Your target is to cover your short at the 32 RSI.\" (p.73)"], "Not testable."),
+        d("sbma_p73_rsi51_short", "Index rally to RSI 51 below the 200-day SMA (short)", "Ch. 10 · Combining moving averages with other indicators", "Short", Status::Live,
+            &["E|\"You take a short position in a stock index as it rallies back to the 51 RSI, but the market is under the 200 day SMA. Your stop loss is a close over the 54 RSI. Your trailing stop is the previous day's high of day. Your target is to cover your short at the 32 RSI.\" (p.73)",
+              "E|Read: sell short at the close of the day the RSI rises to 51 or more (below 51 the day before) while the close is below the 200-day SMA",
+              "X|Read: cover at the close of the first day the RSI closes above 54 (stop), the close is above the previous day's high (trailing stop), or the RSI falls to 32 or less (target)",
+              EOD],
+            "Adapted: 2 unstated details (lane R2, 16 Nov 2026, R4 #297/#339; the mirror of sbma_p73_rsi34 with the same readings). Unstated in the book: (1) the RSI period; vault reading: 14 days, Wilder's RSI as StockCharts plots it (the book's charts are StockCharts, p.4; p.rsi sets any period); (2) when an index 'rallies back to the 51 RSI'; vault reading: the first close at or above 51 after a close below it. Fills at the signal close (the book's end-of-day rule, p.63; p.fill = 1: next open). Runs on indices, ETFs and stocks, US and India, as a declared application (the book says 'stock index'); shorts are hypothetical on cash indices. No results printed."),
     ]
 }
 
@@ -108,7 +111,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "sbma_ema5" | "sbma_ema10_trend" | "sbma_ema10_sma50" | "sbma_ema21" | "sbma_sma100_rsi" | "sbma_ladder" =>
             ("sbma_single", "Burns single moving averages (not testable)", ""),
         "sbma_p73_rsi34" => ("sbma_p73_rsi34", "Burns index RSI 34 pullback above the 200-day SMA", "RSI 14"),
-        "sbma_p73_200_rsi65" | "sbma_p73_50_bounce" | "sbma_p73_rsi51_short" =>
+        "sbma_p73_rsi51_short" => ("sbma_p73_rsi51_short", "Burns index RSI 51 rally below the 200-day SMA (short)", "RSI 14"),
+        "sbma_p73_200_rsi65" | "sbma_p73_50_bounce" =>
             ("sbma_p73", "Burns entry/exit strategies p.73 (not testable)", ""),
         _ => return None,
     })
@@ -143,7 +147,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "sbma_sma50_long" => Some(vec![p("ma", "SMA length", 50., 10., 250., 5.), fill]),
         "sbma_sma200_short" => Some(vec![p("ma", "SMA length", 200., 50., 300., 10.), fill]),
-        "sbma_p73_rsi34" => Some(vec![p("rsi", "RSI period (vault reading 14; the book gives none)", 14., 2., 50., 1.), p("ma", "SMA length", 200., 50., 300., 10.), fill]),
+        "sbma_p73_rsi34" | "sbma_p73_rsi51_short" => Some(vec![p("rsi", "RSI period (vault reading 14; the book gives none)", 14., 2., 50., 1.), p("ma", "SMA length", 200., 50., 300., 10.), fill]),
         _ => None,
     }
 }
@@ -213,6 +217,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         positions(x, from, to, next_open, |i, pos| {
             if !m[i].is_finite() { return None; }
             if pos == 0. && c[i] > m[i] { Some(1.) } else if pos > 0. && c[i] < m[i] { Some(0.) } else { None }
+        })
+    } else if id == "sbma_p73_rsi51_short" { // lane R2 (R4 #297/#339): mirror of the RSI 34 rule
+        let (m, r, h) = (sma(c, len("ma")), crate::connors::rsi(c, len("rsi")), &x.h);
+        positions(x, from, to, next_open, |i, pos| {
+            if i == 0 || !m[i].is_finite() || !r[i].is_finite() || !r[i - 1].is_finite() { return None; }
+            if pos == 0. && r[i] >= 51. && r[i - 1] < 51. && c[i] < m[i] { Some(-1.) }
+            else if pos < 0. && (r[i] > 54. || c[i] > h[i - 1] || r[i] <= 32.) { Some(0.) } else { None }
         })
     } else if id == "sbma_p73_rsi34" { // lane R2B (R4 #297)
         let (m, r, l) = (sma(c, len("ma")), crate::connors::rsi(c, len("rsi")), &x.l);
@@ -393,7 +404,7 @@ mod next_reviewed_scope_tests {
     }
 }
 
-pub const R2B_REVIEWED: &[&str] = &["sbma_p73_rsi34"];
+pub const R2B_REVIEWED: &[&str] = &["sbma_p73_rsi34", "sbma_p73_rsi51_short"];
 // Lane R2B (13 Nov 2026, R4 #297): the p.73 index RSI pullback with its two labelled readings (RSI 14, 'at 34' = first close at or below).
 pub const ADMISSION_R2B: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && R2B_REVIEWED.contains(&def.id),
