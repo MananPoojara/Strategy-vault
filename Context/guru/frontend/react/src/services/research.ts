@@ -90,8 +90,7 @@ export interface ShareInventory {
     top_folders: { name: string; files: number; bytes: number }[]; duplicate_copies: number; unique_files: number;
     /** Optional (make_share_inventory.py --coverage): what the listing does and does not cover, and the NAS volume it sits on. */
     coverage?: { top_level: string[]; listed: number; unreadable: string[];
-      volume: { size_bytes: number; used_bytes: number; free_bytes: number; as_of: string; note: string };
-      shares?: { name: string; bytes: number; entries: number; complete: boolean }[] } };
+      volume: { size_bytes: number; used_bytes: number; free_bytes: number; as_of: string; note: string } } };
   compare: null | { base: string; base_date: string; base_files: number; base_bytes: number; added: number; removed: number; size_changed: number;
     added_bytes: number; removed_bytes: number; added_sample: string[]; removed_sample: string[]; changed_sample: string[] };
   types: { id: string; label: string; group: string; rule: string; files: number; bytes: number }[];

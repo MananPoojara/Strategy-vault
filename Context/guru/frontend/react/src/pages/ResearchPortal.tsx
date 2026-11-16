@@ -531,7 +531,7 @@ function ShareBody({ d }: { d: ShareInventory }) {
   const unnamed = d.kinds.filter(k => k.kind !== "author").reduce((a, k) => a + k.sources, 0);
   const strategiesOnSources = d.sources.reduce((a, s) => a + s.strategies, 0);
   const listed = fmtDate(L.date);
-  const cov = L.coverage, others = (cov?.shares ?? []).filter(x => x.name !== "research");
+  const cov = L.coverage;
   return (
     <section className="rp-share">
       <h1>Research share</h1>
@@ -546,9 +546,7 @@ function ShareBody({ d }: { d: ShareInventory }) {
         {c.backtested != null && <Stat n={c.backtested} label="Backtested" cls="ok" />}
       </div>
       {cov && <p className="rp-small rp-muted" data-share-volume>
-        The NAS volume at 192.168.4.50 holds {fmtBytesBoth(cov.volume.size_bytes)}, of which {fmtBytesBoth(cov.volume.used_bytes)} is used, across all its shares{others.length ? ` (${[L.root.split("\\").pop(), ...others.map(x => x.name)].join(", ")})` : ""}; the research share is {fmtBytesBoth(L.bytes)} of it.
-        {others.length > 0 && <> Measured by read-only scans: {[{ name: "research", bytes: L.bytes, complete: true }, ...others].map(x => `${x.name} ${fmtBytesBoth(x.bytes)}${x.complete ? "" : " so far (scan not finished)"}`).join("; ")}.</>}
-        {" "}The share size comes from the listing; SMB reports one size for the whole volume, so it cannot be read per share. Volume read {fmtStamp(cov.volume.as_of)}.
+        The NAS volume at 192.168.4.50 is {fmtBytesBoth(cov.volume.size_bytes)}, {fmtBytesBoth(cov.volume.used_bytes)} used, shared with the other shares on this NAS (e.g. share); the research share is {fmtBytesBoth(L.bytes)} of it. SMB reports one size for the whole volume, so it cannot be read per share. Volume read {fmtStamp(cov.volume.as_of)}.
       </p>}
       <div className="rp-checks">
         {cov && <Check ok={cov.listed >= cov.top_level.length - cov.unreadable.length}>Whole share covered: {cov.listed === cov.top_level.length - cov.unreadable.length ? `all ${cov.listed} top-level folders and files` : `${cov.listed} of ${cov.top_level.length} top-level entries`} are in the listing{cov.unreadable.length ? ` (${cov.unreadable.join(", ")}${cov.unreadable.includes("#recycle") ? ", the share's recycle bin," : ""} ${cov.unreadable.length > 1 ? "are" : "is"} not readable to this account)` : ""}.</Check>}
