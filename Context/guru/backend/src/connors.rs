@@ -1260,7 +1260,7 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
             let st = |i: usize| (hvv[i] / div).max(floor) / 100.0;
             let buy = |i: usize| c[i] > tr[i] && x.h[i] < ma[i] && c[i] <= ma[i] * (1.0 - st(i));
             let sell = |i: usize| c[i] < tr[i] && x.l[i] > ma[i] && c[i] >= ma[i] * (1.0 + st(i));
-            let side = |dir: f64| {
+            let side_from = |dir: f64, from: usize| {
                 let sig = |i: usize| if dir > 0.0 { buy(i) } else { sell(i) };
                 simulate(x, &Spec {
                     dir,
@@ -1273,6 +1273,7 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
                     },
                 }, from, to)
             };
+            let side = |dir: f64| side_from(dir, from);
             match id {
                 "ss_long" => side(1.0),
                 "ss_short" => side(-1.0),
@@ -1283,12 +1284,21 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
                     .map(|t| Trade { legs: vec![Leg { w: 1.0, ..t.legs[1] }], ..t })
                     .collect(),
                 _ => {
-                    // one position per ETF: merge both sides and skip a signal that starts while the other side is open
-                    // ponytail: skips the overlapping trade instead of re-simulating; rule 1 (200-day filter) makes overlaps rare
-                    let mut all = [side(1.0), side(-1.0)].concat();
-                    all.sort_by_key(|t| t.legs[0].i);
-                    let mut busy = None;
-                    all.into_iter().filter(|t| { let free = busy.map_or(true, |b| t.legs[0].i > b); if free { busy = Some(t.exit_i); } free }).collect()
+                    // one position per ETF (R4 #345 (4)): the earlier of the two sides' next entries opens the position, the other
+                    // side is ignored until it closes, then both are searched again from the bar after the exit (no entry on the exit bar)
+                    let (mut out, mut k) = (Vec::new(), from);
+                    while k < to {
+                        let (a, b) = (side_from(1.0, k), side_from(-1.0, k));
+                        let first = match (a.into_iter().next(), b.into_iter().next()) {
+                            (Some(a), Some(b)) => if a.legs[0].i < b.legs[0].i { a } else { b },
+                            (a, b) => match a.or(b) { Some(t) => t, None => break },
+                        };
+                        k = first.exit_i + 1;
+                        let open = first.open;
+                        out.push(first);
+                        if open { break; }
+                    }
+                    out
                 }
             }
         }
