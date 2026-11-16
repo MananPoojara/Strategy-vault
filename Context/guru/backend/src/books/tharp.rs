@@ -56,9 +56,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         make("tharp_false_breakout", "False breakout entry (Workbook)", "Workbook 2-2 · Entry techniques", "Long/Short",
             Status::NotTestable("duplicate of ss_turtle_soup (decision #277, lane K74: the same 20-day-low false breakout, live from Street Smarts); rules not fully defined: no profit exit (\"some trades will last 2 to 3 hours, others will last days\", Systems Development Workbook p.75); the entry idea runs in the vault as ss_turtle_soup"),
             &["E|Today makes a 20-day low; the previous low was not within the last 5 days; buy stop 8 ticks above the previous 20-day low, good today only (Workbook p.75)", "X|If filled, GTC sell stop just under today's low (Workbook p.75)"], "Exit rule missing."),
-        make("tharp_110day_breakout", "110-day breakout, weekly-volatility stop", "Super Trader ch. 13 · Simple system idea", "Long",
-            Status::NotTestable("multiple of weekly volatility for the stop is not given (\"something as simple as\")"),
-            &["E|Buy on a 110-day channel breakout (Super Trader p.213)", "X|Weekly volatility as worst-case exit, trailed from the close; 1% risk (Super Trader p.213)"], "Stop multiple unspecified (TYW p.258 suggests 0.7-2x weekly volatility as a range, not a rule)."),
+        make("tharp_110day_breakout", "110-day breakout, weekly-volatility trailing stop", "Super Trader ch. 13 · Simple system idea", "Long", Status::Live,
+            &["E|\"buying on a 110-day channel breakout, using the weekly volatility as a worst-case exit, trailing it from the close as a profit-taking stop, and not risking more than 1% of his equity on any trade\" (Super Trader p.213)",
+              "E|Read: buy at the close of the first day whose close is above the highest high of the previous 110 days, when flat (p.entry_n sets the days)",
+              "X|Read: the stop is the highest close since entry minus p.mult x the weekly volatility, only ever raised; exit at the first close below it (the book says he looks at the market only after the close, once a day)",
+              "A|Unstated in the book (lane R2, 16 Nov 2026, R4 #297/#339: 4 unstated details, UNVERIFIED): (1) 'channel breakout' = a close above the highest high of the previous 110 days; (2) 'weekly volatility' = the 10-day average of the rolling 5-day high-low range (the book gives no formula); (3) the stop multiple, 1.0 x weekly volatility, inside the 0.7-2 x range Tharp gives in Trade Your Way to Financial Freedom p.258 (p.mult sets any); (4) fills at the close of the signal day, the stop checked at each close. Position size = 1% of equity / (stop distance / entry price) as printed (p.risk_pct 0 = one full-equity unit)."],
+            "Super Trader p.213: an illustration ('could be something as simple as'), no results printed, so no #168 check. Entry and exit at the close: no intraday order (#240: 0%). Declared application on indices, ETFs and stocks, US and India; Cash-index runs are one price series with the 1% risk weight as printed."),
     ]
 }
 
@@ -67,7 +70,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "tharp_random_entry" => ("tharp_random", "Random entry", "3x volatility trailing stop, 1% risk"),
         "tharp_55_21_breakout" => ("tharp_breakout", "Channel breakout", "55-day entry / 21-day trailing stop"),
         "tharp_gallacher_10day" => ("tharp_breakout", "Channel breakout", "Gallacher 10-day (fundamental)"),
-        "tharp_110day_breakout" => ("tharp_breakout", "Channel breakout", "110-day (stop multiple missing)"),
+        "tharp_110day_breakout" => ("tharp_110day_breakout", "Channel breakout", "110-day, weekly-volatility stop"),
         "tharp_foolish_four" | "tharp_oneil_canslim" | "tharp_kaufman_ama" | "tharp_roberts_123" | "tharp_false_breakout" =>
             ("tharp_common", "Common systems reviewed", ""),
         _ => return None,
@@ -88,6 +91,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("exit_n", "Trailing stop days", 21., 5., 55., 1.),
             p("sizing", "Sizing: 0 full equity, 1 percent risk, 2 percent volatility", 0., 0., 2., 1.),
             p("pct", "Percent of equity for sizing 1/2", 1., 0.25, 5., 0.25),
+        ]),
+        "tharp_110day_breakout" => Some(vec![
+            p("entry_n", "Channel breakout days (printed 110)", 110., 20., 250., 5.),
+            p("mult", "Stop = multiple of weekly volatility (book gives none; TYW p.258: 0.7-2)", 1., 0.5, 3., 0.1),
+            p("risk_pct", "Percent risk per trade (0 = full-equity unit)", 1., 0., 3., 0.25),
         ]),
         _ => None,
     }
@@ -166,6 +174,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             t.open = true;
             out.push(t);
         }
+    } else if id == "tharp_110day_breakout" {
+        let (en, mult, risk) = (g("entry_n").round().max(1.) as usize, g("mult"), g("risk_pct") / 100.);
+        // weekly volatility: 10-day average of the rolling 5-day high-low range
+        let rng5: Vec<f64> = (0..x.r.len()).map(|i| if i >= 4 { x.h[i - 4..=i].iter().copied().fold(f64::NEG_INFINITY, f64::max) - x.l[i - 4..=i].iter().copied().fold(f64::INFINITY, f64::min) } else { f64::NAN }).collect();
+        let v = |i: usize| rng5[i - 9..=i].iter().sum::<f64>() / 10.;
+        let mut cur: Option<(Trade, f64)> = None;
+        for i in from.max(en.max(13))..to {
+            if let Some((t, stop)) = cur.as_mut() {
+                if x.c[i] < *stop { out.push(close_trade(cur.take().unwrap().0, i, x.c[i], "weekly-volatility trailing stop")); continue; }
+                *stop = stop.max(x.c[i] - mult * v(i));
+                continue;
+            }
+            let hh = x.h[i - en..i].iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            if x.c[i] > hh && v(i) > 0. {
+                let dist = mult * v(i);
+                let w = if risk > 0. { risk * x.c[i] / dist } else { 1. };
+                cur = Some((open_trade(1., i, x.c[i], w, "close"), x.c[i] - dist));
+            }
+        }
+        if let Some((t, _)) = cur { let mut t = close_trade(t, to, x.c[to], "open"); t.open = true; out.push(t); }
     } else {
         let (en, xn) = (g("entry_n").round().max(1.) as usize, g("exit_n").round().max(1.) as usize);
         let (sizing, pct) = (g("sizing").round() as i32, g("pct") / 100.);
@@ -272,4 +300,11 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"tharp") && (crate::books::tharp::reviewed(def.id)),
     label: "Trade Your Way to Financial Freedom tested these systems on a basket of futures; index, ETF and stock runs (US and India) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
     basis: "Van K. Tharp, Trade Your Way to Financial Freedom (1999): random entry with a trailing 3 x volatility stop and 1% risk (p.200-201) and the 55-day breakout with a 21-day trailing stop (p.286), reviewed in authors/tharp/admission/SOURCE-CONTRACT.md with independent chronological ledgers. The coin is a seeded generator (seed option) and fills follow the card's declared readings. No costs; the book's futures results are not reproduced.",
+};
+
+// Lane R2 (16 Nov 2026, R4 #297/#339): Super Trader p.213 110-day breakout with four labelled readings.
+pub const ADMISSION_R2: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "tharp_super_trader" && def.id == "tharp_110day_breakout",
+    label: "Van Tharp gives this system as an illustration without a test, a volatility formula or a stop multiple; runs on indices, ETFs and stocks, US and India, are a declared application with the readings stated on the card. Cash-index runs are one price series.",
+    basis: "Van K. Tharp, Super Trader (2009), p.213; stop-multiple range from Trade Your Way to Financial Freedom p.258; R4 #297/#339; independent check authors/relax-339/R2/w/ref5.py",
 };
