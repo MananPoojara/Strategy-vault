@@ -338,7 +338,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if let Some(r)=ctx.r.get(from) {
             // NYSE-breadth rules on NIFTY 50: say why (US series only; the NSE version is held), not just "series missing"
             if r.ticker=="NIFTY 50" && !def.id.starts_with("ptjmt_cvr") && !def.id.ends_with("_nse") {
-                return issue("needs_data","This version reads NYSE TRIN / NYSE advances-declines, a US market series; it is not run on NIFTY 50. The NSE-breadth version is held: it uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.");
+                return issue("needs_data","This version reads NYSE TRIN / NYSE advances-declines, a US market series; it is not run on NIFTY 50. The NYSE series measures another market (and its calendar differs from India), so it is not used for Indian instruments; the NSE-breadth twin card runs the same rule on the real NSE breadth held in the vault (R4 #340, labelled declared adaptation, UNVERIFIED).");
             }
             if def.id.starts_with("ptjmt_cvr") && r.date.as_str()<books::ptjmt::REAL_VIX_OHLC_FROM {
                 return issue("needs_data",format!("The CVR rules read the VIX high and low (CVR I and V also the open); the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::ptjmt::REAL_VIX_OHLC_FROM));

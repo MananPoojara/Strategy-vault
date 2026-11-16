@@ -141,12 +141,12 @@ fn connors_final_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool,us:
 // ---------------------------------------------------------------- NYSE breadth (user request 26 Oct 2026, connors-final)
 // The NYSE-breadth versions of the Connors TRIN / advance-decline rules read the vault's real NYSE breadth (extra_data/us,
 // to 2020-02-10) with the book's NYSE thresholds. Admission only: they run on every US index, ETF and stock as a
-// declared application; the NSE-breadth versions stay held (user decision 21 Oct 2026) and Indian instruments are refused.
+// declared application; the NSE-breadth twins now run (R4 #340) and the NYSE versions refuse Indian instruments.
 pub const NYSE_BREADTH_RULES:&[(&str,&str)]=&[("ats","ats_trin_thrust"),("ats","ats_padi"),("hfm","hfm_chadtp"),
     ("ptjmt","ptjmt_trin_reversals"),("ptjmt","ptjmt_trin_reversals_20"),("ptjmt","ptjmt_trin_thrusts"),("ptjmt","ptjmt_padi"),
     ("spmt","spmt_trin_1"),("spmt","spmt_trin_2"),("spmt","spmt_trin_3"),("spmt","spmt_trin_4"),("spmt","spmt_trin_5"),("spmt","spmt_nyse_adv"),
     ("ss","ss_ad_market_buster")];
-pub const NYSE_BREADTH_LABEL:&str="The book traded S&P 500 futures on NYSE breadth (NYSE TRIN / NYSE advances and declines). The signal is read from the real NYSE breadth series with the book's NYSE thresholds; runs on US indices, ETFs and stocks other than the book's market are a declared application (user request 26 Oct 2026), not the author's test. NYSE breadth in the vault ends on 2020-02-10 and is missing on a few days (for example 1999-11-26, 2002-06-20, 2019-08-20); a run uses the longest stretch with no missing day. Indian instruments are not run: the NSE-breadth version is held (thresholds not calibrated for India).";
+pub const NYSE_BREADTH_LABEL:&str="The book traded S&P 500 futures on NYSE breadth (NYSE TRIN / NYSE advances and declines). The signal is read from the real NYSE breadth series with the book's NYSE thresholds; runs on US indices, ETFs and stocks other than the book's market are a declared application (user request 26 Oct 2026), not the author's test. NYSE breadth in the vault ends on 2020-02-10 and is missing on a few days (for example 1999-11-26, 2002-06-20, 2019-08-20); a run uses the longest stretch with no missing day. Indian instruments are not run on this NYSE series (it measures another market and has a different calendar); the NSE-breadth twin card runs them on the real NSE breadth (R4 #340).";
 pub const SPMT_BREADTH_LABEL:&str="The course signals on SPY with the NYSE TRIN / NYSE advancers. On US instruments the signal is read from the real NYSE breadth series (to 2020-02-10, missing on a few days; a run uses the longest stretch with no missing day), a declared application beyond the author's market. On Indian instruments (NIFTY 50, NIFTYBANK, NIFTYMIDCAP100) the vault has no NYSE breadth on the Indian calendar, so R4 #340 reads the real NSE breadth it holds (extra_data/india TRIN / ADV) with the course's NYSE thresholds unchanged. NSE breadth behaves differently (TRIN median 0.70 vs NYSE 0.93; it fires 2-3x more often): a declared adaptation, not the author's test, UNVERIFIED.";
 pub fn nyse_breadth(def:&StrategyDef)->bool {NYSE_BREADTH_RULES.contains(&(def.book,def.id))}
 // ---------------------------------------------------------------- end NYSE breadth
@@ -513,12 +513,12 @@ fn spmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
 }
 fn ptjmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if def.book!="ptjmt" || !crate::books::ptjmt::reviewed_daily(def.id) || crate::books::ptjmt::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only; the NSE-breadth versions are held (thresholds not calibrated for India). {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only; the NSE-breadth twin cards run on the held NSE breadth (R4 #340, labelled UNVERIFIED). {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn ss_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     use crate::books::ss;
     if def.book!=ss::BOOK || !ss::reviewed_daily(def.id) || native_stock || ss::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("Street Smarts traded futures (and stocks for some setups). This review admits SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK for the futures setups; the A/D Market Buster only on SPX/SPY with NYSE breadth (the NSE-breadth version is held, thresholds not calibrated for India). {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Street Smarts traded futures (and stocks for some setups). This review admits SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK for the futures setups; the A/D Market Buster only on SPX/SPY with NYSE breadth (the NSE-breadth twin card runs on NIFTY indices, R4 #340, labelled UNVERIFIED). {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn ws5_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     use crate::books::ws5;
@@ -531,7 +531,7 @@ fn ats_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<
     if def.book!=ats::BOOK || !ats::reviewed_daily(def.id) {return None;}
     let ok=match stock_us {Some(us)=>def.id!="ats_cvr_equities" || us, None=>ats::admitted_symbol(def.id,ticker)};
     if ok {return None;}
-    Some(Issue{status:"needs_data",note:format!("Connors on Advanced Trading Strategies traded S&P 500 futures and US stocks. This review admits SPX and SPY for the CVR I, NYSE TRIN and NYSE breadth rules, also NIFTY 50 with India VIX for CVR II and III (the NSE TRIN / NSE breadth versions are held, thresholds not calibrated for India), SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK for the HV Thrust, and CVR I on stocks only for US stocks and US indices/ETFs with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close). {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Connors on Advanced Trading Strategies traded S&P 500 futures and US stocks. This review admits SPX and SPY for the CVR I, NYSE TRIN and NYSE breadth rules, also NIFTY 50 with India VIX for CVR II and III (the NSE TRIN / NSE breadth twin cards run on the held NSE breadth, R4 #340, labelled UNVERIFIED), SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK for the HV Thrust, and CVR I on stocks only for US stocks and US indices/ETFs with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close). {ticker} is outside that reviewed scope; no result is published.")})
 }
 /// Hedge Fund Manager CHADTP and the PTJ Options & Volatility CVR I sides / HV Thrust (connors/hfm-admission).
 fn hfm_otvt_reviewed(def:&StrategyDef)->bool {
@@ -540,7 +540,7 @@ fn hfm_otvt_reviewed(def:&StrategyDef)->bool {
 fn hfm_otvt_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
     if !hfm_otvt_reviewed(def) || crate::books::hfm::admitted_symbol(def.id,ticker) || crate::books::otvt::admitted_symbol(def.id,ticker) {return None;}
     if def.id=="hfm_ndxspx" && stock_us==Some(true) {return None;} // D1 CUD-06: US stocks with the NDX-vs-SPX signal (declared application)
-    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY (the NSE-breadth CHADTP is held, thresholds not calibrated for India), NDX-SPX (NASDAQ 100 vs S&P 500 signal) for SPX, SPY, DJI, QQQ, IWM, MDY and US stocks only, CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY (the NSE-breadth CHADTP twin runs on the NIFTY indices, R4 #340, labelled UNVERIFIED), NDX-SPX (NASDAQ 100 vs S&P 500 signal) for SPX, SPY, DJI, QQQ, IWM, MDY and US stocks only, CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
 }
 /// R4 #340 (16 Nov 2026): the NSE breadth / TRIN mappings of the NYSE-calibrated Connors rules are no longer held. They run
 /// on the real held NSE breadth (extra_data/india) with the book's NYSE thresholds as a labelled declared adaptation, UNVERIFIED.
