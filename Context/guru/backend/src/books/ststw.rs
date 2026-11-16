@@ -39,7 +39,7 @@ fn below(a: f64, ma: f64) -> bool {
 }
 
 const STOCKS: &str = "needs a US stock universe (every NYSE/Nasdaq stock 1995-2007 with 100-day average volume >= 250,000 shares and price > $5, incl. delisted names); the vault has index data only";
-const IDX: &str = " Book tested the S&P 500 cash index (SPX) / SPY; the vault runs the same rules on NIFTY 50, NIFTY BANK, NIFTY IT, NIFTY MIDCAP 100 (instrument swap only) and SPX/NDX/DJI/SPY/QQQ in the US check. One position at a time, no costs in the book.";
+const IDX: &str = " Book tested the S&P 500 cash index (SPX) / SPY; the vault runs the same rules on NIFTY 50, NIFTY BANK, NIFTY IT, NIFTY MIDCAP 100 (instrument swap only) and SPX/NDX/DJI/SPY/QQQ in the US check. One position at a time, no costs in the book. NIFTY note (R4 #340, UNVERIFIED on an index): the rule buys the daily open. The held NIFTY 50 and NIFTYBANK daily opens were compared with the first bar of the held 1-minute data: NIFTY 50 matches within 0.2% on 97-100% of days from 2010 (52% in 2008 and 75% in 2009, when the minute file starts at 09:55), NIFTYBANK on 79-94% of days in 2010-2014 and 100% from 2015; before the minute data (1995-2007, NIFTYMIDCAP100 before 2010) the opens cannot be checked. The whole history is kept (user rule), so early-year results rest on unchecked opens.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
