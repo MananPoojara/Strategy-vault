@@ -5,7 +5,7 @@ use super::apta::{ema, macd_run, run_long, Macd};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["apmacd_neutral", "apmacd_uptrend", "apmacd_downtrend", "apmacd_ad_stay"]; // _nse held: +450 is an NYSE A-D amount (engine guard)
+pub const REVIEWED: &[&str] = &["apmacd_neutral", "apmacd_uptrend", "apmacd_downtrend", "apmacd_ad_stay", "apmacd_ad_stay_nse"]; // _nse opened by IN1 17 Nov 2026 (R4 #340)
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "apmacd";
