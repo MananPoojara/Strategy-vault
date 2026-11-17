@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod release; // lane M3 (R4 #346): extra_data series keyed by their ReleaseDate
 mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod spread; // lane P1: two-leg spread positions
 mod jobs;
@@ -245,14 +246,18 @@ fn load_extra(dir: &str) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
         let Ok(text) = std::fs::read_to_string(e.path()) else { continue };
         let mut lines = text.lines();
         let head = parse_csv_fields(lines.next().unwrap_or(""));
-        let Some(di) = head.iter().position(|h| h.trim().eq_ignore_ascii_case("date")) else { continue };
-        let cols: Vec<usize> = (0..head.len()).filter(|&i| i != di).collect();
+        // lane M3 (R4 #346): a file with a ReleaseDate column is keyed by that date (release.rs); a blank release date is a gap
+        let rel = head.iter().position(|h| h.trim().eq_ignore_ascii_case("releasedate"));
+        let named = |n: &str| head.iter().position(|h| h.trim().eq_ignore_ascii_case(n));
+        let Some(di) = rel.or(named("date")) else { continue };
+        let cols: Vec<usize> = (0..head.len()).filter(|&i| i != di && !(rel.is_some() && (Some(i) == named("date") || Some(i) == named("reportdate")))).collect();
         for line in lines {
             let f = parse_csv_fields(line);
             let Some(date) = f.get(di).and_then(|d| normalize_date(d)) else { continue };
             for &i in &cols {
                 if let Some(v) = f.get(i).and_then(|x| parse_csv_number(x).ok()) {
                     let key = if cols.len() == 1 { series.clone() } else { format!("{series}.{}", head[i].trim()) };
+                    if rel.is_some() { release::mark(&key); }
                     out.entry((ticker.clone(), key)).or_default().insert(date.clone(), v);
                 }
             }
@@ -725,7 +730,7 @@ impl SelectedContext<'_>{
                 }
                 for ((symbol,key),values) in &st.market_extra {
                     if is_vix_series(key)&&self.volatility_source(st).is_none(){continue;}
-                    if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),rows.iter().map(|r|values.get(&r.date).copied().unwrap_or(f64::NAN)).collect());}
+                    if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),release::column(key,rows.iter().map(|r|r.date.as_str()),values));}
                 }
                 // EP4 (K51, #223): second series from the engine's own price file (NDX-SPX for hfm Ch.6 on US stocks, D1 CUD-06, unchanged)
                 if let Some(data)=books::rotation::PRELOADED.get() {second::inject(&mut ctx,data);}
@@ -2242,7 +2247,7 @@ fn main() {
             for ((tk, key), m) in &extra {
                 if is_vix_series(key)&&volatility_source.is_none(){continue;}
                 if tk == "*" || tk == t {
-                    c.extra.insert(key.clone(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+                    c.extra.insert(key.clone(), release::column(key, rows.iter().map(|r| r.date.as_str()), m));
                 }
             }
             // lane K75 (R4 #279 (2)): first-hour / last-hour series from this ticker's real 1-minute bars; an extra_data file
