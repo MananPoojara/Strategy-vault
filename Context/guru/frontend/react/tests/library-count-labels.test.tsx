@@ -16,8 +16,8 @@ it("uses plain counter labels and explains grouping without changing supplied co
  expect(html).not.toContain("Download book inventory");expect(html).not.toContain(">Larry Connors</a>");expect(html).toContain("Browse all strategies");
  expect(html).not.toContain("Implemented methods");expect(html).not.toContain("Backtest families on");
  // Whole-share reviewed totals are shown; the converted subset appears in the note only when supplied.
- expect(html).toContain(`<dt>Trading authors (estimate)</dt><dd data-count="${shareReview.authors}">${shareReview.authors}</dd><dd class="count-asof">as of 11 Nov 2026</dd>`);
- expect(html).toContain(`<dt>Trading books (estimate)</dt><dd data-count="${shareReview.books}">${shareReview.books}</dd><dd class="count-asof">as of 11 Nov 2026</dd>`);
+ expect(html).toContain(`<dt>Trading authors (estimate)</dt><dd data-count="${shareReview.authors}">${shareReview.authors}</dd><dd class="count-asof">as of 16 Nov 2026</dd>`);
+ expect(html).toContain(`<dt>Trading books (estimate)</dt><dd data-count="${shareReview.books}">${shareReview.books}</dd><dd class="count-asof">as of 16 Nov 2026</dd>`);
  expect(html).toContain("some were classified from names and notes");
  expect(html).toContain("same name and size");
  const withTotals=renderToStaticMarkup(<HomePage snapshot={{...snapshot,home:{...home,libraryTotals:{authors:198,books:169,otherSources:191}}}}/>);
