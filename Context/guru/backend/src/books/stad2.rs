@@ -25,7 +25,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad2";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_dow" /* lane PG: Dow averages from Norgate */, "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
+pub const REVIEWED: &[&str] = &["stad5_im1" /* lane M2 */, "stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_dow" /* lane PG: Dow averages from Norgate */, "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -599,11 +599,14 @@ fn defs_a() -> Vec<Def> {
         "X|MedXAvg < SlowXAvg: ExitLong next bar at market (short mirror); ExitLong next bar at Close - StopAmt($1000)/BigPointValue stop",
         "X|Format dialog: \"Under the Stops tab, we enabled a money management stop of $1,200\" (p.16); no slippage or commission (p.16)"],
       "Vol 5 ch.2 p.12-20. Book: Swiss Franc + bonds 6/93-5/98: $28,425 on 56 trades, 62% winners, win/loss 1.47, PF 2.45. Runs on the Norgate Swiss franc continuous contract with the Norgate T-bond contract as Data2 (its XAverage on its own bars, carried to the franc's dates, TradeStation Data2; lane F1C, R4 #293, #314 (4)): $1,000 and $1,200 at $125,000 per 1.00 (0.008 and 0.0096). Variables start at 0 as declared, so in the first 4 bars of the data (1979) the buy stop at BuyLevel 0 fills at the open (literal). MaxBarsBack 11 (Average(TrueRange,10)). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad5_curbond", "Currency/Bond", "Vol 5")),
-    d("stad5_im1", "Intermarket I", "Vol 5 · Trending", "Long",
-      NeedsData("Needs Data2 = the US Treasury bond yield (daily); no rate series in the vault."),
-      &["E|If Close of Data2 < Close[1] of Data2 + LYldTrg(.25): Buy this bar on close (Vol 5 p.21 code; prose '25% of the yield' - code adds .25)",
-        "X|BarsSinceEntry > TNBars(50): ExitLong this bar on close"],
-      "Vol 5 ch.2 p.20-25. Book: S&P index 1/88-9/98: 132 trades, 88% profitable, PF 5.58.", ("stad5_im1", "Intermarket I", "Vol 5")),
+    d("stad5_im1", "Intermarket I", "Vol 5 · Trending", "Long", Live,
+      &["E|If Close of Data2 < Close[1] of Data2 + LYldTrg(.25): Buy this bar on close (Vol 5 p.21 code; the prose says '25% of the yield', the code adds .25)",
+        "X|BarsSinceEntry > TNBars(50): ExitLong this bar on close",
+        "A|[Declared reading 1, lane M2 17 Nov 2026, R4 #346] Data2 = the US Treasury long-bond yield: FRED DGS30 (Treasury.gov 30 Yr par, verified exact by lane DA, 1977-02-15..); a bar without a yield print (bond-market holidays, and the 2002-02-19..2006-02-08 gap where the 30-year was discontinued) gives no signal, nothing is filled in; option bond = 10 reads DGS10 instead (labelled adaptation, never spliced)",
+        "A|[Declared reading 2] .25 is added to the previous bar's yield in percentage points (the code), and the order fills at this bar's close (the code), not the next open (the prose)",
+        "A|[Declared reading 3] BarsSinceEntry counts bars from the entry bar (0): the exit is at the close of the 51st bar after the entry bar",
+        "A|[Declared reading 4] a new entry is possible from the bar after an exit, never on the exit bar"],
+      "Vol 5 ch.2 p.20-25 (STAD05 p.21 re-read). Book: S&P index 1/88-9/98: 132 trades, 88% profitable, PF 5.58 (the book's yield series is not named; ours is FRED DGS30, so the count is compared, not matched). Runs on SPX only (the S&P index of the book), US only; UNVERIFIED.", ("stad5_im1", "Intermarket I", "Vol 5")),
     d("stad5_im2", "Intermarket II", "Vol 5 · Trending", "Long",
       NeedsData("Needs Data3 = the US prime rate (daily); no rate series in the vault."),
       &["F|If Close of Data3 < Close[1] of Data3 then prSteps += 1 else if Close of Data3 > Close[1] then prSteps = 0 (Vol 5 p.26-27 code)",
@@ -1152,6 +1155,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad5_curbond" => [vec![p("fast", "Fast XAverage", 4., 2., 20., 1.), p("med", "Medium XAverage", 12., 5., 40., 1.), p("slow", "Slow XAverage", 23., 10., 60., 1.),
             p("bondma", "Bond XAverage (Data2)", 50., 10., 100., 1.), p("actvbar", "Bars the entry stop stays active", 5., 1., 20., 1.), usd("stop_usd", "StopAmt: risk trailing stop from the close ($)", 1000.),
             usd("mm_usd", "Money-management stop ($, Format dialog)", 1200.)], bpv(125000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad5_im1" => vec![p("tnbars", "TNBars: exit when BarsSinceEntry exceeds", 50., 5., 250., 1.), p("lyldtrg", "LYldTrg (yield points added to the previous yield)", 0.25, 0., 2., 0.05), p("bond", "Data2: 30 = DGS30, 10 = DGS10 (adaptation)", 30., 10., 30., 20.)],
         "stad5_fib382" => [vec![p("xavglen", "XAverage length", 15., 5., 40., 1.), p("hilolen", "High/low range bars", 50., 20., 100., 5.), p("retrace", "Retracement", 0.382, 0.2, 0.618, 0.01),
             p("setuplen", "Setup length bars", 24., 5., 50., 1.), usd("mm_usd", "Money-management stop ($)", 200.), usd("tr_usd", "$ Risk trailing ($)", 400.)], bpv(100., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_hlosc" => [vec![p("len1", "High/Low XAverage length", 10., 3., 30., 1.), p("len2", "Close XAverage length", 60., 20., 120., 5.), p("trailstp", "TrailStp ($ / BigPointValue)", 700., 0., 2000., 50.),
@@ -1342,6 +1346,15 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if mx[i] < sx[i] { nx.push(o(A::Xl, P::Mkt, "MedXAvg below SlowXAvg")); }
                 if mx[i] > sx[i] { nx.push(o(A::Xs, P::Mkt, "MedXAvg above SlowXAvg")); }
                 nx.push(o(A::Xl, P::Stop(c[i] - stp), "Risk trailing stop")); nx.push(o(A::Xs, P::Stop(c[i] + stp), "Risk trailing stop"));
+            })
+        }
+        "stad5_im1" => {
+            // lane M2 (R4 #346): Data2 = the staged Treasury yield (extra_data DGS30 / DGS10), aligned to this context's bars by date
+            let Some(y) = x.extra.get(if g("bond") >= 20. { "DGS30" } else { "DGS10" }) else { return Some(vec![]) };
+            let (tn, ly) = (g("tnbars"), g("lyldtrg"));
+            run_ts(x, from, to, 2, cfg(), |i, st, now, _nx| {
+                if st.pos == 1 { if st.bse(i) as f64 > tn { now.push(o(A::Xl, P::Mkt, "TNBars")); } }
+                else if y[i].is_finite() && y[i - 1].is_finite() && y[i] < y[i - 1] + ly { now.push(o(A::Buy, P::Mkt, "TBond")); }
             })
         }
         "stad5_fib382" => {
@@ -2612,6 +2625,38 @@ mod tests {
     fn rows(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
         v.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: Some(1000.0) }).collect()
     }
+    /// Lane M2: STAD5 Intermarket I on a hand-made yield series.
+    #[test]
+    fn im1_buys_when_yield_is_below_previous_plus_quarter_and_exits_after_bar_51() {
+        let r = rows(&(0..70).map(|i| { let c = 100. + i as f64; (c, c, c, c) }).collect::<Vec<_>>());
+        let mut x = Ctx::new(&r, &r, &[]);
+        let mut y = vec![5.0; 70];
+        y[3] = 5.3; y[10] = f64::NAN; // a rise of 0.3 on bar 3 = no signal; a missing print = no signal on 10 and 11
+        x.extra.insert("DGS30".into(), y);
+        let t = run("stad5_im1", &x, 0, 69, &Params::new()).unwrap();
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (2, 53)); // bar 2: first with a previous print; BarsSinceEntry 51 on bar 53
+        assert_eq!(t[1].legs[0].i, 54); // flat after the exit bar, so the next entry is bar 54
+        assert!(run("stad5_im1", &Ctx::new(&r, &r, &[]), 0, 69, &Params::new()).unwrap().is_empty());
+    }
+    /// Lane M2 reference feed (SPX + DGS30 or DGS10): `IM_DUMP=out IM_US=us_data.csv IM_Y=DGS30.csv IM_BOND=30 cargo test --release im_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn im_dump() {
+        let (Ok(out), Ok(us), Ok(yf)) = (std::env::var("IM_DUMP"), std::env::var("IM_US"), std::env::var("IM_Y")) else { return };
+        let iso = |d: &str| { let v: Vec<&str> = d.split('-').collect(); format!("{}-{}-{}", v[2], v[1], v[0]) };
+        let rows: Vec<Row> = std::fs::read_to_string(us).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != "SPX" { return None; }
+            Some(Row { ticker: f[0].into(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let ym: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(yf).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect();
+        let bond: f64 = std::env::var("IM_BOND").ok().and_then(|v| v.parse().ok()).unwrap_or(30.);
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert(if bond >= 20. { "DGS30" } else { "DGS10" }.into(), rows.iter().map(|r| ym.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let mut p = Params::new(); p.insert("bond".into(), bond);
+        let t = run("stad5_im1", &x, 0, rows.len() - 1, &p).unwrap();
+        let mut s = String::new();
+        for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, s).unwrap();
+    }
     #[test]
     fn pyramid_adds_legs_and_partial_exit_averages() {
         let r = rows(&[(100., 101., 99., 100.), (100., 102., 99., 101.), (101., 104., 100., 103.), (103., 106., 102., 105.), (105., 106., 104., 105.)]);
@@ -2686,7 +2731,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 70); // + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 71); // + stad5_im1 (lane M2); + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 
