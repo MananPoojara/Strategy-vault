@@ -2235,6 +2235,7 @@ fn main() {
             let mut c = Ctx::new(rows, bench, source_vix);
             // intraday phase 1: index only; days are read on demand
             c.minutes = intraday_dir.as_deref().and_then(|d| intraday::Minutes::load(d, t)).map(|m| &*Box::leak(Box::new(m)));
+            if t.starts_with("NIFTY") { c.fut = intraday_dir.as_deref().and_then(|d| intraday::Minutes::scan_fut(&format!("{d}/{}.FUT1.m1.csv", t.replace(' ', "_")))).map(|m| &*Box::leak(Box::new(m))); } // lane M1
             c.options = options_dir.as_deref().and_then(|d| options::Chain::load(d, t)).map(|m| &*Box::leak(Box::new(m)));
             // the VIX's own daily OHLC as built-in series (VIX.Open/High/Low/Close), aligned by date
             let vx: BTreeMap<&str, &Row> = source_vix.iter().map(|v| (v.date.as_str(), v)).collect();

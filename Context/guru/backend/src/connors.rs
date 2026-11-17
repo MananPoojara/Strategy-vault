@@ -301,6 +301,8 @@ pub struct Ctx<'a> {
     pub native_market: Option<crate::baskets::Market>,
     /// intraday phase 1: real 1-minute bars of this ticker (None = not loaded; minute-path rules then report a data gap)
     pub minutes: Option<&'static crate::intraday::Minutes>,
+    /// lane M1: NIFTY / BANKNIFTY futures 1-minute with volume (None unless `<intraday dir>/<T>.FUT1.m1.csv` exists)
+    pub fut: Option<&'static crate::intraday::Minutes>,
     /// options phase 2: real EOD monthly-option chain of this underlying (None = not loaded; option rules report a data gap)
     pub options: Option<&'static crate::options::Chain>,
 }
@@ -396,6 +398,7 @@ impl<'a> Ctx<'a> {
             extra: BTreeMap::new(),
             native_market: None,
             minutes: None,
+            fut: None,
             options: None,
             c,
             r,

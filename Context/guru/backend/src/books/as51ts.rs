@@ -30,6 +30,8 @@ pub const DAILY: &[&str] = &["as51_ichimoku", "as51_fractal_sma", "as51_donchian
 pub const REPO_SERIES: &str = "RBI_REPO_RATE.ChangeBp";
 /// Coded minute rules (admitted through intraday_ep::K70 on the four minute tickers).
 pub const INTRA: &[&str] = &["as51_st_pivot", "as51_double_rsi", "as51_ha_psar", "as51_ema_scalp"];
+pub const FUT: &[&str] = &[]; // lane M1: as51_vwap_sd is held (5 details); its code is kept (vwap_sd)
+const FUTMIN: &str = "A|Minute path [convention, intraday_ep6]: orders work on the real 1-minute futures bars: a stop or limit fills at its level, or at the minute's open when the minute opens through it; inside a minute the path runs to the extreme nearer the open first, and a minute whose result depends on that order is counted (#240).";
 pub fn reviewed(id: &str) -> bool { DAILY.contains(&id) }
 
 const SRC: &str = "Aseem Singhal, 51 Trading Strategies (ZebraLearn 2023), web-reader screenshots in the research share";
@@ -89,8 +91,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"STOPLOSS may be placed below the Supertrend. The TARGET is at the trader's discretion or exit when the price closes below Supertrend\"; \"Since we are using Supertrend, it acts like the stoploss and the trade is exited at the closing of the candle below the Supertrend\" (p.95); \"since this was an intraday trade we needed to close the trade at 3:15 PM\" (p.97)",
               "A|Read: session-aligned 5-minute bars from the 1-minute file, one continuous series (TradingView); Supertrend = TradingView ta.supertrend(3, 7) on (H+L)/2 with Wilder's ATR; pivots = Traditional from the previous daily bar: P = (H+L+C)/3, R1 = 2P - L, S1 = 2P - H. Setup at a bar's close: close above R1, Supertrend bullish, close above open; then a buy stop at that close for the next bar only (short: the mirror below S1); exit at the close of a bar on which the Supertrend turns bearish (the close below it); square-off at the close of the bar ending 15 minutes before the session close (15:15 NSE, 15:45 US); no new order from that bar on [Declared readings]. The 'discretionary' target is not modelled. NIFTY 50 examples; SPY, SPX and NIFTYBANK are a declared application.", MIN],
             NO_TABLE),
-        data!("as51_vwap_sd", "2.3 VWAP + 2-standard-deviation band reversal (5-minute)", "E|Bearish close below the lower 2-SD VWAP band, next candle bullish: buy above its high; stop its low; targets VWAP and the upper band (p.97-107 [PDF 50-55])",
-            "Held (decisions #268 (3), #271(5)): the rule needs real traded volume for the session VWAP, and the vault's 1-min bar files carry no volume data (p.97-107)."),
+        held!("as51_vwap_sd", "2.3 VWAP + 2-SD band reversal (5-minute)", "E|Bearish close below the lower 2-SD VWAP band, next candle bullish: buy above its high; stop its low; targets VWAP and the upper band (p.97-107 [PDF 50-55])",
+            "Held (lane M1, 17 Nov 2026, lead ruling under #339/#343): the rule is complete and the code is kept (vwap_sd, run on the DI NIFTY / BANKNIFTY futures minutes with volume: pandas reference 0 mismatches over 8,258 trades), but it needs 5 unstated details, over the cap of 4: the next-bar reading, the one-bar buy stop, the fixed target level, the unfiltered 1:2 ratio and the band-deviation definition. The book (p.101) only says the VWAP comes with 'upper and lower range of standard deviation' and prints no formula, and TradingView's ta.vwap page prints none either (text copy authors/data-1117/M1/w/tradingview_ta_vwap.txt), so the volume-weighted deviation would be our reading and #343 counts indicator definitions. Un-hold if a source prints the band formula."),
         data!("as51_rsi_vo", "2.4 RSI + Volume Oscillator (5-minute)", "E|Volume Oscillator(5,10) near -30% with RSI(14) at 30 in an uptrend dip: buy; stop the swing low; target RSI overbought (p.107-115 [PDF 55-59])",
             "Held (decision #268): needs volume data (the vault's 1-min bar files carry none), and 'near -30%', 'in tandem', the trend and the swing low are undefined (p.107-115)."),
         held!("as51_pivot_pullback", "2.5 Pivot-point pullback (5-minute)", "E|Pullback without breaking a pivot = reversal trade, after breaking it = continuation; bullish candle after the pullback; stop its low; target the next pivot (p.115-125 [PDF 59-64])",
@@ -601,7 +603,7 @@ fn series(x: &Ctx, from: usize, to: usize, n: u16) -> Vec<B> {
 
 /// A working entry order: direction, level, protective stop, target risk multiple (NaN: none), last bar index it works on.
 #[derive(Clone, Copy, Debug)]
-struct Pend { d: f64, lv: f64, stop: f64, rr: f64, until: usize }
+struct Pend { d: f64, lv: f64, stop: f64, rr: f64, tgt: f64, until: usize }
 #[derive(Clone, Copy, Debug)]
 struct IPos { d: f64, ei: usize, ep: f64, stop: f64, tgt: f64, amb: bool }
 #[derive(Clone, Default)]
@@ -625,7 +627,7 @@ fn walk(s: &mut W, segs: &[Seg], i: usize) -> Vec<Ev> {
             if s.pos.is_none() {
                 if let Some(p) = s.pend {
                     if let Some(px) = reach(&g, p.lv, p.d > 0.0) {
-                        let tgt = if p.rr.is_finite() { px + p.rr * (px - p.stop) } else { f64::NAN };
+                        let tgt = if p.tgt.is_finite() { p.tgt } else if p.rr.is_finite() { px + p.rr * (px - p.stop) } else { f64::NAN }; // lane M1: tgt = a fixed price target
                         s.pos = Some(IPos { d: p.d, ei: i, ep: px, stop: p.stop, tgt, amb: false });
                         s.pend = None;
                         ev.push(Ev { k: 0, px, up: p.d > 0.0 });
@@ -693,6 +695,60 @@ fn drive(x: &Ctx, v: &[B], place: &dyn Fn(usize) -> Option<Pend>, stop_of: &dyn 
 }
 pub const AMB: &str = " · ambiguous minute";
 
+
+/// Lane M1: session-aligned N-minute bars of the NIFTY / BANKNIFTY futures (x.fut) with each bar's volume.
+fn series_fut(x: &Ctx, from: usize, to: usize, n: u16) -> (Vec<B>, Vec<f64>) {
+    let (mut out, mut vol) = (vec![], vec![]);
+    let Some(f) = x.fut else { return (out, vol) };
+    for i in from..=to.min(x.r.len().saturating_sub(1)) {
+        let r = &x.r[i];
+        let Some((m, mv)) = f.fut_day(&r.date) else { continue };
+        let (open, close) = (crate::intraday::session_open(&r.ticker, &r.date), crate::intraday_ep::session_close(&r.ticker));
+        let bars = crate::intraday_ep::nbars(&m, open, n, close);
+        let k = bars.len();
+        for (j, z) in bars.into_iter().enumerate() {
+            vol.push(mv[z.a..z.b].iter().sum());
+            out.push(B { i, s: z.s, e: z.e, open, close, o: z.o, h: z.h, l: z.l, c: z.c, m: m[z.a..z.b].to_vec(), first: j == 0, last: j + 1 == k });
+        }
+    }
+    (out, vol)
+}
+
+/// Session VWAP of hlc3 and its +/- mult SD band, per bar (TradingView ta.vwap, anchor session).
+pub fn vwap_bands(v: &[(bool, f64, f64, f64, f64)], mult: f64) -> Vec<(f64, f64, f64)> {
+    // v = (first-of-session, high, low, close, volume)
+    let (mut pv, mut pv2, mut vv) = (0.0, 0.0, 0.0);
+    v.iter().map(|&(first, h, l, c, q)| {
+        if first { pv = 0.0; pv2 = 0.0; vv = 0.0; }
+        let p = (h + l + c) / 3.0;
+        pv += p * q; pv2 += p * p * q; vv += q;
+        let w = pv / vv;
+        let sd = (pv2 / vv - w * w).max(0.0).sqrt();
+        (w, w - mult * sd, w + mult * sd)
+    }).collect()
+}
+
+#[allow(dead_code)] // held (5 details): hand-run only, from the m1_dump test
+pub fn vwap_sd(x: &Ctx, from: usize, to: usize, mult: f64, far: bool) -> Vec<Trade> {
+    let (v, q) = series_fut(x, from, to, 5);
+    let vb = vwap_bands(&v.iter().zip(&q).map(|(b, &q)| (b.first, b.h, b.l, b.c, q)).collect::<Vec<_>>(), mult);
+    let cut = |k: usize| v[k].e >= v[k].close - 15;
+    let place = |k: usize| -> Option<Pend> {
+        if k == 0 || v[k - 1].i != v[k].i { return None; }
+        let (a, b) = (&v[k - 1], &v[k]);
+        if a.c < a.o && a.c < vb[k - 1].1 && b.c > b.o {
+            let t = if far { vb[k].2 } else { vb[k].0 };
+            if t > b.h { return Some(Pend { d: 1.0, lv: b.h, stop: b.l, rr: f64::NAN, tgt: t, until: k + 1 }); }
+        }
+        if a.c > a.o && a.c > vb[k - 1].2 && b.c < b.o {
+            let t = if far { vb[k].1 } else { vb[k].0 };
+            if t < b.l { return Some(Pend { d: -1.0, lv: b.l, stop: b.h, rr: f64::NAN, tgt: t, until: k + 1 }); }
+        }
+        None
+    };
+    drive(x, &v, &place, &|_, q| q.stop, &|_, _| None, &cut, to)
+}
+
 fn st_pivot(x: &Ctx, from: usize, to: usize, n: usize, fac: f64) -> Vec<Trade> {
     let v = series(x, from.max(1), to, 5);
     let (h, l, c): (Vec<f64>, Vec<f64>, Vec<f64>) = (v.iter().map(|b| b.h).collect(), v.iter().map(|b| b.l).collect(), v.iter().map(|b| b.c).collect());
@@ -703,8 +759,8 @@ fn st_pivot(x: &Ctx, from: usize, to: usize, n: usize, fac: f64) -> Vec<Trade> {
         let (ph, pl, pc) = (x.h[b.i - 1], x.l[b.i - 1], x.c[b.i - 1]);
         let p = (ph + pl + pc) / 3.0;
         let (r1, s1) = (2.0 * p - pl, 2.0 * p - ph);
-        if b.c > r1 && dir[k] == -1 && b.c > b.o { return Some(Pend { d: 1.0, lv: b.c, stop: f64::NAN, rr: f64::NAN, until: k + 1 }); }
-        if b.c < s1 && dir[k] == 1 && b.c < b.o { return Some(Pend { d: -1.0, lv: b.c, stop: f64::NAN, rr: f64::NAN, until: k + 1 }); }
+        if b.c > r1 && dir[k] == -1 && b.c > b.o { return Some(Pend { d: 1.0, lv: b.c, stop: f64::NAN, rr: f64::NAN, tgt: f64::NAN, until: k + 1 }); }
+        if b.c < s1 && dir[k] == 1 && b.c < b.o { return Some(Pend { d: -1.0, lv: b.c, stop: f64::NAN, rr: f64::NAN, tgt: f64::NAN, until: k + 1 }); }
         None
     };
     let ex = |k: usize, q: &IPos| -> Option<&'static str> {
@@ -730,8 +786,8 @@ fn double_rsi(x: &Ctx, from: usize, to: usize, lo: f64, hi: f64) -> Vec<Trade> {
     let place = |k: usize| -> Option<Pend> {
         if k == 0 { return None; }
         let b = &v[k];
-        if r60[k] > 50.0 && r5[k].min(r5[k - 1]) < lo && b.c > b.o { return Some(Pend { d: 1.0, lv: b.h, stop: b.l, rr: f64::NAN, until: k + 1 }); }
-        if r60[k] < 50.0 && r5[k].max(r5[k - 1]) > hi && b.c < b.o { return Some(Pend { d: -1.0, lv: b.l, stop: b.h, rr: f64::NAN, until: k + 1 }); }
+        if r60[k] > 50.0 && r5[k].min(r5[k - 1]) < lo && b.c > b.o { return Some(Pend { d: 1.0, lv: b.h, stop: b.l, rr: f64::NAN, tgt: f64::NAN, until: k + 1 }); }
+        if r60[k] < 50.0 && r5[k].max(r5[k - 1]) > hi && b.c < b.o { return Some(Pend { d: -1.0, lv: b.l, stop: b.h, rr: f64::NAN, tgt: f64::NAN, until: k + 1 }); }
         None
     };
     let ex = |k: usize, q: &IPos| -> Option<&'static str> {
@@ -791,8 +847,8 @@ fn ha_psar(x: &Ctx, from: usize, to: usize, rr: f64) -> Vec<Trade> {
         if k == 0 || k + 1 >= m { return None; }
         let stop = nxt[k];
         let (bull, bear) = (flat(hl[k], ho[k], k), flat(hh[k], ho[k], k));
-        if hc[k] > ho[k] && bull && below[k] && r[k - 1] <= 50.0 && r[k] > 50.0 && stop < hh[k] { return Some(Pend { d: 1.0, lv: hh[k], stop, rr, until: k + 1 }); }
-        if hc[k] < ho[k] && bear && !below[k] && r[k - 1] >= 50.0 && r[k] < 50.0 && stop > hl[k] { return Some(Pend { d: -1.0, lv: hl[k], stop, rr, until: k + 1 }); }
+        if hc[k] > ho[k] && bull && below[k] && r[k - 1] <= 50.0 && r[k] > 50.0 && stop < hh[k] { return Some(Pend { d: 1.0, lv: hh[k], stop, rr, tgt: f64::NAN, until: k + 1 }); }
+        if hc[k] < ho[k] && bear && !below[k] && r[k - 1] >= 50.0 && r[k] < 50.0 && stop > hl[k] { return Some(Pend { d: -1.0, lv: hl[k], stop, rr, tgt: f64::NAN, until: k + 1 }); }
         None
     };
     // the stop working on bar k is the SAR level for bar k (from bar k-1's close)
@@ -809,8 +865,8 @@ fn ema_scalp(x: &Ctx, from: usize, to: usize, n: usize, rr: f64) -> Vec<Trade> {
         // the day's 2nd bar (k-1 is the day's first)
         if k == 0 || !v[k - 1].first || v[k].i != v[k - 1].i || until[k] <= k { return None; }
         let b = &v[k];
-        if b.c > e[k] && b.l > e[k] { return Some(Pend { d: -1.0, lv: b.l, stop: b.h, rr, until: until[k] }); }
-        if b.c < e[k] && b.h < e[k] { return Some(Pend { d: 1.0, lv: b.h, stop: b.l, rr, until: until[k] }); }
+        if b.c > e[k] && b.l > e[k] { return Some(Pend { d: -1.0, lv: b.l, stop: b.h, rr, tgt: f64::NAN, until: until[k] }); }
+        if b.c < e[k] && b.h < e[k] { return Some(Pend { d: 1.0, lv: b.h, stop: b.l, rr, tgt: f64::NAN, until: until[k] }); }
         None
     };
     drive(x, &v, &place, &|_, q| q.stop, &|_, _| None, &|_| false, to)
@@ -1430,7 +1486,7 @@ mod tests {
     fn all_51_cards_and_daily_rules_run() {
         let cat = catalogue();
         assert_eq!(cat.len(), 51);
-        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), DAILY.len() + INTRA.len() + OPT_IDS.len());
+        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), DAILY.len() + INTRA.len() + FUT.len() + OPT_IDS.len());
         for d in &cat { assert!(family_of(d.id).is_some() && (d.status == Status::Live) == params(d.id).is_some(), "{}", d.id); }
         let r = rows(900);
         let x = Ctx::new(&r, &r, &[]);
@@ -1473,8 +1529,8 @@ mod tests {
             m: vec![Bar1 { m: 570 + 5 * k, o, h, l, c }], first: k == 0, last: k == 3 };
         let v = vec![bar(0, 100., 101., 99., 100.5), bar(1, 100.5, 100.8, 100., 100.6), bar(2, 100.6, 102., 100.5, 101.8), bar(3, 101.8, 102., 101., 101.5)];
         let place = |k: usize| match k {
-            0 => Some(Pend { d: 1., lv: 105., stop: f64::NAN, rr: f64::NAN, until: 1 }),
-            1 => Some(Pend { d: 1., lv: 100.7, stop: f64::NAN, rr: f64::NAN, until: 2 }),
+            0 => Some(Pend { d: 1., lv: 105., stop: f64::NAN, rr: f64::NAN, tgt: f64::NAN, until: 1 }),
+            1 => Some(Pend { d: 1., lv: 100.7, stop: f64::NAN, rr: f64::NAN, tgt: f64::NAN, until: 2 }),
             _ => None };
         let t = drive(&x, &v, &place, &|_, q| q.stop, &|_, _| None, &|_| false, 4);
         assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_px), (1, 100.7, 101.5));
@@ -1514,14 +1570,14 @@ mod tests {
     #[test]
     fn minute_walk_entry_stop_target() {
         // a buy stop at 101 fills, then the target 101 + 2 x (101 - 100) = 103 is reached before the stop
-        let mut s = W { pend: Some(Pend { d: 1., lv: 101., stop: 100., rr: 2., until: 9 }), ..Default::default() };
+        let mut s = W { pend: Some(Pend { d: 1., lv: 101., stop: 100., rr: 2., tgt: f64::NAN, until: 9 }), ..Default::default() };
         let m = [Bar1 { m: 0, o: 100.5, h: 101.5, l: 100.4, c: 101.2 }, Bar1 { m: 1, o: 101.2, h: 103.5, l: 101.1, c: 103. }];
         let (amb, w) = ep6::walk_minutes(&m, 100.5, s.clone(), &|st: &mut W, g: &[Seg]| walk(st, g, 7));
         assert!(!amb && w.pos.is_none() && w.done.len() == 1);
         let (q, px, why) = w.done[0];
         assert_eq!((q.ep, q.tgt, px, why, q.ei), (101., 103., 103., "target", 7));
         // one minute through both the entry and the stop (opened through neither): ambiguous
-        s.pend = Some(Pend { d: 1., lv: 101., stop: 100.8, rr: f64::NAN, until: 9 });
+        s.pend = Some(Pend { d: 1., lv: 101., stop: 100.8, rr: f64::NAN, tgt: f64::NAN, until: 9 });
         let (amb, _) = ep6::walk_minutes(&[Bar1 { m: 0, o: 100.9, h: 101.5, l: 100.5, c: 101. }], 100.9, s, &|st: &mut W, g: &[Seg]| walk(st, g, 7));
         assert!(amb);
     }
