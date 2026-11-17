@@ -79,10 +79,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|POT Friday-Monday: \"Buy trade triggers at Friday high plus 48 cents with a $2,700 stop loss and sell trades trigger at Friday low minus 48 cents with a $2,200 stop loss\", 300 shares, FPO (Fig. 7.3)",
               "E|GOOG Wednesday-Thursday: \"using 45 cents as the buy and sell trigger with $4,800 stop loss on longs and $3,400 stops on shorts and FPO exit\" (Fig. 7.4)"],
             "Printed: GOOG Fri-Mon PF 1.5, 75% winners, payout ratio .50, return 357% (Fig. 7.2); POT PF 1.89, 83.1% (Fig. 7.3); GOOG Wed-Thu 68.4% (Fig. 7.4). Test periods are not printed."),
-        def!("jbudt_volspike", "Volume spike trigger", "Ch.8 · Volume Spikes", "Long/Short", NeedsData("intraday bars with volume (ten-minute chart preferred)"),
+        def!("jbudt_volspike", "Volume spike trigger on NIFTY / BANKNIFTY futures (10-minute): buy a close above the spike bar's high, sell a close below its low; opposite side stops; out at the close", "Ch.8 · Volume Spikes", "Long/Short", Status::Live,
             &["F|\"we will define a VS as an increase of at least fourfold in volume over a period of a maximum of at least four price bars\" (ch.8)",
-              "E|\"Isolate a volume spike on an intra-day chart. I prefer the ten-minute chart ... Buy on a bar close above the price high. Sell on a bar close below the price low\" (ch.8)",
-              "X|\"Use the opposite side of the trade for a stop loss. Exit by the end of the session\" (ch.8)"], ""),
+              "E|\"Isolate a volume spike on an intra-day chart. I prefer the ten-minute chart ... Note the price bar high and low for the period of the spike. Buy on a bar close above the price high. Sell on a bar close below the price low\" (ch.8, src.txt PDF p.103-105)",
+              "X|\"Use the opposite side of the trade for a stop loss. Exit by the end of the session\" (ch.8); the optional trailing part (item 7) and 'active markets only' (item 8) are not modelled",
+              "A|Adapted (R4 #340, #346 (4)): 4 unstated details, UNVERIFIED. The book trades stocks and futures with their own volume; the vault's NIFTY 50 / NIFTYBANK cash minutes carry no volume, so the rule runs on the NIFTY / BANKNIFTY FUTURES 1-minute series with traded volume staged by lane DI (NIFTY_50.FUT1 2018-12-28 to 2026-11-12, NIFTYBANK.FUT1 2023-09-06 to 2026-08-05; nearest-expiry continuous, no back-adjustment; days with a blank volume are absent; the 15:30 auction minute is dropped; authors/data-1117/DI/VERIFY.md). Volume is futures volume in units. Readings: (1) a spike = a session-aligned 10-minute bar whose volume is at least p.mult (4) times the lowest volume of the previous p.win (4) bars of the same day (so the first possible spike is the 5th bar); (2) 'the price bar high and low for the period of the spike' = the spike bar's own high and low; (3) the latest spike's range is armed until it triggers, a newer spike replaces it, a spike arms one trade only (no re-entry after the stop), one position at a time, no entry on the day's last bar; (4) the protective stop is a stop order at the opposite extreme of the spike bar, working from the bar after entry, filled at its level or at the minute's open when the minute opens through it (one level, so no ambiguous minute, #240 0%); out at the last bar's close. Entries fill at the trigger bar's close.", FUTMIN],
+            ""),
         def!("jbudt_divergence", "Momentum / MACD divergence (A-B-C-D-E)", "Ch.9-11 · Divergence", "Long/Short", NotTestable("chart judgement: \"divergence is not a trading system. It is, rather, a trading methodology incorporating some subjectivity\" (ch.10)"),
             &["F|28-period momentum and the one-line MACD 9/18 (ch.9, ch.11)", "E|\"A buy signal is generated when ... a new closing Momentum high is created that is higher than the highest Momentum during the period of bullish convergence\" (ch.10); three-month window, at least six bars (ch.10)",
               "X|\"The first target, P1, was one half the range of the highest price high and lowest price low during the time frame from A to D inclusive\" (ch.11)"],
@@ -121,12 +123,17 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     })
 }
 
+/// Lane M1 ids: NIFTY / BANKNIFTY futures minutes with volume (x.fut).
+pub const FUT: &[&str] = &["jbudt_volspike"];
+const FUTMIN: &str = "A|Minute path [convention, intraday_ep6]: the stop fills at its level, or at the minute's open when the minute opens through it.";
+
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "jbudt_gap_fpo" | "jbudt_gap_split" => vec![p("stop", "Stop [unstated in the book, R4 #297 reading]: 1 = the entry day's low (buys) / high (sells) from the next day, 0 = no stop (literal)", 1., 0., 1., 1.)], // lane R2D
         "jbudt_pop" => vec![p("bar", "Bar size (minutes; 5 default; 10, 15, 30 the chapter's other figures)", 5., 5., 30., 5.), p("k", "Stochastic length (bars)", 9., 2., 50., 1.),
             p("smooth", "%K smoothing (bars)", 3., 1., 10., 1.), p("upper", "Buy above (%K)", 70., 50., 95., 5.), p("lower", "Sell below (%K)", 30., 5., 50., 5.)], // intraday EP block (K55)
+        "jbudt_volspike" => vec![p("bar", "Bar size (minutes; 10 preferred, ch.8)", 10., 5., 30., 5.), p("mult", "Spike: volume at least this multiple (4)", 4., 2., 10., 0.5), p("win", "of the lowest of the previous bars (4)", 4., 1., 10., 1.)],
         "jbudt_mac_ad57" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars", 2., 1., 4., 1.), p("ad_ma", "MA of Williams A/D (bars)", 57., 20., 80., 1.)],
         "jbudt_tb16" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01)],
         "jbudt_tb16_mom" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01), p("mom", "Momentum length", 14., 5., 40., 1.), p("ma", "MA of momentum (bars)", 14., 5., 40., 1.),
@@ -142,6 +149,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| getp(id, p, k);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     if id == "jbudt_pop" { return Some(pop(x, from, to, u("bar") as u16, u("k"), u("smooth"), g("upper"), g("lower"))); } // intraday EP block (K55)
+    if id == "jbudt_volspike" { return Some(volspike(x, from, to, u("bar") as u16, g("mult"), u("win"))); } // lane M1
     let mut out = Vec::new();
     let mut cur: Option<Trade> = None;
     match id {
@@ -340,4 +348,40 @@ fn pop(x: &Ctx, from: usize, to: usize, n: u16, len: usize, smooth: usize, up: f
     }
     out
 }
+
+// ---- lane M1 block (17 Nov 2026, R4 #340 / #346 (4)): NIFTY / BANKNIFTY futures minutes with volume
+/// Volume spike (ch.8): see the card's reading. Returns trades at daily-row indices of `x`; needs `x.fut`.
+fn volspike(x: &Ctx, from: usize, to: usize, n: u16, mult: f64, win: usize) -> Vec<Trade> {
+    use crate::intraday::{first_touch, Level, Touch};
+    let Some(f) = x.fut else { return vec![] };
+    let mut out = vec![];
+    for i in from..=to {
+        let r = &x.r[i];
+        let Some((m, mv)) = f.fut_day(&r.date) else { continue };
+        let (open, close) = (crate::intraday::session_open(&r.ticker, &r.date), crate::intraday_ep::session_close(&r.ticker));
+        let b = crate::intraday_ep::nbars(&m, open, n, close);
+        let vol: Vec<f64> = b.iter().map(|z| mv[z.a..z.b].iter().sum()).collect();
+        let (mut armed, mut pos) = (None::<(f64, f64)>, None::<(f64, f64, f64)>); // (high, low) | (dir, entry, stop)
+        for k in 0..b.len() {
+            let z = &b[k];
+            if let Some((d, ep, st)) = pos {
+                match first_touch(&m[z.a..z.b], 0, &[Level { up: d < 0.0, px: st }]) {
+                    Touch::Hit { px, .. } => { out.push(crate::intraday::day_trade(d, i, ep, i, px, "stop at the opposite side of the spike bar", "close", false)); pos = None; }
+                    _ if k + 1 == b.len() => { out.push(crate::intraday::day_trade(d, i, ep, i, z.c, "end of session", "close", false)); pos = None; }
+                    _ => continue,
+                }
+            } else if let Some((h, l)) = armed {
+                if k + 1 < b.len() && (z.c > h || z.c < l) {
+                    let d = if z.c > h { 1.0 } else { -1.0 };
+                    pos = Some((d, z.c, if d > 0.0 { l } else { h }));
+                    armed = None;
+                    continue;
+                }
+            }
+            if k >= win && vol[k] >= mult * vol[k - win..k].iter().copied().fold(f64::INFINITY, f64::min) { armed = Some((z.h, z.l)); }
+        }
+    }
+    out
+}
+// ---- end lane M1 block
 // ---- end intraday EP block

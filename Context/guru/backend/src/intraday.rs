@@ -43,6 +43,52 @@ impl Minutes {
     }
 }
 
+
+/// Lane M1 (17 Nov 2026, R4 #346 (4)): NIFTY / BANKNIFTY futures 1-minute with volume, staged by lane DI
+/// (`<dir>/<TICKER>.FUT1.m1.csv`: Date,Time,Open,High,Low,Close,Volume,OI). One pass builds the day index in memory; a day
+/// with any empty or unreadable Volume (DI blanked flagged days) or a malformed row is left OUT, never filled. The minute
+/// stamped 15:30 (auction-time bar, after the 15:30 session close the engine uses) is dropped by `fut_day`.
+impl Minutes {
+    pub fn scan_fut(path: &str) -> Option<Minutes> {
+        use std::io::BufRead;
+        let mut r = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+        let mut idx: BTreeMap<String, (u64, usize)> = BTreeMap::new();
+        let (mut line, mut pos) = (String::new(), 0u64);
+        let (mut cur, mut start, mut ok): (String, u64, bool) = (String::new(), 0, true);
+        let mut head = true;
+        loop {
+            line.clear();
+            let n = r.read_line(&mut line).ok()?;
+            let end = n == 0;
+            let f: Vec<&str> = line.trim_end().split(',').collect();
+            let date = if end || head { "" } else { f[0] };
+            if date != cur {
+                if !cur.is_empty() && ok { idx.insert(cur.clone(), (start, (pos - start) as usize)); }
+                cur = date.to_string(); start = pos; ok = true;
+            }
+            if end { break; }
+            if !head && ok { ok = f.len() >= 8 && !f[6].is_empty() && f[6].parse::<f64>().is_ok_and(|v| v > 0.0) && f[2..6].iter().all(|v| v.parse::<f64>().is_ok()); }
+            head = false;
+            pos += n as u64;
+        }
+        (!idx.is_empty()).then(|| Minutes { idx, path: path.into() })
+    }
+    /// The day's minutes with their volumes (before 15:30), or None.
+    pub fn fut_day(&self, date: &str) -> Option<(Vec<Bar1>, Vec<f64>)> {
+        let m = self.day(date)?;
+        let &(off, n) = self.idx.get(date)?;
+        let mut f = std::fs::File::open(&self.path).ok()?;
+        f.seek(SeekFrom::Start(off)).ok()?;
+        let mut buf = vec![0u8; n];
+        f.read_exact(&mut buf).ok()?;
+        let v: Vec<f64> = std::str::from_utf8(&buf).ok()?.lines().map(|l| l.split(',').nth(6)?.parse::<f64>().ok()).collect::<Option<_>>()?;
+        if v.len() != m.len() { return None; }
+        let k = m.iter().position(|z| z.m >= 15 * 60 + 30).unwrap_or(m.len());
+        let (m, v) = (m[..k].to_vec(), v[..k].to_vec());
+        (!m.is_empty()).then_some((m, v))
+    }
+}
+
 /// Regular-session opening minute (start-stamped exchange clock): US 09:30 ET; NSE 09:55 before 2010-01-04,
 /// 09:00 until the pre-open call auction began on 2010-10-18, 09:15 since.
 pub fn session_open(ticker: &str, date: &str) -> u16 {
@@ -296,6 +342,44 @@ mod tests {
             let s = session_series(&m, t, &dates);
             let body: String = dates.iter().enumerate().map(|(i, d)| format!("{d},{:?},{:?},{:?},{:?}\n", s[0][i], s[1][i], s[2][i], s[3][i])).collect();
             std::fs::write(format!("{out}/{}.rust.csv", t.replace(' ', "_")), body).unwrap();
+        }
+    }
+
+
+    #[test]
+    fn m1_fut_minutes_scan_blank_volume_day_absent_and_1530_dropped() {
+        let dir = std::env::temp_dir().join(format!("m1fut{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("T.FUT1.m1.csv");
+        std::fs::write(&f, "Date,Time,Open,High,Low,Close,Volume,OI\n2024-01-02,09:15,100,101,99,100.5,10,5\n2024-01-02,15:30,100,100,100,100,3,5\n2024-01-03,09:15,100,101,99,100,,5\n2024-01-03,09:16,100,101,99,100,7,5\n2024-01-04,09:15,1,2,0.5,1.5,4,5\n").unwrap();
+        let m = Minutes::scan_fut(f.to_str().unwrap()).unwrap();
+        assert!(m.fut_day("2024-01-03").is_none(), "blank volume: day absent, never filled");
+        let (b, v) = m.fut_day("2024-01-02").unwrap();
+        assert_eq!((b.len(), v), (1, vec![10.0])); // the 15:30 minute is dropped
+        assert_eq!(m.fut_day("2024-01-04").unwrap().1, vec![4.0]);
+        assert_eq!((m.first(), m.last()), ("2024-01-02", "2024-01-04"));
+    }
+    /// Lane M1: hand-run dump of the two futures-volume cards on the real files for the pandas reference
+    /// (M1_CSV=<idx_data.csv> M1_FUT_DIR=<staged/india> M1_OUT=<dir> cargo test --release m1_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn m1_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("M1_CSV").unwrap(), std::env::var("M1_FUT_DIR").unwrap(), std::env::var("M1_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(format!("{out}/rust_trades.csv")).unwrap());
+        writeln!(f, "id,ticker,variant,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = crate::connors::Ctx::new(rows, &[], &[]);
+            x.fut = Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for (id, var, p) in [("as51_vwap_sd", "tgt1", vec![]), ("as51_vwap_sd", "tgt2", vec![("tgt", 2.0)]), ("jbudt_volspike", "bar10", vec![]), ("jbudt_volspike", "bar5", vec![("bar", 5.0)])] {
+                let p: crate::connors::Params = p.into_iter().map(|(k, v): (&str, f64)| (k.to_string(), v)).collect();
+                let tr = if id.starts_with("as51") { crate::books::as51ts::run(id, &x, 0, rows.len() - 1, &p) } else { crate::books::jbudt::run(id, &x, 0, rows.len() - 1, &p) }.unwrap();
+                for z in tr {
+                    writeln!(f, "{id},{t},{var},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+                }
+            }
         }
     }
 }
