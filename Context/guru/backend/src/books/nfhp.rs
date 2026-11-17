@@ -56,11 +56,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|\"Enter Long Tomorrow on a Stop Placed at Highest High of Past 25 Days. ... Enter Short ... Lowest Low of Past 25 Days. If Order Not Filled, Adjust Stops and Place New Order for Next Session\" (Fig. 20, p.12)",
             "X|\"Protective Stop $2,000; Trailing Stop $2,000; Reversing Signal\" (Fig. 20)"],
           "Book (Figs 16-19, 1978-2000): SF 221 trades 49%, DM 178 44%, BP 259 42%, JY 208 42%. Not run: $ stops on currency contracts."),
-        StrategyDef { needs_series: crate::books::nfgu::R2_SERIES, ..d("nfhp_r2_metals", "R-Squared Precious Metals System", "R-Squared Precious Metals", "Long/Short", Live, &[],
+        d("nfhp_r2_metals", "R-Squared Precious Metals System", "R-Squared Precious Metals", "Long/Short", NotTestable("Duplicate of nfgu_r2_metals (lane M3, R4 #346): the 2000 handout's Fig. 24 prints the same R-Squared rules as the 1996 workbook p.2 (silver above its 12-day average, real T-bill rate below 1.0%, Swiss franc above its 4-day average, short the reverse, $2,000 initial and $2,500 trailing stop), with 'Enter on Tomorrow's Open' and <= on the short side; run as nfgu_r2_metals on the Norgate silver contract it gives the same 492 trades with either boundary (independent reference r2_ref.py, 0 mismatches for both), so it is counted once."), &[],
           &["E|Long: Silver > 12-day SMA, real T-bill rate < 1.0%, Swiss franc > 4-day SMA, 'Enter Long on Tomorrow's Open'; short: Silver <= 12-DMA, real rate >= 1.0%, Swiss franc <= 4-DMA (Fig. 24, p.11)",
-            "X|\"$2,000 Initial Stop; $2,500 Trailing Stop\" (Fig. 24)",
-            crate::books::nfgu::R2_A1, crate::books::nfgu::R2_A2, crate::books::nfgu::R2_A3, crate::books::nfgu::R2_A4],
-          "Book: silver 1975-2000 205 trades 48%; gold (3 lots) 119 trades 47% (Figs 22-23). Same rules as nfgu_r2_metals (the 1996 workbook p.2), with the short side printed with <=. Runs on the Norgate silver continuous contract with the Norgate Swiss franc contract as Data2 (R4 #346). adapted: 4 labelled readings, UNVERIFIED.") },
+            "X|\"$2,000 Initial Stop; $2,500 Trailing Stop\" (Fig. 24)"],
+          "Book: silver 1975-2000 205 trades 48%; gold (3 lots) 119 trades 47% (Figs 22-23). Same rules as nfgu_r2_metals, which is run."),
         d("nfhp_cqiii", "CQIII Currency Trading System", "CQIII Currency System", "Long/Short", NotTestable("Duplicate of nfgu_cqiii (lane F1C, R4 #293): the 2000 handout's Fig. 41 lists the same CQIII entries (close vs 10-day MA, 10-day MA vs ten days ago, close vs 40 days ago, next day open) and the $2,000 protective stop, an abbreviated list of the 1996 rules (which add the adaptive trailing stop); its yen results continue the 1996 table (1978-99: 87 trades 54%, avg winner 101 bars). Run as nfgu_cqiii on the Norgate currency contracts; counted once."), &[],
           &["E|Long next day open: Close > 10-day MA, 10-day MA today > 10-day MA of ten days ago, Close > close of 40 days ago; short the reverse (Fig. 41, p.19)",
             "X|\"Protective Stop: $2000\" (Fig. 41)"],
@@ -85,7 +84,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "nfhp_quadram_tf_nse" => (q.0, q.1, "Trend-following · NSE (2000)"),
         "nfhp_channel25" => ("nf_channel25", "Freeburg Channel 25", "2000 · duplicate of the 1996 code"),
         "nfhp_cqiii" => ("nf_cqiii", "Freeburg CQIII", "2000 · duplicate of the 1996 rules"),
-        "nfhp_r2_metals" => ("nf_r2", "Freeburg R-Squared metals", "2000 · Data missing"),
+        "nfhp_r2_metals" => ("nf_r2", "Freeburg R-Squared metals", "2000 · duplicate of the 1996 rules"),
         "nfhp_tbond_intermarket" => ("nf_tbond", "Freeburg intermarket T-Bond", "2000 · Data missing"),
         "nfhp_vl_swing" => ("nf_vlswing", "Value Line percent swing", "2000 · not testable"),
         "nfhp_results_only" => ("nf_results", "Freeburg results-only examples", "2000"),
@@ -95,7 +94,6 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    if id == "nfhp_r2_metals" { return super::nfgu::params(id); }
     let tf = match id { "nfhp_quadram_ct" | "nfhp_quadram_ct_nse" => false, "nfhp_quadram_tf" | "nfhp_quadram_tf_nse" => true, _ => return None };
     Some(vec![
         p("chad_n", "CHAD days (totals of advances / declines)", 5., 2., 20., 1.),
@@ -193,7 +191,6 @@ pub fn quadram_run(x: &Ctx, from: usize, to: usize, sig: &[i8], q: &Quad) -> Vec
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if id == "nfhp_r2_metals" { return super::nfgu::run(id, x, from, to, p); }
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);

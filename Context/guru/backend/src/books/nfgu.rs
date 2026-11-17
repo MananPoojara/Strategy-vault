@@ -14,7 +14,7 @@ const HEINE: &str = "Lehman bond index, T-Bond / T-Bill yields, DJ Utilities, CR
 
 pub(crate) const R2_SERIES: &[&str] = &["DTB3", "CPIAUCNS_yoy_release"];
 pub(crate) const R2_A1: &str = "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] CPI inflation = the 12-month percent change of the CPI-U all-items index, not seasonally adjusted (BLS via FRED CPIAUCNS), known only from the ReleaseDate of its month (ALFRED first vintage; no release date exists before 1949, those months are not used); real rate = inflation subtracted from the T-bill yield, both in percent";
-pub(crate) const R2_A2: &str = "A|[Declared reading 2] the T-bill yield = the daily 3-month Treasury bill, discount basis (FRED DTB3, matched to Treasury.gov by lane DA, no print on a bar = no signal, nothing carried over)";
+pub(crate) const R2_A2: &str = "A|[Declared reading 2] the T-bill yield = the daily 3-month Treasury bill, discount basis (FRED DTB3, matched to Treasury.gov by lane DA, no print on a bar = no signal, nothing carried over); Daily FRED values are used on their own date (same-day publication assumed; the H.15 posts the next business day)";
 pub(crate) const R2_A3: &str = "A|[Declared reading 3] stops as the same workbook's Channel 25 code (Fig. 27): the $2,000 protective stop from the entry fill (armed on the entry bar), the $2,500 trailing stop from the highest (lowest) close since the entry bar once open profit has reached $2,500; a stop fills at its price or at the open when it gaps through; dollars at the contract's $ per point";
 pub(crate) const R2_A4: &str = "A|[Declared reading 4] entries are tested at every close and fill at the next open; an opposite entry reverses a position (a stop-and-reverse), and a stopped-out system enters again on any later bar where the conditions hold; the 12-day average is of silver's closes; the Swiss franc's close is joined by exact date (no franc bar = no signal) and its 4-day average is taken on its own bars and carried (Norgate &6S, as the Pathfinder card's Data2)";
 const R2_NOTE: &str = "Book (1996, Fig. 15-17): silver 4/75-10/96, 125 trades, 54% winners; (2000, Fig. 22-27): silver 1975-2000 205 trades 48% (gold 3 lots 119 trades 47%, not run: the printed rules name silver). Runs on the Norgate silver continuous contract with the Norgate Swiss franc contract as Data2 (R4 #346). adapted: 4 labelled readings, UNVERIFIED.";
@@ -34,7 +34,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Book 1/78-10/96 (Figs 9-14, p.10-11; no costs stated): DM 181 trades 46%, SF 185 49% avg $542.97, BP 192 40% avg $444.79, JY 167 48% avg $988.02; composite 725 trades 46%, avg $576. Runs on the Norgate Swiss franc, British pound and Japanese yen continuous contracts with the Norgate T-bond contract as Data2 (lane F1C, R4 #293; no Deutsche mark series): signals and points on the back-adjusted series, % per trade on the unadjusted entry fill price, $2,000 at the contract's $ per point (futures::MARKETS). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. adapted: 2 unstated details (R4 #297). Krutsinger's jkbwts_pathfinder prints a different reading of the same idea with an unnamed data2 (stays held)."),
         StrategyDef { needs_series: R2_SERIES, ..d("nfgu_r2_metals", "R-Squared Silver/Gold System", "Formulas p.2 · R-Squared", "Long/Short", Live,
           &["F|Real interest rate = US T-Bill yield minus CPI inflation rate (TAG XVIII formulas p.2, PDF p.4)",
-            "E|Long: silver > 12-day SMA, real T-Bill rate < 1.0%, Swiss franc > 4-day SMA; short: silver < 12-day SMA, real rate >= 1.0%, SF < 4-day SMA (p.2); the 2000 handout (Fig. 24) prints the entries as 'Enter on Tomorrow's Open' and the short side with <=",
+            "E|Long: silver > 12-day SMA, real T-Bill rate < 1.0%, Swiss franc > 4-day SMA; short: silver < 12-day SMA, real rate >= 1.0%, SF < 4-day SMA (p.2); the 2000 handout (Fig. 24) prints the entries as 'Enter on Tomorrow's Open' and the short side with <= (same trades)",
             "X|Protective stop $2,000; trailing stop $2,500 (p.2; Fig. 24: '$2,000 Initial Stop, $2,500 Trailing Stop')",
             R2_A1, R2_A2, R2_A3, R2_A4],
           R2_NOTE) },
@@ -95,7 +95,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("tight", "Tight stop factor (1 of 3)", 0.4, 0.1, 1., 0.05), stop,
             p("onchange", "[Option, not the default reading] 1 = enter only on the day the indicator count reaches 3 (no same-direction re-entry after a stop)", 0., 0., 1., 1.),
             p("ratchet", "[Option, not the default reading] 1 = the trailing stop never loosens", 0., 0., 1., 1.)],
-        "nfgu_r2_metals" | "nfhp_r2_metals" => vec![p("sma", "Silver simple average (days)", 12., 3., 50., 1.), p("sfma", "Swiss franc simple average (days)", 4., 2., 30., 1.),
+        "nfgu_r2_metals" => vec![p("sma", "Silver simple average (days)", 12., 3., 50., 1.), p("sfma", "Swiss franc simple average (days)", 4., 2., 30., 1.),
             p("rr", "Real T-bill rate threshold (%)", 1.0, -2., 5., 0.25), stop, p("trl_usd", "Trailing stop $ per contract", 2500., 250., 10000., 250.)],
         "nfgu_pathfinder" => vec![p("fast", "Currency short MA", 9., 2., 30., 1.), p("slow", "Currency long MA", 18., 5., 60., 1.), p("bfast", "T-bond short MA", 3., 1., 20., 1.),
             p("bslow", "T-bond long MA", 25., 5., 60., 1.), p("trig", "Entry MA (rising / falling)", 6., 2., 30., 1.), stop],
@@ -160,19 +160,19 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 v
             })
         }
-        "nfgu_r2_metals" | "nfhp_r2_metals" => {
+        "nfgu_r2_metals" => {
             // lane M3 (R4 #346): DTB3 and the CPI 12-month change (released series) are extra_data; the Swiss franc is Data2
             let (Some(tb), Some(inf)) = (x.extra.get("DTB3"), x.extra.get("CPIAUCNS_yoy_release")) else { return Some(vec![]) };
             let Some(rows) = crate::futures::rows("&6S") else { return Some(vec![]) }; // readiness refuses this case (futures::data2_issue)
             let sf = crate::second::align("&6S", x.r, rows);
             let (sfc, sfa) = (sf.exact(crate::second::Field::C), sf.own(|r| sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("sfma"))));
             let sa = sma(c, u("sma"));
-            let (trl, rr, le) = (crate::futures::usd_points(x, from, g("trl_usd"))?, g("rr"), id == "nfhp_r2_metals"); // le: the 2000 handout prints the short side with <=
+            let (trl, rr) = (crate::futures::usd_points(x, from, g("trl_usd"))?, g("rr"));
             sim(x, from, to, init, false, |i, pos, _| {
                 if ![tb[i], inf[i], sfc[i], sfa[i], sa[i]].iter().all(|v| v.is_finite()) { return vec![]; }
                 let real = tb[i] - inf[i];
                 let long = c[i] > sa[i] && real < rr && sfc[i] > sfa[i];
-                let short = if le { c[i] <= sa[i] && real >= rr && sfc[i] <= sfa[i] } else { c[i] < sa[i] && real >= rr && sfc[i] < sfa[i] };
+                let short = c[i] < sa[i] && real >= rr && sfc[i] < sfa[i]; // the 2000 handout prints <=: the same 492 trades (r2_ref.py)
                 let cur = pos.map_or(0, |q| q.dir);
                 let mut v = vec![];
                 if long && cur != 1 { v.push(entry(1, Ty::Mkt, 0., "R-Squared long")); }
@@ -233,7 +233,7 @@ mod tests {
         let t = run("nfgu_r2_metals", &x, 0, n - 1, &Params::new()).unwrap();
         assert_eq!((t[0].dir, t[0].legs[0].i), (1., 12)); // first full 12-day average on bar 11, filled at the open of bar 12
         tb[11] = f64::NAN; x.extra.insert("DTB3".into(), tb);
-        assert_eq!(run("nfhp_r2_metals", &x, 0, n - 1, &Params::new()).unwrap()[0].legs[0].i, 13);
+        assert_eq!(run("nfgu_r2_metals", &x, 0, n - 1, &Params::new()).unwrap()[0].legs[0].i, 13);
         assert!(run("nfgu_r2_metals", &Ctx::new(&si, &si, &[]), 0, n - 1, &Params::new()).unwrap().is_empty());
         crate::futures::TEST_ROWS.with(|t| t.borrow_mut().clear());
     }

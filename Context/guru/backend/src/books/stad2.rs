@@ -602,7 +602,7 @@ fn defs_a() -> Vec<Def> {
     d("stad5_im1", "Intermarket I", "Vol 5 · Trending", "Long", Live,
       &["E|If Close of Data2 < Close[1] of Data2 + LYldTrg(.25): Buy this bar on close (Vol 5 p.21 code; the prose says '25% of the yield', the code adds .25)",
         "X|BarsSinceEntry > TNBars(50): ExitLong this bar on close",
-        "A|[Declared reading 1, lane M2 17 Nov 2026, R4 #346] Data2 = the US Treasury long-bond yield: FRED DGS30 (Treasury.gov 30 Yr par, verified exact by lane DA, 1977-02-15..); a bar without a yield print (bond-market holidays, and the 2002-02-19..2006-02-08 gap where the 30-year was discontinued) gives no signal, nothing is filled in; option bond = 10 reads DGS10 instead (labelled adaptation, never spliced)",
+        "A|[Declared reading 1, lane M2 17 Nov 2026, R4 #346] Data2 = the US Treasury long-bond yield: FRED DGS30 (Treasury.gov 30 Yr par, verified exact by lane DA, 1977-02-15..); a bar without a yield print (bond-market holidays, and the 2002-02-19..2006-02-08 gap where the 30-year was discontinued) gives no signal, nothing is filled in; Daily FRED values are used on their own date (same-day publication assumed; the H.15 posts the next business day); option bond = 10 reads DGS10 instead (labelled adaptation, never spliced)",
         "A|[Declared reading 2] .25 is added to the previous bar's yield in percentage points (the code), and the order fills at this bar's close (the code), not the next open (the prose)",
         "A|[Declared reading 3] BarsSinceEntry counts bars from the entry bar (0): the exit is at the close of the 51st bar after the entry bar",
         "A|[Declared reading 4] a new entry is possible from the bar after an exit, never on the exit bar"],
@@ -610,7 +610,7 @@ fn defs_a() -> Vec<Def> {
     d("stad5_im2", "Intermarket II", "Vol 5 · Trending", "Long", Live,
       &["F|If Close of Data3 < Close[1] of Data3 then prSteps += 1 else if Close of Data3 > Close[1] then prSteps = 0 (Vol 5 p.26-27 code)",
         "E|prSteps >= PStepTrg(1) and prSteps > prSteps[1]: Buy this bar on close", "X|BarsSinceEntry > PNBars(100): ExitLong this bar on close; Format: $4,500 money-management stop",
-        "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] Data3 = the US prime rate: FRED DPRIME, daily (Fed H.15 monthly average matched by lane DA in 854 of 855 months; the daily values are checked against the NY Fed target rate + 3.00 only from 2008-12-16, so the span before 2008-12-16 is monthly-checked only); FRED stamps an FOMC cut on the announcement day",
+        "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] Data3 = the US prime rate: FRED DPRIME, daily (Fed H.15 monthly average matched by lane DA in 854 of 855 months; the daily values are checked against the NY Fed target rate + 3.00 only from 2008-12-16, so the span before 2008-12-16 is monthly-checked only); FRED stamps an FOMC cut on the announcement day; Daily FRED values are used on their own date (same-day publication assumed; the H.15 posts the next business day)",
         "A|[Declared reading 2] a bar without a prime print (a day FRED leaves blank) neither changes prSteps nor gives a signal, and the next print is compared with the last print on the card's own bars (TradeStation Data3 repeats the last close); nothing is filled in",
         "A|[Declared reading 3] the $4,500 money-management stop is at $500 per S&P point (the book's contract, bpv 500), working from the bar after the entry bar, filled at the stop or at the open when it gaps through",
         "A|[Declared reading 4] BarsSinceEntry counts from the entry bar (0): the exit is at the close of the 101st bar after the entry bar; a new entry is possible from the bar of a stop exit, never on the bar of the time exit"],
@@ -2683,7 +2683,9 @@ mod tests {
         let ym: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(yf).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect();
         let mut x = Ctx::new(&rows, &rows, &[]);
         x.extra.insert("DPRIME".into(), rows.iter().map(|r| ym.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
-        let t = run("stad5_im2", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let end = std::env::var("IM2_END").unwrap_or("9999-12-31".into()); // the published window ends 1995-07-31 (mhstp::OPEN_WINDOW)
+        let last = rows.partition_point(|r| r.date.as_str() <= end.as_str()) - 1;
+        let t = run("stad5_im2", &x, 0, last, &Params::new()).unwrap();
         let mut s = String::new();
         for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
         std::fs::write(out, s).unwrap();

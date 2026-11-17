@@ -26,8 +26,8 @@ use crate::intraday_ep6::{self as ep6, Ev, Seg};
 pub const BOOK: &str = "as51ts";
 /// Coded daily rules (admitted by ADMISSION below).
 pub const DAILY: &[&str] = &["as51_ichimoku", "as51_fractal_sma", "as51_donchian_pb", "as51_st_rsi", "as51_rsi_mw", "as51_repo_rate"];
-/// Lane M2: the engine key of lane DI's staged RBI_REPO_RATE_CHANGES.csv (extra_data loader: file stem + "." + column).
-pub const REPO_SERIES: &str = "RBI_REPO_RATE_CHANGES.ChangeBp";
+/// Lane M2/M3: the engine key of the engine-format copy staged/india/RBI_REPO_RATE.csv of lane DI's RBI_REPO_RATE_CHANGES.csv (Date = EffectiveDate, same values; extra_data loader: file stem + "." + column).
+pub const REPO_SERIES: &str = "RBI_REPO_RATE.ChangeBp";
 /// Coded minute rules (admitted through intraday_ep::K70 on the four minute tickers).
 pub const INTRA: &[&str] = &["as51_st_pivot", "as51_double_rsi", "as51_ha_psar", "as51_ema_scalp"];
 pub fn reviewed(id: &str) -> bool { DAILY.contains(&id) }
@@ -1407,18 +1407,20 @@ mod tests {
         assert!(t[2].open && t[2].legs[0].i == 70 && t[2].exit_i == 79); // the open trade is marked at the last bar
         assert!(run("as51_repo_rate", &Ctx::new(&r, &r, &[]), 0, 79, &Params::new()).unwrap().is_empty()); // no series, no trade
     }
-    /// Lane M2 reference feed: `REPO_DUMP=<out.tsv> REPO_IDX=<idx_data.csv> REPO_CHG=<RBI_REPO_RATE_CHANGES.csv> cargo test --release repo_dump -- --ignored`
+    /// Lane M2 reference feed: `REPO_DUMP=<out.tsv> REPO_IDX=<idx_data.csv> REPO_DIR=<folder holding RBI_REPO_RATE.csv> cargo test --release repo_dump -- --ignored`
     #[test]
     #[ignore]
     fn repo_dump() {
-        let (Ok(out), Ok(idx), Ok(chg)) = (std::env::var("REPO_DUMP"), std::env::var("REPO_IDX"), std::env::var("REPO_CHG")) else { return };
+        let (Ok(out), Ok(idx), Ok(dir)) = (std::env::var("REPO_DUMP"), std::env::var("REPO_IDX"), std::env::var("REPO_DIR")) else { return };
         let dmy = |d: &str| { let v: Vec<&str> = d.split('-').collect(); format!("{}-{}-{}", v[2], v[1], v[0]) };
         let rows: Vec<Row> = std::fs::read_to_string(idx).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
             if f[0] != "NIFTY 50" { return None; }
             Some(Row { ticker: f[0].into(), date: dmy(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
-        let ch: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(chg).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[3].parse().ok()?)) }).collect();
+        // the engine path itself: main::load_extra reads the file, then each bar takes its date's value (as main does per ticker)
+        let extra = crate::load_extra(&dir);
+        let m = extra.get(&("*".to_string(), REPO_SERIES.to_string())).expect("load_extra must yield RBI_REPO_RATE.ChangeBp");
         let mut x = Ctx::new(&rows, &rows, &[]);
-        x.extra.insert(REPO_SERIES.into(), rows.iter().map(|r| ch.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        x.extra.insert(REPO_SERIES.into(), crate::release::column(REPO_SERIES, rows.iter().map(|r| r.date.as_str()), m));
         let t = run("as51_repo_rate", &x, 0, rows.len() - 1, &Params::new()).unwrap();
         let mut s = String::new();
         for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\t{}\n", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
