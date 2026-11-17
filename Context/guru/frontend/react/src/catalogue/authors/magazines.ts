@@ -26,6 +26,7 @@ export default {
     "atm02": {"type":"magazine_volume","people":[]},
     "atm03": {"type":"magazine_volume","people":[]},
     "atm04": {"type":"magazine_volume","people":[]},
+    "atrio": {"type":"magazine_volume","people":[]},
     "atm10": {"type":"magazine_volume","people":[]},
     "atmmisc": {"type":"magazine_volume","people":[]},
     "ftm": {"type":"magazine_volume","people":[]},
