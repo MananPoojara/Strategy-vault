@@ -25,7 +25,9 @@ use crate::intraday_ep6::{self as ep6, Ev, Seg};
 
 pub const BOOK: &str = "as51ts";
 /// Coded daily rules (admitted by ADMISSION below).
-pub const DAILY: &[&str] = &["as51_ichimoku", "as51_fractal_sma", "as51_donchian_pb", "as51_st_rsi", "as51_rsi_mw"];
+pub const DAILY: &[&str] = &["as51_ichimoku", "as51_fractal_sma", "as51_donchian_pb", "as51_st_rsi", "as51_rsi_mw", "as51_repo_rate"];
+/// Lane M2: the engine key of lane DI's staged RBI_REPO_RATE_CHANGES.csv (extra_data loader: file stem + "." + column).
+pub const REPO_SERIES: &str = "RBI_REPO_RATE_CHANGES.ChangeBp";
 /// Coded minute rules (admitted through intraday_ep::K70 on the four minute tickers).
 pub const INTRA: &[&str] = &["as51_st_pivot", "as51_double_rsi", "as51_ha_psar", "as51_ema_scalp"];
 pub fn reviewed(id: &str) -> bool { DAILY.contains(&id) }
@@ -220,8 +222,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Held (decision #268): the range is drawn by eye (p.399-405)."),
         held!("as51_retest", "7.4 Breakout retest (pullback)", "E|After a range breakout, buy the retest of the old resistance when the pullback candle's high breaks; 1:3-1:4 (p.405-409 [PDF 204-206])",
             "Held (decision #268): the range and the resistance are drawn by eye (p.405-409)."),
-        data!("as51_repo_rate", "7.5 Trading on RBI repo-rate decisions (NIFTY 50)", "E|Buy NIFTY 50 at the close of an RBI policy day that cuts the repo rate, short when it hikes, none when unchanged; exit after one month (p.409-413 [PDF 206-208])",
-            "Held (decision #268): a complete rule, but it needs the RBI policy dates and decisions, which the vault does not hold (p.409-413)."),
+        // lane M2 (17 Nov 2026, R4 #346 / #340): India only, on lane DI's verified RBI repo-rate change list.
+        StrategyDef { needs_series: &[REPO_SERIES], ..def!("as51_repo_rate", "7.5 Trading on RBI repo-rate decisions (NIFTY 50)", "Long/Short", Status::Live,
+            &["E|Buy NIFTY 50 at the close of an RBI policy day that cuts the repo rate, short when it hikes, none when unchanged (p.413 [PDF 208])",
+              "X|Hold for a month; book the profit or loss at the end of one month; no target or stop (p.413)",
+              "A|[Declared reading 1] one month = 21 trading bars after the entry close; exit at that close",
+              "A|[Declared reading 2] a policy day = every EffectiveDate of the verified RBI change list (2003-03-03..2026-10-07, 67 rows, off-cycle moves included); a day with no change is not in the list and is no signal; a change dated on a non-trading day (2007-03-31, a Saturday) gives no signal",
+              "A|[Declared reading 3] EffectiveDate stands for the announcement day (the list holds effective dates; where they differ the entry is a day late, never early); one position at a time, a change inside a running month is not taken",
+              "A|[Declared reading 4] pre-October-2004 values follow the RBI Handbook's current repo nomenclature (LAF repo after the 2004 swap); the book's own backtest starts in 2008"],
+            "Source: p.409-413 [PDF 206-208], read in the OCR (authors/rnew/ocr p206-p208). Data: RBI Handbook of Statistics Table 44/40 and RBI press releases (authors/data-1117/DI/VERIFY.md section 1). NIFTY 50 only (the book's index). UNVERIFIED: the book prints a 15-year result of 3,300 points but not its trade list, so nothing is compared. Meetings without a change are not held and are not needed. No costs.") },
         held!("as51_vcp", "7.6 Volatility contraction pattern", "E|Minervini-style contractions, then the breakout (p.415-421 [PDF 209-212])",
             "Held (decision #268): the pattern is judged by eye (p.415-421)."),
         held!("as51_two_leg_pb", "7.7 Two-legged pullback", "E|In a trend of higher highs and lows, wait for a two-legged pullback and buy above the green candle's high (p.421-427 [PDF 212-215])",
@@ -250,6 +259,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             pd("init_stop", "Initial stop: 1 = at the Supertrend of the signal candle (step card p.235, the example's level); 0 = none (exits at closes only)", 1., 0., 1., 1.)],
         "as51_rsi_mw" => vec![pd("lo", "Oversold (30)", 30., 5., 50., 1.), pd("hi", "Overbought (70)", 70., 50., 95., 1.),
             pd("mw", "1 = the M / W shape, two re-crosses (figure p.249); 0 = every re-cross of 30 / 70", 1., 0., 1., 1.)],
+        "as51_repo_rate" => vec![pd("hold", "Hold: trading bars (one month = 21, declared reading 1)", 21., 5., 63., 1.)],
         "as51_st_pivot" => vec![pd("atr", "Supertrend ATR length (7)", 7., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5)],
         "as51_double_rsi" => vec![pd("lo", "5-minute oversold (30)", 30., 5., 50., 1.), pd("hi", "5-minute overbought (70)", 70., 50., 95., 1.)],
         "as51_ha_psar" => vec![pd("rr", "Target: risk multiple (1:2)", 2., 0.5, 10., 0.5)],
@@ -290,6 +300,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "as51_donchian_pb" => donchian(x, from, to, n("len"), n("pb_max").max(3), g("rr")),
         "as51_st_rsi" => st_rsi(x, from, to, n("atr"), g("fac"), g("hi"), g("lo"), g("stop_entry") >= 0.5, g("init_stop") >= 0.5),
         "as51_rsi_mw" => rsi_mw(x, from, to, g("lo"), g("hi"), g("mw") >= 0.5),
+        "as51_repo_rate" => repo_rate(x, from, to, n("hold")),
         "as51_st_pivot" => st_pivot(x, from, to, n("atr"), g("fac")),
         "as51_double_rsi" => double_rsi(x, from, to, g("lo"), g("hi")),
         "as51_ha_psar" => ha_psar(x, from, to, g("rr")),
@@ -401,6 +412,15 @@ fn daily(x: &Ctx, from: usize, to: usize, on: bool, signal: &dyn Fn(usize) -> Op
     }
     if let Some(p) = pos { out.push(day_trade(p.d, p.ei, p.ep, to, x.c[to], "open", "close", true)); }
     out
+}
+/// Lane M2: a cut of the repo rate on a bar buys that bar's close, a hike sells it; exit `hold` bars later at the close.
+fn repo_rate(x: &Ctx, from: usize, to: usize, hold: usize) -> Vec<Trade> {
+    let Some(bp) = x.extra.get(REPO_SERIES) else { return vec![] };
+    let signal = |t: usize| -> Option<(f64, f64, f64)> {
+        let v = *bp.get(t)?;
+        if !v.is_finite() || v == 0. { None } else { Some((if v < 0. { 1. } else { -1. }, f64::NAN, f64::NAN)) }
+    };
+    daily(x, from, to, false, &signal, &|t, p| if t >= p.ei + hold { Some("one month") } else { None }, &no_trail)
 }
 fn none_exit(_: usize, _: &DPos) -> Option<&'static str> { None }
 fn no_trail(_: usize, _: &mut DPos) {}
@@ -1374,6 +1394,37 @@ mod tests {
             Row { ticker: "T".into(), date: format!("2000-{:05}", i), open: c - 0.8 * (f / 2.3).sin(), high: c + 1.2 + 0.3 * (f / 3.).cos(), low: c - 1.1, close: c, volume: None } }).collect()
     }
     #[test]
+    fn repo_rate_buys_cuts_sells_hikes_exits_in_21_bars() {
+        let r = rows(80);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let mut bp = vec![f64::NAN; 80];
+        bp[10] = -25.; bp[15] = 50.; /* inside the month: not taken */ bp[40] = 50.; bp[70] = -25.;
+        x.extra.insert(REPO_SERIES.into(), bp);
+        let t = run("as51_repo_rate", &x, 0, 79, &Params::new()).unwrap();
+        assert_eq!(t.len(), 3);
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i, t[0].legs[0].px, t[0].exit_px), (1., 10, 31, x.c[10], x.c[31]));
+        assert_eq!((t[1].dir, t[1].legs[0].i, t[1].exit_i), (-1., 40, 61));
+        assert!(t[2].open && t[2].legs[0].i == 70 && t[2].exit_i == 79); // the open trade is marked at the last bar
+        assert!(run("as51_repo_rate", &Ctx::new(&r, &r, &[]), 0, 79, &Params::new()).unwrap().is_empty()); // no series, no trade
+    }
+    /// Lane M2 reference feed: `REPO_DUMP=<out.tsv> REPO_IDX=<idx_data.csv> REPO_CHG=<RBI_REPO_RATE_CHANGES.csv> cargo test --release repo_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn repo_dump() {
+        let (Ok(out), Ok(idx), Ok(chg)) = (std::env::var("REPO_DUMP"), std::env::var("REPO_IDX"), std::env::var("REPO_CHG")) else { return };
+        let dmy = |d: &str| { let v: Vec<&str> = d.split('-').collect(); format!("{}-{}-{}", v[2], v[1], v[0]) };
+        let rows: Vec<Row> = std::fs::read_to_string(idx).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != "NIFTY 50" { return None; }
+            Some(Row { ticker: f[0].into(), date: dmy(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let ch: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(chg).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[3].parse().ok()?)) }).collect();
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert(REPO_SERIES.into(), rows.iter().map(|r| ch.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let t = run("as51_repo_rate", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let mut s = String::new();
+        for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\t{}\n", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, s).unwrap();
+    }
+    #[test]
     fn all_51_cards_and_daily_rules_run() {
         let cat = catalogue();
         assert_eq!(cat.len(), 51);
@@ -1381,7 +1432,7 @@ mod tests {
         for d in &cat { assert!(family_of(d.id).is_some() && (d.status == Status::Live) == params(d.id).is_some(), "{}", d.id); }
         let r = rows(900);
         let x = Ctx::new(&r, &r, &[]);
-        for id in DAILY {
+        for id in DAILY.iter().filter(|i| **i != "as51_repo_rate") { // lane M2: the repo rule needs its own data series (own test)
             let mut p = Params::new();
             if *id == "as51_donchian_pb" { p.insert("pb_max".into(), 50.); } // the smooth test series rarely pulls back only 3-4 bars
             let t = run(id, &x, 0, r.len() - 1, &p).unwrap();
