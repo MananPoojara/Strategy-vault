@@ -48,6 +48,23 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
     let o=|k:usize|ctx.o[k]+off; let h=|k:usize|ctx.h[k]+off; let l=|k:usize|ctx.l[k]+off; let c=|k:usize|ctx.c[k]+off;
     let entry=if t.entry_kind=="open"&&epx==o(e) {Fill::Open} else if t.entry_kind=="close"&&epx==c(e) {Fill::Close} else {Fill::At(epx)};
     let exit=if t.open||(xpx==c(x)&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
+    // W3 17 Nov (R4 #349): trades that registered their fill minutes (kftsm_zones) count only the minutes after the entry fill and up to the exit fill
+    if let Some((em,xm,xc))=crate::intraday::fill_minutes(&ctx.r[e].ticker,t) {
+        let mut p=Vec::new();let mut ok=true;
+        for k in e..=x {
+            let day=ctx.minutes.and_then(|m|m.day(&ctx.r[k].date));
+            match day {
+                Some(m)=>{
+                    if k==e {p.push((k,epx));}
+                    for b in m.iter().filter(|b|(k!=e||b.m>em)&&(k!=x||if xc {b.m<=xm} else {b.m<xm})) {p.push((k,b.l));p.push((k,b.h));}
+                    if k==x {p.push((k,xpx));}
+                }
+                None if k!=e&&k!=x=>{p.push((k,l(k)));p.push((k,h(k)));}
+                None=>{ok=false;break;}
+            }
+        }
+        if ok {return p;}
+    }
     let mut pts=Vec::new();
     for k in e..=x {
         let start=if k==e {entry} else {Fill::Open};
@@ -220,6 +237,21 @@ mod tests {
         pair(ex(&x,&one(1.,3,102.,"open",3,102.,2)),(0.,0.));
         x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
         pair(ex(&x,&one(1.,3,102.,"open",3,102.,2)),(0.,0.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn registered_fill_minutes_cut_the_excursion_at_the_fills(){
+        // W3 17 Nov (kftsm_zones): short filled at the close of the 09:31 minute (price 104.5); the minutes before it and the exit minute do not count
+        let dir=std::env::temp_dir().join(format!("mae-fm-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,110,103,104\n2020-01-02,09:31,104,104.6,104,104.5\n2020-01-02,09:32,104.5,104.8,103,103.5\n2020-01-02,09:33,103.5,104,102,102.5\n2020-01-02,09:34,102.5,120,95,100\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        let t=one(-1.,1,104.5,"close",1,101.,1);
+        crate::intraday::note_fill("TEST",&t,(9*60+31,9*60+34,false));
+        // after 09:31: 09:32 high 104.8 (adverse), 09:33 low 102 (favourable), the exit at 101; minute 09:34 itself is not counted
+        pair(ex(&x,&t),(-(104.8/104.5-1.),1.-101./104.5));
         let _=std::fs::remove_dir_all(&dir);
     }
     #[test]

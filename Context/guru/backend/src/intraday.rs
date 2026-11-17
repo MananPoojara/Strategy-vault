@@ -205,6 +205,20 @@ pub fn stop_entry_day(b: &[Bar1], from: usize, entries: &[Level], stop: &dyn Fn(
 pub fn day_trade(dir: f64, i: usize, px: f64, xi: usize, xp: f64, why: &str, kind: &'static str, open: bool) -> crate::connors::Trade {
     crate::connors::Trade { dir, legs: vec![crate::connors::Leg { i, px, w: 1.0 }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: kind, signal_i: xi, open, exits: Vec::new() }
 }
+
+/// W3 17 Nov (R4 #349): the entry and exit minute of trades that fill at an N-minute bar close or inside a minute (kftsm_zones), so
+/// MAE/MFE stop at the fill. A Trade carries no minute and has 400+ construction sites, so the card registers each trade here under
+/// (ticker, entry bar, entry price, exit bar, exit price, direction); accounting::path_points looks it up. (entry minute, exit minute,
+/// exit at that minute's close). Minute = start of the 1-minute bar. Same key = same fills, so a repeat registration is idempotent.
+type FillKey = (String, usize, u64, usize, u64, i8);
+static FILLS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<FillKey, (u16, u16, bool)>>> = std::sync::OnceLock::new();
+fn fill_key(ticker: &str, t: &crate::connors::Trade) -> FillKey { (ticker.to_string(), t.legs[0].i, t.legs[0].px.to_bits(), t.exit_i, t.exit_px.to_bits(), t.dir as i8) }
+pub fn note_fill(ticker: &str, t: &crate::connors::Trade, v: (u16, u16, bool)) {
+    FILLS.get_or_init(Default::default).lock().unwrap().insert(fill_key(ticker, t), v);
+}
+pub fn fill_minutes(ticker: &str, t: &crate::connors::Trade) -> Option<(u16, u16, bool)> {
+    FILLS.get()?.lock().unwrap().get(&fill_key(ticker, t)).copied()
+}
 // ---- end intraday wave 1
 
 // ---- intraday wave 2a block (claude/intraday-w2a, 2026-10-29)
