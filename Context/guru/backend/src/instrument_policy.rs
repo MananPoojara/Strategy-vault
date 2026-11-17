@@ -77,11 +77,9 @@ pub const VIX_INDIA_RULES:&[(&str,&str)]=&[("stc9","vix200"),("stc9","vix2"),("s
     ("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr8"),("vixr","vixr_cvr9"),("vixr","vixr_cvr10"),("vixr","vixr_cvr11"),("vixr","vixr_all")];
 pub const VIX_INDIA_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026; VIX India 24 Oct 2026), not the author's test. US instruments read the CBOE VIX. Indian instruments (NIFTY 50, NIFTYBANK, Indian stocks): declared application: India VIX in place of the CBOE VIX. VIX levels and VIX-point thresholds printed for the US VIX are kept as printed; India VIX runs on a different scale, so on Indian instruments they mark different market conditions. Rules that read the VIX open use the real India VIX open from 1-minute data (the first minute after NSE's 09:15 opening print), available from 2015; NSE's daily India VIX open repeats the previous close and is never used.";
 pub fn vix_india(def:&StrategyDef)->bool {VIX_INDIA_RULES.contains(&(def.book,def.id))}
-/// Held on Indian instruments (user decision): the independent reference and the engine differ on an exact tie.
-pub fn vix_india_held(def:&StrategyDef,ticker:&str,india:bool)->Option<Issue> {
-    if india && def.id=="vixr_all" {return Some(Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): the all-signals portfolio includes CVR 11, which is held on Indian instruments (an exact India VIX tie the engine and the independent reference read differently), so the printed portfolio cannot be formed. It runs on US instruments with the CBOE VIX.")});} // lane K43
-    (india && def.id=="vixr_cvr11").then(||Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): CVR 11 compares yesterday's VIX 3/10-day oscillator with -1 VIX point. On India VIX the oscillator is exactly -1.00 on 2012-04-03; the book's rule (at or below -1) sells, but the engine's floating-point average gives -0.99999... and does not, so the engine and the independent check differ from that trade on. Not published until the tie handling is decided. US runs (CBOE VIX) match the check.")})
-}
+/// CVR 11 / vixr_all were held on India for an exact -1.00 India VIX tie (engine floating point vs the reference). IN1, 17 Nov 2026: the thresholds are
+/// compared with a 1e-9 tolerance (the rule says "-1 or less" on 2-decimal VIX closes), so nothing is held any more.
+pub fn vix_india_held(_def:&StrategyDef,_ticker:&str,_india:bool)->Option<Issue> {None}
 // ---------------------------------------------------------------- end VIX India
 // ---------------------------------------------------------------- connors-final (26 Oct 2026)
 /// US ETFs the engine serves from us_data.csv. connors-final adds the Alpha Formula ETFs (Rising Assets, Dynamic
@@ -553,7 +551,7 @@ pub fn nse_breadth_held(def:&StrategyDef,_ticker:&str)->Option<Issue> {
     held.then(||Issue{status:"needs_data",note:"Held: this rule uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.".into()})
 }
 pub const NSE_BREADTH_LABEL:&str="The book traded S&P 500 futures on NYSE breadth (TRIN / advances and declines) with NYSE-calibrated thresholds. Here the signal is read from the real NSE breadth the vault holds (extra_data/india) with the book's thresholds unchanged. NSE breadth behaves differently (TRIN median 0.70 vs NYSE 0.93; it fires 2-3x more often), so this is a declared adaptation, not the author's test, and it is UNVERIFIED.";
-pub fn nse_breadth(def:&StrategyDef)->bool {matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv")}
+pub fn nse_breadth(def:&StrategyDef)->bool {matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"|"scarms_265_nse"|"scwtrin_wtrin10_nse")}
 /// R4 #306: the thrust-oscillator buy reads NYSE breadth, so it runs only on the US indices/ETFs in its gate list
 /// (SPX, SPY, DJI, DIA, NDX, QQQ): never on an Indian instrument or a single stock.
 fn chntt_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
@@ -3292,7 +3290,7 @@ mod tests {
         assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11","vixr_all"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let open=open_all(d) || vix_india(d); // open-all 23 Oct 2026 + VIX India 24 Oct 2026
-            let india=!matches!(d.id,"vixr_cvr11"|"vixr_all"); // VIX India: CVR 11 held on Indian instruments (exact-tie difference); vixr_all contains it (lane K43)
+            let india=true; // IN1 17 Nov 2026: CVR 11 / vixr_all open on India (exact-tie fix, 1e-9 tolerance in vixr.rs)
             assert_eq!(policy(d).requirement,if open {"index_etf_or_stock"} else {"declared_index_timing"});
             assert!(check(d,"SPY",false).is_none() && check(d,"SPX",false).is_none(),"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),india,"{}",d.id);

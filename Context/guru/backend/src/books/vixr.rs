@@ -494,7 +494,7 @@ fn signals(id: &str, x: &Ctx, v: &Vx, p: &Params) -> Option<Vec<i8>> {
         }
         "vixr_cvr11" => {
             let (f, s, thr, hl) = (sma(vc, u("fast")), sma(vc, u("slow")), g("thr"), u("hl_n"));
-            on_vix(&|k| sign(k > 0 && f[k - 1] - s[k - 1] >= thr && v.hh(k, hl), k > 0 && f[k - 1] - s[k - 1] <= -thr && v.ll(k, hl)))
+            on_vix(&|k| sign(k > 0 && f[k - 1] - s[k - 1] >= thr - 1e-9 && v.hh(k, hl), k > 0 && f[k - 1] - s[k - 1] <= -thr + 1e-9 && v.ll(k, hl)))
         }
         _ => return None, // listed, not testable
     })

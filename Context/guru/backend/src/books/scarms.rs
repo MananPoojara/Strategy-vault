@@ -5,21 +5,28 @@
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::lc3::Pos;
 
-pub const REVIEWED: &[&str] = &["scarms_265"];
+pub const REVIEWED: &[&str] = &["scarms_265", "scarms_265_nse"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "[Declared readings] Arms Index = NYSE TRIN (decision #204: the vault's NYSE_TRIN, extra_data/us, 1965-03-01 to 2020-02-10; it reproduces the article's readings, e.g. 2.81, 3.31 and 4.09 on 7 July, 11 September and 18 November 1986). Buy at the close of any day with the Arms Index at 2.65 or higher; each new reading of 2.65 or higher while long restarts the count; sell at the close of the last trading day on or before the date eight calendar months after the last reading (Figure 2: 6/24/65 -> 2/24/66, and Saturday anniversaries sold the Friday before, e.g. 12/2/74 -> 8/1/75, 10/25/82 -> 6/24/83; a day 29-31 that the eighth month lacks becomes its last day). 'On or before' reads the next bar's date (the exchange calendar). Long only. Book (Figure 2, S&P 500 6/24/1965-9/2/1985): 11 trades, 10 up, +441.1% compounded against +192.1% buy and hold; the vault's SPX starts in 1983, where the two printed trades are 2/8/84 155.85 -> 10/8/84 162.13 (our closes are the same) and 1/2/85 165.37 -> 9/2/85 187.91 (the vault's SPX file has a 2 September 1985 Labor Day row, volume 0, close 182.80, where this rule sells; the printed 187.91 is the 3 September close). US instruments only: India has no NYSE breadth (needs data). Runs on US indices, ETFs and stocks other than the S&P 500 are a declared application; results end with the TRIN data.";
 
+const NOTE_NSE: &str = "[Declared adaptation, R4 #340 / #346 (4), IN1 17 Nov 2026; UNVERIFIED] The article buys the S&P 500 on NYSE Arms Index (TRIN) readings of 2.65 or higher. This twin reads the real NSE TRIN the vault holds (extra_data/india/NSE_TRIN.csv, from 1999) on the NIFTY indices with the article's 2.65 and eight-month rule unchanged. NSE TRIN behaves differently from NYSE TRIN (median 0.70 against 0.93), so this is not the author's test and is not verified. Same readings as the NYSE card: buy at the close of any day with TRIN at or above the level; each new reading while long restarts the count; sell at the close of the last trading day on or before the date eight calendar months after the last reading; long only. Independent check authors/india-1117/IN1/ref_in1.py.";
+
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "scarms_265", name: "Alphier-Kuhn Arms Index panic: buy the close of a day with NYSE TRIN at 2.65 or higher, sell 8 calendar months after the last such day", group: "S&C: A helping hand from the Arms Index (Alphier & Kuhn, V.5:4)", session: 0, dir: "Long", status: Status::Live,
-        needs_volume: false, needs_vix: false, needs_series: &["NYSE_TRIN"], book: "scarms", rules: &[
+    vec![mk("scarms_265", "Alphier-Kuhn Arms Index panic: buy the close of a day with NYSE TRIN at 2.65 or higher, sell 8 calendar months after the last such day", &["NYSE_TRIN"], NOTE),
+         mk("scarms_265_nse", "Alphier-Kuhn Arms Index panic on NSE TRIN: buy the close of a day with NSE TRIN at 2.65 or higher, sell 8 calendar months after the last such day", &["NSE_TRIN"], NOTE_NSE)]
+}
+
+fn mk(id: &'static str, name: &'static str, series: &'static [&'static str], notes: &'static str) -> StrategyDef {
+    StrategyDef { id, name, group: "S&C: A helping hand from the Arms Index (Alphier & Kuhn, V.5:4)", session: 0, dir: "Long", status: Status::Live,
+        needs_volume: false, needs_vix: false, needs_series: series, book: "scarms", rules: &[
             "F|\"The Arms formula: (Advancing Issue / Declining Issues) (AdvancingVolume / DecliningVolume)\" [the article's typesetting; the Arms Index divides the two ratios] \"At 2.65, our arbitrary threshold, there have been but 18 trading days in the past 21 years\" (p.142)",
             "E|\"we simply assumed that an investor 'bought' the S&P 500 on the day of the high Arms Index reading\"; Figure 2 'Simple Strategy': \"Buy: On day of Arms Index 2.65 or higher\" (pp.142-143)",
             "X|\"and then held for eight calendar months and sold. If new high index readings appeared before the eight months were out, we re-started the eight-month count from that new high reading, selling only when the high readings had not occurred for eight full calendar months.\"; Figure 2: \"Sell: 8 calendar months later or after last 'overlapping' 2.65 reading\" (pp.142-143)"],
-        notes: NOTE, claim: None }]
+        notes, claim: None }
 }
 
-pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("scarms_265", "Alphier-Kuhn Arms Index 2.65 (S&C)", "8 calendar months, restart")) }
+pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("scarms_265", "Alphier-Kuhn Arms Index 2.65 (S&C)", if id.ends_with("_nse") { "NSE TRIN, 8 calendar months, restart" } else { "8 calendar months, restart" })) }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
@@ -38,7 +45,7 @@ pub fn add_months(d: &str, k: i64) -> String {
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
-    let Some(trin) = x.series("NYSE_TRIN") else { return Some(vec![]) };
+    let Some(trin) = x.series(if id.ends_with("_nse") { "NSE_TRIN" } else { "NYSE_TRIN" }) else { return Some(vec![]) };
     let (level, months) = (p.get("level").copied().unwrap_or(2.65), p.get("months").copied().unwrap_or(8.).round() as i64);
     let n = x.r.len();
     let mut pos = Pos::new();
@@ -73,9 +80,9 @@ mod tests {
     }
 }
 
-// Instrument admission: S&C Alphier-Kuhn Arms Index 2026-11-04 (titles lane K40). India is refused by readiness (no NYSE_TRIN there).
+// Instrument admission: S&C Alphier-Kuhn Arms Index 2026-11-04 (titles lane K40). The NYSE card is refused on India by readiness (no NYSE_TRIN there); the _nse twin reads NSE_TRIN (IN1, R4 #340).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scarms" && reviewed(def.id),
-    label: "James Alphier and Bill Kuhn bought the S&P 500 on NYSE Arms Index readings (1965-1986). The signal is the vault's real NYSE TRIN; runs on US indices, ETFs and stocks are a declared application; Indian instruments have no NYSE breadth.",
+    label: "James Alphier and Bill Kuhn bought the S&P 500 on NYSE Arms Index readings (1965-1986). The signal is the vault's real NYSE TRIN; runs on US indices, ETFs and stocks are a declared application; Indian instruments run the _nse twin on the real NSE TRIN, a labelled UNVERIFIED declared adaptation (R4 #340).",
     basis: "Technical Analysis of Stocks & Commodities V.5:4 pp.142-143 (A helping hand from the Arms Index), Figures 1-2; independent check authors/titles-1030/K40w/k40_ref.py",
 };

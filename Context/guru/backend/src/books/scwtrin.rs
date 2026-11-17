@@ -4,24 +4,31 @@
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::tselhs::Book;
 
-pub const REVIEWED: &[&str] = &["scwtrin_wtrin10"];
+pub const REVIEWED: &[&str] = &["scwtrin_wtrin10", "scwtrin_wtrin10_nse"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume"];
+const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume"];
+const NOTE_NSE: &str = "[Declared adaptation, R4 #340 / #346 (4), IN1 17 Nov 2026; UNVERIFIED] The article times the S&P 500 with NYSE advances, declines and up/down volume. This twin reads the real NSE advances, declines and up/down volume the vault holds (extra_data/india/NSE_ADV_DEC.csv, from 1999; the AdvVolume and DecVolume columns equal the UpVolume and DownVolume columns) on the NIFTY indices with the article's WTRIN10 formula and its 20 / 80 levels unchanged (the NSE series are not calibrated to the article's). It is not the author's test and is not verified. Rule as the NYSE card: buy at the close of the first day WTRIN10 rises after it has been below 20 while flat; sell at the close of the first day it falls after it has been above 80 while long; long only. Independent check authors/india-1117/IN1/ref_in1.py.";
 
 const NOTE: &str = "[Complete rule; unverified] Open TRIN10 = (10-day average of NYSE advancing issues / 10-day average of declining issues) / (10-day average of advancing volume / 10-day average of declining volume) (the sidebar's cell G20). Bollinger bands = its 10-day average +/- 2 population standard deviations (STDEVP) of the last 10 TRIN10 values; normalised value = 100 x (upper band - TRIN10) / (upper band - lower band); WTRIN10 = its five-day weighted average (weights 5,4,3,2,1 / 15). Buy at the close of the first day WTRIN10 rises after it has been below 20 while flat; sell at the close of the first day it falls after it has been above 80 while long ('Buy when WTRIN10 has an uptick after falling below 20, hold until it goes above 80, and then sell on its first downtick'; 'the trades are made at the close on the day of the signal'). Long only. Breadth: the vault's NYSE advances / declines / up and down volume (NYSE_ADV_DEC, 1965-03-01 to 2020-02-10), so results end in February 2020. The article trades the S&P 500 (an index fund) and prints its 14 trades of May 1990 - June 1992 (p.451-452); the breadth timing is applied to other US indices, ETFs and stocks as a declared application. India is refused (NYSE breadth).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "scwtrin_wtrin10", name: "Wilbur WTRIN10: buy the first uptick of the banded open TRIN10 after it dips under 20, sell the first downtick after 80", group: "S&C: A Twist On The Arms Index (Wilbur, V.10:11)", session: 0, dir: "Long", status: Status::Live,
-        needs_volume: false, needs_vix: false, needs_series: AD, book: "scwtrin", rules: &[
+    vec![mk("scwtrin_wtrin10", "Wilbur WTRIN10: buy the first uptick of the banded open TRIN10 after it dips under 20, sell the first downtick after 80", AD, NOTE),
+         mk("scwtrin_wtrin10_nse", "Wilbur WTRIN10 on NSE breadth: buy the first uptick of the banded open TRIN10 after it dips under 20, sell the first downtick after 80", NSE_AD, NOTE_NSE)]
+}
+
+fn mk(id: &'static str, name: &'static str, series: &'static [&'static str], notes: &'static str) -> StrategyDef {
+    StrategyDef { id, name, group: "S&C: A Twist On The Arms Index (Wilbur, V.10:11)", session: 0, dir: "Long", status: Status::Live,
+        needs_volume: false, needs_vix: false, needs_series: series, book: "scwtrin", rules: &[
             "F|\"=(AVERAGE(C11:C20)/AVERAGE(D11:D20))/(AVERAGE(E11:E20)/AVERAGE(F11:F20))\"; \"=STDEVP(G11:G20)\"; \"=100*(J20-G20)/(J20-K20)\"; \"=((5*L20)+(4*L19)+(3*L18)+(2*L17)+L16)/15\" (V.10:11 sidebar, p.453)",
             "E|\"Buy when WTRIN10 has an uptick after falling below 20\" (p.451)",
             "X|\"hold until it goes above 80, and then sell on its first downtick\"; \"the trades are made at the close on the day of the signal\" (p.451)"],
-        notes: NOTE, claim: None }]
+        notes, claim: None }
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then_some(("scwtrin_wtrin10", "Wilbur weighted open TRIN (S&C)", "20 / 80"))
+    reviewed(id).then_some(("scwtrin_wtrin10", "Wilbur weighted open TRIN (S&C)", if id.ends_with("_nse") { "NSE breadth, 20 / 80" } else { "20 / 80" }))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -46,7 +53,7 @@ pub fn wtrin10(adv: &[f64], dec: &[f64], av: &[f64], dv: &[f64]) -> Vec<f64> {
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
-    let Some(s) = AD.iter().map(|k| x.series(k)).collect::<Option<Vec<&[f64]>>>() else { return Some(vec![]) }; // no breadth: no trades
+    let Some(s) = (if id.ends_with("_nse") { NSE_AD } else { AD }).iter().map(|k| x.series(k)).collect::<Option<Vec<&[f64]>>>() else { return Some(vec![]) }; // no breadth: no trades
     let wt = wtrin10(s[0], s[1], s[2], s[3]);
     let (lo, hi) = (p.get("buy").copied().unwrap_or(20.), p.get("sell").copied().unwrap_or(80.));
     let mut pos = Book::new();
@@ -93,6 +100,6 @@ mod tests {
 // Instrument admission: S&C Wilbur WTRIN10 2026-11-13 (lane PA1).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scwtrin" && reviewed(def.id),
-    label: "Harley Wilbur times the S&P 500 with NYSE breadth (advances, declines, up and down volume); other US indices, ETFs and stocks are a declared application of the same timing. India is refused: NYSE breadth has no India counterpart in the vault.",
+    label: "Harley Wilbur times the S&P 500 with NYSE breadth (advances, declines, up and down volume); other US indices, ETFs and stocks are a declared application of the same timing. Indian instruments run the _nse twin on the real NSE breadth, a labelled UNVERIFIED declared adaptation (R4 #340).",
     basis: "Technical Analysis of Stocks & Commodities V.10:11 pp.449-453 (A Twist On The Arms Index); independent check authors/pa1/pa1_ref.py",
 };
