@@ -188,6 +188,31 @@ it("admin sees the research share with reconciled counts and downloads the sourc
   expect((await blobs[1].text()).split("\r\n")[1].startsWith("'=Omega Research,")).toBe(true);   // no formula injection
 });
 
+it("research share: folder pie, per-folder table with subfolders, and the why-slow note", async () => {
+  const folders = [
+    { name: "USB HDD 2", files: 3, bytes: 600, types: { image: 2, book: 1 }, claude: { opened: 1, title: 0, stated: 0, folder: 1, none: 1 }, subfolders: 2,
+      largest_subfolders: [{ name: "Backup A", files: 2, bytes: 500, opened: 1 }, { name: "Backup B", files: 1, bytes: 100, opened: 0 }] },
+    { name: "Trading Books", files: 2, bytes: 900, types: { book: 2 }, claude: { opened: 1, title: 1, stated: 0, folder: 0, none: 0 }, subfolders: 1,
+      largest_subfolders: [{ name: "Cohen", files: 2, bytes: 900, opened: 1 }] },
+  ];
+  const inv = { ...inventory, listing: { ...inventory.listing, top_folders: folders } };
+  api({ "GET /api/app/research/me": { employee: null, admin: true, ready: true }, "GET /api/app/research/share": inv });
+  const el = await mount("#/research?v=share");
+  const legend = [...el.querySelectorAll(".rp-pie-legend li")].map(li => li.textContent);
+  expect(legend.length).toBe(2);
+  expect(legend[0]).toContain("USB HDD 2");
+  expect(legend[0]).toContain("60%");
+  expect(el.querySelectorAll(".rp-pie path, .rp-pie circle").length).toBe(2);
+  expect(el.querySelector(".rp-folders .rp-check.ok")!.textContent).toContain("2 top-level folders add up to 5 files");
+  const rows = () => [...el.querySelectorAll(".rp-folder-table tbody tr")];
+  expect(rows().length).toBe(2);
+  await act(async () => el.querySelector<HTMLButtonElement>(".rp-folder-table .rp-linkbtn")!.click());
+  expect(rows().length).toBe(4);
+  expect(el.querySelector(".rp-subrow")!.textContent).toContain("Backup A");
+  expect(el.querySelector(".rp-why summary")!.textContent).toContain("Why these numbers grow slowly");
+  expect(el.querySelector(".rp-why")!.textContent).toContain("0 mismatches");
+});
+
 it("an employee does not see the research share tab or its data", async () => {
   const calls = api({ "GET /api/app/research/me": asha, "GET /api/app/research/summary": { totals: {}, team: { verdicts: {} } }, "GET /api/app/research/browse": { items: [] } });
   const el = await mount("#/research?v=share");

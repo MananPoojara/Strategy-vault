@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
 import { VerificationView } from "./VerificationView";
 import {
   research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
-  type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareInventory, type ShareSource, type Site, type Strategy,
+  type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareFolder, type ShareInventory, type ShareSource, type Site, type Strategy,
   type TimelineItem, type Verdict,
 } from "../services/research";
 
@@ -558,6 +558,11 @@ function ShareBody({ d }: { d: ShareInventory }) {
         </Check>}
       </div>
 
+      {L.top_folders.length > 0 && <>
+        <h2 className="rp-section">By folder</h2>
+        <FolderView d={d} />
+      </>}
+
       <h2 className="rp-section">By resource type</h2>
       <TypeBars d={d} />
 
@@ -584,6 +589,99 @@ function ShareBody({ d }: { d: ShareInventory }) {
         <p className="rp-small rp-muted">Listing {listed}; page data generated {fmtStamp(d.generated_at)}{c.as_of ? `; site counts as of ${fmtStamp(c.as_of)} (run ${c.run})` : ""}.</p>
       </div>
     </section>
+  );
+}
+
+/* Research share by top-level folder (17 Nov 2026): a pie of files per folder (largest six + Other) and a table of every folder
+   with its resource types, Claude's progress and its largest subfolders. Slice colours are the validated categorical slots 1-6;
+   the light-theme contrast warning is relieved by the legend and the table, which carry every figure. */
+const PIE_TOP = 6;
+const pct = (n: number, of: number) => `${((100 * n) / Math.max(1, of)).toLocaleString("en-IN", { maximumFractionDigits: n / Math.max(1, of) < 0.01 ? 2 : 1 })}%`;
+function arc(cx: number, cy: number, r0: number, r1: number, a0: number, a1: number) {
+  const pt = (r: number, a: number) => `${(cx + r * Math.sin(a)).toFixed(2)} ${(cy - r * Math.cos(a)).toFixed(2)}`;
+  const big = a1 - a0 > Math.PI ? 1 : 0;
+  return `M ${pt(r1, a0)} A ${r1} ${r1} 0 ${big} 1 ${pt(r1, a1)} L ${pt(r0, a1)} A ${r0} ${r0} 0 ${big} 0 ${pt(r0, a0)} Z`;
+}
+function FolderPie({ slices, total }: { slices: { name: string; files: number; bytes: number; cls: string }[]; total: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  let a = 0;
+  const parts = slices.map((sl, i) => {
+    const a0 = a, a1 = a + (2 * Math.PI * sl.files) / Math.max(1, total); a = a1;
+    return { ...sl, i, d: sl.files >= total ? "" : arc(100, 100, 58, 96, a0, a1) };
+  });
+  const h = hover == null ? null : parts[hover];
+  return (
+    <div className="rp-pie">
+      <svg viewBox="0 0 200 200" role="img" aria-label={`Files per folder: ${parts.map(p => `${p.name} ${p.files}`).join(", ")}`}>
+        {parts.map(p => p.d
+          ? <path key={p.name} d={p.d} className={`rp-slice ${p.cls}${hover === p.i ? " on" : ""}`} onMouseEnter={() => setHover(p.i)} onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(p.i)} onBlur={() => setHover(null)} tabIndex={0}><title>{`${p.name}: ${num(p.files)} files (${pct(p.files, total)}), ${fmtBytes(p.bytes)}`}</title></path>
+          : <circle key={p.name} cx={100} cy={100} r={77} className={`rp-slice ${p.cls}`} style={{ strokeWidth: 38, fill: "none" }} />)}
+        <text x={100} y={94} className="rp-pie-n">{h ? num(h.files) : num(total)}</text>
+        <text x={100} y={112} className="rp-pie-l">{h ? `${pct(h.files, total)} · ${h.name.length > 22 ? h.name.slice(0, 21) + "…" : h.name}` : "files"}</text>
+      </svg>
+      <ul className="rp-pie-legend">
+        {parts.map(p => (
+          <li key={p.name} className={hover === p.i ? "on" : ""} onMouseEnter={() => setHover(p.i)} onMouseLeave={() => setHover(null)}>
+            <i className={p.cls} /><span>{p.name}</span><b>{num(p.files)}</b><span className="rp-muted">{pct(p.files, total)}</span><span className="rp-small rp-muted">{fmtBytes(p.bytes)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+function FolderView({ d }: { d: ShareInventory }) {
+  const L = d.listing, folders: ShareFolder[] = L.top_folders, total = L.files;
+  const label = useMemo(() => new Map(d.types.map(t => [t.id, t.label])), [d.types]);
+  const [open, setOpen] = useState<string | null>(null);
+  const top = folders.slice(0, PIE_TOP), rest = folders.slice(PIE_TOP);
+  const slices = [...top.map((f, i) => ({ name: f.name, files: f.files, bytes: f.bytes, cls: `c${i + 1}` })),
+    ...(rest.length ? [{ name: `Other ${rest.length} folders`, files: rest.reduce((a, f) => a + f.files, 0), bytes: rest.reduce((a, f) => a + f.bytes, 0), cls: "c0" }] : [])];
+  const sum = folders.reduce((a, f) => a + f.files, 0), bytes = folders.reduce((a, f) => a + f.bytes, 0);
+  const detailed = folders.some(f => f.claude);
+  return (
+    <>
+      <div className="rp-panel rp-folders">
+        <FolderPie slices={slices} total={total} />
+        <Check ok={sum === total && bytes === L.bytes}>{num(folders.length)} top-level folders add up to {num(sum)} files and {fmtBytesBoth(bytes)} (listing: {num(total)} files).</Check>
+      </div>
+      <div className="rp-panel rp-scroll">
+        <table className="rp-table rp-folder-table">
+          <thead><tr><th>Folder</th><th className="n">Files</th><th className="n">Share</th><th className="n">Size</th><th>Main resource types</th>{detailed && <><th className="n">Opened</th><th>Claude's progress</th></>}</tr></thead>
+          <tbody>
+            {folders.map((f, i) => {
+              const c = f.claude, decided = c ? c.title + c.stated : 0;
+              const types = f.types ? Object.entries(f.types).sort((a, b) => b[1] - a[1]).slice(0, 3) : [];
+              const subs = f.largest_subfolders || [];
+              return (
+                <Fragment key={f.name}>
+                  <tr>
+                    <td>{i < PIE_TOP ? <i className={`rp-swatch c${i + 1}`} /> : <i className="rp-swatch c0" />}
+                      {subs.length > 1 ? <button className="rp-linkbtn" aria-expanded={open === f.name} onClick={() => setOpen(open === f.name ? null : f.name)}>{f.name}</button> : f.name}
+                      {f.subfolders ? <span className="rp-small rp-muted"> · {num(f.subfolders)} subfolders</span> : null}</td>
+                    <td className="n">{num(f.files)}</td><td className="n">{pct(f.files, total)}</td><td className="n" title={`${f.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(f.bytes)}</td>
+                    <td className="rp-small">{types.map(([k, n]) => `${label.get(k) || k} ${num(n)}`).join(" · ") || "–"}</td>
+                    {detailed && <><td className="n">{c ? num(c.opened) : "–"}</td>
+                      <td>{c ? <div className="rp-bar3 rp-bar5 rp-thin" role="img" title={`Opened ${num(c.opened)} · decided from title or record ${num(decided)} · folder-level decision ${num(c.folder)} · no record yet ${num(c.none)}`}
+                        aria-label={`Opened ${c.opened}, decided ${decided}, folder-level ${c.folder}, no record ${c.none}`}>
+                        <i className="ok" style={{ width: pct(c.opened, f.files) }} /><i className="held" style={{ width: pct(decided, f.files) }} />
+                        <i className="fold" style={{ width: pct(c.folder, f.files) }} /><i className="todo" style={{ width: pct(c.none, f.files) }} /></div> : "–"}</td></>}
+                  </tr>
+                  {open === f.name && subs.map(s => (
+                    <tr key={f.name + "/" + s.name} className="rp-subrow">
+                      <td>{s.other ? <span className="rp-muted">{s.name}</span> : s.name}</td><td className="n">{num(s.files)}</td><td className="n">{pct(s.files, f.files)} of folder</td>
+                      <td className="n">{fmtBytes(s.bytes)}</td><td />{detailed && <><td className="n">{num(s.opened)}</td><td /></>}
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        {detailed && <ul className="rp-legend rp-legend5"><li><i className="ok" />Opened (text read)</li><li><i className="held" />Decided from the title or a record</li><li><i className="fold" />Covered by a folder-level decision</li><li><i className="todo" />No record yet</li></ul>}
+        <p className="rp-small rp-muted">Click a folder name to see its largest subfolders. “Share” is the folder's part of all {num(total)} files; the USB HDD folders are backup drives copied onto the share and hold most of the extra copies.</p>
+      </div>
+    </>
   );
 }
 
@@ -689,6 +787,27 @@ function SourceTable({ d }: { d: ShareInventory }) {
   );
 }
 
+/* Why the counts move slowly (17 Nov 2026, user: explain what is happening and why it takes time). Figures come from the page data. */
+function WhySlow({ d }: { d: ShareInventory }) {
+  const f = d.claude.files, t = new Map(d.types.map(x => [x.id, x.files]));
+  const g = (ids: string[]) => ids.reduce((a, id) => a + (t.get(id) || 0), 0);
+  return (
+    <details className="rp-why">
+      <summary>Why these numbers grow slowly, and what is happening</summary>
+      <p>The share holds <b>{num(f.total)}</b> files, but most of them are not strategy text: {num(g(["image"]))} images, {num(g(["web"]))} saved web pages, {num(g(["video", "audio"]))} video and audio files and {num(g(["data"]))} data files. Those are judged a folder at a time ({num(f.folder)} files so far) instead of being read one by one; {num(f.opened)} files with rule text have been opened and read.</p>
+      <p>Each strategy then goes through the same steps before it counts as backtested:</p>
+      <ol>
+        <li><b>Read the rule</b> in the book or article. Many are scanned pages that first need text recognition (OCR).</li>
+        <li><b>Code it</b> in the Rust engine, exactly as printed.</li>
+        <li><b>Check it independently</b>: a second program, written from the book's text alone, must reproduce every single trade (0 mismatches).</li>
+        <li><b>Review</b>: a separate reviewer compares the code with the book, counts any detail the book leaves out, and holds the strategy if more than four are missing or the book gives no entry or exit.</li>
+        <li><b>Release</b>: the whole site (about 47,000 results) is recomputed and compared value by value with the live site; a release goes live only if no existing result changed or disappeared. One build and refresh takes about 45 minutes, and builds run one at a time so the PC does not run out of memory.</li>
+      </ol>
+      <p>Strategies found grows faster than backtested because many books describe a rule without everything needed to trade it (no exit, “use your judgement”, parameters left unstated). Those are held with the reason written down rather than guessed. The work runs continuously, so these numbers keep rising.</p>
+    </details>
+  );
+}
+
 const counted = (n: number | undefined) => (n == null ? "not counted" : num(n));
 function ClaudeDone({ d }: { d: ShareInventory }) {
   const c = d.claude, f = c.files;
@@ -698,6 +817,7 @@ function ClaudeDone({ d }: { d: ShareInventory }) {
     <>
       <div className="rp-panel">
         <p className="rp-big"><b>{num(f.opened)}</b> of <b>{num(f.total)}</b> files opened, <b>{counted(c.strategies)}</b> strategies found, <b>{counted(c.backtested)}</b> backtested.</p>
+        <WhySlow d={d} />
         <div className="rp-bar3 rp-bar5" role="img" aria-label={parts.map(([l, n]) => `${l}: ${n}`).join(", ")}>
           {parts.map(([l, n, cls]) => <i key={l} className={cls} style={{ width: `${(100 * n) / Math.max(1, f.total)}%` }} />)}
         </div>
