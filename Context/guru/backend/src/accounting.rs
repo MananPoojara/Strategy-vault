@@ -39,7 +39,15 @@ enum Fill { Close, Open, At(f64) }
 
 /// The one MAE/MFE rule for every strategy (research-team verified 2026-10-26): the price points the position lived
 /// through, as (bar, price). See EXCURSION_BASIS for the window.
-pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
+pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {path_points_with(ctx,t,false)}
+
+/// R4 #348 lane W1 (17 Nov 2026), Stridsman cards only (strmm/strtw, gated in main.rs): `level` = the trade's stop / target / reversal exit is a
+/// price-LEVEL fill, never a close fill, even when that level equals the exit bar's close or open (the close-fill test below is by price and
+/// signal_i == exit_i, which a stop on its own bar also satisfies). Then (1) an exit at the bar's open counts only its fill price (the minute file's
+/// first open differs from the daily open on some days), and (2) a level no minute reaches (daily and minute highs/lows differ by a tick or two)
+/// is placed on the minute that came nearest to it instead of dropping the whole minute path.
+pub fn path_points_with(ctx:&Ctx,t:&Trade,level:bool)->Vec<(usize,f64)> {
+    let level=level&&!t.open&&["stop","target","reversal"].iter().any(|w|t.reason.starts_with(w));
     let (e,x,epx)=(t.legs[0].i,t.exit_i,t.legs[0].px);
     let xpx=t.exits.last().map_or(t.exit_px,|p|p.1);
     // lane F3 (lead review): a futures trade is priced on the unadjusted contract (futures::raw_basis); read the context's
@@ -47,12 +55,13 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
     let off=crate::futures::trade_offset(ctx,t);
     let o=|k:usize|ctx.o[k]+off; let h=|k:usize|ctx.h[k]+off; let l=|k:usize|ctx.l[k]+off; let c=|k:usize|ctx.c[k]+off;
     let entry=if t.entry_kind=="open"&&epx==o(e) {Fill::Open} else if t.entry_kind=="close"&&epx==c(e) {Fill::Close} else {Fill::At(epx)};
-    let exit=if t.open||(xpx==c(x)&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
+    let exit=if level {if x>e&&xpx==o(x) {Fill::Open} else {Fill::At(xpx)}} else if t.open||(xpx==c(x)&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
     let mut pts=Vec::new();
     for k in e..=x {
         let start=if k==e {entry} else {Fill::Open};
         let end=if k==x {exit} else {Fill::Close};
         if start==Fill::Close {if k==x {pts.push((k,c(k)));} continue;} // entered at this close: nothing after it on this bar
+        if k==x&&end==Fill::Open&&start==Fill::Open {pts.push((k,o(k)));continue;} // level exit at the open (gap through the stop): only its fill price
         if start==Fill::Open&&end==Fill::Close {pts.push((k,l(k)));pts.push((k,h(k)));continue;}
         // part of a bar: 1-minute bars between the fill(s) when they exist, else only the fill prices
         // the minute that traded at px; else (a fill price between two ticks, e.g. a 3%-below-close limit, or a price the minutes jump over) the first
@@ -62,7 +71,7 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
             (from.max(1)..m.len()).find(|&j|(m[j-1].c-px)*(m[j].o-px)<0.).map(|j|(j,true)));
         let minute=ctx.minutes.and_then(|m|m.day(&ctx.r[k].date)).and_then(|m|{
             let (lo,mut p)=match start {Fill::At(px)=>{let (j,gap)=inside(&m,0,px)?;(if gap {j} else {j+1},vec![px])},_=>(0,vec![])};
-            let hi=match end {Fill::At(px)=>{let j=inside(&m,lo.saturating_sub(1),px)?.0;p.push(px);j.max(lo)},_=>m.len()};
+            let hi=match end {Fill::At(px)=>{let from=lo.saturating_sub(1);let j=match inside(&m,from,px) {Some(r)=>r.0,None if level=>nearest(&m,from,px)?,None=>return None};p.push(px);j.max(lo)},_=>m.len()};
             for b in &m[lo..hi] {p.push(b.l);p.push(b.h);}
             Some(p)
         });
@@ -77,12 +86,19 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
     pts
 }
 
+/// The minute whose range lies nearest to `px` (first on ties), from `from` on; used only for level exits no minute reaches.
+fn nearest(m:&[crate::intraday::Bar1],from:usize,px:f64)->Option<usize> {
+    let d=|b:&crate::intraday::Bar1|if b.l<=px&&px<=b.h {0.} else {(b.l-px).abs().min((b.h-px).abs())};
+    (from..m.len()).fold(None,|best:Option<(usize,f64)>,j|{let dj=d(&m[j]);if best.map_or(true,|(_,db)|dj<db){Some((j,dj))}else{best}}).map(|b|b.0)
+}
+
 /// (MAE, MFE, bars counted) as fractions of the trade's allocation, gross; None when no finite point exists.
 /// One leg of weight 1: MAE = min(price) / entry - 1 and MFE = max(price) / entry - 1 (shorts mirrored).
 /// Scale-ins count from their fill bar on (the whole bar for an open fill, else the next bar); scale-out pieces
 /// stay banked at their fill price from their bar on.
-pub fn excursion(ctx:&Ctx,t:&Trade)->Option<(f64,f64,usize)> {
-    let pts=path_points(ctx,t);
+pub fn excursion(ctx:&Ctx,t:&Trade)->Option<(f64,f64,usize)> {excursion_with(ctx,t,false)}
+pub fn excursion_with(ctx:&Ctx,t:&Trade,level:bool)->Option<(f64,f64,usize)> {
+    let pts=path_points_with(ctx,t,level);
     let off=crate::futures::trade_offset(ctx,t); // lane F3: 0 off futures contexts
     let mut out:Option<(f64,f64)>=None;
     for &(k,px) in &pts {
@@ -198,6 +214,18 @@ mod tests {
         pair(ex(&x,&one(1.,0,105.,"close",1,100.,1)),(95./105.-1.,112./105.-1.));
         // no clamp: the lowest low stayed above the entry, so MAE is positive
         pair(ex(&x,&one(1.,1,100.,"close",2,103.,2)),(100.5/100.-1.,108./100.-1.));
+    }
+    #[test]
+    fn level_exit_equal_to_its_bar_close_or_open_counts_only_its_fill_price(){
+        let r=path_rows();let x=Ctx::new(&r,&r,&[]);
+        let stop=|xpx:f64,why:&str|Trade{reason:why.into(),..one(1.,1,100.,"close",2,xpx,2)};
+        let lv=|t:&Trade|{let e=excursion_with(&x,t,true).unwrap();(e.0,e.1)};
+        // stop filled at 103 = bar 2's close: the legacy test reads a close exit (whole bar 100.5..108); level mode counts only 103
+        pair(ex(&x,&stop(103.,"stop")),(100.5/100.-1.,108./100.-1.));pair(lv(&stop(103.,"stop")),(0.03,0.03));
+        // gap through the stop at bar 2's open (101): only that price
+        pair(lv(&stop(101.,"target")),(0.01,0.01));
+        // other reasons keep the legacy reading even in level mode
+        pair(lv(&stop(103.,"time (close)")),(100.5/100.-1.,108./100.-1.));
     }
     #[test]
     fn open_entry_counts_its_bar_and_open_exit_counts_only_the_open(){
