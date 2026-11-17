@@ -350,7 +350,7 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
 pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol"|"hfm"|"as51ts")}
 pub fn options_tickers(id:&str)->&'static [&'static str] {
     match id {
-        "otvt_cvr1_sell_puts"=>&["SPY","NIFTY 50"], // lane N1 (R4 #340, 17 Nov 2026): NIFTY 50 monthly options + India VIX
+        "otvt_cvr1_sell_puts"=>&["SPY"],
         "ccl08_weekly_rsi_options"|"mahrs_covered_calls"|"ccl08_quick_scalp"|"fotol_covered_call"|"fotol_monthend_call"
             |"hfm_und"|"hfm_und_long"|"hfm_und_short"|"otvt_diz_short_strangle"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only; otvt_diz: lane K54
         "otvt_sector_options_overpriced"=>&["NIFTYBANK"], // lane I1 (R4 #303 (3)): the sector index with real option prices
@@ -3223,7 +3223,7 @@ mod tests {
         // the US file has no option high/open: OISS (2x stop on the high) and spmt_eom_puts (next-open exit) stay India-only
         assert!(check(&def("oiss_short_put","oiss"),"SPY",false).unwrap().note.contains("16:00 snapshot"));
         assert!(check(&def("spmt_eom_puts","spmt"),"SPY",false).is_some());
-        assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_none() && check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTYBANK",false).is_some()); // lane N1: NIFTY 50 only (India VIX prices NIFTY 50 options)
+        assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_some());
         // lane F2: Singhal's option rules run on NIFTY weekly 1-minute options only
         for id in crate::books::as51ts::OPT_IDS {
             let bnf=crate::books::as51ts::BNF_IDS.contains(id);
