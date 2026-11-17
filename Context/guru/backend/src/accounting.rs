@@ -47,7 +47,8 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
     let off=crate::futures::trade_offset(ctx,t);
     let o=|k:usize|ctx.o[k]+off; let h=|k:usize|ctx.h[k]+off; let l=|k:usize|ctx.l[k]+off; let c=|k:usize|ctx.c[k]+off;
     let entry=if t.entry_kind=="open"&&epx==o(e) {Fill::Open} else if t.entry_kind=="close"&&epx==c(e) {Fill::Close} else {Fill::At(epx)};
-    let exit=if t.open||(xpx==c(x)&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
+    // a plain "stop" exit is an intrabar fill even when its price equals the day's close by coincidence (lwlts_vb_sp_tdw 05-12-2017: stop 10118.25 = close)
+    let exit=if t.open||(xpx==c(x)&&t.signal_i==x&&t.reason!="stop") {Fill::Close} else {Fill::At(xpx)};
     let mut pts=Vec::new();
     for k in e..=x {
         let start=if k==e {entry} else {Fill::Open};
@@ -248,6 +249,19 @@ mod tests {
         let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
         x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
         pair(ex(&x,&one(1.,1,105.5,"stop",1,100.,1)),(0.,108./105.5-1.)); // the daily fallback would give (100/105.5-1, 0)
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_stop_that_ends_at_the_days_close_price_is_still_an_intrabar_fill(){
+        // W2 (lwlts_vb_sp_tdw 05-12-2017): stop 100 equals bar 1's close by coincidence; the low after the stop (99) is not part of the trade
+        let dir=std::env::temp_dir().join(format!("mae-stopclose-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,105,103,104\n2020-01-02,09:31,104,104.5,99.9,100.5\n2020-01-02,09:32,100.5,101,99,100\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        let mut t=one(1.,1,104.5,"stop",1,100.,1);t.reason="stop".into();
+        pair(ex(&x,&t),(100./104.5-1.,0.)); // stop at 100 = the bar close
         let _=std::fs::remove_dir_all(&dir);
     }
     #[test]
