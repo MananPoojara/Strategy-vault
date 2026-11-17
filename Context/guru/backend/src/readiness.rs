@@ -64,6 +64,11 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
+/// Lane IN2 (R4 #340): the futures daily-volume series of an India index context, for the ids that opt in (connors::FUT_VOL_IDS).
+fn fut_vol_of<'a>(ctx:&'a Ctx,def:&StrategyDef)->Option<&'a [f64]> {
+    if !crate::connors::FUT_VOL_IDS.contains(&def.id) || !ctx.r.first().is_some_and(|r|r.ticker.starts_with("NIFTY")) {return None;}
+    ctx.extra.get(crate::connors::FUT_VOL).map(|v|v.as_slice())
+}
 fn minute_path(def:&StrategyDef,p:&Params)->bool {crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5)}
 
 /// Auto-end (user request 2026-10-24, mirrors auto_start): when a required input (1-minute bars, option prices, a needed
@@ -83,7 +88,8 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     for name in required_series(def,p,minutes).into_iter().filter(|n|!event_column(n)) {
         if let Some(v)=ctx.series(name) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("{name} data")));}
     }
-    if def.needs_volume {ends.push(((0..=to).rev().find(|&i|ctx.r[i].volume.is_some_and(|v|v.is_finite()&&v>0.)),format!("daily volume figures for {ticker}")));}
+    if let Some(v)=fut_vol_of(ctx,def) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("futures volume figures for {ticker}")));}
+    else if def.needs_volume {ends.push(((0..=to).rev().find(|&i|ctx.r[i].volume.is_some_and(|v|v.is_finite()&&v>0.)),format!("daily volume figures for {ticker}")));}
     // same condition as the ccl08 Liquidity Filter check in `check` (instrument and benchmark close x volume)
     if def.book==books::ccl08::BOOK && books::ccl08::reviewed_daily(def.id) && books::ccl08::params(def.id).is_some_and(|ps|ps.iter().any(|d|d.key=="lf")) && to<ctx.lf.len() {
         ends.push(((0..=to).rev().find(|&i|ctx.lf[i].is_finite()),format!("the Liquidity Filter inputs (close x volume of {ticker} and its benchmark)")));
@@ -564,7 +570,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if (futures && (from..=to).any(|i| crate::futures::invalid_bar(ctx,i))) || (!futures && ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high)) {
         return issue("needs_data", "The selected period contains invalid or incomplete OHLC market prices. Results are withheld until the source data is corrected.");
     }
-    if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
+    if let Some(v)=fut_vol_of(ctx,def) { // lane IN2 (R4 #340): futures volume as the volume proxy; a day without a verified figure stays a gap (the rule then makes no entry on it)
+        let first=v.iter().position(|x|x.is_finite());
+        if first.map_or(true,|f|from<f) {return issue("needs_data",format!("Required futures volume begins on {}. The selected period includes earlier days with no volume figure; choose a fully covered period.",first.map_or("(none)",|f|ctx.r[f].date.as_str())));}
+    } else if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
         return issue("needs_data", "Required volume data is missing on one or more trading days in this period. A price-only index cannot substitute for this rule's volume or stock-universe filter.");
     }
     // ---- intraday phase 1: minute-path rules need this ticker's 1-minute bars over the whole window
