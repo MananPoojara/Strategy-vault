@@ -326,7 +326,7 @@ struct Cfg {
     ll_period: usize,
 }
 
-fn nr7_loop(x: &Ctx, k: &Cfg, gd: &Guard) -> Loop {
+fn nr7_loop(x: &Ctx, k: &Cfg, gd: &Guard, eligibility: Option<&[bool]>) -> Loop {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     let n = c.len();
     let mut s = Loop::new(n);
@@ -381,7 +381,7 @@ fn nr7_loop(x: &Ctx, k: &Cfg, gd: &Guard) -> Loop {
                 abc[i] = 0;
             }
         }
-        let ready = !pos && regime[i] && abc[i] == 1 && c[i] > hi[i] && filt;
+        let ready = !pos && regime[i] && abc[i] == 1 && c[i] > hi[i] && filt && eligibility.is_none_or(|v| v[i]);
         let mut bought = false;
         if st {
             if ready && trend[i] == 1 {
@@ -445,14 +445,19 @@ fn nr7_loop(x: &Ctx, k: &Cfg, gd: &Guard) -> Loop {
     s
 }
 
-pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+/// Generate the AFL's own signal arrays before any portfolio rejection or sizing.
+pub(crate) fn source_signals(id: &str, x: &Ctx, p: &Params) -> Option<Loop> {
+    source_signals_with_eligibility(id,x,p,None)
+}
+
+/// Research adaptation: eligibility gates entries inside the AFL loop; it does
+/// not force an exit. The original NR7 AFL has no AUX condition of its own.
+pub(crate) fn source_signals_with_eligibility(id: &str, x: &Ctx, p: &Params, eligibility:Option<&[bool]>) -> Option<Loop> {
     let v = variant(id)?;
     let schema = params(id)?;
+    if eligibility.is_some_and(|m|m.len()!=x.c.len()) {return None;}
+    if x.c.is_empty() { return Some(Loop::new(0)); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
-    let n = x.c.len();
-    if n == 0 || from > to || to >= n {
-        return Some(Vec::new());
-    }
     let k = Cfg {
         v,
         swing: g("swing_pct"),
@@ -463,7 +468,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         ll_period: g("ll_period").round().max(1.0) as usize,
     };
     let gd = Guard::of(&g, volsig6);
-    Some(fills(x, &nr7_loop(x, &k, &gd), from, to, "close"))
+    Some(nr7_loop(x, &k, &gd, eligibility))
+}
+
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    let signals = source_signals(id, x, p)?;
+    Some(fills(x, &signals, from, to, "close"))
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -562,6 +572,18 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn dated_eligibility_gates_entries_before_source_position_state() {
+        let mut v=base();
+        v.push((108.3,110.,108.,109.));
+        let rows=bars(&v);let x=Ctx::new(&rows,&rows,&[]);
+        let mut allowed=vec![true;rows.len()];allowed[8]=false;
+        let s=source_signals_with_eligibility(NR7_ST,&x,&Params::new(),Some(&allowed)).unwrap();
+        assert!(s.entry[8].is_none());
+        assert!(s.entry[9].is_some());
+        assert!(source_signals_with_eligibility(NR7_ST,&x,&Params::new(),Some(&allowed[..3])).is_none());
+    }
+
+    #[test]
     fn nr7_low2_exit_fills_at_close() {
         let mut v = base();
         v.push((108.5, 110.0, 108.0, 109.5)); // 9: prev2 = min(106.5, 106.0) = 106.0
@@ -621,6 +643,11 @@ pub(crate) mod tests {
         w.push((162.0, 162.5, 157.0, 157.5)); // 22: close below the stop
         let t = go(NR7_ST, &bars(&w), &[]);
         assert_eq!((t[0].0, t[0].2, t[0].4.as_str()), (21, 22, "ATR stop"));
+        let rows=bars(&w);let x=Ctx::new(&rows,&rows,&[]);
+        let mut eligible=vec![true;rows.len()];eligible[22]=false;
+        let signals=source_signals_with_eligibility(NR7_ST,&x,&Params::new(),Some(&eligible)).unwrap();
+        assert!(signals.entry[21].is_some());
+        assert!(signals.exit[22].is_some(),"loss of eligibility must not suppress an existing position's exit");
     }
 
     #[test]

@@ -11,6 +11,8 @@ export interface LabReport {
 export interface Trade {
   entry: string; exit: string; entry_px: number; exit_px: number; ret: number; bars: number; open: boolean; dir: number; reason: string;
   mae?: number | null; mfe?: number | null;
+  /** Intraday AFLs: "YYYY-MM-DD hh:mm" candle stamps of the entry / exit and the bars held in candles. */
+  entry_time?: string; exit_time?: string; candles?: number;
 }
 /** One row of the whole-unit account per trade (the lab's money ledger). */
 export interface LedgerRow { entry: string; qty: number; notional: number; costs: number; pnl: number }
@@ -39,6 +41,7 @@ export interface YtRules {
 interface EngineTrade {
   dir: number; legs: [number, number, number][]; entry: string; exit: string; exit_px: number; ret: number; bars: number; open: boolean; reason: string;
   accounting?: { mae_ret_observed?: number | null; mfe_ret_observed?: number | null };
+  entry_time?: string; exit_time?: string; candles?: number;
   units?: number; position_value?: number; pnl?: number; costs_paid?: number;
 }
 export interface EngineRun { dates: string[]; equity: number[]; bh: number[]; trades: EngineTrade[]; report?: LabReport; money?: MoneySummary; stats?: Record<string, number | null> }
@@ -48,6 +51,7 @@ export function ytRunResult(d: EngineRun, ticker: string, name?: string, rollove
   const trades: Trade[] = d.trades.map((t) => ({
     entry: t.entry, exit: t.exit, entry_px: t.legs[0][1], exit_px: t.exit_px, ret: t.ret, bars: t.bars, open: t.open, dir: t.dir, reason: t.reason,
     mae: t.accounting?.mae_ret_observed ?? null, mfe: t.accounting?.mfe_ret_observed ?? null,
+    ...(t.entry_time ? { entry_time: t.entry_time, exit_time: t.exit_time, candles: t.candles } : {}),
   }));
   const ledger = d.money && d.trades.every((t) => typeof t.pnl === "number")
     ? d.trades.map((t) => ({ entry: t.entry, qty: t.units ?? 0, notional: t.position_value ?? 0, costs: t.costs_paid ?? 0, pnl: t.pnl ?? 0 })) : undefined;

@@ -183,7 +183,19 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 const BIG: f64 = 9_999_999.0;
 
-fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
+/// Original AFLs read turnover from OpenInt. The source-qualified portfolio
+/// can provide it; legacy individual-stock runs keep their existing calculation.
+fn portfolio_turnover(x:&Ctx,on:bool,open_interest:Option<&[f64]>)->Vec<bool> {
+    match open_interest {
+        Some(values) if on => values.iter().enumerate().map(|(i,&v)| {
+            let year=x.r[i].date.get(..4).and_then(|s|s.parse().ok()).unwrap_or(0);
+            v > crate::books::ytbb::volsig(year)
+        }).collect(),
+        _=>turnover(x,on),
+    }
+}
+
+fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64, eligible:Option<&[bool]>,open_interest:Option<&[f64]>) -> Sig4 {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
     let gi = |k: &str| g(k).round() as i64;
@@ -193,7 +205,7 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
     let rc: Vec<bool> = (0..n).map(|i| i > 0 && h[i] - l[i] < h[i - 1] - l[i - 1]).collect();
     let vc: Vec<bool> = (0..n).map(|i| i > 0 && vol[i] > vol[i - 1] * (1.0 + vp / 100.0)).collect();
     let (dbs, dss) = dead_sigs(n, gi("dead_bt") == 1, false);
-    let turn = turnover(x, gi("turnover") == 1);
+    let turn = portfolio_turnover(x, gi("turnover") == 1,open_interest);
     let penny = g("penny");
     let bcf: Vec<bool> = (0..n).map(|i| h[i] != c[i] && turn[i] && c[i] > penny && dbs[i]).collect();
     let lc: Vec<bool> = (0..n).map(|i| l[i] == c[i]).collect();
@@ -217,7 +229,7 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
     let (mut pos, mut skip) = (false, false);
     let (mut tsl, mut hsl, mut hh, mut pt) = (0.0f64, 0.0f64, BIG, BIG);
     for i in 1..n {
-        if !pos && rc[i - 1] && vc[i - 1] && c[i] > h[i - 1] && bcf[i] && fb[i] {
+        if !pos && rc[i - 1] && vc[i - 1] && c[i] > h[i - 1] && bcf[i] && fb[i] && eligible.is_none_or(|v|v[i]) {
             s.buy[i] = true;
             if tsl_pct > 0.0 {
                 hh = h[i];
@@ -271,7 +283,7 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
 }
 
 /// The Miscelleneous short AFLs and their long mirror: every exit at the close; the setup as in `signals`.
-fn signals_close(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
+fn signals_close(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64, eligible:Option<&[bool]>,open_interest:Option<&[f64]>) -> Sig4 {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     let n = c.len();
     let gi = |k: &str| g(k).round() as i64;
@@ -282,7 +294,7 @@ fn signals_close(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
     let rc: Vec<bool> = (0..n).map(|i| i > 0 && h[i] - l[i] < h[i - 1] - l[i - 1]).collect();
     let vc: Vec<bool> = (0..n).map(|i| i > 0 && vol[i] > vol[i - 1] * (1.0 + vp / 100.0)).collect();
     let (dbs, dss) = dead_sigs(n, gi("dead_bt") == 1, false);
-    let turn = turnover(x, gi("turnover") == 1);
+    let turn = portfolio_turnover(x, gi("turnover") == 1,open_interest);
     let penny = g("penny");
     // Short_Cash_Filter: LC == 0 (Buy_Cash_Filter: UC == 0); a cover waits on UC bars, a sell on LC bars
     let cash: Vec<bool> = (0..n).map(|i| (if short { l[i] != c[i] } else { h[i] != c[i] }) && turn[i] && c[i] > penny && dbs[i]).collect();
@@ -309,7 +321,7 @@ fn signals_close(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
     let (mut ext, mut tsl, mut pt, mut hsl) = (0.0f64, tsl0, pt0, tsl0);
     for i in 1..n {
         let brk = if short { c[i] < l[i - 1] } else { c[i] > h[i - 1] };
-        if !pos && rc[i - 1] && vc[i - 1] && brk && cash[i] && fe[i] {
+        if !pos && rc[i - 1] && vc[i - 1] && brk && cash[i] && fe[i] && eligible.is_none_or(|v|v[i]) {
             if short { s.short[i] = true } else { s.buy[i] = true }
             if tsl_pct > 0.0 {
                 ext = if short { l[i] } else { h[i] };
@@ -364,13 +376,21 @@ fn signals_close(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig4 {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    run_with_eligibility(id,x,from,to,p,None,None)
+}
+
+/// Research basket adaptation; AUX gates entries before the source loop changes
+/// state, and never changes exits. Existing unfiltered calls remain unchanged.
+pub(crate) fn run_with_eligibility(id:&str,x:&Ctx,from:usize,to:usize,p:&Params,eligible:Option<&[bool]>,open_interest:Option<&[f64]>)->Option<Vec<Trade>> {
     let schema = params(id)?;
+    if eligible.is_some_and(|v|v.len()!=x.c.len()){return None;}
+    if open_interest.is_some_and(|v|v.len()!=x.c.len()){return None;}
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let n = x.c.len();
     if n == 0 || from > to || to >= n {
         return Some(Vec::new());
     }
-    let sig = if matches!(id, SHORT | SHORT_PLAIN | LONG_CHOICE) { signals_close(id, x, &g) } else { signals(id, x, &g) };
+    let sig = if matches!(id, SHORT | SHORT_PLAIN | LONG_CHOICE) { signals_close(id, x, &g,eligible,open_interest) } else { signals(id, x, &g,eligible,open_interest) };
     Some(amibt(x, &sig, from, to))
 }
 
@@ -469,6 +489,29 @@ mod tests {
         let mut w = short_setup();
         w[2] = (98.5, 99.0, 97.5, 97.5);
         assert!(go(SHORT, &with_volume(rows(&w), &[100.0, 130.0, 100.0]), &[]).is_empty());
+    }
+
+    #[test]
+    fn dated_eligibility_gates_short_entry_but_never_cover() {
+        let mut v=short_setup();v.push((96.,96.5,92.,93.));
+        let r=with_volume(rows(&v),&[100.,130.,100.,100.]);let x=Ctx::new(&r,&r,&[]);
+        let p=Params::new();
+        let t=run_with_eligibility(SHORT,&x,0,3,&p,Some(&[true,true,true,false]),None).unwrap();
+        assert_eq!(t.len(),1);assert!(!t[0].open);assert_eq!(t[0].exit_i,3);
+        assert!(run_with_eligibility(SHORT,&x,0,3,&p,Some(&[true,true,false,true]),None).unwrap().is_empty());
+        assert!(run_with_eligibility(SHORT,&x,0,3,&p,Some(&[true]),None).is_none());
+    }
+    #[test]
+    fn portfolio_turnover_uses_native_open_interest_strictly_above_threshold() {
+        let mut v=short_setup();v.push((96.,96.5,92.,93.));
+        let r=with_volume(rows(&v),&[100.,130.,100.,100.]);let x=Ctx::new(&r,&r,&[]);
+        let p=ps(&[("turnover",1.)]);
+        let mut oi=vec![0.;4];oi[2]=9_000_001.;
+        let trades=run_with_eligibility(SHORT_PLAIN,&x,0,3,&p,None,Some(&oi)).unwrap();
+        assert_eq!(trades.len(),1);assert_eq!(trades[0].legs[0].i,2);
+        oi[2]=9_000_000.;
+        assert!(run_with_eligibility(SHORT_PLAIN,&x,0,3,&p,None,Some(&oi)).unwrap().is_empty());
+        assert!(run(SHORT_PLAIN,&x,0,3,&p).unwrap().is_empty());
     }
 
     #[test]

@@ -88,7 +88,7 @@ pub struct Catalogue {root:PathBuf,entries:BTreeMap<String,Entry>,expected_membe
 pub struct BasketMember {pub key:String,pub symbol:String,pub first:String,pub last:String,pub market:Market,pub membership_kind:String}
 struct Entry {basket:String,symbol:String,path:PathBuf,first:String,last:String,bars:usize,source:String,source_sha:String,csv_sha:String,membership:String,basket_member:bool,has_volume:bool,excluded_prefix:usize,original_bars:usize,coverage_note:String,evidence:NativeEvidence}
 
-fn sha256_hex(bytes:&[u8])->Result<String,String>{
+pub(crate) fn sha256_hex(bytes:&[u8])->Result<String,String>{
     // Coreutils is present in the engine's Debian base. Hash the very bytes
     // parsed below, rather than reopening a path and introducing a TOCTOU gap.
     let mut child=Command::new("sha256sum").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|_|"Source checksum verification is unavailable")?;
@@ -123,6 +123,25 @@ pub fn parse_rows(text:&str,symbol:&str)->Result<Vec<Row>,String>{
     if rows.len()<2{return Err("Native series has fewer than two usable source bars".into());}Ok(rows)
 }
 impl Catalogue {
+    /// Dated AUX fields from the same original native file as this catalogue entry.
+    /// Only the team's explicitly mapped cash database is admitted; hashes are
+    /// checked against the existing index before values are aligned to prices.
+    pub(crate) fn yt_aux(&self,key:&str,native_root:&Path,rows:&[Row])->Result<Vec<crate::yt_aux::Aux>,String>{
+        let e=self.entries.get(key).ok_or("Unknown qualified basket symbol")?;
+        if e.source!="Team AmiBroker database cp_updated_2026" && e.source!="Team AmiBroker database cp_old_2022" {return Err("AUX mapping is not established for this data source".into());}
+        if rows.is_empty() || rows.iter().any(|r|r.ticker!=e.symbol) {return Err("AUX stock identity does not match its price series".into());}
+        let symbol=&e.symbol;
+        if symbol.is_empty() || symbol.contains('/') || symbol.contains('\\') || symbol=="." || symbol==".." || symbol.chars().any(char::is_control) {return Err("Unsafe source symbol".into());}
+        let first=symbol.chars().next().unwrap().to_ascii_lowercase();
+        let sub=if first.is_ascii_alphanumeric(){first}else{'_'};
+        let root=native_root.canonicalize().map_err(|_|"Original local AmiBroker database unavailable")?;
+        let path=root.join(sub.to_string()).join(symbol).canonicalize().map_err(|_|"Original local AmiBroker symbol unavailable")?;
+        if !path.starts_with(&root){return Err("Original symbol path escapes database root".into());}
+        let mut bytes=Vec::new();std::fs::File::open(path).map_err(|_|"Original symbol unavailable")?.take(32*1024*1024+1).read_to_end(&mut bytes).map_err(|_|"Original symbol read failed")?;
+        if bytes.len()>32*1024*1024{return Err("Original symbol exceeds size limit".into());}
+        if sha256_hex(&bytes)?!=e.source_sha{return Err("Original source hash differs from the basket catalogue".into());}
+        crate::yt_aux::align(&bytes,rows)
+    }
     pub fn load(directory:&Path)->Result<Self,String>{
         let root=directory.canonicalize().map_err(|_|"Basket data directory unavailable")?;
         let index=root.join("index.csv").canonicalize().map_err(|_|"Basket whitelist index.csv unavailable")?;
@@ -167,6 +186,8 @@ impl Catalogue {
         members.sort_by(|a,b|a.symbol.cmp(&b.symbol));members
     }
     pub fn native_evidence(&self,key:&str)->Option<&NativeEvidence>{self.entries.get(key).map(|entry|&entry.evidence)}
+    /// The original source named in the index (e.g. "Team AmiBroker database cp_updated_2026").
+    pub(crate) fn native_source(&self,key:&str)->Option<&str>{self.entries.get(key).map(|entry|entry.source.as_str())}
     pub fn rows(&self,key:&str)->Result<Vec<Row>,String>{
         let entry=self.entries.get(key).ok_or("Unknown qualified basket symbol")?;
         let path=self.root.join(&entry.path).canonicalize().map_err(|_|"Native source CSV unavailable")?;
@@ -245,6 +266,24 @@ mod tests {
     use super::*;
     use std::{fs,path::PathBuf,sync::atomic::{AtomicUsize,Ordering}};
     static NEXT:AtomicUsize=AtomicUsize::new(0);
+    #[test]
+    fn local_yt_aux_aligns_when_database_is_configured() {
+        let (Ok(basket),Ok(native))=(std::env::var("TEST_YT_BASKET_DIR"),std::env::var("TEST_YT_AUX_DIR")) else{return};
+        let cat=Catalogue::load(Path::new(&basket)).unwrap();
+        let key="basket:nse500:RELIANCE";
+        let rows=cat.rows(key).unwrap();
+        let aux=cat.yt_aux(key,Path::new(&native),&rows).unwrap();
+        assert_eq!(aux.len(),rows.len());
+        assert!(aux.iter().any(|a|a.aux1==1.));
+        let ctx=crate::connors::Ctx::new(&rows,&rows,&[]);
+        let observed=crate::yt_nr7_portfolio::observe_with_aux(&cat,key,Path::new(&native),&ctx,&crate::connors::Params::new(),crate::yt_aux::Rule::Aux1).unwrap();
+        assert_eq!(observed.bars.len(),rows.len());
+        let p=crate::connors::Params::new();
+        for id in [crate::books::ytnr7::NR7_ST,crate::books::ytcr::SHORT] {
+            let trades=crate::yt_aux::strategy_trades(&cat,key,Path::new(&native),id,&ctx,0,rows.len()-1,&p,crate::yt_aux::Rule::Aux1).unwrap();
+            for t in trades { assert_eq!(aux[t.legs[0].i].aux1,1.); }
+        }
+    }
     struct Fixture(PathBuf);
     impl Drop for Fixture{fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}}
     fn fixture()->Fixture{

@@ -29,18 +29,47 @@
 //! Not coded:
 //! - the ROC / RSI "ranking" (PositionScore) only chooses between stocks in AmiBroker's portfolio backtest and is not
 //!   modelled; the ROC sign / threshold entry conditions of those AFLs are coded;
-//! - "2 DAY SHORT ON intraday nth cadle*.afl" (5 files, 4 distinct, in "2 Day Short ON Intraday nth candle_turnover
-//!   divide by 7 for 1hr" and "2 Day Short/AFLs/Intraday") trade the Nth intraday candle of the month: intraday bars
-//!   are not available here;
+//! - "2 DAY SHORT ON intraday nth cadle*.afl": basic, HSL/PT and profit-booking paths have provisional held
+//!   implementations. The swing filter declares an adaptation: HCL is computed before the loop that refers to it;
 //! - "2 Day Short/DualPlot.afl" only plots two Foreign tickers (no trading rules).
 #![allow(dead_code)]
 use crate::books::yteng::rsi as rsi_afl;
 use crate::books::ytroc::{backtest, Px};
 use crate::books::ytsw::{exrem, sma, st_filter, true_range};
 use crate::books::ytwh::{bound, loop_val};
-use crate::connors::{dmi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{dmi, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+
+/// Raw signals for "2 DAY SHORT ON intraday nth cadle.afl", prior to ExRem and execution.
+/// The input filter and turnover arrays must be established from the source data; the default
+/// filter is NONE (sell allowed, buy disallowed). End-of-month refers to the next observed bar,
+/// just as the AFL's positive Ref does. A missing next bar is not invented.
+fn nth_candle_month_signals(month: &[u8], day: &[u8], entry_ok: &[bool],
+                            filter_buy: &[bool], filter_sell: &[bool], entry: usize, exit: usize)
+    -> Result<Vec<(bool, bool)>, &'static str> {
+    let n = month.len();
+    if [day.len(), entry_ok.len(), filter_buy.len(), filter_sell.len()].iter().any(|&len| len != n)
+        || entry == 0 || exit == 0 {
+        return Err("month, day and filters must align and candle offsets must be positive");
+    }
+    let mut month_end = vec![false; n];
+    for i in 0..n.saturating_sub(1) {
+        month_end[i] = month[i] != month[i + 1] && day[i] != day[i + 1];
+    }
+    let mut signals = Vec::with_capacity(n);
+    for i in 0..n {
+        let short = i.checked_sub(entry).is_some_and(|k| month_end[k]) && entry_ok[i] && filter_sell[i];
+        let cover = entry.checked_add(exit).and_then(|offset| i.checked_sub(offset))
+            .is_some_and(|k| month_end[k]) || filter_buy[i];
+        signals.push((short, cover));
+    }
+    Ok(signals)
+}
 
 pub const BOOK: &str = "yt_2ds";
+pub const INTRADAY_NTH: &str = "yt2ds_intraday_nth";
+pub const INTRADAY_STOPS: &str = "yt2ds_intraday_nth_stops";
+pub const INTRADAY_PT: &str = "yt2ds_intraday_nth_pt";
+pub const INTRADAY_IDS: [&str;3] = [INTRADAY_NTH,INTRADAY_STOPS,INTRADAY_PT];
 pub const CANDLE: &str = "yt2ds_candle_color";
 pub const ROC_VALUE: &str = "yt2ds_roc_value";
 pub const ADX: &str = "yt2ds_adx";
@@ -81,6 +110,17 @@ macro_rules! tmpl {
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
+        StrategyDef { id: INTRADAY_NTH, name: "2 Day Short on Intraday Nth Candle", group: "YT Strategies · 13-3 AKA 2D Short", session: 0, dir: "Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules: &[
+            "F|The last observed candle of a month is followed by a candle in a new month",
+            "E|Short at the close of the specified candle offset after month end (default 1)",
+            "X|Cover at the close after the additional specified offset (default 1)",
+        ], notes: "2 Day Short/AFLs/Intraday/2 DAY SHORT ON intraday nth cadle.afl, default NONE filter and turnover off. The AFL states no analysis interval: the candle minutes setting is the Analysis periodicity (default 1 minute). ST, ATH and swing filters are included. Swing is a declared adaptation computing HCL before its first use; the AFL assigns HCL later. Ranking and sizing choose among symbols and are not modelled in a single-symbol run. Not compared with the team's trade sheets.", claim: None },
+        StrategyDef { id: INTRADAY_STOPS, name: "2 Day Short Intraday Nth Candle with HSL and PT", group: "YT Strategies · 13-3 AKA 2D Short", session:0, dir:"Short", status:Status::Live, needs_volume:false,needs_vix:false,needs_series:&[],book:BOOK,
+            rules:&["E|Short at the specified candle after month end", "X|Cover using the source exit-bar, hard stop and profit-target loop"],
+            notes:"2 DAY SHORT ON intraday nth cadle_turnover divide by 7 for 1hr_HSL_PT.afl. Default NONE filter, HSL and PT off; the source's SkipCover assignment is retained. Candles default to 60 minutes (the folder's 1hr). The AFL later assigns CoverPrice = Close, overriding earlier loop prices, so every cover fills at a candle close. Not compared with the team's trade sheets.",claim:None },
+        StrategyDef { id: INTRADAY_PT, name: "2 Day Short Intraday Nth Candle with Profit Booking", group: "YT Strategies · 13-3 AKA 2D Short", session:0, dir:"Short", status:Status::Live, needs_volume:false,needs_vix:false,needs_series:&[],book:BOOK,
+            rules:&["E|Short at the specified candle after month end", "X|Cover using the source exit-bar, hard stop and profit-target loop"],
+            notes:"2 DAY SHORT ON intraday nth cadle_turnover divide by 7 for 1hr_With PT.afl. Default NONE filter, HSL 2%, target 1%; the AFL compares its count to a Boolean exit array and later assigns CoverPrice = Close, so every cover fills at a candle close. Candles default to 60 minutes (the folder's 1hr). Not compared with the team's trade sheets.",claim:None },
         def(CANDLE, "2 Day Short with Candle Colour (stock)", &[
             E_DAY,
             "F|Candle colour: any (RANDOM, default), red (Close < Open) or green (Close > Open)",
@@ -175,6 +215,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    if INTRADAY_IDS.contains(&id) {
+        let mut result=vec![p("tf_min", if id==INTRADAY_NTH {"Candle minutes (the AFL states no interval; the Analysis periodicity)"} else {"Candle minutes (the AFL folder: 1hr)"}, if id==INTRADAY_NTH {1.} else {60.}, 1., 60., 1.),
+            p("entry_bar", "Entry candle offset", 1., 1., 350., 1.),
+            p("exit_bar", "Additional exit candle offset", 1., 1., 350., 1.),
+            p("filter","Market filter (0 none, 1 ST, 2 swing adaptation, 3 ATH)",0.,0.,3.,1.),p("st_period","Daily ST period",5.,1.,20.,1.),p("st_factor","Daily ST factor",1.,0.,20.,1.),p("st_point","ST point (1 midpoint, 2 close, 3 pivot)",1.,1.,3.,1.),
+            p("bear_pct","Bear swing percent",23.,10.,50.,1.),p("bull_pct","Bull swing percent",44.,10.,50.,1.),p("ath_exit_pct","ATH exit percent",18.,1.,100.,1.),
+            p("turnover","OpenInt turnover filter (1 on)",0.,0.,1.,1.),p("deadstock","Dead-stock backtest (1 on)",0.,0.,1.,1.),p("penny","Penny price threshold",0.,0.,100.,1.)];
+        if id!=INTRADAY_NTH { result.push(p("hsl_pct","Hard stop percent",if id==INTRADAY_PT {2.}else{0.},0.,10.,1.));result.push(p("pt_pct","Profit target percent",if id==INTRADAY_PT {1.}else{0.},0.,10.,1.)); }
+        result.push(crate::intraday::align_param());
+        return Some(result);
+    }
     let days = |e: f64, x: f64| vec![p("entry_day", "Entry day (Nth trading day of the month)", e, 1.0, 31.0, 1.0), p("exit_day", "Exit day (trading days after entry)", x, 1.0, 31.0, 1.0)];
     let elec = |d: f64| p("no_election", "No shorts in election months (May 2004/09/14/19; 1 on)", d, 0.0, 1.0, 1.0);
     let hsl = |d: f64| p("hsl_pct", "Hard SL % (0 off)", d, 0.0, 12.0, 1.0);
@@ -465,7 +516,103 @@ fn filter_arrays(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: i64, swing_athc: bool) 
 
 // ---------------------------------------------------------------- run
 
+fn intraday_ath_filter(c:&[f64],exit:f64)->Vec<i8> {
+    if c.is_empty(){return Vec::new();}
+    let mut hcl=c.to_vec();for i in 1..c.len(){hcl[i]=hcl[i].max(hcl[i-1]);}
+    let mut up=hcl.clone();let mut down:Vec<f64>=c.iter().map(|v|v*(1.-exit/100.)).collect();
+    let mut trend=vec![1i8;c.len()];let mut active=vec![false;c.len()];
+    for i in 1..c.len() {
+        trend[i]=if c[i]>up[i-1] {1}else if c[i]<down[i-1] {-1}else{trend[i-1]};
+        if trend[i]>0 && down[i]<down[i-1] {down[i]=down[i-1];}
+        if trend[i]<0 && up[i]>up[i-1] {up[i]=up[i-1];}
+        if trend[i]<0 && trend[i-1]>0 {up[i]=hcl[i];}
+        if trend[i]>0 && trend[i-1]<0 {down[i]=c[i]*(1.-exit/100.);}
+        active[i]=if c[i]>hcl[i-1] {true}else if trend[i]==-1 && active[i-1] {false}else{active[i-1]};
+    }
+    active.into_iter().map(|v|if v {1}else{-1}).collect()
+}
+
+fn run_intraday_nth(id: &str, x: &Ctx, from: usize, to: usize, p: &Params, capture:&mut Vec<(usize,usize)>) -> Vec<Trade> {
+    if x.r.is_empty() || from > to || to >= x.r.len() { return Vec::new(); }
+    let ticker = format!("{}{}", crate::intraday::BASKET_PREFIX, x.r[0].ticker);
+    let Some(minutes) = crate::intraday::minutes(&ticker) else { return Vec::new(); };
+    let value = |name: &str, default: f64, max: f64| p.get(name).copied().filter(|v| v.is_finite()).unwrap_or(default).round().clamp(1., max) as usize;
+    let tf = value("tf_min", if id==INTRADAY_NTH {1.}else{60.}, 60.) as u16;
+    let (bars, di) = crate::books::ytsti::candles_for(&minutes, x, tf,crate::intraday::align_of(p));
+    let dates: Vec<&str> = bars.day.iter().map(|&d| minutes.dates[d as usize].as_str()).collect();
+    let month: Vec<u8> = dates.iter().map(|d| d.get(5..7).and_then(|v| v.parse().ok()).unwrap_or(0)).collect();
+    let day: Vec<u8> = dates.iter().map(|d| d.get(8..10).and_then(|v| v.parse().ok()).unwrap_or(0)).collect();
+    if month.contains(&0) || day.contains(&0) { return Vec::new(); }
+    let n = bars.len();
+    let on=|k:&str|p.get(k).is_some_and(|v|v.is_finite()&&*v>=0.5);
+    let penny=p.get("penny").copied().filter(|v|v.is_finite()).unwrap_or(0.).clamp(0.,100.);
+    let entry_ok: Vec<bool> = (0..n).map(|i| {
+        let deadstock=if on("deadstock"){i+1<n}else{i>0};
+        let turnover=!on("turnover") || bars.oi[i].zip(crate::intraday::open_interest_threshold(&minutes.dates[bars.day[i] as usize],id!=INTRADAY_NTH)).is_some_and(|(oi,level)|oi>level);
+        bars.c[i]>penny && deadstock && turnover
+    }).collect();
+    let number=|k:&str,d:f64,lo:f64,hi:f64|p.get(k).copied().filter(|v|v.is_finite()).unwrap_or(d).clamp(lo,hi);
+    let kind=number("filter",0.,0.,3.).round() as i64;
+    let daily=match kind {
+        1=>st_filter(x,'D',value("st_point",1.,3.) as i64,value("st_period",5.,20.),number("st_factor",1.,0.,20.)),
+        // Declared adaptation: calculate the HCL series before the AFL's swing loop, which refers to it before assignment.
+        2=>close_swing(&x.c,number("bear_pct",23.,10.,50.),number("bull_pct",44.,10.,50.),true),
+        3=>intraday_ath_filter(&x.c,number("ath_exit_pct",18.,1.,100.)),
+        _=>vec![0;x.r.len()],
+    };
+    let selected_st=kind!=0;
+    let trend:Vec<i8>=(0..n).map(|i|if !selected_st {0} else if bars.last_of_day(i){daily[di[i]]}else{di[i].checked_sub(1).map_or(0,|d|daily[d])}).collect();
+    let filter_buy:Vec<bool>=trend.iter().enumerate().map(|(i,&v)|v==1 || (on("deadstock") && i+1==n)).collect();
+    let filter_sell:Vec<bool>=trend.iter().map(|&v|!selected_st || v == -1).collect();
+    let Ok(signals) = nth_candle_month_signals(&month, &day, &entry_ok, &filter_buy, &filter_sell,
+        value("entry_bar", 1., 350.), value("exit_bar", 1., 350.)) else { return Vec::new(); };
+    let Ok(plain) = nth_candle_month_signals(&month, &day, &entry_ok, &vec![false; n], &vec![true; n],
+        value("entry_bar", 1., 350.), value("exit_bar", 1., 350.)) else { return Vec::new(); };
+    let mut trades = Vec::new();
+    let mut position: Option<usize> = None;
+    let mut skip=false;let mut count=0usize;let mut hsl=9_999_999.;let mut target=0.;
+    let pct=|k:&str,default:f64|p.get(k).copied().filter(|v|v.is_finite()).unwrap_or(default).clamp(0.,10.);
+    for i in 0..n {
+        if di[i] > to { break; }
+        if let Some(e) = position {
+            let exit=if id==INTRADAY_NTH {signals[i].1} else if skip {
+                bars.h[i]!=bars.c[i] || (on("deadstock") && i+1==n)
+            } else {
+                count+=1;
+                let bar_exit=if id==INTRADAY_PT {count==usize::from(plain[i].1)}else{plain[i].1};
+                let trigger=bar_exit || filter_buy[i] || bars.l[i]<=target || bars.h[i]>hsl;
+                if id==INTRADAY_PT && trigger && bars.h[i]==bars.c[i] && !(on("deadstock") && i+1==n) {skip=true;false}
+                else if id==INTRADAY_STOPS && !trigger {skip=true;false}
+                else {trigger}
+            };
+            if exit {
+                trades.push(Trade { dir: -1., legs: vec![Leg { i: di[e], px: bars.c[e], w: 1. }], exit_i: di[i], exit_px: bars.c[i],
+                    reason: format!("Intraday short {:04} to {:04}; {tf}-minute candles", bars.hhmm[e], bars.hhmm[i]),
+                    entry_kind: "close", signal_i: di[i], open: false, exits: Vec::new() });
+                capture.push((e,i));
+                position = None;
+                skip=false;count=0;target=0.;
+            }
+        } else if signals[i].0 && di[i] >= from && (id!=INTRADAY_PT || bars.l[i]!=bars.c[i]) {
+            position = Some(i);
+            let h=pct("hsl_pct",if id==INTRADAY_PT{2.}else{0.});
+            let t=pct("pt_pct",if id==INTRADAY_PT{1.}else{0.});
+            if h>0. {hsl=bars.c[i]*(1.+h/100.);} if t>0. {target=bars.c[i]*(1.-t/100.);}
+        }
+    }
+    if let Some(e) = position {
+        if let Some(i) = (e..n).rev().find(|&i| di[i] <= to) {
+            trades.push(Trade { dir: -1., legs: vec![Leg { i: di[e], px: bars.c[e], w: 1. }], exit_i: di[i], exit_px: bars.c[i],
+                reason: "Open intraday position at end of selected period".into(), entry_kind: "close", signal_i: di[i], open: true, exits: Vec::new() });
+            capture.push((e,i));
+        }
+    }
+    crate::intraday::record(&minutes,&bars,tf,crate::intraday::align_of(p),&trades,capture);
+    trades
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if INTRADAY_IDS.contains(&id) { return Some(run_intraday_nth(id, x, from, to, p,&mut Vec::new())); }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let gi = |k: &str| g(k).round() as i64;
@@ -601,6 +748,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(backtest(x, &px, from, to))
 }
 
+pub(crate) fn intraday_portfolio_observations(id:&str,x:&Ctx,from:usize,to:usize,p:&Params,first_id:u64)
+    ->Result<(Vec<crate::yt_intraday_portfolio::Signal>,Vec<crate::yt_intraday_portfolio::Mark>),String> {
+    if !INTRADAY_IDS.contains(&id){return Err("unknown intraday 2D strategy".into());}
+    crate::intraday::validate_research_params(&params(id).ok_or("missing 2D parameters")?,p)?;
+    if x.r.is_empty() || from>to || to>=x.r.len(){return Err("invalid selected daily coverage".into());}
+    let ticker=format!("{}{}",crate::intraday::BASKET_PREFIX,x.r[0].ticker);
+    crate::intraday::available(&ticker)?;
+    let minutes=crate::intraday::minutes(&ticker).ok_or("intraday bars are unavailable")?;
+    let default=if id==INTRADAY_NTH {1.}else{60.};
+    let tf=p.get("tf_min").copied().unwrap_or(default).round().clamp(1.,60.) as u16;
+    let (bars,_)=crate::books::ytsti::candles_for(&minutes,x,tf,crate::intraday::align_of(p));
+    let mut indices=Vec::new();let trades=run_intraday_nth(id,x,from,to,p,&mut indices);
+    if indices.len()!=trades.len(){return Err("timestamped source trade count mismatch".into());}
+    let timed=trades.into_iter().zip(indices).map(|(t,(e,z))|(t,e,z)).collect();
+    crate::yt_intraday_portfolio::close_observations(x,from,to,&minutes,&bars,timed,first_id)
+}
+
 /// Two Day Short Only with and without %Swing and ST Filter_Calendar Days.afl.
 fn calendar(x: &Ctx, k: &Cal, g: &dyn Fn(&str) -> f64) -> Px {
     let (h, l, c) = (&x.h, &x.l, &x.c);
@@ -729,7 +893,7 @@ fn fresh(x: &Ctx, k: &Cal, g: &dyn Fn(&str) -> f64) -> Px {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    if !IDS.contains(&id) {
+    if !IDS.contains(&id) && !INTRADAY_IDS.contains(&id) {
         return None;
     }
     let d = catalogue().into_iter().find(|d| d.id == id)?;
@@ -739,6 +903,22 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn intraday_ath_filter_activates_on_a_new_high_and_deactivates_on_a_swing_break() {
+        assert_eq!(intraday_ath_filter(&[100.,110.,105.,80.,120.],18.),vec![-1,1,1,-1,1]);
+    }
+    #[test]
+    fn intraday_month_end_offsets_follow_observed_bars() {
+        let month = [1, 1, 2, 2, 2];
+        let day = [31, 31, 1, 1, 1];
+        let yes = [true; 5];
+        let no = [false; 5];
+        let signals = nth_candle_month_signals(&month, &day, &yes, &no, &yes, 1, 1).unwrap();
+        assert_eq!(signals[2], (true, false));
+        assert_eq!(signals[3], (false, true));
+        assert_eq!(signals[4], (false, false)); // default dead-stock setting does not force an exit
+        assert!(nth_candle_month_signals(&month, &day, &yes, &no, &yes, 0, 1).is_err());
+    }
     use crate::books::ytmr::day_number;
     use crate::books::ytwh::testbars::*;
     use crate::Row;

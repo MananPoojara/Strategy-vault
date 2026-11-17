@@ -34,6 +34,7 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/yt/summary"
             | "guru/yt/readiness"
             | "guru/yt/run"
+            | "guru/yt/basket-run"
             | "guru/yt/params"
             | "guru/yt/optimize"
             | "guru/yt/progress"
@@ -83,7 +84,8 @@ mod tests {
             assert!(allowed_engine_path(&format!("guru/yt/{route}")));
         }
         assert!(!is_optimization_path("guru/yt/progress"));
-        assert!(!allowed_engine_path("guru/yt/basket-run"));
+        assert!(allowed_engine_path("guru/yt/basket-run"));
+        assert!(!is_optimization_path("guru/yt/basket-run"));
         for owner in ["connors","ross","chande","yt"] {assert!(is_optimization_path(&format!("guru/{owner}/optimize")));}
         assert!(!is_optimization_path("guru/other/optimize"));
         for path in [
@@ -163,6 +165,10 @@ mod numeric_tests {
         }
         assert!(!allowed_engine_path("guru/other/basket-run"));
         assert!(allowed_engine_path("guru/connors/basket-run"));
+        assert!(safe_engine_numbers(&params(&[("mode","amibroker"),("initial_equity","1000000"),("size_mode","pct"),("size_value","5"),("max_positions","20"),("brokerage","0")])));
+        for pair in [("mode","other"),("size_mode","percent"),("initial_equity","0"),("initial_equity","NaN"),("size_value","-5"),("size_value","1e13"),("brokerage","-1"),("brokerage","101")]{
+            assert!(!safe_engine_numbers(&params(&[pair])),"{pair:?}");
+        }
         assert!(!is_optimization_path("guru/connors/basket-run"));
     }
 }
@@ -174,6 +180,21 @@ pub fn safe_engine_numbers(params: &std::collections::BTreeMap<String, String>) 
             return false;
         }
         if key == "membership" && !matches!(value.as_str(),"current"|"past") {
+            return false;
+        }
+        // AmiBroker-style YT portfolio (mode=amibroker): sizing settings are bounded here as well as in the engine.
+        if key == "mode" && value != "amibroker" {
+            return false;
+        }
+        if key == "size_mode" && !matches!(value.as_str(),"pct"|"shares"|"value") {
+            return false;
+        }
+        if matches!(key.as_str(),"initial_equity"|"size_value")
+            && !value.parse::<f64>().is_ok_and(|n| n.is_finite() && n > 0.0 && n <= 1e12)
+        {
+            return false;
+        }
+        if key == "brokerage" && !value.parse::<f64>().is_ok_and(|n| n.is_finite() && (0.0..=100.0).contains(&n)) {
             return false;
         }
         if key.starts_with("p.") || matches!(key.as_str(),"cost"|"slippage"|"rollover") {

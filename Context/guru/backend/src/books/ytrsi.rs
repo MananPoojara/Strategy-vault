@@ -32,9 +32,19 @@
 //! - template settings left at their defaults: dead-stock (NO), penny price 0 and turnover filter (NO); UC = high
 //!   equals close, LC = low equals close, `Prec(x, 2)` truncates to two decimals.
 //!
-//! Not coded: "Fast Slow RSI" (both AFLs are hourly-RSI crossovers run on hourly bars); "RSI - Index" (both run on
-//! F&O intraday bars with a daily filter); the two "New_RSI_Threshold_Long_TSL_on_RSI" AFLs (they
-//! `#include_once <parmar/UtilityParam.afl>`, a file not in the folder); the three AFLs in TRASH sub-folders
+//! `ytrsi_threshold_tsl` and `ytrsi_threshold_tsl_upd` are the two "RSI Afls/New_RSI_Threshold_Long_TSL_on_RSI" AFLs
+//! (Yashesh Sorathia, 24-02-2023). They `#include_once <parmar/UtilityParam.afl>` (supplied on 17-11-2026 in
+//! jay-local/Include(X86)/parmar) but call none of its functions, so the include changes nothing. Specific to them:
+//! - the loop runs over bars 1 .. BarCount-2, so nothing is bought or sold on the last bar and the dead-stock sell
+//!   on the last bar is never reached; an open position is marked at the run's end;
+//! - their own Supertrend (`SupertrendV2`): ATR = mean of the last `period` ATR(1), trend up from the start, the loop
+//!   from bar `period` (`ytbb::st_loop`); on a higher timeframe the value is shifted `Ref(-1)`, expanded with
+//!   expandFirst and shifted `Ref(+1)`: a period's value reaches the daily bars at the period's last bar, the bars
+//!   before it read the previous period (none in the first period); intraday timeframe choices stay daily;
+//! - the ST filter state is `IIf(Close >= ST, 1, -1)`; while the ST line is still Null it is taken as neither.
+//!
+//! Not coded: "Fast Slow RSI" (coded in `ytrsi_ieod.rs`); "RSI - Index" (both run on
+//! F&O intraday bars with a daily filter); the three AFLs in TRASH sub-folders
 //! (discarded drafts of the trailing family).
 #![allow(dead_code)]
 use crate::books::ytsw::{close_swing, compress, expand_last, sma, supertrend, trade};
@@ -60,7 +70,9 @@ pub const CONNORS: &str = "ytrsi_connors_fo";
 pub const SLT: &str = "ytrsi_st_ma_sl";
 pub const HLLH: &str = "ytrsi_hl_lh";
 pub const OBOS: &str = "ytrsi_obos_delayed";
-pub const IDS: [&str; 18] = [CROSS, TRAIL, TRAIL_V1, TRAIL_V2, TRAIL_V3, LOWEST, LOWEST_SW, LOWEST_ATHC, BREACH, DIP, AK_BULL, AK_BEAR, AK_BULL_N, AK_BEAR_N, CONNORS, SLT, HLLH, OBOS];
+pub const THRESH: &str = "ytrsi_threshold_tsl";
+pub const THRESH_UPD: &str = "ytrsi_threshold_tsl_upd";
+pub const IDS: [&str; 20] = [CROSS, TRAIL, TRAIL_V1, TRAIL_V2, TRAIL_V3, LOWEST, LOWEST_SW, LOWEST_ATHC, BREACH, DIP, AK_BULL, AK_BEAR, AK_BULL_N, AK_BEAR_N, CONNORS, SLT, HLLH, OBOS, THRESH, THRESH_UPD];
 
 const GROUP: &str = "YT Strategies · RSI";
 
@@ -185,6 +197,28 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|RSI crosses below 60 (leaves overbought), Low != Close: at the Close; otherwise next bar without a low circuit at Open - 0.25%",
             "F|Versions: Simple RSI (default), hard % SL on the Close, hard ATR SL, daily SuperTrend(5, 1) (entry up, exit down), 200-day MA exit",
         ], "RSI OverboughtOversold Delayed EntryExit with Exit versions.afl (folder root), coded as the AFL is written. Its hard % SL and ATR SL default to 0 (off)."),
+        def(THRESH, "RSI Threshold Entry, Trailing SL on RSI", "Long", &[
+            "F|Optional Supertrend filter (default OFF): monthly, (High+Low)/2, period 5, multiplier 2, bullish (Close at or above the ST)",
+            "F|Flat (no position); not the first or the last bar",
+            "F|Close > penny price (0); turnover filter (off)",
+            "E|RSI(14) falls below 20 (the threshold crosses above the RSI): buy at the Close",
+            "X|From the bar after entry, sell at the Close when any of these holds:",
+            "X|RSI below its trailing level: highest (RSI − points) since entry (default 0 points = off)",
+            "X|Profit booking % or hard SL % reached (both 0 = off); tested on the Close, or on the High / Low with 'Exit at' Live",
+            "X|ST filter turns against the position (filter ON)",
+        ], "RSI Afls/New_RSI_Threshold_Long_TSL_on_RSI.afl, coded as the AFL is written with its default Param values. With those defaults every exit is off (TSL on RSI 0, which is below its declared range 5-30; profit and hard SL 0; ST filter OFF) and the loop stops before the last bar, so the AFL buys once and never sells; set rsi_tsl (the AFL's range is 5-30 points) to trade. With 'Exit at' Live a profit / hard-SL exit sells at the level, or at max(Low, Open − buffer %) when the Open is beyond it. The AFL includes parmar/UtilityParam.afl but uses nothing from it. Runs on one instrument at a time; the AFL's portfolio settings (20 positions, sizing, 0.65 brokerage) are not modelled. Not compared with the team's results."),
+        def(THRESH_UPD, "RSI Threshold Entry, Trailing SL on RSI (Updated Filter)", "Long", &[
+            "F|RSI signal: RSI(14) crosses below 30 (or above it, entry type 1); the signal stays armed until a trade is closed",
+            "F|Optional Supertrend filter (default OFF): monthly, (High+Low)/2, period 5, multiplier 1, bullish",
+            "F|Optional: RSI still below the threshold on the entry bar (default OFF)",
+            "F|Flat (no position); not the first or the last bar; Close > penny price (0); turnover filter (off)",
+            "E|Signal armed and the ST filter allows it: buy at the Close",
+            "X|From the bar after entry, sell at the Close when any of these holds:",
+            "X|RSI below its trailing level: highest (RSI − points) since entry (default 0 = off)",
+            "X|Profit booking %, hard SL % or trailing SL % (trailed on the Close) reached (all 0 = off)",
+            "X|Fresh sell of the exit Supertrend: the ST line crosses above the Close (default OFF; chart timeframe, period 5, multiplier 2)",
+            "X|ST filter turns against the position (filter ON)",
+        ], "RSI Afls/New_RSI_Threshold_Long_TSL_on_RSI (With Updated Filter).afl, coded as the AFL is written with its default Param values. With those defaults every exit is off (TSL on RSI 0, below its declared range 5-30; profit, hard and trail SL 0; both Supertrend options OFF) and the loop stops before the last bar, so the AFL buys once and never sells; set an exit to trade. The RSI signal is latched (RSIEntry): after a cross the buy can come on a later bar, when the ST filter turns. A trailing-SL % exit sells at the Close also with 'Exit at' Live (only profit / hard SL have a live price). The AFL includes parmar/UtilityParam.afl but uses nothing from it. Runs on one instrument at a time; portfolio settings not modelled. Not compared with the team's results."),
     ]
 }
 
@@ -375,6 +409,50 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.push(p("ma_n", "MA period", 200.0, 1.0, 600.0, 1.0));
             v
         }
+        THRESH | THRESH_UPD => {
+            let upd = id == THRESH_UPD;
+            const INPUT: &str = "ST input (0 O, 1 H, 2 L, 3 C, 4 (O+C)/2, 5 (H+L)/2, 6 (HLC)/3, 7 (OHLC)/4)";
+            let mut v = vec![p("rsi_n", "RSI period", 14.0, 4.0, 28.0, 2.0)];
+            if upd {
+                v.push(p("entry_type", "RSI entry type (0 cross below threshold, 1 cross above)", 0.0, 0.0, 1.0, 1.0));
+                v.push(p("thresh", "RSI threshold", 30.0, 10.0, 90.0, 5.0));
+                v.push(p("thresh_tog", "RSI must be below the threshold at entry (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0));
+            } else {
+                v.push(p("thresh", "RSI threshold", 20.0, 10.0, 50.0, 5.0));
+            }
+            v.extend([
+                p("st_flt", "ST as a filter (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
+                p("flt_tf", "Filter timeframe (0 daily, 1 weekly, 2 monthly)", 2.0, 0.0, 2.0, 1.0),
+                p("flt_input", INPUT, 5.0, 0.0, 7.0, 1.0),
+                p("flt_n", "Filter ST period", 5.0, 1.0, 50.0, 1.0),
+                p("flt_f", "Filter ST multiplier", if upd { 1.0 } else { 2.0 }, 0.1, 10.0, 0.1),
+                p("flt_type", "ST filter type (0 bearish, 1 bullish)", 1.0, 0.0, 1.0, 1.0),
+            ]);
+            if upd {
+                v.extend([
+                    p("st_exit", "Exit on fresh ST sell (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
+                    p("x_tf", "Exit ST timeframe (0 daily, 1 weekly, 2 monthly)", 0.0, 0.0, 2.0, 1.0),
+                    p("x_input", INPUT, 5.0, 0.0, 7.0, 1.0),
+                    p("x_n", "Exit ST period", 5.0, 1.0, 50.0, 1.0),
+                    p("x_f", "Exit ST multiplier", 2.0, 1.0, 5.0, 0.5),
+                ]);
+            }
+            v.extend([
+                p("exit_close", "Exit at (0 live, 1 closing)", 1.0, 0.0, 1.0, 1.0),
+                p("rsi_tsl", "TSL on RSI in points (0 off)", 0.0, 0.0, 30.0, 5.0),
+                p("pb_pct", "Profit booking % (0 off)", 0.0, 0.0, if upd { 100.0 } else { 50.0 }, 1.0),
+                p("hsl_pct", "Hard SL % (0 off)", 0.0, 0.0, if upd { 100.0 } else { 50.0 }, 1.0),
+            ]);
+            if upd {
+                v.push(p("tsl_pct", "Trail SL % (0 off)", 0.0, 0.0, 100.0, 1.0));
+            }
+            v.extend([
+                p("buffer_pct", "Selling buffer %", 0.25, 0.0, 10.0, 0.05),
+                p("penny", "Penny stock price", 0.0, 0.0, 100.0, 1.0),
+                p("turnover", "Turnover filter (0 no, 1 yes: close x volume)", 0.0, 0.0, 1.0, 1.0),
+            ]);
+            v
+        }
         _ => return None,
     })
 }
@@ -441,7 +519,7 @@ fn ma_nan(c: &[f64], n: usize) -> Vec<f64> {
 
 /// The AFLs' Supertrend loop trend (1 up, -1 down) on the timeframe `tf` ('D', 'W', 'M'), expanded to the daily bars.
 /// Calculation point: 1 mid (H+L)/2, 2 close, 3 pivot (H+L+C)/3, 4 (mid + pivot + close)/3, 5 MA(C, 3), 6 MA(C, 5).
-fn st_trend(x: &Ctx, tf: char, point: i64, period: usize, factor: f64) -> Vec<i8> {
+pub(crate) fn st_trend(x: &Ctx, tf: char, point: i64, period: usize, factor: f64) -> Vec<i8> {
     let b = compress(x, tf);
     let m = b.c.len();
     let mid = |g: usize| (b.h[g] + b.l[g]) / 2.0;
@@ -509,7 +587,7 @@ fn athc(c: &[f64], exit_pct: f64) -> Vec<bool> {
 }
 
 /// The % swing filter of the Lowest-RSI swing AFLs (bull % above, bear % below, a new all-time-high close also up).
-fn swing_filter(c: &[f64], bear: f64, bull: f64) -> Vec<i8> {
+pub(crate) fn swing_filter(c: &[f64], bear: f64, bull: f64) -> Vec<i8> {
     let n = c.len();
     let hcl = ath_close(c);
     let mut up: Vec<f64> = c.iter().map(|v| v + v * bull / 100.0).collect();
@@ -1567,6 +1645,123 @@ fn run_obos(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
     s
 }
 
+// ---------------------------------------------------------------- New_RSI_Threshold_Long_TSL_on_RSI
+
+/// The AFLs' SupertrendV2 on timeframe `tf`: the period rows, the daily-to-period map and the ST line per period
+/// (ATR = mean of the last `period` ATR(1)).
+fn st_v2_periods(x: &Ctx, tf: char, input: i64, period: usize, mult: f64) -> (Vec<crate::Row>, crate::books::ytsw::Bars, Vec<Option<f64>>) {
+    let (rows, b) = crate::books::ytbb::period_rows(x, tf);
+    let (ph, pl, pc): (Vec<f64>, Vec<f64>, Vec<f64>) = (rows.iter().map(|r| r.high).collect(), rows.iter().map(|r| r.low).collect(), rows.iter().map(|r| r.close).collect());
+    let trr = crate::books::ytsw::true_range(&ph, &pl, &pc);
+    let p = period.max(1);
+    let atr: Vec<Option<f64>> = (0..pc.len()).map(|i| if i + 1 < p { None } else { trr[i + 1 - p..=i].iter().try_fold(0.0, |s, v| v.map(|v| s + v)).map(|s| s / p as f64) }).collect();
+    let line = crate::books::ytbb::st_loop(&crate::books::ytbb::input_array(&rows, input), &atr, p, mult, &pc);
+    (rows, b, line)
+}
+
+/// A per-period value on the daily bars as the AFLs expand it (Ref(-1), expandFirst, Ref(+1)); see the module notes.
+fn expand_v2<T: Copy>(v: &[Option<T>], b: &crate::books::ytsw::Bars, tf: char) -> Vec<Option<T>> {
+    (0..b.group.len()).map(|i| { let k = b.group[i]; if tf == 'D' || b.last[k] == i { v[k] } else if k > 0 { v[k - 1] } else { None } }).collect()
+}
+
+fn run_thresh(x: &Ctx, g: &dyn Fn(&str) -> f64, upd: bool) -> Sig {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let n = c.len();
+    let gi = |k: &str| g(k).round() as i64;
+    let r = rsi(c, g("rsi_n").round().max(1.0) as usize);
+    let thresh = g("thresh");
+    let ok = |i: usize| r[i].is_finite() && r[i - 1].is_finite();
+    // Cross(threshold, RSI): the RSI falls below it; Cross(RSI, threshold): rises above it
+    let below = |i: usize| i > 0 && ok(i) && thresh > r[i] && thresh <= r[i - 1];
+    let above = |i: usize| i > 0 && ok(i) && r[i] > thresh && r[i - 1] <= thresh;
+    let cond1 = |i: usize| if upd && gi("entry_type") == 1 { above(i) } else { below(i) };
+    // ST as a filter: 1 / -1 from Close >= ST on the filter timeframe
+    let flt_on = gi("st_flt") == 1;
+    let bullish = gi("flt_type") == 1;
+    let stf: Vec<Option<i8>> = if flt_on {
+        let tf = tf_dwm(gi("flt_tf"));
+        let (rows, b, line) = st_v2_periods(x, tf, gi("flt_input"), g("flt_n").round().max(1.0) as usize, g("flt_f"));
+        let state: Vec<Option<i8>> = (0..rows.len()).map(|k| line[k].map(|s| if rows[k].close >= s { 1 } else { -1 })).collect();
+        expand_v2(&state, &b, tf)
+    } else {
+        vec![None; n]
+    };
+    let flt_in = |i: usize| !flt_on || stf[i] == Some(if bullish { 1 } else { -1 });
+    let flt_out = |i: usize| flt_on && stf[i] == Some(if bullish { -1 } else { 1 });
+    let st_exit: Vec<bool> = if upd && gi("st_exit") == 1 {
+        let tf = tf_dwm(gi("x_tf"));
+        let (_, b, line) = st_v2_periods(x, tf, gi("x_input"), g("x_n").round().max(1.0) as usize, g("x_f"));
+        let line = expand_v2(&line, &b, tf);
+        let cs: Vec<Option<f64>> = c.iter().map(|&v| Some(v)).collect();
+        crate::books::yteng::cross(&line, &cs)
+    } else {
+        vec![false; n]
+    };
+    let turn = crate::books::ytbb::turnover(x, gi("turnover") == 1);
+    let penny = g("penny");
+    let exit_close = gi("exit_close") == 1;
+    let (pts, pb_pct, hsl_pct, buf) = (g("rsi_tsl"), g("pb_pct"), g("hsl_pct"), g("buffer_pct"));
+    let tsl_pct = if upd { g("tsl_pct") } else { 0.0 };
+    let tog = upd && gi("thresh_tog") == 1;
+    let mut s = Sig::new(n);
+    let (mut pos, mut armed) = (false, false);
+    // the first AFL starts PB at 9999999 and HSL at 0; the updated one keeps them Null (-1e10 in the loop)
+    let (mut pb, mut hsl, mut tsl, mut rsi_stop) = if upd { (NUL, NUL, NUL, 0.0f64) } else { (BIG, 0.0, NUL, 0.0f64) };
+    for i in 1..n.saturating_sub(1) {
+        let base = turn[i] && c[i] > penny;
+        if upd && !pos && cond1(i) {
+            armed = true;
+        }
+        let entry = if upd { base && armed && flt_in(i) && (!tog || (r[i].is_finite() && r[i] < thresh)) } else { base && cond1(i) && flt_in(i) };
+        if !pos && entry {
+            s.buy[i] = Some(c[i]);
+            if pb_pct > 0.0 {
+                pb = (1.0 + pb_pct * 0.01) * c[i];
+            }
+            if hsl_pct > 0.0 {
+                hsl = (1.0 - hsl_pct * 0.01) * c[i];
+            }
+            if tsl_pct > 0.0 {
+                tsl = (1.0 - tsl_pct * 0.01) * c[i];
+            }
+            if pts > 0.0 {
+                rsi_stop = r[i] - pts;
+            }
+            pos = true;
+        } else if pos {
+            let sl_hit = hsl_pct > 0.0 && (if exit_close { c[i] } else { l[i] }) < hsl;
+            let pb_hit = pb_pct > 0.0 && (if exit_close { c[i] } else { h[i] }) > pb;
+            let tsl_hit = tsl_pct > 0.0 && (if exit_close { c[i] } else { l[i] }) < tsl;
+            let rsi_hit = pts > 0.0 && r[i] < rsi_stop;
+            if sl_hit || pb_hit || tsl_hit || rsi_hit || st_exit[i] || flt_out(i) {
+                let mut px = c[i];
+                if !exit_close && pb_hit {
+                    px = if o[i] > pb { l[i].max(o[i] * (1.0 - buf * 0.01)) } else { pb };
+                }
+                if !exit_close && sl_hit {
+                    px = if o[i] < hsl { l[i].max(o[i] * (1.0 - buf * 0.01)) } else { hsl };
+                }
+                let why = if sl_hit { "Hard SL" } else if pb_hit { "Profit booking" } else if tsl_hit { "Trail SL" } else if rsi_hit { "TSL on RSI" } else if st_exit[i] { "ST fresh sell" } else { "ST filter exit" };
+                s.sell[i] = Some((px, why));
+                pos = false;
+                if upd {
+                    armed = false;
+                    pb = NUL;
+                    hsl = NUL;
+                    tsl = NUL;
+                }
+            }
+            if pts > 0.0 {
+                rsi_stop = rsi_stop.max(r[i] - pts);
+            }
+            if tsl_pct > 0.0 && tsl != NUL {
+                tsl = tsl.max((1.0 - tsl_pct * 0.01) * c[i]);
+            }
+        }
+    }
+    s
+}
+
 // ---------------------------------------------------------------- run
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -1595,6 +1790,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         SLT => run_slt(x, &g, if g("delayed").round() as i64 == 1 { Ent::Delayed } else { Ent::Cross }),
         HLLH => run_slt(x, &g, Ent::HlLh),
         OBOS => run_obos(x, &g),
+        THRESH => run_thresh(x, &g, false),
+        THRESH_UPD => run_thresh(x, &g, true),
         _ => return None,
     };
     Some(backtest(x, &s, from, to))
@@ -1808,6 +2005,51 @@ mod tests {
                     assert!(tr.exit_px >= tr.legs[0].px * 1.1 - 1e-9 || x.o[tr.exit_i] > tr.legs[0].px * 1.1);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn threshold_tsl_defaults_buy_once_and_exits_need_a_setting() {
+        let r = wave(400);
+        let x = Ctx::new(&r, &r, &[]);
+        let last = r.len() - 1;
+        for id in [THRESH, THRESH_UPD] {
+            // every exit is off by default and the loop stops before the last bar: one buy, never sold
+            let t = run(id, &x, 0, last, &ps(&[("thresh", 40.0)])).unwrap();
+            assert_eq!(t.len(), 1, "{id}");
+            assert!(t[0].open && t[0].legs[0].i >= 1, "{id}");
+            // with the RSI trail on, trades close; none is entered or closed on the last bar
+            let t = run(id, &x, 0, last, &ps(&[("thresh", 40.0), ("rsi_tsl", 5.0)])).unwrap();
+            assert!(t.len() > 1, "{id}: {}", t.len());
+            assert!(t.iter().all(|t| t.legs[0].i < last && (t.open || t.exit_i < last)), "{id}");
+            // a buy needs the RSI to have crossed the threshold
+            let rs = rsi(&x.c, 14);
+            let e = t[0].legs[0].i;
+            assert!(rs[e] < 40.0 && rs[e - 1] >= 40.0, "{id}");
+        }
+        // updated AFL: the RSI signal stays armed until the ST filter allows the buy
+        let plain = run(THRESH_UPD, &x, 0, last, &ps(&[("thresh", 40.0), ("rsi_tsl", 5.0)])).unwrap();
+        let flt = run(THRESH_UPD, &x, 0, last, &ps(&[("thresh", 40.0), ("rsi_tsl", 5.0), ("st_flt", 1.0), ("flt_tf", 0.0)])).unwrap();
+        assert!(!flt.is_empty() && flt[0].legs[0].i >= plain[0].legs[0].i);
+        // first AFL: the cross and the filter must coincide
+        let both = run(THRESH, &x, 0, last, &ps(&[("thresh", 40.0), ("rsi_tsl", 5.0), ("st_flt", 1.0), ("flt_tf", 0.0)])).unwrap();
+        let rs = rsi(&x.c, 14);
+        assert!(both.iter().all(|t| { let e = t.legs[0].i; rs[e] < 40.0 && rs[e - 1] >= 40.0 }));
+    }
+
+    #[test]
+    fn threshold_tsl_live_exit_prices() {
+        // RSI(4) falls below 40 on the drop, buy at 90; profit 5% = 94.5; next bars rise
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..8).map(|k| { let c = 100.0 + k as f64; (c, c + 1.0, c - 1.0, c) }).collect();
+        v.extend([(100.0, 101.0, 89.0, 90.0), (91.0, 93.0, 90.0, 92.0), (96.0, 99.0, 95.0, 98.0), (98.0, 99.0, 97.0, 98.0)]);
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let kv = [("rsi_n", 4.0), ("thresh", 40.0), ("pb_pct", 5.0), ("exit_close", 0.0)];
+        for id in [THRESH, THRESH_UPD] {
+            let t = run(id, &x, 0, r.len() - 1, &ps(&kv)).unwrap();
+            // bar 10 opens at 96 above the 94.5 level: sold at max(Low 95, Open x 0.9975 = 95.76)
+            assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i), (8, 90.0, 10), "{id}");
+            assert!((t[0].exit_px - 95.76).abs() < 1e-9, "{id}: {}", t[0].exit_px);
         }
     }
 

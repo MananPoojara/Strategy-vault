@@ -1,6 +1,7 @@
 //! YT Strategies · Supertrend (Stocks): the team's stock-universe AmiBroker AFLs in "Old Topics/Supertrend" (the
-//! three "ST monthly single trade ..." AFLs, "ST trade below filter - Copy" and "SMA BUY SELL WITH ALL TIMEFRAME";
-//! see `ytst.rs` for the index / single-series AFLs of that folder). Coded from the AFLs as written, with the AFLs'
+//! three "ST monthly single trade ..." AFLs, "ST trade below filter - Copy", "SMA BUY SELL WITH ALL TIMEFRAME" and
+//! "Entry when Closing is above 5,1_Scale-in with 14 days ATR_Exit below 5,1" = "Rajiv Shukla Ver1", which despite its
+//! folder name has no Supertrend; see `ytst.rs` for the index / single-series AFLs of that folder). Coded from the AFLs as written, with the AFLs'
 //! own default Param values; there is no book PDF and no trade sheet was compared.
 //!
 //! What runs: each AFL's per-stock Buy / Sell (and, where the AFL has them, Short / Cover) rules on the stock's own
@@ -33,17 +34,26 @@
 //! - the template guards are the AFLs' defaults: dead-stock backtest NO (no entry on the first bar), penny price
 //!   and turnover as each AFL sets them (turnover = Volume x Close above the AFL's yearly threshold; two of the
 //!   AFLs apply it by default because their toggle tests the value 0).
+//! - Rajiv Shukla Ver1 (its own bar loop): the 52-week high is HHV(High, 52) on Monday-Sunday weekly bars expanded
+//!   with expandLast (a week's value reaches the daily bars on the week's last bar), HHV using the weeks available near
+//!   the start; MA(C, 200) is Null (-1e10 in the loop) for the first 199 bars; the 50% scale-out (`Buy = sigScaleOut`,
+//!   SetPositionSize(50, spsPercentOfPosition)) is one piece of the Trade's `exits`: AmiBroker fills a long scale-out
+//!   at BuyPrice, which the AFL sets to the previous Close + 3% unless the Open is already above it (then it sets
+//!   SellPrice, which the scale-out does not read, and the default BuyPrice, the Close, is used); whole-share rounding
+//!   of the 50% is not modelled.
 //!
 //! Not coded: PositionScore ranking, MaxOpenPositions and sizing (portfolio level, see above); the NSE 500
 //! `Foreign("NSE500", "C")` RSI of the two ATHC AFLs, which feeds only an unused COMBINERSI (no rule reads it); the
 //! weekly filter timeframe; the SMA branch of "ST trade below filter" (its monthlytrend is computed on the filter
 //! timeframe and not expanded) and the weekly / monthly SMA timeframes of "SMA BUY SELL" (its DIFF reads the
-//! un-expanded MA), so both are offered on the ST filter / daily SMA only.
+//! un-expanded MA), so both are offered on the ST filter / daily SMA only. Rajiv Shukla Ver1: its PositionScore =
+//! RSI(14) ranking, MAXIMUM POSITION 20, sizing and 0.65 brokerage (portfolio level) and its dead-stock option (default
+//! NO, which only stops entries on the first bar).
 #![allow(dead_code)]
 use crate::books::ytst::{calc_on, st_lines};
 use crate::books::ytsw::{close_swing, compress, expand_last, exrem, trade, true_range};
-use crate::books::ytwh::{bound, prec2};
-use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::books::ytwh::{bound, hhv, prec2};
+use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_sts";
 pub const SQN: &str = "ytsts_monthly_single_trade";
@@ -51,7 +61,8 @@ pub const ATHC: &str = "ytsts_monthly_single_athc";
 pub const ATHC_DAILY: &str = "ytsts_monthly_single_athc_daily";
 pub const BELOW: &str = "ytsts_trade_below_monthly_st";
 pub const SMA: &str = "ytsts_sma_buy_sell";
-pub const IDS: [&str; 5] = [SQN, ATHC, ATHC_DAILY, BELOW, SMA];
+pub const RAJIV: &str = "ytsts_rajiv_shukla_v1";
+pub const IDS: [&str; 6] = [SQN, ATHC, ATHC_DAILY, BELOW, SMA, RAJIV];
 
 const GROUP: &str = "YT Strategies · Supertrend (Stocks)";
 const NULL: f64 = -1e10;
@@ -134,6 +145,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Turnover filter off by default",
             CIRC_F,
         ], concat!("SMA BUY SELL WITH ALL TIMEFRAME.afl (folder of that name; its header: 'FOR NSE 500 ... 200 MA LONG ONLY WITH RANKING ON NSE 500'), coded as the AFL is written on the daily SMA; its weekly / monthly SMA choices are not offered (DIFF reads the un-expanded MA). The team ran it on NSE 500 stocks.", universe!())),
+        def(RAJIV, "Rajiv Shukla Ver1 (52-Week High / 200-Day SMA Entry, 50% Scale-out)", "Long", false, &[
+            "F|52-week high = HHV(High, 52) on weekly bars, reaching the daily bars on each week's last bar",
+            "E|Buy at the Close when flat and the Close is within 25% below the 52-week high (above 75% of it and below it), above MA(Close, 200) and more than 2% above the previous Close",
+            "E|Not on an upper-circuit bar; Close above the penny price (0); turnover filter off by default",
+            "X|Scale out 50% (once per trade) when the Close is more than 3% above the previous Close, not on a lower-circuit bar: at the previous Close + 3%, or at the Close when the Open is already above that level",
+            "X|Sell the rest at the Close when the Close is below the previous bar's Low, not on a lower-circuit bar",
+            "F|Ranking: PositionScore = RSI(14) chooses between stocks in the team's portfolio run (not modelled here)",
+            "F|Daily bars, long only, positional; no entry on the data's first bar",
+            CIRC_F,
+        ], concat!("Entry when Closing is above 5,1_Scale-in with 14 days ATR_Exit below 5,1.afl (folder 'Supertrend/Entry when Closing is above 5,1_Scale-in with 14 days ATR_Exit below 5,1'; its header: 'Rajiv Shukla Ver1', daily, long only, positional), coded as the AFL is written; despite the folder name it has no Supertrend or ATR scale-in. Its 50% scale-out is one piece of the trade (Buy = sigScaleOut, SetPositionSize 50% of position); AmiBroker fills it at BuyPrice, which the AFL leaves at the Close when the Open is already above the level (it sets SellPrice there, which the scale-out does not read). Whole-share rounding of the 50% is not modelled. Runs on one actual stock at a time; the team ran it as a portfolio backtest over a stock universe ranked by PositionScore = RSI(14): the ranking, MAXIMUM POSITION (20), position sizing and the 0.65 brokerage are not modelled.")),
     ]
 }
 
@@ -202,6 +223,18 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                 p("sma_period", "SMA period (daily)", 200.0, 1.0, 1000.0, 1.0),
                 p("buffer", "SMA buy buffer %", 1.0, 0.0, 10.0, 1.0),
                 hard(),
+                penny(),
+                turn(0.0),
+            ]);
+        }
+        RAJIV => {
+            out.extend([
+                p("hi_weeks", "52-week high: weeks", 52.0, 1.0, 104.0, 1.0),
+                p("hi_pct", "Close within % below the 52-week high", 25.0, 1.0, 100.0, 1.0),
+                p("sma_period", "SMA period (daily)", 200.0, 1.0, 1000.0, 1.0),
+                p("buy_pct", "Buy: Close above the previous Close by %", 2.0, 0.0, 20.0, 0.5),
+                p("scale_pct", "Scale out: Close above the previous Close by %", 3.0, 0.0, 20.0, 0.5),
+                p("scale_frac", "Scale out: % of the position", 50.0, 1.0, 99.0, 1.0),
                 penny(),
                 turn(0.0),
             ]);
@@ -395,6 +428,70 @@ fn backtest(x: &Ctx, s: &Sig, side: i64, hard: f64, from: usize, to: usize) -> V
     out
 }
 
+// ---------------------------------------------------------------- Rajiv Shukla Ver1
+
+/// "Rajiv Shukla Ver1": the AFL's own bar loop over all loaded bars (from bar 1) with its one 50% scale-out. Positions
+/// entered in from..=to; the scale-out is a piece of the Trade's `exits`; one still open after `to` (or a scale-out
+/// after it) is marked at the Close of `to`.
+fn rajiv(x: &Ctx, g: &dyn Fn(&str) -> f64, from: usize, to: usize) -> Vec<Trade> {
+    let (o, c, l) = (&x.o, &x.c, &x.l);
+    let n = c.len();
+    let gi = |k: &str| g(k).round() as i64;
+    let w = compress(x, 'W');
+    let hi52 = expand_last(&hhv(&w.h, gi("hi_weeks").max(1) as usize), &w);
+    let sma = ma(&some(c), gi("sma_period").max(1) as usize);
+    let (hi_pct, buy_pct, sc_pct, frac) = (g("hi_pct"), g("buy_pct"), g("scale_pct"), g("scale_frac") / 100.0);
+    let penny = g("penny");
+    let tov = |i: usize| gi("turnover") != 1 || turnover_ok(x, i);
+    // (entry, scale-out (bar, price), exit (bar, price))
+    let mut pos: Vec<(usize, Option<(usize, f64)>, Option<(usize, f64)>)> = Vec::new();
+    let (mut open, mut scale_ok) = (false, false);
+    for i in 1..n {
+        if !open
+            && c[i] > hi52[i] - hi52[i] * hi_pct / 100.0
+            && c[i] < hi52[i]
+            && c[i] > nv(sma[i])
+            && c[i] > c[i - 1] + c[i - 1] * buy_pct / 100.0
+            && !up_circuit(x, i)
+            && c[i] > penny
+            && tov(i)
+        {
+            pos.push((i, None, None));
+            (open, scale_ok) = (true, true);
+        } else if open {
+            let Some(p) = pos.last_mut() else { break };
+            let lvl = c[i - 1] + c[i - 1] * sc_pct / 100.0;
+            if c[i] > lvl && scale_ok && !lo_circuit(x, i) {
+                p.1 = Some((i, bound(x, i, if o[i] > lvl { c[i] } else { lvl })));
+                scale_ok = false;
+            }
+            if c[i] < l[i - 1] && !lo_circuit(x, i) {
+                p.2 = Some((i, c[i]));
+                open = false;
+            }
+        }
+    }
+    pos.into_iter()
+        .filter(|p| p.0 >= from && p.0 <= to)
+        .map(|(e, so, ex)| {
+            let (xi, xpx, open) = match ex {
+                Some((i, px)) if i <= to => (i, px, false),
+                _ => (to, c[to], true),
+            };
+            let so = so.filter(|s| s.0 <= xi);
+            let (exit_px, exits, reason) = match so {
+                Some((si, spx)) => (
+                    frac * spx + (1.0 - frac) * xpx,
+                    vec![(si, spx, frac), (xi, xpx, 1.0 - frac)],
+                    format!("{:.0}% scaled out on {} at {spx:.2}; rest: {}", frac * 100.0, x.r[si].date, if open { "open" } else { "Sell: Close below the previous Low" }),
+                ),
+                None => (xpx, Vec::new(), if open { "open".to_string() } else { "Sell: Close below the previous Low".to_string() }),
+            };
+            Trade { dir: 1.0, legs: vec![Leg { i: e, px: c[e], w: 1.0 }], exit_i: xi, exit_px, reason, entry_kind: "close", signal_i: xi, open, exits }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------- the AFLs
 
 fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
@@ -519,6 +616,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let n = x.c.len();
     if n == 0 || from > to || to >= n {
         return Some(Vec::new());
+    }
+    if id == RAJIV {
+        return Some(rajiv(x, &g, from, to));
     }
     let s = signals(id, x, &g);
     let side = if schema.iter().any(|d| d.key == "side") { g("side").round() as i64 } else { 1 };
@@ -668,6 +768,75 @@ mod tests {
         let r2 = bars(&[bar(100.0), bar(100.0), (93.0, 94.0, 92.0, 93.5), bar(96.0)]);
         let x2 = Ctx::new(&r2, &r2, &[]);
         assert_eq!(backtest(&x2, &s, 1, 5.0, 0, 3)[0].exit_px, 93.0);
+    }
+
+    /// A rise to 131.5 by bar 210, a fall to 119.5 by bar 225, then a 2.5% up day (bar 226, the entry).
+    fn rajiv_bars() -> Vec<(f64, f64, f64, f64)> {
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..=210).map(|k| bar(100.0 + 0.15 * k as f64)).collect();
+        v.extend((0..15).map(|k| bar(131.5 - 0.8 * (k + 1) as f64)));
+        v.push(bar(119.5 * 1.025));
+        v
+    }
+
+    #[test]
+    fn rajiv_buys_near_the_52_week_high_and_scales_out_half() {
+        let mut v = rajiv_bars();
+        let e = v.len() - 1;
+        let epx = v[e].3;
+        v.push(bar(epx * 1.035)); // more than 3% up: scale out 50% (the Open is above the level -> at the Close)
+        v.push(bar(epx * 1.035 + 0.2));
+        v.push(bar(epx * 1.035 - 1.5)); // below the previous Low: sell the rest
+        v.extend((0..5).map(|_| bar(epx * 1.035 - 1.5)));
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run(RAJIV, &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1, "{t:?}");
+        let t = &t[0];
+        assert_eq!((t.legs[0].i, t.legs[0].px), (e, x.c[e]));
+        assert_eq!(t.exit_i, e + 3);
+        assert_eq!(t.exits, vec![(e + 1, x.c[e + 1], 0.5), (e + 3, x.c[e + 3], 0.5)]);
+        assert!((t.exit_px - (x.c[e + 1] + x.c[e + 3]) / 2.0).abs() < 1e-9);
+        assert!(!t.open);
+        // the Open below the level: the scale-out fills at the previous Close + 3%
+        let mut v2 = v.clone();
+        v2[e + 1] = (epx, epx * 1.035 + 1.0, epx - 0.2, epx * 1.035);
+        let r2 = bars(&v2);
+        let x2 = Ctx::new(&r2, &r2, &[]);
+        let t2 = &run(RAJIV, &x2, 0, r2.len() - 1, &Params::new()).unwrap()[0];
+        assert!((t2.exits[0].1 - epx * 1.03).abs() < 1e-9);
+        // no 3% day: one exit at the Close, no pieces
+        let mut v3 = v.clone();
+        v3[e + 1] = bar(epx + 1.0);
+        v3[e + 2] = bar(epx + 1.2);
+        for b in &mut v3[e + 3..] {
+            *b = bar(epx);
+        }
+        let r3 = bars(&v3);
+        let x3 = Ctx::new(&r3, &r3, &[]);
+        let t3 = &run(RAJIV, &x3, 0, r3.len() - 1, &Params::new()).unwrap()[0];
+        assert!(t3.exits.is_empty());
+        assert_eq!((t3.exit_i, t3.exit_px), (e + 3, x3.c[e + 3]));
+        // the entry needs the Close within 25% of the 52-week high: within 5% the 2.5% day (122.5 vs 132.5) is too far
+        // below it; the next day (126.8, up 3.5%) enters instead
+        let t5 = run(RAJIV, &x, 0, r.len() - 1, &ps(&[("hi_pct", 5.0)])).unwrap();
+        assert_eq!(t5.iter().map(|t| t.legs[0].i).collect::<Vec<_>>(), vec![e + 1]);
+    }
+
+    #[test]
+    fn rajiv_open_trade_keeps_its_scale_out() {
+        let mut v = rajiv_bars();
+        let e = v.len() - 1;
+        let epx = v[e].3;
+        v.push(bar(epx * 1.035));
+        v.push(bar(epx * 1.035 + 0.5));
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = &run(RAJIV, &x, 0, r.len() - 1, &Params::new()).unwrap()[0];
+        assert!(t.open);
+        assert_eq!(t.exits, vec![(e + 1, x.c[e + 1], 0.5), (e + 2, x.c[e + 2], 0.5)]);
+        // a window ending on the entry bar: open, no pieces
+        let t = &run(RAJIV, &x, 0, e, &Params::new()).unwrap()[0];
+        assert!(t.open && t.exits.is_empty() && t.exit_i == e);
     }
 
     #[test]

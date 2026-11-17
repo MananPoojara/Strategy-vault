@@ -174,3 +174,24 @@ it('gives a Research YTS admin the QA accounts panel', async () => {
   expect(rows[1].textContent).toContain('Deactivate');
   expect(rows[1].querySelector('a')?.getAttribute('href')).toContain('reporter=2');
 });
+
+it('lets an admin choose one reporter, which hides every other reporter\'s issues', async () => {
+  signedIn = { id: 1, username: 'admin', name: 'Admin', admin: true };
+  await mount('#/research-yts');
+  const chips = () => [...host.querySelectorAll<HTMLButtonElement>('.yts-reporters button')];
+  // only reporters who have filed issues are offered, after "All reporters"
+  expect(chips().map(b => b.textContent)).toEqual(['All reporters', 'Priya Shah']);
+  expect(chips()[0].getAttribute('aria-pressed')).toBe('true');
+  await act(async () => { chips()[1].click(); await new Promise(r => setTimeout(r, 0)); });
+  await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+  expect(location.hash).toContain('reporter=2');
+  expect(chips()[1].getAttribute('aria-pressed')).toBe('true');
+  const asked = (fetch as unknown as { mock: { calls: [string][] } }).mock.calls.map(c => c[0]).filter(u => u.startsWith('/api/app/research-yts/issues?'));
+  expect(asked.at(-1)).toContain('reporter=2');
+});
+
+it('does not offer the reporter chooser to a QA, who sees only their own issues', async () => {
+  await mount('#/research-yts');
+  expect(host.querySelector('.yts-reporters')).toBeNull();
+  expect(host.querySelector('.yts-row')?.textContent).toContain('Exit at the wrong price');
+});

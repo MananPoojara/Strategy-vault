@@ -50,6 +50,17 @@ it('keeps the whole-unit money columns and running drawdown in the trade table',
   expect(t.csv[0].at(-1)).toBe('Exit reason');
 });
 
+it('shows intraday entry and exit times and candles held for intraday trades',()=>{
+  const run:EngineRun={dates:['2022-03-01','2022-03-02'],equity:[1,1.01],bh:[1,1],trades:[
+    {dir:-1,legs:[[0,100,1]],entry:'2022-03-01',exit:'2022-03-01',exit_px:99,ret:0.01,bars:0,open:false,reason:'Short',entry_time:'2022-03-01 09:30',exit_time:'2022-03-01 15:15',candles:23,accounting:{mae_ret_observed:-0.002,mfe_ret_observed:0.015}}]};
+  const t=tradeTable(ytRunResult(run,'basket:ieodfo:BANKNIFTY'));
+  expect(t.header.slice(0,9)).toEqual(['Symbol','Trade type','Entry date','Entry time','Entry price','Exit date','Exit time','Exit price','% Change']);
+  const row=Object.fromEntries(t.header.map((h,i)=>[h,t.rows[0][i]]));
+  expect([row['Entry time'],row['Exit time'],row['Bars held'],row['MFE']]).toEqual(['09:30','15:15','23','1.50%']);
+  expect(t.cls[0][t.header.indexOf('Entry time')]).toBe('c');
+  expect(tradeTable(ytRunResult(engine,'NIFTYBANK')).header).not.toContain('Entry time');
+});
+
 // Two settings: Initial ATR × (2, 3) and Favour ATR × (2, 3); 3 × 2 is out of order and comes back unranked (nulls).
 const names=['Net Profit','Net % Profit','Exposure %','CAR','RAR','Max. Trade Drawdown','Max. Trade % Drawdown','Max. Sys Drawdown','Max. Sys % Drawdown','Recovery Factor','CAR/MDD','RAR/MDD','Profit Factor','Payoff Ratio','Standard Error','RRR','Ulcer Index','Ulcer Perf. Index','Sharpe Ratio','K-Ratio','# Trades','Avg Profit/Loss','Avg % Profit/Loss','Avg Bars Held','# of winners','% of Winners','W. Tot. Profit','W. Avg. Profit','W. Avg % Profit','W. Avg. Bars Held','# of losers','% of Losers','L. Tot. Loss','L. Avg. Loss','L. Avg % Loss','L. Avg. Bars Held'];
 const sheetRow=(a:number,f:number,carMdd:number)=>[a,f,...names.map(n=>n==='CAR/MDD'?carMdd:n==='Avg % Profit/Loss'?2.3:n==='Avg Bars Held'?28.42:n==='# Trades'?128:n==='W. Avg % Profit'?9:n==='L. Avg % Loss'?-3.6:n==='% of Winners'?46.88:n==='% of Losers'?53.12:n.includes('Bars Held')?20:1)];

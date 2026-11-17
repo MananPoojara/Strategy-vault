@@ -125,3 +125,6 @@
 .yts-thumbs .yts-muted { margin: 0; font-size: 12px; }
 .yts-file-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .yts-thumbs .yts-actions { display: flex; gap: 12px; font-size: 13px; margin: 0; }
+
+/* Reporter chooser (admins): one chip per reporter under the status chips */
+.yts-reporters { margin-top: 8px; }

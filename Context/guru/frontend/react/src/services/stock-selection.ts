@@ -36,6 +36,14 @@ export function basketSpan(prices: StockPrice[]): {first: string; last: string} 
     last: usable.reduce((d, p) => p.last! > d ? p.last! : d, usable[0].last!)};
 }
 
+/** The From / To a page keeps when another instrument is picked: each date stays only while it lies inside the new
+ * instrument's data (an empty string means "from the first bar" / "to the last bar"); an unknown span keeps both. */
+export function keptPeriod(span: {first?: string; last?: string} | null | undefined, from = "", to = ""): {from: string; to: string} {
+  if (!span?.first || !span?.last) return {from, to};
+  const f = from && from > span.first ? from : "", t = to && to < span.last ? to : "";
+  return (f || span.first) < (t || span.last) ? {from: f, to: t} : {from: "", to: ""};
+}
+
 export function positionLimit(value: unknown): number | null {
   if (typeof value !== "string" || !/^[1-9]\d{0,2}$/.test(value)) return null;
   const count = Number(value);

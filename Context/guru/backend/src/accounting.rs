@@ -42,7 +42,9 @@ pub struct TradeLedger {
     symbol:String,side:&'static str,open:bool,
     pub gross_pnl:f64,pub fees:f64,pub slippage:f64,pub net_pnl:f64,
     pub gross_ret:f64,pub net_ret:f64,pub fee_ret:f64,pub slippage_ret:f64,pub pts:f64,pub days_held:i64,
-    pub observed_mae:Option<f64>,pub observed_mfe:Option<f64>,pub excursion_bars:usize,allocation:f64,entry_only_open:bool,amibroker_excursions:bool
+    pub observed_mae:Option<f64>,pub observed_mfe:Option<f64>,pub excursion_bars:usize,allocation:f64,entry_only_open:bool,amibroker_excursions:bool,
+    /// Intraday AmiBroker excursions on the strategy's candles (set by `amibroker_intraday`).
+    intraday_excursions:bool
 }
 impl TradeLedger {
     pub fn new(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
@@ -74,6 +76,27 @@ impl TradeLedger {
         s.observed_mae=Some(mae);s.observed_mfe=Some(mfe);s.excursion_bars=bars;s.amibroker_excursions=true;
         s
     }
+    /// The AmiBroker trade-list convention of `amibroker` applied to an intraday trade's own candles (the bars
+    /// AmiBroker backtested the AFL on): every candle from the entry candle up to the candle before the exit counts its
+    /// high and low (the entry candle alone for a one-candle trade), plus the exit candle's open and the exit fill.
+    /// `excursion_bars` counts those candles.
+    pub fn amibroker_intraday(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs,timing:&crate::intraday::TradeTiming)->Self{
+        let mut s=Self::new(ctx,t,allocation,costs);
+        let ret=|px:f64|t.dir*(px/t.legs[0].px-1.)*t.legs[0].w*allocation;
+        let (mut mae,mut mfe)=(0f64,0f64);
+        for n in [ret(timing.ab_low),ret(timing.ab_high),s.gross_ret*allocation,timing.ab_exit_open.map_or(f64::NAN,ret)] {
+            if n.is_finite() {mae=mae.min(n);mfe=mfe.max(n);}
+        }
+        s.observed_mae=Some(mae);s.observed_mfe=Some(mfe);s.excursion_bars=timing.candles.max(1);s.amibroker_excursions=true;s.intraday_excursions=true;
+        s
+    }
+    /// Exact excursions of the 1-minute path between the fills (fractions of the allocation), None for a trade that
+    /// enters and exits in one minute.
+    pub fn minute_path(t:&Trade,timing:&crate::intraday::TradeTiming)->Option<(f64,f64)>{
+        let ret=|px:f64|t.dir*(px/t.legs[0].px-1.);
+        let (a,b)=(ret(timing.path_low?),ret(timing.path_high?));
+        Some((a.min(b).min(0.),a.max(b).max(0.)))
+    }
     pub fn source_account(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
         Self::with_open_cost_basis(ctx,t,allocation,costs,true)
     }
@@ -97,14 +120,14 @@ impl TradeLedger {
             observed_mfe=Some(observed_mfe.unwrap_or(0.).max(bounds[0]).max(bounds[1]));
         }
         Self{symbol:ctx.r[t.legs[0].i].ticker.clone(),side:if t.dir>0.{"Long"}else{"Short"},open:t.open,gross_pnl:allocation*gross_ret,fees:allocation*fee_ret,slippage:allocation*slippage_ret,net_pnl:allocation*net_ret,
-            gross_ret,net_ret,fee_ret,slippage_ret,pts:t.dir*(t.exit_px-t.avg_px()),days_held:day_number(&ctx.r[t.exit_i].date)-day_number(&ctx.r[t.legs[0].i].date),observed_mae,observed_mfe,excursion_bars,allocation,entry_only_open,amibroker_excursions:false}
+            gross_ret,net_ret,fee_ret,slippage_ret,pts:t.dir*(t.exit_px-t.avg_px()),days_held:day_number(&ctx.r[t.exit_i].date)-day_number(&ctx.r[t.legs[0].i].date),observed_mae,observed_mfe,excursion_bars,allocation,entry_only_open,amibroker_excursions:false,intraday_excursions:false}
     }
     pub fn json(&self)->String{
         let pct=|v:Option<f64>|v.map_or("null".into(),|n|num(n/self.allocation));
         format!("{{\"symbol\":\"{}\",\"signal_side\":\"{}\",\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"gross_pnl\":null,\"fees\":null,\"slippage\":null,\"taxes\":null,\"net_pnl\":null,\"money_status\":\"No position quantities or monetary sizing supplied\",\"return_basis\":\"Existing normalized allocation and actual filled leg weights; not contract quantities\",\"pts_basis\":\"Direction-adjusted effective exit price minus weighted average entry price; not monetary profit\",\"cost_status\":\"{}\",\"mae\":null,\"mfe\":null,\"mae_ret_observed\":{},\"mfe_ret_observed\":{},\"excursion_bars\":{},\"excursion_status\":\"{}\",\"excursion_basis\":\"{}\"}}",
             esc(&self.symbol),self.side,num(self.pts),self.days_held,num(self.gross_ret),num(self.net_ret),num(self.fee_ret),num(self.slippage_ret),if self.open&&self.entry_only_open{"actual_entry_cost_only_open_mark"}else if self.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},pct(self.observed_mae),pct(self.observed_mfe),self.excursion_bars,
-            if self.amibroker_excursions{"amibroker_daily_ohlc"}else if self.excursion_bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"},
-            if self.amibroker_excursions{"AmiBroker trade-list convention on gross allocation returns: high/low of the entry bar through the bar before the exit, plus the exit fill. The entry bar's full range is counted even when the fill is at its close."}else{"Gross allocation returns on event-free full held OHLC bars only, preserving banked scale-out fills. Execution-day ordering is unknown; exact full-trade MAE/MFE remains unavailable."})
+            if self.intraday_excursions{"amibroker_intraday_candles"}else if self.amibroker_excursions{"amibroker_daily_ohlc"}else if self.excursion_bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"},
+            if self.intraday_excursions{"AmiBroker trade-list convention on the strategy's intraday candles, gross allocation returns: high/low of the entry candle through the candle before the exit, plus the exit candle's open and the exit fill. The entry candle's full range is counted even when the fill is at its close."}else if self.amibroker_excursions{"AmiBroker trade-list convention on gross allocation returns: high/low of the entry bar through the bar before the exit, plus the exit fill. The entry bar's full range is counted even when the fill is at its close."}else{"Gross allocation returns on event-free full held OHLC bars only, preserving banked scale-out fills. Execution-day ordering is unknown; exact full-trade MAE/MFE remains unavailable."})
     }
 }
 #[cfg(test)]

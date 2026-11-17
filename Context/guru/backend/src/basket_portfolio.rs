@@ -16,7 +16,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-const MAX_SYMBOLS: usize = 2500;
+// The staged NSE500 C&P inventory contains 2,772 source entries. Keep the
+// request bounded while allowing that full inventory to reach admission checks.
+const MAX_SYMBOLS: usize = 3000;
 const MAX_CANDIDATES: usize = 100_000;
 const MAX_MARKS: usize = 2_000_000;
 const TIME_LIMIT: Duration = Duration::from_secs(90);
@@ -70,6 +72,7 @@ struct Request<'a> {
     basket: &'a str,
     max_positions: usize,
     membership: &'a str,
+    aux_filter: &'a str,
     from: Option<&'a str>,
     to: Option<&'a str>,
 }
@@ -91,6 +94,8 @@ impl<'a> Request<'a> {
         if !matches!(membership, "current" | "past") {
             return Err("membership must be current or past".into());
         }
+        let aux_filter=q.get("aux_filter").map_or("off",String::as_str);
+        if !matches!(aux_filter,"off"|"aux1"|"aux2"|"both") {return Err("aux_filter must be off, aux1, aux2 or both".into());}
         let date = |name: &str| -> Result<Option<&str>, String> {
             match q.get(name) {
                 None => Ok(None),
@@ -118,6 +123,7 @@ impl<'a> Request<'a> {
             basket,
             max_positions,
             membership,
+            aux_filter,
             from,
             to,
         })
@@ -143,6 +149,11 @@ impl Phase {
 /// Extending this list requires reviewing that source runner's fill operations.
 fn execution_contract(id: &str, book: &str) -> Option<(Phase, Phase)> {
     match (book, id) {
+        // Source AFLs set both entry and exit prices to Close. AUX is an
+        // explicit basket entry-filter adaptation; its data gate is below.
+        ("yt_nr7", crate::books::ytnr7::NR7_ST) => Some((Phase::Close,Phase::Close)),
+        ("yt_cr", crate::books::ytcr::SHORT_PLAIN) => Some((Phase::Close,Phase::Close)),
+        ("yt_cr", crate::books::ytcr::SHORT) => Some((Phase::Close,Phase::Close)),
         ("stc9", "f1a" | "f3a" | "rsi2_5d") => Some((Phase::Close, Phase::Close)), // connors::simulate, Entry::Close / Exit::Close
         (
             "hbqts",
@@ -581,6 +592,11 @@ fn portfolio_stats(
 }
 
 pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    let aux_root=std::env::var_os("VAULT_YT_AUX_DIR").map(std::path::PathBuf::from);
+    run_with_aux_root(st,q,aux_root.as_deref())
+}
+
+fn run_with_aux_root(st: &State, q: &BTreeMap<String, String>,aux_root:Option<&std::path::Path>) -> Result<String, String> {
     let req = Request::parse(q)?;
     let costs = Costs::parse(q)?;
     costs.ensure_rollover()?;
@@ -589,8 +605,34 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .iter()
         .find(|d| d.id == req.id)
         .ok_or("unknown strategy")?;
+    let aux_rule=match req.aux_filter {
+        "off"=>None,
+        "aux1"=>Some(crate::yt_aux::Rule::Aux1),
+        "aux2"=>Some(crate::yt_aux::Rule::Aux2),
+        "both"=>Some(crate::yt_aux::Rule::Aux1AndAux2),
+        _=>unreachable!(),
+    };
+    if aux_rule.is_some() && !crate::books::ytnr7::IDS.contains(&def.id) && !crate::books::ytcr::IDS.contains(&def.id) {
+        return Ok(hold(&req,"not_testable","Dated AUX entry-state support is not yet reviewed for this strategy. No filter is silently ignored.",&[]));
+    }
+    if crate::instrument_policy::intraday_rule(def) {
+        return Ok(hold(&req,"not_testable","The intraday research ledger requires source-qualified timestamped signals, ranking scores, actual marks and reviewed execution ordering. The daily basket adapter cannot provide these inputs; no portfolio result is published.",&[]));
+    }
     if crate::instrument_policy::reviewed_kestner_stock(def) {
         return Ok(hold(&req,"not_testable","The Kestner review covers one actual stock at a time. Simultaneous long/short basket selection, capacity and portfolio accounting have not been reviewed for these methods; no basket result is published.",&[]));
+    }
+    let yt_aux_portfolio=matches!(def.id,crate::books::ytnr7::NR7_ST|crate::books::ytcr::SHORT_PLAIN|crate::books::ytcr::SHORT);
+    if yt_aux_portfolio && aux_rule.is_none() {
+        return Ok(hold(&req,"needs_data","Select a dated AUX eligibility rule for this source-universe portfolio; an unfiltered snapshot is not a substitute.",&[]));
+    }
+    if yt_aux_portfolio && !matches!((req.basket,req.aux_filter),("nse500","aux1"|"both")|("allfo","aux2"|"both")) {
+        return Ok(hold(&req,"needs_data","This basket inventory cannot establish the requested AUX universe. Use NSE500 with AUX1, F&O cash stocks with AUX2, or either with both.",&[]));
+    }
+    if yt_aux_portfolio && st.baskets.expected_member_count(req.basket).is_none() {
+        return Ok(hold(&req,"needs_data","The staged basket has no complete source-inventory count. Rebuild and validate the full dated AUX cash-stock inventory; no partial portfolio is published.",&[]));
+    }
+    if def.id==crate::books::ytcr::SHORT && crate::params_of(q).get("hsl_pct").copied().unwrap_or(2.)>0. {
+        return Ok(hold(&req,"not_testable","This short AFL's hard stop references an unassigned BuyPrice. Set the hard stop to zero or supply an AmiBroker trade comparison that resolves its behavior.",&[]));
     }
     let members = st.baskets.members(req.basket);
     if let Some(expected) = st.baskets.expected_member_count(req.basket) {
@@ -607,9 +649,9 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         ));
     }
     if members.len() > MAX_SYMBOLS {
-        return Ok(hold(&req,"unavailable","Basket exceeds the bounded 2,500-symbol research request limit; no truncated universe is published.",&[]));
+        return Ok(hold(&req,"unavailable","Basket exceeds the bounded 3,000-symbol research request limit; no truncated universe is published.",&[]));
     }
-    if req.membership == "past"
+    if (req.membership == "past" && !yt_aux_portfolio)
         || members
             .iter()
             .any(|m| m.membership_kind != "current_snapshot")
@@ -713,9 +755,11 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
                 .ok_or(
                     "needs_data: Source rule warmup/volatility does not cover this member window",
                 )?;
-            let source = crate::backtest(ctx, req.id, start, end, cost, &params)?;
-            source
-                .trades
+            let trades=if let Some(rule)=aux_rule {
+                let root=aux_root.ok_or("needs_data: VAULT_YT_AUX_DIR must identify the matching local AmiBroker cash database")?;
+                crate::yt_aux::strategy_trades(&st.baskets,&member.key,root,req.id,ctx,start,end,&params,rule)?
+            } else {crate::backtest(ctx, req.id, start, end, cost, &params)?.trades};
+            trades
                 .iter()
                 .map(|t| Candidate::from_source(&member.key, ctx, t, contract))
                 .collect()
@@ -806,7 +850,11 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let gross=t.gross_return();let net=t.net_return(costs.side_rate());
         format!("{{\"symbol\":{},\"ticker\":{},\"dir\":{},\"legs\":[[{},{},{}]],\"entry\":{},\"exit\":{},\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"reason\":{},\"entry_kind\":{},\"entry_phase\":{},\"exit_phase\":{},\"allocation\":{},\"portfolio_contribution\":{},\"exits\":[],\"accounting\":{{\"symbol\":{},\"signal_side\":{},\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"slippage_ret\":{},\"fee_ret\":{},\"gross_pnl\":null,\"net_pnl\":null,\"taxes\":null,\"slippage\":null,\"fees\":null,\"mae\":null,\"mfe\":null,\"mae_ret_observed\":null,\"mfe_ret_observed\":null,\"cost_status\":{},\"return_basis\":\"Unchanged source-unit return; portfolio contribution is fixed initial-equity slot times this return. Fractional normalized units, no monetary capital.\"}}}}",quote(&t.symbol),quote(&t.key),t.dir,entry_i,exact(t.entry_px),exact(t.weight),quote(&t.entry),quote(&t.exit),exit_i,exact(t.exit_px),exact(t.entry_px),exact(net),t.bars,t.open,quote(&t.reason),quote(t.entry_kind),quote(t.entry_phase.name()),quote(t.exit_phase.name()),exact(accepted.allocation),exact(accepted.allocation*net),quote(&t.symbol),quote(if t.dir>0.{"Long"}else{"Short"}),exact(t.dir*(t.exit_px-t.entry_px)),crate::day_number(&t.exit)-crate::day_number(&t.entry),exact(gross),exact(net),exact(t.weight*costs.slippage_bps/10000.*if t.open{1.}else{2.}),exact(t.weight*costs.fees_bps/10000.*if t.open{1.}else{2.}),quote(if t.open{"entry_cost_only_actual_open_mark"}else{"modeled_round_trip_cost"}))
     });
-    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_basis\":\"Observed prior-signal next-open exits before open entries; observed close exits before close entries. Intraday stop/limit ordering and multi-leg positions are withheld.\",\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Open positions deduct entry costs only; no guessed closing transaction is applied.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,members.len(),array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string()))))
+    let response=format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_basis\":\"Observed prior-signal next-open exits before open entries; observed close exits before close entries. Intraday stop/limit ordering and multi-leg positions are withheld.\",\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Open positions deduct entry costs only; no guessed closing transaction is applied.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,members.len(),array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string())));
+    if yt_aux_portfolio {
+        let signal_basis=if def.book==crate::books::ytcr::BOOK {"Dated AUX eligibility gates entries in the source loop. When enabled, turnover uses the dated native OpenInt field. Rejected portfolio entries are not retried. This is a declared fixed-slot research adaptation, not an AmiBroker portfolio reproduction."} else {"Dated AUX eligibility gates entries in the source loop; rejected portfolio entries are not retried. This is a declared fixed-slot research adaptation, not an AmiBroker portfolio reproduction."};
+        Ok(response.replace("\"membership\":\"current\"",&format!("\"membership\":{}",quote(req.membership))).replace("Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried",signal_basis).replace("Actual source bars and unchanged strategy guards passed; current membership is a snapshot with survivorship bias.","Actual source bars and dated AUX entry eligibility were applied; inventory completeness and historical membership are not independently verified.").replace("Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.","Entries use dated AUX flags from the staged source inventory. Inventory completeness and the flags are not independently verified against historical index records."))
+    } else { Ok(response) }
 }
 
 #[cfg(test)]
@@ -1012,6 +1060,7 @@ mod tests {
             ("max_positions", "2.5"),
             ("max_positions", "-1"),
             ("membership", "dead"),
+            ("aux_filter", "unknown"),
             ("from", "2020-02-30"),
             ("p.trend", "NaN"),
             ("basket", "../../data"),
@@ -1193,6 +1242,90 @@ mod tests {
             ("to".into(), "2020-11-20".into()),
         ]);
         (Fixture(directory), state, q)
+    }
+    #[test]
+    fn unsupported_aux_filter_is_not_silently_ignored() {
+        let _lock=ENDPOINT_LOCK.lock().unwrap();
+        let (_fixture,state,mut q)=fixture();
+        q.insert("aux_filter".into(),"both".into());
+        let result=run(&state,&q).unwrap();
+        assert!(result.contains("not_testable"));
+        assert!(result.contains("No filter is silently ignored"));
+    }
+    #[test]
+    fn yt_portfolio_requires_dated_aux_and_a_complete_source_inventory() {
+        let _lock=ENDPOINT_LOCK.lock().unwrap();
+        let (_fixture,state,mut q)=fixture();
+        q.insert("_guru".into(),"yt".into());
+        q.insert("id".into(),crate::books::ytnr7::NR7_ST.into());
+        q.insert("basket".into(),"nse500".into());
+        let missing_rule=run(&state,&q).unwrap();
+        assert!(missing_rule.contains("Select a dated AUX"));
+        q.insert("aux_filter".into(),"aux1".into());
+        let incomplete=run(&state,&q).unwrap();
+        assert!(incomplete.contains("no complete source-inventory count"));
+        assert!(incomplete.contains("\"stats\":null"));
+    }
+    #[test]
+    fn yt_aux_portfolio_endpoint_uses_source_verified_cash_data() {
+        let _lock=ENDPOINT_LOCK.lock().unwrap();
+        let (fixture,mut state,mut q)=fixture();
+        let csv=std::fs::read_to_string(fixture.0.join("stock.csv")).unwrap();
+        let rows=baskets::parse_rows(&csv,"A").unwrap();
+        let mut raw=vec![0u8;1184];raw[..8].copy_from_slice(b"BROKDAt5");
+        raw[1180..1184].copy_from_slice(&(rows.len() as u32).to_le_bytes());
+        for row in &rows {
+            let y:u64=row.date[..4].parse().unwrap();let m:u64=row.date[5..7].parse().unwrap();let d:u64=row.date[8..10].parse().unwrap();
+            raw.extend_from_slice(&((y<<52)|(m<<48)|(d<<43)).to_le_bytes());
+            for n in [row.close,row.open,row.high,row.low,5000.,0.,1.,0.] {raw.extend_from_slice(&(n as f32).to_le_bytes());}
+        }
+        raw.extend_from_slice(&[0;4]);
+        let root=fixture.0.join("native");
+        for symbol in ["A","Z"] {let sub=root.join(symbol.to_ascii_lowercase());std::fs::create_dir_all(&sub).unwrap();std::fs::write(sub.join(symbol),&raw).unwrap();}
+        let source_sha=baskets::sha256_hex(&raw).unwrap();let csv_sha=baskets::sha256_hex(csv.as_bytes()).unwrap();
+        let mut index="basket,ticker,path,first,last,bars,source,source_sha256,csv_sha256,membership,status,has_volume,basket_expected_members\n".to_string();
+        for symbol in ["A","Z"] {index.push_str(&format!("nse500,{symbol},stock.csv,2020-01-01,2020-11-20,300,Team AmiBroker database cp_updated_2026,{source_sha},{csv_sha},Dated AUX inventory,ready,true,2\n"));}
+        std::fs::write(fixture.0.join("index.csv"),index).unwrap();
+        state.baskets=baskets::Catalogue::load(&fixture.0).unwrap();
+        q.insert("_guru".into(),"yt".into());q.insert("id".into(),crate::books::ytnr7::NR7_ST.into());q.insert("basket".into(),"nse500".into());q.insert("aux_filter".into(),"aux1".into());q.insert("membership".into(),"past".into());
+        let body=run_with_aux_root(&state,&q,Some(&root)).unwrap();
+        assert!(body.contains("\"status\":\"ready\""),"{body}");
+        assert!(body.contains("Dated AUX eligibility gates entries"));
+        assert!(body.contains("\"membership\":\"past\""));
+        assert!(body.contains("not an AmiBroker portfolio reproduction"));
+    }
+    #[test]
+    fn local_yt_aux_signals_feed_portfolio_replay_when_configured() {
+        let (Ok(basket),Ok(native))=(std::env::var("TEST_YT_BASKET_DIR"),std::env::var("TEST_YT_AUX_DIR")) else {return};
+        let catalog=baskets::Catalogue::load(std::path::Path::new(&basket)).unwrap();
+        let stock_rows:Vec<_>=["RELIANCE","TCS"].iter().map(|s|catalog.rows(&format!("basket:nse500:{s}")).unwrap()).collect();
+        let calendar:Vec<String>=stock_rows[0].iter().filter(|r|r.date.as_str()>="2018-01-01" && r.date.as_str()<="2020-12-31").filter(|r|stock_rows[1].binary_search_by(|other|other.date.cmp(&r.date)).is_ok()).map(|r|r.date.clone()).collect();
+        assert!(calendar.len()>500);
+        for id in [crate::books::ytnr7::NR7_ST,crate::books::ytcr::SHORT_PLAIN] {
+            let mut candidates=Vec::new();
+            for rows in &stock_rows {
+                let key=format!("basket:nse500:{}",rows[0].ticker);let ctx=Ctx::new(rows,rows,&[]);
+                let from=rows.partition_point(|r|r.date<calendar[0]);
+                let to=rows.partition_point(|r|r.date<=*calendar.last().unwrap())-1;
+                let trades=crate::yt_aux::strategy_trades(&catalog,&key,std::path::Path::new(&native),id,&ctx,from,to,&Default::default(),crate::yt_aux::Rule::Aux1).unwrap();
+                for t in &trades {candidates.push(Candidate::from_source(&key,&ctx,t,(Phase::Close,Phase::Close)).unwrap());}
+            }
+            assert!(!candidates.is_empty(),"{id}");
+            let ledger=replay(&candidates,&calendar,2,0.).unwrap();
+            assert!(!ledger.accepted.is_empty(),"{id}");
+            assert!(ledger.positions.iter().all(|&n|n<=2));
+            assert!(ledger.equity.iter().all(|n|n.is_finite() && *n>0.));
+        }
+    }
+    #[test]
+    fn intraday_portfolio_cannot_fall_through_to_daily_replay() {
+        let _lock=ENDPOINT_LOCK.lock().unwrap();
+        let (_fixture,state,mut q)=fixture();
+        q.insert("_guru".into(),"yt".into());q.insert("id".into(),crate::books::ytsti::FRESH.into());
+        let body=run(&state,&q).unwrap();
+        assert!(body.contains("\"status\":\"not_testable\""),"{body}");
+        assert!(body.contains("timestamped signals"),"{body}");
+        assert!(body.contains("\"stats\":null"),"{body}");
     }
     #[test]
     fn actual_endpoint_uses_stock_ledger_and_never_manufactures_a_price_chart() {

@@ -9,7 +9,13 @@ mod accounting;
 mod yt_report;
 mod baskets;
 mod intraday;
+mod yt_intraday_rank;
+mod yt_intraday_portfolio;
+mod yt_futures_portfolio;
+mod yt_nr7_portfolio;
+mod yt_aux;
 mod basket_portfolio;
+mod yt_amibroker_portfolio;
 mod instrument_policy;
 mod trade_validation;
 mod unit_exposure_report;
@@ -749,7 +755,8 @@ struct State {
     market_extra:BTreeMap<(String,String),BTreeMap<String,f64>>,
 }
 
-enum SelectedContext<'a>{Preloaded(&'a Ctx<'static>),Native{rows:Vec<Row>,evidence:&'a baskets::NativeEvidence}}
+/// `aux2`: the stock's dated AUX2 (yt_aux::native_aux2), loaded only for a strategy whose AFL reads it.
+enum SelectedContext<'a>{Preloaded(&'a Ctx<'static>),Native{rows:Vec<Row>,evidence:&'a baskets::NativeEvidence,aux2:Option<Vec<f64>>}}
 enum ContextRef<'a>{Preloaded(&'a Ctx<'a>),Native(Ctx<'a>)}
 impl<'a> std::ops::Deref for ContextRef<'a>{type Target=Ctx<'a>;fn deref(&self)->&Self::Target{match self{Self::Preloaded(c)=>c,Self::Native(c)=>c}}}
 impl SelectedContext<'_>{
@@ -769,26 +776,9 @@ impl SelectedContext<'_>{
     fn context<'a>(&'a self,st:&'a State)->ContextRef<'a>{
         match self {
             Self::Preloaded(c)=>ContextRef::Preloaded(c),
-            Self::Native{rows,evidence}=>{
-                let benchmark=native_benchmark(evidence.market());
-                let bench=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty()&&c.r.iter().all(|r|r.ticker==benchmark)).map_or(&[][..],|c|c.r);
-                let (source_vix,_)=market_vix(&st.vix,Some(evidence.market()));
-                let mut ctx=Ctx::new(rows,bench,source_vix);
-                let vix:BTreeMap<&str,&Row>=source_vix.iter().map(|r|(r.date.as_str(),r)).collect();
-                for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
-                    let values:Vec<f64>=rows.iter().map(|r|vix.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect();
-                    ctx.extra.insert(format!("VIX_OHLC.{name}"),values.clone());ctx.extra.insert(format!("VIX.{name}"),values);
-                }
-                // The market's benchmark index (NIFTY 50 for India) on the stock's dates: the team's stock AFLs use it as
-                // a market filter (their Foreign("NSENIFTY", ...)). NaN where the index has no bar.
-                let bench_rows:BTreeMap<&str,&Row>=bench.iter().map(|r|(r.date.as_str(),r)).collect();
-                for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
-                    ctx.extra.insert(format!("BENCH.{name}"),rows.iter().map(|r|bench_rows.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect());
-                }
-                for ((symbol,key),values) in &st.market_extra {
-                    if is_vix_series(key)&&self.volatility_source(st).is_none(){continue;}
-                    if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),rows.iter().map(|r|values.get(&r.date).copied().unwrap_or(f64::NAN)).collect());}
-                }
+            Self::Native{rows,evidence,aux2}=>{
+                let mut ctx=native_stock_context(st,rows,evidence.market());
+                if let Some(a)=aux2 {ctx.extra.insert(yt_aux::AUX2_SERIES.into(),a.clone());}
                 ContextRef::Native(ctx)
             }
         }
@@ -799,6 +789,31 @@ impl SelectedContext<'_>{
         let market=match self {Self::Native{evidence,..}=>Some(evidence.market()),Self::Preloaded(c)=>preloaded_market(&c.r[0].ticker)};
         market_vix(&st.vix,market).1
     }
+}
+/// Context for one native stock series: the market benchmark rows, the market's
+/// volatility index and the shared extra series, exactly as single-stock runs build it.
+/// Also used by the AmiBroker-style portfolio mode for each universe symbol.
+pub(crate) fn native_stock_context<'a>(st:&State,rows:&'a [Row],market:baskets::Market)->Ctx<'a>{
+    let benchmark=native_benchmark(market);
+    let bench=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty()&&c.r.iter().all(|r|r.ticker==benchmark)).map_or(&[][..],|c|c.r);
+    let (source_vix,volatility_source)=market_vix(&st.vix,Some(market));
+    let mut ctx=Ctx::new(rows,bench,source_vix);
+    let vix:BTreeMap<&str,&Row>=source_vix.iter().map(|r|(r.date.as_str(),r)).collect();
+    for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
+        let values:Vec<f64>=rows.iter().map(|r|vix.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect();
+        ctx.extra.insert(format!("VIX_OHLC.{name}"),values.clone());ctx.extra.insert(format!("VIX.{name}"),values);
+    }
+    // The market's benchmark index (NIFTY 50 for India) on the stock's dates: the team's stock AFLs use it as
+    // a market filter (their Foreign("NSENIFTY", ...)). NaN where the index has no bar.
+    let bench_rows:BTreeMap<&str,&Row>=bench.iter().map(|r|(r.date.as_str(),r)).collect();
+    for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
+        ctx.extra.insert(format!("BENCH.{name}"),rows.iter().map(|r|bench_rows.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect());
+    }
+    for ((symbol,key),values) in &st.market_extra {
+        if is_vix_series(key)&&volatility_source.is_none(){continue;}
+        if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),rows.iter().map(|r|values.get(&r.date).copied().unwrap_or(f64::NAN)).collect());}
+    }
+    ctx
 }
 fn native_benchmark(market:baskets::Market)->&'static str {match market {baskets::Market::India=>BENCHMARK,baskets::Market::UnitedStates=>"SPX"}}
 fn preloaded_market(ticker:&str)->Option<baskets::Market>{
@@ -818,7 +833,12 @@ fn select_context<'a>(st:&'a State,q:&BTreeMap<String,String>)->Result<SelectedC
     if let Some(c)=st.ctxs.get(ticker){return Ok(SelectedContext::Preloaded(c));}
     if let Some(evidence)=st.baskets.native_evidence(ticker){
         for key in ["from","to"] {if q.get(key).is_some_and(|value|!value.is_empty()&&!baskets::valid_date(value)){return Err(format!("needs_data: Native requested {key} must be a valid YYYY-MM-DD date; no date is repaired."));}}
-        return st.baskets.rows(ticker).map(|rows|SelectedContext::Native{rows,evidence});
+        return st.baskets.rows(ticker).map(|rows|{
+            // Missing or unaligned AUX2 leaves the series absent: readiness then reports needs_data for those strategies.
+            let root=std::env::var_os("AMIBROKER_DATA_DIR").map(std::path::PathBuf::from);
+            let aux2=q.get("id").map_or(true,|id|yt_aux::reads_aux2(id)).then(||yt_aux::native_aux2(&st.baskets,ticker,root.as_deref(),&rows).ok()).flatten();
+            SelectedContext::Native{rows,evidence,aux2}
+        });
     }
     Err(format!("unknown ticker {ticker}"))
 }
@@ -1471,7 +1491,10 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     costs.ensure_rollover_for(yt_money_account(q))?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
     let capital=yt_capital(q)?;
-    let run = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?,costs.side_rate(),capital)?;
+    // Intraday YT AFLs record each trade's candle / minute clock and candle excursions while they run.
+    let intraday_rule=instrument_policy::intraday_rule(def);
+    let (raw_run,timings)=intraday::capture_timings(||selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p));
+    let run = whole_unit_run(ctx,raw_run?,costs.side_rate(),capital)?;
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
@@ -1510,7 +1533,8 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let unit_account=run.whole_units.map(|capital|whole_unit_account(ctx,&run.trades,from,to,costs.side_rate(),capital)).transpose()?;
     arr(&mut o, &mut run.trades.iter().enumerate().map(|(i,t)| {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}
-        let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else if def.book.starts_with("yt_"){accounting::TradeLedger::amibroker(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
+        let timing=if intraday_rule {timings.get(i).filter(|m|m.matches(t)).or_else(||timings.iter().find(|m|m.matches(t)))} else {None};
+        let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else if let Some(tm)=timing.filter(|_|def.book.starts_with("yt_")){accounting::TradeLedger::amibroker_intraday(ctx,t,allocation,costs,tm)}else if def.book.starts_with("yt_"){accounting::TradeLedger::amibroker(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         allocation*=1.+ledger.net_ret;
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
@@ -1521,6 +1545,16 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         );
         if books::lkqts::stock_research_profile(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
+        if let Some(tm)=timing {
+            // Intraday clock: candle stamps (AmiBroker START time) and fill minutes; bars held in candles; the exact
+            // 1-minute path excursions next to the AmiBroker candle MAE / MFE in `accounting`.
+            let path=accounting::TradeLedger::minute_path(t,tm);
+            row.pop();
+            let _=write!(row,",\"entry_time\":\"{} {}\",\"exit_time\":\"{} {}\",\"candles\":{},\"intraday\":{{\"entry_date\":\"{}\",\"entry_bar\":\"{}\",\"entry_fill_minute\":\"{}\",\"exit_date\":\"{}\",\"exit_bar\":\"{}\",\"exit_fill_minute\":\"{}\",\"candles_held\":{},\"timeframe_min\":{},\"alignment\":\"{}\",\"mae_minute_path\":{},\"mfe_minute_path\":{},\"basis\":\"Candle stamps are AmiBroker START times of the strategy's candles; fill minutes are the 1-minute bars the fills happened in. Minute-path excursions are the exact 1-minute high / low between the fills, as fractions of the entry price.\"}}}}",
+                tm.entry_date,intraday::TradeTiming::hm(tm.entry_bar),tm.exit_date,intraday::TradeTiming::hm(tm.exit_bar),tm.candles,
+                tm.entry_date,intraday::TradeTiming::hm(tm.entry_bar),intraday::TradeTiming::hm(tm.entry_fill),tm.exit_date,intraday::TradeTiming::hm(tm.exit_bar),intraday::TradeTiming::hm(tm.exit_fill),
+                tm.candles,tm.tf_min,if tm.align==intraday::Align::Session {"session_0915"} else {"amibroker_midnight"},path.map_or("null".into(),|v|num(v.0)),path.map_or("null".into(),|v|num(v.1)));
+        }
         if let Some(account)=&unit_account {
             // Money columns of the whole-unit account: units bought, their entry value and the account value at entry.
             let units:f64=account.units[i].iter().sum();
@@ -1611,6 +1645,10 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}", stats_json(&financial_stats(ctx, &run, costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(basis));
     if def.book==books::chande::BOOK {o.pop();let _=write!(o,",\"experiment\":{}}}",experiment_json(id));}
     if let Some((report,money))=&yt_report {o.pop();let _=write!(o,",\"report\":{report},\"money\":{money}}}");}
+    if intraday_rule {
+        let notes:Vec<String>=intraday::run_notices(id,&p).iter().map(|n|format!("\"{}\"",esc(n))).collect();
+        o.pop();let _=write!(o,",\"notices\":[{}],\"intraday_timed_trades\":{}}}",notes.join(","),run.trades.iter().filter(|t|timings.iter().any(|m|m.matches(t))).count());
+    }
     if let Some(capital)=run.whole_units {
         o.pop();let _=write!(o,",\"whole_unit_account\":{{\"capital\":{},\"basis\":\"AmiBroker-style money account: starting capital {}; each entry buys the largest whole number of units the account can pay for including the entry cost, and the remainder stays as idle cash. Equity, CAGR and drawdown are on this account, marked to each close; CAGR counts 365-day years. Equity series are this money equity divided by the starting capital. Trade percentages are per unit, unchanged.\"}}}}",num(capital),num(capital));
     }
@@ -1620,7 +1658,9 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
 /// Basket jobs use their own bounded, fail-fast permit. The shared single-stock
 /// strategy engine and its calculation guards are unchanged.
 fn basket_json(st:&State,q:&BTreeMap<String,String>,stream:&mut TcpStream){
-    match basket_portfolio::run(st,q){
+    // `mode=amibroker` is the separate AmiBroker-style YT stock portfolio; the default fixed-slot path is unchanged.
+    let result=if q.get("mode").is_some_and(|m|m=="amibroker"){yt_amibroker_portfolio::run(st,q)}else{basket_portfolio::run(st,q)};
+    match result{
         Ok(body)=>respond(stream,"200 OK","application/json; charset=utf-8",body.as_bytes()),
         Err(note) if note.starts_with("busy:")=>respond(stream,"429 Too Many Requests","text/plain; charset=utf-8",note.as_bytes()),
         Err(note)=>respond(stream,"400 Bad Request","text/plain; charset=utf-8",note.as_bytes()),
@@ -2065,6 +2105,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/yt/summary" => json(summary(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/yt/run" => json(detail(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/yt/params" => json(Ok(params_json("yt")), &mut stream),
+        "/api/guru/yt/basket-run" => basket_json(&st,&owned_query(&q,"yt"),&mut stream),
         "/api/guru/yt/optimize" => json(optimize(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/connors/progress" | "/api/guru/chande/progress" | "/api/guru/ross/progress" | "/api/guru/yt/progress" => json(Ok(progress_json()), &mut stream),
         "/api/notes" => match note_path(&q) {
@@ -2758,7 +2799,7 @@ mod tests {
                 continue;
             }
             for cost in [0.0, 0.0005] {
-                let raw = connors::run(d.id, &ctx, 0, rows.len()-1, &Params::new()).unwrap();
+                let raw = connors::run(d.id, &ctx, 0, rows.len()-1, &Params::new()).unwrap_or_else(|| panic!("{} has no runner", d.id));
                 if let Err(reason) = trade_validation::check(&raw,0,rows.len()-1,cost) {
                     assert!(backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_err().contains(&reason),"{}",d.id);
                     continue;

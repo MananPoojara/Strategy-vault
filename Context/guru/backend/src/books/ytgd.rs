@@ -26,32 +26,108 @@
 //! position sizing, which only choose among stocks.
 //!
 //! Not coded:
-//! - Gap down strategy/GAP DOWN_Intra day time frame/Intraday GapDown Buy with Time Condition.afl and the four
-//!   "Intraday GapDown Buy with Single OR Double Confirmation and Time Condition Exit" AFLs ('+' Normal ROC / '-'
-//!   Nick Radge ROC, with and without filter): 1-minute bars (entry at the 9:20 bar's open, confirmation candles,
-//!   exit at 15:20); the engine has daily bars only;
-//! - Shock system/INTRADAY/GAP DOWN SHORT WHEN PREVIOUS BULLISH CANDLE with intraday trailing sl.afl: intraday bars
-//!   (first-bar entry, trailing SL from the 2nd candle's low, 15:15 / 15:25 exits);
 //! - Single and Double Confirmation - FO Intraday Candle/Intraday GapDown Buy ... ('-' Nick Radge ROC).afl at the
 //!   folder root: only the standard "Price" chart section (no trading rules).
+//! The one-minute "Intraday GapDown Buy with Time Condition" and the positive/negative ROC confirmation variants
+//! have provisional held implementations, including the no-filter version. Their forward-referenced exit can
+//! execute on the entry minute; portfolio ranking is not modelled. The intraday Shock AFL has a provisional
+//! implementation including its optional stops and filters.
 #![allow(dead_code)]
 use crate::books::ytd7::{ma, prec2};
 use crate::books::ytsw::{st_filter, tf_of};
 use crate::books::ytwh::bound;
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Inputs already expanded to one-minute bars for the AFL "Intraday GapDown Buy with Time Condition".
+/// The daily expansion and its possible look-ahead must be reviewed before this draft can be run publicly.
+#[derive(Clone, Copy)]
+struct MinuteGapInputs {
+    date: i32, time: u16, open: f64, close: f64,
+    previous_daily_close: Option<f64>, previous_daily_low: Option<f64>, today_open: Option<f64>,
+    expanded_dma: Option<f64>, preceding_close: Option<f64>, preceding_dma: Option<f64>,
+    turnover: bool,
+}
+
+/// Source-loop signals and actual fill prices, including the source's independent buy and sell `if`s.
+/// Consequently a purchase may be sold on the same minute. Future references are explicit and are not
+/// replaced by a guessed 15:20 exit. Missing next bars make the corresponding comparison unavailable.
+fn minute_gap_signals(b: &[MinuteGapInputs], gap_pct: f64, penny: f64) -> Vec<(Option<f64>, Option<f64>)> {
+    let mut out = vec![(None, None); b.len()];
+    let mut position = false;
+    for i in 1..b.len() {
+        let bar = b[i];
+        let gap = bar.previous_daily_close.zip(bar.today_open)
+            .is_some_and(|(prev, open)| open < prev * (1. - gap_pct / 100.));
+        let dma = bar.preceding_close.zip(bar.preceding_dma).is_some_and(|(close, ma)| close > ma);
+        if !position && gap && dma && bar.expanded_dma.is_some_and(|v| v > 0.)
+            && bar.time == 920 && bar.close > penny && bar.turnover {
+            out[i].0 = Some(bar.open);
+            position = true;
+        }
+        let exit = b.get(i + 2).is_some_and(|future| bar.date != future.date)
+            || b.get(i + 1).is_some_and(|future| bar.time != future.time);
+        if position && exit {
+            out[i].1 = Some(bar.close);
+            position = false;
+        }
+    }
+    out
+}
+
+fn confirmation_signals(b:&[MinuteGapInputs],gap:f64,use_low:bool,double:bool,max_price:f64,id:&str)->Vec<(Option<f64>,Option<f64>)> {
+    let mut out=vec![(None,None);b.len()];let mut position=false;
+    for i in 1..b.len() {
+        let bar=b[i];let base=if use_low {bar.previous_daily_low}else{bar.previous_daily_close};
+        let threshold=base.map(|v|v*(1.-gap/100.));
+        let is_gap=threshold.zip(bar.today_open).is_some_and(|(t,o)|o<t);
+        let price_ok=bar.previous_daily_close.is_some_and(|v|v>0. && v<max_price);
+        let filter=if id==CONFIRM_NONE {true} else {
+            let close=if id==CONFIRM_POS {bar.previous_daily_close}else{bar.preceding_close};
+            close.zip(bar.preceding_dma).is_some_and(|(c,m)|c>m) && bar.expanded_dma.is_some_and(|m|m>0.)
+        };
+        if !position && is_gap && price_ok && filter && bar.turnover && bar.time==920
+            && (!double || threshold.is_some_and(|t|bar.open<t)) {
+            out[i].0=Some(bar.open);position=true;
+        }
+        let exit=b.get(i+2).is_some_and(|next|bar.date!=next.date) || b.get(i+1).is_some_and(|next|bar.time!=next.time);
+        if position && exit {out[i].1=Some(bar.close);position=false;}
+    }
+    out
+}
+
 pub const BOOK: &str = "yt_gd";
 pub const BUY: &str = "ytgd_buy";
 pub const BUY_SMA: &str = "ytgd_buy_sma";
 pub const SHOCK: &str = "ytgd_shock_short";
+pub const MINUTE_TIME: &str = "ytgd_minute_time";
+pub const CONFIRM_POS: &str = "ytgd_confirm_pos";
+pub const CONFIRM_NEG: &str = "ytgd_confirm_neg";
+pub const CONFIRM_NONE: &str = "ytgd_confirm_no_filter";
+pub const SHOCK_IEOD: &str = "ytgd_shock_intraday";
+pub const INTRADAY_IDS: [&str;5] = [MINUTE_TIME,CONFIRM_POS,CONFIRM_NEG,CONFIRM_NONE,SHOCK_IEOD];
 pub const IDS: [&str; 3] = [BUY, BUY_SMA, SHOCK];
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: "YT Strategies · Gap Down", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
+fn confirm_def(id:&'static str,name:&'static str)->StrategyDef {
+    StrategyDef {id,name,group:"YT Strategies · Gap Down",session:0,dir:"Long",status:Status::Live,needs_volume:false,needs_vix:false,needs_series:&[],book:BOOK,
+        rules:&["F|Gap below prior close or low, with optional second confirmation", "E|Buy at 09:20 open", "X|Sell when the AFL forward-reference exit condition is true"],
+        notes:"Single or double confirmation FO intraday AFL; the positive/negative ROC ranking selects among a portfolio and is not modelled in a single-symbol run. Default single confirmation and previous-close gap. The source exit is a future reference that sells at the close of the entry minute, as written. One-minute bars of the selected ieodfo F&O futures (the team's IEOD database). Not compared with the team's trade sheets.",claim:None}
+}
+
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
+        StrategyDef { id: MINUTE_TIME, name: "Gap Down Buy with Minute Time Condition", group: "YT Strategies · Gap Down", session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
+            rules: &["F|Open below prior daily close by gap percentage; daily moving-average filter", "E|Buy at 09:20 open", "X|Sell at close when the AFL's forward-reference exit condition is true"],
+            notes: "Gap down strategy/GAP DOWN_Intra day time frame/Intraday GapDown Buy with Time Condition.afl. One-minute bars of the selected ieodfo F&O futures (the team's IEOD database); TimeFrameGetPrice gives the day's open and the previous close. The AFL uses independent buy and sell conditions and its forward-reference exit sells at the close of the 09:20 entry minute, as written. Not compared with the team's trade sheets.", claim: None },
+        confirm_def(CONFIRM_POS,"Gap Down Single or Double Confirmation, Positive ROC"),
+        confirm_def(CONFIRM_NEG,"Gap Down Single or Double Confirmation, Negative ROC"),
+        confirm_def(CONFIRM_NONE,"Gap Down Single or Double Confirmation, No Filter"),
+        StrategyDef{id:SHOCK_IEOD,name:"Intraday Gap Down Shock Short",group:"YT Strategies · Gap Down",session:0,dir:"Short",status:Status::Live,needs_volume:false,needs_vix:false,needs_series:&[],book:BOOK,
+            rules:&["F|Prior daily candle is bullish and price gaps below the specified level", "E|Short at the first candle open less buffer", "X|Cover on the source time or end-of-day conditions"],
+            notes:"GAP DOWN SHORT WHEN PREVIOUS BULLISH CANDLE with intraday trailing sl.afl. Monthly/weekly/daily ST and no-filter modes and the source hard and trailing stops are modelled. The AFL states no analysis interval: the candle minutes setting is the Analysis periodicity (default 1 minute). A source ST period of zero is not supported. Not compared with the team's trade sheets.",claim:None},
         def(BUY, "Intraday Gap Down Buy", "Long", &[
             "F|Open < previous Low − gap % (1) of it (gap calculation option: previous Close)",
             "F|Entry bar is not a lower circuit (Open = Close = Low to 2 decimals; option, on)",
@@ -85,6 +161,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    if INTRADAY_IDS.contains(&id) {
+        if id==SHOCK_IEOD {return Some(vec![p("tf_min","Candle minutes (the AFL states no interval; the Analysis periodicity)",1.,1.,60.,1.),p("buffer_pct","Entry buffer percent",0.25,0.,2.,0.05),
+            p("filter","Filter (0 ST, 1 off)",0.,0.,1.,1.),p("filter_tf","ST timeframe (0 monthly, 1 weekly, 2 daily)",0.,0.,2.,1.),p("st_period","ST period",20.,1.,20.,1.),p("st_factor","ST factor",1.,0.,20.,1.),p("st_point","ST point (1 midpoint, 2 close, 3 pivot)",1.,1.,3.,1.),
+            p("candle_pct","Bullish candle range percent",20.,1.,100.,1.),p("gap_calc","Gap calculation (0 low, 1 close)",0.,0.,1.,1.),p("gap_pct","Gap range percent",1.,-20.,20.,0.05),p("trail_pct","Trailing stop percent (0 off)",0.,0.,3.,0.5),p("hard_pct","Hard stop percent (0 off)",0.,0.,3.,0.5),crate::intraday::align_param()]);}
+        let mut v=vec![p("gap_pct", "Gap percent", 1., 0., 10., 0.5), p("ma_period", "Daily SMA period", 200., 1., 300., 1.),p("roc_period","Ranking ROC period",1.,1.,100.,1.),p("turnover","Turnover filter (1 on)",0.,0.,1.,1.)];
+        if id!=MINUTE_TIME {v.extend([p("gap_low","Calculate gap from prior low (1)",0.,0.,1.,1.),p("double_confirm","Require second confirmation (1)",0.,0.,1.,1.),p("max_price","Previous close maximum",10000.,1000.,100000.,100.)]);}
+        return Some(v);
+    }
     match id {
         BUY | BUY_SMA => {
             let mut v = vec![
@@ -136,7 +220,202 @@ fn trade(dir: f64, i: usize, px: f64, exit_px: f64, why: &str) -> Trade {
 
 const BIG: f64 = 9_999_999.0;
 
+fn run_minute_gap(id:&str, x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
+    minute_gap_capture(id,x,from,to,p,&mut Vec::new())
+}
+
+/// Candle indices accompany the ordinary trades so the research adapter never parses display text.
+fn minute_gap_capture(id:&str, x: &Ctx, from: usize, to: usize, p: &Params, capture:&mut Vec<(usize,usize,bool)>) -> Vec<Trade> {
+    if x.r.is_empty() || from > to || to >= x.r.len() { return Vec::new(); }
+    let ticker = format!("{}{}", crate::intraday::BASKET_PREFIX, x.r[0].ticker);
+    let Some(minutes) = crate::intraday::minutes(&ticker) else { return Vec::new(); };
+    let (bars, di) = crate::books::ytsti::candles_for(&minutes, x, 1,crate::intraday::Align::Midnight);
+    let period = p.get("ma_period").copied().filter(|v| v.is_finite()).unwrap_or(200.).round().clamp(1., 300.) as usize;
+    let gap = p.get("gap_pct").copied().filter(|v| v.is_finite()).unwrap_or(1.).clamp(if id==CONFIRM_NONE {0.}else{1.}, 10.);
+    let sma = ma(&x.c, period);
+    // TimeFrameExpand's default expandLast exposes the current daily value only at the session's last bar.
+    let expanded: Vec<Option<usize>> = (0..bars.len()).map(|i| {
+        if bars.last_of_day(i) { Some(di[i]) } else { di[i].checked_sub(1) }
+    }).collect();
+    let inputs: Vec<MinuteGapInputs> = (0..bars.len()).map(|i| {
+        let prior_daily = di[i].checked_sub(1);
+        let prev_expand = i.checked_sub(1).and_then(|k| expanded[k]);
+        MinuteGapInputs { date: bars.day[i] as i32, time: bars.hhmm[i], open: bars.o[i], close: bars.c[i],
+            previous_daily_close: prior_daily.map(|d| x.c[d]), previous_daily_low: prior_daily.map(|d|x.l[d]), today_open: Some(x.o[di[i]]),
+            expanded_dma: expanded[i].and_then(|d| sma[d]), preceding_close: prev_expand.map(|d| x.c[d]),
+            preceding_dma: prev_expand.and_then(|d| sma[d]), turnover: !p.get("turnover").is_some_and(|v|v.is_finite()&&*v>=0.5)
+                || bars.v[i]*bars.c[i]>volsig(&minutes.dates[bars.day[i] as usize]) }
+    }).collect();
+    let signals = if id==MINUTE_TIME {minute_gap_signals(&inputs,gap,0.)} else {
+        let on=|key:&str|p.get(key).is_some_and(|v|v.is_finite() && *v>=0.5);
+        let max=p.get("max_price").copied().filter(|v|v.is_finite()).unwrap_or(10000.).clamp(1000.,100000.);
+        confirmation_signals(&inputs,gap,on("gap_low"),on("double_confirm"),max,id)
+    };
+    let mut trades = Vec::new(); let mut entry: Option<(usize, f64)> = None;
+    for (i, &(buy, sell)) in signals.iter().enumerate() {
+        if di[i] > to { break; }
+        if let Some(px) = buy { if di[i] >= from && entry.is_none() { entry = Some((i, px)); } }
+        if let (Some(px), Some((e, entry_px))) = (sell, entry) {
+            trades.push(Trade { dir: 1., legs: vec![Leg { i: di[e], px: entry_px, w: 1. }], exit_i: di[i], exit_px: px,
+                reason: format!("Minute gap entry {:04}, exit {:04}", bars.hhmm[e], bars.hhmm[i]), entry_kind: "open", signal_i: di[e], open: false, exits: Vec::new() });
+            capture.push((e,i,false));
+            entry = None;
+        }
+    }
+    if let Some((e, entry_px)) = entry {
+        if let Some(i) = (e..bars.len()).rev().find(|&i| di[i] <= to) {
+            trades.push(Trade { dir: 1., legs: vec![Leg { i: di[e], px: entry_px, w: 1. }], exit_i: di[i], exit_px: bars.c[i], reason: "Open position at end of selected period".into(), entry_kind: "open", signal_i: di[e], open: true, exits: Vec::new() });
+            capture.push((e,i,true));
+        }
+    }
+    let pairs:Vec<(usize,usize)>=capture.iter().map(|&(e,z,_)|(e,z)).collect();
+    crate::intraday::record(&minutes,&bars,1,crate::intraday::Align::Midnight,&trades,&pairs);
+    trades
+}
+
+/// Build typed, source-scored observations for the one-minute Gap Down variants.
+/// This is a research adapter only; callers must enforce instrument and readiness admission.
+/// The event clock is trading date * 2880 + minute-of-day * 2 + phase (open=0, close=1).
+/// Every returned mark is the observed open or close of that same source minute. No daily
+/// quote is promoted to an intraday mark and a missing ranking score is an error.
+pub(crate) fn gap_portfolio_observations(id:&str,x:&Ctx,from:usize,to:usize,p:&Params,first_id:u64)
+    -> Result<(Vec<crate::yt_intraday_portfolio::Signal>,Vec<crate::yt_intraday_portfolio::Mark>),String> {
+    use crate::yt_intraday_portfolio::{Signal,Mark};
+    if ![MINUTE_TIME,CONFIRM_POS,CONFIRM_NEG,CONFIRM_NONE].contains(&id) {return Err("source-defined ranking is unavailable for this gap strategy".into());}
+    crate::intraday::validate_research_params(&params(id).ok_or("unknown gap strategy")?,p)?;
+    if x.r.is_empty() || from>to || to>=x.r.len() {return Err("invalid selected daily coverage".into());}
+    let ticker=format!("{}{}",crate::intraday::BASKET_PREFIX,x.r[0].ticker);
+    crate::intraday::available(&ticker)?;
+    let minutes=crate::intraday::minutes(&ticker).ok_or("intraday bars are unavailable")?;
+    crate::intraday::validate_daily_carrier(&minutes,x.r,to)?;
+    let (bars,di)=crate::books::ytsti::candles_for(&minutes,x,1,crate::intraday::Align::Midnight);
+    let indices:Vec<usize>=(0..bars.len()).filter(|&i|di[i]>=from&&di[i]<=to).collect();
+    if indices.len()>1_000_000 {return Err("selected source exceeds the bounded intraday mark limit".into());}
+    let stamp=|i:usize,phase:i64|->Result<i64,String>{
+        let date=&x.r[di[i]].date;
+        if !crate::baskets::valid_date(date) {return Err("invalid source date".into());}
+        let time=bars.hhmm[i];if time/100>23 || time%100>59{return Err("invalid source minute".into());}
+        Ok(crate::day_number(date)*2880+i64::from(time/100*60+time%100)*2+phase)
+    };
+    let mut marks=Vec::with_capacity(indices.len()*2);
+    for &i in &indices {
+        marks.push(Mark{time:stamp(i,0)?,symbol:x.r[0].ticker.clone(),price:bars.o[i]});
+        marks.push(Mark{time:stamp(i,1)?,symbol:x.r[0].ticker.clone(),price:bars.c[i]});
+    }
+    let mut capture=Vec::new();let trades=minute_gap_capture(id,x,from,to,p,&mut capture);
+    if capture.len()!=trades.len(){return Err("timestamped source trade count mismatch".into());}
+    let period=p.get("roc_period").copied().filter(|v|v.is_finite()).unwrap_or(1.).round().clamp(1.,100.) as usize;
+    let mut signals=Vec::with_capacity(trades.len());
+    for (index,(trade,(entry,exit,open))) in trades.into_iter().zip(capture).enumerate() {
+        let score=if id==CONFIRM_NONE {
+            // The AFL has no PositionScore and defaults to one share per candidate.
+            // Equal default sizes are tied; the research selector uses alphabetical order.
+            // https://www.amibroker.com/kb/2015/09/28/symbol-selection-when-positionscore-is-not-defined/
+            0.
+        } else {
+            let previous=entry.checked_sub(1).ok_or("ranking requires a previous source bar")?;
+            let day=if bars.last_of_day(previous){Some(di[previous])}else{di[previous].checked_sub(1)}.ok_or("ranking requires an expanded prior daily ROC")?;
+            let base=day.checked_sub(period).ok_or("ranking requires earlier daily ROC history")?;
+            let roc=100.*(x.c[day]/x.c[base]-1.);
+            if !roc.is_finite(){return Err("ranking ROC is not finite".into());}
+            if id==CONFIRM_NEG {100.-roc}else{100.+roc}
+        };
+        let signal_id=first_id.checked_add(index as u64).ok_or("portfolio signal ID overflow")?;
+        signals.push(Signal{id:signal_id,symbol:x.r[0].ticker.clone(),entry_time:stamp(entry,0)?,entry_price:trade.legs[0].px,
+            score,direction:1,exit:if open {None}else{Some((stamp(exit,1)?,trade.exit_px))}});
+    }
+    Ok((signals,marks))
+}
+
+fn run_intraday_shock(x:&Ctx,from:usize,to:usize,p:&Params,capture:&mut Vec<(usize,usize)>)->Vec<Trade> {
+    if x.r.is_empty() || from>to || to>=x.r.len(){return Vec::new();}
+    let ticker=format!("{}{}",crate::intraday::BASKET_PREFIX,x.r[0].ticker);
+    let Some(minutes)=crate::intraday::minutes(&ticker) else{return Vec::new();};
+    let get=|k:&str,d:f64|p.get(k).copied().filter(|v|v.is_finite()).unwrap_or(d);
+    let tf=get("tf_min",1.).round().clamp(1.,60.) as u16;
+    let buffer=get("buffer_pct",0.25).clamp(0.,2.)/100.;
+    let (b,di)=crate::books::ytsti::candles_for(&minutes,x,tf,crate::intraday::align_of(p));
+    let filter_tf=match get("filter_tf",0.).round() as i64 {1=>'W',2=>'D',_=>'M'};
+    let trend=st_filter(x,filter_tf,get("st_point",1.).round().clamp(1.,3.) as i64,get("st_period",20.).round().clamp(1.,20.) as usize,get("st_factor",1.).clamp(0.,20.));
+    let expanded=|i:usize|if b.last_of_day(i){Some(di[i])}else{di[i].checked_sub(1)};
+    let mut pos:Option<(usize,f64)>=None;let mut out=Vec::new();
+    let mut hard:f64=99_999_999.;let mut trail:f64=99_999_999.;let mut lowest:f64=99_999_999.;let mut bars_held=0usize;
+    for i in 1..b.len() {
+        if di[i]>to {break;}
+        let end=i+1<b.len() && b.day[i]!=b.day[i+1];
+        let timed=b.hhmm[i]==1515 || b.hhmm[i]==1525;
+        if pos.is_none() && di[i]>=from && b.first_of_day(i) {
+            let previous=expanded(i-1);let current=expanded(i);
+            if let (Some(d),Some(f))=(previous,current) {
+                let range=x.h[d]-x.l[d];let pct=get("candle_pct",20.).clamp(1.,100.)/100.;
+                let bullish=x.c[d]>x.h[d]-pct*range && x.o[d]<x.l[d]+pct*range;
+                let gap_base=if get("gap_calc",0.)>=0.5{x.c[f]}else{x.l[f]};
+                let gap=b.o[i]<gap_base*(1.+get("gap_pct",1.).clamp(-20.,20.)/100.);
+                if bullish && gap && (get("filter",0.)>=0.5 || trend[f]==-1) {
+                    let px=(b.o[i]*(1.-buffer)).clamp(b.l[i],b.h[i]);pos=Some((i,px));bars_held=1;
+                    let pct=get("hard_pct",0.).clamp(0.,3.);hard=if pct>0. {px*(1.+pct/100.)}else{99_999_999.};
+                    trail=99_999_999.;lowest=99_999_999.;
+                }
+            }
+        }
+        if let Some((entry,px))=pos {
+            let prev_trail=trail;
+            if i>entry {
+                bars_held+=1;
+                let t=get("trail_pct",0.).clamp(0.,3.);
+                if bars_held>=2 && t>0. {lowest=lowest.min(b.l[i]);trail=lowest*(1.+t/100.);}
+            }
+            if b.c[i]>prev_trail || b.h[i]>hard || end || timed || i+1==b.len() {
+                let exit_px=if b.h[i]>hard {hard.clamp(b.l[i],b.h[i])} else {b.c[i]};
+                out.push(Trade{dir:-1.,legs:vec![Leg{i:di[entry],px,w:1.}],exit_i:di[i],exit_px,reason:format!("Shock short {:04} to {:04}; {tf}-minute candles",b.hhmm[entry],b.hhmm[i]),entry_kind:"open",signal_i:di[entry],open:false,exits:Vec::new()});capture.push((entry,i));pos=None;
+            }
+        }
+    }
+    if let Some((entry,px))=pos {if let Some(i)=(entry..b.len()).rev().find(|&i|di[i]<=to) {
+        out.push(Trade{dir:-1.,legs:vec![Leg{i:di[entry],px,w:1.}],exit_i:di[i],exit_px:b.c[i],reason:"Open shock short at end of selected period".into(),entry_kind:"open",signal_i:di[entry],open:true,exits:Vec::new()});capture.push((entry,i));
+    }}
+    crate::intraday::record(&minutes,&b,tf,crate::intraday::align_of(p),&out,capture);
+    out
+}
+
+/// The shock source has a modelled buffered-open entry, not an observed execution.
+/// Only the close-exit path is admitted here; stop-enabled intrabar timing is unresolved.
+pub(crate) fn shock_portfolio_observations(x:&Ctx,from:usize,to:usize,p:&Params,first_id:u64)
+    ->Result<(Vec<crate::yt_intraday_portfolio::Signal>,Vec<crate::yt_intraday_portfolio::Mark>),String> {
+    use crate::yt_intraday_portfolio::Signal;
+    crate::intraday::validate_research_params(&params(SHOCK_IEOD).ok_or("missing shock parameters")?,p)?;
+    if ["hard_pct","trail_pct"].iter().any(|key|p.get(*key).is_some_and(|v|*v>0.)) {
+        return Err("needs_data: shock stop execution timing within a candle is not established".into());
+    }
+    if x.r.is_empty() || from>to || to>=x.r.len(){return Err("invalid selected daily coverage".into());}
+    let ticker=format!("{}{}",crate::intraday::BASKET_PREFIX,x.r[0].ticker);
+    crate::intraday::available(&ticker)?;
+    let minutes=crate::intraday::minutes(&ticker).ok_or("intraday bars are unavailable")?;
+    let tf=p.get("tf_min").copied().unwrap_or(1.).round().clamp(1.,60.) as u16;
+    let (bars,_)=crate::books::ytsti::candles_for(&minutes,x,tf,crate::intraday::align_of(p));
+    let (_,marks)=crate::yt_intraday_portfolio::close_observations(x,from,to,&minutes,&bars,Vec::new(),0)?;
+    let mut indices=Vec::new();let trades=run_intraday_shock(x,from,to,p,&mut indices);
+    if indices.len()!=trades.len(){return Err("timestamped source trade count mismatch".into());}
+    let stamp=|i:usize,phase:i64|->Result<i64,String>{
+        if i>=minutes.len(){return Err("invalid minute index".into());}
+        let date=minutes.date(i);let t=minutes.hhmm[i];
+        if !crate::baskets::valid_date(date) || t/100>23 || t%100>59{return Err("invalid source date or minute".into());}
+        Ok(crate::day_number(date)*2880+i64::from(t/100*60+t%100)*2+phase)
+    };
+    let buffer=p.get("buffer_pct").copied().unwrap_or(0.25)/100.;
+    let mut out=Vec::with_capacity(trades.len());
+    for (i,(t,(e,z))) in trades.into_iter().zip(indices).enumerate() {
+        let expected=(bars.o[e]*(1.-buffer)).clamp(bars.l[e],bars.h[e]);
+        if (t.legs[0].px-expected).abs()>0.00011 || (t.exit_px-bars.c[z]).abs()>0.00011 {return Err("shock source fill disagrees with its declared price model".into());}
+        out.push(Signal{id:first_id.checked_add(i as u64).ok_or("portfolio signal ID overflow")?,symbol:x.r[0].ticker.clone(),entry_time:stamp(bars.start[e],0)?,entry_price:t.legs[0].px,score:0.,direction:-1,
+            exit:if t.open {None}else{Some((stamp(bars.end[z],1)?,t.exit_px))}});
+    }
+    Ok((out,marks))
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id==SHOCK_IEOD {return Some(run_intraday_shock(x,from,to,p,&mut Vec::new()));}
+    if INTRADAY_IDS.contains(&id) { return Some(run_minute_gap(id, x, from, to, p)); }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let on = |k: &str| g(k).round() as i64 == 1;
@@ -197,6 +476,42 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_gap_portfolio_bridge_uses_observed_minute_phases_when_configured() {
+        let Ok(csv)=std::env::var("TEST_INTRADAY_DAILY") else {return};
+        if std::env::var_os("INTRADAY_DATA_DIR").is_none(){return;}
+        let text=std::fs::read_to_string(csv).unwrap();
+        let rows:Vec<crate::Row>=text.lines().skip(1).map(|line| {
+            let v:Vec<_>=line.split(',').collect();
+            crate::Row{ticker:"BANKNIFTY".into(),date:v[0].into(),open:v[1].parse().unwrap(),high:v[2].parse().unwrap(),low:v[3].parse().unwrap(),close:v[4].parse().unwrap(),volume:v[5].parse().ok()}
+        }).collect();
+        let from=rows.iter().position(|r|r.date.as_str()>="2019-01-01").unwrap();
+        let to=rows.iter().rposition(|r|r.date.as_str()<="2019-01-31").unwrap();
+        let x=Ctx::new(&rows,&rows,&[]);
+        let (events,marks)=gap_portfolio_observations(CONFIRM_POS,&x,from,to,&Params::new(),17).unwrap();
+        assert!(!marks.is_empty());assert!(marks.iter().all(|m|m.symbol=="BANKNIFTY" && m.price>0.));
+        for e in &events {assert!(e.score.is_finite());assert!(e.exit.is_none_or(|(t,_)|t>e.entry_time));}
+        let ledger=crate::yt_intraday_portfolio::run_gap_research(CONFIRM_POS,&[(&x,from,to)],&Params::new(),1000.,1,0.).unwrap();
+        assert!(ledger.accepted.len()<=events.len());
+        let (unranked,_)=gap_portfolio_observations(CONFIRM_NONE,&x,from,to,&Params::new(),0).unwrap();
+        assert!(unranked.iter().all(|e|e.score==0.));
+    }
+    #[test]
+    fn minute_gap_source_exits_on_entry_bar_when_next_minute_differs() {
+        let bar = MinuteGapInputs { date: 20220103, time: 919, open: 98., close: 98.,
+            previous_daily_close: Some(100.), previous_daily_low: Some(99.), today_open: Some(98.), expanded_dma: Some(90.),
+            preceding_close: Some(100.), preceding_dma: Some(90.), turnover: true };
+        let bars = [bar, MinuteGapInputs { time: 920, open: 97., close: 98., ..bar },
+            MinuteGapInputs { time: 921, ..bar }];
+        let signals = minute_gap_signals(&bars, 1., 0.);
+        assert_eq!(signals[1], (Some(97.), Some(98.)));
+        assert_eq!(signals[2], (None, None));
+        let no_gap = [bar, MinuteGapInputs { time: 920, today_open: Some(99.), ..bar }, bars[2]];
+        assert_eq!(minute_gap_signals(&no_gap, 1., 0.)[1], (None, None));
+        assert_eq!(confirmation_signals(&bars,1.,false,false,10000.,CONFIRM_POS)[1],(Some(97.),Some(98.)));
+        let no_double=[bar,MinuteGapInputs {time:920,open:99.5,..bar},bars[2]];
+        assert_eq!(confirmation_signals(&no_double,1.,false,true,10000.,CONFIRM_NONE)[1],(None,None));
+    }
     use crate::books::ytwh::testbars::*;
     use crate::Row;
 
@@ -301,7 +616,8 @@ mod tests {
     #[test]
     fn every_strategy_runs() {
         smoke(run, &IDS);
-        assert_eq!(catalogue().len(), IDS.len());
+        assert_eq!(catalogue().len(), IDS.len() + INTRADAY_IDS.len());
+        for id in INTRADAY_IDS {assert!(params(id).is_some() && family_of(id).is_some());}
         for id in IDS {
             assert!(params(id).is_some() && family_of(id).is_some());
         }

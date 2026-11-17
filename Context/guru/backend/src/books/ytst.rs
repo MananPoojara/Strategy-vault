@@ -37,8 +37,7 @@
 //! below filter", "SMA BUY SELL WITH ALL TIMEFRAME" (stock-universe runs ranked by PositionScore, one on Foreign
 //! NSE500); "BB 100 MA UB 3% LB1%" (already coded in `ytbb.rs`); the SMA and S% filter branches of the regime AFLs
 //! (the S% branch reads an undefined `Strend1`); "data to excel" and "ATR PLOT" (exploration / plot only); "Entry
-//! when Closing is above 5,1_Scale-in with 14 days ATR_Exit below 5,1.afl" (despite its folder name a stock-universe
-//! AFL, "Rajiv Shukla Ver1": 52-week-high / 200-day-MA entry ranked by PositionScore = RSI(14), no Supertrend). The
+//! when Closing is above 5,1_Scale-in with 14 days ATR_Exit below 5,1.afl" (coded in `ytsts.rs`). The
 //! "ST 5-1 Sell Buy R&R" V1 / V2 / Stock AFL copies are `ytst_st_sell_buy_pb` and its 'Final' copies
 //! `ytst_st_sell_buy_atr` (see their notes).
 #![allow(dead_code)]

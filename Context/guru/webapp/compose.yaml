@@ -68,10 +68,12 @@ services:
       VAULT_BASKET_DATA_DIR: /basket-data
       VAULT_FUTURES_CSV: /data/futures_daily.csv
       INTRADAY_DATA_DIR: /intraday-data/fo_1min
+      AMIBROKER_DATA_DIR: /amibroker-data
     volumes:
       - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
       - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'
       - '${VAULT_INTRADAY_DATA_ROOT:-/home/server/.cache/strategy-vault/intraday-data}:/intraday-data:ro'
+      - '${VAULT_AMIBROKER_DATA_ROOT:-/home/server/.cache/strategy-vault/amibroker-data}:/amibroker-data:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
     mem_limit: 1g

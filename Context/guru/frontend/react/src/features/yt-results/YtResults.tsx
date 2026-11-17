@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createLabChart, themeColors, useThemeKey } from "./charts";
 import { DASH, int, num, pct } from "./format";
 import { dayFirst, ReportPanel, reportSheets } from "./Report";
+import { detailLogRows, type LogRow } from "../../services/detail-log";
 import { buildTsWorkbook, defaultTsFormat, loadXlsxStyle, tsCosts, tsFileName, type TsFormat, type TsInput } from "./ts-workbook";
 import type { LabReport, YtRules, YtRunResult } from "./types";
 import { HelpTip, MetricTiles, ResultTabs, Segmented } from "./ui";
@@ -40,14 +41,16 @@ export const statsTiles = (r: LabReport) => [
 ];
 
 export interface TradeTable { header: string[]; rows: string[][]; csv: string[][]; cls: (string | undefined)[][] }
-const CENTRED = new Set(["Trade type", "Entry date", "Exit date"]);
+const CENTRED = new Set(["Trade type", "Entry date", "Entry time", "Exit date", "Exit time"]);
 const NUMERIC = new Set(["Entry price", "Exit price", "% Change", "Bars held", "Days", "Net profit", "MAE", "MFE", "DD %", "Shares", "Position value", "Allocation", "Costs"]);
 /** The lab's tradesheet table: rows in trade order, the running drawdown, and the whole-unit money columns. */
 export function tradeTable(result: Pick<YtRunResult, "trades" | "ledger" | "money" | "instrument">): TradeTable {
   const { trades, ledger } = result;
   const money = !!ledger?.length && ledger.length === trades.length;
   const excursions = trades.some((t) => typeof t.mae === "number");
-  const header = ["Symbol", "Trade type", "Entry date", "Entry price", "Exit date", "Exit price", "% Change", "Bars held", "Days", "Net profit",
+  // Intraday AFLs carry candle times; their bars held count candles.
+  const timed = trades.some((t) => !!t.entry_time);
+  const header = ["Symbol", "Trade type", "Entry date", ...(timed ? ["Entry time"] : []), "Entry price", "Exit date", ...(timed ? ["Exit time"] : []), "Exit price", "% Change", "Bars held", "Days", "Net profit",
     ...(excursions ? ["MAE", "MFE"] : []), "DD %", ...(money ? ["Shares", "Position value", "Costs"] : [])];
   let growth = 1, pnl = 0, peak = 1;
   const capital = result.money?.capital ?? 1;
@@ -61,7 +64,8 @@ export function tradeTable(result: Pick<YtRunResult, "trades" | "ledger" | "mone
     const cell: Record<string, string> = {
       Symbol: result.instrument?.ticker ?? "", "Trade type": t.dir === -1 ? "Short" : "Long",
       "Entry date": dayFirst(t.entry), "Entry price": num(t.entry_px), "Exit date": t.open ? "Open" : dayFirst(t.exit), "Exit price": num(t.exit_px),
-      "% Change": pct(t.ret, 2), "Bars held": int(t.bars), Days: days === null ? DASH : int(days), "Net profit": r ? num(net) : pct(net, 2),
+      "Entry time": t.entry_time?.slice(11) ?? DASH, "Exit time": t.open ? DASH : t.exit_time?.slice(11) ?? DASH,
+      "% Change": pct(t.ret, 2), "Bars held": int(t.candles ?? t.bars), Days: days === null ? DASH : int(days), "Net profit": r ? num(net) : pct(net, 2),
       MAE: pct(t.mae, 2), MFE: pct(t.mfe, 2), "DD %": pct(dd, 1), Shares: int(r?.qty), "Position value": num(r?.notional), Costs: num(r?.costs),
     };
     const row = header.map((h) => cell[h]);
@@ -235,15 +239,36 @@ export const tsRules = (rules: YtRules, r: YtRunResult) => {
   return { timeframe: "Daily", index: r.instrument.ticker, period: `${dayFirst(r.from)} to ${dayFirst(r.to)}`, strategy: rules.tab, position: rules.position,
     filter: rules.filter, setup: rules.setup, entry: rules.entry, exit: [...rules.exit, ...(open ? [`Last trade still open: valued at the close on ${dayFirst(open.exit || r.to)}`] : [])] };
 };
-export async function saveTsInput(input: TsInput) {
+/** The DetailLog rows of one run (Date | Information, one block per day with an entry or exit): the trades with the
+ *  whole-unit account's quantity, value, costs and P&L where the run has one, and the day's closing equity. */
+export function tsDetailLog(r: YtRunResult): LogRow[] {
+  const capital = r.money?.capital;
+  return detailLogRows({
+    dates: r.dates, equity_money: capital ? r.equity.map((v) => v * capital) : undefined,
+    trades: r.trades.filter((t) => typeof t.entry_px === "number" && typeof t.exit_px === "number").map((t) => {
+      const l = r.ledger?.[r.trades.indexOf(t)];
+      return { symbol: r.instrument.name || r.instrument.ticker, dir: t.dir, entry: t.entry, entry_px: t.entry_px, exit: t.exit || r.to, exit_px: t.exit_px, open: t.open, reason: t.reason, bars: t.bars, ret: t.ret,
+        entry_time: t.entry_time, exit_time: t.exit_time, ...(l ? { shares: l.qty, entry_value: l.notional, fees: l.costs, pnl: l.pnl } : {}) };
+    }),
+  });
+}
+export async function saveTsInput(input: TsInput, detailLog?: LogRow[]) {
   const XLSX = await loadXlsxStyle();
-  const bytes = XLSX.write(buildTsWorkbook(XLSX, input), { bookType: "xlsx", type: "array", cellStyles: true, compression: true });
+  const book = buildTsWorkbook(XLSX, input);
+  if (detailLog) {
+    // the last sheet, so the template's own sheets and their linked formulas keep their places
+    const ws = XLSX.utils.aoa_to_sheet(detailLog.map(([day, text], i) => [i && day ? dayFirst(day) : day, text]));
+    ws["!cols"] = [{ wch: 14 }, { wch: 150 }];
+    for (const c of ["A1", "B1"]) if (ws[c]) ws[c].s = { font: { bold: true } };
+    XLSX.utils.book_append_sheet(book, ws, "DetailLog");
+  }
+  const bytes = XLSX.write(book, { bookType: "xlsx", type: "array", cellStyles: true, compression: true });
   saveBytes(new Uint8Array(bytes), tsFileName(input), XLSX_TYPE);
 }
 /** Download TS for one run (format from the start date, rollover from the page's setting): the optimizer's per-row Excel. */
 export async function saveTs(result: YtRunResult, rules: YtRules, loadBars: () => Promise<DailyBar[]>) {
   await saveTsInput({ format: defaultTsFormat(result.from), symbol: result.instrument.ticker, ohlc: await loadBars(), rules: tsRules(rules, result),
-    costs: tsCosts(result.rollover), sheetName: rules.tab, trades: tradesOf(result, result.to) });
+    costs: tsCosts(result.rollover), sheetName: rules.tab, trades: tradesOf(result, result.to) }, tsDetailLog(result));
 }
 
 const pct100 = (x: number) => Math.round(x * 1e4) / 100;
@@ -258,7 +283,7 @@ function TsDownload({ result, rules, loadBars }: { result: YtRunResult; rules: Y
     setBusy(true); setError("");
     try {
       await saveTsInput({ format: fmt, symbol: result.instrument.ticker, ohlc: await loadBars(), rules: tsRules(rules, result), sheetName: rules.tab, trades: tradesOf(result, result.to),
-        costs: { impact: costs.impact / 100, rollLong: costs.rollLong / 100, rollShort: costs.rollShort / 100 } });
+        costs: { impact: costs.impact / 100, rollLong: costs.rollLong / 100, rollShort: costs.rollShort / 100 } }, tsDetailLog(result));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
   return <div className="lab-ts" data-lab-ts>

@@ -452,13 +452,13 @@ fn st_dir(x: &Ctx, h: &[f64], l: &[f64], c: &[f64], tf: i64, point: i64, period:
     st_full(x, h, l, c, tf, point, period, factor).0
 }
 
-fn sma(v: &[f64], n: usize) -> Vec<f64> {
+pub(crate) fn sma(v: &[f64], n: usize) -> Vec<f64> {
     let n = n.max(1);
     (0..v.len()).map(|i| if i + 1 < n { f64::NAN } else { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect()
 }
 
 /// AFL EMA(v, n), started from the simple average of the first n values (NaN gaps restart it).
-fn ema(v: &[f64], n: usize) -> Vec<f64> {
+pub(crate) fn ema(v: &[f64], n: usize) -> Vec<f64> {
     let n = n.max(1);
     let k = 2.0 / (n as f64 + 1.0);
     let mut out = vec![f64::NAN; v.len()];
@@ -484,7 +484,7 @@ fn ema(v: &[f64], n: usize) -> Vec<f64> {
 }
 
 /// AFL WMA(v, n): linear weights 1..n, the latest bar weighted n.
-fn wma(v: &[f64], n: usize) -> Vec<f64> {
+pub(crate) fn wma(v: &[f64], n: usize) -> Vec<f64> {
     let n = n.max(1);
     let den = (n * (n + 1)) as f64 / 2.0;
     (0..v.len())

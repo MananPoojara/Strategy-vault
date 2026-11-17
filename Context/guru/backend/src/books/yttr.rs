@@ -10,7 +10,18 @@
 //! - `yttr_mwd_cross_swing_exit`: "... with HSL_FINAL.afl" (adds `OR trend1 == -1`: sell when the 20% close swing
 //!   is down, which is on by default because the swing is computed whether or not the ATHC filter is on);
 //! - `yttr_mwd_trail_entry`: "RSI Monthly, Weekly above 60 and Daily RSI Trail based Entry.afl";
-//! - `yttr_dw_cross`: "Daily and Weekly RSI Crossover.afl".
+//! - `yttr_dw_cross`: "Daily and Weekly RSI Crossover.afl";
+//! - `yttr_athc_fo`: "... with ATHC Stock Filter, RSI Ranking with HSL (FO).afl" (AFL folder) and
+//!   `yttr_athc_fo_checking`: the copy of that name in "Checking". Both are the ATHC AFL plus `Aux2`: the buy needs
+//!   `Aux2[i] == 1`, the hard SL in the sell test is `( hard_sl AND L <= hsl ) AND Aux2[i+1] == K` (AND binds tighter
+//!   than OR in AFL, so the AUX2 term qualifies only the hard SL), and the LC-deferral test adds `OR Aux2[i+1] == K`;
+//!   K = 1 in the AFL folder copy, K = 0 in the Checking copy. Both also sell when the ATHC filter (if on) turns off.
+//!   AUX2 is the stock's dated F&O membership in the team's C&P cash database (Database Directory: "Use to Run on FO
+//!   Stocks but Cash Prices", AUX2), read from the native AmiBroker file (`crate::yt_aux::AUX2_SERIES`).
+//!   `Aux2[i+1]` reads the next bar (look-ahead, kept as written). On the last loaded bar there is no next bar:
+//!   AmiBroker stops the formula with "Error 10. Array subscript out of range" there (AFL evaluates every operand of
+//!   AND / OR, so the term is read whenever the sell test runs on the last bar with a position); the engine instead
+//!   treats the missing next bar as neither 1 nor 0 (the AUX2 terms are false) and keeps the bar's other rules.
 //!
 //! AmiBroker behaviour followed:
 //! - `SetBarsRequired(100000, 0)`: the bar loops run over the whole history; positions are reported when they are
@@ -25,9 +36,8 @@
 //! - DEAD STOCK BACKTEST defaults to NO: no forced exit on the last bar, no entry on bar 0; UC (High = Close) blocks
 //!   an entry, an exit on an LC bar (Low = Close) waits for the next non-LC bar; penny 0 and turnover off.
 //!
-//! Not coded: the two "(FO)" AFLs (AFL and Checking folders) read `Aux2` (and `Aux2[i+1]`, a future bar), the team's
-//! futures-database auxiliary field, which the engine does not have. The RSI ranking (`PositionScore`) of the ATHC
-//! AFLs ranks across symbols in a portfolio run; it is off by default and plays no part in a single-symbol run.
+//! The RSI ranking (`PositionScore`) of the ATHC AFLs ranks across symbols in a portfolio run; it is off by default
+//! and plays no part in a single-symbol run.
 //! The "Nifty-BN (Index)_Optim on Spot" folder holds only an analysis .docx (no AFL).
 #![allow(dead_code)]
 use crate::books::ytsw::{close_swing, compress, expand_last};
@@ -40,12 +50,20 @@ pub const ATHC: &str = "yttr_mwd_cross_athc";
 pub const SWING_EXIT: &str = "yttr_mwd_cross_swing_exit";
 pub const TRAIL_ENTRY: &str = "yttr_mwd_trail_entry";
 pub const DW_CROSS: &str = "yttr_dw_cross";
-pub const IDS: [&str; 5] = [CROSS, ATHC, SWING_EXIT, TRAIL_ENTRY, DW_CROSS];
+pub const ATHC_FO: &str = "yttr_athc_fo";
+pub const ATHC_FO_CHECKING: &str = "yttr_athc_fo_checking";
+pub const IDS: [&str; 7] = [CROSS, ATHC, SWING_EXIT, TRAIL_ENTRY, DW_CROSS, ATHC_FO, ATHC_FO_CHECKING];
+/// The "(FO)" AFLs: they read the stock's dated AUX2 (F&O membership) and run on actual C&P cash stocks only.
+pub const FO_IDS: [&str; 2] = [ATHC_FO, ATHC_FO_CHECKING];
 
 const GROUP: &str = "YT Strategies · Tripple RSI";
 
 fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: GROUP, session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
+}
+
+fn fo_def(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
+    StrategyDef { needs_series: &[crate::yt_aux::AUX2_SERIES], ..def(id, name, rules, notes) }
 }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -94,6 +112,30 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|On an LC bar the sale waits for the next non-LC bar",
             "F|No entry on a bar whose High = Close",
         ], "Daily and Weekly RSI Crossover.afl (Tripple RSI/AFL), coded as the AFL is written. Both RSI periods 14 (the AFL defaults)."),
+        fo_def(ATHC_FO, "Monthly, Weekly and Daily RSI Crossover (ATHC filter, hard SL, F&O stocks by AUX2)", &[
+            "F|AUX2 = 1 on the entry day: the stock is an F&O stock on that date (dated AUX2 of the team's C&P cash database)",
+            "F|Monthly RSI(2) > 60 and weekly RSI(3) > 60",
+            "F|ATHC filter (off by default): on from a Close above the highest earlier Close, off once the 20% close swing turns down",
+            "E|Daily RSI(14) crosses above 60: buy at the Close",
+            "X|RSI trail and % trail as the base AFL, both 0 (off) by default; daily RSI exit value 0 (off)",
+            "X|ATHC filter turns off (only when the filter is on)",
+            "X|Hard SL (off by default): Low at or below the buy less 1%, taken only when AUX2 of the NEXT day is 1 (look-ahead as written); sold at that level or at the Open less the 0.25% buffer on a gap below it",
+            "X|With the hard SL on, a sale on a day whose Low reaches the hard SL level is filled at that level (or the gapped Open less the buffer), whichever rule sold (the AFL's SellPrice)",
+            "X|With the defaults no exit rule is on: the position is held to the end of the data",
+            "F|No entry on a bar whose High = Close; an LC exit waits for the next non-LC bar unless the hard SL is hit, the ATHC filter is off or AUX2 of the next day is 1",
+        ], "RSI Monthly, Weekly and Daily Crossover based Entry with ATHC Stock Filter, RSI Ranking with HSL (FO).afl (Tripple RSI/AFL), coded as the AFL is written: the ATHC AFL plus Buy AND Aux2[i]==1, the sell test ... OR ( hard_sl_switch == \"ON\" AND L[i] <= hsl_price ) AND Aux2[i+1]==1 (AFL's AND binds tighter than OR, so the AUX2 term qualifies the hard SL only) and the LC test ... OR Aux2[i+1]==1. AUX2 is the stock's dated F&O membership in the team's C&P cash database (Database Directory: Use to Run on FO Stocks but Cash Prices), read from the native AmiBroker file; the run needs an actual C&P cash stock with that file (AMIBROKER_DATA_DIR) and reports needs_data otherwise. Aux2[i+1] reads the next day (look-ahead in the AFL). On the last loaded bar AmiBroker stops with Error 10 (array subscript out of range) when the sell test runs with a position; the engine treats the missing next bar as neither 1 nor 0. Defaults as the AFL (Optimize returns its default in a backtest): RSI periods 2 / 3 / 14, entry values 60, RSI trail 0, trail SL 0, filter OFF, hard SL OFF 1% with 0.25% buffer, swing 20%; the weekly period default 3 lies outside its Param range 4-20 and is used as written. RSI scoring is off by default and not used."),
+        fo_def(ATHC_FO_CHECKING, "Monthly, Weekly and Daily RSI Crossover (ATHC filter, hard SL, F&O stocks by AUX2, Checking copy)", &[
+            "F|AUX2 = 1 on the entry day: the stock is an F&O stock on that date (dated AUX2 of the team's C&P cash database)",
+            "F|Monthly RSI(2) > 60 and weekly RSI(3) > 60",
+            "F|ATHC filter (off by default): on from a Close above the highest earlier Close, off once the 20% close swing turns down",
+            "E|Daily RSI(14) crosses above 60: buy at the Close",
+            "X|RSI trail and % trail as the base AFL, both 0 (off) by default; daily RSI exit value 0 (off)",
+            "X|ATHC filter turns off (only when the filter is on)",
+            "X|Hard SL (off by default): Low at or below the buy less 1%, taken only when AUX2 of the NEXT day is 0, i.e. the stock leaves F&O tomorrow (look-ahead as written); sold at that level or at the Open less the 0.25% buffer on a gap below it",
+            "X|With the hard SL on, a sale on a day whose Low reaches the hard SL level is filled at that level (or the gapped Open less the buffer), whichever rule sold (the AFL's SellPrice)",
+            "X|With the defaults no exit rule is on: the position is held to the end of the data",
+            "F|No entry on a bar whose High = Close; an LC exit waits for the next non-LC bar unless the hard SL is hit, the ATHC filter is off or AUX2 of the next day is 0",
+        ], "RSI Monthly, Weekly and Daily Crossover based Entry with ATHC Stock Filter, RSI Ranking with HSL (FO).afl (Tripple RSI/Checking), coded as the AFL is written. It differs from the AFL-folder copy only in Aux2[i+1]==0 (not ==1) in the sell test (( hard_sl_switch == \"ON\" AND L[i] <= hsl_price ) AND Aux2[i+1]==0, the AUX2 term qualifying the hard SL only, as AND binds tighter than OR) and in the LC test (OR Aux2[i+1]==0), and in Param instead of Optimize with other ranges (same defaults). Buy AND Aux2[i]==1. AUX2 is the stock's dated F&O membership in the team's C&P cash database (Database Directory: Use to Run on FO Stocks but Cash Prices), read from the native AmiBroker file; the run needs an actual C&P cash stock with that file (AMIBROKER_DATA_DIR) and reports needs_data otherwise. Aux2[i+1] reads the next day (look-ahead in the AFL); on the last loaded bar AmiBroker stops with Error 10 (array subscript out of range) when the sell test runs with a position; the engine treats the missing next bar as neither 1 nor 0. Defaults: RSI periods 2 / 3 / 14, entry values 60, RSI trail 0, trail SL 0, filter OFF, hard SL OFF 1% with 0.25% buffer, swing 20%. RSI scoring is off by default and not used."),
     ]
 }
 
@@ -109,7 +151,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         ]
     };
     Some(match id {
-        CROSS | ATHC | SWING_EXIT => {
+        CROSS | ATHC | SWING_EXIT | ATHC_FO | ATHC_FO_CHECKING => {
             let base = id == CROSS;
             let mut v = mwd(14.0);
             v.extend([
@@ -218,7 +260,21 @@ pub(crate) fn athc_filter(c: &[f64], swing_pct: f64) -> (Vec<bool>, Vec<i8>) {
     (sig, trend)
 }
 
+/// The "(FO)" AFLs' AUX2 terms: `aux2` is the stock's dated AUX2 on its bars (NaN where unknown: neither 1 nor 0),
+/// `next_eq` the K of `Aux2[i+1] == K` (1 AFL folder, 0 Checking). `gate` is an extra dated entry condition supplied by
+/// a portfolio basket (AmiBroker-style mode); None in a single-stock run.
+#[derive(Clone, Copy)]
+pub(crate) struct Fo<'a> {
+    pub aux2: &'a [f64],
+    pub next_eq: f64,
+    pub gate: Option<&'a [bool]>,
+}
+
 pub(crate) fn cross_loop(x: &Ctx, s: &Mwd, k: &CrossCfg) -> Vec<Ev> {
+    cross_loop_fo(x, s, k, None)
+}
+
+pub(crate) fn cross_loop_fo(x: &Ctx, s: &Mwd, k: &CrossCfg, fo: Option<Fo>) -> Vec<Ev> {
     let (o, l, c) = (&x.o, &x.l, &x.c);
     let n = c.len();
     let (athc, trend) = athc_filter(c, k.swing_pct);
@@ -235,7 +291,8 @@ pub(crate) fn cross_loop(x: &Ctx, s: &Mwd, k: &CrossCfg) -> Vec<Ev> {
             (Some(d), Some(dp), Some(w), Some(m)) => d > k.d_val && dp < k.d_val && w > k.w_val && m > k.m_val,
             _ => false,
         };
-        if !pos && entry && buy_ok(x, i) && (!k.athc || athc[i]) {
+        let aux_entry = fo.map_or(true, |f| f.aux2.get(i) == Some(&1.0) && f.gate.map_or(true, |g| g.get(i) == Some(&true)));
+        if !pos && entry && buy_ok(x, i) && (!k.athc || athc[i]) && aux_entry {
             let d = s.d[i].unwrap_or(0.0);
             hsl_px = c[i] * (1.0 - k.hsl_pct / 100.0);
             hi_rsi = d;
@@ -258,24 +315,33 @@ pub(crate) fn cross_loop(x: &Ctx, s: &Mwd, k: &CrossCfg) -> Vec<Ev> {
                 hc = hc.max(c[i]);
             }
             let hsl_hit = k.hard_sl && l[i] <= hsl_px;
-            let athc_off = k.athc_exit && !athc[i];
-            let cond = c[i] <= tsl || d < rsi_trail || d < k.d_exit || athc_off || (k.swing_exit && trend[i] == -1) || hsl_hit;
+            // with the filter OFF the AFL sets ATHCBuysig = 1, so `ATHCBuysig[i] == 0` never sells
+            let athc_off = k.athc_exit && k.athc && !athc[i];
+            // FO AFLs: `Aux2[i+1] == K`; no next bar (the last loaded bar) or an unknown value is neither 1 nor 0
+            let aux_next = fo.is_some_and(|f| f.aux2.get(i + 1).is_some_and(|&v| v == f.next_eq));
+            // `... OR ( hard_sl AND L <= hsl ) AND Aux2[i+1] == K`: AND binds tighter than OR in AFL
+            let hsl_sell = hsl_hit && (fo.is_none() || aux_next);
+            let cond = c[i] <= tsl || d < rsi_trail || d < k.d_exit || athc_off || (k.swing_exit && trend[i] == -1) || hsl_sell;
             if cond {
-                if !lc(x, i) || hsl_hit || athc_off {
-                    if hsl_hit {
-                        sell(&mut evs, i, if o[i] < hsl_px { o[i] - o[i] * k.hsl_buf / 100.0 } else { hsl_px }, "Hard SL");
+                if !lc(x, i) || hsl_hit || athc_off || aux_next {
+                    let r = if hsl_sell {
+                        "Hard SL"
+                    } else if c[i] <= tsl {
+                        "Trail SL"
+                    } else if d < rsi_trail {
+                        "RSI trail"
+                    } else if d < k.d_exit {
+                        "Daily RSI exit"
+                    } else if athc_off {
+                        "ATHC filter off"
                     } else {
-                        let r = if c[i] <= tsl {
-                            "Trail SL"
-                        } else if d < rsi_trail {
-                            "RSI trail"
-                        } else if d < k.d_exit {
-                            "Daily RSI exit"
-                        } else if athc_off {
-                            "ATHC filter off"
-                        } else {
-                            "Swing down"
-                        };
+                        "Swing down"
+                    };
+                    // SellPrice: the hard SL price whenever the Low reached it, whichever rule sold (FO AFLs: also when
+                    // the hard SL's own AUX2 term is false)
+                    if hsl_hit {
+                        sell(&mut evs, i, if o[i] < hsl_px { o[i] - o[i] * k.hsl_buf / 100.0 } else { hsl_px }, r);
+                    } else {
                         sell(&mut evs, i, c[i], r);
                     }
                     pos = false;
@@ -412,6 +478,12 @@ pub(crate) fn dw_loop(x: &Ctx, d: &[Option<f64>], w: &[Option<f64>]) -> Vec<Ev> 
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    run_with_gate(id, x, from, to, p, None)
+}
+
+/// `run` with an extra dated entry condition from a portfolio basket (AmiBroker-style mode, FO ids only): the
+/// basket's AUX rule joins the AFL's own `Aux2[i] == 1` on the Buy, inside the loop.
+pub(crate) fn run_with_gate(id: &str, x: &Ctx, from: usize, to: usize, p: &Params, gate: Option<&[bool]>) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let gu = |k: &str| g(k).round().max(1.0) as usize;
@@ -420,6 +492,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if n == 0 || from > to || to >= n {
         return Some(Vec::new());
     }
+    let fo = if FO_IDS.contains(&id) {
+        // readiness reports needs_data when the stock's dated AUX2 is not loaded; no AUX2 is ever assumed
+        let Some(aux2) = x.extra.get(crate::yt_aux::AUX2_SERIES).filter(|a| a.len() == n) else { return Some(Vec::new()) };
+        if gate.is_some_and(|g| g.len() != n) {
+            return None;
+        }
+        Some(Fo { aux2, next_eq: if id == ATHC_FO { 1.0 } else { 0.0 }, gate })
+    } else {
+        None
+    };
     let evs = match id {
         DW_CROSS => dw_loop(x, &rsi_d(&x.c, gu("d_prd")), &rsi_tf(x, 'W', gu("w_prd"))),
         _ => {
@@ -429,6 +511,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 trail_loop(x, &s, &k)
             } else {
                 let base = id == CROSS;
+                let fo_afl = fo.is_some();
                 let k = CrossCfg {
                     d_val: g("d_val"),
                     w_val: g("w_val"),
@@ -437,14 +520,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     rsi_trail: g("rsi_trail"),
                     tsl_pct: g("tsl_pct"),
                     athc: !base && gb("athc"),
-                    athc_exit: id == ATHC && gb("athc_exit"),
+                    athc_exit: fo_afl || (id == ATHC && gb("athc_exit")),
                     swing_exit: id == SWING_EXIT,
                     swing_pct: if base { 20.0 } else { g("swing_pct") },
                     hard_sl: !base && gb("hard_sl"),
                     hsl_pct: if base { 1.0 } else { g("hsl_pct") },
                     hsl_buf: if base { 0.25 } else { g("hsl_buffer") },
                 };
-                cross_loop(x, &s, &k)
+                cross_loop_fo(x, &s, &k, fo)
             }
         }
     };
@@ -581,6 +664,107 @@ mod tests {
         // a Wednesday of week 6 shows week 5's value; its Friday shows its own
         assert_eq!(w[32], opt(raw[5]));
         assert_eq!(w[34], opt(raw[6]));
+    }
+
+    fn fo(aux2: &[f64], next_eq: f64) -> Option<Fo<'_>> {
+        Some(Fo { aux2, next_eq, gate: None })
+    }
+
+    #[test]
+    fn fo_entry_needs_aux2_and_hard_sl_reads_next_days_aux2() {
+        let mut v = quiet(8);
+        v[4] = (99.5, 100.0, 98.0, 99.5); // Low 98 <= 100.2 x 0.99 = 99.198: hard SL hit at bar 4 (open above the level)
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let d = some(&[50.0, 50.0, 61.0, 70.0, 70.0, 70.0, 70.0, 70.0]);
+        let s = Mwd { d, w: hi(8), m: hi(8) };
+        let k = CrossCfg { rsi_trail: 0.0, tsl_pct: 0.0, hard_sl: true, athc_exit: true, ..cfg() };
+        let one = [1.0; 8];
+        // AFL folder copy (K = 1): AUX2 of bar 5 is 1, so the hard SL sells at bar 4 at the level
+        let e = cross_loop_fo(&x, &s, &k, fo(&one, 1.0));
+        assert_eq!(ev(&e), vec![(2, Some(4), "Hard SL")]);
+        assert!((e[0].exit.unwrap().1 - 100.2 * 0.99).abs() < 1e-9);
+        // Checking copy (K = 0): next-day AUX2 is 1, so the hard SL is not taken and the position is held
+        assert_eq!(ev(&cross_loop_fo(&x, &s, &k, fo(&one, 0.0))), vec![(2, None, "")]);
+        // ... and taken when the stock leaves F&O the next day
+        let mut leaves = one;
+        leaves[5] = 0.0;
+        assert_eq!(ev(&cross_loop_fo(&x, &s, &k, fo(&leaves, 0.0))), vec![(2, Some(4), "Hard SL")]);
+        assert_eq!(ev(&cross_loop_fo(&x, &s, &k, fo(&leaves, 1.0))), vec![(2, None, "")]);
+        // entry blocked when AUX2 is 0 (or unknown) on the crossing day; there is no later crossing
+        for blocked in [0.0, f64::NAN] {
+            let mut a = one;
+            a[2] = blocked;
+            assert!(cross_loop_fo(&x, &s, &k, fo(&a, 1.0)).is_empty());
+        }
+        // a basket gate (portfolio mode) joins the Buy the same way
+        let mut g = [true; 8];
+        g[2] = false;
+        assert!(cross_loop_fo(&x, &s, &k, Some(Fo { aux2: &one, next_eq: 1.0, gate: Some(&g) })).is_empty());
+    }
+
+    #[test]
+    fn fo_next_day_aux2_lets_an_lc_exit_through_and_the_last_bar_has_no_next_day() {
+        let mut v = quiet(8);
+        v[2] = (100.0, 101.0, 99.0, 100.0); // entry at 100
+        v[3] = (110.0, 111.0, 109.0, 110.0); // TSL 104.5 from bar 4 on
+        v[4] = (105.0, 106.0, 104.5, 104.5); // close <= TSL on an LC bar
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let d = some(&[50.0, 50.0, 61.0, 70.0, 70.0, 70.0, 70.0, 70.0]);
+        let s = Mwd { d, w: hi(8), m: hi(8) };
+        let k = CrossCfg { rsi_trail: 0.0, athc_exit: true, ..cfg() };
+        let one = [1.0; 8];
+        // K = 1 and AUX2 of bar 5 is 1: sold on the LC bar itself
+        assert_eq!(ev(&cross_loop_fo(&x, &s, &k, fo(&one, 1.0))), vec![(2, Some(4), "Trail SL")]);
+        // K = 0: no bypass, the LC exit waits for the next non-LC bar
+        assert_eq!(ev(&cross_loop_fo(&x, &s, &k, fo(&one, 0.0))), vec![(2, Some(5), "Blocked exit, next bar")]);
+        // hard SL on the last loaded bar: no next day, so `Aux2[i+1] == K` is false for either K
+        let mut w = quiet(6);
+        w[5] = (99.0, 100.0, 95.0, 99.0);
+        let r = bars(&w);
+        let x = Ctx::new(&r, &r, &[]);
+        let s = Mwd { d: some(&[50.0, 50.0, 61.0, 70.0, 70.0, 70.0]), w: hi(6), m: hi(6) };
+        let k = CrossCfg { rsi_trail: 0.0, tsl_pct: 0.0, hard_sl: true, athc_exit: true, ..cfg() };
+        for eq in [1.0, 0.0] {
+            assert_eq!(ev(&cross_loop_fo(&x, &s, &k, fo(&[1.0, 1.0, 1.0, 1.0, 1.0, eq], eq))), vec![(2, None, "")]);
+        }
+    }
+
+    #[test]
+    fn fo_ids_run_from_the_ctx_aux2_series() {
+        // a rising series with daily swings: monthly / weekly RSI above 60, daily RSI crossing 60 again and again
+        let v: Vec<_> = (0..900).map(|k| { let k = k as f64; let c = 100.0 + 0.4 * k + 12.0 * (k / 6.0).sin(); (c, c + 1.0, c - 1.0, c) }).collect();
+        let r = bars(&v);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let n = r.len();
+        let p = ps(&[("rsi_trail", 20.0)]);
+        // no AUX2 loaded: no trades (readiness reports needs_data before a run)
+        for id in FO_IDS {
+            assert!(run(id, &x, 0, n - 1, &p).unwrap().is_empty());
+        }
+        // F&O every day, hard SL and the ATHC filter off: both equal the ATHC AFL
+        x.extra.insert(crate::yt_aux::AUX2_SERIES.into(), vec![1.0; n]);
+        let athc = run(ATHC, &x, 0, n - 1, &p).unwrap();
+        assert!(athc.len() >= 2, "{}", athc.len());
+        for id in FO_IDS {
+            let t = run(id, &x, 0, n - 1, &p).unwrap();
+            assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), athc.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>(), "{id}");
+        }
+        // not F&O on the first entry day: that entry is gone
+        let first = athc[0].legs[0].i;
+        let mut a = vec![1.0; n];
+        a[first] = 0.0;
+        x.extra.insert(crate::yt_aux::AUX2_SERIES.into(), a);
+        for id in FO_IDS {
+            let t = run(id, &x, 0, n - 1, &p).unwrap();
+            assert!(!t.is_empty() && t.iter().all(|t| t.legs[0].i != first), "{id}");
+        }
+        x.extra.insert(crate::yt_aux::AUX2_SERIES.into(), vec![0.0; n]);
+        for id in FO_IDS {
+            assert!(run(id, &x, 0, n - 1, &p).unwrap().is_empty());
+            assert!(catalogue().iter().any(|d| d.id == id && d.needs_series == [crate::yt_aux::AUX2_SERIES]));
+        }
     }
 
     #[test]

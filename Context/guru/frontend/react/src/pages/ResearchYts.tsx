@@ -252,6 +252,9 @@ function IssueList({ p, qa, byBook, byId, summary, catalogue }: { p: URLSearchPa
   const [text, setText] = useState(q);
   useEffect(() => setText(q), [q]);
   const list = useLoad(() => yts.issues({ reporter, collection: c, strategy: s, status: status === "all" ? undefined : status, category: cat, q, page, size: 20 }), [reporter, c, s, status, cat, q, page]);
+  // Admins see every QA's issues, so they get one button per reporter: choosing one hides everyone else's issues.
+  const accounts = useLoad(() => (qa.admin ? yts.accounts() : Promise.resolve([])), [qa.admin]);
+  const reporters = useMemo(() => (accounts.data || []).filter(a => a.issues > 0 || String(a.id) === reporter), [accounts.data, reporter]);
   const strategies = useMemo(() => catalogue.filter(x => x.book === c), [catalogue, c]);
   const search = (e: FormEvent) => { e.preventDefault(); go({ q: text.trim() || undefined, page: undefined }); };
   return (
@@ -289,6 +292,14 @@ function IssueList({ p, qa, byBook, byId, summary, catalogue }: { p: URLSearchPa
           <button key={v} type="button" className={status === v ? "on" : ""} aria-pressed={status === v} onClick={() => go({ status: v === ACTIVE ? undefined : v, page: undefined })}>{label}</button>
         ))}
       </div>
+      {qa.admin && reporters.length > 0 && (
+        <div className="yts-chips yts-reporters" role="group" aria-label="Reporter">
+          <button type="button" className={!reporter ? "on" : ""} aria-pressed={!reporter} onClick={() => go({ reporter: undefined, page: undefined })}>All reporters</button>
+          {reporters.map(a => (
+            <button key={a.id} type="button" className={reporter === String(a.id) ? "on" : ""} aria-pressed={reporter === String(a.id)} onClick={() => go({ reporter: String(a.id), page: undefined })}>{a.name}</button>
+          ))}
+        </div>
+      )}
       {list.error ? <Problem error={list.error} retry={list.reload} /> : !list.data ? <p className="yts-muted">Loading issues…</p> : (
         <>
           <p className="yts-muted">{list.data.total} {list.data.total === 1 ? "issue" : "issues"}</p>

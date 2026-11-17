@@ -20,6 +20,26 @@ fn event_column(name: &str) -> bool {
 mod short_course_readiness_tests {
     use super::*;
     #[test]
+    fn intraday_rules_publish_except_the_named_orb_hold() {
+        let rows: Vec<crate::Row> = (1..=3).map(|i| crate::Row {
+            ticker: "BANKNIFTY".into(), date: format!("2022-03-0{i}"),
+            open: 100., high: 101., low: 99., close: 100., volume: Some(10.),
+        }).collect();
+        let ctx = Ctx::new(&rows, &rows, &[]);
+        let defs: Vec<_> = crate::connors::catalogue().into_iter().filter(crate::instrument_policy::intraday_rule).collect();
+        assert!(defs.len() > 40);
+        for def in defs {
+            let result = check(&ctx, &def, 0, 2, &Params::new());
+            if def.id == books::ytorb_draft::ID {
+                let r = result.unwrap();
+                assert_eq!(r.status, "not_testable");
+                assert!(r.note.contains("long and a short can be open"), "{}", r.note);
+            } else {
+                assert!(result.is_none(), "{} is held: {:?}", def.id, result.map(|r| r.note));
+            }
+        }
+    }
+    #[test]
     fn momentum_uses_actual_preceding_states_and_does_not_reseed_bad_history() {
         let mut rows:Vec<crate::Row>=(0..100).map(|i|crate::Row {ticker:"RELIANCE".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
         for &id in books::kfsc::MOMENTUM_STOCK_IDS {
@@ -47,6 +67,13 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    // Intraday YT AFLs: candle alignment (AmiBroker's time-compression grid, `intraday::compress_aligned`), the
+    // instrument (the team's IEOD continuous futures, `intraday::INSTRUMENT_BASIS`), same-day trade timing and
+    // candle-based AmiBroker MAE / MFE (`intraday::TradeTiming`) are resolved; AFL look-ahead is reproduced as written
+    // and stated (`intraday::look_ahead_notice`). Only an id with its own unresolved problem stays held through its
+    // catalogue status (the ORB AFL's concurrent long and short positions).
+    // No intraday AFL here needs the order of two price levels inside one candle: every stop / target pair has at
+    // most one intra-candle level (the other is tested on the candle close), as the AFLs are written.
     if def.book==books::lkqts::BOOK && books::lkqts::stock_research_profile(def.id) {
         if let Some(note)=books::lkqts::validate_stock_research_profile(def.id,p) {return issue("not_testable",note);}
         if let Some(note)=books::lkqts::stock_research_history_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
@@ -182,6 +209,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     let mut required=def.needs_series.to_vec();
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
+    }
+    if def.book==books::ytadr::BOOK && p.get("breadth").is_some_and(|v| v.round()==1.0) {
+        required=books::ytadr::SERIES[1].to_vec();
     }
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
