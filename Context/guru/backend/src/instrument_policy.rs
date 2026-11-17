@@ -77,10 +77,11 @@ pub const VIX_INDIA_RULES:&[(&str,&str)]=&[("stc9","vix200"),("stc9","vix2"),("s
     ("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr8"),("vixr","vixr_cvr9"),("vixr","vixr_cvr10"),("vixr","vixr_cvr11"),("vixr","vixr_all")];
 pub const VIX_INDIA_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026; VIX India 24 Oct 2026), not the author's test. US instruments read the CBOE VIX. Indian instruments (NIFTY 50, NIFTYBANK, Indian stocks): declared application: India VIX in place of the CBOE VIX. VIX levels and VIX-point thresholds printed for the US VIX are kept as printed; India VIX runs on a different scale, so on Indian instruments they mark different market conditions. Rules that read the VIX open use the real India VIX open from 1-minute data (the first minute after NSE's 09:15 opening print), available from 2015; NSE's daily India VIX open repeats the previous close and is never used.";
 pub fn vix_india(def:&StrategyDef)->bool {VIX_INDIA_RULES.contains(&(def.book,def.id))}
-/// vixr_all stays held on India (IN1 review 17 Nov 2026): its window ends at the engine's account wipe-out (2019-07..2020-03) and no reference re-derives that rule.
-/// CVR 11 is open on India (IN1, R4 #347: 1e-9 tie tolerance on India contexts only).
-pub fn vix_india_held(def:&StrategyDef,ticker:&str,india:bool)->Option<Issue> {
-    (india && def.id=="vixr_all").then(||Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): the all-signals portfolio ends at the account wipe-out rule (2019-07..2020-03 on India) and no independent reference re-derives that rule yet, so the printed portfolio is not published on India. It runs on US instruments with the CBOE VIX.")})
+/// vixr_all opens on India (lane N1, 17 Nov 2026, user order): the independent reference authors/verify-errors-1117/N1/ref/ref_vixr_all.py re-derives the
+/// account wipe-out rule (equity, first close at or below 0, units cut there) and the unit geometry at 0 mismatches on NIFTY 50, NIFTYBANK and NIFTYMIDCAP100.
+/// CVR 11 is open on India (IN1, R4 #347: 1e-9 tie tolerance on India contexts only). Kept as a hook: no rule is held on India now.
+pub fn vix_india_held(def:&StrategyDef,ticker:&str,india:bool)->Option<Issue> { // vixr_all: referenced on the three Nifty indices only, not on Indian stocks
+    (india && def.id=="vixr_all" && !ticker.starts_with("NIFTY")).then(||Issue{status:"not_testable",note:format!("The all-signals portfolio is opened on NIFTY 50, NIFTYBANK and NIFTYMIDCAP100 (account wipe-out rule re-derived by an independent reference). {ticker} is a stock: not referenced, so no result is published. It runs on US instruments with the CBOE VIX.")})
 }
 // ---------------------------------------------------------------- end VIX India
 // ---------------------------------------------------------------- connors-final (26 Oct 2026)
@@ -349,7 +350,7 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
 pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol"|"hfm"|"as51ts")}
 pub fn options_tickers(id:&str)->&'static [&'static str] {
     match id {
-        "otvt_cvr1_sell_puts"=>&["SPY"],
+        "otvt_cvr1_sell_puts"=>&["SPY","NIFTY 50"], // lane N1 (R4 #340, 17 Nov 2026): NIFTY 50 monthly options + India VIX
         "ccl08_weekly_rsi_options"|"mahrs_covered_calls"|"ccl08_quick_scalp"|"fotol_covered_call"|"fotol_monthend_call"
             |"hfm_und"|"hfm_und_long"|"hfm_und_short"|"otvt_diz_short_strangle"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"], // hfm_und: lane K34, close fills only; otvt_diz: lane K54
         "otvt_sector_options_overpriced"=>&["NIFTYBANK"], // lane I1 (R4 #303 (3)): the sector index with real option prices
@@ -549,13 +550,14 @@ fn hfm_otvt_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Op
 /// on the real held NSE breadth (extra_data/india) with the book's NYSE thresholds as a labelled declared adaptation, UNVERIFIED.
 /// (The 21 Oct 2026 hold said NSE breadth is not calibrated: TRIN median 0.70 vs NYSE 0.93.) Kept as a hook for ch_ntt_to_buy_nse.
 pub fn nse_breadth_held(def:&StrategyDef,_ticker:&str)->Option<Issue> {
-    let held=matches!(def.id,"ch_ntt_to_buy_nse"); // R4 #306 chntt: not part of #340 lane E6
+    let held=false; // ch_ntt_to_buy_nse released by lane N1 (R4 #340, 17 Nov 2026)
     held.then(||Issue{status:"needs_data",note:"Held: this rule uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.".into()})
 }
 pub const NSE_BREADTH_LABEL:&str="The book traded S&P 500 futures on NYSE breadth (TRIN / advances and declines) with NYSE-calibrated thresholds. Here the signal is read from the real NSE breadth the vault holds (extra_data/india) with the book's thresholds unchanged. NSE breadth behaves differently (TRIN median 0.70 vs NYSE 0.93; it fires 2-3x more often), so this is a declared adaptation, not the author's test, and it is UNVERIFIED.";
 pub fn nse_breadth(def:&StrategyDef)->bool {matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv")}
 /// IN1 / R4 #347: count-threshold NSE twins carry their own MEASURED firing rates (1999-11-09..2020-02-10 overlap, NSE vs NYSE), not the generic "fires 2-3x more often".
 pub fn nse_count_label(def:&StrategyDef)->Option<&'static str> {Some(match def.id {
+    "ch_ntt_to_buy_nse"=>"The book tested the thrust-oscillator buy (21-day SMA of TO below -0.3, then above its 13-day EMA) on NYSE breadth and the DJIA (Table 6.2). Here TO is built from the real NSE advances, declines and volumes (extra_data/india) with the -0.3 level unchanged (R4 #347). Measured over 1999-11-09 to 2020-02-10: the 21-day SMA is below -0.3 on 2.9% of NSE days against 0.6% of NYSE days, and the buy fires 40 times on NSE (1.97 a year) against 11 times on NYSE (0.54 a year). A declared adaptation, not the author's test, UNVERIFIED.",
     "apmacd_ad_stay_nse"=>"The book tested the 19-39 MACD of the NYSE advance-decline line against +450 issues. Here the line is built from the real NSE advances and declines (extra_data/india) with +450 unchanged (R4 #347: a count of issues, applied unchanged). Measured, the signal differs: MACD above +450 on 9.6% of NSE days (5.8% over the 1999-11 to 2020-02 overlap) against 68.5% of NYSE days over the same overlap. A declared adaptation, not the author's test, UNVERIFIED.",
     "apsmts_ad_obos_nse"=>"The book used the 10-day total of NYSE advances minus declines with +-2,000 lines. Here the total is built from the real NSE advances and declines (extra_data/india) with the lines unchanged (R4 #347). Measured over 1999-11-09 to 2020-02-10: above +2,000 on 6.0% of NSE days against 42.2% of NYSE days; below -2,000 on 20.8% against 19.6%. A declared adaptation, not the author's test, UNVERIFIED.",
     "scarms_265_nse"=>"The article bought the S&P 500 on NYSE TRIN of 2.65 or higher. Here the signal is the real NSE TRIN (extra_data/india) with 2.65 unchanged (R4 #347). Measured over 1999-11-09 to 2020-02-10: TRIN at or above 2.65 on 166 NSE days (3.3%) against 140 NYSE days (2.7%). A declared adaptation, not the author's test, UNVERIFIED.",
@@ -1522,7 +1524,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // "ch_bta2_tat": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         // "ch_bta2_xopp"|"ch_bta2_xopp_trail": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         // ch_ntt_to_buy: admitted on SPX, SPY, DJI, DIA, NDX, QQQ only (lane R2E, R4 #297/#306; chntt::ADMISSION + gate list)
-        "ch_ntt_to_buy_nse"=>"Held: NSE mapping of a NYSE-calibrated level (-0.3) held, as the 21 Oct 2026 user decision for the Connors breadth rules (R4 #306). The New Technical Trader tests the thrust-oscillator buy on NYSE breadth and the DJIA (p.143-159); its -0.3 level is not calibrated for NSE breadth.",
         "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
         // ch_pbs_cbpb_trail3: admitted on SPX only with the workshop's $1,500 / $500 = 3.00-point initial stop (lane K74, R4 #277; chpbs::ADMISSION_SPX)
         // ---- end Chande block
@@ -2078,7 +2079,7 @@ mod tests {
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
         for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
                    /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
-                   /* ch_ntt_to_buy: admitted on the US gate list by lane R2E (chntt::ADMISSION, R4 #297/#306) */ "ch_ntt_to_buy_nse","ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
+                   /* ch_ntt_to_buy: admitted on the US gate list by lane R2E (chntt::ADMISSION, R4 #297/#306) */ "ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -3222,7 +3223,7 @@ mod tests {
         // the US file has no option high/open: OISS (2x stop on the high) and spmt_eom_puts (next-open exit) stay India-only
         assert!(check(&def("oiss_short_put","oiss"),"SPY",false).unwrap().note.contains("16:00 snapshot"));
         assert!(check(&def("spmt_eom_puts","spmt"),"SPY",false).is_some());
-        assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_some());
+        assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_none() && check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTYBANK",false).is_some()); // lane N1: NIFTY 50 only (India VIX prices NIFTY 50 options)
         // lane F2: Singhal's option rules run on NIFTY weekly 1-minute options only
         for id in crate::books::as51ts::OPT_IDS {
             let bnf=crate::books::as51ts::BNF_IDS.contains(id);
@@ -3302,14 +3303,14 @@ mod tests {
         assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11","vixr_all"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let open=open_all(d) || vix_india(d); // open-all 23 Oct 2026 + VIX India 24 Oct 2026
-            let india=d.id!="vixr_all"; // CVR 11 open on India (IN1, #347); vixr_all held (wipe-out window not re-derived)
+            let india=true; let stock_ok=d.id!="vixr_all"; // CVR 11 open on India (IN1, #347); vixr_all opened by lane N1 (wipe-out rule re-derived)
             assert_eq!(policy(d).requirement,if open {"index_etf_or_stock"} else {"declared_index_timing"});
             assert!(check(d,"SPY",false).is_none() && check(d,"SPX",false).is_none(),"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),india,"{}",d.id);
             for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),open,"{} {t}",d.id);}
             assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && india,"{}",d.id);
             assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{}",d.id);
-            assert_eq!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none(),open && india,"{}",d.id);
+            assert_eq!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none(),open && india && stock_ok,"{}",d.id);
             assert!(!reviewed_cash_rule(&def(d.id,"spmt")));
         }
         for id in ["vixr_stocks","vixr_options","vixr_cvr4"] { // vixr_all: admitted with the CVRs since lane K43
@@ -3574,11 +3575,12 @@ mod tests {
         for t in ["SPX","SPY","DJI","DIA","NDX","QQQ"] {assert!(check(&to,t,false).is_none(),"{t}");}
         for t in ["NIFTY 50","NIFTYBANK","RELIANCE","IWM"] {assert!(check(&to,t,false).is_some(),"{t}");}
         assert!(check(&to,"AAPL",true).is_some() && check(&to,"RELIANCE",true).is_some());
-        let nse=def("ch_ntt_to_buy_nse","chntt");assert!(!reviewed_cash_rule(&nse));
-        for t in ["NIFTY 50","NIFTYBANK","SPX","SPY","DJI"] {assert!(check(&nse,t,false).is_some(),"{t}");}
-        assert!(check(&nse,"RELIANCE",true).is_some());
+        let nse=def("ch_ntt_to_buy_nse","chntt");assert!(reviewed_cash_rule(&nse)); // R4 #340 (lane N1): the NSE twin runs on the three Nifty indices
+        for t in ["NIFTY 50","NIFTYBANK","NIFTYMIDCAP100"] {assert!(check(&nse,t,false).is_none(),"{t}");}
+        assert!(crate::gate::get("ch_ntt_to_buy_nse").is_some_and(|g|g.allowed==Some(&["NIFTY 50","NIFTYBANK","NIFTYMIDCAP100"][..]))); // US tickers stay out through the gate list
+        // single stocks stay out through the gate list (readiness: "fixed point or dollar amounts set for NIFTY 50, ...")
         assert!(crate::gate::get("ch_ntt_to_buy").is_some_and(|g|g.allowed==Some(&["SPX","SPY","DJI","DIA","NDX","QQQ"][..])));
-        assert!(crate::gate::get("ch_ntt_to_buy_nse").is_some_and(|g|g.verdict=="withheld" && g.reason.contains("R4 #306")));
+        assert!(crate::gate::get("ch_ntt_to_buy_nse").is_some_and(|g|g.verdict=="unverified" && g.reason.contains("R4 #340")));
         assert!(check(&def("ch_65sma3cc","ch_bta"),"NIFTY 50",false).is_none());
         assert!(check(&def("ch_cbpb_time","ch_bta"),"SPY",false).is_none());
     }
