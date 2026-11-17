@@ -255,6 +255,12 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
         }
         None
     };
+    // R4 #349 (1), 17 Nov 2026: on a day the daily convention settles (and that has 1-minute bars), a stop fills at the first minute that reaches its level, at
+    // that minute's open when the minute opens beyond the level (the daily gap rule applied to minutes; NIFTYBANK 05-10-2012: the 09:51 minute opens 10246 through 11321).
+    let stop_fill = |j: usize, lv: f64, long: bool| -> f64 {
+        crate::intraday_w2b::day(x, j).and_then(|m| m.into_iter().find(|b| if long { b.h >= lv } else { b.l <= lv }))
+            .map_or(lv, |b| if long { b.o.max(lv) } else { b.o.min(lv) })
+    };
     let bar_old = |j: usize, st: &mut Bst| {
         if let Some(mut p) = st.pos.take() {
             if let Some(w) = st.exit_open.take() {
@@ -289,9 +295,9 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                     if j == od.setup && through {
                         None // the setup bar opened beyond the level: the breakout came before the setup
                     } else if long && h[j] >= lv {
-                        Some(o[j].max(lv))
+                        Some(if o[j] >= lv { o[j] } else { stop_fill(j, lv, true) })
                     } else if !long && l[j] <= lv {
-                        Some(o[j].min(lv))
+                        Some(if o[j] <= lv { o[j] } else { stop_fill(j, lv, false) })
                     } else {
                         None
                     }

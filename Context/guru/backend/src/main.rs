@@ -1542,6 +1542,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         // never paged); skipping its excursion pass (a minute-file read per partial bar) keeps a summary-only answer fast.
         if page.is_some_and(|(offset,limit)|i<offset||i>=offset+limit) {allocation*=1.+t.ret(costs.side_rate());return None;}
         let mut ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
+        // R4 #348 lane W1: Stridsman stop/target/reversal exits are price-level fills (accounting::path_points_with); strmm/strtw cards only
         // options phase 2: the underlying's daily range says nothing about the option's excursion
         if run.option_account.as_ref().is_some_and(|a|a.model!=books::units::MODEL) {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;} // a multi-unit trade is on the underlying itself (lane K43)
         allocation*=1.+ledger.net_ret;
