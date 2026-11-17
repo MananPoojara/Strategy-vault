@@ -8,7 +8,7 @@ use super::rbtie::target_trades;
 pub const REVIEWED: &[&str] = &["scsaitta_volma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Adapted: 2 unstated details, R4 #297] Norgate continuous T-bond futures (&ZB), back-adjusted daily bars; volume = Norgate's continuous-series volume, i.e. the contract held in the series, not the total of all months (labelled reading, as R4 #301 (3)); Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor (the article used a back-adjusted continuous contract too, 'adjusted for the quarterly rollover'). Unstated in the article: (1) fills: vault reading, every entry and exit at the close of the signal day (the rules are close conditions: 'crossed and then closed above', 'closed below'); (2) 'the average daily volume of the last 10 days': vault reading, the 10 days before the signal day (today's volume is compared with it). A 'cross' needs the previous close at or below (above) the previous average; a long closed by a close below the average reverses to short the same day when that day's volume qualifies. One contract, no costs (as the article). p.vol = 0: the article's initial system (always in, no volume condition, Figures 1-2).";
+const NOTE: &str = "[Adapted: 2 unstated details, R4 #297] Norgate continuous T-bond futures (&ZB), back-adjusted daily bars; volume = Norgate's continuous-series volume, i.e. the contract held in the series, not the total of all months (labelled reading, as R4 #301 (3)); Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor (the article used a back-adjusted continuous contract too, 'adjusted for the quarterly rollover'). Unstated in the article: (1) fills: vault reading, every entry and exit at the close of the signal day (the rules are close conditions: 'crossed and then closed above', 'closed below'); (2) 'the average daily volume of the last 10 days': vault reading, the 10 days before the signal day (today's volume is compared with it). A 'cross' needs the previous close at or below (above) the previous average; a long closed by a close below the average reverses to short the same day when that day's volume qualifies. One contract, no costs (as the article). p.vol = 0: the article's initial system (always in, no volume condition, Figures 1-2). India (lane IN2, R4 #340): ALSO run on NIFTY 50 and NIFTYBANK as a declared adaptation, UNVERIFIED: the index close for the contract's close and the nearest-expiry NIFTY / BANKNIFTY futures daily volume (lane DI, bhavcopy-verified days only; a day without a verified figure is a gap: no entry on it, never filled) for the volume, from 2018-12-28 (NIFTY) / 2023-09-06 (NIFTYBANK).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "scsaitta_volma", name: "Saitta T-bond 20-day moving average with a volume condition: enter on a close through the average on above-average volume, exit on the close back through it", group: "S&C: A Price- And Volume-Based System (Saitta, V14:3)",
@@ -38,7 +38,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (n, vn, use_vol) = (g("n").round().max(1.) as usize, g("vn").round().max(1.) as usize, g("vol") >= 0.5);
     let c = &x.c;
     let sma = |i: usize| if i + 1 >= n { c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 } else { f64::NAN };
-    let vol = |i: usize| x.r[i].volume.unwrap_or(f64::NAN);
+    let fv = x.fut_vol(); // lane IN2: NIFTY / BANKNIFTY futures volume on the India index contexts, the file's own volume elsewhere
+    let vol = |i: usize| fv[i];
     let vol_ok = |i: usize| !use_vol || (i >= vn && vol(i) > (i - vn..i).map(vol).sum::<f64>() / vn as f64);
     let mut tgt = vec![0i8; to + 1];
     let mut pos = 0i8;

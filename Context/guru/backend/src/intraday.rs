@@ -89,6 +89,25 @@ impl Minutes {
     }
 }
 
+/// Lane IN2 (17 Nov 2026, R4 #340): daily NIFTY / BANKNIFTY futures volume as the volume proxy of a price-only index. Sum of every
+/// minute's Volume of the day in `<dir>/<TICKER>.FUT1.m1.csv` (the 15:30-15:39 minutes included: DI's volume gate compares the
+/// whole day with bhavcopy). A day with any empty or unreadable Volume (DI blanked it) is OMITTED, never estimated.
+pub fn fut_daily_volume(path: &str) -> BTreeMap<String, f64> {
+    use std::io::BufRead;
+    let mut out: BTreeMap<String, f64> = BTreeMap::new();
+    let Ok(f) = std::fs::File::open(path) else { return out };
+    let (mut cur, mut sum, mut ok) = (String::new(), 0.0f64, true);
+    let mut flush = |cur: &str, sum: f64, ok: bool, out: &mut BTreeMap<String, f64>| { if ok && !cur.is_empty() && sum > 0.0 { out.insert(cur.to_string(), sum); } };
+    for l in std::io::BufReader::new(f).lines().skip(1).map_while(Result::ok) {
+        let v: Vec<&str> = l.split(',').collect();
+        if v.len() < 8 { continue; }
+        if v[0] != cur { flush(&cur, sum, ok, &mut out); cur = v[0].to_string(); sum = 0.0; ok = true; }
+        match v[6].parse::<f64>() { Ok(x) if x.is_finite() && x >= 0.0 => sum += x, _ => ok = false }
+    }
+    flush(&cur, sum, ok, &mut out);
+    out
+}
+
 /// Regular-session opening minute (start-stamped exchange clock): US 09:30 ET; NSE 09:55 before 2010-01-04,
 /// 09:00 until the pre-open call auction began on 2010-10-18, 09:15 since.
 pub fn session_open(ticker: &str, date: &str) -> u16 {
@@ -381,5 +400,19 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod in2_fut_volume_tests {
+    #[test]
+    fn day_sum_skips_a_day_with_any_empty_volume_and_never_fills() {
+        let p = std::env::temp_dir().join(format!("in2_fut_{}.csv", std::process::id()));
+        std::fs::write(&p, "Date,Time,Open,High,Low,Close,Volume,OI\n2020-01-01,09:15,1,1,1,1,10,5\n2020-01-01,15:30,1,1,1,1,5,5\n2020-01-02,09:15,1,1,1,1,,5\n2020-01-02,09:16,1,1,1,1,7,5\n2020-01-03,09:15,1,1,1,1,3,5\n").unwrap();
+        let v = super::fut_daily_volume(p.to_str().unwrap());
+        std::fs::remove_file(&p).ok();
+        assert_eq!(v.len(), 2);
+        assert_eq!((v["2020-01-01"], v["2020-01-03"]), (15.0, 3.0)); // 15:30 minute counted; 2020-01-02 (one empty field) is a gap
+        assert!(super::fut_daily_volume("/nonexistent/none.csv").is_empty());
     }
 }

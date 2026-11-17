@@ -268,6 +268,9 @@ pub fn streak(n: usize, pred: impl Fn(usize) -> bool) -> Vec<usize> {
 
 // ---------------------------------------------------------------- context
 
+/// Lane IN2 (R4 #340): name of the NIFTY / BANKNIFTY futures daily-volume series, and the volume rules that may read it as a labelled adaptation.
+pub const FUT_VOL: &str = "FUT1.Volume";
+pub const FUT_VOL_IDS: &[&str] = &["scsaitta_volma", "fotol_bb_breakout"];
 pub struct Ctx<'a> {
     pub r: &'a [Row],
     pub o: Vec<f64>,
@@ -416,6 +419,11 @@ impl<'a> Ctx<'a> {
         self.stock_tick().unwrap_or(if self.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 })
     }
     /// An external series by name, if it has any data for this ticker.
+    /// Lane IN2 (R4 #340): the daily volume a volume rule reads. On NIFTY 50 / NIFTYBANK it is the futures volume (FUT_VOL, NaN on days
+    /// without a verified figure) and only the ids in `FUT_VOL_IDS` call this; every other context reads the file's own volume.
+    pub fn fut_vol(&self) -> Vec<f64> {
+        match self.extra.get(FUT_VOL) { Some(v) if v.len() == self.r.len() => v.clone(), _ => self.r.iter().map(|r| r.volume.unwrap_or(f64::NAN)).collect() }
+    }
     pub fn series(&self, name: &str) -> Option<&[f64]> {
         self.extra.get(name).filter(|v| v.iter().any(|x| x.is_finite())).map(|v| v.as_slice())
     }

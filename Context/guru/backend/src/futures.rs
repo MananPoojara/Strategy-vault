@@ -766,6 +766,7 @@ pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { c
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
     card(id)?;
+    if id == "scsaitta_volma" && matches!(t, "NIFTY 50" | "NIFTYBANK") { return None; } // lane IN2 (R4 #340): the declared India index adaptation (futures volume as the volume proxy)
     let ms: Vec<&Market> = card_markets(id).into_iter().filter_map(|s| MARKETS.iter().find(|m| m.sym == s)).collect();
     let on = of_ticker(t).is_some_and(|m| ms.iter().any(|h| h.sym == m.sym));
     let names = |f: fn(&Market) -> String| ms.iter().map(|m| f(m)).collect::<Vec<_>>().join(", ");

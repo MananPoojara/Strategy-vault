@@ -2253,6 +2253,11 @@ fn main() {
                     c.extra.insert(key.clone(), release::column(key, rows.iter().map(|r| r.date.as_str()), m));
                 }
             }
+            // lane IN2 (R4 #340): NIFTY / BANKNIFTY futures daily volume (days DI blanked stay NaN), read only by the cards that opt in (Ctx::fut_vol)
+            if t.starts_with("NIFTY") { if let Some(d) = intraday_dir.as_deref() {
+                let v = intraday::fut_daily_volume(&format!("{d}/{}.FUT1.m1.csv", t.replace(' ', "_")));
+                if !v.is_empty() { c.extra.insert(connors::FUT_VOL.to_string(), rows.iter().map(|r| v.get(r.date.as_str()).copied().unwrap_or(f64::NAN)).collect()); }
+            } }
             // lane K75 (R4 #279 (2)): first-hour / last-hour series from this ticker's real 1-minute bars; an extra_data file
             // of the same name takes precedence
             if let Some(m) = c.minutes {
