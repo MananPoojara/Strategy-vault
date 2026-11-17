@@ -258,8 +258,9 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
     // R4 #349 (1), 17 Nov 2026: on a day the daily convention settles (and that has 1-minute bars), a stop fills at the first minute that reaches its level, at
     // that minute's open when the minute opens beyond the level (the daily gap rule applied to minutes; NIFTYBANK 05-10-2012: the 09:51 minute opens 10246 through 11321).
     let stop_fill = |j: usize, lv: f64, long: bool| -> f64 {
-        crate::intraday_w2b::day(x, j).and_then(|m| m.into_iter().find(|b| if long { b.h >= lv } else { b.l <= lv }))
-            .map_or(lv, |b| if long { b.o.max(lv) } else { b.o.min(lv) })
+        // R4 #351 (2): when that minute is the session's FIRST, the daily open stands in for the minute file's first open (they differ on some days)
+        crate::intraday_w2b::day(x, j).and_then(|m| m.into_iter().enumerate().find(|(_, b)| if long { b.h >= lv } else { b.l <= lv }))
+            .map_or(lv, |(k, b)| { let op = if k == 0 { o[j] } else { b.o }; if long { op.max(lv) } else { op.min(lv) } })
     };
     let bar_old = |j: usize, st: &mut Bst| {
         if let Some(mut p) = st.pos.take() {
