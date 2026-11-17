@@ -103,23 +103,33 @@ fn series(x: &Ctx, from: usize, to: usize, n: u16) -> Vec<B> {
 
 /// A position: direction, entry price, entry tag, entry day row, entry kind.
 #[derive(Clone, Copy)]
-struct P { d: f64, ep: f64, tag: u8, ei: usize, kind: &'static str }
+struct P { d: f64, ep: f64, tag: u8, ei: usize, kind: &'static str, em: u16 }
 /// Walker state: the position, trades closed in the current minute(s), orders placed for this bar, entry orders already
 /// filled in it (bit mask), the current day row, entries today, and two free levels (vdso's stops).
 #[derive(Clone, Default)]
-struct St { pos: Option<P>, done: Vec<(P, usize, f64, &'static str)>, live: Vec<Ord>, used: u32, i: usize, n: u32, a: f64, b: f64 }
+struct St { pos: Option<P>, done: Vec<(P, usize, f64, &'static str)>, live: Vec<Ord>, used: u32, i: usize, n: u32, a: f64, b: f64,
+    /// W3 17 Nov: the minute being walked (start), whether a fill happens at a bar close (that minute included), and each `done` exit's (minute, at close)
+    cm: u16, cl: bool, fm: Vec<(u16, bool)> }
 impl St {
     fn dir(&self) -> f64 { self.pos.map_or(0.0, |p| p.d) }
     /// Entry: ignored in the held direction; an opposite position is closed at the same price ("reverse").
     fn enter(&mut self, d: f64, px: f64, tag: u8, kind: &'static str) {
         if self.dir() == d { return; }
-        if let Some(p) = self.pos.take() { self.done.push((p, self.i, px, "reverse")); }
-        self.pos = Some(P { d, ep: px, tag, ei: self.i, kind });
+        if let Some(p) = self.pos.take() { self.done.push((p, self.i, px, "reverse")); self.fm.push((self.cm, self.cl)); }
+        self.pos = Some(P { d, ep: px, tag, ei: self.i, kind, em: self.cm });
         self.n += 1;
     }
-    fn exit(&mut self, px: f64, why: &'static str) { if let Some(p) = self.pos.take() { self.done.push((p, self.i, px, why)); } }
-    fn flush(&mut self, out: &mut Vec<Trade>) { for (p, xi, xp, why) in self.done.drain(..) { out.push(day_trade(p.d, p.ei, p.ep, xi, xp, why, p.kind, false)); } }
-    fn walk(&mut self, q: &Bar1, orders: &dyn Fn(&St) -> Vec<Ord>, fill: &dyn Fn(&mut St, u8, f64)) { let adv = self.dir() < 0.0; minute(q, self, orders, fill, adv); }
+    fn exit(&mut self, px: f64, why: &'static str) { if let Some(p) = self.pos.take() { self.done.push((p, self.i, px, why)); self.fm.push((self.cm, self.cl)); } }
+    fn flush(&mut self, out: &mut Vec<Trade>) { self.fm.clear(); for (p, xi, xp, why) in self.done.drain(..) { out.push(day_trade(p.d, p.ei, p.ep, xi, xp, why, p.kind, false)); } }
+    /// flush + record each trade's entry and exit minute for the excursion window (zones: fills at 10-minute bar closes)
+    fn flush_fm(&mut self, x: &Ctx, out: &mut Vec<Trade>) {
+        for ((p, xi, xp, why), (xm, xc)) in self.done.drain(..).zip(self.fm.drain(..)) {
+            let t = day_trade(p.d, p.ei, p.ep, xi, xp, why, p.kind, false);
+            crate::intraday::note_fill(&x.r[0].ticker, &t, (p.em, xm, xc));
+            out.push(t);
+        }
+    }
+    fn walk(&mut self, q: &Bar1, orders: &dyn Fn(&St) -> Vec<Ord>, fill: &dyn Fn(&mut St, u8, f64)) { self.cm = q.m; let adv = self.dir() < 0.0; minute(q, self, orders, fill, adv); }
     fn finish(mut self, out: &mut Vec<Trade>, i: usize, px: f64) {
         self.flush(out);
         if let Some(p) = self.pos.take() { out.push(day_trade(p.d, p.ei, p.ep, i, px, "open", p.kind, true)); }
@@ -354,10 +364,12 @@ fn zones(x: &Ctx, from: usize, to: usize, lag: bool) -> Vec<Trade> {
         }
         let Some([h2, h1, l1, l2, mid]) = zz else { continue };
         if k > 0 {
+            st.cm = z.m.last().map_or(0, |q| q.m); st.cl = true;
             if z.l <= l1 && b[k - 1].l > l1 { st.enter(1.0, z.c, 0, "close"); }
             else if z.h >= h1 && b[k - 1].h < h1 { st.enter(-1.0, z.c, 0, "close"); }
+            st.cl = false;
         }
-        st.flush(&mut out);
+        st.flush_fm(x, &mut out);
         match st.pos { Some(p) if p.d > 0.0 => next = vec![ord(false, l2, 10), ord(true, mid, 11)], Some(_) => next = vec![ord(true, h2, 10), ord(false, mid, 11)], None => {} }
     }
     match b.last() { Some(z) => st.finish(&mut out, z.i, z.c), None => {} }
