@@ -2821,6 +2821,13 @@ mod tests {
         let ctx = Ctx::new(rows, rows, &[]);
         let (mut compared, mut other_path) = (0, 0); // other_path: refused by design, ruin or invalid trades, each asserted below
         for d in connors::catalogue().iter().filter(|d| d.status == Status::Live && !d.needs_vix) {
+            if d.id == "atrio_ratio_range" {
+                // Active Trader May 2001 workbook (lane C4): runs on DJI / SPX / NDX only; any other instrument has no run (refused)
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none(),"{}",d.id);
+                assert_eq!(backtest_costs(&ctx,d.id,0,rows.len()-1,accounting::Costs::default(),&Params::new()).unwrap_err(), "Strategy implementation unavailable"); // as apta_nhnl: refused off DJI/SPX/NDX
+                other_path += 1;
+                continue;
+            }
             if d.id == "apta_nhnl" {
                 // This source-specific NYSE breadth method is admitted only on SPX,
                 // not on this Nifty context without count inputs. Its SPX ledger
