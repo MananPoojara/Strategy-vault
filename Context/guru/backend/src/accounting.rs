@@ -53,6 +53,9 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
         let start=if k==e {entry} else {Fill::Open};
         let end=if k==x {exit} else {Fill::Close};
         if start==Fill::Close {if k==x {pts.push((k,c(k)));} continue;} // entered at this close: nothing after it on this bar
+        // W3 17 Nov: entered at the open and left at that same open (a reversal that fires on the entry bar; an exit AT THE CLOSE of a doji bar is not this): the position never lived
+        // through the bar, so only the fill price counts (the minute search below would count every minute before the open price traded again)
+        if k==e&&k==x&&start==Fill::Open&&exit!=Fill::Close&&xpx==o(k) {pts.push((k,xpx));continue;}
         if start==Fill::Open&&end==Fill::Close {pts.push((k,l(k)));pts.push((k,h(k)));continue;}
         // part of a bar: 1-minute bars between the fill(s) when they exist, else only the fill prices
         // the minute that traded at px; else (a fill price between two ticks, e.g. a 3%-below-close limit, or a price the minutes jump over) the first
@@ -205,6 +208,19 @@ mod tests {
         pair(ex(&x,&one(1.,1,104.,"open",3,102.,2)),(95./104.-1.,112./104.-1.));
         // same-bar open entry, close exit: the whole bar
         pair(ex(&x,&one(1.,3,102.,"open",3,110.,3)),(99./102.-1.,115./102.-1.));
+    }
+    #[test]
+    fn entered_and_left_at_the_same_open_lived_through_nothing(){
+        // W3 17 Nov (pbwts_seasonal NIFTYBANK 3 Feb 2012): a reversal at the open on the entry bar; the bar's low is not its MAE, with or without minutes
+        let dir=std::env::temp_dir().join(format!("mae-zero-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-04,09:30,99,103,98,102\n2020-01-04,09:31,102,104,101,103\n2020-01-04,09:32,102,102.5,90,95\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-04,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        pair(ex(&x,&one(1.,3,102.,"open",3,102.,2)),(0.,0.));
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,3,102.,"open",3,102.,2)),(0.,0.));
+        let _=std::fs::remove_dir_all(&dir);
     }
     #[test]
     fn stop_fills_count_only_their_price_and_gap_fills_count_as_the_open(){
