@@ -25,7 +25,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad2";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad5_im1" /* lane M2 */, "stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_dow" /* lane PG: Dow averages from Norgate */, "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
+pub const REVIEWED: &[&str] = &["stad5_im1" /* lane M2 */, "stad5_im2" /* lane M3 */, "stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_dow" /* lane PG: Dow averages from Norgate */, "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -607,11 +607,14 @@ fn defs_a() -> Vec<Def> {
         "A|[Declared reading 3] BarsSinceEntry counts bars from the entry bar (0): the exit is at the close of the 51st bar after the entry bar",
         "A|[Declared reading 4] a new entry is possible from the bar after an exit, never on the exit bar"],
       "Vol 5 ch.2 p.20-25 (STAD05 p.21 re-read). Book: S&P index 1/88-9/98: 132 trades, 88% profitable, PF 5.58 (the book's yield series is not named; ours is FRED DGS30, so the count is compared, not matched). Runs on SPX only (the S&P index of the book), US only; UNVERIFIED.", ("stad5_im1", "Intermarket I", "Vol 5")),
-    d("stad5_im2", "Intermarket II", "Vol 5 · Trending", "Long",
-      NeedsData("Needs Data3 = the US prime rate (daily); no rate series in the vault."),
+    d("stad5_im2", "Intermarket II", "Vol 5 · Trending", "Long", Live,
       &["F|If Close of Data3 < Close[1] of Data3 then prSteps += 1 else if Close of Data3 > Close[1] then prSteps = 0 (Vol 5 p.26-27 code)",
-        "E|prSteps >= PStepTrg(1) and prSteps > prSteps[1]: Buy this bar on close", "X|BarsSinceEntry > PNBars(100): ExitLong this bar on close; Format: $4,500 money-management stop"],
-      "Vol 5 ch.2 p.26-32. Book: S&P futures 1/78-9/98: 15 trades, 53% winners, win/loss 3.17, PF 3.63, avg trade $5,005.", ("stad5_im2", "Intermarket II", "Vol 5")),
+        "E|prSteps >= PStepTrg(1) and prSteps > prSteps[1]: Buy this bar on close", "X|BarsSinceEntry > PNBars(100): ExitLong this bar on close; Format: $4,500 money-management stop",
+        "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] Data3 = the US prime rate: FRED DPRIME, daily (Fed H.15 monthly average matched by lane DA in 854 of 855 months; the daily values are checked against the NY Fed target rate + 3.00 only from 2008-12-16, so the span before 2008-12-16 is monthly-checked only); FRED stamps an FOMC cut on the announcement day",
+        "A|[Declared reading 2] a bar without a prime print (a day FRED leaves blank) neither changes prSteps nor gives a signal, and the next print is compared with the last print on the card's own bars (TradeStation Data3 repeats the last close); nothing is filled in",
+        "A|[Declared reading 3] the $4,500 money-management stop is at $500 per S&P point (the book's contract, bpv 500), working from the bar after the entry bar, filled at the stop or at the open when it gaps through",
+        "A|[Declared reading 4] BarsSinceEntry counts from the entry bar (0): the exit is at the close of the 101st bar after the entry bar; a new entry is possible from the bar of a stop exit, never on the bar of the time exit"],
+      "Vol 5 ch.2 p.26-32. Book: S&P futures 1/78-9/98: 15 trades, 53% winners, win/loss 3.17, PF 3.63, avg trade $5,005. Runs on the Norgate S&P 500 continuous contract (from 1982-04-21; the book starts 1/78, so the count is compared on 1982-98, not matched); US only; UNVERIFIED.", ("stad5_im2", "Intermarket II", "Vol 5")),
     d("stad5_fib382", "Fibonacci .382 Retracement", "Vol 5 · Support/Resistance", "Long/Short", Live,
       &["F|XAvg = XAverage(Close,15); HiHi/LoLo = Highest(High,50)/Lowest(Low,50); HiHiBar/LoLoBar = HighestBar/LowestBar; Retracement = (HiHi-LoLo)*.382 (Vol 5 p.35-36 code)",
         "F|Close <= HiHi - Retracement and HiHiBar < LoLoBar: BuySetup = 0; Close >= LoLo + Retracement and HiHiBar > LoLoBar: SellSetup = 0; both counters +1 every bar",
@@ -1155,6 +1158,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad5_curbond" => [vec![p("fast", "Fast XAverage", 4., 2., 20., 1.), p("med", "Medium XAverage", 12., 5., 40., 1.), p("slow", "Slow XAverage", 23., 10., 60., 1.),
             p("bondma", "Bond XAverage (Data2)", 50., 10., 100., 1.), p("actvbar", "Bars the entry stop stays active", 5., 1., 20., 1.), usd("stop_usd", "StopAmt: risk trailing stop from the close ($)", 1000.),
             usd("mm_usd", "Money-management stop ($, Format dialog)", 1200.)], bpv(125000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad5_im2" => [vec![p("pstep", "PStepTrg: consecutive cuts needed", 1., 1., 5., 1.), p("pnbars", "PNBars: exit when BarsSinceEntry exceeds", 100., 10., 250., 1.), usd("mm_usd", "Money-management stop ($, Format dialog)", 4500.)], bpv(500., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_im1" => vec![p("tnbars", "TNBars: exit when BarsSinceEntry exceeds", 50., 5., 250., 1.), p("lyldtrg", "LYldTrg (yield points added to the previous yield)", 0.25, 0., 2., 0.05), p("bond", "Data2: 30 = DGS30, 10 = DGS10 (adaptation)", 30., 10., 30., 20.)],
         "stad5_fib382" => [vec![p("xavglen", "XAverage length", 15., 5., 40., 1.), p("hilolen", "High/low range bars", 50., 20., 100., 5.), p("retrace", "Retracement", 0.382, 0.2, 0.618, 0.01),
             p("setuplen", "Setup length bars", 24., 5., 50., 1.), usd("mm_usd", "Money-management stop ($)", 200.), usd("tr_usd", "$ Risk trailing ($)", 400.)], bpv(100., 1.)].into_iter().flatten().collect::<Vec<_>>(),
@@ -1346,6 +1350,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if mx[i] < sx[i] { nx.push(o(A::Xl, P::Mkt, "MedXAvg below SlowXAvg")); }
                 if mx[i] > sx[i] { nx.push(o(A::Xs, P::Mkt, "MedXAvg above SlowXAvg")); }
                 nx.push(o(A::Xl, P::Stop(c[i] - stp), "Risk trailing stop")); nx.push(o(A::Xs, P::Stop(c[i] + stp), "Risk trailing stop"));
+            })
+        }
+        "stad5_im2" => {
+            // lane M3 (R4 #346): Data3 = the staged US prime rate (extra_data DPRIME), aligned to this context's bars by date
+            let Some(y) = x.extra.get("DPRIME") else { return Some(vec![]) };
+            let (pst, pn) = (g("pstep"), g("pnbars"));
+            let mut cf = cfg(); cf.ss.sl = usd("mm_usd");
+            let (mut prev, mut steps, mut steps1) = (f64::NAN, 0.0f64, 0.0f64);
+            run_ts(x, from, to, 0, cf, |i, st, now, _nx| {
+                // prSteps is advanced on every bar from the start of the data (Data3 history), so the run window does not change it
+                steps1 = steps;
+                if y[i].is_finite() { if prev.is_finite() { if y[i] < prev { steps += 1.0; } else if y[i] > prev { steps = 0.0; } } prev = y[i]; }
+                if st.pos == 1 { if st.bse(i) as f64 > pn { now.push(o(A::Xl, P::Mkt, "PNBars")); } }
+                else if steps >= pst && steps > steps1 { now.push(o(A::Buy, P::Mkt, "Prime cut")); }
             })
         }
         "stad5_im1" => {
@@ -2638,6 +2656,38 @@ mod tests {
         assert_eq!(t[1].legs[0].i, 54); // flat after the exit bar, so the next entry is bar 54
         assert!(run("stad5_im1", &Ctx::new(&r, &r, &[]), 0, 69, &Params::new()).unwrap().is_empty());
     }
+    /// Lane M3: STAD5 Intermarket II on a hand-made prime-rate series.
+    #[test]
+    fn im2_buys_on_a_cut_bar_exits_after_bar_101_and_stops_at_nine_points() {
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..130).map(|i| { let c = 100. + i as f64 * 0.1; (c, c + 0.2, c - 0.2, c) }).collect();
+        v[20] = (102., 102., 90., 95.); // the low is more than 9 points below the entry close of bar 5
+        let r = rows(&v);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let mut y = vec![5.0; 130];
+        for i in 5..130 { y[i] = 4.75; } y[8] = f64::NAN; // a cut on bar 5; a missing print on bar 8 changes nothing
+        x.extra.insert("DPRIME".into(), y);
+        let t = run("stad5_im2", &x, 0, 129, &Params::new()).unwrap();
+        assert_eq!(t[0].legs[0].i, 5);
+        assert_eq!(t[0].exit_i, 20); // stop: entry 100.5 - 9 = 91.5, bar 20 low 90 with the open above it
+        assert!((t[0].exit_px - (100.5 - 9.0)).abs() < 1e-9);
+        assert!(run("stad5_im2", &Ctx::new(&r, &r, &[]), 0, 129, &Params::new()).unwrap().is_empty());
+    }
+    /// Lane M3 reference feed (Norgate &SP + DPRIME): `IM2_DUMP=out IM2_SP=&SP.csv IM2_Y=DPRIME.csv cargo test --release im2_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn im2_dump() {
+        let (Ok(out), Ok(sp), Ok(yf)) = (std::env::var("IM2_DUMP"), std::env::var("IM2_SP"), std::env::var("IM2_Y")) else { return };
+        let q = |s: &str| s.trim_matches('"').to_string();
+        let rows: Vec<Row> = std::fs::read_to_string(sp).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            Some(Row { ticker: "&SP".into(), date: q(f[0]), open: q(f[3]).parse().ok()?, high: q(f[4]).parse().ok()?, low: q(f[5]).parse().ok()?, close: q(f[6]).parse().ok()?, volume: None }) }).collect();
+        let ym: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(yf).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect();
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert("DPRIME".into(), rows.iter().map(|r| ym.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let t = run("stad5_im2", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let mut s = String::new();
+        for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, s).unwrap();
+    }
     /// Lane M2 reference feed (SPX + DGS30 or DGS10): `IM_DUMP=out IM_US=us_data.csv IM_Y=DGS30.csv IM_BOND=30 cargo test --release im_dump -- --ignored`
     #[test]
     #[ignore]
@@ -2731,7 +2781,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 71); // + stad5_im1 (lane M2); + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 72); // + stad5_im2 (lane M3); + stad5_im1 (lane M2); + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 
