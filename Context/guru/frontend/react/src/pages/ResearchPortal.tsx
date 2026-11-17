@@ -596,7 +596,10 @@ function ShareBody({ d }: { d: ShareInventory }) {
    with its resource types, Claude's progress and its largest subfolders. Slice colours are the validated categorical slots 1-6;
    the light-theme contrast warning is relieved by the legend and the table, which carry every figure. */
 const PIE_TOP = 6;
-const pct = (n: number, of: number) => `${((100 * n) / Math.max(1, of)).toLocaleString("en-IN", { maximumFractionDigits: n / Math.max(1, of) < 0.01 ? 2 : 1 })}%`;
+const pct = (n: number, of: number) => {
+  const r = n / Math.max(1, of);
+  return n > 0 && r < 0.0001 ? "<0.01%" : `${(100 * r).toLocaleString("en-IN", { maximumFractionDigits: r < 0.01 ? 2 : 1 })}%`;
+};
 function arc(cx: number, cy: number, r0: number, r1: number, a0: number, a1: number) {
   const pt = (r: number, a: number) => `${(cx + r * Math.sin(a)).toFixed(2)} ${(cy - r * Math.cos(a)).toFixed(2)}`;
   const big = a1 - a0 > Math.PI ? 1 : 0;
@@ -658,7 +661,7 @@ function FolderView({ d }: { d: ShareInventory }) {
                   <tr>
                     <td>{i < PIE_TOP ? <i className={`rp-swatch c${i + 1}`} /> : <i className="rp-swatch c0" />}
                       {subs.length > 1 ? <button className="rp-linkbtn" aria-expanded={open === f.name} onClick={() => setOpen(open === f.name ? null : f.name)}>{f.name}</button> : f.name}
-                      {f.subfolders ? <span className="rp-small rp-muted"> · {num(f.subfolders)} subfolders</span> : null}</td>
+                      {f.subfolders ? <span className="rp-small rp-muted"> · {num(f.subfolders)} subfolder{f.subfolders === 1 ? "" : "s"}</span> : null}</td>
                     <td className="n">{num(f.files)}</td><td className="n">{pct(f.files, total)}</td><td className="n" title={`${f.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(f.bytes)}</td>
                     <td className="rp-small">{types.map(([k, n]) => `${label.get(k) || k} ${num(n)}`).join(" · ") || "–"}</td>
                     {detailed && <><td className="n">{c ? num(c.opened) : "–"}</td>
