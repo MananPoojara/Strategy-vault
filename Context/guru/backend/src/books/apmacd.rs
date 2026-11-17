@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("apmacd_ad_stay", "Super stay-in: 19-39 MACD of the A-D line above +450 · NYSE breadth", "Supplementary Chart F", Live, &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"], AD_STAY,
             "Book examples: HOLD 2/3/1995 (NYSE 260.44) to 10/9/1995 (310.35, +19.2%); 12/21/1995 (327.60) to 4/10/1996 (340.93, +4.1%) (p.43). Days without breadth data leave the A-D line unchanged."),
         d("apmacd_ad_stay_nse", "Super stay-in: 19-39 MACD of the A-D line above +450 · NSE breadth", "Supplementary Chart F", Live, &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"], AD_STAY,
-            "India mapping: NSE advances/declines, same +450 level (NSE lists a similar number of issues)."),
+            "India mapping (R4 #347): real NSE advances/declines, same +450 level, a count of issues applied unchanged. Measured: MACD above +450 on 9.6% of NSE days (5.8% over 1999-11..2020-02) against 68.5% of NYSE days over the same overlap; UNVERIFIED declared adaptation."),
     ]
 }
 

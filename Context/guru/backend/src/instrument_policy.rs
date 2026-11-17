@@ -77,9 +77,11 @@ pub const VIX_INDIA_RULES:&[(&str,&str)]=&[("stc9","vix200"),("stc9","vix2"),("s
     ("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr8"),("vixr","vixr_cvr9"),("vixr","vixr_cvr10"),("vixr","vixr_cvr11"),("vixr","vixr_all")];
 pub const VIX_INDIA_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026; VIX India 24 Oct 2026), not the author's test. US instruments read the CBOE VIX. Indian instruments (NIFTY 50, NIFTYBANK, Indian stocks): declared application: India VIX in place of the CBOE VIX. VIX levels and VIX-point thresholds printed for the US VIX are kept as printed; India VIX runs on a different scale, so on Indian instruments they mark different market conditions. Rules that read the VIX open use the real India VIX open from 1-minute data (the first minute after NSE's 09:15 opening print), available from 2015; NSE's daily India VIX open repeats the previous close and is never used.";
 pub fn vix_india(def:&StrategyDef)->bool {VIX_INDIA_RULES.contains(&(def.book,def.id))}
-/// CVR 11 / vixr_all were held on India for an exact -1.00 India VIX tie (engine floating point vs the reference). IN1, 17 Nov 2026: the thresholds are
-/// compared with a 1e-9 tolerance (the rule says "-1 or less" on 2-decimal VIX closes), so nothing is held any more.
-pub fn vix_india_held(_def:&StrategyDef,_ticker:&str,_india:bool)->Option<Issue> {None}
+/// vixr_all stays held on India (IN1 review 17 Nov 2026): its window ends at the engine's account wipe-out (2019-07..2020-03) and no reference re-derives that rule.
+/// CVR 11 is open on India (IN1, R4 #347: 1e-9 tie tolerance on India contexts only).
+pub fn vix_india_held(def:&StrategyDef,ticker:&str,india:bool)->Option<Issue> {
+    (india && def.id=="vixr_all").then(||Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): the all-signals portfolio ends at the account wipe-out rule (2019-07..2020-03 on India) and no independent reference re-derives that rule yet, so the printed portfolio is not published on India. It runs on US instruments with the CBOE VIX.")})
+}
 // ---------------------------------------------------------------- end VIX India
 // ---------------------------------------------------------------- connors-final (26 Oct 2026)
 /// US ETFs the engine serves from us_data.csv. connors-final adds the Alpha Formula ETFs (Rising Assets, Dynamic
@@ -551,7 +553,14 @@ pub fn nse_breadth_held(def:&StrategyDef,_ticker:&str)->Option<Issue> {
     held.then(||Issue{status:"needs_data",note:"Held: this rule uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.".into()})
 }
 pub const NSE_BREADTH_LABEL:&str="The book traded S&P 500 futures on NYSE breadth (TRIN / advances and declines) with NYSE-calibrated thresholds. Here the signal is read from the real NSE breadth the vault holds (extra_data/india) with the book's thresholds unchanged. NSE breadth behaves differently (TRIN median 0.70 vs NYSE 0.93; it fires 2-3x more often), so this is a declared adaptation, not the author's test, and it is UNVERIFIED.";
-pub fn nse_breadth(def:&StrategyDef)->bool {matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"|"scarms_265_nse"|"scwtrin_wtrin10_nse"|"apmacd_ad_stay_nse"|"apsmts_ad_obos_nse")}
+pub fn nse_breadth(def:&StrategyDef)->bool {matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv")}
+/// IN1 / R4 #347: count-threshold NSE twins carry their own MEASURED firing rates (1999-11-09..2020-02-10 overlap, NSE vs NYSE), not the generic "fires 2-3x more often".
+pub fn nse_count_label(def:&StrategyDef)->Option<&'static str> {Some(match def.id {
+    "apmacd_ad_stay_nse"=>"The book tested the 19-39 MACD of the NYSE advance-decline line against +450 issues. Here the line is built from the real NSE advances and declines (extra_data/india) with +450 unchanged (R4 #347: a count of issues, applied unchanged). Measured, the signal differs: MACD above +450 on 9.6% of NSE days (5.8% over the 1999-11 to 2020-02 overlap) against 68.5% of NYSE days over the same overlap. A declared adaptation, not the author's test, UNVERIFIED.",
+    "apsmts_ad_obos_nse"=>"The book used the 10-day total of NYSE advances minus declines with +-2,000 lines. Here the total is built from the real NSE advances and declines (extra_data/india) with the lines unchanged (R4 #347). Measured over 1999-11-09 to 2020-02-10: above +2,000 on 6.0% of NSE days against 42.2% of NYSE days; below -2,000 on 20.8% against 19.6%. A declared adaptation, not the author's test, UNVERIFIED.",
+    "scarms_265_nse"=>"The article bought the S&P 500 on NYSE TRIN of 2.65 or higher. Here the signal is the real NSE TRIN (extra_data/india) with 2.65 unchanged (R4 #347). Measured over 1999-11-09 to 2020-02-10: TRIN at or above 2.65 on 166 NSE days (3.3%) against 140 NYSE days (2.7%). A declared adaptation, not the author's test, UNVERIFIED.",
+    "scwtrin_wtrin10_nse"=>"The article timed the S&P 500 with WTRIN10 built from NYSE advances, declines and volume. Here it is built from the real NSE series (extra_data/india) with the 20 / 80 levels unchanged (R4 #347). Measured over 1999-11-09 to 2020-02-10: WTRIN10 below 20 on 19.7% of NSE days against 18.7% of NYSE days, above 80 on 15.9% against 16.5%. A declared adaptation, not the author's test, UNVERIFIED.",
+    _=>return None})}
 /// R4 #306: the thrust-oscillator buy reads NYSE breadth, so it runs only on the US indices/ETFs in its gate list
 /// (SPX, SPY, DJI, DIA, NDX, QQQ): never on an Indian instrument or a single stock.
 fn chntt_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
@@ -1660,6 +1669,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",WS5_STOCK_LABEL!(),"\""));}
     if def.book=="afactor" && crate::books::afactor::stock_rule(def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
+    if let Some(l)=nse_count_label(def) {json.push_str(&format!(",\"declared_application\":\"{l}\""));}
     if nse_breadth(def) && def.book!="spmt" {json.push_str(&format!(",\"declared_application\":\"{NSE_BREADTH_LABEL}\""));} // R4 #340 (spmt: SPMT_BREADTH_LABEL below)
     if let Some(label)=open_instrument_label(def) {
         // open-all block: a book label already present is kept and the 23 Oct scope sentence is appended to it (one key).
@@ -3290,7 +3300,7 @@ mod tests {
         assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11","vixr_all"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let open=open_all(d) || vix_india(d); // open-all 23 Oct 2026 + VIX India 24 Oct 2026
-            let india=true; // IN1 17 Nov 2026: CVR 11 / vixr_all open on India (exact-tie fix, 1e-9 tolerance in vixr.rs)
+            let india=d.id!="vixr_all"; // CVR 11 open on India (IN1, #347); vixr_all held (wipe-out window not re-derived)
             assert_eq!(policy(d).requirement,if open {"index_etf_or_stock"} else {"declared_index_timing"});
             assert!(check(d,"SPY",false).is_none() && check(d,"SPX",false).is_none(),"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),india,"{}",d.id);

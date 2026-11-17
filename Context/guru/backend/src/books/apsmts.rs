@@ -70,7 +70,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("apsmts_ad_obos_nse", "A-D overbought-oversold oscillator (10-day total, +-2,000) · NSE", "Ch 7 · Advance-decline overbought-oversold indicator", "Long", Live, NSE_AD,
             &["F|10-day moving total of NSE advances minus declines; +-2,000 lines (p.67-68)",
               "E|Buy when it falls below -2,000 then emerges above it (p.67)", "X|Sell when it rises above +2,000 then falls below it (p.67)"],
-            "India mapping: NSE breadth; the +-2,000 lines stay as printed (labelled p.level to vary).",
+            "India mapping (R4 #347): real NSE breadth; the +-2,000 lines stay as printed (a count of issues; p.level varies it). Measured 1999-11-09..2020-02-10: above +2,000 on 6.0% of NSE days vs 42.2% NYSE; below -2,000 on 20.8% vs 19.6%; UNVERIFIED declared adaptation.",
         ),
         d("apsmts_channel", "Calendar channel reverse system on closing levels (25-day)", "Ch 9 · Channel reversal", "Long/Short", Live, &[],
             &["E|\"2. A buy signal is rendered whenever the stock (or stock market average) rises above the highest price level attained within the specified reversal period.\" (p.100)",
