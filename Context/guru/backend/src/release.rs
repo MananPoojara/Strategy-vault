@@ -6,6 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 static KEYED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// Event lists (a complete list of change dates, e.g. RBI repo-rate changes): key -> the as-of date of the list. Between its first
+/// event and the as-of date a day without an event is 0, which is the list's own definition (nothing changed), not a filled price;
+/// before the first event and after the as-of date the series is missing.
+static EVENTS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
+pub fn mark_event(key: &str, asof: &str) { EVENTS.lock().unwrap().insert(key.to_string(), asof.to_string()); }
 pub fn mark(key: &str) { KEYED.lock().unwrap().insert(key.to_string()); }
 fn is(key: &str) -> bool { KEYED.lock().unwrap().contains(key) }
 
@@ -21,6 +26,10 @@ fn days(d: &str) -> i64 {
 
 /// One value per bar date for `key`: exact date match, or for a release-keyed series the latest release on or before the bar.
 pub fn column<'a>(key: &str, dates: impl Iterator<Item = &'a str>, m: &BTreeMap<String, f64>) -> Vec<f64> {
+    if let Some(asof) = EVENTS.lock().unwrap().get(key).cloned() {
+        let first = m.keys().next().cloned().unwrap_or_else(|| "9999-12-31".into());
+        return dates.map(|d| if d < first.as_str() || d > asof.as_str() { f64::NAN } else { m.get(d).copied().unwrap_or(0.0) }).collect();
+    }
     if !is(key) { return dates.map(|d| m.get(d).copied().unwrap_or(f64::NAN)).collect(); }
     let ks: Vec<&String> = m.keys().collect();
     let gap = ks.windows(2).map(|w| days(w[1]) - days(w[0])).max().unwrap_or(0);
@@ -42,5 +51,8 @@ mod tests {
         assert!(v[7].is_nan());
         assert_eq!(column("OTHER", ["2020-01-10", "2020-01-11"].into_iter(), &m)[1].is_nan(), true);
         assert_eq!(days("1970-01-02"), 1);
+        mark_event("T_EVT.A", "2020-01-20");
+        let e = column("T_EVT.A", ["2020-01-09", "2020-01-10", "2020-01-11", "2020-01-17", "2020-01-20", "2020-01-21"].into_iter(), &m);
+        assert!(e[0].is_nan() && e[1] == 1.0 && e[2] == 0.0 && e[3] == 2.0 && e[4] == 0.0 && e[5].is_nan()); // 0 between events, missing outside first..as-of
     }
 }

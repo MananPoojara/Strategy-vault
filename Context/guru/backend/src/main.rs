@@ -250,6 +250,7 @@ fn load_extra(dir: &str) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
         let rel = head.iter().position(|h| h.trim().eq_ignore_ascii_case("releasedate"));
         let named = |n: &str| head.iter().position(|h| h.trim().eq_ignore_ascii_case(n));
         let Some(di) = rel.or(named("date")) else { continue };
+        let asof = named("asof").and_then(|i| lines.clone().next().and_then(|l| parse_csv_fields(l).get(i).and_then(|d| normalize_date(d))));
         let cols: Vec<usize> = (0..head.len()).filter(|&i| i != di && !(rel.is_some() && (Some(i) == named("date") || Some(i) == named("reportdate")))).collect();
         for line in lines {
             let f = parse_csv_fields(line);
@@ -258,6 +259,7 @@ fn load_extra(dir: &str) -> BTreeMap<(String, String), BTreeMap<String, f64>> {
                 if let Some(v) = f.get(i).and_then(|x| parse_csv_number(x).ok()) {
                     let key = if cols.len() == 1 { series.clone() } else { format!("{series}.{}", head[i].trim()) };
                     if rel.is_some() { release::mark(&key); }
+                    if let Some(a) = asof.as_deref() { release::mark_event(&key, a); } // an AsOf column makes the file an event list
                     out.entry((ticker.clone(), key)).or_default().insert(date.clone(), v);
                 }
             }

@@ -1477,6 +1477,12 @@ mod tests {
         let m = extra.get(&("*".to_string(), REPO_SERIES.to_string())).expect("load_extra must yield RBI_REPO_RATE.ChangeBp");
         let mut x = Ctx::new(&rows, &rows, &[]);
         x.extra.insert(REPO_SERIES.into(), crate::release::column(REPO_SERIES, rows.iter().map(|r| r.date.as_str()), m));
+        // readiness on the real data: the whole history is refused with the covered window, the published window is accepted
+        let def = catalogue().into_iter().find(|d| d.id == "as51_repo_rate").unwrap();
+        let first = rows.partition_point(|r| r.date.as_str() < "2003-03-07");
+        let all = crate::readiness::check(&x, &def, 0, rows.len() - 1, &Params::new());
+        let win = crate::readiness::check(&x, &def, first, rows.len() - 1, &Params::new());
+        std::fs::write(format!("{out}.readiness"), format!("from 1995 start: {:?}\nfrom 2003-03-07: {:?}\n", all.map(|i| i.note), win.map(|i| i.note))).unwrap();
         let t = run("as51_repo_rate", &x, 0, rows.len() - 1, &Params::new()).unwrap();
         let mut s = String::new();
         for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\t{}\n", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
