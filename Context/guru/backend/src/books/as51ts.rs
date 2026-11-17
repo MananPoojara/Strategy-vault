@@ -28,7 +28,7 @@ pub const BOOK: &str = "as51ts";
 pub const DAILY: &[&str] = &["as51_ichimoku", "as51_fractal_sma", "as51_donchian_pb", "as51_st_rsi", "as51_rsi_mw"];
 /// Coded minute rules (admitted through intraday_ep::K70 on the four minute tickers).
 pub const INTRA: &[&str] = &["as51_st_pivot", "as51_double_rsi", "as51_ha_psar", "as51_ema_scalp"];
-pub const FUT: &[&str] = &["as51_vwap_sd"]; // lane M1: NIFTY / BANKNIFTY futures minutes with volume
+pub const FUT: &[&str] = &[]; // lane M1: as51_vwap_sd is held (5 details); its code is kept (vwap_sd)
 const FUTMIN: &str = "A|Minute path [convention, intraday_ep6]: orders work on the real 1-minute futures bars: a stop or limit fills at its level, or at the minute's open when the minute opens through it; inside a minute the path runs to the extreme nearer the open first, and a minute whose result depends on that order is counted (#240).";
 pub fn reviewed(id: &str) -> bool { DAILY.contains(&id) }
 
@@ -89,12 +89,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"STOPLOSS may be placed below the Supertrend. The TARGET is at the trader's discretion or exit when the price closes below Supertrend\"; \"Since we are using Supertrend, it acts like the stoploss and the trade is exited at the closing of the candle below the Supertrend\" (p.95); \"since this was an intraday trade we needed to close the trade at 3:15 PM\" (p.97)",
               "A|Read: session-aligned 5-minute bars from the 1-minute file, one continuous series (TradingView); Supertrend = TradingView ta.supertrend(3, 7) on (H+L)/2 with Wilder's ATR; pivots = Traditional from the previous daily bar: P = (H+L+C)/3, R1 = 2P - L, S1 = 2P - H. Setup at a bar's close: close above R1, Supertrend bullish, close above open; then a buy stop at that close for the next bar only (short: the mirror below S1); exit at the close of a bar on which the Supertrend turns bearish (the close below it); square-off at the close of the bar ending 15 minutes before the session close (15:15 NSE, 15:45 US); no new order from that bar on [Declared readings]. The 'discretionary' target is not modelled. NIFTY 50 examples; SPY, SPX and NIFTYBANK are a declared application.", MIN],
             NO_TABLE),
-        def!("as51_vwap_sd", "2.3 VWAP + 2-SD band reversal on NIFTY / BANKNIFTY futures (5-minute): bearish close below the lower band, bullish candle, buy its high; stop its low; target the VWAP", "Long/Short", Status::Live,
-            &["F|\"Apply VWAP, keep only upper and lower band #2 enabled\"; 5-minute chart (p.101-105 [PDF 52-54])",
-              "E|\"Wait for a bearish candle to close below the lower band ... The next move of the price is to pivot with a bullish candle. ENTRY above the high of the green candle\" (p.105 [PDF 54]); sell: \"a bullish candle closes above the upper band ... a bearish candle ... entry below the low of the red candle\" (p.107 [PDF 55])",
-              "X|\"STOPLOSS below the low of the green candle. TARGET 1 is at the VWAP and TARGET 2 is at the upper band. The preferred minimum Risk to Reward ratio is 1:2\" (p.105); sell: stop above the high of the red candle, targets the VWAP and the lower band (p.107)",
-              "A|Adapted (R4 #340, #346 (4)): 5 unstated details counting the band-deviation reading, UNVERIFIED. The book trades NSE stocks and shows no volume source for an index; the vault's NIFTY 50 / NIFTYBANK cash minutes carry no volume, so the rule runs on the NIFTY / BANKNIFTY FUTURES 1-minute series with traded volume staged by lane DI (NIFTY_50.FUT1 2018-12-28 to 2026-11-12, NIFTYBANK.FUT1 2023-09-06 to 2026-08-05; nearest-expiry continuous, no back-adjustment; days with a blank volume are absent; the 15:30 auction minute is dropped; DI/VERIFY.md). Volume is futures volume in units. Built-in definition: TradingView ta.vwap, https://www.tradingview.com/pine-script-reference/v5/#fun_ta.vwap (fetched 17 Nov 2026; text copy authors/data-1117/M1/w/tradingview_ta_vwap.txt). That page names the tuple [vwap, upper, lower] with an anchor and stdev_mult but prints NO formula; the support article (same file) gives VWAP = cumulative(hlc3 x volume) / cumulative(volume), source hlc3, session anchor. The band deviation formula is NOT printed by either source: declared reading here = the volume-weighted standard deviation of the bar hlc3 about the VWAP, sqrt(max(sum(v x hlc3^2) / sum(v) - VWAP^2, 0)), band = VWAP +/- mult x that, mult 2 (the article's 'standard deviations of the VWAP values' is ambiguous). Readings: (1) 'the next move' = the bar immediately after the bearish bar must be bullish (close above open), else no setup; (2) the buy stop at that bullish bar's high works on the following bar only (decision #273) with the stop at its low; (3) the target is fixed at the signal bar's close: p.tgt = 1 the VWAP (default, 'Target 1'), 2 the opposite band ('Target 2'); the two targets are not scaled out; an order whose target is not beyond its entry level is not placed; (4) the 'preferred' 1:2 ratio is not a filter. Out at the close of the bar ending 15 minutes before the session close (15:15). Short = mirror. Minute path as MIN below. NIFTY 50 and NIFTYBANK only (futures); cash-index shorts are not involved, the shorts are futures shorts.", FUTMIN],
-            NO_TABLE),
+        held!("as51_vwap_sd", "2.3 VWAP + 2-SD band reversal (5-minute)", "E|Bearish close below the lower 2-SD VWAP band, next candle bullish: buy above its high; stop its low; targets VWAP and the upper band (p.97-107 [PDF 50-55])",
+            "Held (lane M1, 17 Nov 2026, lead ruling under #339/#343): the rule is complete and the code is kept (vwap_sd, run on the DI NIFTY / BANKNIFTY futures minutes with volume: pandas reference 0 mismatches over 8,258 trades), but it needs 5 unstated details, over the cap of 4: the next-bar reading, the one-bar buy stop, the fixed target level, the unfiltered 1:2 ratio and the band-deviation definition. The book (p.101) only says the VWAP comes with 'upper and lower range of standard deviation' and prints no formula, and TradingView's ta.vwap page prints none either (text copy authors/data-1117/M1/w/tradingview_ta_vwap.txt), so the volume-weighted deviation would be our reading and #343 counts indicator definitions. Un-hold if a source prints the band formula."),
         data!("as51_rsi_vo", "2.4 RSI + Volume Oscillator (5-minute)", "E|Volume Oscillator(5,10) near -30% with RSI(14) at 30 in an uptrend dip: buy; stop the swing low; target RSI overbought (p.107-115 [PDF 55-59])",
             "Held (decision #268): needs volume data (the vault's 1-min bar files carry none), and 'near -30%', 'in tandem', the trend and the swing low are undefined (p.107-115)."),
         held!("as51_pivot_pullback", "2.5 Pivot-point pullback (5-minute)", "E|Pullback without breaking a pivot = reversal trade, after breaking it = continuation; bullish candle after the pullback; stop its low; target the next pivot (p.115-125 [PDF 59-64])",
@@ -257,7 +253,6 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "as51_rsi_mw" => vec![pd("lo", "Oversold (30)", 30., 5., 50., 1.), pd("hi", "Overbought (70)", 70., 50., 95., 1.),
             pd("mw", "1 = the M / W shape, two re-crosses (figure p.249); 0 = every re-cross of 30 / 70", 1., 0., 1., 1.)],
         "as51_st_pivot" => vec![pd("atr", "Supertrend ATR length (7)", 7., 2., 50., 1.), pd("fac", "Supertrend factor (3)", 3., 0.5, 10., 0.5)],
-        "as51_vwap_sd" => vec![pd("mult", "Band width: standard deviations (2)", 2., 1., 3., 0.5), pd("tgt", "Target: 1 = VWAP, 2 = opposite band", 1., 1., 2., 1.)],
         "as51_double_rsi" => vec![pd("lo", "5-minute oversold (30)", 30., 5., 50., 1.), pd("hi", "5-minute overbought (70)", 70., 50., 95., 1.)],
         "as51_ha_psar" => vec![pd("rr", "Target: risk multiple (1:2)", 2., 0.5, 10., 0.5)],
         "as51_ema_scalp" => vec![pd("ema", "EMA length (5; the book: 5 or 7)", 5., 2., 50., 1.), pd("rr", "Target: risk multiple (1:3)", 3., 0.5, 10., 0.5)],
@@ -299,7 +294,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "as51_rsi_mw" => rsi_mw(x, from, to, g("lo"), g("hi"), g("mw") >= 0.5),
         "as51_st_pivot" => st_pivot(x, from, to, n("atr"), g("fac")),
         "as51_double_rsi" => double_rsi(x, from, to, g("lo"), g("hi")),
-        "as51_vwap_sd" => vwap_sd(x, from, to, g("mult"), g("tgt") >= 1.5),
         "as51_ha_psar" => ha_psar(x, from, to, g("rr")),
         _ => ema_scalp(x, from, to, n("ema"), g("rr")),
     })
@@ -714,7 +708,8 @@ pub fn vwap_bands(v: &[(bool, f64, f64, f64, f64)], mult: f64) -> Vec<(f64, f64,
     }).collect()
 }
 
-fn vwap_sd(x: &Ctx, from: usize, to: usize, mult: f64, far: bool) -> Vec<Trade> {
+#[allow(dead_code)] // held (5 details): hand-run only, from the m1_dump test
+pub fn vwap_sd(x: &Ctx, from: usize, to: usize, mult: f64, far: bool) -> Vec<Trade> {
     let (v, q) = series_fut(x, from, to, 5);
     let vb = vwap_bands(&v.iter().zip(&q).map(|(b, &q)| (b.first, b.h, b.l, b.c, q)).collect::<Vec<_>>(), mult);
     let cut = |k: usize| v[k].e >= v[k].close - 15;
@@ -1438,7 +1433,7 @@ mod tests {
     fn all_51_cards_and_daily_rules_run() {
         let cat = catalogue();
         assert_eq!(cat.len(), 51);
-        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), DAILY.len() + INTRA.len() + FUT.len() + OPT_IDS.len()); // lane M1: + as51_vwap_sd
+        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), DAILY.len() + INTRA.len() + FUT.len() + OPT_IDS.len());
         for d in &cat { assert!(family_of(d.id).is_some() && (d.status == Status::Live) == params(d.id).is_some(), "{}", d.id); }
         let r = rows(900);
         let x = Ctx::new(&r, &r, &[]);
