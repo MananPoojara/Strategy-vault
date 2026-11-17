@@ -1167,13 +1167,13 @@ mod vix_india_tests { // VIX India block (24 Oct 2026)
         for (book,id) in VIX_INDIA_RULES { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=all.iter().find(|d|d.id==*id&&d.book==*book).unwrap_or_else(||panic!("{book}:{id}"));
             assert!(vix_india(d) && (d.needs_vix || !d.needs_series.is_empty()));
-            let held_in=*id=="vixr_all"; // CVR 11 open on India (IN1, #347); vixr_all held (wipe-out window not re-derived)
-            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert_eq!(pol(d,t,false).is_none(),!(held_in&&t.starts_with("NIFTY")),"{id} {t}");}
+            let held_in=*id=="vixr_all"; // CVR 11 open on India (IN1, #347); vixr_all opened on the three indices by lane N1 (stocks held)
+            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert!(pol(d,t,false).is_none(),"{id} {t}");}
             assert_eq!(check_native(d,"RELIANCE",&crate::baskets::NativeEvidence::india_test_fixture()).is_none(),!held_in,"{id}");
             assert!(check_native(d,"AAPL",&crate::baskets::NativeEvidence::us_test_fixture()).is_none(),"{id}");
             assert_eq!(crate::instrument_policy::open_instrument_label(d),Some(crate::instrument_policy::VIX_INDIA_LABEL));
         }
-        assert!(pol(all.iter().find(|d|d.id=="vixr_cvr11").unwrap(),"NIFTY 50",false).is_none());assert_eq!(pol(all.iter().find(|d|d.id=="vixr_all").unwrap(),"NIFTY 50",false).unwrap().status,"not_testable");
+        assert!(pol(all.iter().find(|d|d.id=="vixr_cvr11").unwrap(),"NIFTY 50",false).is_none());assert!(pol(all.iter().find(|d|d.id=="vixr_all").unwrap(),"NIFTY 50",false).is_none());
     }
 }
 
