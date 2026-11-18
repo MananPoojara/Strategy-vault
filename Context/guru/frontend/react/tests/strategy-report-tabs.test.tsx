@@ -14,7 +14,7 @@ const markup = (signals = true) => `
   <section class="box"><div class="box-h">Yearly returns</div><div id="c-yr"></div></section></div>
   <section class="box" data-benchmark>Book vs benchmark</section><section class="box" data-detailed>Detailed statistics</section>
   <section class="box"><div class="box-h">Monthly returns</div><select id="heat-palette"><option value="green">Green / red</option><option value="blue">Blue</option></select><div id="heatbox"><table><tbody><tr><td>4.12</td></tr></tbody></table></div></section>
-  <section class="box" data-tradesheet><div class="box-h">Tradesheet</div><button data-export="trades">Excel</button><div class="tlog"><table><tbody><tr><td>RELIANCE</td><td>2026-01-02</td><td>1.27%</td></tr></tbody></table></div></section>`;
+  <section class="box" data-tradesheet><div class="box-h">Tradelist</div><button data-export="trades">Excel</button><div class="tlog"><table><tbody><tr><td>RELIANCE</td><td>2026-01-02</td><td>1.27%</td></tr></tbody></table></div></section>`;
 let root: Root | undefined, host: HTMLDivElement;
 afterEach(async () => {
   if(root) await act(async () => root!.unmount());
@@ -36,7 +36,7 @@ const click=async(id:string)=>act(async()=>tab(id).click());
 it('groups the six existing views in the equity card and keeps rules, benchmark and statistics outside',async()=>{
   await mount();
   const report=host.querySelector('[data-strategy-report]')!;
-  expect([...host.querySelectorAll('[role="tab"]')].map(n=>n.textContent)).toEqual(['Equity Curve','Drawdown','Monthly Returns','Yearly Returns','Price & Signals','Positions']);
+  expect([...host.querySelectorAll('[role="tab"]')].map(n=>n.textContent)).toEqual(['Equity Curve','Drawdown','Monthly Returns','Yearly Returns','Price & Signals','Tradelist']);
   expect(report.tagName).toBe('SECTION');expect(report.classList.contains('box')).toBe(true);
   expect(report.querySelectorAll('[role="tabpanel"]')).toHaveLength(6);
   expect(host.querySelector('.two')).toBeNull();

@@ -7,9 +7,10 @@ const runtime = readFileSync('src/compat/runtime.js', 'utf8');
 const VaultReport = createRequire(import.meta.url)('../../report-data.js');
 const part = (from: string, to: string) => runtime.slice(runtime.indexOf(from), runtime.indexOf(to));
 const rows = runtime.slice(runtime.indexOf(' const tradeHeadersFor='), runtime.indexOf('\n', runtime.indexOf(' const tradeRowsFor=')));
-const presenter = part('// Tradesheet number columns', ' function equityNavigator(');
+const presenter = part('// Tradelist columns', ' function equityNavigator(');
+import * as fmt from '../src/services/tradelist-format';
 const deps = {
-  VaultReport, sourceTradeHeaders: (h: string[]) => h, sourceAccountCopy: () => ({tradeNote: ''}), tradeExitCheckMarkup: () => '',
+  ...fmt,   VaultReport, sourceTradeHeaders: (h: string[]) => h, sourceAccountCopy: () => ({tradeNote: ''}), tradeExitCheckMarkup: () => '',
   escText: (v: unknown) => String(v ?? ''), label: (n: number) => String(n), csvSafeRows: (r: unknown[][]) => r,
 };
 const ui = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps;${rows}${presenter};return {tradeHTML,tradeTableHTML};`)(deps);
@@ -18,13 +19,13 @@ const page = (offset: number, n: number, total: number) => ({trades: Array.from(
 
 it('a small run keeps its tradesheet exactly as before: every row, no pager, no page note', () => {
   const html = ui.tradeHTML({trades: Array.from({length: 12}, (_, i) => trade(i))});
-  expect(html).toContain('12 positions · newest first');
+  expect(html).toContain('12 trades · newest first');
   expect(html).not.toMatch(/data-trade-page|trades_page|loads 1,000/);
 });
 
 it('a summary-only run states the true total and says what the page covers', () => {
   const html = ui.tradeHTML({trades: [], trades_page: {offset: 0, limit: 0, total: 79123, cap: 20000}});
-  expect(html).toContain('79123 positions · loading the newest page');
+  expect(html).toContain('79123 trades · loading the newest page');
   expect(html).toContain('This run has 79,123 trades, more than the 20,000 one response carries');
   expect(html).toContain('Statistics, equity, drawdown and calendar returns use every trade');
   expect(html).not.toContain('data-trade-page="');
