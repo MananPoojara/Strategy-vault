@@ -207,9 +207,9 @@ mod chaikin_candidate_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
-    if def.book=="apta" && def.id=="apta_nhnl" {
+    if def.book=="apta" && matches!(def.id,"apta_nhnl"|"apta_nhnl_nse") {
         if let Some(note)=books::apta::nhnl_params_issue(p) {return issue("not_testable",note);}
-        if let Some(note)=books::apta::nhnl_input_issue(ctx,from,to) {return issue("needs_data",note);}
+        if let Some(note)=books::apta::nhnl_input_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
     }
     if def.book == books::bstar_candidate::BOOK && def.id == books::bstar_candidate::ID {
         if !p.is_empty() { return issue("not_testable", "This source candidate accepts no alternate settings."); }
