@@ -171,6 +171,12 @@ mod adr191_gap_tests {
         ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),lead);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
         assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
         assert!(check(&ctx,&get("kdta_adr191"),10,99,&Params::new()).is_none());
+        // trailing missing data (after the series' last value) is exempt too: the run ends there via auto-end, nothing is filled
+        let mut tail=vec![2.0;100];for v in tail.iter_mut().skip(90) {*v=f64::NAN;}
+        ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),tail);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).is_none());
+        assert!(check(&ctx,&get("kdta_adline"),0,99,&Params::new()).is_some());
+        assert_eq!(auto_end(&ctx,&get("kdta_adr191"),0,99,&Params::new()).0,89);
     }
 }
 
