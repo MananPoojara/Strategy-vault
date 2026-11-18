@@ -2828,6 +2828,15 @@ mod tests {
                 other_path += 1;
                 continue;
             }
+            if d.id == "apta_nhnl_nse" {
+                // lane Q3: admitted on the NIFTY contexts, but the NSE_NHNL series is installed by the lead (not in the test price file):
+                // with no series there is no run and readiness says needs_data, never a fill.
+                assert!(instrument_policy::check(d,"NIFTY 50",false).is_none());
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                assert_eq!(readiness::check(&ctx,d,20,rows.len()-1,&Params::new()).unwrap().status,"needs_data");
+                other_path += 1;
+                continue;
+            }
             if d.id == "apta_nhnl" {
                 // This source-specific NYSE breadth method is admitted only on SPX,
                 // not on this Nifty context without count inputs. Its SPX ledger
