@@ -601,6 +601,18 @@ mod tests {
         assert_eq!(civil(dnum("2001-12-31")), (2001, 12, 31));
     }
     #[test]
+    fn adr191_ten_day_ratio_crossing_hand_checked() {
+        // lane Q5a: advances 1 / declines 1 except bars 30.. where advances = 5: the 10-day ratio (sum A / sum D) is 1.4 at bar 30,
+        // 1.8 at bar 31 and 2.2 at bar 32 -> first cross above 1.91 at bar 32; hold 20 bars -> exit at the close of bar 52.
+        let r = ctx_rows(&[(100.0, 101.0, 99.0, 100.0); 80], dnum("2020-01-06"));
+        let mut x = Ctx::new(&r, &[], &[]);
+        x.extra.insert("NYSE_ADV_DEC.Advances".into(), (0..80).map(|i| if i >= 30 { 5.0 } else { 1.0 }).collect());
+        x.extra.insert("NYSE_ADV_DEC.Declines".into(), vec![1.0; 80]);
+        let p: Params = [("hold", 20.0)].into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        let t = run("kdta_adr191", &x, 0, 79, &p).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(32, 52, false)]);
+    }
+    #[test]
     fn plurality_band_breakout_and_time_stop_hand_checked() {
         // lane R2A (R4 #297): sum 1, band 3 bars x 1 SD, time stop 2. |A-D| = 1,1,1,1,10,1,1,...: bar 4 closes above the band
         // (mean 4, SD 4.24 -> upper 8.24) after bar 3 sat on it -> buy the close of 4; time stop -> sell the close of 6.
