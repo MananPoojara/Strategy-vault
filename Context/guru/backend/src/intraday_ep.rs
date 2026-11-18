@@ -93,9 +93,9 @@ pub const US: &[&str] = &["jmls_ls_model"];
 /// Lane M1 (17 Nov 2026, R4 #340 / #346 (4)): rules on the NIFTY / BANKNIFTY futures 1-minute series with volume (Ctx::fut, lane DI): NIFTY 50 and NIFTYBANK only.
 pub const M1: &[&str] = &["jbudt_volspike"];
 pub fn m1(id: &str) -> bool { M1.contains(&id) }
-pub fn id(id: &str) -> bool { M1.contains(&id) || IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) || PA1.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) || CV4_US.contains(&id) }
-pub fn us_id(id: &str) -> bool { US.contains(&id) || CV4_US.contains(&id) }
-pub fn book(b: &str) -> bool { matches!(b, "stkch" | "atm03" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts" | "jr_tbtm" | "scchem" | "sckzthr" | "clomw" | "lpgap" | "dmpoly") }
+pub fn id(id: &str) -> bool { M1.contains(&id) || IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) || PA1.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) }
+pub fn us_id(id: &str) -> bool { US.contains(&id) }
+pub fn book(b: &str) -> bool { matches!(b, "stkch" | "atm03" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts" | "jr_tbtm" | "scchem" | "sckzthr" | "clomw" | "lpgap") }
 // ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
 /// No fixed amount: all four minute tickers. Ford's three NinjaTrader systems on 60-minute bars (EP2) and the STAD Vol 3
 /// inside-day breakout failure on 30-minute bars with a daily Data2 (EP1).
@@ -165,10 +165,6 @@ pub const K70: &[&str] = crate::books::as51ts::INTRA;
 /// Rising Lows and the three-day extreme breakout, day trades on 5-minute bars with the violation-method exit.
 pub const K80: &[&str] = crate::books::jrtbtm::INTRA;
 // ---- end lane K80 block
-// ---- lane CV4 block (19 Nov 2026; authors/convert-1118/I-low; books/dmpoly.rs)
-/// Meyers 4th-order polynomial on 5-minute S&P bars (the article trades the S&P 500 futures): SPX and SPY only.
-pub const CV4_US: &[&str] = crate::books::dmpoly::INTRA;
-// ---- end lane CV4 block
 // ---- lane PA1 block (13 Nov 2026; authors/pa1/FINAL.md; books/scchem.rs)
 /// No fixed amount: all four minute tickers. Chan's S&P e-mini 5-minute stochastic day trade on the reduced session (S&C V.21:8).
 pub const PA1: &[&str] = crate::books::scchem::INTRA;
