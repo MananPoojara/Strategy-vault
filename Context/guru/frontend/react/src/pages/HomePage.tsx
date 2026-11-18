@@ -5,9 +5,8 @@ import { BookCard } from "../components/BookCard";
 import { Pagination } from "../components/Pagination";
 import { DataCoverageNotice } from "../components/DataCoverageNotice";
 import { LivingBook } from "../components/LivingBook";
-import { shareReview as share, shareFiles as files } from "../services/source-review-data";
+import { shareReview as share } from "../services/source-review-data";
 import { CLEAR_ALL } from "../services/author-filters";
-const n = (v: number) => v.toLocaleString("en-IN");
 const shareAsOf = new Date(share.asOf).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
   const model = snapshot.home;
@@ -45,28 +44,6 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           </div>
         ))}
       </dl>
-      <p className="library-count-note">
-        These estimates cover trading sources identified in the research share. Earlier sources were checked from their first pages; some were classified from names and notes. Credited authors and works were merged where identified as the same person or work, including copies, editions and translations.
-        The share also holds {share.articles} articles, {share.courseManuals} course manuals, {share.codePackages} system code packages, {share.magazinesAndNewsletters} magazines and newsletters, {share.videoCourses} video courses and {share.otherSources} other sources.
-        {model.libraryTotals ? ` Strategies so far come from ${model.libraryTotals.books} of these books and ${model.libraryTotals.otherSources} other sources.` : ""}{" "}
-        Total Strategies includes catalogued entries awaiting review or conversion, grouping parameter versions within each book.
-        Backtested counts strategies with available computed results on a supported instrument,
-        across India and US; it does not certify the original book study.
-      </p>
-      <section className="share-files" aria-labelledby="share-files-h">
-        <h2 id="share-files-h" className="section-h">Research share files</h2>
-        <dl className="lstrip share-files-strip">
-          {([["Authors", files.authors], ["Book files", files.books], ["Articles", files.articles], ["Research papers", files.papers], ["Audio", files.audio], ["Video", files.video], ["Name-size groups", files.unique]] as const).map(([label, value]) => (
-            <div key={label}><dt>{label}</dt><dd>{n(value)}</dd></div>
-          ))}
-        </dl>
-        <p className="library-count-note">
-          Research share files listed on {new Date(files.asOf).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}: {n(files.found)} files found, {n(files.duplicates)} extra files with the same name and size grouped together, {n(files.unique)} name-size groups ({files.sizeTB} TB).
-          The other {n(files.other)} files support the material above: {n(files.images)} images and {n(files.webPages)} web pages (mostly books and courses saved as web pages), {n(files.tradingCode)} trading software files, {n(files.data)} spreadsheets and data, {n(files.programs)} programs and installers, {n(files.archives)} archives, {n(files.text)} text notes, {n(files.blogs)} blog files and {n(files.noExtension + files.unidentified)} files of other types.
-          The author estimate includes {n(files.authors)} names on these files (co-authors counted separately, known spelling variants merged); {n(files.companies)} companies and websites are not counted as authors. Name and size matches do not establish identical contents.
-          These are all-subject file counts; one book can be several files, so they differ from the trading estimates above.
-        </p>
-      </section>
       {!model.progressCurrent ? <p className="rnote" role="status">Backtest progress is being checked against the current catalogue. No completion is inferred from enabled code.</p> : null}
       <LibraryControls model={model} state={snapshot.state} />
       <DataCoverageNotice issues={model.summaryIssues} />
