@@ -6,7 +6,7 @@ export const REPORT_TABS = [
   {id: "monthly", label: "Monthly Returns", anchor: "heatbox"},
   {id: "yearly", label: "Yearly Returns", anchor: "c-yr"},
   {id: "signals", label: "Price & Signals", anchor: "c-px"},
-  {id: "positions", label: "Positions", anchor: null},
+  {id: "positions", label: "Tradelist", anchor: null},
 ] as const;
 export type ReportTabId = typeof REPORT_TABS[number]["id"];
 export interface ReportMarkup {nodes: DOMNode[]; tabs: ReportTabId[]}

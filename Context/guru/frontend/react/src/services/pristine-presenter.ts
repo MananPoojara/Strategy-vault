@@ -66,7 +66,7 @@ export function pristinePresentation(data: unknown, view: PristineView) {
 export type PristinePresentation = ReturnType<typeof pristinePresentation>;
 export function pristineTradeTable(data: unknown, view: PristineView): PristineTable {
   const report=paired(data,view);
-  return table('Positions', ['Symbol','Signal date','Entry date','Entry phase','Entry price','Exit / mark date','Exit / mark phase','Exit / mark price','Open','Net return','Gross return','Fee deduction','Slippage deduction','Calendar days held','Observed sessions','Paid sides','Estimated exit sides','Net entry allocation (unit)','Net contribution (unit)'],
+  return table('Tradelist', ['Symbol','Signal date','Entry date','Entry phase','Entry price','Exit / mark date','Exit / mark phase','Exit / mark price','Open','Net return','Gross return','Fee deduction','Slippage deduction','Calendar days held','Observed sessions','Paid sides','Estimated exit sides','Net entry allocation (unit)','Net contribution (unit)'],
     report.spans.map((span,i)=>{const days=datesFor(report,span),t=report.trade_returns[i],x=report.trade_supplements[i];return [report.symbol,report.rows[span.signal_i-report.from_source_index].date,days.entry,span.entry_phase,span.entry_price,days.exit,span.exit_or_mark_phase,span.exit_or_mark_price,span.open,t.net_return,t.gross_return,t.fee_return,t.slippage_return,x.calendar_days_held,x.observed_exposure_sessions,x.paid_sides,x.estimated_exit_sides,t.entry_allocation,t.net_contribution];}),[9,10,11,12]);
 }
 /** Full raw values are exported; formatting never feeds a return calculation. */
