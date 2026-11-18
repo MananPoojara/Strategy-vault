@@ -97,8 +97,14 @@ pub(crate) fn run_sys_path(x: &Ctx, from: usize, to: usize, s: &Sys, minute: boo
                 if st.is_finite() && !(lv.is_finite() && (lv - st) * p.dir > 0.) { lv = st; }
                 if lv.is_finite() && ((p.dir > 0. && x.l[i] <= lv) || (p.dir < 0. && x.h[i] >= lv)) {
                     let px = if p.dir > 0. { x.o[i].min(lv) } else { x.o[i].max(lv) };
-                    let why = if lv == st { "Initial stop" } else { "Trailing/exit stop" };
-                    out.push(done(pos.take().unwrap(), i, px, why, i));
+                    // R4 #338: an opposite stop entry on the same side of the open that the price reaches before this stop
+                    // reverses the position first (it fills below on its own level); the held stop is then moot.
+                    let entry_first = pend.iter().flatten().any(|&(d, k)| d == -p.dir && matches!(k, Kind::Stop(e)
+                        if ((d > 0. && x.h[i] >= e) || (d < 0. && x.l[i] <= e)) && ((if d > 0. { x.o[i].max(e) } else { x.o[i].min(e) }) - x.o[i]).abs() < (px - x.o[i]).abs()));
+                    if !entry_first {
+                        let why = if lv == st { "Initial stop" } else { "Trailing/exit stop" };
+                        out.push(done(pos.take().unwrap(), i, px, why, i));
+                    }
                 }
             }
             // stop entries; if both sides trigger on one bar, the level nearer the open is taken first
