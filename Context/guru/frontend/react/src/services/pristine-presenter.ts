@@ -2,6 +2,7 @@ import {
   isValidatedPristinePair, type PristineView, type PristineReport,
   type PristineStatMap, type PristineSpan,
 } from './pristine-report';
+import {TRADE_COLS,tradelistCell,tradelistClass} from './tradelist-format';
 
 export type PristineCell = string | number | boolean | null;
 export interface PristineTable {
@@ -68,6 +69,15 @@ export function pristineTradeTable(data: unknown, view: PristineView): PristineT
   const report=paired(data,view);
   return table('Tradelist', ['Symbol','Signal date','Entry date','Entry phase','Entry price','Exit / mark date','Exit / mark phase','Exit / mark price','Open','Net return','Gross return','Fee deduction','Slippage deduction','Calendar days held','Observed sessions','Paid sides','Estimated exit sides','Net entry allocation (unit)','Net contribution (unit)'],
     report.spans.map((span,i)=>{const days=datesFor(report,span),t=report.trade_returns[i],x=report.trade_supplements[i];return [report.symbol,report.rows[span.signal_i-report.from_source_index].date,days.entry,span.entry_phase,span.entry_price,days.exit,span.exit_or_mark_phase,span.exit_or_mark_price,span.open,t.net_return,t.gross_return,t.fee_return,t.slippage_return,x.calendar_days_held,x.observed_exposure_sessions,x.paid_sides,x.estimated_exit_sides,t.entry_allocation,t.net_contribution];}),[9,10,11,12]);
+}
+/** On-screen Tradelist: the same 17 columns and formats as every other report (tradelist-format.ts). The pristine engine supplies no
+ * direction, points, money, MAE or MFE, so those cells stay '—'; nothing is computed. Exports keep pristineTradeTable's full rows. */
+export function pristineTradelist(data: unknown, view: PristineView) {
+  const report=paired(data,view);
+  return {headers: TRADE_COLS as readonly string[], classes: (i: number, raw: unknown) => tradelistClass(i, raw),
+    rows: report.spans.map((span,i)=>{const days=datesFor(report,span),t=report.trade_returns[i],x=report.trade_supplements[i];
+      const raw=[report.symbol,null,days.entry,span.entry_price,span.open?'Open':days.exit,span.exit_or_mark_price,null,null,t.gross_return,x.calendar_days_held,null,null,null,t.net_return,null,null,span.exit_or_mark_phase];
+      return raw.map((v,j)=>({raw:v,text:tradelistCell(j,v)}));}).reverse()};
 }
 /** Full raw values are exported; formatting never feeds a return calculation. */
 export function pristineWorkbook(data: unknown, view: PristineView): readonly PristineTable[] {

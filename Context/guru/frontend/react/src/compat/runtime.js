@@ -15,6 +15,7 @@ import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,s
 import {BANDY_SIMPLE_METHOD,simpleInstrumentContext} from '../services/bandy-source-account';
 import {unitExposureMethod,unitExposureInstrumentContext,validatedUnitExposureReport} from '../services/unit-exposure-report';
 import {PRISTINE_BOOK,PRISTINE_RESEARCH_MODE,pristineMethod,pristineInstrumentContext,validatedPristineReport,isValidatedPristinePair} from '../services/pristine-report';
+import {TRADE_COLS,TS_NUM,numMinus,tradelistCell,tradelistClass} from '../services/tradelist-format';
 import {pristineWorkbook,pristineTradeTable} from '../services/pristine-presenter';
 import {UNIT_VISUAL_BASIS,UNIT_CLOSED_BASIS,unitExposureTables,unitExposureMetadata,unitPriceSignals} from '../services/unit-exposure-presenter';
 import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check';
@@ -127,30 +128,17 @@ window.VaultUI=(()=>{
  function benchmarkFor(d,px,unit=d.unit_exposure_report){const from=d.dates?.[0],to=d.dates?.at(-1);if(unit)return {b:{...d.benchmark_stats,from,to},note:null};const b=VaultReport.benchmark(px,from,to);if(!b)return {b:null,note:'Benchmark price coverage is missing.'};const gap=(a,c)=>Math.abs(Date.parse(a)-Date.parse(c))/864e5;/* ponytail: 7-day tolerance = weekend plus holidays; a benchmark that lags longer is still withheld */if(gap(b.from,from)>7||gap(b.to,to)>7)return {b:null,note:`Benchmark prices cover ${b.from} to ${b.to}, the strategy ${from} to ${to}; benchmark values are withheld so both columns cover the same dates.`};return {b,note:null};}
  function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const {b,note}=benchmarkFor(d,px),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:escText(note)} Book-reported figures remain separate reference claims.</p><table class="tbl stat-table"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${numMinus(label(d.stats[key],type))}</td><td class="n">${numMinus(label(b?.[key],type))}</td></tr>`).join('')}</tbody></table></section>`;}
 
-// Tradesheet number columns (display only; CSV/Excel exports are unchanged): right-aligned tabular figures and a true minus sign.
-const TS_NUM=[3,5,6,7,8,9,10,11,12,13,14,15], TS_SIGNED=[6,8,13,14,15], TS_DATE=[2,4];
-const tsMinus=(t,i)=>TS_NUM.includes(i)?String(t).replace(/^-/,'\u2212'):t;
-const numMinus=t=>String(t).replace(/^-/,'\u2212');
+// Tradelist columns and display formats are shared with the pristine report: services/tradelist-format.ts.
  // Lane E6: a run over the engine's trade cap arrives summary-only (trades_page); its tradesheet loads one page at a time.
  const TRADE_PAGE=1000;
  function tradePager(d){const p=d.trades_page;if(!p)return '';const n=d.trades.length,newer=p.offset+n<p.total,older=p.offset>0;
   return `${n?`<button type="button" class="dbtn sm" data-trade-page="${Math.min(p.offset+TRADE_PAGE,Math.max(0,p.total-TRADE_PAGE))}" ${newer?'':'disabled'}>Newer</button><button type="button" class="dbtn sm" data-trade-page="${Math.max(0,p.offset-TRADE_PAGE)}" ${older?'':'disabled'}>Older</button>`:''}`;}
  function tradePageNote(d){const p=d.trades_page;return p?`<p class="rnote" data-trade-page-note>This run has ${p.total.toLocaleString('en-US')} trades, more than the ${p.cap.toLocaleString('en-US')} one response carries, so the trade list loads ${TRADE_PAGE.toLocaleString('en-US')} at a time. Statistics, equity, drawdown and calendar returns use every trade; this table and its Excel/CSV downloads cover only the loaded page, and the price chart draws no trade markers.</p>`:'';}
  function tradeHTML(d){const p=d.trades_page,n=(d.trades||[]).length;return `<section class="box" data-tradesheet><div class="box-h">Tradelist <span class="legend"><small>${p?`${p.total} trades · ${n?`showing ${p.offset+1}–${p.offset+n}`:'loading the newest page'}`:`${n} trades`} · newest first</small>${tradePager(d)}<button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div>${tradePageNote(d)}<div class="tlog" data-tradesheet-table></div></section>`;}
- // Display-only formatters (exports keep VaultReport's raw rows). Money shows only when the run supplied it, else an em dash.
- const tsPct=v=>typeof v==='number'?numMinus((v*100).toFixed(1)+'%'):'—';
- const tsPx=v=>typeof v==='number'?v.toFixed(2):'—';
- const tsDate=v=>String(v??'').replace(/^(\d{2})-(\d{2})-(\d{4})$/,'$1/$2/$3');
- const tsCap=v=>{const s=String(v||'').toLowerCase();return s.charAt(0).toUpperCase()+s.slice(1);};
- function tsMoney(v,us){if(typeof v!=='number'||!Number.isFinite(v))return '—';const a=Math.abs(v),sign=v<0?'\u2212':'';
-  if(us)return sign+'$'+Math.round(a).toLocaleString('en-US');
-  const u=a>=1e7?[a/1e7,' Cr']:a>=1e5?[a/1e5,' L']:null;
-  return sign+'\u20b9'+(u?u[0].toFixed(1)+u[1]:Math.round(a).toLocaleString('en-IN'));}
- const TRADE_COLS=['Symbol','Signal','Entry Date','Entry Price','Exit Date','Exit Price','Pts','Gross P&L','Gross P&L %','Days Held','Taxes','Slippage','Net P&L','Net P&L %','MAE','MFE','Exit Reason'];
  // The rows are built when the Tradelist tab opens, or for a PDF or print. Exports read the run data, never this table.
  function tradeTableHTML(d,tk){const rows=tradeRowsFor(d,tk),us=typeof isUS==='function'&&isUS();
-  const cell=(row,i,t)=>{const v=row[i];switch(i){case 1:return tsCap(v);case 2:case 4:return tsDate(v);case 3:case 5:case 6:return tsPx(v);case 7:case 10:case 12:return tsMoney(v,us);case 11:return tsMoney(t.accounting?.slippage,us);case 8:case 13:case 14:case 15:return tsPct(v);case 9:return typeof v==='number'?v.toFixed(0):'—';default:return escText(v);}};
-  return `<table class="tbl tl" id="tradesheet"><thead><tr>${TRADE_COLS.map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>{const t=d.trades[tradeIndex];return `<tr>${TRADE_COLS.map((_,i)=>`<td class="${TS_NUM.includes(i)?'n'+(TS_SIGNED.includes(i)&&typeof row[i]==='number'?(row[i]<0?' neg':' pos'):''):TS_DATE.includes(i)?'d':''}">${cell(row,i,t)}${i===16?tradeExitCheckMarkup(t):''}</td>`).join('')}</tr>`;}).reverse().join('')}</tbody></table>`;}
+  const cell=(row,i,t)=>escText(tradelistCell(i,i===11?t.accounting?.slippage:row[i],us));
+  return `<table class="tbl tl" id="tradesheet"><thead><tr>${TRADE_COLS.map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>{const t=d.trades[tradeIndex];return `<tr>${TRADE_COLS.map((_,i)=>`<td class="${tradelistClass(i,row[i])}">${cell(row,i,t)}${i===16?tradeExitCheckMarkup(t):''}</td>`).join('')}</tr>`;}).reverse().join('')}</tbody></table>`;}
  function equityNavigator(ch,d){
   // Range brush: one window over a mini equity line; drag the window to move, drag either edge to resize, double-click for all.
   const box=document.getElementById('equity-navigator');if(!box)return;const win=box.querySelector('.rb-win'),out=box.querySelector('output'),line=box.querySelector('polyline'),n=d.dates.length;

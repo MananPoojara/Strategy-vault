@@ -7,9 +7,10 @@ const runtime = readFileSync('src/compat/runtime.js', 'utf8');
 const VaultReport = createRequire(import.meta.url)('../../report-data.js');
 const part = (from: string, to: string) => runtime.slice(runtime.indexOf(from), runtime.indexOf(to));
 const rows = runtime.slice(runtime.indexOf(' const tradeHeadersFor='), runtime.indexOf('\n', runtime.indexOf(' const tradeRowsFor=')));
-const presenter = part('// Tradesheet number columns', ' function equityNavigator(');
+const presenter = part('// Tradelist columns', ' function equityNavigator(');
+import * as fmt from '../src/services/tradelist-format';
 const deps = {
-  VaultReport, sourceTradeHeaders: (h: string[]) => h, sourceAccountCopy: () => ({tradeNote: ''}), tradeExitCheckMarkup: () => '',
+  ...fmt,   VaultReport, sourceTradeHeaders: (h: string[]) => h, sourceAccountCopy: () => ({tradeNote: ''}), tradeExitCheckMarkup: () => '',
   escText: (v: unknown) => String(v ?? ''), label: (n: number) => String(n), csvSafeRows: (r: unknown[][]) => r,
 };
 const ui = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps;${rows}${presenter};return {tradeHTML,tradeTableHTML};`)(deps);
