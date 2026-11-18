@@ -171,12 +171,15 @@ mod adr191_gap_tests {
         ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),lead);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
         assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
         assert!(check(&ctx,&get("kdta_adr191"),10,99,&Params::new()).is_none());
-        // trailing missing data (after the series' last value) is exempt too: the run ends there via auto-end, nothing is filled
+        // trailing missing data (after the series' last value) is NOT exempt: check() refuses and auto-end ends the run there with its note
         let mut tail=vec![2.0;100];for v in tail.iter_mut().skip(90) {*v=f64::NAN;}
         ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),tail);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
-        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).is_none());
+        // an EXPLICIT end past the series' last value must still refuse here and auto-end must say the series ended (no silent "no signals")
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
+        assert!(check(&ctx,&get("kdta_adr191"),0,89,&Params::new()).is_none());
         assert!(check(&ctx,&get("kdta_adline"),0,99,&Params::new()).is_some());
-        assert_eq!(auto_end(&ctx,&get("kdta_adr191"),0,99,&Params::new()).0,89);
+        let (end,note)=auto_end(&ctx,&get("kdta_adr191"),0,99,&Params::new());
+        assert_eq!(end,89);assert!(note.unwrap().starts_with(&format!("Ended {}:",ctx.r[89].date)));
     }
 }
 
@@ -202,6 +205,13 @@ mod gap_fixed_window_tests {
             }
             if !required_series(def,&Params::new(),false).is_empty() {
                 assert!(check(&ctx,def,0,299,&Params::new()).is_some_and(|i|i.note.contains("is missing on 5 trading day")),"{id} leading gap");
+            }
+            for n in required_series(def,&Params::new(),false) {
+                let mut v=vec![1.5;300];for k in 290..300 {v[k]=f64::NAN;}ctx.extra.insert(n.to_string(),v);
+            }
+            if !required_series(def,&Params::new(),false).is_empty() {
+                assert!(check(&ctx,def,0,299,&Params::new()).is_some_and(|i|i.note.contains("is missing on 10 trading day")),"{id} trailing gap inside the window refuses");
+                assert!(check(&ctx,def,0,289,&Params::new()).is_none(),"{id} window ending at the last value runs");
             }
         }
     }
@@ -663,7 +673,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         let tolerant=GAP_FIXED_WINDOW.contains(&def.id);
         // only INTERIOR gaps (after the series' first value) are exempt; data that has not begun yet still refuses so auto-start says so
         let first_valid=if tolerant {values.iter().position(|v| v.is_finite()).unwrap_or(usize::MAX)} else {usize::MAX};
-        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && (!tolerant || i<first_valid)).collect();
+        let last_valid=if tolerant {values.iter().rposition(|v| v.is_finite()).unwrap_or(0)} else {0};
+        // exempt only gaps STRICTLY BETWEEN the first and last finite values; data not begun / already ended still refuses (auto-start / auto-end say so)
+        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && (!tolerant || i<first_valid || i>last_valid)).collect();
         if let Some(&first)=gaps.first() {
             let dates=values.iter().enumerate().filter(|(_,v)| v.is_finite()).map(|(i,_)| ctx.r[i].date.as_str()).collect::<Vec<_>>();
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
