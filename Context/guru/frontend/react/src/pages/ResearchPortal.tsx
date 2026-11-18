@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
 import { VerificationView } from "./VerificationView";
+import { SnapshotModal } from "./SnapshotModal";
 import {
-  research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
+  research, snapshotDetail, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
   type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareFolder, type ShareInventory, type ShareSource, type Site, type Strategy,
   type TimelineItem, type Verdict,
 } from "../services/research";
@@ -448,6 +449,11 @@ function PersonWork({ person }: { person: string }) {
 
 function ClaudeView() {
   const [page, setPage] = usePage();
+  const detail = useLoad(snapshotDetail, []);
+  const [open, setOpen] = useState<TimelineItem | null>(null);
+  const closeSnap = useCallback(() => setOpen(null), []);
+  const isSnap = (it: TimelineItem) => it.detail === "Live snapshot";
+  const snapEv = (it: TimelineItem) => Object.values(detail.data?.events || {}).find(e => Date.parse(e.at) === Date.parse(it.at)) || null;
   const list = useLoad(() => research.timeline({ kind: "platform", page, size: 30 }), [page]);
   const days = new Map<string, TimelineItem[]>();
   for (const it of list.data?.items || []) { const k = dayKey(it.at); days.set(k, [...(days.get(k) || []), it]); }
@@ -463,7 +469,9 @@ function ClaudeView() {
               <h3>{fmtDate(items[0].at)}</h3>
               <ul className="rp-feed rp-claude">
                 {items.map((it, i) => (
-                  <li key={i} className={`w-${it.who.toLowerCase().replace(/\W+/g, "-")}`}>
+                  <li key={i} className={`w-${it.who.toLowerCase().replace(/\W+/g, "-")}`}
+                    {...(isSnap(it) ? { role: "button", tabIndex: 0, style: { cursor: "pointer" }, title: "Open the detail of this snapshot",
+                      onClick: () => setOpen(it), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(it); } } } : {})}>
                     <span className="rp-count">{it.backtested != null ? <><b>{num(it.backtested)}</b><small>backtested</small></> : null}</span>
                     <div>
                       <p className="rp-meta"><span className="rp-pill">{it.who}</span>{it.detail && it.detail !== day && <span> {it.detail}</span>}</p>
@@ -478,8 +486,15 @@ function ClaudeView() {
           <Pager page={list.data} set={setPage} />
         </>
       )}
+      {open && <SnapshotModal ev={snapEv(open)} at={fmtStamp(open.at)} healthStarts={detail.data?.health_starts_ist} onClose={closeSnap}
+        stats={snapEv(open)?.stats ?? snapStats(open)} />}
     </section>
   );
+}
+/** Numbers from the timeline row itself when no detail file is served: "N of M strategies backtested, H held ... (B books)". */
+function snapStats(it: TimelineItem) {
+  const m = /(\d+) of (\d+) strategies backtested, (\d+) held.*\((\d+) books\)/.exec(it.text || "");
+  return m ? { backtested: +m[1], total: +m[2], held: +m[3], books: +m[4] } : it.backtested != null ? { backtested: it.backtested, total: 0, held: 0, books: 0 } : null;
 }
 
 /* ---------------------------------------------------------------- admin: employee cards */
