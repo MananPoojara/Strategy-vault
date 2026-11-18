@@ -150,6 +150,26 @@ pub fn auto_start(ctx:&Ctx,from:usize,to:usize,requested:&str,refuse:impl Fn(usi
 }
 
 #[cfg(test)]
+mod adr191_gap_tests {
+    use super::*;
+    #[test]
+    fn a_missing_breadth_day_does_not_block_adr191_but_still_blocks_adline() {
+        let rows:Vec<crate::Row>=(0..100).map(|i|crate::Row {ticker:"DJI".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        let mut ctx=Ctx::new(&rows,&rows,&[]);
+        let mut adv=vec![2.0;100];adv[40]=f64::NAN;
+        ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),adv);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
+        let get=|id:&str|books::kdta::catalogue().into_iter().find(|d|d.id==id).unwrap();
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).is_none());
+        assert!(check(&ctx,&get("kdta_adline"),0,99,&Params::new()).unwrap().note.contains("is missing on 1 trading day"));
+        // leading missing data (the series has not begun) still refuses, so auto-start reports it
+        let mut lead=vec![2.0;100];for v in lead.iter_mut().take(10) {*v=f64::NAN;}lead[40]=f64::NAN;
+        ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),lead);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
+        assert!(check(&ctx,&get("kdta_adr191"),10,99,&Params::new()).is_none());
+    }
+}
+
+#[cfg(test)]
 mod short_course_readiness_tests {
     use super::*;
     #[test]
@@ -598,9 +618,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // A series existing somewhere in history does not mean it covers the requested dates.
     for &name in &required {
+        // Q5a (18 Nov 2026): kdta_adr191 sums advances and declines over 10 days; a day with no value only blanks the ratio for
+        // 10 days (no signal, nothing filled), so a gap must not move the start past the last gap (it cut 1970-2005 to 2002-06-21..).
         if event_column(name) { continue; }
         let values=ctx.series(name).unwrap();
-        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite())).collect();
+        // only INTERIOR gaps (after the series' first value) are exempt; data that has not begun yet still refuses so auto-start says so
+        let first_valid=if def.id=="kdta_adr191" {values.iter().position(|v| v.is_finite()).unwrap_or(usize::MAX)} else {usize::MAX};
+        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && (def.id!="kdta_adr191" || i<first_valid)).collect();
         if let Some(&first)=gaps.first() {
             let dates=values.iter().enumerate().filter(|(_,v)| v.is_finite()).map(|(i,_)| ctx.r[i].date.as_str()).collect::<Vec<_>>();
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
