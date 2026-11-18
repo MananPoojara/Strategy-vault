@@ -57,7 +57,7 @@ pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,
 /// today-vs-yesterday ratio, a level test, an N-day simple average that blanks for exactly N bars) with no cumulative or EMA state carried
 /// through the gap: a missing INTERIOR day blanks the signal for that look-back (NaN compares false, nothing is filled) so it must not
 /// move the start. Leading gaps still refuse and auto-start says so. Each id is read in its module (see authors/backlog-1118/Q9/FINAL.md).
-const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10","apsmts_ad_obos"];
+const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10"];
 /// Series a rule reads (shared by check and auto_end). The minute path reads no derived series.
 fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static str> {
     let mut required=if minute_path {vec![]} else {def.needs_series.to_vec()};
