@@ -3125,7 +3125,8 @@ mod connors_final_tests {
         let mut ctx=Ctx::new(&r,&r,&[]);
         let mut trin=vec![1.0;r.len()];trin[100]=f64::NAN;trin[700]=f64::NAN;
         ctx.extra.insert("TRIN".into(),trin);
-        let d=connors::catalogue().into_iter().find(|d|d.id=="trin4").unwrap();
+        let mut d=connors::catalogue().into_iter().find(|d|d.id=="trin4").unwrap();
+        d.id="trin4_gap_sensitive_probe"; // trin4 itself is gap-tolerant (GAP_FIXED_WINDOW); the probe keeps the series-gap refusal under test
         let p=Params::new();
         let refuse=|f:usize,t:usize|readiness::check(&ctx,&d,f,t,&p);
         assert!(refuse(0,899).is_some(),"a gap inside the window refuses it");

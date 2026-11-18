@@ -53,6 +53,11 @@ pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,
 }
 // ---------------------------------------------------------------- end VIX India
 
+/// R4 #361 (1) + Q9 (18 Nov 2026): cards whose arithmetic over the breadth / TRIN series is a FIXED look-back (a streak of N closes, a
+/// today-vs-yesterday ratio, a level test, an N-day simple average that blanks for exactly N bars) with no cumulative or EMA state carried
+/// through the gap: a missing INTERIOR day blanks the signal for that look-back (NaN compares false, nothing is filled) so it must not
+/// move the start. Leading gaps still refuse and auto-start says so. Each id is read in its module (see authors/backlog-1118/Q9/FINAL.md).
+const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma"];
 /// Series a rule reads (shared by check and auto_end). The minute path reads no derived series.
 fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static str> {
     let mut required=if minute_path {vec![]} else {def.needs_series.to_vec()};
@@ -166,6 +171,33 @@ mod adr191_gap_tests {
         ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),lead);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
         assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
         assert!(check(&ctx,&get("kdta_adr191"),10,99,&Params::new()).is_none());
+    }
+}
+
+
+#[cfg(test)]
+mod gap_fixed_window_tests {
+    use super::*;
+    /// Q9: every declared id passes `check` with ONE interior gap in each series it reads, and still refuses a leading gap.
+    #[test]
+    fn declared_fixed_window_cards_pass_an_interior_gap_and_refuse_a_leading_one() {
+        let rows:Vec<crate::Row>=(0..300).map(|i|crate::Row {ticker:"DJI".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1e6)}).collect();
+        let defs=crate::connors::catalogue();
+        for id in GAP_FIXED_WINDOW {
+            let def=defs.iter().find(|d|d.id==*id).unwrap_or_else(|| panic!("{id} not in the catalogue"));
+            let mut ctx=Ctx::new(&rows,&rows,&[]);
+            for n in required_series(def,&Params::new(),false) {
+                let mut v=vec![1.5;300];v[150]=f64::NAN;ctx.extra.insert(n.to_string(),v);
+            }
+            let r=check(&ctx,def,0,299,&Params::new());
+            assert!(r.as_ref().map_or(true,|i|!i.note.contains("is missing on")),"{id}: {:?}",r.map(|i|i.note));
+            for n in required_series(def,&Params::new(),false) {
+                let mut v=vec![1.5;300];for k in 0..5 {v[k]=f64::NAN;}ctx.extra.insert(n.to_string(),v);
+            }
+            if !required_series(def,&Params::new(),false).is_empty() {
+                assert!(check(&ctx,def,0,299,&Params::new()).is_some_and(|i|i.note.contains("is missing on 5 trading day")),"{id} leading gap");
+            }
+        }
     }
 }
 
@@ -622,9 +654,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         // 10 days (no signal, nothing filled), so a gap must not move the start past the last gap (it cut 1970-2005 to 2002-06-21..).
         if event_column(name) { continue; }
         let values=ctx.series(name).unwrap();
+        let tolerant=GAP_FIXED_WINDOW.contains(&def.id);
         // only INTERIOR gaps (after the series' first value) are exempt; data that has not begun yet still refuses so auto-start says so
-        let first_valid=if def.id=="kdta_adr191" {values.iter().position(|v| v.is_finite()).unwrap_or(usize::MAX)} else {usize::MAX};
-        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && (def.id!="kdta_adr191" || i<first_valid)).collect();
+        let first_valid=if tolerant {values.iter().position(|v| v.is_finite()).unwrap_or(usize::MAX)} else {usize::MAX};
+        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && (!tolerant || i<first_valid)).collect();
         if let Some(&first)=gaps.first() {
             let dates=values.iter().enumerate().filter(|(_,v)| v.is_finite()).map(|(i,_)| ctx.r[i].date.as_str()).collect::<Vec<_>>();
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
@@ -964,7 +997,8 @@ mod tests {
     }
     #[test]
     fn external_series_are_checked_in_the_selected_window() {
-        let r=rows();let mut ctx=Ctx::new(&r,&r,&[]);let def=definition("trin4");
+        let r=rows();let mut ctx=Ctx::new(&r,&r,&[]);let mut def=definition("trin4");
+        def.id="trin4_gap_sensitive_probe"; // trin4 itself is gap-tolerant (GAP_FIXED_WINDOW); the probe keeps the series-gap refusal under test
         ctx.extra.insert("TRIN".into(),vec![1.0,1.0,f64::NAN,f64::NAN,f64::NAN]);
         let e=check(&ctx,&def,2,4,&Params::new()).unwrap();
         assert_eq!(e.status,"needs_data");assert!(e.note.contains("2020-01-03"));
