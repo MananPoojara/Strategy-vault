@@ -312,6 +312,7 @@ fn dow(y: i64, m: i64, d: i64) -> i64 {
 fn ymd(s: &str) -> (i64, i64, i64) { (s[..4].parse().unwrap_or(0), s[5..7].parse().unwrap_or(1), s[8..10].parse().unwrap_or(1)) }
 /// OptionExp(): 1 on the last bar on or before the month's third Friday, within that week (lead decision 181; as agtsic_expiry).
 fn option_exp(x: &Ctx) -> S {
+    if super::tselhs::india(x) { return x.r.iter().map(|r| bv(crate::nse_expiry::is_monthly_expiry(&r.date))).collect(); } // lane CV6 (R4 #340): NSE monthly expiry from the held NIFTY chain
     (0..x.r.len()).map(|i| {
         let (y, m, d) = ymd(&x.r[i].date);
         let fri = 1 + (5 - dow(y, m, 1) + 7) % 7 + 14;
@@ -488,7 +489,7 @@ fn run_k30(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 // OptionExp() run on US instruments only (instrument_policy phbttk_symbol_issue).
 pub const ADMISSION_K30: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "phbttk" && reviewed_k30(def.id),
-    label: "Price Headley's Big Trends Toolkit 2.0 ships these MetaStock system tests without a market or a printed test (the manual shows US stock charts); runs on indices, ETFs and stocks, US and India, are a declared application. The two records that exit after the monthly option expiry run on US instruments only.",
+    label: "Price Headley's Big Trends Toolkit 2.0 ships these MetaStock system tests without a market or a printed test (the manual shows US stock charts); runs on indices, ETFs and stocks, US and India, are a declared application. The two records that exit after the monthly option expiry run on US instruments, and on Indian ones only when the NSE monthly expiry derived from the held NIFTY 50 option chain is loaded (R4 #340 declared adaptation, UNVERIFIED on India).",
     basis: "Big Trends Toolkit 2.0 for MetaStock (BigTrends/Equis 2008): the System Tester records in MS10PRFT.DTA of Bigtrendv2setup.exe (research share USB HDD 1/MetaStock/@Systems & Indicators/Price Headleys Big Trends Toolkit 2.0; slots read by batch X, authors/batch-x/keep/2617/PRFT_slots.txt), the manual BTTK_2 0.pdf for the words; independent check authors/titles-1030/K30w/k30_ref.py",
 };
 

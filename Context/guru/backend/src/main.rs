@@ -3,6 +3,7 @@
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
 mod nse_holidays; // R4 #364: NSE closures derived from the NIFTY 50 bars
+mod nse_expiry; // lane CV6 (R4 #340): NSE monthly option expiry derived from the held NIFTY chain
 mod release; // lane M3 (R4 #346): extra_data series keyed by their ReleaseDate
 mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod spread; // lane P1: two-leg spread positions
@@ -2226,6 +2227,7 @@ fn main() {
     // options phase 2: optional arg 6 = folder of <TICKER>.opt.csv / .optidx.csv; missing = no option prices (option rules report a data gap)
     let options_dir = args.get(6).cloned();
     if let Some(d) = &options_dir { println!("option chains: {d}"); }
+    if data.contains_key("NIFTY 50") { if let Some(d) = &options_dir { let n = nse_expiry::install(&std::path::Path::new(d).join("NIFTY_50.opt.csv")); println!("NSE monthly expiries derived from the NIFTY chain: {n}"); } } // lane CV6
     // lane F2 (R4 #293): the weekly 1-minute option store sits beside the option chains (<options>/../weekly1m); missing = data gap
     if let Some(w) = options_dir.as_deref().and_then(|d| std::path::Path::new(d).parent()).map(|p| p.join("weekly1m")).filter(|p| p.is_dir()) {
         println!("weekly 1-minute options: {}", w.display());

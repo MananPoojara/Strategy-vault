@@ -3,23 +3,32 @@
 //! Source: library/arebta/.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/aronson/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["arebta_tt", "arebta_ti", "arebta_e", "arebta_tt_br", "arebta_ti_br", "arebta_e_br", "arebta_d_br" /* lane K78, R4 #276 (3), #287 */];
+pub const REVIEWED: &[&str] = &["arebta_tt", "arebta_ti", "arebta_e", "arebta_tt_br", "arebta_ti_br", "arebta_e_br", "arebta_d_br" /* lane K78, R4 #276 (3), #287 */,
+    "arebta_tt_br_nse", "arebta_ti_br_nse", "arebta_e_br_nse", "arebta_d_br_nse" /* lane CV6, R4 #340 / #347 / #365 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "Case study: 6,402 binary long/short reversal rules on the S&P 500, 1 Nov 1980 - 1 Jul 2005, evaluated on DETRENDED daily returns (mean daily change subtracted, p.391-392); entries and exits \"on the open price of the day following a position-reversal signal\" (p.449). Input series 1 = S&P 500 close; here the traded index's own close (instrument swap for NIFTY). Always in the market once the rule output is defined (the position is taken at the first open after the selected start).";
 const OTHER: &str = "the other 33 rule inputs of Table 8.2 (p.418) are not in the vault: S&P Industrials, Dow Jones transports and utilities, NYSE financials, NASDAQ Composite, Value Line, NYSE new highs/lows, the DJ 20 bonds, T-bill, T-bond, AAA and BAA yields, and the volume indicators. The DJIA high/low/close (Table 8.1 raw series 3-5) feed only the accumulation-distribution and money-flow indicators (inputs 12-17, p.410-411), which multiply by NYSE volume; NYSE volume changes units on 2002-06-21 (thousands to shares), so every volume-level input (9-23, 33) is excluded (R4 #287). The six breadth inputs 24-29 are coded as arebta_tt_br, arebta_ti_br, arebta_e_br and arebta_d_br";
 /// Lane K78 (R4 #276 (3), #287): Table 8.2 breadth inputs 24-29 from NYSE advances/declines/unchanged and up/down/unchanged volume.
 pub const BREADTH: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.Unchanged", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume", "NYSE_ADV_DEC.UnchVolume"];
-pub fn breadth(id: &str) -> bool { matches!(id, "arebta_tt_br" | "arebta_ti_br" | "arebta_e_br" | "arebta_d_br") }
+pub fn breadth(id: &str) -> bool { matches!(id, "arebta_tt_br" | "arebta_ti_br" | "arebta_e_br" | "arebta_d_br") || nse(id) }
+/// Lane CV6 (R4 #365): the NSE twins read the NSE advances / declines / unchanged and up / down volume (extra_data/india NSE_ADV_DEC).
+pub fn nse(id: &str) -> bool { id.ends_with("_br_nse") }
+pub const BREADTH_NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.Unchanged", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume"];
 const BR_NOTE: &str = "Lane K78 (R4 #276 (3), #287, #288). Input = NYSE breadth (extra_data NYSE_ADV_DEC, all NYSE issues, 1965-03-01..2020-02-10, as the book's 'all issues traded on the NYSE', p.413); traded = the instrument's own next open (the book traded the S&P 500; other US indices, ETFs and stocks are a declared application). US only (no NYSE breadth for Indian instruments). Runs go to the end of the breadth data (2020-02-10); the book's test period 1 Nov 1980 - 1 Jul 2005 (p.393) is used only for the book check (R4 #288 (1)). Up/down/unchanged volume switch together from thousands to shares on 2002-06-21 (the source lacks 2002-06-20), so the volume RATIO (inputs 27-29) has no unit break; volume levels are not used. [Declared] A day without a breadth print is skipped by the indicator (sums, averages and channels count breadth days only) and the position is unchanged; crossing = previous value on/at one side, today strictly beyond; a flat channel = no value. No detrending (the book scores detrended returns, p.391-392); one unit per trade.";
 const INPUTS: &str = "Input (Table 8.2, p.418): 24 CADR, 25 ADR10, 26 ADR30, 27 CUDR (cum. up-down volume ratio), 28 UDR10, 29 UDR30";
 
 fn br(d: StrategyDef) -> StrategyDef { StrategyDef { needs_series: BREADTH, ..d } }
+const NSE_NOTE: &str = "[R4 #340 / #347 declared adaptation, UNVERIFIED] NSE twin of the NYSE-breadth rule: the same rule, parameters and thresholds on the NSE's own advances / declines / unchanged and up / down volume (extra_data/india NSE_ADV_DEC, 1999-01-01 on; all NSE-listed issues as the book's 'all issues traded on the NYSE'). The NSE publishes no unchanged-issue volume, so the volume ratio (inputs 27-29) is (up - down) / (up + down) where the book divides by up + down + unchanged volume. The divergence rule (D) compares with the NIFTY 50 close on the same date where the NYSE rule uses the SPX close (the NIFTY 50's own close on NIFTY 50). Runs on Indian indices and stocks; US instruments are refused (no NSE series there). The book traded the S&P 500 on NYSE breadth: no NSE result exists. Measured firing rates, NSE vs NYSE: ";
+fn twin(d: &StrategyDef, id: &'static str, name: &'static str, rate: &'static str) -> StrategyDef {
+    StrategyDef { id, name, group: d.group, session: d.session, dir: d.dir, status: d.status, needs_volume: d.needs_volume, needs_vix: d.needs_vix, book: d.book, rules: d.rules,
+        needs_series: BREADTH_NSE, notes: Box::leak(format!("{NSE_NOTE}{rate}").into_boxed_str()), claim: None }
+}
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, status, rules, notes, claim| StrategyDef { id, name, group: "Ch.8 S&P 500 rule data-mining case study", session: 0, dir, status, rules, notes,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "arebta", claim };
-    vec![
+    let v = vec![
         d("arebta_tt", "Traditional trend rule TT-1-n (channel breakout of the close)", "Long/Short", Status::Live,
           &["F|CBO(n): upper = max of the series over the past n periods, lower = min, \"not including the current period\" (p.397)",
             "E|\"signals long positions when the analyzed series exceeds its maximum value established over the past n-periods ... short positions are signaled when the time series falls below its n-period minimum\" (p.397); otherwise the output is unchanged",
@@ -61,8 +70,20 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Upper/lower thresholds 50 +/- 10 or 20; n 15/30/60; the 12 types of Table 8.4 (p.440) = the event pairs of Table 8.3 (p.439)",
             "X|Reversal only; next open (p.449). Default D-10-28-10-30, the best printed divergence rule on these inputs (Table 9.1 p.445: 8.69%/yr detrended)"],
           BR_NOTE, Some(crate::connors::Claim { trades: "-", win: "-", avg: "8.69%/yr mean return on detrended S&P 500 (D-10-28-10-30)", hold: "-", period: "11/1/1980 - 7/1/2005, S&P 500 (Table 9.1 p.445; not significant after data-mining correction)" }))),
-    ]
+    ];
+    let mut v = v;
+    for (base, id, name, rate) in NSE_TWINS {
+        let t = v.iter().find(|d| d.id == base).map(|b| twin(b, id, name, rate));
+        v.extend(t);
+    }
+    v
 }
+const NSE_TWINS: [(&str, &str, &str, &str); 4] = [
+    ("arebta_tt_br", "arebta_tt_br_nse", "Traditional trend rule TT on NSE breadth (inputs 24-29)", "default inputs (input 28, n = 12) over 2014-01-02..2019-08-19, the stretch the NYSE series runs on: NSE 16.9 position reversals a year, long 49.2% of days; NYSE (SPX) 18.5 a year, long 47.1%. Full NSE overlap 1999-11-09..2020-02-10: 16.9 a year, long 48.6%."),
+    ("arebta_ti_br", "arebta_ti_br_nse", "Inverse trend rule TI on NSE breadth (inputs 24-29)", "default inputs (input 28, n = 12) over 2014-01-02..2019-08-19, the stretch the NYSE series runs on: NSE 16.9 position reversals a year, long 50.6% of days; NYSE (SPX) 18.5 a year, long 52.8%. Full NSE overlap 1999-11-09..2020-02-10: 16.9 a year, long 51.4%."),
+    ("arebta_e_br", "arebta_e_br_nse", "Extreme-value & transition rule E on NSE breadth (inputs 24-29)", "default inputs (E-12-28-10-30) over 2014-01-02..2019-08-19, the stretch the NYSE series runs on: NSE 17.8 position reversals a year, long 56.4% of days; NYSE (SPX) 21.3 a year, long 59.0%. Full NSE overlap 1999-11-09..2020-02-10: 17.7 a year, long 55.6%."),
+    ("arebta_d_br", "arebta_d_br_nse", "Divergence rule D: NSE breadth vs the NIFTY 50", "default inputs (D-10-28-10-30) over 2014-01-02..2019-08-19, the stretch the NYSE series runs on: NSE 9.6 position reversals a year, long 62.3% of days; NYSE (SPX) 10.1 a year, long 54.0%. Full NSE overlap 1999-11-09..2020-02-10: 9.1 a year, long 57.3%."),
+];
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
@@ -70,6 +91,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "arebta_ti" => ("arebta_trend", "Aronson trend rules (series 1)", "TI · inverse"),
         "arebta_tt_br" => ("arebta_trend_br", "Aronson trend rules on NYSE breadth", "TT · traditional"),
         "arebta_ti_br" => ("arebta_trend_br", "Aronson trend rules on NYSE breadth", "TI · inverse"),
+        "arebta_tt_br_nse" => ("arebta_trend_br_nse", "Aronson trend rules on NSE breadth", "TT · traditional"),
+        "arebta_ti_br_nse" => ("arebta_trend_br_nse", "Aronson trend rules on NSE breadth", "TI · inverse"),
         _ => return catalogue().into_iter().find(|d| d.id == id).map(|d| (d.id, d.name, "")),
     })
 }
@@ -79,9 +102,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "arebta_tt" | "arebta_ti" => vec![p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 3., 3., 205., 1.)],
         "arebta_e" => vec![p("type", "E-rule type 1-12 (Table 8.3)", 2., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 20., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 30., 15., 60., 15.)],
-        "arebta_tt_br" | "arebta_ti_br" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 12., 3., 205., 1.)],
-        "arebta_e_br" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "E-rule type 1-12 (Table 8.3)", 12., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 30., 15., 60., 15.)],
-        "arebta_d_br" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "D-rule type 1-12 (Table 8.4)", 10., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", 30., 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close (labelled option)", 0., 0., 1., 1.)],
+        "arebta_tt_br" | "arebta_ti_br" | "arebta_tt_br_nse" | "arebta_ti_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 12., 3., 205., 1.)],
+        "arebta_e_br" | "arebta_e_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "E-rule type 1-12 (Table 8.3)", 12., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 30., 15., 60., 15.)],
+        "arebta_d_br" | "arebta_d_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "D-rule type 1-12 (Table 8.4)", 10., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", 30., 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close (labelled option)", 0., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -100,10 +123,13 @@ fn cn(s: &[f64], n: usize) -> Vec<f64> {
 }
 
 /// Lane K78: Table 8.2 input 24-29 on the breadth days (index list into the context) of this context.
-fn breadth_input(x: &Ctx, input: usize) -> Option<(Vec<usize>, Vec<f64>)> {
+fn breadth_input(x: &Ctx, input: usize, nse: bool) -> Option<(Vec<usize>, Vec<f64>)> {
     let vol = input >= 27;
-    let col = |k: usize| x.series(BREADTH[k + if vol { 3 } else { 0 }]);
-    let (a, d, u) = (col(0)?, col(1)?, col(2)?);
+    let names: &[&str] = if nse { BREADTH_NSE } else { BREADTH };
+    let col = |k: usize| x.series(names[k + if vol { 3 } else { 0 }]);
+    let zero = vec![0.; x.c.len()];
+    let (a, d) = (col(0)?, col(1)?);
+    let u: &[f64] = if nse && vol { &zero } else { col(2)? }; // NSE: no unchanged-issue volume (twin note)
     let days: Vec<usize> = (0..x.c.len()).filter(|&i| a[i].is_finite() && d[i].is_finite() && u[i].is_finite() && a[i] + d[i] + u[i] > 0. && x.c[i].is_finite()).collect();
     let ratio: Vec<f64> = days.iter().map(|&i| (a[i] - d[i]) / (a[i] + d[i] + u[i])).collect();
     let s = match (input - 24) % 3 {
@@ -116,10 +142,18 @@ fn breadth_input(x: &Ctx, input: usize) -> Option<(Vec<usize>, Vec<f64>)> {
 /// Lane K78: TT/TI, E and D rules on a breadth input, computed on the breadth days (D: those with an SPX close too); the
 /// state is carried over the other days.
 fn output_br(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Vec<f64> {
+    let twin_nse = nse(id);
+    let id = id.trim_end_matches("_nse");
     let mut out = vec![0.; x.c.len()];
-    let Some((mut days, mut s)) = breadth_input(x, (g("input") as usize).clamp(24, 29)) else { return out };
+    let Some((mut days, mut s)) = breadth_input(x, (g("input") as usize).clamp(24, 29), twin_nse) else { return out };
     // R4 #288 (2): the divergence's S&P 500 = the SPX close on the same date (FOLLOWER_CLOSE, exact join); p.ref = 1: own close
-    let spx = if id == "arebta_d_br" && g("ref") < 0.5 { match x.series("FOLLOWER_CLOSE") { Some(v) => Some(v), None => return out } } else { None };
+    // the NSE twin: the NIFTY 50 close on the same date (BENCH.C; on NIFTY 50 itself its own close), as the NYSE rule uses the SPX close
+    let own_nifty: Vec<f64>;
+    let spx = if id == "arebta_d_br" && g("ref") < 0.5 {
+        if twin_nse {
+            match x.series("BENCH.C") { Some(v) => Some(v), None if x.r.first().is_some_and(|r| r.ticker == "NIFTY 50") => { own_nifty = x.c.clone(); Some(&own_nifty[..]) } None => return out }
+        } else { match x.series("FOLLOWER_CLOSE") { Some(v) => Some(v), None => return out } }
+    } else { None };
     if let Some(v) = spx {
         let keep: Vec<usize> = (0..days.len()).filter(|&k| v[days[k]].is_finite()).collect();
         s = keep.iter().map(|&k| s[k]).collect();
@@ -253,6 +287,22 @@ mod tests {
         x
     }
     fn prm(v: &[(&str, f64)]) -> Params { v.iter().map(|(k, x)| (k.to_string(), *x)).collect() }
+
+    #[test]
+    fn nse_twin_reads_nse_breadth_and_matches_the_nyse_rule_on_the_same_counts() { // lane CV6
+        let q = [0.1, 0.1, 0.1, 0.1, -0.1, f64::NAN, -0.1, -0.1, 0.1, 0.1, 0.1, 0.1];
+        let (r, cols) = br_ctx("1995", &q, &[100.; 12]);
+        let mut x = Ctx::new(&r, &r, &[]);
+        for (k, c) in BREADTH_NSE.iter().zip(&cols) { x.extra.insert(k.to_string(), c.clone()); } // advances, declines, unchanged, up volume, down volume
+        let p = prm(&[("input", 24.), ("n", 3.)]);
+        let nyse = run("arebta_tt_br", &with_br(&r, &cols), 0, 11, &p).unwrap();
+        let nse_t = run("arebta_tt_br_nse", &x, 0, 11, &p).unwrap();
+        assert_eq!(nse_t.iter().map(|z| (z.dir, z.legs[0].i)).collect::<Vec<_>>(), nyse.iter().map(|z| (z.dir, z.legs[0].i)).collect::<Vec<_>>());
+        assert!(run("arebta_tt_br_nse", &with_br(&r, &cols), 0, 11, &p).unwrap().is_empty(), "the twin ignores NYSE series");
+        assert!(run("arebta_tt_br", &x, 0, 11, &p).unwrap().is_empty(), "the original ignores NSE series");
+        // volume ratio without unchanged volume: (up - down) / (up + down) carries the same signs here
+        assert_eq!(run("arebta_tt_br_nse", &x, 0, 11, &prm(&[("input", 27.), ("n", 3.)])).unwrap().len(), 3);
+    }
 
     #[test]
     fn tt_ti_br_cadr_breakout_skips_missing_breadth_days() {

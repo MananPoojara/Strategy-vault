@@ -53,7 +53,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             rules: &["E|\"If the range of the day five trading days before expiration day is less than 70% of the average range of the previous three days or is greater than 140% of the average range of the previous three days then an unusual volatility disturbance has taken place.\" (p.40-41)",
                 "E|\"Given an unusual volatility disturbance five days before expiration, buy the S&P 500 futures on the close of the unusual disturbance day.\" (p.41)",
                 "X|\"Hold the long futures position until the close of options expiration day.\" (p.41)"],
-            notes: "[Declared readings] Expiration day = the third Friday of the month (US monthly equity/index options); when the third Friday has no trading bar (exchange holiday) the last trading day before it is used, as the book's calendar does for holiday Thursdays (code comment, p.45). Five trading days before = five bars before the expiration bar. Range = high - low; the average range of the previous three days = the three bars before the signal day. Buy at that close, sell at the expiration day's close. Runs on US instruments only: Indian options expire on a different calendar. Costs are not modelled.",
+            notes: "[Declared readings] Expiration day = the third Friday of the month (US monthly equity/index options); when the third Friday has no trading bar (exchange holiday) the last trading day before it is used, as the book's calendar does for holiday Thursdays (code comment, p.45). Five trading days before = five bars before the expiration bar. Range = high - low; the average range of the previous three days = the three bars before the signal day. Buy at that close, sell at the expiration day's close. Indian instruments (R4 #340): the expiration day is the NSE monthly option expiry derived from the held NIFTY 50 option chain (latest expiry listed in each month; 2001-06 on), shown only when that chain is loaded; UNVERIFIED on India. Costs are not modelled.",
             claim: None },
         day("agtsic_p5", "Daily pattern #5 'Pick Up the Plunger' (open + 45% of the smaller recent range)", "Ch.5 Reactive Day Trading (p.53-63)",
             &["E|\"value1=lowest(range,2)*.45; if high[2]<low[5] and high>highest(high,2)[1] and close<open then buy (\"Buy D5\") tomorrow at open tomorrow + value1 stop;\" (p.59)",
@@ -153,6 +153,7 @@ fn third_friday(d: &str) -> i64 { let first = dow(&format!("{}-01", &d[..7])); 1
 
 /// Expiration bar: the last bar on or before the month's third Friday, in that week (a holiday Friday moves it to Thursday).
 fn is_expiration(x: &Ctx, i: usize) -> bool {
+    if super::tselhs::india(x) { return crate::nse_expiry::is_monthly_expiry(&x.r[i].date); } // lane CV6 (R4 #340): the NSE monthly expiry derived from the held NIFTY chain
     let d = &x.r[i].date;
     let (fri, dd): (i64, i64) = (third_friday(d), d[8..10].parse().unwrap_or(0));
     if dd > fri || dd <= fri - 7 { return false; }
