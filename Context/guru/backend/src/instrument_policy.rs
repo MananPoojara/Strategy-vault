@@ -631,6 +631,7 @@ mod short_course_policy_tests {
 /// method to a familiar book cannot inherit admission without a source review.
 pub fn policy(def:&StrategyDef)->Policy {
     let mut p=base_policy(def);
+    if crate::futures::DUAL.contains(&def.id) {p.source_basis=crate::futures::dual_basis(def.id,p.source_basis);} // R4 #367 (2): the futures-contract adaptation label shows on the card
     // Never reopens a rule that base_policy holds for source review.
     if open_instrument_label(def).is_some() && p.requirement!="source_review_required" {
         p.requirement="index_etf_or_stock";p.allowed_types=&["index","etf","individual_stock"];
@@ -1076,7 +1077,7 @@ fn base_policy(def:&StrategyDef)->Policy {
         p.market_adaptation=true; return p;
     }
     if def.id=="scsaitta_volma" {return requirement("futures",&["futures","index"],SCSAITTA_BASIS);} // lane IN2 (R4 #340): the T-bond contract, plus the declared India index adaptation
-    if let Some(basis)=crate::futures::card_basis(def) {return requirement("futures",&["futures"],basis);} // lane F1 (R4 #293): the named continuous contract
+    if !crate::futures::DUAL.contains(&def.id) {if let Some(basis)=crate::futures::card_basis(def) {return requirement("futures",&["futures"],basis);}} // lane F1 (R4 #293): the named continuous contract
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
     if options_p2(def) && def.book=="as51ts" {return requirement("options_underlying", &["index"], AS51_OPT_BASIS);} // lane F2: the book's own market (NIFTY weekly options)
@@ -1368,6 +1369,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if def.book=="apta" && def.id=="apta_nhnl_nse" && (!matches!(ticker,"NIFTY 50"|"NIFTYBANK"|"NIFTY BANK"|"NIFTYMIDCAP100"|"NIFTY MIDCAP 100") || native_stock) {return Some(Issue{status:"needs_data",note:"This declared NSE adaptation of the Appel new-high/new-low rule runs on the actual NIFTY 50, NIFTYBANK or NIFTYMIDCAP100 index contexts with the NSE's own 52-week counts; no other instrument is admitted.".into()});}
     if def.book=="apta" && def.id=="apta_nhnl" && (ticker!="SPX" || native_stock) {return Some(Issue{status:"needs_data",note:"This local Appel application requires the actual SPX index context and NYSE new-high/new-low counts; no other instrument is admitted.".into()});}
+    if crate::futures::DUAL.contains(&def.id) && crate::futures::is_futures(ticker) {return None;} // R4 #367 (2): futures contract admitted; readiness (futures::home) keeps it to the book's own market
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=tradable_check_issue(def,ticker,native_stock){return Some(issue);} // decisions #177/#179
     if ticker==crate::futures::NYA_TICKER {return (!crate::futures::NYA_CARDS.contains(&def.id)).then(||Issue{status:"needs_data",note:format!("{ticker} is loaded for the close-only NYSE Composite systems only (Holt, R4 #319; Appel & Hitschler, lane PF): Norgate's $NYA has real closes and volume, but its open/high/low equal the close before 1988-12-07, and no other card is reviewed on it. No results are published.")});} // lane PE

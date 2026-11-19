@@ -545,7 +545,7 @@ pub fn data2_issue(id: &str, x: &Ctx) -> Option<String> {
 /// (MARKETS NaN = unknown): only that period is published on that contract.
 /// (card, contract, first, last, why) - lane PF also uses it for a source-era window (scchvid, R4 #293 (4)).
 const USD_WINDOW: &[(&str, &str, &str, &str, &str)] = &[("andro_andromeda", "&DX", "1985-11-20", "1996-07-31", USD_WHY),
-    ("scchvid_ravi", "&SP", "1982-04-21", "1991-07-31", SCCHVID_WHY)];
+    ("scchvid_ravi", "&SP", "1982-04-21", "1991-07-31", SCCHVID_WHY), ("ch_bta2_65sma_ravi", "&SP", "1982-04-21", "1995-07-31", V5_PIT_WHY)];
 const SCCHVID_WHY: &str = "the article's reference deviations (6 and 4 S&P points, 'a 10-year average' of 1980s weekly data) are used literally on the S&P contract (R4 #293 (4)); they belong to the article's period (to July 1991), and later the smoothing constant 0.15 x s10 / 4 exceeds 1 on more and more weeks, so only that period is published";
 const USD_WHY: &str = "the contract's US$ per point is known only to 1996-07-31 (R4 #323/#324: US$500 per index point 1985-11..1996-07; the start of the later US$1,000 contract is not established), and this card's $4,000 risk limit and $10,000 profit exit need it (R4 #334)";
 /// The published run period of a card on ticker `t`, if it is limited to the book's window (BOOK_WINDOW) or to a known multiplier (USD_WINDOW).
@@ -583,7 +583,7 @@ const WTC: &str = "Market Analytics, William Tell Coffee Trading System (WT Coff
 const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH).chain(CARDS_D2).chain(CARDS_R1).chain(CARDS_D3).chain(CARDS_S1).chain(CARDS_M3).chain(CARDS_C6).chain(CARDS_CV3) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH).chain(CARDS_D2).chain(CARDS_R1).chain(CARDS_D3).chain(CARDS_S1).chain(CARDS_M3).chain(CARDS_C6).chain(CARDS_CV3).chain(CARDS_V5) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
@@ -719,6 +719,23 @@ const STAD6B: &str = "Omega Research, STAD Vol 6 (1998) ch.2 p.34-41, DMA Channe
 const STAD13K: &str = "Omega Research, STAD Vol 13 (2000) ch.5 p.47-58, DMA and Range Leaders (revisited): the printed TradeStation code (UpperBand = Average(High,50)[10], LowerBand = Average(Low,50)[10]; Range Leader and Close beyond the band: Buy next bar at High + 1 point stop, Sell next bar at Low - 1 point stop) with the book's own optimised Coffee inputs (p.56: StopLoss $3,000, BreakevenFloor $3,000, DllrRiskTrailing $5,000, DMAvgLength 50, Displacement 10), run on the Norgate coffee continuous contract (back-adjusted daily bars; US$375 per 1.00 = one cent a pound, so $3,000 = 8.0 and $5,000 = 13.33). DECLARED ADAPTATION (R4 #340), UNVERIFIED. Four unstated details (honest count, R4 #339/#343), each a labelled reading: (1) '1 point' = one tick of the contract (0.05, decision #57); (2) the breakeven floor and the dollar-risk trailing stop are read from the maximum favourable excursion (bar highs for longs, lows for shorts), evaluated at each close; (3) stop timing: the stop loss is live from the entry fill on the entry bar, the excursion counts the entry bar and the breakeven and trailing stops act from the next bar; (4) window: the book prints no dates for its coffee test (the 1/95-4/00 coffee range printed for MRTS in the same volume is another system), so the whole Norgate history 1978-12-14 to 2020-09-11 is run. Engine vs the independent reference (authors/relax-339/S1/w/kc_ref.py, same simulator as dm_ref.py): 0 mismatches in 529 trades over three windows. #240 (two bar paths, no coffee minute bars): 4 of 322 trades (1.2%) over 1978-2020, 2 of 47 (4.3%) in 1995-2000, under the 5% limit. #168: not testable, no window is printed; for information the book's 81 trades, 52% winners, $91,152 against our 322 trades, 34% winners, $149,756 over the whole history: it does not reproduce the book.";
 /// Lane S1 (17 Nov 2026, R4 #339/#340/#343 second opinion): the book's own futures tests of two held Stad cards.
 const CARDS_S1: &[(&str, &str, &str)] = &[("stad6_dmachan", "&6B", STAD6B), ("stad13_dmarl", "&KC", STAD13K)];
+/// Lane V5 (19 Nov 2026, R4 #367 (2)): four cards the book tested on a futures market, admitted on the Norgate continuous contract of that market.
+const V5_TN: &str = "Futures & Options Trader, Jan 2009 p.9 (Tables 1-2, Fig 3): T-note pullback on 10-year T-note futures 2001-12-31..2009-01-02, long 7 days / short 2 days, close fills; run on the Norgate 10-Year T-Note continuous contract (&ZN), no point thresholds. Printed trades and win rate only (no dollars). DECLARED ADAPTATION (R4 #340, #367 (2)), UNVERIFIED unless the whole printed result passes: continuous back-adjusted contract in place of the magazine's contract file.";
+const V5_RAVI: &str = "Tushar Chande, Beyond Technical Analysis (1997) Table 4.4 p.98: 65sma-3cc with RAVI 0.5 and a $1,000 stop on S&P 500 futures 4/82-7/95; run on the Norgate S&P 500 continuous contract (&SP), whose first bar is 1982-04-21. The $1,000 stop is 2.0 index points at the contract's own US$500 a point (p.stop_pts=2, chbta2 note), printed settings are NOT the card defaults (RAVI 1.0, no stop). Published only to 1995-07-31: from August 1995 Norgate's &SP open is not the pit open (R4 #330) and this card enters at the next open. DECLARED ADAPTATION (R4 #340, #367 (2)), UNVERIFIED unless the whole printed result passes.";
+const V5_FPS: &str = "Omega Research, STAD Vol 6 (1998) ch.4 p.70-79, First Pullback (after Linda Raschke): the printed TradeStation code (MACD 4/10, signal 16, ATR 10, 1.25 ATR entry stop, 2.0 ATR stop, CTrendLow - 1 point stop) on the book's own British pound test 6/93-11/98; run on the Norgate British pound continuous contract (&6B, US$62,500 per 1.00, '1 point' = one tick 0.0002). The Format-dialog stops the book enabled are not printed and not modelled. DECLARED ADAPTATION (R4 #340, #367 (2)), UNVERIFIED unless the whole printed result passes.";
+const V5_SPI: &str = "Michael Johnson, Sign Post Trading, in Stephen Pierce (ed.), Amazing Trading Plans (2004) PDF p.60-69: the 3-day moving-average changeover on SPI 200 futures, 30 Mar-28 Apr 2004; run on the Norgate ASX SPI 200 continuous contract (&YAP, SPI points, no USD value). The printed +25 / -20 SPI-point target and stop are in the market's own points but the card does not model them (held), so the printed T1..T6 points (+25, +25, -20, +1, -4, +25) cannot be reproduced by the stop-and-reverse reading. DECLARED ADAPTATION (R4 #340, #367 (2)), UNVERIFIED.";
+const V5_PIT_WHY: &str = "from August 1995 Norgate's &SP open is not the pit open (R4 #330) and this card enters at the next open, so only the 1982-04-21..1995-07-31 part of the book's 4/82-7/95 test is published";
+/// R4 #367 (2): these cards keep every admission they already had (indices, ETFs, stocks, US and India) and ALSO run on their one futures contract; no existing run is refused.
+pub const DUAL: &[&str] = &["fot08_tnote", "ch_bta2_65sma_ravi", "stad6_fps", "mjspt_3dma"];
+/// The policy source_basis of a DUAL card with the futures-contract adaptation label appended (cached: policy() returns &'static str).
+pub fn dual_basis(id: &str, old: &'static str) -> &'static str {
+    static C: std::sync::Mutex<BTreeMap<String, &'static str>> = std::sync::Mutex::new(BTreeMap::new());
+    let Some(c) = card(id) else { return old };
+    let mut m = C.lock().unwrap();
+    m.entry(id.to_string()).or_insert_with(|| Box::leak(format!("{old} FUTURES CONTRACT ({}): {}", ticker_of_sym(c.1), c.2).into_boxed_str()))
+}
+fn ticker_of_sym(sym: &str) -> String { MARKETS.iter().find(|m| m.sym == sym).map(ticker).unwrap_or_default() }
+const CARDS_V5: &[(&str, &str, &str)] = &[("fot08_tnote", "&ZN", V5_TN), ("ch_bta2_65sma_ravi", "&SP", V5_RAVI), ("stad6_fps", "&6B", V5_FPS), ("mjspt_3dma", "&YAP", V5_SPI)];
 const STAD5I2: &str = "Omega Research, STAD Vol 5 (1998) ch.2 p.26-32, Intermarket II: the printed TradeStation code (prSteps counts the consecutive cuts of the US prime rate, Data3; buy on the close when prSteps >= 1 and rises; exit on the close when BarsSinceEntry > 100; $4,500 money-management stop) on the Norgate S&P 500 continuous contract (from 1982-04-21; the book's test starts 1/78) with the daily FRED prime rate (DPRIME) as Data3, $4,500 at $500 per point. published 1982-04-21..1995-07-31 (R4 #328/#330: the $4,500 stop fills at the open on gaps, and from August 1995 Norgate's &SP open is not the pit open). DECLARED READINGS (R4 #346), UNVERIFIED: the prime-rate span before 2008-12-16 is monthly-checked only (lane DA).";
 /// Lane M3 (17 Nov 2026, R4 #346): futures cards that read a staged rate series.
 const FTMCOT: &str = "Murray Ruggiero, What makes a system a winner, Futures Magazine April 2002 p.59: the COT commercials model on weekly S&P 500 bars (buy at the open when COTVal = the 50-week normalised net commercial position is above 0.80 and the close is below its close 3 weeks back; exit at the open when COTVal < 0.40), run on the Norgate S&P 500 continuous contract (R4 #346) with the CFTC full-size S&P 500 commercial long and short (contract 138741, each row used only on bars on or after its ReleaseDate); published 1992-10-06..1995-07-31 (R4 #330: from August 1995 Norgate's &SP open is not the pit open). DECLARED READINGS, UNVERIFIED.";
@@ -770,6 +787,7 @@ pub fn card_basis(def: &crate::connors::StrategyDef) -> Option<&'static str> { c
 /// Readiness: a futures card runs only on the continuous contract its source names (None = this is that contract, or not a futures card).
 pub fn home(id: &str, t: &str) -> Option<String> {
     card(id)?;
+    if DUAL.contains(&id) && of_ticker(t).is_none() { return None; } // R4 #367 (2): existing non-futures admissions are unchanged
     if id == "scsaitta_volma" && matches!(t, "NIFTY 50" | "NIFTYBANK") { return None; } // lane IN2 (R4 #340): the declared India index adaptation (futures volume as the volume proxy)
     let ms: Vec<&Market> = card_markets(id).into_iter().filter_map(|s| MARKETS.iter().find(|m| m.sym == s)).collect();
     let on = of_ticker(t).is_some_and(|m| ms.iter().any(|h| h.sym == m.sym));
@@ -788,6 +806,14 @@ mod tests {
         assert!(two.contains("this card's &ZN trades") && two.contains("this card's &ZC trades"));
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
         assert_eq!(super::zb_open_notes("dmadr_daily", "x"), "x");
+    }
+    #[test] fn v5_dual_cards_run_on_their_contract_and_keep_existing_admissions() { // R4 #367 (2) review follow-up
+        for (id, own, other) in [("fot08_tnote", "10-Year T-Note (Norgate &ZN)", "Japanese Yen (Norgate &6J)"), ("ch_bta2_65sma_ravi", "S&P 500 (Norgate &SP)", "Japanese Yen (Norgate &6J)"), ("stad6_fps", "British Pound (Norgate &6B)", "Japanese Yen (Norgate &6J)"), ("mjspt_3dma", "ASX SPI 200 (Norgate &YAP)", "Japanese Yen (Norgate &6J)")] {
+            assert!(super::home(id, own).is_none() && super::home(id, other).is_some() && super::home(id, "SPY").is_none(), "{id}");
+            let def = crate::books::catalogue().into_iter().find(|d| d.id == id).unwrap();
+            assert!(crate::instrument_policy::check(&def, own, false).is_none() && crate::instrument_policy::check(&def, "SPY", false).is_none(), "{id}");
+            assert!(crate::instrument_policy::policy(&def).source_basis.contains("FUTURES CONTRACT") && crate::instrument_policy::policy(&def).source_basis.contains("#367 (2)"), "{id}");
+        }
     }
     #[test] fn market_symbols_unique() { let mut v: Vec<&str> = super::MARKETS.iter().map(|m| m.sym).collect(); let n = v.len(); v.sort(); v.dedup(); assert_eq!(v.len(), n, "duplicate MARKETS symbol (lane merge)"); } // lane PF (review PF2 M4)
     use super::*;
