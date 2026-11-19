@@ -727,6 +727,14 @@ const V5_SPI: &str = "Michael Johnson, Sign Post Trading, in Stephen Pierce (ed.
 const V5_PIT_WHY: &str = "from August 1995 Norgate's &SP open is not the pit open (R4 #330) and this card enters at the next open, so only the 1982-04-21..1995-07-31 part of the book's 4/82-7/95 test is published";
 /// R4 #367 (2): these cards keep every admission they already had (indices, ETFs, stocks, US and India) and ALSO run on their one futures contract; no existing run is refused.
 pub const DUAL: &[&str] = &["fot08_tnote", "ch_bta2_65sma_ravi", "stad6_fps", "mjspt_3dma"];
+/// The policy source_basis of a DUAL card with the futures-contract adaptation label appended (cached: policy() returns &'static str).
+pub fn dual_basis(id: &str, old: &'static str) -> &'static str {
+    static C: std::sync::Mutex<BTreeMap<String, &'static str>> = std::sync::Mutex::new(BTreeMap::new());
+    let Some(c) = card(id) else { return old };
+    let mut m = C.lock().unwrap();
+    m.entry(id.to_string()).or_insert_with(|| Box::leak(format!("{old} FUTURES CONTRACT ({}): {}", ticker_of_sym(c.1), c.2).into_boxed_str()))
+}
+fn ticker_of_sym(sym: &str) -> String { MARKETS.iter().find(|m| m.sym == sym).map(ticker).unwrap_or_default() }
 const CARDS_V5: &[(&str, &str, &str)] = &[("fot08_tnote", "&ZN", V5_TN), ("ch_bta2_65sma_ravi", "&SP", V5_RAVI), ("stad6_fps", "&6B", V5_FPS), ("mjspt_3dma", "&YAP", V5_SPI)];
 const STAD5I2: &str = "Omega Research, STAD Vol 5 (1998) ch.2 p.26-32, Intermarket II: the printed TradeStation code (prSteps counts the consecutive cuts of the US prime rate, Data3; buy on the close when prSteps >= 1 and rises; exit on the close when BarsSinceEntry > 100; $4,500 money-management stop) on the Norgate S&P 500 continuous contract (from 1982-04-21; the book's test starts 1/78) with the daily FRED prime rate (DPRIME) as Data3, $4,500 at $500 per point. published 1982-04-21..1995-07-31 (R4 #328/#330: the $4,500 stop fills at the open on gaps, and from August 1995 Norgate's &SP open is not the pit open). DECLARED READINGS (R4 #346), UNVERIFIED: the prime-rate span before 2008-12-16 is monthly-checked only (lane DA).";
 /// Lane M3 (17 Nov 2026, R4 #346): futures cards that read a staged rate series.
@@ -798,6 +806,14 @@ mod tests {
         assert!(two.contains("this card's &ZN trades") && two.contains("this card's &ZC trades"));
         assert!(super::zb_open_notes("mhs_us800310_1", "x").starts_with("x On Norgate &ZB, from 1999-12 to 2000-10") && super::zb_open_notes("mhs_us800310_1", "x").contains("3 of this card's"));
         assert_eq!(super::zb_open_notes("dmadr_daily", "x"), "x");
+    }
+    #[test] fn v5_dual_cards_run_on_their_contract_and_keep_existing_admissions() { // R4 #367 (2) review follow-up
+        for (id, own, other) in [("fot08_tnote", "10-Year T-Note (Norgate &ZN)", "Japanese Yen (Norgate &6J)"), ("ch_bta2_65sma_ravi", "S&P 500 (Norgate &SP)", "Japanese Yen (Norgate &6J)"), ("stad6_fps", "British Pound (Norgate &6B)", "Japanese Yen (Norgate &6J)"), ("mjspt_3dma", "ASX SPI 200 (Norgate &YAP)", "Japanese Yen (Norgate &6J)")] {
+            assert!(super::home(id, own).is_none() && super::home(id, other).is_some() && super::home(id, "SPY").is_none(), "{id}");
+            let def = crate::books::catalogue().into_iter().find(|d| d.id == id).unwrap();
+            assert!(crate::instrument_policy::check(&def, own, false).is_none() && crate::instrument_policy::check(&def, "SPY", false).is_none(), "{id}");
+            assert!(crate::instrument_policy::policy(&def).source_basis.contains("FUTURES CONTRACT") && crate::instrument_policy::policy(&def).source_basis.contains("#367 (2)"), "{id}");
+        }
     }
     #[test] fn market_symbols_unique() { let mut v: Vec<&str> = super::MARKETS.iter().map(|m| m.sym).collect(); let n = v.len(); v.sort(); v.dedup(); assert_eq!(v.len(), n, "duplicate MARKETS symbol (lane merge)"); } // lane PF (review PF2 M4)
     use super::*;
