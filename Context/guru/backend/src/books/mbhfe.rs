@@ -50,22 +50,32 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("mbhfe_ad11_nse", "11-day advance/decline ratio > 1.9 · NSE breadth (India)", "Ch 4 · Macro technical tools: breadth", "Long", Live, AD_NSE, AD_RULES,
           "India mapping: NSE advances/declines (extra_data/india/NSE_ADV_DEC.csv, 1999-) instead of NYSE; 1.9 and 63 days kept.", None),
         // ---- Ch 2 · monetary and economic gauges (macro data)
-        nd("mbhfe_tbill_roc", "3-month T-bill yield 12-month ROC 6% (Spreadsheets 2.1-2.2)", "Ch 2 · Liquidity: monetary gauges",
-           "monthly 3-month T-bill yield history (1943-) - no rates data in the vault",
-           &["E|\"Buy S&P when the 12-month rate of change of 3-Month T-Bill Yield < 6.0%. Exit when > 6.0%.\" (Spreadsheet 2.1, p.64)",
-             "E|Bearish twin: \"Buy S&P when the 12-month rate of change of 3-Month T-Bill Yield > 6.0%. Exit when < 6.0%.\" (Spreadsheet 2.2, p.66)"],
-           "Monthly closes of the T-bill yield and the S&P. India would need 91-day T-bill yields (RBI) - not in the vault.",
-           claim("", "", "", "", "S&P 1/29/43-12/31/97: 18.8% a.r. when ROC <= 6%, 2.2% when > 6% (Master spreadsheet p.363)")),
-        nd("mbhfe_tbond_roc", "30-year Treasury yield 12-month ROC 9% (Spreadsheets 2.5-2.6)", "Ch 2 · Liquidity: monetary gauges",
-           "monthly 30-year Treasury bond yield history - no rates data in the vault",
-           &["E|\"Buy S&P when the 12-month rate of change of 30-Year Treasury Bond Yield < 9%. Exit when > 9%.\" (Spreadsheet 2.5, p.70)",
-             "E|Bearish twin: \"> 9%. Exit when < 9%.\" (Spreadsheet 2.6, p.70)"],
-           "", claim("", "", "", "", "S&P 1/29/43-12/31/97: 14.8% a.r. (< 9%) vs 0.9% (> 9%)")),
-        nd("mbhfe_yield_curve", "Yield curve: 30-year / 3-month ratio (Spreadsheets 2.7-2.8)", "Ch 2 · Liquidity: monetary gauges",
-           "monthly 30-year Treasury and 3-month T-bill yields - not in the vault",
-           &["E|\"Buy S&P when the ratio of 30-Year Treasury Bonds Yields to 3-Month Treasury Bills is < 1. Exit when the ratio > 1.\" (Spreadsheet 2.7, p.72)",
-             "E|\"Buy S&P when the ratio ... is > 1.15. Exit when the ratio < 1.15.\" (Spreadsheet 2.8, p.72)"],
-           "", claim("", "", "", "", "S&P 1/29/43-12/31/97: -7.5% a.r. (< 1.0) vs 19.1% (> 1.15)")),
+        StrategyDef { needs_series: &["DTB3"], ..d("mbhfe_tbill_roc", "3-month T-bill yield 12-month ROC 6% (Spreadsheets 2.1-2.2)", "Ch 2 · Liquidity: monetary gauges", "Long", Live, &[],
+           &["E|\"Buy S&P when the 12-month rate of change of 3-Month T-Bill Yield < 6.0%.\" (Spreadsheet 2.1, p.64)",
+             "X|\"Exit when > 6.0%.\" (Spreadsheet 2.1, p.64)",
+             "E|Printed twin (option invert = 1): \"Buy S&P when the 12-month rate of change of 3-Month T-Bill Yield > 6.0%. Exit when < 6.0%.\" (Spreadsheet 2.2, p.66)",
+             "A|[Declared reading 1, lane H1b 19 Nov 2026, R4 #339/#343/#346, #372] a month's value of a rate = the last published FRED daily print inside that calendar month (3-month bill: DTB3, discount basis, the held series in place of the book's bill yield, R4 #340); the signal is read on the month's last trading day, but the rate of day t is public only from the close of the next trading day (R4 #372), so the month-end state is usable at that close and the order fills at the FOLLOWING open (t+2); option fill = 1 fills at the open right after the month-end (one day ahead on the rates), option fill = 2 at the month-end close as the printed trade lists do (two days ahead); no print in a month = no signal and the previous state is kept (nothing filled)",
+                          "A|[Declared reading 2] 12-month rate of change = percent change of the rate against the month-end 12 calendar months earlier ('today's 3-month T-bill rate 4.26 percent and one year ago 4 percent ... risen 6.5 percent', p.64); a zero rate a year earlier gives no signal; a value exactly on the threshold keeps the previous state (the spreadsheets print '< 6.0%' to buy and '> 6.0%' to exit)",
+             "A|[Declared adaptation, R4 #340] price index return instead of the book's S&P monthly closes (same series type); the cash leg earns nothing"],
+           "Book (p.64-67, Spreadsheets 2.1/2.2, 1/29/43-12/31/97, monthly S&P closes): 2.1 18.8% a year, 44% of days invested, 36 trades; 2.2 2.2% a year. Runs on the held index / ETF price series from SPX 1983 (SPY 1993) with FRED daily rates (DTB3 from 1954, DGS30 from 1977-02-15, DGS10 from 1962); the book window starts 1943 on S&P monthly closes, so the printed trade list is compared only for its post-1983 segment and the card stays UNVERIFIED (R4 #368 (1), #370). Out of the market = flat with no interest (the printed table's cash leg is not simulated). Indices only (R4 #364 (2)); the India engine holds no US rates and refuses it.",
+           claim("", "", "", "", "S&P 1/29/43-12/31/97: 18.8% a.r. when ROC < 6%, 2.2% when > 6% (p.64-67)")) },
+        StrategyDef { needs_series: &["DGS30", "DGS10"], ..d("mbhfe_tbond_roc", "30-year Treasury yield 12-month ROC 9% (Spreadsheets 2.5-2.6)", "Ch 2 · Liquidity: monetary gauges", "Long", Live, &[],
+           &["E|\"Buy S&P when the 12-month rate of change of 30-Year Treasury Bond Yield < 9%.\" (Spreadsheet 2.5, p.70)",
+             "X|\"Exit when > 9%.\" (Spreadsheet 2.5, p.70)",
+             "E|Printed twin (option invert = 1): \"Buy S&P when the 12-month rate of change of 30-Year Treasury Bond Yield > 9%. Exit when < 9%.\" (Spreadsheet 2.6, p.70)",
+             "A|[Declared reading 1, lane H1b 19 Nov 2026, R4 #339/#343/#346, #372] a month's value of the yield = the last published FRED DGS30 daily print inside that calendar month (30-year Treasury constant-maturity yield); the signal is read on the month's last trading day, but the rate of day t is public only from the close of the next trading day (R4 #372), so the month-end state is usable at that close and the order fills at the FOLLOWING open (t+2); option fill = 1 fills at the open right after the month-end (one day ahead on the rates), option fill = 2 at the month-end close as the printed trade lists do (two days ahead); no print in a month = no signal and the previous state is kept (nothing filled)",
+                          "A|[Declared reading 2] 12-month rate of change = percent change of the yield against the month-end 12 calendar months earlier, the form of the book's worked example for the bill ('4.26 percent and one year ago 4 percent ... risen 6.5 percent', p.64) applied to the 30-year yield; a zero yield a year earlier gives no signal; a value exactly on the 9% threshold keeps the previous state (Spreadsheet 2.5 prints '< 9%' to buy and '> 9%' to exit, p.70)",
+             "A|[Declared adaptation, R4 #340 (data substitution)] the 30-year yield is FRED DGS30 (held complete from 1977-02-15; the series carries prints for 2002-02-19..2006-02-08, the years the Treasury issued no 30-year bond, as FRED publishes them, which the book's 1997 data could not contain). If a month-pair (now and 12 months earlier) had no DGS30 value on either side the 10-year yield DGS10 would be used for BOTH sides (never one series against the other); that fallback does not trigger in the held file. February 2002 uses the 2002-02-28 print; the cash leg earns nothing"],
+           "Book (p.70-71, Spreadsheets 2.5/2.6, 1/29/43-12/31/97): 2.5 14.8% a year, 64% invested; 2.6 -0.9% a year. Runs on the held index / ETF price series from SPX 1983 (SPY 1993) with FRED daily rates (DTB3 from 1954, DGS30 from 1977-02-15, DGS10 from 1962); the book window starts 1943 on S&P monthly closes, so the printed trade list is compared only for its post-1983 segment and the card stays UNVERIFIED (R4 #368 (1), #370). Out of the market = flat with no interest (the printed table's cash leg is not simulated). Indices only (R4 #364 (2)); the India engine holds no US rates and refuses it.",
+           claim("", "", "", "", "S&P 1/29/43-12/31/97: 14.8% a.r. (< 9%) vs -0.9% (> 9%) (p.70-71)")) },
+        StrategyDef { needs_series: &["DTB3", "DGS30", "DGS10"], ..d("mbhfe_yield_curve", "Yield curve: 30-year / 3-month ratio (Spreadsheets 2.7-2.8)", "Ch 2 · Liquidity: monetary gauges", "Long", Live, &[],
+           &["E|\"Buy S&P when the ratio of 30-Year Treasury Bonds Yields to 3-Month Treasury Bills is < 1.\" (Spreadsheet 2.7, p.72)",
+             "X|\"Exit when the ratio > 1.\" (Spreadsheet 2.7, p.72)",
+             "E|Printed twin (options invert = 1, threshold = 1.15): \"Buy S&P when the ratio ... is > 1.15. Exit when the ratio < 1.15.\" (Spreadsheet 2.8, p.72)",
+             "A|[Declared reading 1, lane H1b 19 Nov 2026, R4 #339/#343/#346, #372] the ratio uses each month's last published daily FRED print (DGS30 over DTB3, discount basis); the signal is read on the month's last trading day, but the rate of day t is public only from the close of the next trading day (R4 #372), so the month-end state is usable at that close and the order fills at the FOLLOWING open (t+2); option fill = 1 fills at the open right after the month-end (one day ahead on the rates), option fill = 2 at the month-end close as the printed trade lists do (two days ahead); no print or a zero bill rate = no signal and the previous state is kept; a ratio exactly on the threshold keeps the previous state",
+             "A|[Declared adaptation, R4 #340 (data substitution)] DGS30 is held complete from 1977-02-15 (including 2002-02-19..2006-02-08 as FRED publishes them); in a month without a DGS30 print the 10-year DGS10 would be used for the ratio (never triggers in the held file); the cash leg earns nothing"],
+           "Book (p.72-73, Spreadsheets 2.7/2.8, 1/29/43-12/31/97): 2.7 -7.5% a year, 14% invested, 12 trades; 2.8 19.1% a year, 63% invested. Runs on the held index / ETF price series from SPX 1983 (SPY 1993) with FRED daily rates (DTB3 from 1954, DGS30 from 1977-02-15, DGS10 from 1962); the book window starts 1943 on S&P monthly closes, so the printed trade list is compared only for its post-1983 segment and the card stays UNVERIFIED (R4 #368 (1), #370). Out of the market = flat with no interest (the printed table's cash leg is not simulated). Indices only (R4 #364 (2)); the India engine holds no US rates and refuses it.",
+           claim("", "", "", "", "S&P 1/29/43-12/31/97: -7.5% a.r. (< 1.0) vs 19.1% (> 1.15) (p.72-73)")) },
         nd("mbhfe_monetary_composite", "Monetary composite (Spreadsheet 2.9)", "Ch 2 · Liquidity: monetary gauges",
            "monthly T-bill yield, Dow Jones 20 Bond Average and 30-year Treasury yield - not in the vault",
            &["E|\"Buy S&P when 3-Month T-Bill Yield 12-Month ROC <= 6.0%, Dow Jones 20 Bond Average 12-Month ROC > -1.5%, and 30-Year Treasury Bond Rate 12-Month ROC < 9%. Exit when any of these is no longer true.\" (Spreadsheet 2.9, p.74)"],
@@ -216,6 +226,13 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             ParamDef { key: "bdma", label: "T-bond yield simple average (weeks)", def: 40.0, min: 5.0, max: 104.0, step: 1.0 },
             ParamDef { key: "fill", label: "[Option, not the default] 1 = fill at the week's last close instead of the next open; it uses the week's last yield print, which FRED/H.15 publishes the next business day, so it looks one day ahead on the rates", def: 0.0, min: 0.0, max: 1.0, step: 1.0 },
         ]),
+        "mbhfe_tbill_roc" | "mbhfe_tbond_roc" | "mbhfe_yield_curve" => Some(vec![
+            ParamDef { key: "months", label: "Rate-of-change look-back (months; the book's 12)", def: 12.0, min: 3.0, max: 24.0, step: 1.0 },
+            ParamDef { key: "thr", label: if id == "mbhfe_tbill_roc" { "ROC threshold % (book: 6.0)" } else if id == "mbhfe_tbond_roc" { "ROC threshold % (book: 9)" } else { "Ratio threshold (Spreadsheet 2.7: 1.0; 2.8: 1.15)" },
+                def: match id { "mbhfe_tbill_roc" => 6.0, "mbhfe_tbond_roc" => 9.0, _ => 1.0 }, min: 0.0, max: 20.0, step: 0.05 },
+            ParamDef { key: "invert", label: "[Printed twin] 1 = buy ABOVE the threshold (Spreadsheets 2.2 / 2.6 / 2.8)", def: 0.0, min: 0.0, max: 1.0, step: 1.0 },
+            ParamDef { key: "fill", label: "[Options, not the default] 1 = fill at the open after the month-end (looks one day ahead: the rate of day t is public only from the close of t+1, R4 #372); 2 = fill at the month-end close as the printed trade lists do (looks two days ahead)", def: 0.0, min: 0.0, max: 2.0, step: 1.0 },
+        ]),
         "mbhfe_upvol77" | "mbhfe_upvol77_nse" => Some(vec![
             ParamDef { key: "ma", label: "Moving-average days", def: 5.0, min: 3.0, max: 20.0, step: 1.0 },
             ParamDef { key: "level", label: "Up volume % of total above", def: 77.0, min: 60.0, max: 90.0, step: 0.5 },
@@ -255,6 +272,40 @@ fn hold_after(x: &Ctx, sig: &[f64], level: f64, hold: usize, from: usize, to: us
     out
 }
 
+/// Lane H1b (19 Nov 2026, R4 #339/#343/#346): long (1) / flat (0) state per bar from the monthly rate rules (Boucher Ch.2,
+/// Spreadsheets 2.1-2.2, 2.5-2.8), decided on each calendar month's last trading day and carried to the next one.
+fn rate_targets(x: &Ctx, id: &str, k: usize, thr: f64, inv: bool) -> Option<Vec<i8>> {
+    let tb = x.extra.get("DTB3");
+    let (b30, b10) = (x.extra.get("DGS30"), x.extra.get("DGS10"));
+    let n = x.c.len();
+    let me: Vec<usize> = (0..n.saturating_sub(1)).filter(|&i| x.r[i].date[..7] != x.r[i + 1].date[..7]).collect();
+    let last = |v: Option<&Vec<f64>>, m: usize| -> f64 {
+        let Some(v) = v else { return f64::NAN };
+        let a = if m == 0 { 0 } else { me[m - 1] + 1 };
+        (a..=me[m]).rev().map(|i| v[i]).find(|q| q.is_finite()).unwrap_or(f64::NAN)
+    };
+    if match id { "mbhfe_tbill_roc" => tb.is_none(), "mbhfe_tbond_roc" => b30.is_none() && b10.is_none(), _ => tb.is_none() || (b30.is_none() && b10.is_none()) } { return None; }
+    let (mut tgt, mut state) = (vec![0i8; n], 0i8);
+    for m in 0..me.len() {
+        let v = match id {
+            "mbhfe_tbill_roc" if m >= k => { let (a, b) = (last(tb, m), last(tb, m - k)); if b > 0. { (a / b - 1.) * 100. } else { f64::NAN } }
+            "mbhfe_tbond_roc" if m >= k => {
+                let r = |s: Option<&Vec<f64>>| { let (a, b) = (last(s, m), last(s, m - k)); if a.is_finite() && b > 0. { (a / b - 1.) * 100. } else { f64::NAN } };
+                let v = r(b30); if v.is_finite() { v } else { r(b10) }
+            }
+            "mbhfe_yield_curve" => { let (t, l) = (last(tb, m), last(b30, m)); let l = if l.is_finite() { l } else { last(b10, m) }; if t > 0. { l / t } else { f64::NAN } }
+            _ => f64::NAN,
+        };
+        if v.is_finite() {
+            let (hi, lo) = (v > thr, v < thr);
+            if inv { if hi { state = 1 } else if lo { state = 0 } } else if lo { state = 1 } else if hi { state = 0 }
+        }
+        let end = if m + 1 < me.len() { me[m + 1] } else { n };
+        for t in me[m]..end { tgt[t] = state; }
+    }
+    Some(tgt)
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return Some(vec![]); }
@@ -263,6 +314,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let u = |k: &str| g(k).round().max(1.) as usize;
         let Some(tgt) = crate::books::nfgu::weekly_rate_targets(x, u("spma"), u("tbma"), u("bdma"), |sp, sa, t, ta, b, ba| sp > sa && (t < ta || b < ba)) else { return Some(vec![]) };
         return Some(crate::books::rbtie::target_trades(x, &tgt, from, to, g("fill") < 0.5, "criteria no longer met"));
+    }
+    if matches!(id, "mbhfe_tbill_roc" | "mbhfe_tbond_roc" | "mbhfe_yield_curve") { // lane H1b: monthly state of the Ch.2 rate rules
+        let Some(tgt) = rate_targets(x, id, g("months").round().max(1.) as usize, g("thr"), g("invert") >= 0.5) else { return Some(vec![]) };
+        // R4 #372: the rate of day t is public only from the close of t+1. Default fill = 0: the month-end state is usable at the close of the
+        // next trading day and fills at the following open (t+2); fill 1 = open of t+1 (looks one day ahead); fill 2 = month-end close (printed lists; two days ahead).
+        let f = g("fill").round() as i32;
+        let tgt: Vec<i8> = if f == 0 { std::iter::once(0).chain(tgt.iter().cloned()).take(tgt.len()).collect() } else { tgt };
+        return Some(crate::books::rbtie::target_trades(x, &tgt, from, to, f < 2, "rate rule turned"));
     }
     let (ma, level, hold) = (g("ma").round().max(1.0) as usize, g("level"), g("hold").round().max(1.0) as usize);
     let nse = id.ends_with("_nse");
@@ -312,3 +371,29 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Mark Boucher tested these timing models on the S&P 500 (breadth thrusts, Renshaw, Appel) and the Value Line Composite (Zweig 4%) with NYSE breadth; the _nse versions read NSE breadth for India. Runs on other indices, ETFs and single stocks are a declared application.",
     basis: "The Hedge Fund Edge (1999) Ch.4 p.136-139, System Spreadsheets 4.2 (up volume > 77%) and 4.3 (11-day A/D > 1.9); The Science of Trading workbook, Timing Models pp.19-22 (Zweig 4% weekly, Renshaw thrust, Appel Impulse, Appel McClellan, Appel Combo). Index/ETF/stock runs are a declared application.",
 };
+
+#[cfg(test)]
+mod h1b_tests {
+    use super::*;
+    /// Lane H1b reference feed: `MB_DUMP=out MB_ID=mbhfe_tbill_roc MB_TICKER=SPX MB_CSV=us_data.csv MB_DIR=extra_data/us [MB_INV=1 MB_THR=1.15] cargo test --release mb_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn mb_dump() {
+        let (Ok(out), Ok(id), Ok(tk), Ok(csv), Ok(dir)) = (std::env::var("MB_DUMP"), std::env::var("MB_ID"), std::env::var("MB_TICKER"), std::env::var("MB_CSV"), std::env::var("MB_DIR")) else { return };
+        let iso = |d: &str| format!("{}-{}-{}", &d[6..10], &d[3..5], &d[0..2]);
+        let rows: Vec<crate::Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != tk { return None; }
+            Some(crate::Row { ticker: tk.clone(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let ld = |n: &str| -> std::collections::BTreeMap<String, f64> { std::fs::read_to_string(format!("{dir}/{n}.csv")).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect() };
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        for n in ["DTB3", "DGS30", "DGS10"] { let m = ld(n); x.extra.insert(n.into(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect()); }
+        let mut p = Params::new();
+        if let Ok(v) = std::env::var("MB_INV") { p.insert("invert".into(), v.parse().unwrap()); }
+        if let Ok(v) = std::env::var("MB_THR") { p.insert("thr".into(), v.parse().unwrap()); }
+        if let Ok(v) = std::env::var("MB_FILL") { p.insert("fill".into(), v.parse().unwrap()); }
+        let t = run(&id, &x, 0, rows.len() - 1, &p).unwrap();
+        let mut o = String::new();
+        for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, o).unwrap();
+    }
+}
