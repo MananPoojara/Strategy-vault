@@ -809,12 +809,15 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .bk-made-author { font: 600 8.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: .18em; text-transform: uppercase; opacity: .8; }
 .bk-made-title { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f3e5bb55; font: 600 19px/1.15 "Newsreader", Georgia, serif; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; text-shadow: 0 1px 0 rgb(0 0 0 / .25); }
 .bk-made-year { margin-top: auto; font: 500 10px "IBM Plex Mono", monospace; opacity: .75; }
-.bk:hover .bk-book, .bk-stage:focus-visible .bk-book { transform: translateY(-6px); }
-.bk:hover .bk-stage::after { opacity: .6; }
+.bk:hover .bk-book, .bk-stage:focus-visible .bk-book { transform: translateY(-10px); }
+.bk-img, .bk-made { transition: box-shadow .4s; }
+.bk:hover .bk-img, .bk:hover .bk-made { box-shadow: inset 4px 0 0 rgb(255 255 255 / .18), inset -1px 0 0 rgb(0 0 0 / .2), 0 30px 36px -20px rgb(0 0 0 / .7), 0 10px 16px -8px rgb(0 0 0 / .35); }
+.bk:hover .bk-stage::after { opacity: .45; transform: scaleX(.85); }
+.bk-stage::after { transition: opacity .4s, transform .4s; }
 .bk-body { padding: 16px 4px 0; display: flex; flex-direction: column; }
 .bk-body h3 { margin: 0; min-height: 2.6em; font-size: 16px; line-height: 1.3; letter-spacing: -.005em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.bk-body h3 a { color: var(--ink); text-decoration: none; background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; transition: background-size .35s; }
-.bk:hover .bk-body h3 a { background-size: 100% 1px; }
+.bk-body h3 a { color: var(--ink); text-decoration: none; transition: color .25s; }
+.bk:hover .bk-body h3 a { color: var(--blue); }
 .bk-meta { margin-top: 4px; font-size: 12px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bk-summary { margin: 10px 0 0; min-height: 4.65em; font-size: 13px; line-height: 1.55; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .bk-stats { display: flex; gap: 16px; margin-top: 14px; font-size: 12px; color: var(--ink3); }
