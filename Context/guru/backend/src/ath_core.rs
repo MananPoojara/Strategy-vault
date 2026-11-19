@@ -246,20 +246,26 @@ pub struct PortfolioParams {
     pub commission_pct: f64,
     pub start: i32,
     pub end: i32,
-    /// book profit and cash as AmiBroker does (`ab_profit` / `ab_cost`); on only for the variants in `ath_run::AMIBROKER_PROFIT`
+    /// book profit and cash as AmiBroker does (`ab_profit` / `ab_cost`); on for every ATH variant (`ath_run::portfolio_of`, 18 Nov 2026)
     pub amibroker_profit: bool,
     /// on top of `amibroker_profit`, the rest of AmiBroker's arithmetic (6-decimal equity exports of the Tulsi %swing sheets): the
     /// commission rate as a float32, 2-decimal prices (`price_ab`) in the profit, open positions valued at those prices in the equity,
-    /// and the position size from the unrounded equity; on only for the variants in `ath_run::AMIBROKER_FULL`
+    /// and the position size from the unrounded equity; on for every ATH variant (18 Nov 2026)
     pub amibroker_full: bool,
     /// size each entry from the equity at that moment (AmiBroker's default, `UsePrevBarEquityForPosSizing` False): cash plus the open
     /// positions at the current close less the commission to close them, so it falls with every entry of the bar; off = the previous
     /// bar's equity; on only for the variants in `ath_run::CURRENT_EQUITY_SIZING`
     pub current_equity_sizing: bool,
-    /// in the full set, size with the stored float32 price (174.39999) instead of its 2-decimal / 7-digit value (174.40); on only for the
-    /// variants in `ath_run::SIZE_F32_PRICE` (Fund Issue sheet: HAVELLS 2012-01-30 190,133 shares, GREENPLY 2013-04-09 250,135) -- the
-    /// MARICO 2020-12-07 case of `ytath_running_pctswing_after_2_pctswing` needs the 2-decimal price, so it stays per variant
+    /// in the full set, size with the stored float32 price (174.39999) instead of its 2-decimal / 7-digit value (174.40); on for every
+    /// ATH variant (Fund Issue sheet: HAVELLS 2012-01-30 190,133 shares, GREENPLY 2013-04-09 250,135; with the float32-step decimals the
+    /// running_pctswing 6-decimal sheets, MARICO 2020-12-07 included, stay equal)
     pub size_f32_price: bool,
+    /// Detail Log day-summary values (Market Value, Equity, Cash) rounded to 2 decimals half away from zero, like AmiBroker (a value of exactly
+    /// 7,999,931.625 prints 7,999,931.63; Rust's `{:.2}` rounds half to even and prints .62); text only, on for every ATH variant
+    pub detail_half_up: bool,
+    /// significant digits of the prices in the profit / value arithmetic: 7, 6, or 0 = AmiBroker's own rule (decimals of the
+    /// float32 step, `ab_price_digits`), 0 for every ATH variant
+    pub price_digits: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -295,7 +301,35 @@ struct Open {
 /// Market value of an open position at price `px` (a short sale: the margin set aside plus the unrealised gain).
 /// A price as AmiBroker takes it in a trade's profit: its 7-significant-digit decimal (251.899994 -> 251.9).
 fn price7(x: f64) -> f64 {
-    format!("{:.6e}", x).parse().unwrap_or(x)
+    let digits = PRICE_DIGITS.with(|d| d.get());
+    let digits = if digits == 0 { ab_price_digits(x) } else { digits }.max(1);
+    // an exact tie rounds half away from zero, as AmiBroker (HINDZINC 92.65625 -> 92.6563, 83.40625 -> 83.4063; `{:e}` alone gives the even digit)
+    let exact = format!("{:.*e}", digits + 29, x.abs());
+    let m: String = exact.split('e').next().unwrap_or("").chars().filter(|c| c.is_ascii_digit()).collect();
+    let tail = &m[digits.min(m.len())..];
+    if tail.starts_with('5') && tail[1..].chars().all(|c| c == '0') {
+        let step = 10f64.powi(x.abs().log10().floor() as i32 - digits as i32 + 1);
+        return format!("{:.*e}", digits - 1, x + x.signum() * step * 0.25).parse().unwrap_or(x);
+    }
+    format!("{:.*e}", digits - 1, x).parse().unwrap_or(x)
+}
+
+/// How many significant digits AmiBroker keeps of a stored float32 price. The decimals follow the float32 step (ulp) at that price:
+/// the largest d with 10^-d >= 1.5 ulp, i.e. 6 decimals for 4-8, 5 for 8-64, 4 for 64-1024, 3 for 1024-8192, 2 for 8192-65536.
+/// Found 17 Nov 2026: every one of 1,023 one-odd-price days fits (MAHLIFE 8.9666662 -> 8.96667, VAIBHAVGBL 73.0099945 -> 73.01,
+/// ASTRAL 64.2824936 -> 64.2825, ASTRAL 759.6899414 -> 759.6899, MAHLIFE 4.9666667 -> 4.966667) and DIXON 2020-06-08 1002.0099487 -> 1002.0099
+/// (turnover 50 Open 75,575 sh, Rs 7.56; Fund Issue 2 % 43,058 sh, Rs 4.31) while 1060.6799316 -> 1060.680 on its later days. It equals the
+/// earlier 6 / 7 digit rule everywhere except 1000-1023.99, where it keeps 4 decimals.
+fn ab_price_digits(x: f64) -> usize {
+    if !x.is_finite() || x == 0.0 { return 7; }
+    let ulp32 = 2f64.powi(x.abs().log2().floor() as i32 - 23);
+    let decimals = (-(1.5 * ulp32).log10()).floor() as i32;
+    (decimals + x.abs().log10().floor() as i32 + 1).max(1) as usize
+}
+
+thread_local! {
+    /// Significant digits of the prices AmiBroker's profit / value arithmetic uses (7 = the proven default); set per run from `PortfolioParams::price_digits`.
+    static PRICE_DIGITS: std::cell::Cell<usize> = const { std::cell::Cell::new(7) };
 }
 
 /// AmiBroker's trade profit (6-decimal export of the Tulsi RSI Ranking sheet, 1,620 trades): shares x (exit - entry) on the 7-digit
@@ -310,7 +344,22 @@ pub fn ab_profit(sh: f64, entry: f64, exit: f64, comm: f64) -> f64 {
 /// ALL) and the other 6-decimal exports: 3,086 of 3,094 trade profits exact (7 digits only: 3,049).
 fn price_ab(x: f64) -> f64 {
     let r = (x * 100.0).round() / 100.0;
-    if (x - r).abs() < 1e-4 { r } else { price7(x) }
+    // a 2-decimal price only when the stored float32 IS the float32 of that price; 759.68994 (a split-adjusted 759.6899) stays 759.6899
+    // (Fund Issue sheet ytath_entry_and_pctswing_exit_with_pct_hard_2, 4,008 trades with brokerage 0: ASTRAL 2019-05-21, SRF 2020-10-26;
+    // the former 1e-4 snap was one profit worse on this sheet, the 6-decimal Tradelist and both equity sheets)
+    // under AmiBroker's decimals rule (price_digits 0) a price of 65,536 or more keeps 1 decimal even when it is a clean 2-decimal price
+    // (MRF 2018-04-05, 75,502.45 -> 75,502.5: all-ST sheet 50 Open, 898 sh x 0.05 = Rs 44.90)
+    let few_decimals = PRICE_DIGITS.with(|d| d.get()) == 0 && x.is_finite() && x != 0.0 && (ab_price_digits(x) as i32) - (x.abs().log10().floor() as i32 + 1) < 2;
+    if (r as f32 as f64) == x && !few_decimals { r } else { price7(x) }
+}
+
+/// `price_ab` under AmiBroker's own decimals rule (`ab_price_digits`) whatever `PRICE_DIGITS` the thread has, for the engines outside
+/// this module that use the full set (BTST universe, 19 Nov 2026).
+pub(crate) fn ab_full_price(x: f64) -> f64 {
+    let keep = PRICE_DIGITS.with(|d| d.replace(0));
+    let p = price_ab(x);
+    PRICE_DIGITS.with(|d| d.set(keep));
+    p
 }
 
 fn ab_profit_with(sh: f64, entry: f64, exit: f64, comm: f64, price: fn(f64) -> f64) -> f64 {
@@ -325,10 +374,15 @@ fn ab_profit_raw(sh: f64, entry: f64, exit: f64, comm: f64, price: fn(f64) -> f6
     sh * (price(exit) - price(entry)) - (ev + xv) * comm
 }
 
-/// AmiBroker's share count for a % of equity entry in the full set: the unrounded previous-bar equity x % / `price_ab`, floored
-/// (MARICO 2020-12-07: 31,771,739.84 x 2 % / 400.40 = 1,586.99999 -> 1,586; the float32 equity 31,771,740 / 400.399994 gives 1,587).
+/// AmiBroker's share count for a % of equity entry in the full set: the unrounded previous-bar equity x % / the price, floored. The price
+/// is the 2-decimal value when the stored float32 is a 2-decimal price (MARICO 2020-12-07: 31,771,739.84 x 2 % / 400.40 = 1,586.99999
+/// -> 1,586; the float32 400.399994 gives 1,587), else the stored float32 itself, not its 7-digit decimal (Tulsi 'Verification - ATHC
+/// with 19%swing sl with probability - no brokerage': MOTHERSUMI 2000-01-03 2,000,000 / 0.41666666 (5/12) = 4,800,000.03 -> 4,800,000,
+/// the 7-digit 0.4166667 gives 4,799,999; MOTHERSUMI 2003-01-24 at 0.74166667 (89/120) likewise 260,091).
 pub fn ab_shares(equity: f64, pct: f64, price: f64) -> f64 {
-    (equity * pct / 100.0 / price_ab(price)).floor()
+    let r = (price * 100.0).round() / 100.0;
+    let px = if (r as f32 as f64) == price { r } else { price };
+    (equity * pct / 100.0 / px).floor()
 }
 
 /// AmiBroker's cash for an entry: the float32 position value plus its commission.
@@ -337,7 +391,7 @@ pub fn ab_cost(sh: f64, px: f64, comm: f64) -> f64 {
     v + v * comm
 }
 
-fn ab_value(sh: f64, px: f64) -> f64 {
+pub(crate) fn ab_value(sh: f64, px: f64) -> f64 {
     (sh as f32 * px as f32) as f64
 }
 
@@ -357,8 +411,10 @@ fn liquidation_mark(o: &Open, px: f64, comm: f64, amibroker_full: bool) -> f64 {
         // AmiBroker values a long position as its float32 entry value plus the unrealised profit on 2-decimal prices, less the closing
         // commission on the float32 current value (Fund Issue sheet: the Market Value of the daily log to the paisa, equity before each
         // entry 817 of 823 float32 values; the plain shares x price gave up to Rs 0.9 off)
+        // The closing commission is on shares x the stored float32 close, not the 2-decimal one (Verification With Brokerage 0.65
+        // workbooks, 17 Nov 2026: Market Value equal on every day of all 8 runs; on the 2-decimal close about half the days were 0.01 to 2.08 off)
         let (x, e) = (price_ab(px), price_ab(o.price));
-        ab_value(o.shares, o.price) + o.shares * (x - e) - comm * ((o.shares * x) as f32 as f64)
+        ab_value(o.shares, o.price) + o.shares * (x - e) - comm * ab_value(o.shares, px)
     } else if o.short {
         mark(o, px) - o.shares * px * comm
     } else {
@@ -368,13 +424,15 @@ fn liquidation_mark(o: &Open, px: f64, comm: f64, amibroker_full: bool) -> f64 {
 
 /// Largest whole-share entry affordable under the same cost arithmetic used to debit cash.
 /// Computing this with `price * (1 + comm)` while debiting float32 share-value arithmetic can admit or reject a boundary share.
-fn affordable_shares(cash: f64, px: f64, comm: f64, amibroker_profit: bool) -> f64 {
+pub(crate) fn affordable_shares(cash: f64, px: f64, comm: f64, amibroker_profit: bool) -> f64 {
     if !cash.is_finite() || !px.is_finite() || cash <= 0.0 || px <= 0.0 {
         return 0.0;
     }
     let cost = |shares: f64| {
         if amibroker_profit {
-            ab_cost(shares, px, comm)
+            // AmiBroker tests whether a share fits on the unrounded cost, and debits the float32 value afterwards (Fund Issue sheet,
+            // FCONSUMER 2014-05-08: cash 0.05 short of share 763,889 whose cost is 5,538,195.25; the float32 cost 5,538,195.0 let it through)
+            shares * (px as f32 as f64) * (1.0 + comm)
         } else {
             shares * px * (1.0 + comm)
         }
@@ -407,6 +465,17 @@ fn g7(x: f64) -> String {
 
 /// Day summary values: always two decimals.
 fn f2(x: f64) -> String { format!("{:.2}", x) }
+
+/// Two decimals, half away from zero, on the exact value of the double (AmiBroker, 17 Nov 2026 sheet of the turnover running-buy variant:
+/// all 23 days whose market value was exactly x.xx5 were printed rounded up: 7,999,931.625 -> 7,999,931.63, 7,920,110.625 -> 7,920,110.63).
+fn f2_half_up(x: f64) -> String {
+    if !x.is_finite() { return format!("{x}"); }
+    let s = format!("{:.30}", x.abs()); // the exact binary value, so only a true tie rounds up
+    let (int, frac) = s.split_once('.').unwrap();
+    let mut cents = int.parse::<u128>().unwrap_or(0) * 100 + frac[..2].parse::<u128>().unwrap_or(0);
+    if frac.as_bytes()[2] >= b'5' { cents += 1; }
+    format!("{}{}.{:02}", if x < 0.0 && cents > 0 { "-" } else { "" }, cents / 100, cents % 100)
+}
 
 /// Detail logs show AmiBroker's ranking magnitude. A Null score in this AFL is logged as 1.
 fn detail_rank(score: f32) -> f32 {
@@ -562,6 +631,8 @@ pub fn backtest_full_with_detail_log(syms: &[(&Series, &Signals)], rank: &[usize
     let mut open: Vec<Open> = Vec::new();
     let mut out = Backtest { trades: Vec::new(), dates: all_dates.clone(), equity: Vec::with_capacity(all_dates.len()), positions: Vec::with_capacity(all_dates.len()), signals: 0, accepted: 0, rejected_capacity: 0, rejected_cash: 0, detail_log: want_detail_log.then(Vec::new) };
     let mut cum = 0.0;
+    let fd = |x: f64| if pp.detail_half_up { f2_half_up(x) } else { f2(x) };
+    PRICE_DIGITS.with(|d| d.set(pp.price_digits)); // 0 = AmiBroker's 6 / 7 digit rule (`ab_price_digits`)
     let mut sig_in = vec![false; syms.len()]; // per-symbol signal state (long): a buy signalled and not yet sold
     let mut e = 0;
     for &date in &all_dates {
@@ -836,7 +907,22 @@ pub fn backtest_full_with_detail_log(syms: &[(&Series, &Signals)], rank: &[usize
                             (None, None) => (((size_eq * pp.pct_of_equity * sg.entry_size as f64 * em / 100.0 / price) as f32) as f64).floor(),
                         };
                         let afford = affordable_shares(cash, price, comm, pp.amibroker_profit);
-                        let shares = wanted.min(afford); // AllowPositionShrinking
+                        let mut shares = wanted.min(afford); // AllowPositionShrinking
+                        // AmiBroker: when the requested value fits the cash but its commission does not, the size is taken again from the equity
+                        // less the commission on the requested value, and the smaller of that and the cash rule is bought (Verification With
+                        // Brokerage 0.65 workbooks: TATACOFFEE 2006-07-07 375,176 and 759,212 shares, CCL 2014-04-04 67,557)
+                        if pp.amibroker_full && pp.size_f32_price && comm > 0.0 && wanted > afford && pp.fixed_amount.is_none() && leg_pct.is_none() {
+                            // only when the requested size itself is below the cash; at 100 % of an all-cash account the cash rule stays (team single-stock
+                            // sheets, RELIANCE 2001-02-02 11,371 shares)
+                            let req = ab_value(wanted, price);
+                            let pctx = pp.pct_of_equity * sg.entry_size as f64 * em;
+                            if size_raw * pctx / 100.0 < cash {
+                                shares = shares.min(((size_raw - comm * req) * pctx / 100.0 / (price as f32 as f64)).floor());
+                            }
+                        }
+                        // AmiBroker holds the share count as float32: above 16,777,216 only even counts exist
+                        // (RASOYPR 2012-01-02: 20,621,455 -> 20,621,456; its profit -8,867,226.08 = 20,621,456 x -0.43)
+                        let shares = if pp.amibroker_full { shares as f32 as f64 } else { shares };
                         if shares < 1.0 {
                             funds_exhausted = true;
                             out.rejected_cash += 1;
@@ -888,7 +974,7 @@ pub fn backtest_full_with_detail_log(syms: &[(&Series, &Signals)], rank: &[usize
         if let Some(log) = out.detail_log.as_mut() {
             let market_value = eq - cash;
             let holdings = if open.is_empty() { ", ".to_string() } else { open.iter().map(|o| format!(", {} ({}{}),", syms[o.sym].0.name, if o.short { "-" } else { "+" }, o.shares)).collect::<Vec<_>>().join(" ") };
-            day_log.push(format!("{} Open Positions: {} Market Value: {}, Equity: {}, Cash: {}, Margin: 0.00, Net Cash Balance: {}, ", open.len(), holdings, f2(market_value), f2(eq), f2(cash), f2(cash)));
+            day_log.push(format!("{} Open Positions: {} Market Value: {}, Equity: {}, Cash: {}, Margin: 0.00, Net Cash Balance: {}, ", open.len(), holdings, fd(market_value), fd(eq), fd(cash), fd(cash)));
             for (i, information) in day_log.drain(..).enumerate() {
                 log.push(DetailLogRow { date: if i == 0 { Some(date) } else { None }, information });
             }
@@ -904,6 +990,7 @@ pub fn backtest_full_with_detail_log(syms: &[(&Series, &Signals)], rank: &[usize
         out.trades.push(TradeOut { sym: o.sym, entry_date: s.bars[o.entry_i].date, entry_price: o.price, exit_date: s.bars[k.saturating_sub(1)].date, exit_price: last, shares: o.shares, profit, cum_profit: cum, weight: o.weight, stopped: false, open: true, short: o.short });
     }
     out.trades.sort_by_key(|t| (t.open, t.exit_date, t.entry_date));
+    PRICE_DIGITS.with(|d| d.set(7));
     out
 }
 
@@ -1001,10 +1088,14 @@ mod tests {
         let px = 407.239990234375;
         let comm = (0.65_f32 as f64) / 100.0;
         let pos = Open { sym: 0, entry_i: 0, shares, price: px, weight: 0.02, high_water: 0.0, short: false };
-        // marked at the entry price: the float32 entry value, less the commission on the float32 current value
+        // marked at the entry price: the float32 entry value, less the commission on the float32 value at the stored close
         let entry_value = (shares as f32 * px as f32) as f64;
         let got = liquidation_mark(&pos, px, comm, true);
-        assert!((got - (entry_value - comm * ((shares * 407.24) as f32 as f64))).abs() < 1e-8);
+        assert!((got - (entry_value - comm * ((shares * px) as f32 as f64))).abs() < 1e-8);
+        // Verification With Brokerage 0.65, 19 % swing 20 % x 5, 2000-05-22: HDFC 39,962 bought at 49.1, close 48.62, Market Value 1,930,323.18
+        // (the commission on the 2-decimal close gave 1,930,323.17)
+        let hdfc = Open { sym: 0, entry_i: 0, shares: 39_962.0, price: 49.1_f32 as f64, weight: 0.2, high_water: 0.0, short: false };
+        assert_eq!(format!("{:.2}", liquidation_mark(&hdfc, 48.62_f32 as f64, comm, true)), "1930323.18");
     }
 
     #[test]
@@ -1056,7 +1147,7 @@ mod tests {
         let symbols: Vec<_> = series.iter().zip(signals.iter()).collect();
         let pp = PortfolioParams {
             initial_equity: 10_000_000.0, pct_of_equity: 2.0, fixed_amount: None, max_positions: 50,
-            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: true, amibroker_full: true, current_equity_sizing: false, size_f32_price: false,
+            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: true, amibroker_full: true, current_equity_sizing: false, size_f32_price: false, detail_half_up: false, price_digits: 7,
         };
         let run = backtest_full_with_detail_log(&symbols, &[0, 1, 2], &pp, true);
         let log = run.detail_log.unwrap();
@@ -1090,8 +1181,9 @@ mod tests {
     fn ath_amibroker_full_set_sizes_from_the_unrounded_equity() {
         // Tulsi BACKTEST ALL equity export: MARICO 2020-12-07, X equity prev bar 31,771,740 (float32), AmiBroker 1,586 shares
         assert_eq!(ab_shares(31_771_739.84, 2.0, 400.4_f32 as f64), 1586.0);
+        assert_eq!(ab_shares(10_000_000.0, 20.0, (5.0_f64 / 12.0) as f32 as f64), 4_800_000.0); // split-adjusted: the stored float32, not 0.4166667
         assert_eq!((((31_771_740.0 * 2.0 / 100.0 / (400.4_f32 as f64)) as f32) as f64).floor(), 1587.0);
-        assert_eq!(price_ab(77.87999_f32 as f64), 77.88);
+        assert_eq!(price_ab(77.88_f32 as f64), 77.88);
         assert_eq!(price_ab(59.266666_f32 as f64), 59.26667);
     }
 
@@ -1120,7 +1212,7 @@ mod tests {
         let symbols = vec![(&a, &sa), (&b, &sb), (&c, &sc)];
         let pp = PortfolioParams {
             initial_equity: 1_000_000.0, pct_of_equity: 10.0, fixed_amount: None, max_positions: 1,
-            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false,
+            commission_pct: 0.65, start: 20000103, end: 20000104, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false, detail_half_up: false, price_digits: 7,
         };
         let run = backtest_full_with_detail_log(&symbols, &[0, 1, 2], &pp, true);
         let log = run.detail_log.unwrap();
@@ -1162,5 +1254,71 @@ mod tests {
         let eq = 337_448_042.1_f64;
         assert_eq!(ab_shares(eq, 5.0, 88.74_f32 as f64), 190132.0);
         assert_eq!((eq * 5.0 / 100.0 / (88.74_f32 as f64)).floor(), 190133.0);
+    }
+
+    #[test]
+    fn ath_amibroker_price_snaps_to_two_decimals_only_for_a_real_two_decimal_price() {
+        // Fund Issue sheet: ASTRAL 2019-05-20 / 21 entry 759.68994 exit 704.69995 (split-adjusted 759.6899 / 704.70), profit -2,821,091.85
+        assert_eq!(price_ab(759.68994140625), 759.6899);
+        assert_eq!(price_ab(704.699951171875), 704.7);
+        assert_eq!(price_ab(759.69_f32 as f64), 759.69);
+        assert_eq!(price_ab(8.016666412353516), 8.016666);
+    }
+
+    #[test]
+    fn ath_amibroker_affordability_checks_the_unrounded_cost() {
+        // FCONSUMER 2014-05-08: cash 5,538,195.20 buys 763,888 shares of 7.25, not 763,889 (cost 5,538,195.25; float32 value 5,538,195.0)
+        assert_eq!(affordable_shares(5_538_195.20, 7.25, 0.0, true), 763_888.0);
+        assert_eq!(affordable_shares(5_538_195.25, 7.25, 0.0, true), 763_889.0);
+    }
+
+    #[test]
+    fn ath_detail_log_half_up_rounding_matches_amibroker_on_exact_ties() {
+        // turnover running-buy sheet: market values exactly x.xx5 were printed rounded up by AmiBroker
+        assert_eq!(f2_half_up(7_999_931.625), "7999931.63");
+        assert_eq!(f2_half_up(7_920_110.625), "7920110.63");
+        assert_eq!(format!("{:.2}", 7_999_931.625_f64), "7999931.62"); // Rust: half to even
+        assert_eq!(f2_half_up(500_345.437), "500345.44");
+        assert_eq!(f2_half_up(500_345.434), "500345.43");
+        assert_eq!(f2_half_up(54_343.457), "54343.46");
+        assert_eq!(f2_half_up(0.0), "0.00");
+        assert_eq!(f2_half_up(-2.005), "-2.00"); // the double -2.005 is -2.00499999999999989...
+        assert_eq!(f2_half_up(12.0), "12.00");
+    }
+
+    #[test]
+    fn ath_amibroker_keeps_6_or_7_significant_digits_by_float32_precision() {
+        assert_eq!(ab_price_digits(8.966666221618652), 6);
+        assert_eq!(ab_price_digits(73.00999450683594), 6);
+        assert_eq!(ab_price_digits(64.28249359130859), 6);
+        assert_eq!(ab_price_digits(759.6899414062500), 7);
+        assert_eq!(ab_price_digits(4.966666698455811), 7);
+        assert_eq!(ab_price_digits(0.3833333253860474), 7);
+        assert_eq!(ab_price_digits(143.2666625976562), 7);
+        PRICE_DIGITS.with(|d| d.set(0));
+        assert_eq!(price7(8.966666221618652), 8.96667);
+        assert_eq!(price7(759.6899414062500), 759.6899);
+        assert_eq!(price7(76.46249389648438), 76.4625);
+        // 1000-1023.99 keeps 4 decimals (DIXON 2020-06-08), 1024 and up 3
+        assert_eq!(ab_price_digits(1002.0099487304688), 8);
+        assert_eq!(price7(1002.0099487304688), 1002.0099);
+        assert_eq!(price7(1060.679931640625), 1060.68);
+        // exact ties round half away from zero (HINDZINC 2006-12-08 / 19)
+        assert_eq!(price7(92.65625), 92.6563);
+        assert_eq!(price7(83.40625), 83.4063);
+        assert_eq!(price7(-92.65625), -92.6563);
+        // 65,536 and up: 1 decimal even for a clean 2-decimal price (MRF 75,502.45 -> 75,502.5); below it the 2-decimal value stays
+        assert_eq!(price_ab(75502.45_f32 as f64), 75502.5);
+        assert_eq!(price_ab(8384.25_f32 as f64), 8384.25);
+        assert_eq!(price_ab(1060.68_f32 as f64), 1060.68);
+        PRICE_DIGITS.with(|d| d.set(7));
+        assert_eq!(price7(8.966666221618652), 8.966666);
+        assert_eq!(price7(251.8999938964844), 251.9);
+    }
+
+    #[test]
+    fn ath_amibroker_share_count_is_float32() {
+        assert_eq!(20_621_455f64 as f32 as f64, 20_621_456.0);
+        assert_eq!(3_850_704f64 as f32 as f64, 3_850_704.0);
     }
 }

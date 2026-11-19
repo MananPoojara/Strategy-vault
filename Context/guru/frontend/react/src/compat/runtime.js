@@ -1987,9 +1987,11 @@ function btInstrumentShort(v, tk, src) {
 }
 function btDialogHtml(v, tk) {
   const onUni = universeScope(v), btst = !!ytFamilyReference(v.id), schema = btSchema(v), f = document.getElementById('period'), ref = btRef(v, tk), afl = onUni ? universeAflRows(AFL_PARAMS[v.id]) : AFL_PARAMS[v.id];
-  const base = paramValues(schema, ref?.params || {}), cur = { ...base, ...decodeP(S.p) }, sk = Object.fromEntries(schema.map(p => [p.key, p]));
-  const from = f?.elements.from?.value || '', to = f?.elements.to?.value || '', slip = f?.elements.slippage?.value || S.slippage || '0', roll = f?.elements.rollover?.value || S.rollover || '0';
-  const cost = +(S.slippage || 0), costBase = ref ? ref.cost : 0;
+  // the window opens on what was applied last on this page (waiting for Run backtest, or kept after it) until the page is left; else on the page's own state
+  const kept = (BT_PENDING?.path === R.path ? BT_PENDING : BT_KEPT?.path === R.path ? BT_KEPT : null)?.state, st = kept || S;
+  const base = paramValues(schema, ref?.params || {}), cur = { ...base, ...decodeP(st.p) }, sk = Object.fromEntries(schema.map(p => [p.key, p]));
+  const from = (kept && kept.from) || f?.elements.from?.value || '', to = (kept && kept.to) || f?.elements.to?.value || '', slip = kept ? (kept.slippage || '0') : (f?.elements.slippage?.value || S.slippage || '0'), roll = kept ? (kept.rollover || '0') : (f?.elements.rollover?.value || S.rollover || '0');
+  const cost = +(st.slippage || 0), costBase = ref ? ref.cost : 0;
   const row = p => btControl(p, clampParam(p, cur[p.key]), base[p.key], {
     plain: btst,
     label: btst ? PLAIN_LABELS[p.key] : undefined,
@@ -2060,10 +2062,11 @@ document.addEventListener('submit', e => {
   // The Net Profit display follows the sizing (fixed quantity: rupee result; compounding: compounded returns).
   const sizing = 'sizing' in vals ? { report_mode: vals.sizing === 2 ? 'fixed' : 'compound' } : {};
   BT_PENDING = { path: R.path, state: { ...S, p: encodeP(p), from: f2, to: t2, slippage, ...sizing, ...(fd.has('rollover') ? { rollover: String(Math.max(0, +fd.get('rollover') || 0)) } : {}) } };
+  BT_KEPT = BT_PENDING; // the window keeps these until the page is left (or Reset to defaults and Apply)
   btPendingMark();
 });
 // settings applied in the Strategy settings popup wait for "Run backtest"
-let BT_PENDING = null;
+let BT_PENDING = null, BT_KEPT = null;
 function btPendingMark() {
   const b = document.querySelector('[data-bt-open]'); if (!b) return;
   b.classList.toggle('bt-pending', !!BT_PENDING);
@@ -2076,7 +2079,7 @@ function btRun() {
   if (job && href(job.path, job.state) !== location.hash) go(job.path, job.state); else render();
   btAnnounce();
 }
-addEventListener('hashchange', () => { if (BT_PENDING && BT_PENDING.path !== R.path) BT_PENDING = null; });
+addEventListener('hashchange', () => { if (BT_PENDING && BT_PENDING.path !== R.path) BT_PENDING = null; if (BT_KEPT && BT_KEPT.path !== R.path) BT_KEPT = null; });
 // the toolbar's settings icon opens the parameter popup on pages that have one
 document.addEventListener('click', e => {
   const t = e.target.closest('.strategy-settings-trigger'); if (!t || !STRAT || R.name !== 'strategy' || !btSchema(STRAT.v)?.length || !isYt(STRAT.v)) return;

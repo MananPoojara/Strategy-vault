@@ -41,23 +41,18 @@ const FO22_DATABASE: &str = "NSE FO + ATH UPDATED TILL_31-03-2022 (team database
 const FO_DATABASE: &str = "NSE FO + ATH UPDATED TILL_26-10-2021 (team snapshot, converted copy)";
 const DEFAULT_FROM: i32 = 20000101; // the team's runs start 1/1/2000
 const TIME_LIMIT_SECS: f64 = 100.0;
-/// Variants whose profit and cash are booked as AmiBroker does (`ath_core::ab_profit`): Supertrend 10/4 (Tulsi sheets RSI / Negative ROC /
-/// no ranking: all trades and shares equal); %swing after 2 %swing losses (exit) (Tulsi 'Equity 6' sheet 1,491/1,491 shares). Not for all
-/// variants: 5 of the 114 older team sheets match worse with it.
-const AMIBROKER_PROFIT: [&str; 5] = ["ytath_entry_and_pctswing_exit_with_pct_hard_2", "ytath_with_supertrend_10_4_exit_from_close", "ytath_running_pctswing_after_2_pctswing", "ytath_chk_all_st_variations_all_ranking", "ytath_chk_19pct_swing_sl_probability"];
-/// Of those, the variants that also take the rest of AmiBroker's arithmetic (`PortfolioParams::amibroker_full`): %swing after 2 %swing
-/// losses (exit): Tulsi 6-decimal equity exports BACKTEST ALL / NSE500 x dead stock YES / NO all trades and shares equal.
-const AMIBROKER_FULL: [&str; 4] = ["ytath_entry_and_pctswing_exit_with_pct_hard_2", "ytath_running_pctswing_after_2_pctswing", "ytath_chk_all_st_variations_all_ranking", "ytath_chk_19pct_swing_sl_probability"];
+// Every ATH variant books its trades with AmiBroker's own arithmetic (18 Nov 2026, user: "apply this same calculation to the remaining ATH
+// variants"): profit and cash as AmiBroker (`amibroker_profit`), the full set (`amibroker_full`: float32 position value, unrounded-equity
+// sizing, float32 share count, closing commission on the stored close, commission shrink), sizing on the stored float32 price
+// (`size_f32_price`), prices to the decimals of their float32 step (`price_digits` 0, `ath_core::ab_price_digits`) and the day summary
+// printed half up (`detail_half_up`). Proven on the team's sheets: the four Verification workbooks (zero and 0.65 % brokerage, 20 % x 5 and
+// 2 % x 50) equal on every day; Fund Issue 2 % 4,008/4,008 trades and shares; hard-SL Tradelist 1,384/1,384 shares, no cash drift;
+// running_pctswing 6-decimal sheets 1,928 / 1,492; Shrey 10 % 103/103; replay of the 215 team sheets of ATH/verify and ATH/v2:
+// equal shares 346,760 -> 363,804, equal profit 330,707 -> 357,904, same trades 625,927 -> 626,223 (before 17-18 Nov these were per-variant lists).
 /// Variants whose AFL leaves `UsePrevBarEquityForPosSizing` at AmiBroker's default (False): each entry is sized from the equity at that
 /// moment, which falls with every entry of the bar (`PortfolioParams::current_equity_sizing`). Supertrend long only: the team's
 /// 2020-2021 sheet buys MARICO 143 / GOKEX 654 on 01-01-2020 where the previous bar's equity gives 144 / 655.
 const CURRENT_EQUITY_SIZING: [&str; 1] = ["ytath_supertrend_long_only_buy_st_5_2_up"];
-/// Of the full-set variants, those sized with the stored float32 price (`PortfolioParams::size_f32_price`): the Tulsi 'Fund Issue' sheet of
-/// ATHC Entry & %Swing Exit with % Hard SL or ATR Hard SL (HAVELLS 2012-01-30, GREENPLY 2013-04-09). The other full-set variants keep the
-/// 2-decimal price (MARICO 2020-12-07 of ytath_running_pctswing_after_2_pctswing).
-const SIZE_F32_PRICE: [&str; 1] = ["ytath_entry_and_pctswing_exit_with_pct_hard_2"];
-// 2026-11-07: ATHC Entry & %Swing Exit with % Hard SL or ATR Hard SL (Tulsi 'Fund Issue' sheet): sized with the 2-decimal price, cash as AmiBroker debits it.
-// 2026-11-05: the two green "AFL ATH checking" variants with ranking (all-Supertrend, 19 % swing probability) take the full set too (no team sheet of their own to verify it against).
 /// A run holds every bar of its universe in memory (about 120 MB for the 1,301 symbols of NSE 500 C&P) next to the engine's own arrays; the container has 1 GB.
 const MAX_SYMBOLS: usize = 1800;
 /// Index series the AFLs read with `Foreign()`.
@@ -310,12 +305,13 @@ fn variant_of(q: &BTreeMap<String, String>) -> Result<VariantDef, String> {
 }
 
 /// The settings of one run: the page's `p.<key>` values over the AFL defaults; the AFL's own BROKERAGE parameter follows the page's
-/// brokerage, and a page brokerage outside the AFL's range (e.g. none given -> 0) falls back into the range.
+/// brokerage as entered (0 means 0, kept inside the AFL's range as AmiBroker's Param() does); only a run that gives no brokerage at all
+/// (no `cost` / `slippage`) uses the AFL default.
 struct Knobs {
     raw: crate::connors::Params,
     defaults: BTreeMap<&'static str, f64>,
     comm_range: BTreeMap<&'static str, (f64, f64, f64)>,
-    comm_for_afl: f64,
+    comm_for_afl: Option<f64>,
     max_positions: f64,
     pct: f64,
     equity0: f64,
@@ -328,7 +324,8 @@ impl Knobs {
             raw,
             defaults: schema.iter().map(|d| (d.key, d.def)).collect(),
             comm_range: schema.iter().filter(|d| d.key == "comm" || d.key == "brokerage").map(|d| (d.key, (d.min, d.max, d.def))).collect(),
-            comm_for_afl: costs.side_rate() * 100.0, // the page's brokerage, for AFLs whose own logic reads BROKERAGE (key `comm`)
+            // the page's brokerage, for AFLs whose own logic reads BROKERAGE (key `comm`)
+            comm_for_afl: (q.contains_key("cost") || q.contains_key("slippage")).then(|| costs.side_rate() * 100.0),
             max_positions: 0.0,
             pct: 0.0,
             equity0: 0.0,
@@ -351,8 +348,8 @@ impl Knobs {
     }
     fn get(&self, k: &str) -> f64 {
         match self.comm_range.get(k) {
-            Some(&(lo, hi, def)) if k == "comm" || k == "brokerage" => if self.comm_for_afl > 0.0 { self.comm_for_afl.clamp(lo, hi) } else { def },
-            _ if k == "comm" || k == "brokerage" => self.comm_for_afl,
+            Some(&(lo, hi, def)) if k == "comm" || k == "brokerage" => self.comm_for_afl.map_or(def, |c| c.clamp(lo, hi)),
+            _ if k == "comm" || k == "brokerage" => self.comm_for_afl.unwrap_or(0.0),
             _ => self.raw.get(k).copied().unwrap_or_else(|| self.defaults.get(k).copied().unwrap_or(0.0)),
         }
     }
@@ -427,7 +424,7 @@ fn signals_of(variant: &VariantDef, s: &Setup, g: crate::ath_core::G) -> Result<
 }
 
 fn portfolio_of(variant: &VariantDef, s: &Setup, k: &Knobs, costs: crate::accounting::Costs) -> PortfolioParams {
-    PortfolioParams { initial_equity: k.equity0, pct_of_equity: k.pct, fixed_amount: k.alloc, max_positions: k.max_positions as usize, commission_pct: costs.side_rate() * 100.0, start: s.from, end: s.to, amibroker_profit: AMIBROKER_PROFIT.contains(&variant.id), amibroker_full: AMIBROKER_FULL.contains(&variant.id), current_equity_sizing: CURRENT_EQUITY_SIZING.contains(&variant.id), size_f32_price: SIZE_F32_PRICE.contains(&variant.id) }
+    PortfolioParams { initial_equity: k.equity0, pct_of_equity: k.pct, fixed_amount: k.alloc, max_positions: k.max_positions as usize, commission_pct: costs.side_rate() * 100.0, start: s.from, end: s.to, amibroker_profit: true, amibroker_full: true, current_equity_sizing: CURRENT_EQUITY_SIZING.contains(&variant.id), size_f32_price: true, detail_half_up: true, price_digits: 0 }
 }
 
 /// `GET guru/yt/ath-run`: one portfolio backtest of an ATH sub-variant on the watchlist of its database.

@@ -5,10 +5,11 @@
 //! name), exits before entries on a bar, `max_positions` slots, size = floor(pct% x previous-bar equity / price) whole
 //! shares with equity compounding (open positions marked at the previous bar's close), shrink to the cash available
 //! (skip below 1 share), signals on a symbol's last data day never entered, commission/slippage per side from the
-//! Vault's cost settings.
+//! Vault's cost settings. Since 19 Nov 2026 with AmiBroker's full arithmetic, as every ATH variant (`simulate`).
 //!
 //! Memory: the universe (~1.1 GB on disk) is never held; each worker reads one file, builds that symbol's series,
 //! keeps only its candidate trades, and drops the rest. One run at a time (`Permit`), bounded threads and time.
+use crate::ath_core;
 use crate::books::ytbtst;
 use crate::connors::{Ctx, Params};
 use crate::Row;
@@ -469,6 +470,8 @@ pub struct Taken {
     pub exit_day: i32,
     pub exit_t: u16,
     pub exit_px: f64,
+    /// AmiBroker's trade profit (float32; an open trade at its last mark)
+    pub profit: f64,
 }
 
 pub struct Book2 {
@@ -499,10 +502,25 @@ fn mark_day(c: &Cand, date: i32) -> f64 {
     c.day_marks.iter().filter(|m| m.0 <= date).last().map_or(c.entry_px, |m| m.1)
 }
 
+/// AmiBroker's profit before it is stored as a float32: shares x the change of the AmiBroker prices, less the commission on the float32
+/// entry and exit values (the ATH full set, `ath_core`; team BTST lists: 56,475 of 56,478 profits on the database prices, 455 / 456 NIFTY).
+fn ab_profit_raw(sh: f64, e: f64, x: f64, c: f64) -> f64 {
+    sh * (ath_core::ab_full_price(x) - ath_core::ab_full_price(e)) - (ath_core::ab_value(sh, e) + ath_core::ab_value(sh, x)) * c
+}
+
+/// AmiBroker's value of an open long position at `m`: its float32 entry value plus the unrealised profit on AmiBroker prices, less the
+/// commission to close it on the float32 value at `m` (`ath_core::liquidation_mark`).
+fn ab_mark(sh: f64, e: f64, m: f64, c: f64) -> f64 {
+    ath_core::ab_value(sh, e) + sh * (ath_core::ab_full_price(m) - ath_core::ab_full_price(e)) - c * ath_core::ab_value(sh, m)
+}
+
 /// Replay the candidates through the portfolio on the calendar `dates` (yyyymmdd, ascending). `names` = symbol names
 /// (tie order). Entries are grouped by (day, entry time); exits at a bar happen before entries at it.
+/// Arithmetic: AmiBroker's full set, as for every ATH variant (`Verification.md`; 19 Nov 2026, replay of the 20 team BTST lists,
+/// 549,288 trades: equal shares 541,246 -> 546,611). Prices are AmiBroker's float32 arrays, the commission rate a float32 %.
 pub fn simulate(cands: &[Cand], names: &[String], dates: &[i32], book: Book) -> Book2 {
-    let c = book.cost;
+    let c = ((book.cost * 100.0) as f32) as f64 / 100.0;
+    let (ep, xp) = (|cd: &Cand| cd.entry_px as f32 as f64, |cd: &Cand| cd.exit_px as f32 as f64);
     let mut by_bar: BTreeMap<(i32, u16), Vec<usize>> = BTreeMap::new();
     for (k, cd) in cands.iter().enumerate() {
         if cd.entry_day >= book.from && cd.entry_day <= book.to {
@@ -523,8 +541,11 @@ pub fn simulate(cands: &[Cand], names: &[String], dates: &[i32], book: Book) -> 
         due.sort_by_key(|&k| exit_key(&cands[open[k].cand]));
         for &k in &due {
             let cd = &cands[open[k].cand];
-            *cash += open[k].shares * cd.exit_px * (1.0 - c);
+            // the entry cost back plus the unrounded profit; the trade reports the float32 profit
+            let (sh, raw) = (open[k].shares, ab_profit_raw(open[k].shares, ep(cd), xp(cd), c));
+            *cash += ath_core::ab_cost(sh, ep(cd), c) + raw;
             let t = &mut taken[open[k].taken];
+            t.profit = raw as f32 as f64;
             t.open = false;
             t.exit_day = cd.exit_day;
             t.exit_t = cd.exit_t;
@@ -542,9 +563,11 @@ pub fn simulate(cands: &[Cand], names: &[String], dates: &[i32], book: Book) -> 
             }
             bars.next();
             close_until(&mut open, &mut cash, &mut taken, (bd, bt), true);
-            // previous-bar equity: cash + positions still open at the previous bar, at their previous-bar marks
-            let e = cash + open.iter().map(|p| p.shares * mark_before(&cands[p.cand], bd)).sum::<f64>();
+            // previous-bar equity (unrounded): cash + positions still open at the previous bar, at their previous-bar marks less the
+            // commission to close them
+            let e = cash + open.iter().map(|p| { let cd = &cands[p.cand]; ab_mark(p.shares, ep(cd), mark_before(cd, bd), c) }).sum::<f64>();
             close_until(&mut open, &mut cash, &mut taken, (bd, bt), false);
+            let mut funds_exhausted = false;
             for &k in list {
                 let cd = &cands[k];
                 if open.iter().any(|p| cands[p.cand].sym == cd.sym) {
@@ -554,32 +577,45 @@ pub fn simulate(cands: &[Cand], names: &[String], dates: &[i32], book: Book) -> 
                     rejected_capacity += 1;
                     continue;
                 }
-                let mut shares = match book.alloc { Some(a) => (a / cd.entry_px).floor(), None => (e * book.pct / 100.0 / cd.entry_px).floor() };
-                if shares * cd.entry_px * (1.0 + c) > cash {
-                    shares = (cash / (cd.entry_px * (1.0 + c))).floor();
-                }
-                if shares < 1.0 {
+                // AmiBroker ends the entries of a bar at the first one it cannot fund (ATH, `ath_core`; no case in the team BTST lists)
+                if funds_exhausted {
                     rejected_cash += 1;
                     continue;
                 }
-                cash -= shares * cd.entry_px * (1.0 + c);
-                taken.push(Taken { cand: k, shares, weight: shares * cd.entry_px / e, open: true, exit_day: 0, exit_t: 0, exit_px: f64::NAN });
+                let px = ep(cd);
+                let wanted = match book.alloc { Some(a) => (a / px).floor(), None => (e * book.pct / 100.0 / px).floor() };
+                let afford = ath_core::affordable_shares(cash, px, c, true);
+                let mut shares = wanted.min(afford);
+                // the requested value fits the cash but not its commission: sized again from the equity less the commission on it
+                if book.alloc.is_none() && c > 0.0 && wanted > afford && e * book.pct / 100.0 < cash {
+                    shares = shares.min(((e - c * ath_core::ab_value(wanted, px)) * book.pct / 100.0 / px).floor());
+                }
+                let shares = shares as f32 as f64; // AmiBroker holds the share count as a float32
+                if shares < 1.0 {
+                    funds_exhausted = true;
+                    rejected_cash += 1;
+                    continue;
+                }
+                cash -= ath_core::ab_cost(shares, px, c);
+                taken.push(Taken { cand: k, shares, weight: shares * cd.entry_px / e, open: true, exit_day: 0, exit_t: 0, exit_px: f64::NAN, profit: f64::NAN });
                 open.push(Pos { cand: k, shares, taken: taken.len() - 1 });
             }
         }
         close_until(&mut open, &mut cash, &mut taken, (day, u16::MAX), false);
         eq_dates.push(day);
-        equity.push(cash + open.iter().map(|p| p.shares * mark_day(&cands[p.cand], day)).sum::<f64>());
+        equity.push(cash + open.iter().map(|p| { let cd = &cands[p.cand]; ab_mark(p.shares, ep(cd), mark_day(cd, day), c) }).sum::<f64>());
         positions.push(open.len());
     }
     // still open at the end: marked at the last day-end close
     let end = eq_dates.last().copied().unwrap_or(book.to);
     for p in &open {
+        let cd = &cands[p.cand];
         let t = &mut taken[p.taken];
         t.open = true;
         t.exit_day = end;
         t.exit_t = 0;
-        t.exit_px = mark_day(&cands[p.cand], end);
+        t.exit_px = mark_day(cd, end);
+        t.profit = ab_profit_raw(p.shares, ep(cd), t.exit_px as f32 as f64, c) as f32 as f64;
     }
     Book2 { taken, dates: eq_dates, equity, positions, rejected_capacity, rejected_cash }
 }
@@ -763,7 +799,7 @@ pub fn run_json(q: &BTreeMap<String, String>) -> Result<String, String> {
             let cd = &cands[t.cand];
             format!(
                 "{{\"symbol\":\"{}\",\"entry\":\"{}\",\"entry_time\":\"{}\",\"entry_ts\":\"{} {}\",\"exit_ts\":{},\"entry_px\":{},\"exit\":\"{}\",\"exit_time\":{},\"exit_px\":{},\"shares\":{},\"pnl\":{},\"weight\":{},\"score\":{},\"ret\":{},\"reason\":\"{}\",\"open\":{}}}",
-                crate::esc(&names[cd.sym]), iso(cd.entry_day), hhmm(cd.entry_t), iso(cd.entry_day), hhmm(cd.entry_t), if t.open { "null".to_string() } else { format!("\"{} {}\"", iso(t.exit_day), hhmm(t.exit_t)) }, crate::num(cd.entry_px), iso(t.exit_day), if t.open { "null".to_string() } else { format!("\"{}\"", hhmm(t.exit_t)) }, crate::num(t.exit_px), t.shares, crate::num(t.shares * (t.exit_px * (1.0 - book.cost) - cd.entry_px * (1.0 + book.cost))), crate::num(t.weight), crate::num(cd.score), crate::num(ret(t)), crate::esc(if t.open { "open" } else { &cd.reason }), t.open
+                crate::esc(&names[cd.sym]), iso(cd.entry_day), hhmm(cd.entry_t), iso(cd.entry_day), hhmm(cd.entry_t), if t.open { "null".to_string() } else { format!("\"{} {}\"", iso(t.exit_day), hhmm(t.exit_t)) }, crate::num(cd.entry_px), iso(t.exit_day), if t.open { "null".to_string() } else { format!("\"{}\"", hhmm(t.exit_t)) }, crate::num(t.exit_px), t.shares, crate::num(t.profit), crate::num(t.weight), crate::num(cd.score), crate::num(ret(t)), crate::esc(if t.open { "open" } else { &cd.reason }), t.open
             )
         })
         .collect();
@@ -773,7 +809,7 @@ pub fn run_json(q: &BTreeMap<String, String>) -> Result<String, String> {
     let bh: Vec<String> = res.dates.iter().map(|&d| nifty_file.days.iter().find(|x| x.date == d).map_or("null".into(), |x| crate::num(x.c / bh_base))).collect();
     let list = |v: Vec<String>| format!("[{}]", v.join(","));
     Ok(format!(
-        "{{\"kind\":\"universe\",\"status\":\"ready\",\"id\":\"{id}\",\"src\":{src},\"universe\":\"{}\",\"symbols\":{},\"max_positions\":{},\"pct\":{},\"sizing\":{},\"alloc\":{},\"pad\":{},\"model_initial_equity\":{},\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"benchmark_symbol\":\"NIFTY_F1\",\"benchmark_basis\":\"Buy & hold of NIFTY near-month continuous futures (IEOD_FO daily close; src 3: the team-copy rebuild), not back-adjusted: roll jumps included, as in AmiBroker's NIFTY_F1\",\"instrument\":{{\"symbol\":\"{}\",\"description\":\"{}\",\"database\":\"{}\"}},\"positions\":{},\"trades\":{},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"portfolio\":{{\"candidates\":{},\"accepted\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"last_day_signals_dropped\":{},\"candidate_seconds\":{},\"seconds\":{},\"ranking\":\"PositionScore, higher first; equal scores in ascending symbol name\",\"sizing\":\"floor(pct% x previous-bar equity / price) whole shares, compounding; shrink to available cash, skipped below 1 share\",\"timing\":\"exits before entries on the same bar\"}},\"notices\":[\"Prices as stored in the team's 2023 IEOD_FO database (some symbols back-adjusted for corporate actions); a symbol exists only on days it has data (no survivorship filter).\",\"Simulated portfolio of the team's AFL rules; not a published result.\"]}}",
+        "{{\"kind\":\"universe\",\"status\":\"ready\",\"id\":\"{id}\",\"src\":{src},\"universe\":\"{}\",\"symbols\":{},\"max_positions\":{},\"pct\":{},\"sizing\":{},\"alloc\":{},\"pad\":{},\"model_initial_equity\":{},\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"benchmark_symbol\":\"NIFTY_F1\",\"benchmark_basis\":\"Buy & hold of NIFTY near-month continuous futures (IEOD_FO daily close; src 3: the team-copy rebuild), not back-adjusted: roll jumps included, as in AmiBroker's NIFTY_F1\",\"instrument\":{{\"symbol\":\"{}\",\"description\":\"{}\",\"database\":\"{}\"}},\"positions\":{},\"trades\":{},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"portfolio\":{{\"candidates\":{},\"accepted\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"last_day_signals_dropped\":{},\"candidate_seconds\":{},\"seconds\":{},\"ranking\":\"PositionScore, higher first; equal scores in ascending symbol name\",\"sizing\":\"floor(pct% x previous-bar equity / price) whole shares, compounding; shrink to available cash, skipped below 1 share (the rest of the bar too)\",\"arithmetic\":\"AmiBroker full set as every ATH variant: float32 prices, values, shares and commission %; profit on AmiBroker prices; equity less the commission to close\",\"timing\":\"exits before entries on the same bar\"}},\"notices\":[\"Prices as stored in the team's 2023 IEOD_FO database (some symbols back-adjusted for corporate actions); a symbol exists only on days it has data (no survivorship filter).\",\"Simulated portfolio of the team's AFL rules; not a published result.\"]}}",
         crate::esc(ytbtst::UNIVERSE), names.len(), book.max_positions, crate::num(pct), if alloc.is_some() { 2 } else { 1 }, alloc.map_or("null".into(), crate::num), u8::from(pad), crate::num(equity0),
         list(res.dates.iter().map(|&d| format!("\"{}\"", iso(d))).collect()),
         list(res.equity.iter().map(|v| crate::num(v / equity0)).collect()),
@@ -952,12 +988,16 @@ mod tests {
         // day 2 entry at 14:50: the 09:25 exits happened before; previous-bar equity = cash; 10% / 200 = floor(494.805) = 494
         let e = cash2;
         assert_eq!(r.taken[2].shares, (e * 0.1 / 200.0).floor());
-        assert!((r.taken[2].weight - r.taken[2].shares * 200.0 / e).abs() < 1e-12);
-        // equity curve: day 1 marks at the entry prices (day_marks), day 3 after the last exit
-        assert!((r.equity[0] - (799_800.0 + 2000.0 * 50.0 + 1000.0 * 100.0)).abs() < 1e-6);
+        assert!((r.taken[2].weight - r.taken[2].shares * 200.0 / e).abs() < 1e-9);
+        // (the commission is AmiBroker's float32 0.1 %, 0.0010000000149: a few millionths of a rupee from the exact 0.001)
+        // equity curve: day 1 marks at the entry prices (day_marks) less the commission to close them, day 3 after the last exit
+        assert!((r.equity[0] - (799_800.0 + 2000.0 * 50.0 * 0.999 + 1000.0 * 100.0 * 0.999)).abs() < 1e-4, "{}", r.equity[0]);
         let last = cash2 - 494.0 * 200.0 * 1.001 + 494.0 * 210.0 * 0.999;
-        assert!((r.equity[2] - last).abs() < 1e-6, "{} {}", r.equity[2], last);
+        assert!((r.equity[2] - last).abs() < 1e-4, "{} {}", r.equity[2], last);
         assert!(r.taken.iter().all(|t| !t.open));
+        // AmiBroker's trade profit: shares x price change less the commission on both values, a float32
+        // (A: 1000 x 10 - 0.001 x 210,000 = 9,790; C: 2000 x -10 - 0.001 x 180,000 = -20,180)
+        assert_eq!((r.taken[0].profit, r.taken[1].profit), (-20_180.0, 9_790.0));
     }
 
     /// Sizing 2: floor(alloc / price) shares on every trade regardless of profits; equity = initial + realised P&L.

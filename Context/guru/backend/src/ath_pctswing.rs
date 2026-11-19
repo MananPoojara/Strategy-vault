@@ -253,7 +253,7 @@ mod tests {
     fn the_portfolio_sizes_a_position_as_a_percent_of_equity_and_charges_commission_both_ways() {
         let s = series(&[100.0, 101.0, 102.0, 103.0, 104.0, 83.0, 82.0]);
         let sg = signals(&s, &Params::default());
-        let pp = PortfolioParams { initial_equity: 100_000.0, pct_of_equity: 10.0, fixed_amount: None, max_positions: 5, commission_pct: 0.5, start: 20200101, end: 20201231, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false };
+        let pp = PortfolioParams { initial_equity: 100_000.0, pct_of_equity: 10.0, fixed_amount: None, max_positions: 5, commission_pct: 0.5, start: 20200101, end: 20201231, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false, detail_half_up: false, price_digits: 7 };
         let t = backtest(&[(&s, &sg)], &[0], &pp);
         assert_eq!(t.len(), 1);
         let x = &t[0];
@@ -273,7 +273,7 @@ mod tests {
         let mut b = series(&[49.0, 50.0, 51.0, 45.0]);
         b.name = "B".into();
         let (sa, sc, sb) = (signals(&a, &Params::default()), signals(&c, &Params::default()), signals(&b, &Params::default()));
-        let pp = PortfolioParams { initial_equity: 1_000.0, pct_of_equity: 100.0, fixed_amount: None, max_positions: 5, commission_pct: 0.0, start: 20200101, end: 20201231, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false };
+        let pp = PortfolioParams { initial_equity: 1_000.0, pct_of_equity: 100.0, fixed_amount: None, max_positions: 5, commission_pct: 0.0, start: 20200101, end: 20201231, amibroker_profit: false, amibroker_full: false, current_equity_sizing: false, size_f32_price: false, detail_half_up: false, price_digits: 7 };
         let t = backtest(&[(&a, &sa), (&c, &sc), (&b, &sb)], &[0, 1, 2], &pp);
         assert!(t.iter().any(|x| x.sym == 0), "A is entered");
         assert!(t.iter().all(|x| x.sym != 1 && x.sym != 2), "C cannot be funded and B comes after it");
