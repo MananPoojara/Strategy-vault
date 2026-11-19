@@ -157,8 +157,9 @@ impl Cal {
                 let (p, q) = (first(hd), after(hd));
                 if p == 0 || p >= n { continue; }
                 for k in 1..=3usize {
-                    if p >= k { c.hol[p - k].push((0, -(k as i64))); }
-                    if q + k - 1 < n { c.hol[q + k - 1].push((0, k as i64)); }
+                    // adjacent closures share their bars: one entry per (class, offset), so nothing is counted twice
+                    if p >= k && !c.hol[p - k].contains(&(0, -(k as i64))) { c.hol[p - k].push((0, -(k as i64))); }
+                    if q + k - 1 < n && !c.hol[q + k - 1].contains(&(0, k as i64)) { c.hol[q + k - 1].push((0, k as i64)); }
                 }
             }
             return c;

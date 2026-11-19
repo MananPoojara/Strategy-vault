@@ -165,6 +165,20 @@ mod tests {
         let mut us = r.clone(); for q in us.iter_mut() { q.ticker = "SPY".into(); }
         assert!(!indicator_days(&Ctx::new(&us, &us, &[]), 0, 0, 2, false).iter().any(|&b| b), "a US ticker keeps the US holiday list");
     }
+    #[test]
+    fn run_of_more_than_two_weekday_closures_is_a_data_gap_not_holidays() { // R4 #364 lead rule
+        let row = |y: i64, m: i64, d: i64| Row { ticker: "NIFTY 50".into(), date: format!("{y:04}-{m:02}-{d:02}"), open: 1., high: 1., low: 1., close: 1., volume: None };
+        // Thu 2020-03-05 bar, then Fri 06, Mon 09, Tue 10 closed (3 consecutive weekdays across a weekend), Wed 11 bar,
+        // then Thu 12 closed alone, Fri 13 bar, Mon 16 closed, Tue 17 closed (pair), Wed 18 bar
+        let r = vec![row(2020, 3, 5), row(2020, 3, 11), row(2020, 3, 13), row(2020, 3, 18)];
+        // gaps: 06,09,10 (run of 3: dropped) | 12 (single: kept) | 16,17 (pair: kept)
+        assert_eq!(crate::nse_holidays::derive(&r), vec![dnum(2020, 3, 12), dnum(2020, 3, 16), dnum(2020, 3, 17)]);
+        // Fri + Mon (a pair across the weekend) is kept
+        let r2 = vec![row(2020, 3, 5), row(2020, 3, 11)];
+        assert_eq!(crate::nse_holidays::derive(&r2).len(), 0); // 06,09,10 = run of 3
+        let r3 = vec![row(2020, 3, 5), row(2020, 3, 10)];
+        assert_eq!(crate::nse_holidays::derive(&r3), vec![dnum(2020, 3, 6), dnum(2020, 3, 9)]);
+    }
 }
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
