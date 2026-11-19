@@ -2678,7 +2678,7 @@ mod tests {
         use crate::books::{mkits, mkfve};
         let all:Vec<StrategyDef>=mkits::catalogue().into_iter().chain(mkfve::catalogue()).collect();
         let mut want:Vec<&str>=mkits::REVIEWED.iter().chain(mkits::REVIEWED_RS).chain(mkfve::REVIEWED.iter()).copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !crate::books::mkits::GOLD_DXY.contains(&d.id)).map(|d|d.id).collect(); // lane K1: the GLD-only gold/DXY cards are admitted by mkits::ADMISSION_GOLD_DXY
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
