@@ -359,7 +359,10 @@ function IndicatorsLab() {
         <div role="tabpanel" id="lab-panel-chart" aria-labelledby="lab-tab-chart" hidden={tab !== "chart"} className="lab-tab-panel">
         <Part>
           {ticker ? (
-            <Workbench toolbar={chartToolbar} onRange={(range) => dispatch({ type: "range", range })} library={indicatorLibrary} market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={chartCat!} chips={state.chips}
+            <Workbench toolbar={(controls) => chartToolbar(<>{controls}
+              {/* the next step sits at the trailing end of the chart's own toolbar, so the chart keeps the whole screen */}
+              <button type="button" className="dbtn primary lab-build-cta" data-lab-build title={chartPicks.length ? "Your indicators are on the chart. Turn them into buy and sell rules and test them." : "Add indicators to the chart, or go straight to buy and sell rules."}
+                onClick={() => { setTab("strategy"); setStep("idea"); }}>Build a strategy ›</button></>)} onRange={(range) => dispatch({ type: "range", range })} library={indicatorLibrary} market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={chartCat!} chips={state.chips}
               trades={result?.kind==="lab_simulation"?result.trades:undefined} loadSeries={loadSeries} instrumentLabel={option?.instrumentLabel}
               onChipChange={(key, params) => dispatch({ type: "chip-set", key, params })}
               onChipRemove={(key) => dispatch({ type: "chip-remove", key })} onChipLook={(key, looks) => dispatch({ type: "chip-look", key, looks })} comparisonOptions={comparisonOptions}
@@ -378,8 +381,6 @@ function IndicatorsLab() {
           canEdit={canEditMine} check={(text) => lab.formulaInfo(market, text)} api={lab.indicators}
           onSaved={mineSaved} onDeleted={mineDeleted} onClose={() => setEditing(null)}
           blocksEditor={(p) => <FormulaBlocks {...p} indicators={cat.indicators} check={(text) => lab.formulaInfo(market, text)} readOnly={!canEditMine} />} /></ChartPopup></Part>}
-        <div className="lab-step-nav lab-chart-next"><span className="cap">{chartPicks.length ? "Your indicators are on the chart. Turn them into buy and sell rules and test them:" : "Add indicators to the chart, or go straight to buy and sell rules:"}</span>
-          <button type="button" className="dbtn primary" data-lab-build onClick={() => { setTab("strategy"); setStep("idea"); }}>Build a strategy ›</button></div>
         </div>
         </LabModeContext.Provider>
         <div role="tabpanel" id="lab-panel-strategy" aria-labelledby="lab-tab-strategy" hidden={tab !== "strategy"} className="lab-tab-panel">

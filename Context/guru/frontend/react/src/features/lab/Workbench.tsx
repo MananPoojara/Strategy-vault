@@ -539,12 +539,12 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       setFull(fs);
       if (!el || el.closest("[hidden]")) return; // another tab is showing: nothing to measure
       const box = el.getBoundingClientRect(), top = box.top + (fs ? 0 : window.scrollY);
-      // TradingView: in the page the chart workspace (toolbar, price chart, panes, range row) is one screen tall, so the chart
-      // gets the height TradingView gives it; the page title above and the notes below are reached by scrolling.
-      // Neither part depends on the chart's own height, so this settles in one pass.
+      // The page header, tabs and the whole chart workspace (toolbar, price chart, panes, range row) share one screen, so nothing
+      // needs scrolling on open; the notes below are reached by scrolling. Neither part depends on the chart's own height, so this settles in one pass.
       const ws = workspaceRef.current?.getBoundingClientRect();
       const above = ws ? box.top - ws.top : 48, below = ws ? ws.bottom - box.bottom : panesHeight + 72;
-      setFit(Math.max(360, Math.round(fs ? window.innerHeight - top - panesHeight - 48 : window.innerHeight - above - below - 8)));
+      const pageTop = ws ? Math.max(0, ws.top + window.scrollY) : 0; // the workspace's place on the page, not on the scrolled screen
+      setFit(Math.max(360, Math.round(fs ? window.innerHeight - top - panesHeight - 48 : window.innerHeight - pageTop - above - below - 8)));
     };
     measure();
     // notes and the strip under the chart change after the data loads (trades, provisional notes): measure again
