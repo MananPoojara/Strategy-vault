@@ -1,9 +1,9 @@
 //! D. Aronson, Evidence-Based Technical Analysis (Wiley 2007), Part II case study (ch.8-9, p.389-450).
 //! Only rules whose input is the traded index's own close are Live (input series 1 = S&P 500 close).
 //! Source: library/arebta/.
-use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/aronson/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["arebta_tt", "arebta_ti", "arebta_e", "arebta_tt_br", "arebta_ti_br", "arebta_e_br", "arebta_d_br" /* lane K78, R4 #276 (3), #287 */,
+pub const REVIEWED: &[&str] = &["arebta_d_djta", "arebta_d_hlr10", "arebta_d_hlr30", "arebta_d_pt10y", "arebta_e_durspd", "arebta_tt_pt10y" /* lane H3b, R4 #339/#343/#346 */, "arebta_tt", "arebta_ti", "arebta_e", "arebta_tt_br", "arebta_ti_br", "arebta_e_br", "arebta_d_br" /* lane K78, R4 #276 (3), #287 */,
     "arebta_tt_br_nse", "arebta_ti_br_nse", "arebta_e_br_nse", "arebta_d_br_nse" /* lane CV6, R4 #340 / #347 / #365 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
@@ -11,13 +11,46 @@ const NOTE: &str = "Case study: 6,402 binary long/short reversal rules on the S&
 const OTHER: &str = "umbrella of the other 33 rule inputs of Table 8.2 (p.418); lane U2 (19 Nov 2026): the Dow transports and utilities ($DJT/$DJU), NASDAQ Composite ($COMP), NYSE new highs/lows (#NYSEHI/#NYSELO), the 3-month T-bill (DTB3) and the 10/30-year Treasury yields (DGS10/DGS30) ARE held, so they are no longer the reason; still not held: S&P Industrials, NYSE financials, Value Line, the DJ 20 bonds, AAA and BAA yields; and the volume indicators. The DJIA high/low/close (Table 8.1 raw series 3-5) feed only the accumulation-distribution and money-flow indicators (inputs 12-17, p.410-411), which multiply by NYSE volume; NYSE volume changes units on 2002-06-21 (thousands to shares), so every volume-level input (9-23, 33) is excluded (R4 #287). The six breadth inputs 24-29 are coded as arebta_tt_br, arebta_ti_br, arebta_e_br and arebta_d_br";
 /// Lane K78 (R4 #276 (3), #287): Table 8.2 breadth inputs 24-29 from NYSE advances/declines/unchanged and up/down/unchanged volume.
 pub const BREADTH: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.Unchanged", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume", "NYSE_ADV_DEC.UnchVolume"];
-pub fn breadth(id: &str) -> bool { matches!(id, "arebta_tt_br" | "arebta_ti_br" | "arebta_e_br" | "arebta_d_br") || nse(id) }
+pub fn breadth(id: &str) -> bool { other(id) || matches!(id, "arebta_tt_br" | "arebta_ti_br" | "arebta_e_br" | "arebta_d_br") || nse(id) }
 /// Lane CV6 (R4 #365): the NSE twins read the NSE advances / declines / unchanged and up / down volume (extra_data/india NSE_ADV_DEC).
 pub fn nse(id: &str) -> bool { id.ends_with("_br_nse") }
 pub const BREADTH_NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.Unchanged", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume"];
 const BR_NOTE: &str = "Lane K78 (R4 #276 (3), #287, #288). Input = NYSE breadth (extra_data NYSE_ADV_DEC, all NYSE issues, 1965-03-01..2020-02-10, as the book's 'all issues traded on the NYSE', p.413); traded = the instrument's own next open (the book traded the S&P 500; other US indices, ETFs and stocks are a declared application). US only (no NYSE breadth for Indian instruments). Runs go to the end of the breadth data (2020-02-10); the book's test period 1 Nov 1980 - 1 Jul 2005 (p.393) is used only for the book check (R4 #288 (1)). Up/down/unchanged volume switch together from thousands to shares on 2002-06-21 (the source lacks 2002-06-20), so the volume RATIO (inputs 27-29) has no unit break; volume levels are not used. [Declared] A day without a breadth print is skipped by the indicator (sums, averages and channels count breadth days only) and the position is unchanged; crossing = previous value on/at one side, today strictly beyond; a flat channel = no value. No detrending (the book scores detrended returns, p.391-392); one unit per trade.";
 const INPUTS: &str = "Input (Table 8.2, p.418): 24 CADR, 25 ADR10, 26 ADR30, 27 CUDR (cum. up-down volume ratio), 28 UDR10, 29 UDR30";
 
+/// Lane H3b: one card per other Table 8.2 input whose series is held and whose rule Table 9.1 (p.445-447) prints.
+pub fn other(id: &str) -> bool { OTHER_CARDS.iter().any(|c| c.0 == id) }
+/// (id, rule kind = the br card whose rule runs, input number, name, series the card needs)
+static OTHER_CARDS: [(&str, &str, usize, &str, &[&str]); 6] = [
+    ("arebta_d_djta", "arebta_d_br", 4, "Divergence rule D-8-4-10-60: Dow Jones Transportation Average vs the S&P 500", &["DJ_TRANSPORT"]),
+    ("arebta_d_hlr10", "arebta_d_br", 31, "Divergence rule D-8-31-10-30: NYSE new highs-new lows ratio, 10-day MA, vs the S&P 500", &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS", "NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.Unchanged"]),
+    ("arebta_d_hlr30", "arebta_d_br", 32, "Divergence rule D-8-32-10-15: NYSE new highs-new lows ratio, 30-day MA, vs the S&P 500", &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS", "NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.Unchanged"]),
+    ("arebta_d_pt10y", "arebta_d_br", 36, "Divergence rule D-7-36-10-30: price of the 10-year Treasury (100 / yield) vs the S&P 500", &["DGS10"]),
+    ("arebta_e_durspd", "arebta_e_br", 39, "Extreme-value & transition rule E-11-39-10-60: duration spread (10-year minus 3-month yield)", &["DGS10", "DTB3"]),
+    ("arebta_tt_pt10y", "arebta_tt_br", 36, "Traditional trend rule TT-36-5: price of the 10-year Treasury (100 / yield)", &["DGS10"]),
+];
+fn other_card(id: &str) -> Option<&'static (&'static str, &'static str, usize, &'static str, &'static [&'static str])> { OTHER_CARDS.iter().find(|c| c.0 == id) }
+/// Input series of an `other` card on the days (indices into the context) where every needed value and the traded close exist.
+fn other_input(id: &str, x: &Ctx) -> Option<(Vec<usize>, Vec<f64>)> {
+    let c = other_card(id)?;
+    let n = x.c.len();
+    let cols: Vec<&[f64]> = c.4.iter().map(|k| x.series(k)).collect::<Option<_>>()?;
+    let ok = |i: usize| x.c[i].is_finite() && cols.iter().all(|v| v[i].is_finite());
+    let mut days: Vec<usize> = (0..n).filter(|&i| ok(i)).collect();
+    let ma = |v: &[f64], w: usize| -> Vec<f64> { (0..v.len()).map(|j| if j + 1 < w { f64::NAN } else { v[j + 1 - w..=j].iter().sum::<f64>() / w as f64 }).collect() };
+    let s: Vec<f64> = match c.2 {
+        4 => days.iter().map(|&i| cols[0][i]).collect(),
+        31 | 32 => {
+            days.retain(|&i| cols[2][i] + cols[3][i] + cols[4][i] > 0.);
+            let hlr: Vec<f64> = days.iter().map(|&i| (cols[0][i] - cols[1][i]) / (cols[2][i] + cols[3][i] + cols[4][i])).collect();
+            ma(&hlr, if c.2 == 31 { 10 } else { 30 })
+        }
+        36 => { days.retain(|&i| cols[0][i] > 0.); days.iter().map(|&i| 100. / cols[0][i]).collect() }
+        39 => days.iter().map(|&i| cols[0][i] - cols[1][i]).collect(),
+        _ => return None,
+    };
+    Some((days, s))
+}
 fn br(d: StrategyDef) -> StrategyDef { StrategyDef { needs_series: BREADTH, ..d } }
 const NSE_NOTE: &str = "[R4 #340 / #347 declared adaptation, UNVERIFIED] NSE twin of the NYSE-breadth rule: the same rule, parameters and thresholds on the NSE's own advances / declines / unchanged and up / down volume (extra_data/india NSE_ADV_DEC, 1999-01-01 on; all NSE-listed issues as the book's 'all issues traded on the NYSE'). The NSE publishes no unchanged-issue volume, so the volume ratio (inputs 27-29) is (up - down) / (up + down) where the book divides by up + down + unchanged volume. The divergence rule (D) compares with the NIFTY 50 close on the same date where the NYSE rule uses the SPX close (the NIFTY 50's own close on NIFTY 50). Runs on Indian indices and stocks; US instruments are refused (no NSE series there). The book traded the S&P 500 on NYSE breadth: no NSE result exists. Measured firing rates, NSE vs NYSE: ";
 fn twin(d: &StrategyDef, id: &'static str, name: &'static str, rate: &'static str) -> StrategyDef {
@@ -76,7 +109,25 @@ pub fn catalogue() -> Vec<StrategyDef> {
         let t = v.iter().find(|d| d.id == base).map(|b| twin(b, id, name, rate));
         v.extend(t);
     }
+    for c in OTHER_CARDS.iter() { v.push(other_def(c)); }
     v
+}
+
+const OTHER_NOTE: &str = "Lane H3b (19 Nov 2026, R4 #339/#343/#346). One card for one Table 8.2 input whose series the vault holds and whose rule Table 9.1 (p.445-447) prints; the printed rule ID is the default (Type-Input-Disp-Span for D and E, Input-Span for TT), the other grid values stay options. Declared readings, 3 unstated details and no more: (1) a day on which the input (or any of its parts) has no print is skipped, the sums / averages / channels count days with prints only and the position is unchanged; (2) a crossing is 'previous value on or at one side, today strictly beyond' (the book states no equality convention); (3) the rule trades the instrument's own next open, the S&P 500 only as the divergence reference (SPX close on the same date; the book traded the S&P 500; other US indices, ETFs and stocks are a declared application). Printed, not choices: the input definition, CN, the 4-day LMA of the E rule, the double normalisation 10n of the D rule, the 12 event-type tables, reversal only, next open. No detrending (the book scores detrended returns, p.391-392); one unit per trade; no costs. US only: the series are US series, so Indian instruments get the missing-series message. UNVERIFIED: the book prints return, p-values and confidence limits for the S&P 500 on detrended returns, no trade list. ";
+fn other_def(c: &'static (&'static str, &'static str, usize, &'static str, &'static [&'static str])) -> StrategyDef {
+    let (id, kind, inp, name, series) = *c;
+    let (rules, def_in, claim): (&'static [&'static str], &str, &str) = match id {
+        "arebta_d_djta" => (&["F|Input 4 = Dow Jones Transportation Index close ($DJT, Table 8.2 p.418; raw series)", "F|Divergence indicator = CN{CN(DJTA, n) - CN(S&P 500, n), 10n} (p.437-438)", "E|D-8-4-10-60: type 8 (Table 8.4: long on event 3, short on event 1 of Table 8.3, p.439-440), thresholds 50 +/- 10, n = 60", "X|Reversal only; next open (p.449)"], "D-8-4-10-60", "Table 9.1 p.445 (2nd best of the 100): return 0.102395 a year on detrended S&P 500 returns, SR bootstrap p 0.001, Monte Carlo p 0.0015; siblings D-9-4-10-60 and D-10-4-10-60 on p.446"),
+        "arebta_d_hlr10" => (&["F|Input 31 = HLR10 = 10-day MA of HLR = (NYSE new 52-week highs - new lows) / (advancing + declining + unchanged issues) (p.416; Norgate #NYSEHI/#NYSELO and NYSE_ADV_DEC)", "F|Divergence indicator = CN{CN(HLR10, n) - CN(S&P 500, n), 10n} (p.437-438)", "E|D-8-31-10-30: type 8, thresholds 50 +/- 10, n = 30", "X|Reversal only; next open (p.449)"], "D-8-31-10-30", "Table 9.1 p.446: return 0.06831 a year on detrended S&P 500 returns, bootstrap p 0.019, Monte Carlo p 0.023"),
+        "arebta_d_hlr30" => (&["F|Input 32 = HLR30 = 30-day MA of HLR (p.416)", "F|Divergence indicator = CN{CN(HLR30, n) - CN(S&P 500, n), 10n} (p.437-438)", "E|D-8-32-10-15: type 8, thresholds 50 +/- 10, n = 15", "X|Reversal only; next open (p.449)"], "D-8-32-10-15", "Table 9.1 p.445: return 0.08048 a year on detrended S&P 500 returns, bootstrap p 0.006, Monte Carlo p 0.0085; siblings D-10-32-20-15, D-9-32-10-15 and TI-32-61 on p.446"),
+        "arebta_d_pt10y" => (&["F|Input 36 = price of the 10-year Treasury = 100 / the 10-year yield (p.417: 'a rate of 6.05 percent would be equivalent to a price of 15.38'; FRED DGS10)", "F|Divergence indicator = CN{CN(PT10Y, n) - CN(S&P 500, n), 10n} (p.437-438)", "E|D-7-36-10-30: type 7, thresholds 50 +/- 10, n = 30", "X|Reversal only; next open (p.449)"], "D-7-36-10-30", "Table 9.1 p.445: return 0.079943 a year on detrended S&P 500 returns, bootstrap p 0.0065, Monte Carlo p 0.0055; siblings D-7-36-20-30 and D-7-36-10-60 on p.445"),
+        "arebta_e_durspd" => (&["F|Input 39 = duration spread = the 10-year yield minus the 3-month yield (p.417; FRED DGS10, DTB3)", "F|Indicator = CN(LMA(DURSPD, 4), N) (p.401-402, 421)", "E|E-11-39-10-60: event type 11 of Table 8.3 (p.423), thresholds 50 +/- 10, N = 60", "X|Reversal only; next open (p.449)"], "E-11-39-10-60", "Table 9.1 p.445: return 0.092282 a year on detrended S&P 500 returns, bootstrap p 0.001, Monte Carlo p 0.0015"),
+        _ => (&["F|Input 36 = price of the 10-year Treasury = 100 / the 10-year yield (p.417)", "E|TT-36-5: CBO(PT10Y, 5): +1 above its 5-day maximum (not including today), -1 below its minimum (p.397, 420)", "X|Reversal only; next open (p.449)"], "TT-36-5", "Table 9.1 p.446: return 0.070709 a year on detrended S&P 500 returns, bootstrap p 0.016, Monte Carlo p 0.0235; sibling TT-36-3 on p.446"),
+    };
+    let _ = (kind, inp);
+    StrategyDef { id, name, group: "Ch.8 S&P 500 rule data-mining case study", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: series, book: "arebta", rules,
+        notes: Box::leak(format!("{OTHER_NOTE}Default {def_in}. Book: {claim}.").into_boxed_str()),
+        claim: Some(Claim { trades: "-", win: "-", avg: "see the printed Table 9.1 row (detrended S&P 500 returns, not a trade list)", hold: "-", period: "11/1/1980 - 7/1/2005, S&P 500 (Table 9.1 p.445-447; not significant after data-mining correction)" }) }
 }
 const NSE_TWINS: [(&str, &str, &str, &str); 4] = [
     ("arebta_tt_br", "arebta_tt_br_nse", "Traditional trend rule TT on NSE breadth (inputs 24-29)", "default inputs (input 28, n = 12) over 2014-01-02..2019-08-19, the stretch the NYSE series runs on: NSE 16.9 position reversals a year, long 49.2% of days; NYSE (SPX) 18.5 a year, long 47.1%. Full NSE overlap 1999-11-09..2020-02-10: 16.9 a year, long 48.6%."),
@@ -105,6 +156,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "arebta_tt_br" | "arebta_ti_br" | "arebta_tt_br_nse" | "arebta_ti_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 12., 3., 205., 1.)],
         "arebta_e_br" | "arebta_e_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "E-rule type 1-12 (Table 8.3)", 12., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 30., 15., 60., 15.)],
         "arebta_d_br" | "arebta_d_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "D-rule type 1-12 (Table 8.4)", 10., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", 30., 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close (labelled option)", 0., 0., 1., 1.)],
+        "arebta_d_djta" | "arebta_d_hlr10" | "arebta_d_hlr30" | "arebta_d_pt10y" => { let (ty, di, sp) = match id { "arebta_d_djta" => (8., 10., 60.), "arebta_d_hlr10" => (8., 10., 30.), "arebta_d_hlr30" => (8., 10., 15.), _ => (7., 10., 30.) };
+            vec![p("type", "D-rule type 1-12 (Table 8.4)", ty, 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", di, 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", sp, 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close", 0., 0., 1., 1.)] }
+        "arebta_e_durspd" => vec![p("type", "E-rule type 1-12 (Table 8.3)", 11., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 60., 15., 60., 15.)],
+        "arebta_tt_pt10y" => vec![p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 5., 3., 205., 1.)],
         _ => return None,
     })
 }
@@ -143,9 +198,11 @@ fn breadth_input(x: &Ctx, input: usize, nse: bool) -> Option<(Vec<usize>, Vec<f6
 /// state is carried over the other days.
 fn output_br(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Vec<f64> {
     let twin_nse = nse(id);
-    let id = id.trim_end_matches("_nse");
+    let card = id;
+    let id = other_card(id).map_or(id.trim_end_matches("_nse"), |c| c.1); // lane H3b: the other-input cards run their br rule
     let mut out = vec![0.; x.c.len()];
-    let Some((mut days, mut s)) = breadth_input(x, (g("input") as usize).clamp(24, 29), twin_nse) else { return out };
+    let inp = if other(card) { other_input(card, x) } else { breadth_input(x, (g("input") as usize).clamp(24, 29), twin_nse) };
+    let Some((mut days, mut s)) = inp else { return out };
     // R4 #288 (2): the divergence's S&P 500 = the SPX close on the same date (FOLLOWER_CLOSE, exact join); p.ref = 1: own close
     // the NSE twin: the NIFTY 50 close on the same date (BENCH.C; on NIFTY 50 itself its own close), as the NYSE rule uses the SPX close
     let own_nifty: Vec<f64>;
@@ -273,6 +330,28 @@ mod tests {
         assert_eq!(ti[0].dir, -1.);
     }
 
+    /// Lane H3b: the 10-year price input is 100 / yield (p.417), so TT-36-n is the channel breakout of that price; the duration
+    /// spread is yield10 - yield3m; HLR = (new highs - new lows) / (adv + dec + unch).
+    #[test]
+    fn other_inputs_follow_the_printed_definitions() {
+        let pr = [10., 11., 12., 13., 12.5, 12., 9., 9.5];
+        let r: Vec<Row> = pr.iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("{:04}-01-01", 2000 + i), open: c + 0.1, high: c + 1., low: c - 1., close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("DGS10".into(), pr.iter().map(|p| 100. / p).collect());
+        let t = run("arebta_tt_pt10y", &x, 0, 7, &prm(&[("n", 3.)])).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i, t[1].dir), (1., 4, 7, -1.)); // as tt3_reverses_on_next_open on the price 100 / yield
+        x.extra.insert("DTB3".into(), vec![1.; 8]);
+        let (days, s) = other_input("arebta_e_durspd", &x).unwrap();
+        assert_eq!(days.len(), 8);
+        assert!((s[0] - (10. - 1.)).abs() < 1e-12 && (s[3] - (100. / 13. - 1.)).abs() < 1e-12);
+        for (k, v) in [("NYSE_NEW_HIGHS", 30.), ("NYSE_NEW_LOWS", 10.), ("NYSE_ADV_DEC.Advances", 1000.), ("NYSE_ADV_DEC.Declines", 800.), ("NYSE_ADV_DEC.Unchanged", 200.)] { x.extra.insert(k.into(), vec![v; 8]); }
+        let (_, h) = other_input("arebta_d_hlr10", &x).unwrap();
+        assert!(h.iter().all(|v| v.is_nan()), "10-day MA needs 10 days"); // only 8 bars
+        let (_, h) = other_input("arebta_d_hlr10", &x).map(|(d, s)| (d, s)).unwrap();
+        assert_eq!(h.len(), 8);
+        // the divergence cards need the SPX close: none loaded -> no trade
+        assert!(run("arebta_d_djta", &x, 0, 7, &Params::new()).unwrap().is_empty());
+    }
     /// Lane K78: a context with NYSE breadth columns; `ratio` sets advances/declines so ADR = ratio (unchanged = 0).
     fn br_ctx(start: &str, ratio: &[f64], close: &[f64]) -> (Vec<Row>, Vec<Vec<f64>>) {
         let y: i32 = start[..4].parse().unwrap();

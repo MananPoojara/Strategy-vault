@@ -180,7 +180,9 @@ pub const INDEX_SERIES: &[(&str, &str)] = &[("$COMP", "NASDAQ_COMP"), ("$NYA", "
     // lane PB: NYSE 52-week new highs / lows 1932-2020 (SOURCES norgate-us-indices-20200908-pb)
     ("#NYSEHI", "NYSE_NEW_HIGHS"), ("#NYSELO", "NYSE_NEW_LOWS"), ("$DJU", "DJ_UTILITY"),
     // lane PF: the DJIA close for Meyers' DJstr/DJCstr (SOURCES norgate-us-indices-20200908-pf)
-    ("$DJI", "DJ_INDUSTRIAL")];
+    ("$DJI", "DJ_INDUSTRIAL"),
+    // lane H3b: the Dow Jones Transportation Average close for Aronson Table 8.2 input 4 (SOURCES norgate-us-indices-20200908-h3b)
+    ("$DJT", "DJ_TRANSPORT")];
 /// Lane PG (14 Nov 2026): daily HIGHS of the three Dow averages for stad7_dow (STAD Vol 7 Dow Theory: Data2-4 new highs).
 /// $DJT mirrored by lane PG (SOURCES norgate-us-indices-20200908-pg); $DJI (PF) and $DJU (PB) were already mirrored.
 pub const INDEX_HIGHS: &[(&str, &str)] = &[("$DJI", "DJ_IND_HIGH"), ("$DJT", "DJ_TRANS_HIGH"), ("$DJU", "DJ_UTIL_HIGH")];
