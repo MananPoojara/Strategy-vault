@@ -34,6 +34,7 @@ enum M {
     Chan { hl: bool },      // ch5 T1/T3 (close vs highest close) and T4/T5 (close vs highest high)
     HhllStop,               // ch5 T6
     Vb { long_only: bool, adx: bool }, // ch5 T7, T8, T10, T12
+    VbCcy,                  // ch5 T11 (x09mod11.c: the Test 8 rule on the currency markets only; lane H2c)
     StochObos, RsiObos, StochSig, StochDiv, // ch7
     MaT(u8, u8),            // ch6 Tests 4-12, 16-24, 28-36, 40-48: model 1-4 x EMA/FWTMA/VIAverageS (lane H2b)
     MaCt, MaSr,             // ch6 Tests 25-27 / 37-39 (simple MA; lane H2b, R4 #340/#343, x10mod01.c models 3 and 4)
@@ -99,6 +100,9 @@ static TESTS: &[T] = &[
     t!("kets_vb_limit", "Volatility breakout · limit at signal-bar midpoint (Test 8)", G5, M::Vb { long_only: false, adx: false }, Limit, "Long/Short", "pp.98-99 (PDF 114-115)",
         [("bw", "Band width, ATR units", 3.7, 1.5, 4.5, 0.1), ("ma", "EMA length (closes)", 22., 1., 25., 1.), ("atr", "ATR length for the band", 41., 5., 50., 1.)],
         Some(("IS 1,244", "IS 45%", "IS $3,616 / OOS $-2,094", "7 days", "36-futures portfolio; ROA IS 48.3% / OOS -16.9% (Table 5-3)"))),
+    t!("kets_vb_limit_ccy", "Volatility breakout · limit · currencies only (Test 11)", G5, M::VbCcy, Limit, "Long/Short", "p.101 (PDF 117)",
+        [("bw", "Band width, ATR units (Test 8's, printed p.101)", 3.7, 1.5, 4.5, 0.1), ("ma", "EMA length (closes; Test 8's, printed p.101)", 22., 1., 25., 1.), ("atr", "ATR length for the band (Test 8's, printed p.101)", 41., 5., 50., 1.)],
+        Some(("IS 268 / OOS 102", "IS 48% / OOS 43%", "IS $3,977 / OOS $2,106", "", "BP, DM, SF, JY, CD, ED futures portfolio (pp.101-102; ROA IS 36.2% / OOS 17.7%)"))),
     t!("kets_vb_limit_long", "Volatility breakout · limit · long positions only (Test 10)", G5, M::Vb { long_only: true, adx: false }, Limit, "Long", "pp.100-101 (PDF 116-117)",
         [("bw", "Band width, ATR units", 2.6, 1.5, 4.5, 0.1), ("ma", "EMA length (closes)", 15., 1., 25., 1.), ("atr", "ATR length for the band", 18., 5., 50., 1.)],
         Some(("IS 1,263", "IS 48% / OOS 35%", "IS $4,100 / OOS $-1,640", "7 days", "36-futures portfolio; ROA IS 53.0% / OOS -14.6% (Table 5-3)"))),
@@ -362,6 +366,9 @@ fn model_rules(m: M) -> &'static [&'static str] {
         M::Chan { hl: true } => &["E|\"buys ... when today's close breaks above the highest high of the last n days, and sells ... when today's close drops below the lowest low\" (p.92; x09mod04.c: cls[cb] > Highest(hi,n,cb-1), cls[cb] < Lowest(lo,n,cb-1))"],
         M::HhllStop => &["E|Highest high hh and lowest low ll of the last n bars INCLUDING the current bar (p.96, x09mod06.c)",
             "E|If (close-ll)/(hh-ll) >= 0.5 and not long: buy stop at hh next bar; if < 0.5 and not short: sell stop at ll (\"Both orders are never posted together\", p.96)"],
+        M::VbCcy => &["F|Trade only the currency markets BP, DM, SF, JY, CD, ED (x09mod11.c, p.101); this vault holds Norgate continuous BP (&6B), SF (&6S) and JY (&6J) only, so those three are run; DM and CD have no held contract and ED (&GE) is left out (its vendor opens are unreliable, R4 #336)",
+            "E|The Test 8 rule with its printed parameters bw 3.7, EMA 22, ATR 41 (p.101): upper band = EMA(close, 22)[yesterday] + 3.7 x ATR(41)[yesterday]; lower band = EMA - 3.7 x ATR (x09mod08/11.c)",
+            "E|Close above the upper band: buy on a limit at the signal bar's midpoint (if not long); close below the lower band: sell short on a limit at the midpoint (if not short) (x09mod11.c); Standard Exit Strategy pp.76-77, 87"],
         M::Vb { long_only, adx } => match (long_only, adx) {
             (false, false) => &["E|Upper band = EMA(close, ma)[yesterday] + bw x ATR(atr)[yesterday]; lower band = EMA - bw x ATR (p.97; x09mod07/08.c)",
                 "E|Close above the upper band: buy (if not long); close below the lower band: sell short (if not short)"],
@@ -510,10 +517,6 @@ fn off_list() -> Vec<StrategyDef> {
             NotTestable("the book prints the optimal band width as 'X.3' (p.99); the bandwidth digit is missing, so the default cannot be stated"),
             &["E|Bands = EMA(close, 11)[today] +/- bw x ATR(21)[today]; buy stop at the upper band if the close is in the upper half of the bands, else sell stop at the lower band (p.99, x09mod09.c)", "X|Standard exit"],
             "Printed: \"a bandwidth of X.3, a moving average length of 11, and an average true range of 21 bars\" (p.99). IS 1,465 trades, 40% wins, $931/trade; OOS 610 trades, 29%."),
-        off!("kets_vb_limit_ccy", "Volatility breakout · limit · currencies only (Ch.5 Test 11)", G5, "Long/Short",
-            NeedsData("daily British Pound, Deutschemark, Swiss Franc, Japanese Yen, Canadian Dollar and Eurodollar futures (the rule trades only these six markets)"),
-            &["F|Trade only BP, DM, SF, JY, CD, ED futures (x09mod11.c)", "E|Volatility breakout with limit entry, Test 8 parameters bw 3.7, EMA 22, ATR 41 (p.101)", "X|Standard exit"],
-            "Book: IS 268 trades, 48% wins, $3,977/trade, ROA 36.2%; OOS 102 trades, 43%, $2,106, ROA 17.7% (pp.101-102). On an index the market filter admits no bars."),
         off!("kets_ma_trend_xo", "Trend-following MA crossover, SMA/EMA/FWTMA/VIAverageS x open/limit/stop (Ch.6 Tests 1-12)", "Ch.6 Moving-average models", "Long/Short", NotTestable(NT_MA),
             &["E|Buy when the fast MA crosses above the slow MA (fast >= slow today, fast < slow yesterday); sell on the opposite cross (x10mod01.c model 1)", "E|Fast 1-5, slow 5-50 optimised per test (p.120)", "X|Standard exit"],
             "Rules exact in x10mod01.c; Table 6-3 prints only portfolio ROA%/$TRD, e.g. SMA crossover IS open/limit/stop $-1,765/$-926/$-1,045."),
@@ -598,6 +601,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
             M::Vb { long_only: false, adx: false } => ("kets_vb", "Volatility breakout"),
             M::Vb { long_only: true, .. } => ("kets_vb", "Volatility breakout"),
             M::Vb { adx: true, .. } => ("kets_vb", "Volatility breakout"),
+            M::VbCcy => ("kets_vb", "Volatility breakout"),
             M::StochObos => ("kets_stoch_obos", "Stochastic overbought/oversold"),
             M::RsiObos => ("kets_rsi_obos", "RSI overbought/oversold"),
             M::StochSig => ("kets_stoch_sig", "Stochastic signal line"),
@@ -621,6 +625,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         };
         if matches!(t.m, M::Neural | M::NeuralExit) { return Some((f, n, if t.m == M::Neural { "Neural entries (Ch.11)" } else { "Neural signal exit (Ch.15)" })); }
         let v: &'static str = match t.id {
+            "kets_vb_limit_ccy" => "Limit · currency futures only",
             "kets_vb_limit_long" => "Limit · longs only",
             "kets_vb_limit_adx" => "Limit · ADX trend filter",
             "kets_rand_mses" => "Modified standard exit",
@@ -637,7 +642,6 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     let f = |a, b, c| Some((a, b, c));
     match id {
         "kets_vb_stop" => f("kets_vb", "Volatility breakout", "Entry on stop · not testable"),
-        "kets_vb_limit_ccy" => f("kets_vb", "Volatility breakout", "Currencies only · data missing"),
         "kets_ma_trend_xo" | "kets_ma_slope" | "kets_ma_ct_xo" | "kets_ma_sr" => f("kets_ma", "Moving-average entries (Ch.6)", "Not testable"),
         "kets_macd_sig" | "kets_rsi_div" | "kets_macd_div" => f("kets_osc_nt", "Oscillator entries, unprinted parameters", "Not testable"),
         "kets_solar_open" | "kets_solar_limit" | "kets_solar_stop" => f("kets_solar", "Sunspot breakout (Ch.9 solar)", "Entry order of the test"),
@@ -1164,7 +1168,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if pr >= 0.5 { (1, hh) } else if pr < 0.5 { (-1, ll) } else { (0, 0.) } // hh == ll: NaN, no order
             })
         }
-        M::Vb { long_only, adx } => {
+        M::Vb { .. } | M::VbCcy => {
+            let (long_only, adx) = match t.m { M::Vb { long_only, adx } => (long_only, adx), _ => (false, false) };
             let (bw, ma, al) = (g("bw"), u("ma"), u("atr"));
             let atr = sma(&true_range(x), al); let ema = xavg(&x.c, ma);
             let ax = if adx { adx_k(x, u("adx")) } else { vec![] }; let ah = u("adxhi");
