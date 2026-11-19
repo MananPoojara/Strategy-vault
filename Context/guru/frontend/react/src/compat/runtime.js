@@ -1741,8 +1741,8 @@ function authorBookCard(record,index=0){
   const art=cover?`<img class="bk-img" src="data/${esc(cover.file)}" alt="Cover of ${esc(title)}" loading="lazy">`
     :`<div class="bk-made"><span class="bk-made-author">${esc(record.authorName)}</span><span class="bk-made-title">${esc(title)}</span><span class="bk-made-year">${esc(String(year))}</span></div>`;
   return `<article class="bookcard bk" data-library-book="${esc(record.id)}" style="--c:${esc(cloth)};--i:${index%25}">
-    <a class="bk-stage" href="${link}" aria-label="Open ${esc(title)}"><span class="bk-book">${art}</span><span class="bk-open">Open book <span aria-hidden="true">→</span></span></a>
-    <div class="bk-body"><h3><a href="${link}">${esc(title)}</a></h3><span class="bk-meta">${esc(record.authorName)} · ${esc(String(year))}</span>${summary?`<p class="bk-summary">${esc(summary)}</p>`:''}
+    <a class="bk-stage" href="${link}" aria-label="Open ${esc(title)}"><span class="bk-book">${art}</span></a>
+    <div class="bk-body"><h3><a href="${link}">${esc(title)}</a></h3><span class="bk-meta">${esc(record.authorName)} · ${esc(String(year))}</span><p class="bk-summary">${summary?esc(summary):''}</p>
     ${record.kind==='catalogue'?`<div class="bk-stats"><span><b>${total}</b> strategies</span><span class="${backtested?'ok':''}"><b>${backtested}</b> backtested</span></div><div class="bk-bar" role="img" aria-label="${backtested} of ${total} strategies backtested"><i style="width:${pct}%"></i></div>`:''}</div></article>`;
 }
 async function bookShelf(g) {
