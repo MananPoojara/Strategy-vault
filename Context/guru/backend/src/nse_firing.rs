@@ -74,8 +74,9 @@ pub fn apply(v: &mut [StrategyDef]) {
     for d in v.iter_mut() { if let Some(n) = map.get(d.id) { d.notes = n; } }
 }
 
-/// CV6's six NSE twins state their own rates in their own notes: no table entry, no appended line.
-pub const OWN_RATE_NOTES: &[&str] = &["arebta_tt_br_nse", "arebta_ti_br_nse", "arebta_e_br_nse", "arebta_d_br_nse", "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse"];
+/// CV6's NSE twins (R4 #365 and the Q9 pass) state their own rates in their own notes: no table entry, no appended line.
+pub const OWN_RATE_NOTES: &[&str] = &["arebta_tt_br_nse", "arebta_ti_br_nse", "arebta_e_br_nse", "arebta_d_br_nse", "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse",
+    "wmny_pct_nh_nse", "thnhl_ema55_nse", "dmtad_turbo_nse", "dmtfly_flying_nse", "kdta_nh_nl_nse", "mbsot_appel_bottom_fisher_nse"];
 
 #[cfg(test)]
 mod tests {
