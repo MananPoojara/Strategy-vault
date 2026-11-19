@@ -422,6 +422,17 @@ impl<'a> Eng<'a> {
             }
             // lane Q14 (R4 #339): MetaStock mo(PERIODS) = the predefined Momentum indicator = 100 * Close / ref(Close, -PERIODS)
             // (MetaStock Pro 8.0 manual: function list "Momentum mo( PERIODS )", PDF p.281; "Momentum = Close / ref(Close,-10) x 100", printed p.482, PDF p.493; research share USB HDD 1/MetaStock/@Knowledge/Manual MetaStock Professional 8.0 (Original English Manual))
+            // lane H3d (R4 #339(2)): OscP(short, long, method, %) = MetaStock's Price Oscillator: the difference of two moving averages of the close; in percent the
+            // difference is divided by the SHORTER-term average (Achelis, Technical Analysis from A to Z, Price Oscillator, hosted by MetaStock
+            // https://www.metastock.com/customer/resources/taaz/?p=94 and quoted in the eSignal Technical Analysis Dictionary entry 'Price Oscillator'); points = short - long.
+            "oscp" => {
+                argc(4)?;
+                let (p1, p2) = (self.per(&a[0])?, self.per(&a[1])?);
+                let m = match &a[2] { E::Id(m) => m.to_lowercase(), _ => return Err("OscP() method".into()) };
+                let avg = |n: usize| -> Result<Vec<f64>, String> { Ok(match m.as_str() { "s" | "simple" | "simp" => sma(&x.c, n), "e" | "exponential" => ema(&x.c, n), "w" | "weighted" => wma(&x.c, n), _ => return Err(format!("OscP() method '{m}' is not supported")) }) };
+                let (f, l) = (avg(p1)?, avg(p2)?);
+                match &a[3] { E::Sym(o) if o == "%" => zip(&f, &l, |s, g| 100.0 * (s - g) / s), E::Sym(o) if o == "$" => zip(&f, &l, |s, g| s - g), E::Id(o) if o == "p" || o == "pts" => zip(&f, &l, |s, g| s - g), _ => return Err("OscP() needs % or pts".into()) }
+            }
             "mo" => { argc(1)?; let p = self.per(&a[0])?; let b = back(&x.c, p); zip(&x.c, &b, |c, r| 100.0 * c / r) }
             "rsi" => {
                 let (src, p) = match a.len() { 1 => (Rc::new(x.c.clone()), self.per(&a[0])?), 2 => (self.ev(&a[0])?, self.per(&a[1])?), _ => return Err("RSI() arguments".into()) };
