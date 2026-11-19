@@ -124,7 +124,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("kfsc_high_momentum", "High-momentum threshold trading", "Ch 14 · Momentum", "Long/Short", NotTestable("rules not defined: the ±15 threshold is fitted to one AOL chart and the exit is vague (from part of a day to 'two or three days', p.210-211)"), &[
             "E|\"trading in the direction of the trend only when momentum exceeds a high threshold level (for example, +15)\" (p.211)",
         ], ""),
-        d("kfsc_dow_theory", "Dow Theory bull/bear signals", "Ch 18 · Dow Theory", "Long/Short", NotTestable("swing size 'perhaps 10 percent' and confirmation by two of DJIA/DJT/DJU (transport and utility averages not in the vault) (p.262-273)"), &[
+        d("kfsc_dow_theory", "Dow Theory bull/bear signals", "Ch 18 · Dow Theory", "Long/Short", NotTestable("held on unstated details, not on data (lane U2, 19 Nov 2026: Dow Transports and Utilities, Norgate $DJT/$DJU, are held): at least 5 - (1) swing size ('perhaps 10 percent'), (2) rally/decline measured on closes or intraday extremes, (3) how many days may separate the confirming averages, (4) which two of DJIA/DJT/DJU confirm, (5) how far a break of the previous low/high must go; more than the 4 R4 #339/#343 allow (p.262-273)"), &[
             "E|\"The bull market signal is at the point where prices confirm the uptrend by moving above the high of the previous rally. The bear market signal occurs on a break below the low of the previous decline\" (p.264-265)",
         ], ""),
     ]

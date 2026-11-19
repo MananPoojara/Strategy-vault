@@ -9,9 +9,10 @@ use crate::connors::{sma, true_range, Ctx, ParamDef, Params, Status, StrategyDef
 pub const BOOK: &str = "nfgu";
 
 const METALS: &str = "silver/gold futures, Swiss franc futures, US T-bill yield and CPI inflation; none in the vault";
-const PAL: &str = "weekly US T-Bill yield and T-Bond yield (PAL model filter: S&P < 42-week MA and T-Bill yield > 42-week MA or T-Bond yield > 10-week MA); not in the vault";
+const PAL: &str = "the T-bill (DTB3) and bond (DGS10) yields are held (lane U2, 19 Nov 2026) and the PAL filter alone is Live as nfgu_pal_model; this system stays held on its OWN rules: 8 unstated details, more than the 4 R4 #339/#343 allow - (1) which maturity 'T-Bond yield' means, (2) the weekly bar for the PAL filter, (3) the MA definition, (4) the standard-deviation window of the CHAD bands ('10-Day Ma With 1.5 Standard Deviation Bands'), (5) what 'crosses above' means for CHAD against a band, (6) where the $2,000 trailing stop is measured from, (7) when the stops start, (8) whether a PAL flip closes an open trade (the page prints stops as the only exits, and $1,000 / $2,000 are S&P futures dollars, not index points); not coded (p.6, Figs 64-70)";
 const HEINE: &str = "Lehman bond index, T-Bond / T-Bill yields, DJ Utilities, CRB (same model as nftm_heine_bond); not in the vault";
 
+pub(crate) const PAL_SERIES: &[&str] = &["DTB3", "DGS10"];
 pub(crate) const R2_SERIES: &[&str] = &["DTB3", "CPIAUCNS_yoy_release"];
 pub(crate) const R2_A1: &str = "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] CPI inflation = the 12-month percent change of the CPI-U all-items index, not seasonally adjusted (BLS via FRED CPIAUCNS), known only from the ReleaseDate of its month (ALFRED first vintage; no release date exists before 1949, those months are not used); real rate = inflation subtracted from the T-bill yield, both in percent";
 pub(crate) const R2_A2: &str = "A|[Declared reading 2] the T-bill yield = the daily 3-month Treasury bill, discount basis (FRED DTB3, matched to Treasury.gov by lane DA, no print on a bar = no signal, nothing carried over); Daily FRED values are used on their own date (same-day publication assumed; the H.15 posts the next business day)";
@@ -56,9 +57,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Next day open. Countertrend: long PAL bullish and CHAD crosses above lower band; short PAL bearish and CHAD crosses below upper band. Trend-following: long crosses above upper band; short crosses below lower band (p.6)",
             "X|Protective stop $1,000; trailing stop $2,000 (p.6)"],
           "Book 5/82-10/96 (Figs 68-70): 789 trades 43%, net $214,200, avg $266.25; long 682 41%, short 107 53%. The PAL filter needs T-Bill / T-Bond yields. The 2000 version without PAL is Live as nfhp_quadram_*."),
-        d("nfgu_pal_model", "PAL stock market timing model", "PAL Timing Model", "Long", NeedsData(PAL),
-          &["E|PAL bullish (S&P not below its 42-week MA with rising rates) = in stocks; bearish = out (p.6, Figs 59-62)"],
-          "Book: S&P 1/8/54-10/4/96 CAR 15.6% vs 12.2%, DD 18.2%, exposure 75.4%; NASDAQ 1/3/64-10/4/96 15.8% vs 11.4% (pp.37-38). The workbook never states the PAL exit as a separate rule - read from the filter."),
+        StrategyDef { needs_series: PAL_SERIES, ..d("nfgu_pal_model", "PAL stock market timing model", "PAL Timing Model", "Long", Live,
+          &["F|\"PAL Model Always Bullish Except Under Following Conditions. PAL Is Bearish If S&P 500 < 42-Week MA And Either: 1) T-Bill Yield > 42-Week MA; Or 2) T-Bond Yield > 10-Week MA\" (TAG XVIII formulas p.6, the Quadram/PAL setup, PDF p.8)",
+            "E|Bullish = in the market (Figs 60-62, pp.37-38: market exposure 75.4% / 78.0% < 100%, so the model is long or flat); the weekly state is known at the week's last close and the order fills at the next bar's open",
+            "X|Bearish = out of the market, at the next bar's open after the week's last close",
+            "A|[Declared reading 1, lane U2 19 Nov 2026, R4 #343/#346] 'T-Bond yield' is not defined in the workbook; read as the 10-year constant-maturity Treasury yield (FRED DGS10, 1962-): the 30-year series (DGS30) has no print from 2002-02-19 to 2006-02-08, and a gap would have to be filled or skipped",
+            "A|[Declared reading 2] weekly bars: a week ends on its last trading day; the S&P close is that day's close, a yield is the last published daily value of that week (FRED DTB3 3-month bill, discount basis; DGS10), nothing carried from another week and no interpolation",
+            "A|[Declared reading 3] 'MA' = simple average of the weekly values, including the current week; a week without every input (including the 42-week warm-up) gives no signal and keeps the previous state",
+            "A|[Declared reading 4] the model is long or flat only (no short side is printed for the timing model); the price tested is the traded index's own close (the book tests the S&P 500 and also trades the NASDAQ Composite on the same model)"],
+          "Book (Figs 60-63, pp.37-38; S&P 500 total return, 'Max Peak-to-Valley Equity Dip', no costs stated): S&P 1/8/54-10/4/96 CAR 15.6% vs 12.2% buy-and-hold, DD 18.2% vs 44.7%, exposure 75.4%, Sharpe 0.22; NASDAQ Composite 1/3/64-10/4/96 15.8% vs 11.4%, DD 24.3%, exposure 78.0%. Runs on the held index price series (price only, no dividends; the vault's SPX starts in 1983 and DGS10 in 1962, so the book window is not covered). adapted: 4 labelled readings, UNVERIFIED.") },
         d("nfgu_heine", "Heine bond model (cash & futures)", "Heine Bond Model", "Long", NeedsData(HEINE),
           &["E|Same five-indicator point model as nftm_heine_bond (buy >= 3 points, sell <= 2)"],
           "Book: Heine cash 3/1/57-10/3/96 CAR 12.5% vs DJ20 bonds 8.0%, DD 3.2%, exposure 50% (p.43)."),
@@ -76,7 +83,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "nfgu_channel25" => ("nf_channel25", "Freeburg Channel 25", "1996 code · currency futures"),
         "nfgu_cqiii" => ("nf_cqiii", "Freeburg CQIII", "1996 adaptive stop · currency futures"),
         "nfgu_quadram_pal" => ("nf_quadram", "Freeburg Quadram S&P system", "PAL-filtered (1996) · Data missing"),
-        "nfgu_pal_model" => ("nf_pal", "Freeburg PAL timing model", "Data missing"),
+        "nfgu_pal_model" => ("nf_pal", "Freeburg PAL timing model", "1996 · US rates"),
         "nfgu_heine" => ("nf_heine", "Heine bond timing model", "1996 · Data missing"),
         "nfgu_vl_swing" => ("nf_vlswing", "Value Line percent swing", "1996 · not testable"),
         "nfgu_results_only" => ("nf_results", "Freeburg results-only examples", "1996"),
@@ -99,8 +106,37 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("rr", "Real T-bill rate threshold (%)", 1.0, -2., 5., 0.25), stop, p("trl_usd", "Trailing stop $ per contract", 2500., 250., 10000., 250.)],
         "nfgu_pathfinder" => vec![p("fast", "Currency short MA", 9., 2., 30., 1.), p("slow", "Currency long MA", 18., 5., 60., 1.), p("bfast", "T-bond short MA", 3., 1., 20., 1.),
             p("bslow", "T-bond long MA", 25., 5., 60., 1.), p("trig", "Entry MA (rising / falling)", 6., 2., 30., 1.), stop],
+        "nfgu_pal_model" => vec![p("spma", "S&P simple average (weeks)", 42., 5., 104., 1.), p("tbma", "T-bill yield simple average (weeks)", 42., 5., 104., 1.), p("bdma", "T-bond yield simple average (weeks)", 10., 2., 52., 1.)],
         _ => return None,
     })
+}
+
+/// Lane U2 (Q26, R4 #343/#346): the PAL timing state per bar (1 = bullish/long, 0 = bearish or not yet known), set on each week's last
+/// trading day and carried until the next week's; the weekly yield is the last print of its week.
+fn pal_targets(x: &Ctx, spma: usize, tbma: usize, bdma: usize) -> Option<Vec<i8>> {
+    let (tb, bd) = (x.extra.get("DTB3")?, x.extra.get("DGS10")?);
+    let n = x.c.len();
+    let wk = |i: usize| (crate::books::ftm::days(&x.r[i].date) + 3).div_euclid(7);
+    let ends: Vec<usize> = (0..n.saturating_sub(1)).filter(|&i| wk(i + 1) != wk(i)).collect();
+    let last = |v: &[f64], a: usize, b: usize| (a..=b).rev().map(|i| v[i]).find(|q| q.is_finite()).unwrap_or(f64::NAN);
+    let (mut sp, mut t, mut b) = (vec![], vec![], vec![]);
+    for (w, &li) in ends.iter().enumerate() {
+        let a = if w == 0 { 0 } else { ends[w - 1] + 1 };
+        sp.push(x.c[li]); t.push(last(tb, a, li)); b.push(last(bd, a, li));
+    }
+    let avg = |v: &[f64], w: usize, k: usize| if w + 1 < k { f64::NAN } else { v[w + 1 - k..=w].iter().sum::<f64>() / k as f64 };
+    let (mut tgt, mut state, mut nxt) = (vec![0i8; n], 0i8, 0usize);
+    for i in 0..n {
+        if nxt < ends.len() && ends[nxt] == i {
+            let (sa, ta, ba) = (avg(&sp, nxt, spma), avg(&t, nxt, tbma), avg(&b, nxt, bdma));
+            if [sp[nxt], sa, t[nxt], ta, b[nxt], ba].iter().all(|v| v.is_finite()) {
+                state = if sp[nxt] < sa && (t[nxt] > ta || b[nxt] > ba) { 0 } else { 1 };
+            }
+            nxt += 1;
+        }
+        tgt[i] = state;
+    }
+    Some(tgt)
 }
 
 /// Lane F1C (R4 #293): the three currency systems on the Norgate continuous contracts (futures::CARDS_F1B), orders walked on
@@ -111,6 +147,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| crate::books::chbta2::getp(&schema, p, k);
     let u = |k: &str| g(k).round().max(1.) as usize;
     let (h, l, c) = (&x.h, &x.l, &x.c);
+    if id == "nfgu_pal_model" {
+        let u = |k: &str| g(k).round().max(1.) as usize;
+        let Some(tgt) = pal_targets(x, u("spma"), u("tbma"), u("bdma")) else { return Some(vec![]) };
+        return Some(crate::books::rbtie::target_trades(x, &tgt, from, to, true, "PAL bearish"));
+    }
     // off the Norgate contracts the card does not run (readiness refuses those tickers with futures::home)
     let Some(init) = crate::futures::usd_points(x, from, g("init_usd")) else { return Some(vec![]) };
     let best = |a: usize, b: usize, d: i8| { let w = &c[a..=b]; if d > 0 { w.iter().cloned().fold(f64::MIN, f64::max) } else { w.iter().cloned().fold(f64::MAX, f64::min) } };
@@ -257,6 +298,25 @@ mod tests {
         let t = run(&id, &x, 0, si.len() - 1, &Params::new()).unwrap();
         let mut o = String::new();
         for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", si[z.legs[0].i].date, z.legs[0].px, si[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, o).unwrap();
+    }
+    /// Lane U2 reference feed: `PAL_DUMP=out PAL_CSV=us_data.csv PAL_DTB3=DTB3.csv PAL_DGS10=DGS10.csv cargo test --release pal_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn pal_dump() {
+        let (Ok(out), Ok(csv), Ok(tbf), Ok(bdf)) = (std::env::var("PAL_DUMP"), std::env::var("PAL_CSV"), std::env::var("PAL_DTB3"), std::env::var("PAL_DGS10")) else { return };
+        let iso = |d: &str| format!("{}-{}-{}", &d[6..10], &d[3..5], &d[0..2]);
+        let rows: Vec<crate::Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != "SPX" { return None; }
+            Some(crate::Row { ticker: "SPX".into(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let ld = |p: String| -> std::collections::BTreeMap<String, f64> { std::fs::read_to_string(p).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect() };
+        let (tb, bd) = (ld(tbf), ld(bdf));
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert("DTB3".into(), rows.iter().map(|r| tb.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        x.extra.insert("DGS10".into(), rows.iter().map(|r| bd.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let t = run("nfgu_pal_model", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let mut o = String::new();
+        for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
         std::fs::write(out, o).unwrap();
     }
     #[test]
