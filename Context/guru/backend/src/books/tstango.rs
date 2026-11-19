@@ -38,73 +38,100 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 #[derive(Clone, Copy, Default)]
 pub struct StPp { pub pos: i8, pub entry_px: f64, pub entry_i: usize, pub last_profit: f64, pub entries_today: usize }
 
+/// The position part of `run_ts_pp` (EP6, lane K62: cloned to walk an order-dependent bar on its real 1-minute path).
+#[derive(Clone)]
+struct Ps { pos: i8, cur: Option<Trade>, last: f64, entries: usize, od: crate::intraday_ep6::Day, today: Vec<(Trade, crate::intraday_ep6::Day)>, done: Vec<bool> }
+
+impl Ps {
+    fn close(&mut self, i: usize, px: f64, why: &str) {
+        if let Some(mut t) = self.cur.take() { self.last = t.dir * (px - t.legs[0].px); t.exit_i = i; t.exit_px = px; t.reason = why.into(); t.signal_i = i - 1; self.today.push((t, self.od)); }
+        self.pos = 0;
+    }
+    fn exec(&mut self, od: O, k: usize, i: usize, px: f64, kind: &'static str) {
+        self.done[k] = true;
+        match od.a {
+            A::Buy | A::Sell => {
+                let d: i8 = if od.a == A::Buy { 1 } else { -1 };
+                if self.pos == -d { self.close(i, px, "reversed"); }
+                self.pos = d;
+                self.entries += 1;
+                self.od = crate::intraday_ep6::Day::Plain;
+                self.cur = Some(Trade { dir: d as f64, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i - 1, open: false, exits: vec![] });
+            }
+            A::Xl | A::Xs => self.close(i, px, od.tag),
+        }
+    }
+    fn valid(&self, od: &O) -> bool { match od.a { A::Buy => self.pos != 1, A::Sell => self.pos != -1, A::Xl => self.pos == 1, A::Xs => self.pos == -1 } }
+}
+
 /// rrsim's `run_ts` with PositionProfit(1): next-bar orders only.
-pub fn run_ts_pp(x: &Ctx, from: usize, to: usize, mut f: impl FnMut(usize, &StPp, &mut Vec<O>)) -> Vec<Trade> {
-    let (mut pos, mut cur, mut out, mut last): (i8, Option<Trade>, Vec<Trade>, f64) = (0, None, vec![], 0.);
-    let mut close = |pos: &mut i8, cur: &mut Option<Trade>, out: &mut Vec<Trade>, last: &mut f64, i: usize, px: f64, why: &str| {
-        if let Some(mut t) = cur.take() { *last = t.dir * (px - t.legs[0].px); t.exit_i = i; t.exit_px = px; t.reason = why.into(); t.signal_i = i - 1; out.push(t); }
-        *pos = 0;
-    };
-    let valid = |pos: i8, od: &O| match od.a { A::Buy => pos != 1, A::Sell => pos != -1, A::Xl => pos == 1, A::Xs => pos == -1 };
+pub fn run_ts_pp(x: &Ctx, from: usize, to: usize, f: impl FnMut(usize, &StPp, &mut Vec<O>)) -> Vec<Trade> { run_ts_pp_ep6(x, from, to, false, f) }
+
+/// `run_ts_pp` with EP6 (#243, lane K62): `ep6` = the id's resolver is on: every bar's path is walked as segments, and an
+/// order-dependent bar on the real 1-minute path where minutes exist.
+pub fn run_ts_pp_ep6(x: &Ctx, from: usize, to: usize, ep6: bool, mut f: impl FnMut(usize, &StPp, &mut Vec<O>)) -> Vec<Trade> {
+    let mut s = Ps { pos: 0, cur: None, last: 0., entries: 0, od: crate::intraday_ep6::Day::Plain, today: vec![], done: vec![] };
+    let mut out = vec![];
+    let drain = |s: &mut Ps, out: &mut Vec<Trade>, day: crate::intraday_ep6::Day| for (mut t, d) in s.today.drain(..) { crate::intraday_ep6::mark(&mut t, d.worst(day)); out.push(t); };
     let rising = |a: A| matches!(a, A::Buy | A::Xs);
+    let kind = |od: &O| if matches!(od.p, P::Lim(_)) { "limit" } else { "stop" };
     let mut pending: Vec<O> = vec![];
     for i in 0..=to {
-        let mut entries = 0usize;
+        s.entries = 0;
         if i > from && !pending.is_empty() {
             let (op, hi, lo, cl) = (x.o[i], x.h[i], x.l[i], x.c[i]);
-            let mut done = vec![false; pending.len()];
-            let mut exec = |k: usize, px: f64, kind: &'static str, pos: &mut i8, cur: &mut Option<Trade>, out: &mut Vec<Trade>, last: &mut f64, done: &mut Vec<bool>, n_ent: &mut usize| {
-                done[k] = true;
-                let od = pending[k];
-                match od.a {
-                    A::Buy | A::Sell => {
-                        let d: i8 = if od.a == A::Buy { 1 } else { -1 };
-                        if *pos == -d { close(pos, cur, out, last, i, px, "reversed"); }
-                        *pos = d;
-                        *n_ent += 1;
-                        *cur = Some(Trade { dir: d as f64, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i - 1, open: false, exits: vec![] });
-                    }
-                    A::Xl | A::Xs => close(pos, cur, out, last, i, px, od.tag),
-                }
-            };
+            s.done = vec![false; pending.len()];
             for pass in 0..2 {
                 for k in 0..pending.len() {
                     let od = pending[k];
                     let is_exit = matches!(od.a, A::Xl | A::Xs);
-                    if matches!(od.p, P::Mkt) && (pass == 0) == is_exit && !done[k] && valid(pos, &od) { exec(k, op, "open", &mut pos, &mut cur, &mut out, &mut last, &mut done, &mut entries); }
+                    if matches!(od.p, P::Mkt) && (pass == 0) == is_exit && !s.done[k] && s.valid(&od) { s.exec(od, k, i, op, "open"); }
                 }
             }
             loop {
-                let hit = (0..pending.len()).find(|&k| { let od = pending[k]; !done[k] && valid(pos, &od) && match od.p {
-                    P::Stop(s) => if rising(od.a) { op >= s } else { op <= s }, P::Lim(s) => if rising(od.a) { op <= s } else { op >= s }, P::Mkt => false } });
-                match hit { Some(k) => { let kind = if matches!(pending[k].p, P::Lim(_)) { "limit" } else { "stop" }; exec(k, op, kind, &mut pos, &mut cur, &mut out, &mut last, &mut done, &mut entries); } None => break }
+                let hit = (0..pending.len()).find(|&k| { let od = pending[k]; !s.done[k] && s.valid(&od) && match od.p {
+                    P::Stop(v) => if rising(od.a) { op >= v } else { op <= v }, P::Lim(v) => if rising(od.a) { op <= v } else { op >= v }, P::Mkt => false } });
+                match hit { Some(k) => { let od = pending[k]; s.exec(od, k, i, op, kind(&od)); } None => break }
             }
-            let path = if hi - op < op - lo { [hi, lo, cl] } else { [lo, hi, cl] };
-            let (mut c0, mut seg) = (op, 0);
-            while seg < 3 {
-                let t = path[seg];
-                let up = t > c0;
-                let mut best: Option<(usize, f64)> = None;
-                for k in 0..pending.len() {
-                    let od = pending[k];
-                    if done[k] || !valid(pos, &od) { continue; }
-                    let lv = match od.p { P::Stop(s) if rising(od.a) == up => s, P::Lim(s) if rising(od.a) != up => s, _ => continue };
-                    let inside = if up { lv > c0 && lv <= t } else { lv < c0 && lv >= t };
-                    if inside && best.map_or(true, |(_, b)| (lv - c0).abs() < (b - c0).abs()) { best = Some((k, lv)); }
+            drain(&mut s, &mut out, crate::intraday_ep6::Day::Plain);
+            // the bar's path open -> nearer extreme (tie: the low) -> other extreme -> close, as segments; EP6: an
+            // order-dependent bar of an EP6 id on its real 1-minute path
+            let ords = &pending;
+            let walk = |s: &mut Ps, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+                let mut ev = vec![];
+                for g in segs {
+                    let (mut c0, t) = (g.a, g.b);
+                    let up = t > c0;
+                    loop {
+                        let mut best: Option<(usize, f64)> = None;
+                        for k in 0..ords.len() {
+                            let od = ords[k];
+                            if s.done[k] || !s.valid(&od) { continue; }
+                            let lv = match od.p { P::Stop(v) if rising(od.a) == up => v, P::Lim(v) if rising(od.a) != up => v, _ => continue };
+                            let inside = if up { lv > c0 && lv <= t } else { lv < c0 && lv >= t };
+                            if inside && best.map_or(true, |(_, b)| (lv - c0).abs() < (b - c0).abs()) { best = Some((k, lv)); }
+                        }
+                        let Some((k, lv)) = best else { break };
+                        let px = g.fill(lv);
+                        s.exec(ords[k], k, i, px, kind(&ords[k]));
+                        ev.push(crate::intraday_ep6::Ev { k: k as u8, px, up });
+                        c0 = lv;
+                    }
                 }
-                match best {
-                    Some((k, lv)) => { let kind = if matches!(pending[k].p, P::Lim(_)) { "limit" } else { "stop" }; exec(k, lv, kind, &mut pos, &mut cur, &mut out, &mut last, &mut done, &mut entries); c0 = lv; }
-                    None => { c0 = t; seg += 1; }
-                }
-            }
+                ev
+            };
+            let segs = |hf| crate::intraday_ep6::bar_segs(op, hi, lo, cl, hf);
+            let day = crate::intraday_ep6::resolve(x, i, ep6, hi - op < op - lo, &mut s, |s, hf| walk(s, &segs(hf)), &walk);
+            if s.pos != 0 { s.od = s.od.worst(day); }
+            drain(&mut s, &mut out, day);
         }
         pending.clear();
-        let st = StPp { pos, entry_px: cur.as_ref().map_or(0., |t| t.legs[0].px), entry_i: cur.as_ref().map_or(0, |t| t.legs[0].i), last_profit: last, entries_today: entries };
+        let st = StPp { pos: s.pos, entry_px: s.cur.as_ref().map_or(0., |t| t.legs[0].px), entry_i: s.cur.as_ref().map_or(0, |t| t.legs[0].i), last_profit: s.last, entries_today: s.entries };
         let mut next = vec![];
         f(i, &st, &mut next);
         if i >= from && i < to { pending = next; }
     }
-    if let Some(mut t) = cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+    if let Some(mut t) = s.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; crate::intraday_ep6::mark(&mut t, s.od); out.push(t); }
     out
 }
 

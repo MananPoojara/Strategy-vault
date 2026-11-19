@@ -10,7 +10,7 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mfcat";
 
-const FUT: &str = "needs S&P 500 futures (SP, CommodityNumber 149) daily bars with the contract's BigPointValue: the \"$2,000 MM stop\" is coded as EntryPrice -/+ (2000/BigPointValue) (p.1-3) and the source gives no point size; the S&P BigPointValue was $500 before Nov 1997 and $250 after, so a cash-index run would pick a stop the source does not state. ChopLimits for the other 38 listed futures likewise need those contracts";
+const FUT: &str = "Norgate continuous S&P 500 futures are now held (lane PF, 14 Nov 2026), and the $2,000 money stop has its contract value ($500 / $250 per point, R4 #293 (3)), but the choppy / trendy switch cannot be reproduced: ChoppyIndex = 10 x the 30-day true range is compared with per-contract ChopLimits (S&P 60, corn 230, wheat 29, soybeans 700, gold 600, sugar 10, Swiss franc 10; p.3-4) that only fit each contract's price quote in the vendor's own data files (corn 230 vs wheat 29 cannot both be natural price units); the source does not state those units (R4 #297 (2): withheld definition). If the unit is supplied, the S&P run is also capped at 1995-07-31 (R4 #330: every entry is a stop off 'Open of Tomorrow'). Question in authors/verifier-questions.tsv.";
 
 const RULES_COMMON: &[&str] = &[
     "F|ChoppyIndex (p.5): \"If HighestBar(TrueHigh,30) <= LowestBar(TrueLow,30) then ChoppyIndex = 10*(Highest(TrueHigh,30)-Lowest(TrueLow,30)) else ChoppyIndex = - 10*(Highest(TrueHigh,30)-Lowest(TrueLow,30))\"",

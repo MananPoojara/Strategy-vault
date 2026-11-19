@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 460,
-  author: { id: 'seasonal', name: "Jay Kaeppel & Marvin Appel", tagline: "Calendar models and fund-switching timing", books: [{ id: 'kpss', title: "Seasonal Stock Market Trends (Kaeppel)", year: 2009, blurb: "Kaeppel, 2009 · 56 calendar models; 404 of 453 printed Dow rows reproduce" }, { id: 'maetf', title: "Investing with ETFs Made Easy (M. Appel)", year: 2007, blurb: "M. Appel, 2007 · every timing rule needs bond, style-index or fund data" }, { id: 'mahrs', title: "Higher Returns from Safe Investments (M. Appel)", year: 2010, blurb: "M. Appel, 2010 · bond-fund and yield models need data" }, { id: 'jkofc', title: "Optionetics Futures & Commodity Course (Kaeppel et al.)", year: 2007, blurb: "Kaeppel, Lofton & Zigler, 2007 · 4-day average stop-and-reverse" }, { id: "sckdjroc", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V13/C05/ADJIA.PDF"], title: "A DJIA Long-Term Momentum Indicator (Kaeppel, S&C V.13:5)", year: 1995, blurb: "Kaeppel · DJROC weighted 11-month ROC turns up from -1, monthly" }, { id: 'sckcal', sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V20/C12/164stoc.pdf"], title: "The Stock Market, The Calendar, And You (Kaeppel, S&C V.20:12)", year: 2002, blurb: "Kaeppel \u00b7 seasonal index: long when two or more of four calendar tendencies are bullish; US only" }] },
+  author: { id: 'seasonal', name: "Jay Kaeppel & Marvin Appel", tagline: "Calendar models and fund-switching timing", books: [{ id: 'kpss', title: "Seasonal Stock Market Trends (Kaeppel)", year: 2009, blurb: "Kaeppel, 2009 · 56 calendar models; 404 of 453 printed Dow rows reproduce" }, { id: 'maetf', title: "Investing with ETFs Made Easy (M. Appel)", year: 2007, blurb: "M. Appel, 2007 · every timing rule needs bond, style-index or fund data" }, { id: 'mahrs', title: "Higher Returns from Safe Investments (M. Appel)", year: 2010, blurb: "M. Appel, 2010 · bond-fund and yield models need data" }, { id: 'jkofc', title: "Optionetics Futures & Commodity Course (Kaeppel et al.)", year: 2007, blurb: "Kaeppel, Lofton & Zigler, 2007 · 4-day average stop-and-reverse" }, { id: "sckdjroc", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V13/C05/ADJIA.PDF"], title: "A DJIA Long-Term Momentum Indicator (Kaeppel, S&C V.13:5)", year: 1995, blurb: "Kaeppel · DJROC weighted 11-month ROC turns up from -1, monthly" }, { id: 'sckcal', sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V20/C12/164stoc.pdf"], title: "The Stock Market, The Calendar, And You (Kaeppel, S&C V.20:12)", year: 2002, blurb: "Kaeppel \u00b7 seasonal index: long when two or more of four calendar tendencies are bullish; US only" }, { id: "sckc40", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V22/C01/006KAEP.pdf"], title: "The 40-Week Cycle In The Stock Market (Kaeppel, S&C V.22:1)", year: 2004, blurb: "Duplicate of kpss_c40w · Kaeppel's 40-week cycle (same 280-day dates as Seasonal Stock Market Trends ch.6); cited as a second source there, not counted twice"}, { id: "sckjb", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V08/C07/JANBARO.pdf"], title: "The January Barometer: Myth And Reality (Kaeppel, S&C V.8:7)", year: 1990, blurb: "Kaeppel · January pattern 4 (first five days up, January higher still) -> long February-December; patterns 3 and 5 as options"  }] },
   identities: ["Jay Kaeppel","Marvin Appel"],
   profile: {
     "kind": "person",
@@ -25,11 +25,13 @@ export default {
     "confidence": "high"
   },
   sourceReview: {
+    "sckjb": {"type":"article","people":["Jay Kaeppel"]},
     "kpss": {"type":"book","people":["Jay Kaeppel"]},
     "maetf": {"type":"book","people":["Marvin Appel"]},
     "mahrs": {"type":"book","people":["Marvin Appel"]},
     "jkofc": {"type":"course_manual","people":["Brad Zigler","Jay Kaeppel","Robin Lofton"]},
     "sckdjroc": {"type":"article","people":["Jay Kaeppel"]},
     "sckcal": {"type":"article","people":["Jay Kaeppel"]},
+    "sckc40": {"type":"article","people":["Jay Kaeppel"]},
   },
 } satisfies AuthorFile;

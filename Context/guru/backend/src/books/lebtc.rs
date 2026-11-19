@@ -5,7 +5,7 @@
 //! Stocks and Futures" TradeStationWorld slides. Sources, oracle and verification: library/lebtc/.
 //!
 //! The 25x25 and Crossbow code reproduces the manuals' own trade lists exactly on the data files shipped
-//! with them (see tests), but both are futures systems with dollar/tick rules, so they stay NeedsData here.
+//! with them (see tests), but both are futures systems with dollar/tick rules, so they run only on their Norgate continuous contracts (lane F1B, R4 #293: futures::CARDS_F1B).
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 // Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
 pub const REVIEWED: &[&str] = &["lebtc_highbeta"];
@@ -28,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Profit exit: \"barsSinceEntry >= profitTakingTime - 1\" (15 - 1 = 14 bars after the entry bar), \"openPositionProfit >= 2 * average(trueRange, 5)\" and \"RSI(close, 14) >= 75\" -> exit at the next open. Prose: \"at least fifteen market days\", \"two average true ranges above our entry\", \"14-day RSI reaches 75 or higher\".",
               "X|No other exit; a trade still open on the last bar is marked to market."],
             "Workbook pp. 'High Beta Stock Trading System' + 'CODE FOR TRADESTATION' (Fred Schutzman's EasyLanguage, Aug 2001). Where code and prose differ the code is used (ADX > 15 vs >= 15; RSI >= 75 vs 'closes above 75'; barsSinceEntry >= 14 = the 15th bar counting the entry bar). Open profit is per share (prose: 'two average true ranges above our entry'). ATR = simple 5-bar average of true range (code). Built for fast US stocks (CSCO, MSFT, AIG...); run here on the selected index or NSE stock (instrument swap). No results are printed in the workbook."),
-        make("lebtc_25x25", "25 x 25 Bond System v2.0", "25x25 Bond System manual (1998)", "Long", Status::NeedsData(BOND),
+        make("lebtc_25x25", "25 x 25 Bond System v2.0", "25x25 Bond System manual (1998)", "Long", Status::Live,
             &["F|\"The 14-day +DI must be above the 14-day -DI. The 14-day ADX must be above 20. The 4-day RSI must be below 50.\" (code: ADX(14) > 20 and DMIPlus(14) > DMIMinus(14) and RSI(C,4) < 50)",
               "E|\"buy tomorrow only if and when prices rise 18 ticks (18/32) above today's close. Enter on a buy stop order.\" (code: buy C + 18 points stop)",
               "X|\"A stop order at $2,500 below the entry price\" ($2,500 = 2.5 bond points)",
@@ -37,7 +37,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"after any close where the open profit is greater than 5 Average True Ranges the exit stop should be at the lowest low of 2 days. (Important: use 45 days to calculate the ATR)\" (code: if C > entryprice + 5*Avgtruerange(45) then exitlong lowest(l,2) stop). p.v1=1 drops this rule (= the v1.0 trade list printed in the manual).",
               "X|Whichever stop is closest to the market applies; stops fill at the stop or the open if it gaps through."],
             "Reproduced exactly on the manual's own Us.txt (1/4/88-1/16/98, MaxBarsBack 50, $100 per trade): v2.0 = 32 trades, $55,112.50, 72% (Table 1); v1.0 (p.v1=1) = the printed 29-trade list, $53,068.75, 76% (Table 2, 18 ticks). See tests and library/lebtc/verify."),
-        make("lebtc_crossbow", "Crossbow Swiss Franc System v1.0", "Crossbow manual (1999)", "Long/Short", Status::NeedsData(SWISS),
+        make("lebtc_crossbow", "Crossbow Swiss Franc System v1.0", "Crossbow manual (1999)", "Long/Short", Status::Live,
             &["F|Long: \"The 20 day moving average must be above the 40 day moving average\", \"The close must be within 4 Average True Ranges of the highest high in the last 15 days\", \"at least 1.5 Average True Ranges below the highest high of the last five days\", \"The 14 day ADX must be less than 30\" (ATR = 15 bars)",
               "E|Long: \"buy tomorrow on a stop at the highest high of the last two days\" (code: Buy Highest(H,2) Stop)",
               "X|Long: \"If the highest close since entry is greater than the entry price plus 1.5 ATRs then we will exit on a stop at the highest close minus 1.5 ATRs\"",
@@ -243,7 +243,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let atr = atr_sma(x, u("atr_n"));
             let adx = dmi3(x, 14).2;
             let (m20, m40) = (sma(&x.c, 20), sma(&x.c, 40));
-            let (mm, tick, amax) = (g("mm"), g("tick"), g("adx_max"));
+            let (mut mm, mut tick, amax) = (g("mm"), g("tick"), g("adx_max"));
+            // lane F1B (R4 #293 (3)): on the Norgate franc contract (US$ per franc, $125,000 per 1.00) the manual's $2,500 money
+            // stop and the tick are the contract's own, unless given; the manual's SF.LNG quotes in 0.01 points ($1,250)
+            if let Some(m) = crate::futures::ctx_market(x) {
+                if !p.contains_key("mm") { mm = crate::futures::usd_points(x, from, 2500.).unwrap_or(mm); }
+                if !p.contains_key("tick") { tick = m.tick; }
+            }
             let up = |v: f64| (v / tick - 1e-9).ceil() * tick;
             let dn = |v: f64| (v / tick + 1e-9).floor() * tick;
             let mut cur: Option<(Trade, f64)> = None; // trade, best close since entry

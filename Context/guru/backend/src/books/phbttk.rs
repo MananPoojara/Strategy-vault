@@ -35,7 +35,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"the next reading of 21% or higher will set my next closing stop, where an exit will then occur on any close over the high of the bar when Percent R crossed back over 20% to 21% or [higher]\" (p.37-38; printed 'or lower', a misprint: 'exit this position (1) when the close is greater than the high on the bar Percent R last crossed back over 20 to give a reading of 21.00 or higher', p.38)",
             "F|[Book silent] As the long side: fills at the close; cross under 20 = below 20 today, at or above 20 yesterday; cross back over 20 to 21 or higher = %R >= 21 today and < 21 yesterday.",
         ], "Book: US stocks, no statistics printed. Run on the indexes (instrument swap)."),
-        mk("phbttk_options", "Option trades and the expiration-day exit (all BTTK systems)", "Long/Short", NotTestable("rules not fully defined: the expiry month is only given as a range (\"out 3-4 months\", \"2nd expiration month\", \"two months before expiration\"; Big Trends Toolkit 2.0 p.11); real option prices are held for SPY/QQQ/IWM, but there is no single rule to run"),
+        mk("phbttk_options", "Option trades and the expiration-day exit (all BTTK systems)", "Long/Short", NotTestable("rules not fully defined: the expiry month is only given as a range (\"out 3-4 months\", \"2nd expiration month\", \"two months before expiration\"; Big Trends Toolkit 2.0 p.11); real SPY/QQQ/IWM chains are held, but the expiry is not fixed, so there is no single rule to run"),
             &["X|\"(2) on the close 2 weeks before the expiration day (usually close by the first Friday of the expiration month)\" (p.11, 13, 19, 21, 25, 26, 29-31, 35, 37-38, 46, 48-49)"], opt),
         mk("phbttk_nasdaq_rs", "NASDAQ vs S&P relative strength market timing", "Long/Short", NotTestable("rules not fully defined: no confirmation window (\"closes in a future day above the NASDAQ Composite high on the day of the bullish RS crossover\") and no exit rule (Big Trends Toolkit 2.0 p.6); it would also need the NASDAQ Composite (the vault has NDX, not COMP)"),
             &["E|\"When the 10-day simple moving average crosses above the 21-day simple moving average of the relative strength (RS) line, this creates the bullish Setup ... It is ONLY confirmed when the NASDAQ Composite CLOSES in a future day above the NASDAQ Composite high on the day of the bullish RS crossover.\" (p.6)"], "Seen (p.5-8)."),
@@ -312,6 +312,7 @@ fn dow(y: i64, m: i64, d: i64) -> i64 {
 fn ymd(s: &str) -> (i64, i64, i64) { (s[..4].parse().unwrap_or(0), s[5..7].parse().unwrap_or(1), s[8..10].parse().unwrap_or(1)) }
 /// OptionExp(): 1 on the last bar on or before the month's third Friday, within that week (lead decision 181; as agtsic_expiry).
 fn option_exp(x: &Ctx) -> S {
+    if super::tselhs::india(x) { return x.r.iter().map(|r| bv(crate::nse_expiry::is_monthly_expiry(&r.date))).collect(); } // lane CV6 (R4 #340): NSE monthly expiry from the held NIFTY chain
     (0..x.r.len()).map(|i| {
         let (y, m, d) = ymd(&x.r[i].date);
         let fri = 1 + (5 - dow(y, m, 1) + 7) % 7 + 14;
@@ -488,7 +489,7 @@ fn run_k30(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 // OptionExp() run on US instruments only (instrument_policy phbttk_symbol_issue).
 pub const ADMISSION_K30: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "phbttk" && reviewed_k30(def.id),
-    label: "Price Headley's Big Trends Toolkit 2.0 ships these MetaStock system tests without a market or a printed test (the manual shows US stock charts); runs on indices, ETFs and stocks, US and India, are a declared application. The two records that exit after the monthly option expiry run on US instruments only.",
+    label: "Price Headley's Big Trends Toolkit 2.0 ships these MetaStock system tests without a market or a printed test (the manual shows US stock charts); runs on indices, ETFs and stocks, US and India, are a declared application. The two records that exit after the monthly option expiry run on US instruments, and on Indian ones only when the NSE monthly expiry derived from the held NIFTY 50 option chain is loaded (R4 #340 declared adaptation, UNVERIFIED on India).",
     basis: "Big Trends Toolkit 2.0 for MetaStock (BigTrends/Equis 2008): the System Tester records in MS10PRFT.DTA of Bigtrendv2setup.exe (research share USB HDD 1/MetaStock/@Systems & Indicators/Price Headleys Big Trends Toolkit 2.0; slots read by batch X, authors/batch-x/keep/2617/PRFT_slots.txt), the manual BTTK_2 0.pdf for the words; independent check authors/titles-1030/K30w/k30_ref.py",
 };
 

@@ -87,7 +87,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let to = to.min(x.c.len().saturating_sub(1));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
-    let (s, m, lg) = (sma(c, g("ma_s") as usize), sma(c, g("ma_m") as usize), sma(c, g("ma_l") as usize));
+    let (ns, nm, nl) = (g("ma_s") as usize, g("ma_m") as usize, g("ma_l") as usize);
+    let (s, m, lg) = (sma(c, ns), sma(c, nm), sma(c, nl));
+    // R4 #253: exact tests on the printed prices. Rising/falling = sign of C[t] - C[t-n]; a high/low against an average =
+    // n*price vs the exact window sum (crate::connors::ExactSeries); floats only if a price cannot be read exactly.
+    let ex = crate::connors::ExactSeries::new(&[c, h, l]);
+    let sums = ex.as_ref().map(|e| [e.sums(0, ns), e.sums(0, nm), e.sums(0, nl)]);
     let kl = g("k_len").max(1.) as usize;
     let fast: Vec<f64> = (0..n).map(|t| {
         if t + 1 < kl { return f64::NAN }
@@ -101,10 +106,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let setup = |t: usize| -> bool {
         if t == 0 || inside(t) { return false }
         let kk = if side > 0. { k[t] <= klvl } else { k[t] >= klvl };
-        let dir = |v: &Vec<f64>| side * (v[t] - v[t - 1]) > 0.;
-        let straddle = |v: &Vec<f64>| h[t] > v[t] && l[t] < v[t];
-        let seg123 = [&lg, &m, &s].iter().any(|v| dir(v) && straddle(v));
-        let seg4 = dir(&s) && dir(&m) && if side > 0. { l[t] > m[t] && h[t] < s[t] } else { l[t] > s[t] && h[t] < m[t] };
+        // k: 0 = short (20), 1 = middle (50), 2 = long (200) average; j: 1 = high, 2 = low
+        let len = |k: usize| [ns, nm, nl][k];
+        let avg = |k: usize| [&s, &m, &lg][k][t];
+        // SMA_t - SMA_t-1 = (C[t] - C[t-n]) / n: both averages must exist (as before), then the exact sign
+        let dir = |k: usize| avg(k).is_finite() && [&s, &m, &lg][k][t - 1].is_finite() && side * (c[t] - c[t - len(k)]) > 0.;
+        // price (j) above the average k?  Ordering of price vs average, exact when the prices read exactly
+        let pv = |j: usize, k: usize| -> Option<std::cmp::Ordering> {
+            if !avg(k).is_finite() { return None; }
+            match (&ex, &sums) {
+                (Some(e), Some(sm)) => crate::connors::exact_avg_vs(e, &sm[k], len(k), j, t).map(|o| o.reverse()),
+                _ => [h, l][j - 1][t].partial_cmp(&avg(k)),
+            }
+        };
+        use std::cmp::Ordering::{Greater as Gt, Less as Lt};
+        let straddle = |k: usize| pv(1, k) == Some(Gt) && pv(2, k) == Some(Lt);
+        let seg123 = [2usize, 1, 0].iter().any(|&k| dir(k) && straddle(k));
+        let seg4 = dir(0) && dir(1) && if side > 0. { pv(2, 1) == Some(Gt) && pv(1, 0) == Some(Lt) } else { pv(2, 0) == Some(Gt) && pv(1, 1) == Some(Lt) };
         kk && (seg123 || seg4)
     };
     // last confirmed swing low / high known at the close of bar t (pivot j <= t - 2)

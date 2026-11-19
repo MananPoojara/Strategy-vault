@@ -14,6 +14,7 @@
 //!     was set by the low itself); on later bars a gap through the stop fills at the open;
 //!   * when two stop entries could fill on one bar, the one nearer the open fills first.
 use crate::connors::*;
+use crate::intraday_ep6::{bar_segs, Day, Ev, Seg};
 use crate::Row;
 
 pub const BOOK: &str = "ss";
@@ -22,7 +23,8 @@ pub const BOOK: &str = "ss";
 /// independent chronological Python ledger check. Declared application of futures/stock studies to actual
 /// index/ETF prices (and actual stocks for `STOCK_SHOWN`); no futures dollars or book performance claimed.
 /// Held (not listed): Turtle Soup, 80-20's, Momentum Pinball, ADX no-gap variant, chart patterns, news,
-/// Smart Money / TICK / Arms indicators and the gate-withheld Fresh ADX studies.
+/// Smart Money / TICK / Arms indicators and the Fresh ADX studies (two labelled readings, R4 #297; withheld by R4 #303:
+/// the book check misses Moore's trade counts by 31-44%, so the readings are not confirmed).
 pub const REVIEWED_DAILY: &[&str] = &[
     "ss_turtle_soup_plus_one", "ss_2_period_roc", "ss_anti", "ss_anti_3_10", "ss_anti_trigger", "ss_holy_grail",
     "ss_adx_gapper", "ss_whiplash", "ss_three_day_unfilled_gap", "ss_id_nr4", "ss_hist_vol_crabel",
@@ -46,13 +48,14 @@ pub const STOCK_ALSO: &[&str] = &["ss_turtle_soup_plus_one", "ss_holy_grail", "s
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "ss_ad_market_buster" => matches!(ticker, "SPX" | "SPY"),
-        "ss_ad_market_buster_nse" => ticker == "NIFTY 50",
+        "ss_ad_market_buster_nse" => matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100"), // R4 #340
         _ if STOCK_SHOWN.contains(&id) => true,
         _ => reviewed_daily(id) && matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
     }
 }
 /// Every admitted rule except the close-only 2-period ROC fills or exits at the open (stop gaps, next-open orders).
-pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "ss_2_period_roc" }
+/// The Fresh ADX studies enter and exit at closes only (R4 #297 admission, lane R2D).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "ss_2_period_roc" && !id.starts_with("ss_study_fresh_adx") }
 
 // ---------------------------------------------------------------- indicators
 
@@ -293,6 +296,7 @@ struct Pos {
     trailed: bool,
     half: Option<(usize, f64)>, // (bar, close) of the half taken off
     kind: &'static str,
+    od: Day, // EP6 (#243, lane K63): the worst same-day order mark of the trade's bars
 }
 
 enum Act {
@@ -311,6 +315,7 @@ struct Ex<'a> {
     gate: Option<&'a dyn Fn(&Ord, Option<&Trade>) -> bool>, // may an order fill, given the last closed trade
     // Some = after a losing stop-out, a stop at the original entry price stays live while this says so (order, bar)
     reentry: Option<&'a dyn Fn(&Ord, usize) -> bool>,
+    ep6: bool, // EP6 (#243, lane K63): resolve order-dependent bars on the real 1-minute path
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -324,7 +329,71 @@ fn push(out: &mut Vec<Trade>, p: Pos, j: usize, sig: usize, px: f64, why: String
     let exit_px = p.half.map_or(px, |(_, hp)| 0.5 * hp + 0.5 * px);
     let exits = p.half.map_or(Vec::new(), |(hi, hp)| vec![(hi, hp, 0.5), (j, px, 0.5)]);
     let reason = if p.half.is_some() { format!("half off on an earlier close; rest: {why}") } else { why };
-    out.push(Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: j, exit_px, reason, entry_kind: p.kind, signal_i: sig, open, exits });
+    let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: j, exit_px, reason, entry_kind: p.kind, signal_i: sig, open, exits };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    out.push(t);
+}
+
+/// EP6 (#243, lane K63) entry-bar walk state: the order filled (index into the bar's candidates, price), the entry-day
+/// stop-and-reverse fill, and the exit (price, 101 stop / 102 target).
+#[derive(Clone, Default)]
+struct Eb { fill: Option<(usize, f64)>, rev: Option<f64>, exit: Option<(f64, u8)> }
+
+/// The entry bar along a price path (`segs` empty = the open: an order the open is at or through fills there, the first
+/// listed): the first stop entry the path reaches fills (a gapped piece at its end); then the entry-day stop-and-reverse
+/// level, the protective stop (only when the path trades strictly through it, as on daily bars) or the target, whichever
+/// the path reaches first; a target the fill already passed is taken at the fill. A reversed position has no intrabar
+/// exit that day (as before).
+fn entry_walk(x: &Ctx, j: usize, cands: &[(Ord, bool)], s: &mut Eb, segs: &[Seg]) -> Vec<Ev> {
+    let lvl = |od: &Ord| if let Fill::Stop(lv) = od.fill { lv } else { f64::NAN };
+    let levels = |od: &Ord, px: f64| (if od.stop_pct.is_finite() { px * (1.0 - od.dir * od.stop_pct) } else { od.stop }, od.rev, od.target);
+    let mut ev = vec![];
+    let filled = |s: &mut Eb, k: usize, px: f64| {
+        s.fill = Some((k, px));
+        let t = cands[k].0.target;
+        if t.is_finite() && cands[k].0.dir * (px - t) >= 0.0 { s.exit = Some((px, 102)); }
+    };
+    if segs.is_empty() {
+        let o = x.o[j];
+        if s.fill.is_none() {
+            if let Some(k) = cands.iter().position(|(od, _)| od.dir * (o - lvl(od)) >= 0.0) { filled(s, k, o); }
+        }
+        return ev;
+    }
+    for g in segs {
+        let mut a = g.a;
+        loop {
+            if s.rev.is_some() || s.exit.is_some() { break; }
+            let seg = Seg { a, b: g.b, gap: g.gap };
+            let Some((k, fpx)) = s.fill else {
+                let mut best: Option<(usize, f64)> = None;
+                for (n, (od, _)) in cands.iter().enumerate() {
+                    let lv = lvl(od);
+                    if (od.dir > 0.0) == g.up() && seg.inside(lv) && best.map_or(true, |b| (lv - a).abs() < (b.1 - a).abs()) { best = Some((n, lv)); }
+                }
+                let Some((n, lv)) = best else { break };
+                let px = g.fill(lv);
+                filled(s, n, px);
+                ev.push(Ev { k: n as u8, px, up: g.up() });
+                if let Some((xp, _)) = s.exit { ev.push(Ev { k: 102, px: xp, up: g.up() }); }
+                a = lv;
+                continue;
+            };
+            let od = &cands[k].0;
+            let (stop, rev, tgt) = levels(od, fpx);
+            if (od.dir > 0.0) != g.up() {
+                if rev.is_finite() && seg.inside(rev) {
+                    let px = g.fill(rev); s.rev = Some(px); ev.push(Ev { k: 100, px, up: g.up() });
+                } else if stop.is_finite() && (if g.up() { stop >= a && g.b > stop } else { stop <= a && g.b < stop }) { // strictly through
+                    let px = g.fill(stop); s.exit = Some((px, 101)); ev.push(Ev { k: 101, px, up: g.up() });
+                }
+            } else if tgt.is_finite() && seg.inside(tgt) {
+                let px = g.fill(tgt); s.exit = Some((px, 102)); ev.push(Ev { k: 102, px, up: g.up() });
+            }
+            break;
+        }
+    }
+    ev
 }
 
 fn manage(x: &Ctx, ex: &Ex, j: usize, p: &mut Pos, mode: Mode, exit_open: &mut Option<String>, to: usize) -> Option<(f64, String)> {
@@ -341,7 +410,21 @@ fn manage(x: &Ctx, ex: &Ex, j: usize, p: &mut Pos, mode: Mode, exit_open: &mut O
             }
         }
         let entry = mode == Mode::EntryStop;
-        if p.stop.is_finite() {
+        let both = ex.ep6 && mode == Mode::Normal && p.stop.is_finite() && p.target.is_finite();
+        if both {
+            // EP6: a held bar whose range holds the stop and the target (the open through neither) is walked on the minutes
+            let (s0, t0) = (p.stop, p.target);
+            let (hit, day) = crate::intraday_ep6::stop_target(x, j, p.dir, s0, t0, true, ("s", "t"), || {
+                if if long { l[j] <= s0 } else { h[j] >= s0 } { Some((if if long { o[j] <= s0 } else { o[j] >= s0 } { o[j] } else { s0 }, "s")) }
+                else if if long { h[j] >= t0 } else { l[j] <= t0 } { Some((if long { o[j].max(t0) } else { o[j].min(t0) }, "t")) } else { None }
+            });
+            p.od = p.od.worst(day);
+            if let Some((px, k)) = hit {
+                let what = if p.trailed { format!("trailing stop ({n}-bar channel)") } else { "protective stop".to_string() };
+                let gap = px == o[j] && if long { o[j] <= s0 } else { o[j] >= s0 };
+                return Some(if k == "t" { (px, "profit target".into()) } else if gap { (px, format!("{what}, gapped: out on the open")) } else { (px, what) });
+            }
+        } else if p.stop.is_finite() {
             let hit = if entry { if long { l[j] < p.stop } else { h[j] > p.stop } } else if long { l[j] <= p.stop } else { h[j] >= p.stop };
             if hit {
                 let gap = !entry && if long { o[j] <= p.stop } else { o[j] >= p.stop };
@@ -349,7 +432,7 @@ fn manage(x: &Ctx, ex: &Ex, j: usize, p: &mut Pos, mode: Mode, exit_open: &mut O
                 return Some(if gap { (o[j], format!("{what}, gapped: out on the open")) } else { (p.stop, what) });
             }
         }
-        if p.target.is_finite() {
+        if p.target.is_finite() && !both {
             let t = p.target;
             if if long { h[j] >= t } else { l[j] <= t } {
                 // entry bar: a target the fill already gapped past (re-entry / stop filled at a gap open) is
@@ -405,6 +488,7 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
             first += 1;
         }
         let mut best: Option<(f64, f64, Ord)> = None;
+        let mut cands: Vec<(Ord, bool)> = vec![]; // EP6: every order this bar can fill (and whether it is the re-entry)
         for od in &orders[first..] {
             if od.from > j {
                 break;
@@ -431,6 +515,7 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 _ => None,
             };
             let Some(px) = f else { continue };
+            cands.push((*od, false));
             let pri = if matches!(od.fill, Fill::Close) { f64::INFINITY } else { (px - o[j]).abs() };
             if best.as_ref().map_or(true, |b| pri < b.0) {
                 best = Some((pri, px, *od));
@@ -444,6 +529,7 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 } else if let (Fill::Stop(lv), true) = (r.fill, phase <= 1) {
                     let f = if r.dir > 0.0 { (h[j] >= lv).then(|| o[j].max(lv)) } else { (l[j] <= lv).then(|| o[j].min(lv)) };
                     if let Some(px) = f {
+                        cands.push((r, true));
                         if best.as_ref().map_or(true, |b| (px - o[j]).abs() < b.0) {
                             best = Some(((px - o[j]).abs(), px, r));
                             from_re = true;
@@ -452,16 +538,39 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 }
             }
         }
-        let Some((_, px, od)) = best else { continue };
+        let Some((_, mut px, mut od)) = best else { continue };
+        // EP6 (#243, lane K63): an entry bar whose fills differ between its two extreme orders is walked on the minutes
+        let mut ep: Option<Eb> = None;
+        let mut day = Day::Plain;
+        if ex.ep6 && cands.iter().all(|c| matches!(c.0.fill, Fill::Stop(_))) {
+            let walk = |s: &mut Eb, g: &[Seg]| entry_walk(x, j, &cands, s, g);
+            let mut st = Eb::default();
+            day = crate::intraday_ep6::resolve_conv(x, j, true, &mut st, |_| {},
+                |z, hf| { let mut e = walk(z, &[]); e.extend(walk(z, &bar_segs(o[j], h[j], l[j], c[j], hf))); e }, &walk);
+            if matches!(day, Day::Minutes | Day::Ambiguous) {
+                let Some((k, f)) = st.fill else { continue }; // the minutes never reach an entry level: no entry that day
+                (od, px, from_re) = (cands[k].0, f, cands[k].1);
+                ep = Some(st);
+            }
+        }
         re = None;
         tmpl = Some(if from_re { od } else { Ord { fill: Fill::Stop(px), ..od } });
         let kind = if from_re { "re-entry" } else { match od.fill { Fill::Close => "close", Fill::Open => "open", _ => "stop" } };
         let stop = if od.stop_pct.is_finite() { px * (1.0 - od.dir * od.stop_pct) } else { od.stop };
-        let mut p = Pos { dir: od.dir, i: j, px, lv: px, setup: od.setup, stop, rev: od.rev, target: od.target, trailed: false, half: None, kind };
+        let mut p = Pos { dir: od.dir, i: j, px, lv: px, setup: od.setup, stop, rev: od.rev, target: od.target, trailed: false, half: None, kind, od: day };
         let mut mode = match od.fill { Fill::Close => Mode::EntryClose, Fill::Open => Mode::Normal, _ => Mode::EntryStop };
-        if mode == Mode::EntryStop && p.rev.is_finite() && if p.dir > 0.0 { l[j] <= p.rev } else { h[j] >= p.rev } {
-            let rv = p.rev;
-            let q = Pos { dir: -p.dir, i: j, px: rv, lv: rv, setup: p.setup, stop: p.lv, rev: f64::NAN, target: f64::NAN, trailed: false, half: None, kind: "reverse" };
+        let rev_at = match &ep { Some(e) => e.rev, None => (mode == Mode::EntryStop && p.rev.is_finite() && if p.dir > 0.0 { l[j] <= p.rev } else { h[j] >= p.rev }).then_some(p.rev) };
+        if let Some(e) = &ep {
+            if let (None, Some((xp, k))) = (e.rev, e.exit) {
+                let why = if k == 101 { "protective stop" } else { "profit target" };
+                push(&mut out, p, j, j, xp, why.into(), false);
+                re = to_re(&out, why, tmpl, j);
+                continue;
+            }
+            if e.rev.is_none() { mode = Mode::EntryClose; } // the minutes reached neither level: only the close rule runs
+        }
+        if let Some(rv) = rev_at {
+            let q = Pos { dir: -p.dir, i: j, px: rv, lv: rv, setup: p.setup, stop: p.lv, rev: f64::NAN, target: f64::NAN, trailed: false, half: None, kind: "reverse", od: day };
             push(&mut out, p, j, j, rv, "stop and reverse (entry day)".into(), false);
             p = q;
             mode = Mode::EntryClose;
@@ -485,7 +594,7 @@ fn go_alone(x: &Ctx, od: Ord, rule: &dyn Fn(usize, &Pos) -> Option<Act>, to: usi
     if od.from > to {
         return vec![];
     }
-    sim(x, vec![od], &Ex { trail: 0, half_bar: 0, rule, gate: None, reentry: None }, od.from, (od.last + 6).min(to))
+    sim(x, vec![od], &Ex { trail: 0, half_bar: 0, rule, gate: None, reentry: None, ep6: false }, od.from, (od.last + 6).min(to))
 }
 
 /// Moore Research exits (appendix tables): 0 = close of the entry day, 1 = next open, 2 = next close, 3 = 2nd close, ...
@@ -760,7 +869,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ss_id_nr4", "ID/NR4", "Ch 19 · Range Contraction", "Long/Short", Live, &[], NR4, INDEX, None),
         d("ss_hist_vol_crabel", "Historical Volatility Meets Toby Crabel", "Ch 20 · Historical Volatility", "Long/Short", Live, &[], HVC, INDEX, None),
         d("ss_smart_money_index", "Smart Money Index", "Ch 21 · Smart Money Indicators", "Long/Short", Live, &["OPEN60_CLOSE", "LAST60_OPEN"], SMI,
-          "Needs per-ticker series OPEN60_CLOSE = price at the end of the first 60 minutes and LAST60_OPEN = price 60 minutes before the close (book uses the Dow; any index works). Threshold in % of price (20 Dow points at Dow 5,000).",
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years only. OPEN60_CLOSE (the close of the session's first 60 minutes: US 9:30-10:30 ET, NSE 9:15-10:15 IST) and LAST60_OPEN (the open of the minute 60 minutes before the close) are built in the engine from the real 1-minute bars (intraday::session_series, the definition of library/intraday/build_session_series.py); a day without minutes gives no reading. The book reads the Dow (no Dow minutes are held): index/ETF as a declared application. Threshold in % of yesterday's close: the book's 20 Dow points at its example's Dow 4,980 (p.174) = 0.40%. Entry at the next open and exit at that day's close are labelled readings [Not from the book]: the book says only 'look to be a buyer (seller) the next day' (p.174).",
           claim("4-5 signals / month", "-", "-", "next day", "1995, Dow")),
         d("ss_tick_divergence", "Tick divergence", "Ch 21 · Smart Money Indicators", "Long/Short", NeedsData("5-minute S&P bars + NYSE TICK"), &[],
           &["F|\"The S&P must make a morning low where the ticks give a reading of less than -350.\"", "F|\"The S&P then must make an equal or lower low in price at least 90 minutes later. The tick must make a higher low\"", "E|\"If the ticks improve from this second low point by 100 ticks, we will enter at-the-market.\"", "X|\"A protective sell-stop is then entered at the low of the day.\" \"protect at least 50 percent of any equity gained\""],
@@ -811,9 +920,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
           claim("≈13", "69% / 62% / 54% / 46% (C / NO / NC / 2C)", "$237 / $525 / $310 / $485", "0-2 days", "89H-95U, S&P futures (A.14)")),
         m("ss_study_oops_adx_gapper_sell", "Oops (ADX Gapper) sell", "Short", vec!["F|\"Filters: Only ADX(12)>30 & w/ADX(28) trend\" (-DI(28) > +DI(28))", "F|opened above the previous day's high", "E|\"Enter at: PD High\"", "X|Exit 0 = close, 1 = next open (default), 2 = next close, 3 = 2nd close"],
           claim("≈16", "69% / 50% / 56% / 50% (C / NO / NC / 2C)", "$292 / $408 / $378 / $136", "0-2 days", "89H-95U, S&P futures (A.15)")),
-        m("ss_study_fresh_adx_buy", "Fresh ADX buy", "Long", vec!["F|\"periods in which the ADX is above 30 and rising. Trades are taken only in the direction of the trend.\" (ADX(14), +DI > -DI)", "E|\"buying a close that is less than the close of two days ago\" (fresh: yesterday was not such a close)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close. \"No protective stops\""],
+        m("ss_study_fresh_adx_buy", "Fresh ADX buy", "Long", vec!["F|\"periods in which the ADX is above 30 and rising. Trades are taken only in the direction of the trend.\" (ADX(14), +DI > -DI)", "E|\"buying a close that is less than the close of two days ago\" (fresh: yesterday was not such a close)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close. \"No protective stops\"", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table, so the readings are not confirmed (gate note)"],
           claim("≈61", "49% / 51% / 56% / 61% (NC / 2C / 3C / 4C)", "$110 / $48 / $119 / $354", "1-4 days", "86H-95U, S&P futures (A.16)")),
-        m("ss_study_fresh_adx_sell", "Fresh ADX sell", "Short", vec!["F|\"ADX is above 30 and rising\", downtrend (-DI > +DI)", "E|\"selling a close that is greater than the close of two days ago\" (fresh)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close"],
+        m("ss_study_fresh_adx_sell", "Fresh ADX sell", "Short", vec!["F|\"ADX is above 30 and rising\", downtrend (-DI > +DI)", "E|\"selling a close that is greater than the close of two days ago\" (fresh)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table, so the readings are not confirmed (gate note)"],
           claim("≈34", "44% / 50% / 41% / 29% (NC / 2C / 3C / 4C)", "$-51 / $10 / $-18 / $-252", "1-4 days", "86H-95U, S&P futures (A.17)")),
         m("ss_study_gap_failure_buy", "Gap failure buy (50%)", "Long", vec!["F|\"the market opens below the previous day's low and closes in the upper 50 percent of its range ... The gap does not necessarily have to be filled\"", "E|\"Enter on: Close\"", "X|\"Exit on Next Open\""],
           claim("≈113", "62%", "$96", "overnight", "86H-95U, S&P futures (A.18)")),
@@ -909,6 +1018,12 @@ fn overlap() -> ParamDef {
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     family_of(id)?;
     let ex_mode = || p("exit_mode", "Exit: 0 the close, 1 next open, 2 carry only on a strong close (book p.88)", 2.0, 0.0, 2.0, 1.0);
     Some(match id {
@@ -983,7 +1098,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
     let sh_ok = || g("side") <= 0.0;
     let none = |_: usize, _: &Pos| -> Option<Act> { None };
     let day_close = |j: usize, p: &Pos| (j == p.i).then(|| Act::Close("day trade: out on the close".into()));
-    let go = |v: Vec<Ord>, trail: usize, half_bar: usize, rule: Rule| sim(x, v, &Ex { trail, half_bar, rule, gate: None, reentry: None }, from, to);
+    let ep6 = crate::intraday_ep6::on(id, prm); // EP6 (#243, lane K63)
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, prm) else { return Some(vec![]) }; // EP6 #243 (c)
+    let go = |v: Vec<Ord>, trail: usize, half_bar: usize, rule: Rule| sim(x, v, &Ex { trail, half_bar, rule, gate: None, reentry: None, ep6 }, from, to);
     let mut v: Vec<Ord> = Vec::new();
 
     let trades = match id {
@@ -1150,7 +1267,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
             v.iter().for_each(|o| is_setup[o.setup] = true);
             let live = |r: &Ord, j: usize| adx[j - 1] > am && !(r.from - 1..j).any(|m| is_setup[m]);
             let reentry: Option<&dyn Fn(&Ord, usize) -> bool> = if g("reentry") >= 0.5 { Some(&live) } else { None };
-            sim(x, v, &Ex { trail: u0("trail"), half_bar: 0, rule: &none, gate: Some(&gate), reentry }, from, to)
+            sim(x, v, &Ex { trail: u0("trail"), half_bar: 0, rule: &none, gate: Some(&gate), reentry, ep6 }, from, to)
         }
         "ss_adx_gapper" | "ss_adx_gapper_no_gap" => {
             let (pdi, mdi, _) = dmi3(x.r, u("di_len"));
@@ -1398,7 +1515,7 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let none = |_: usize, _: &Pos| -> Option<Act> { None };
         let od = Ord { stop: 99.0, ..ord(1.0, Fill::Stop(101.0), 0, 1, 1) };
-        let run = |re: Option<&dyn Fn(&Ord, usize) -> bool>| sim(&x, vec![od], &Ex { trail: 0, half_bar: 0, rule: &none, gate: None, reentry: re }, 0, 5);
+        let run = |re: Option<&dyn Fn(&Ord, usize) -> bool>| sim(&x, vec![od], &Ex { trail: 0, half_bar: 0, rule: &none, gate: None, reentry: re, ep6: false }, 0, 5);
         let t = run(Some(&|_, _| true));
         assert_eq!(t.len(), 2);
         assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].exit_px), (1, 2, 99.0));
@@ -1415,7 +1532,7 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let none = |_: usize, _: &Pos| -> Option<Act> { None };
         let od = Ord { stop: 102.0, target: 98.0, ..ord(-1.0, Fill::Stop(100.0), 0, 1, 1) };
-        let t = sim(&x, vec![od], &Ex { trail: 0, half_bar: 0, rule: &none, gate: None, reentry: None }, 0, 2);
+        let t = sim(&x, vec![od], &Ex { trail: 0, half_bar: 0, rule: &none, gate: None, reentry: None, ep6: false }, 0, 2);
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (97.0, 1, 97.0));
     }
@@ -1480,6 +1597,20 @@ mod tests {
 #[cfg(test)]
 mod intraday_p1_tests {
     use super::*;
+    #[test]
+    fn smart_money_index_k75_next_open_to_close() {
+        // book p.174 example: yesterday 4980, 10:30 at 4985 (first hour +5 -> -5), 3:00 at 4990, close 4984 (-6): -11
+        let r: Vec<Row> = [(4970., 4980.), (4982., 4984.), (4990., 5010.), (5000., 4995.), (4990., 4970.)].iter().enumerate()
+            .map(|(i, &(o, c))| Row { ticker: "SPY".into(), date: format!("2020-01-{:02}", i + 1), open: o, high: o.max(c) + 5., low: o.min(c) - 5., close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("OPEN60_CLOSE".into(), vec![f64::NAN, 4985., 4986., 4990., f64::NAN]);
+        x.extra.insert("LAST60_OPEN".into(), vec![f64::NAN, 4990., 4970., 5020., f64::NAN]);
+        // day 1: -11 pts = -0.22% (no signal); day 2: -(4986-4984) + (5010-4970) = +38 = +0.76% -> buy day 3 open, out day 3 close;
+        // day 3: -(4990-5010) + (4995-5020) = -5 (no signal); day 4: no minutes (NaN)
+        let t = run("ss_smart_money_index", &x, 0, 4, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px)).collect::<Vec<_>>(), vec![(1., 3, 5000., 3, 4995.)]);
+        assert!(crate::intraday_ep::id("ss_smart_money_index"));
+    }
     #[test]
     fn pinball_minute_path_fills_carries_and_takes_the_day3_limit() {
         let closes = [100.0, 99.0, 97.0, 94.0, 90.0, 85.0, 87.0, 87.2];

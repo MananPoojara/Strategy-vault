@@ -8,13 +8,17 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stkch";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39"];
+pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39", "stkch_gap_fgd_long" /* lane K73, R4 #276 (2) */, "stkch_murphy_macd" /* lane R2A, R4 #297 */, "stkch_preholiday" /* lane R2A, R4 #297 */];
+/// Rules set by the US exchange-holiday calendar: US instruments only (instrument_policy stkch_symbol_issue).
+pub const US_ONLY: &[&str] = &["stkch_preholiday"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const EOD: &str = "E|Fill: the article gives no order type for these end-of-day chart signals; the signal is acted on at the close of the signal day [book silent]";
 const EMA_DEF: &str = "F|EMA: \"The 10-period simple moving average is used for the first calculation only. After that the previous period's EMA is used\" (indic_movingAvg.pdf p.4), weight 2/(n+1)";
 const GAP_TRAIL: &str = "X|\"Once a position is entered, you calculate and set an 8% trailing stop to exit a long position, and a 4% trailing stop to exit a short position\"; examples trail from the close: \"8% below the final close of $58.50\", \"trailing stop would be set at $80 (8% less than the $87 close)\" (gapStrategies1.pdf p.2-3)";
-const GAP_TICK: &str = "F|\"A 'tick' is defined as the bid/ask spread, usually 1/8 to 1/4 point\" (gapStrategies1.pdf p.2); index tick here = p.tick (0.05, the NSE tick)";
+/// Lane K79 (R4 #290 (2)(3)): the first-hour stop entries, settled on the 1-minute bars.
+const GAP_AFTER: &str = "E|The stop is placed \"after 10:30 am\": it is live from the first minute at or after the end of the first hour (US 10:30 ET; NSE 10:15 IST) on that day's real 1-minute bars and fills at its level, or at a minute's open when that minute opened beyond it (lane K79, decision #290); no minute reaching it, no entry; a day without minutes takes no entry";
+const GAP_TICK: &str = "F|\"A 'tick' is defined as the bid/ask spread, usually 1/8 to 1/4 point\" (gapStrategies1.pdf p.2); here (decisions #57, #203, #276 (2)) 'two ticks' = 2 ticks of the traded instrument (US 0.01, NSE 0.05), labelled; option p.ticks = 0 places the stop at the level itself";
 
 fn mk(dir: f64, i: usize, px: f64, sig: usize, kind: &'static str) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] }
@@ -48,6 +52,34 @@ fn states(x: &Ctx, from: usize, to: usize, st: &[i8], rev: bool, why: &str) -> V
     }
     mark_open(&mut out, cur, x, to);
     out
+}
+
+/// Murphy's MACD law on a close series: +1 = cross up with both lines below zero, -1 = cross down with both above zero.
+fn macd_signals(c: &[f64], fa: usize, sl: usize, sg: usize) -> Vec<i8> {
+    let n = c.len();
+    let (f, s) = (ema(c, fa), ema(c, sl));
+    let m: Vec<f64> = (0..n).map(|t| f[t] - s[t]).collect();
+    let mut sig = vec![f64::NAN; n];
+    if let Some(a) = m.iter().position(|v| v.is_finite()) { for (t, v) in ema(&m[a..], sg).into_iter().enumerate() { sig[a + t] = v; } }
+    (0..n).map(|t| {
+        if t == 0 || !(sig[t].is_finite() && sig[t - 1].is_finite()) { return 0; }
+        if m[t] > sig[t] && m[t - 1] <= sig[t - 1] && m[t] < 0. && sig[t] < 0. { 1 }
+        else if m[t] < sig[t] && m[t - 1] >= sig[t - 1] && m[t] > 0. && sig[t] > 0. { -1 } else { 0 }
+    }).collect()
+}
+
+/// One of the article's nine holidays (observed US date) falls on day number g (days since 1970-01-01).
+fn holiday9(g: i64) -> bool {
+    use crate::books::mzwws::{dnum, holidays, wday};
+    let (y, _, _) = { let z = g + 719468; let era = z.div_euclid(146097); let doe = z - era * 146097; let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); let mp = (5 * doy + 2) / 153; let m = if mp < 10 { mp + 3 } else { mp - 9 }; (yoe + era * 400 + if m <= 2 { 1 } else { 0 }, m, 0) };
+    let obs = |n: i64| match wday(n) { 5 => n - 1, 6 => n + 1, _ => n };
+    let nth = |m: i64, wd: i64, k: i64| { let f = dnum(y, m, 1); f + (wd - wday(f)).rem_euclid(7) + 7 * (k - 1) };
+    let pres = if y >= 1971 { nth(2, 0, 3) } else { obs(dnum(y, 2, 22)) };
+    let election = nth(11, 0, 1) + 1;
+    // New Year's of y is mzwws's "NewYear" of y - 1 (Jan 1 of the next year)
+    let ny = { let j = dnum(y, 1, 1); if wday(j) == 6 { j + 1 } else { j } }; // Sunday -> Monday; a Saturday New Year's has no closing
+    pres == g || election == g || ny == g || holidays(y).iter().chain(holidays(y - 1).iter()).any(|&(_, d)| d == g)
 }
 
 fn days(d: &str) -> i64 {
@@ -90,15 +122,19 @@ fn prev_week_closes(x: &Ctx, cal: bool) -> (Vec<f64>, Vec<f64>) {
 /// -1 = full gap down (open < prior low). dir = trade direction. lvl(t) = the stop-entry price on the gap day
 /// (None = data missing). One position at a time; entry stop is a day order on the gap day. Trailing stop from the
 /// closes after entry, checked from the next bar (open beyond the stop fills at the open).
-fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, lvl: impl Fn(usize) -> Option<f64>) -> Vec<Trade> {
+/// `after` = minutes past the session open from which the entry stop is live (0: from the open, on the daily bar; 60: after the
+/// first hour, settled on the day's 1-minute bars only, lane K79).
+fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, after: u16, order: bool, lvl: impl Fn(usize) -> Option<f64>) -> Vec<Trade> {
     let mut out = vec![];
     let mut cur: Option<(Trade, f64)> = None; // trade, best close (or entry) so far
     for t in from.max(1)..=to {
+        let mut cut = None; // lane K75 (#240, R4 #281 (3)): the trailing stop level when it was hit inside this bar (not at the open)
         if let Some((tr, best)) = cur.take() {
             let stop = if dir > 0. { best * (1. - trail) } else { best * (1. + trail) };
             let hit = if dir > 0. { x.l[t] <= stop } else { x.h[t] >= stop };
             if hit {
                 let px = if dir > 0. { x.o[t].min(stop) } else { x.o[t].max(stop) };
+                if if dir > 0. { x.o[t] > stop } else { x.o[t] < stop } { cut = Some(stop); }
                 out.push(fin(tr, t, px, t, if dir > 0. { "8% trailing stop" } else { "4% trailing stop" }));
             } else {
                 let b = if dir > 0. { best.max(x.c[t]) } else { best.min(x.c[t]) };
@@ -110,14 +146,46 @@ fn gap(x: &Ctx, from: usize, to: usize, kind: i8, dir: f64, trail: f64, lvl: imp
         if g != kind { continue; }
         let Some(lv) = lvl(t) else { continue };
         if !lv.is_finite() { continue; }
-        let fill = if dir > 0. { x.h[t] >= lv } else { x.l[t] <= lv };
-        if !fill { continue; }
-        let tr = mk(dir, t, lv, t, "stop");
-        let best = if dir > 0. { lv.max(x.c[t]) } else { lv.min(x.c[t]) };
+        let cut = cut.filter(|_| order);
+        let px = if after > 0 {
+            // lane K79 (#290 (2)(3)): an order placed after the first hour is settled on the day's minutes only; no minutes, no entry
+            let Some(b) = crate::intraday_w2b::day(x, t).filter(|b| !b.is_empty()) else { continue };
+            match same_day(x, t, &b, dir, cut, lv, after) { Some(Some(p)) => p, Some(None) => continue, None => lv }
+        } else {
+            if !(if dir > 0. { x.h[t] >= lv } else { x.l[t] <= lv }) { continue; }
+            match cut.and_then(|sp| crate::intraday_w2b::day(x, t).map(|b| same_day(x, t, &b, dir, Some(sp), lv, 0))) { Some(Some(Some(p))) => p, Some(Some(None)) => continue, _ => lv }
+        };
+        let tr = mk(dir, t, px, t, "stop");
+        let best = if dir > 0. { px.max(x.c[t]) } else { px.min(x.c[t]) };
         cur = Some((tr, best));
     }
     mark_open(&mut out, cur.map(|c| c.0), x, to);
     out
+}
+
+/// The entry stop `lv` on the day's 1-minute bars `b` (intraday_w2b::day: R4 #285 skips the rejected NIFTY 50 minute days), live
+/// from the first minute at or after `after` minutes past the session open (lane K79, #290 (2)(3)), filled at its level or at the
+/// minute's open when it opened through it: Some(Some(fill)) = entered, Some(None) = not touched (no entry that day).
+/// Lane K75 (#240, R4 #281 (3)): `stop` = the trailing stop when it was hit inside this bar, so the daily bar does not say whether
+/// the exit or the new entry came first: the entry is live only from the minute after the stop's first minute. None = the stop is
+/// not on the minutes (with `after` = 0) or the stop and the live entry fall in one minute (unknown order): the caller's daily
+/// convention (out at the stop, then in at the entry level). With `after` > 0 a stop not on the minutes leaves the entry
+/// on the live minutes.
+fn same_day(x: &Ctx, t: usize, b: &[crate::intraday::Bar1], dir: f64, stop: Option<f64>, lv: f64, after: u16) -> Option<Option<f64>> {
+    use crate::intraday::{first_touch, session_open, touched, Level, Touch};
+    let (live, en) = (session_open(&x.r[t].ticker, &x.r[t].date) + after, Level { up: dir > 0., px: lv });
+    let mut k = b.iter().position(|z| z.m >= live).unwrap_or(b.len());
+    if let Some(sp) = stop {
+        match first_touch(b, 0, &[Level { up: dir < 0., px: sp }]) {
+            Touch::Hit { bar: e, .. } => {
+                if b[e].m >= live && touched(&b[e], en) { return None; }
+                k = k.max(e + 1);
+            }
+            _ if after == 0 => return None,
+            _ => {}
+        }
+    }
+    Some(match first_touch(b, k, &[en]) { Touch::Hit { px, .. } => Some(px), _ => None })
 }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -151,22 +219,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"If a stock's opening price is less than yesterday's low, set a long stop equal to two ticks more than yesterday's low.\" (p.3); filled on the gap day when the high reaches the stop (the open is below it)",
             GAP_TRAIL, GAP_TICK,
             "X|Stop is 8% under the entry price, then 8% under the highest close since entry; checked from the day after entry; an open under the stop fills at the open [book silent on gaps through the stop]"],
-          "Entry order lives for the gap day only [book silent]. The TWTC example's 'immediate entry ... at open as long as it has been preceded by another gap signal' (p.3) is not a stated rule and is not coded. 'one would normally reduce the sell stop to 5% or less to protect profit' (p.2) has no trigger: not coded. No statistics printed.", ),
+          "Entry order lives for the gap day only [book silent]. The TWTC example's 'immediate entry ... at open as long as it has been preceded by another gap signal' (p.3) is not a stated rule and is not coded. 'one would normally reduce the sell stop to 5% or less to protect profit' (p.2) has no trigger: not coded. No statistics printed. Lane K75 (#240, R4 #281 (3)): a bar where the trailing stop is hit inside the day and a new gap entry also triggers (25% of SPY entries) is ordered on that day's real 1-minute bars; because the daily convention changed the result materially (#243 (c)), results are published only over the minute windows of SPY, SPX, NIFTY 50 and NIFTYBANK. p.order = 0: the daily convention (out, then in).", ),
         d("stkch_gap_fgu_long", "Full Gap Up: Long (buy stop 2 ticks over the first-hour high)", "Trading Strategies · Gap Trading Strategies", "Long", Live, &["OPEN60_HIGH"],
           &["F|\"A Full Gap Up occurs when the opening price is greater than yesterday's high.\" (gapStrategies1.pdf p.1)",
             "E|\"If a stock's opening price is greater than yesterday's high, revisit the 1-minute chart after 10:30 am and set a long (buy) stop two ticks above the high achieved in the first hour of trading.\" (p.2)",
             GAP_TRAIL, GAP_TICK,
-            "F|OPEN60_HIGH = high of the first 60 minutes of the session (US 9:30-10:30 ET; NSE 9:15-10:15 IST), per ticker. A day high above stop level means the break came after the first hour; fill at the stop"],
-          "Needs first-hour intraday data (OPEN60_HIGH); runs where the series exists. Day order on the gap day [book silent].", ),
+            "F|OPEN60_HIGH = high of the first 60 minutes of the session (US 9:30-10:30 ET; NSE 9:15-10:15 IST), per ticker", GAP_AFTER],
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years; OPEN60_HIGH is built from the real 1-minute bars (intraday::session_series). Day order on the gap day [book silent]. A bar where the trailing stop is hit inside the day and a new gap entry also triggers is ordered on that day's 1-minute bars (p.order = 0: the daily convention, out then in).", ),
         d("stkch_gap_fgu_short", "Full Gap Up: Short (sell stop 2 ticks under the first-hour low)", "Trading Strategies · Gap Trading Strategies", "Short", Live, &["OPEN60_LOW"],
           &["E|\"If a stock's opening price is greater than yesterday's high, revisit the 1-minute chart after 10:30 am and set a short stop equal to two ticks below the low achieved in the first hour of trading.\" (gapStrategies1.pdf p.2)",
             GAP_TRAIL, GAP_TICK,
-            "F|OPEN60_LOW = low of the first 60 minutes of the session, per ticker"],
-          "Needs first-hour intraday data (OPEN60_LOW). Day order on the gap day [book silent].", ),
+            "F|OPEN60_LOW = low of the first 60 minutes of the session, per ticker", GAP_AFTER],
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years; OPEN60_LOW is built from the real 1-minute bars (intraday::session_series). Day order on the gap day [book silent]. A bar where the trailing stop is hit inside the day and a new gap entry also triggers is ordered on that day's 1-minute bars (p.order = 0: the daily convention, out then in).", ),
         d("stkch_gap_fgd_short", "Full Gap Down: Short (sell stop 2 ticks under the first-hour low)", "Trading Strategies · Gap Trading Strategies", "Short", Live, &["OPEN60_LOW"],
           &["E|\"If a stock's opening price is less than yesterday's low, revisit the 1-minute chart after 10:30 am and set a short stop equal to two ticks below the low achieved in the first hour of trading.\" (gapStrategies1.pdf p.3)",
-            GAP_TRAIL, GAP_TICK, "F|OPEN60_LOW = low of the first 60 minutes of the session, per ticker"],
-          "Needs first-hour intraday data (OPEN60_LOW). Day order on the gap day [book silent].", ),
+            GAP_TRAIL, GAP_TICK, "F|OPEN60_LOW = low of the first 60 minutes of the session, per ticker", GAP_AFTER],
+          "Lane K75 (R4 #279 (2)): runs on the minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK) over the minute years; OPEN60_LOW is built from the real 1-minute bars (intraday::session_series). Day order on the gap day [book silent]. A bar where the trailing stop is hit inside the day and a new gap entry also triggers is ordered on that day's 1-minute bars (p.order = 0: the daily convention, out then in).", ),
         d("stkch_gap_partial", "Partial Gap Up / Down, long and short (first-hour breakouts)", "Trading Strategies · Gap Trading Strategies", "Long/Short",
           NotTestable("the partial-gap entries depend on a 'volume requirement' that Part 1 never defines ('If the volume requirement is not met, the safest way to play a partial gap is to wait until the price breaks the previous high'); Part 2's only volume rule is a 'projected daily volume' of 2x the 5-day average, which needs an intraday projection; the article also suggests 'closer trailing stops of 5-6%' without fixing one"), &[],
           &["E|Partial Gap Up (open > yesterday's close, not > yesterday's high): buy stop two ticks above / short stop two ticks below the first-hour range (gapStrategies1.pdf p.3-4)",
@@ -182,14 +250,25 @@ pub fn catalogue() -> Vec<StrategyDef> {
           NotTestable("the confirmation window is not stated: the OBV crossover of its 30-day MA came 'soon after' the K signal (p.6); no rule for how long to wait"), &[],
           &["F|\"one should pair it with a volume assessment for trade confirmation ... the On Balance Volume (OBV) indicator has been added along with a 30 day MA as a signal line\" (lastStochastic.pdf p.5)"],
           "Not testable.", ),
-        d("stkch_preholiday", "Pre-Holiday Effect (buy one or two days before nine US holidays)", "Trading Strategies · The Pre-Holiday Effect", "Long",
-          NotTestable("entry price is not stated ('buy near open' in one example, 'buy near close' in another), 'one or two days prior' is left open and the short-term exit is 'just after the holiday'; the year-end variant is a 1/9-of-capital portfolio schedule over nine US holiday closings"), &[],
-          &["E|\"The general strategy is to purchase equities one or two days prior to a holiday. Short term traders would look to sell just after the holiday while longer-term investors would wait until year end.\" (preHolidayEffect.pdf p.1)"],
-          "Published table (S&P 500 1928-1975, buy 2 / 1 days before, sell at year end) cannot be matched to a mechanical rule. Close relatives in the vault: kpss_hol_d1/d2, mzwws_preholiday, jbcdt2_preholiday_oc.", ),
-        d("stkch_murphy_macd", "Murphy's Law 'Trade MACD' (crosses below / above zero)", "Trading Strategies · John Murphy's Ten Laws of Technical Trading", "Long/Short",
-          NotTestable("'Weekly signals take precedence over daily signals' is part of the rule but how the two time frames combine is not stated; the article also gives no MACD periods"), &[],
-          &["E|\"A buy signal occurs when the faster line crosses above the slower and both lines are below zero. A sell signal takes place when the faster line crosses below the slower from above the zero line. Weekly signals take precedence over daily signals.\" (MurphysLaws.pdf p.3)"],
-          "Not testable.", ),
+        d("stkch_preholiday", "Pre-Holiday Effect: buy two trading days before nine US holidays, sell at the next open after", "Trading Strategies · The Pre-Holiday Effect", "Long",
+          Live, &[],
+          &["F|\"there have been nine holidays during which the Exchanges have traditionally been closed\" (preHolidayEffect.pdf p.1): President's Day (Washington's Birthday), Good Friday, Memorial Day, Independence Day, Labor Day, Election Day, Thanksgiving, Christmas, New Year's (the article's table); a holiday counts in a year only when the market was closed on it",
+            "E|\"The general strategy is to purchase equities one or two days prior to a holiday.\" (p.1); the three worked examples (GE, MOT, VOYN before July 4 2000) all buy on June 30, the second trading day before the holiday",
+            "X|\"Short term traders would look to sell just after the holiday\" (p.1): \"Selling at open on July 5th\" (GE), \"a sell just after the open on July 5th\" (VOYN): sell at the open of the first trading day after the holiday",
+            "F|The long-term variant (hold to year end, 1/9 of capital per holiday) is a portfolio schedule and is not this card"],
+          concat!("Adapted: 2 unstated details (R4 #297). Unstated in the article: one or two days before; vault reading: two trading days before the holiday, the day all three examples buy (p.days = 1: the last trading day before). ",
+            "Unstated: the entry price ('a buy near open' for GE, 'a buy near close' for VOYN); vault reading: the open of the entry day, the first worked example (p.fill = 1: its close). ",
+            "Holiday dates: the observed US dates (Saturday -> Friday, Sunday -> Monday; President's Day = Feb 22 before 1971, then the third Monday of February; Election Day = the Tuesday after the first Monday of November), used only when the data has no bar on that weekday (Election Day closings end in 1980). ",
+            "A trade still open when the next one would start is kept (no overlap). US holiday calendar on US instruments. India (R4 #364, declared adaptation under R4 #340, UNVERIFIED): the closures are the weekdays with no NIFTY 50 bar in the vault daily file (a data gap and a holiday cannot be told apart; no NSE holiday list is held). Stock examples; indices, ETFs and US stocks are a declared application. The table (S&P 500 1928-1975, sell at year end) is the long-term variant and is not comparable."), ),
+        d("stkch_murphy_macd", "Murphy's Law 'Trade MACD' (12/26/9): buy a cross up below zero, sell a cross down above zero, weekly signal first", "Trading Strategies · John Murphy's Ten Laws of Technical Trading", "Long",
+          Live, &[],
+          &["E|\"A buy signal occurs when the faster line crosses above the slower and both lines are below zero.\" (MurphysLaws.pdf p.2-3, law 8)",
+            "X|\"A sell signal takes place when the faster line crosses below the slower from above the zero line.\" (same): closes a long (long or flat by default, like the module's other sell signals; p.mode = 0 also sells short)",
+            "F|\"Weekly signals take precedence over daily signals.\" (same)",
+            "F|MACD: \"the traditional 12/26 MACD\" = 12-day EMA - 26-day EMA of closes, \"Usually, a 9-day EMA of MACD is plotted ... as a trigger\" (indic_MACD1.pdf p.1, the same ChartSchool collection): faster line = MACD, slower line = its 9-period EMA",
+            EMA_DEF, EOD],
+          concat!("Adapted: 1 unstated detail (R4 #297). Unstated in the article: how the weekly signal takes precedence; vault reading: the weekly signal in force (the last buy or sell signal of the same MACD rule on weekly closes, known at the close of each week's last trading day) is a filter and an exit: a daily buy is taken only while the weekly buy is in force, a daily sell only while the weekly sell is in force, and a new weekly signal against the open position closes it at that close (p.wk = 0 trades the daily signals alone). ",
+            "'Crosses above' = MACD > signal today and MACD <= signal yesterday; 'both lines below zero' / 'from above the zero line' are read on the signal day. Weeks = Monday-Sunday calendar weeks; the data's last bar ends a week only on a Friday. The signal EMA starts from the first full MACD value (the collection's SMA seed). Murphy's examples are generic; run on indices, ETFs and stocks (instrument swap). No statistics printed."), ),
         d("stkch_discretionary", "Chart-pattern, candlestick, Dow Theory and indicator-interpretation articles", "ChartSchool · Chart Analysis / Indicators / Market Analysis", "Long/Short",
           NotTestable("pattern recognition and indicator reading (divergences, support/resistance, trendlines, 'in conjunction with other aspects of technical analysis'); no complete entry + exit"), &[],
           &["F|Chart patterns: bump-and-run, cup with handle, double/triple tops and bottoms, flags, head and shoulders, wedges, triangles, rectangles, channels, measured moves, rounding bottom",
@@ -219,8 +298,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let gap = |trail: f64| vec![p("tick", "Tick added to the stop (2 ticks)", 0.05, 0.01, 1., 0.01),
-                                p("trail", "Trailing stop %", trail, 1., 20., 0.5)];
+    let gap = |trail: f64| vec![p("ticks", "Entry offset in ticks of the traded instrument (US 0.01, NSE 0.05): 2 = the article's two ticks; 0 = no offset", 2., 0., 10., 1.),
+                                p("trail", "Trailing stop %", trail, 1., 20., 0.5),
+                                p("order", "A day with a trailing-stop exit inside the bar and a new gap entry: 1 = ordered on the real 1-minute bars where they exist (default, lane K75, #240); 0 = daily convention (out, then in)", 1., 0., 1., 1.)];
     Some(match id {
         "stkch_ema_30_100" => vec![p("fast", "Fast EMA", 30., 5., 60., 1.), p("slow", "Slow EMA", 100., 20., 250., 5.),
                                    p("rev", "0 = long/flat (book); 1 = also short on the sell signal", 0., 0., 1., 1.)],
@@ -231,6 +311,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                             p("sell_lvl", "K crosses below (sell)", 50., 10., 90., 5.),
                             p("wk", "Previous week: 0 = calendar week (book); 1 = prior 5 bars", 0., 0., 1., 1.),
                             p("mode", "0 = sell and sell short (book); 1 = sell only", 0., 0., 1., 1.)],
+        "stkch_preholiday" => vec![p("days", "Buy this many trading days before the holiday (article: one or two; 2 = vault reading)", 2., 1., 2., 1.),
+                                   p("fill", "Entry: 0 = the open (vault reading, GE example); 1 = the close (VOYN example)", 0., 0., 1., 1.)],
+        "stkch_murphy_macd" => vec![p("fast", "MACD fast EMA (collection: 12)", 12., 2., 50., 1.), p("slow", "MACD slow EMA (collection: 26)", 26., 5., 100., 1.),
+                                    p("sig", "Signal line EMA of MACD (collection: 9)", 9., 2., 30., 1.),
+                                    p("wk", "Weekly precedence: 1 = weekly signal filters and closes (vault reading); 0 = daily signals alone", 1., 0., 1., 1.),
+                                    p("mode", "1 = long only (default); 0 = the sell signal also sells short", 1., 0., 1., 1.)],
         "stkch_gap_fgd_long" | "stkch_gap_fgu_long" => gap(8.),
         "stkch_gap_fgu_short" | "stkch_gap_fgd_short" => gap(4.),
         _ => return None,
@@ -254,6 +340,62 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let why = if band > 0. { "PPO below -band (sell signal) · close" } else { "fast EMA below slow EMA (sell signal) · close" };
             states(x, from, to, &st, g("rev") >= 0.5, why)
         }
+        "stkch_preholiday" => {
+            let (back, at_close) = (g("days").round().clamp(1., 2.) as usize, g("fill") >= 0.5);
+            let dn: Vec<i64> = x.r.iter().map(|r| days(&r.date)).collect();
+            let india = crate::nse_holidays::is_india(x); // R4 #364: NSE closures derived from the NIFTY 50 bars replace the nine US holidays
+            let mut out = vec![];
+            let mut busy_until = 0usize;
+            for i in 1..n {
+                // the last trading day before a closed weekday that is one of the nine holidays
+                if i + 1 >= n || !(dn[i] + 1..dn[i + 1]).any(|g| crate::books::mzwws::wday(g) < 5 && if india { crate::nse_holidays::closures().binary_search(&g).is_ok() } else { holiday9(g) }) { continue; }
+                if i + 1 < back { continue; }
+                let e = i + 1 - back;
+                if e < from || e > to || e < busy_until { continue; }
+                let mut t = mk(1., e, if at_close { x.c[e] } else { x.o[e] }, e, if at_close { "close" } else { "open" });
+                if i + 1 <= to { out.push(fin(t, i + 1, x.o[i + 1], i + 1, "first open after the holiday")); busy_until = i + 1; }
+                else { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); busy_until = usize::MAX; }
+            }
+            out
+        }
+        "stkch_murphy_macd" => {
+            let u = |k: &str| (g(k).round() as usize).max(1);
+            let (fa, sl, sg) = (u("fast"), u("slow"), u("sig"));
+            let (wk_on, shorts) = (g("wk") >= 0.5, g("mode") < 0.5);
+            let dsig = macd_signals(&x.c, fa, sl, sg);
+            // weekly closes: a week ends on its last bar (the data's last bar only if it is a Friday)
+            let wn: Vec<i64> = x.r.iter().map(|r| (days(&r.date) - 4).div_euclid(7)).collect();
+            let ends: Vec<usize> = (0..n).filter(|&t| if t + 1 < n { wn[t + 1] != wn[t] } else { (days(&x.r[t].date) + 3).rem_euclid(7) == 4 }).collect();
+            let wsig = macd_signals(&ends.iter().map(|&t| x.c[t]).collect::<Vec<_>>(), fa, sl, sg);
+            let mut ws = vec![0i8; n];
+            let (mut k, mut cur) = (0usize, 0i8);
+            for t in 0..n {
+                let mut new_w = 0i8;
+                if k < ends.len() && ends[k] == t { if wsig[k] != 0 { cur = wsig[k]; new_w = wsig[k]; } k += 1; }
+                ws[t] = if new_w != 0 { 2 * new_w } else { cur }; // +-2 = a new weekly signal on this bar
+            }
+            let mut st = vec![0i8; n];
+            for t in 1..n {
+                let (prev, w) = (st[t - 1], ws[t].signum());
+                let d = dsig[t];
+                let mut nx = prev;
+                if wk_on {
+                    if ws[t].abs() == 2 && prev != 0 && w != prev { nx = 0; }
+                    if d != 0 && d == w { nx = d; }
+                } else if d != 0 { nx = d; }
+                if nx < 0 && !shorts { nx = 0; }
+                st[t] = nx;
+            }
+            let mut out = vec![];
+            let mut cur_t: Option<Trade> = None;
+            for t in from.max(1)..=to {
+                if st[t] == st[t - 1] { continue; }
+                if let Some(tr) = cur_t.take() { out.push(fin(tr, t, x.c[t], t, if st[t] == 0 { "weekly signal against the position · close" } else { "opposite MACD signal · close" })); }
+                if st[t] != 0 { cur_t = Some(mk(st[t] as f64, t, x.c[t], t, "close")); }
+            }
+            mark_open(&mut out, cur_t, x, to);
+            out
+        }
         "stkch_k39" => {
             let k = (g("n").round() as usize).max(2);
             let kk: Vec<f64> = (0..n).map(|t| if t + 1 < k { f64::NAN } else {
@@ -270,12 +412,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             states(x, from, to, &st, g("mode") < 0.5, "K below the sell level and close under last week's low close · close")
         }
-        "stkch_gap_fgd_long" => { let tk = 2. * g("tick"); gap(x, from, to, -1, 1., g("trail") / 100., |t| Some(x.l[t - 1] + tk)) }
+        "stkch_gap_fgd_long" => {
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // K75: #243 (c) minute window
+            let tk = g("ticks").round().max(0.) * x.market_tick(); gap(x, from, to, -1, 1., g("trail") / 100., 0, g("order") >= 0.5, |t| Some(x.l[t - 1] + tk)) }
         "stkch_gap_fgu_long" | "stkch_gap_fgu_short" | "stkch_gap_fgd_short" => {
-            let tk = 2. * g("tick");
+            let tk = g("ticks").round().max(0.) * x.market_tick();
             let (kind, dir, name) = match id { "stkch_gap_fgu_long" => (1, 1., "OPEN60_HIGH"), "stkch_gap_fgu_short" => (1, -1., "OPEN60_LOW"), _ => (-1, -1., "OPEN60_LOW") };
             let Some(s) = x.series(name) else { return Some(vec![]) };
-            gap(x, from, to, kind, dir, g("trail") / 100., |t| Some(if dir > 0. { s[t] + tk } else { s[t] - tk }))
+            gap(x, from, to, kind, dir, g("trail") / 100., 60, g("order") >= 0.5, |t| Some(if dir > 0. { s[t] + tk } else { s[t] - tk }))
         }
         _ => return None,
     })
@@ -295,23 +439,94 @@ mod tests {
         let ts = run("stkch_gap_fgd_long", &x, 0, 3, &Params::new()).unwrap();
         assert_eq!(ts.len(), 1);
         assert_eq!(ts[0].legs[0].i, 1);
-        assert!((ts[0].legs[0].px - 99.10).abs() < 1e-9); // yesterday's low 99 + 2 x 0.05
+        assert!((ts[0].legs[0].px - 99.02).abs() < 1e-9); // yesterday's low 99 + 2 ticks of 0.01 (US; #276 (2))
         // best close 110 -> stop 101.2 hit on day 3 (low 100), open 109 above it -> fill 101.2
         assert_eq!(ts[0].exit_i, 3);
         assert!((ts[0].exit_px - 101.2).abs() < 1e-9);
+        let z = run("stkch_gap_fgd_long", &x, 0, 3, &[("ticks".to_string(), 0.)].into_iter().collect()).unwrap();
+        assert!((z[0].legs[0].px - 99.).abs() < 1e-9); // the 0-offset option
+        let r2: Vec<Row> = r.iter().map(|w| Row { ticker: "NIFTY 50".into(), ..w.clone() }).collect();
+        let n = run("stkch_gap_fgd_long", &Ctx::new(&r2, &r2, &[]), 0, 3, &Params::new()).unwrap();
+        assert!((n[0].legs[0].px - 99.10).abs() < 1e-9); // NSE: 2 x 0.05
+        assert!(reviewed("stkch_gap_fgd_long") && !reviewed("stkch_gap_fgu_long"));
+    }
+
+    #[test]
+    fn same_day_stop_exit_and_new_gap_entry_ordered_on_minutes() {
+        // lane K75 (#240, R4 #281 (3)): day 3 is a full gap down whose trailing stop (95.68) is hit inside the bar and whose
+        // entry stop (103.52) also triggers; its minutes show the entry level first (still long), then the stop: no re-entry
+        let mk = |d: &str, o: f64, h: f64, l: f64, c: f64| Row { ticker: "SPY".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None };
+        let r = vec![mk("2001-01-02", 100., 101., 99., 100.), mk("2001-01-03", 98., 103., 97., 103.), mk("2001-01-04", 104., 104.5, 103.5, 104.),
+                     mk("2001-01-05", 103., 104., 95., 95.5)];
+        let mut x = Ctx::new(&r, &r, &[]);
+        let conv = run("stkch_gap_fgd_long", &x, 0, 3, &[("order".to_string(), 0.)].into_iter().collect()).unwrap();
+        assert_eq!(conv.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1, 3, false), (3, 3, true)]);
+        let dir = std::env::temp_dir().join(format!("stkchk75{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let body = "Date,Time,Open,High,Low,Close\n2001-01-02,09:30,100,101,99,100\n2001-01-05,09:30,103,104,102,103.4\n2001-01-05,09:31,103.4,103.4,95,95.5\n";
+        std::fs::write(dir.join("SPY.m1.csv"), body).unwrap();
+        std::fs::write(dir.join("SPY.m1idx.csv"), format!("Date,offset,bytes\n2001-01-02,30,32\n2001-01-05,62,{}\n", body.len() - 62)).unwrap(); // minute window 01-02..01-05
+        x.minutes = crate::intraday::Minutes::load(dir.to_str().unwrap(), "SPY").map(|m| &*Box::leak(Box::new(m)));
+        let res = run("stkch_gap_fgd_long", &x, 0, 3, &Params::new()).unwrap();
+        assert_eq!(res.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1, 3, false)]);
+        assert!((res[0].exit_px - 104. * 0.92).abs() < 1e-9);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `name`'s 1-minute file for ticker T: (date, ["HH:MM,o,h,l,c", ...]).
+    fn minutes(name: &str, days: &[(&str, &[&str])]) -> &'static crate::intraday::Minutes {
+        let dir = std::env::temp_dir().join(format!("stkch{name}{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut body, mut idx) = (String::from("Date,Time,Open,High,Low,Close\n"), String::from("Date,offset,bytes\n"));
+        for (d, lines) in days {
+            let start = body.len();
+            for l in *lines { body.push_str(&format!("{d},{l}\n")); }
+            idx.push_str(&format!("{d},{start},{}\n", body.len() - start));
+        }
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), &idx).unwrap();
+        Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap()))
+    }
+    /// A full gap up on 2001-01-03 (open 102 > 101) with the given first-hour high / low and minutes.
+    fn gap_up(name: &str, h1: f64, l1: f64, mins: &'static [&'static str]) -> Ctx<'static> {
+        let r: &'static [Row] = Box::leak(vec![row("2001-01-02", 100., 101., 99., 100.), row("2001-01-03", 102., 106., 101.5, 105.), row("2001-01-04", 105., 107., 95., 96.)].into_boxed_slice());
+        let mut x = Ctx::new(r, r, &[]);
+        x.extra.insert("OPEN60_HIGH".into(), vec![f64::NAN, h1, f64::NAN]);
+        x.extra.insert("OPEN60_LOW".into(), vec![f64::NAN, l1, f64::NAN]);
+        x.minutes = Some(minutes(name, &[("2001-01-03", mins)]));
+        x
     }
 
     #[test]
     fn full_gap_up_first_hour_breakouts() {
-        let r = vec![row("2001-01-02", 100., 101., 99., 100.), row("2001-01-03", 102., 106., 101.5, 105.), row("2001-01-04", 105., 107., 95., 96.)];
-        let mut x = Ctx::new(&r, &r, &[]);
-        x.extra.insert("OPEN60_HIGH".into(), vec![f64::NAN, 104., f64::NAN]);
-        x.extra.insert("OPEN60_LOW".into(), vec![f64::NAN, 101.8, f64::NAN]);
+        let x = gap_up("fh", 104., 101.8, &["09:30,102,104,101.8,103", "10:30,103,104.5,102.5,104.4", "11:00,102,102.2,101.5,102"]);
         let l = run("stkch_gap_fgu_long", &x, 0, 2, &Params::new()).unwrap();
         assert_eq!((l[0].legs[0].i, l[0].exit_i), (1, 2));
-        assert!((l[0].legs[0].px - 104.1).abs() < 1e-9 && (l[0].exit_px - 96.6).abs() < 1e-9);
+        assert!((l[0].legs[0].px - 104.02).abs() < 1e-9 && (l[0].exit_px - 96.6).abs() < 1e-9);
         let s = run("stkch_gap_fgu_short", &x, 0, 2, &Params::new()).unwrap();
-        assert!((s[0].legs[0].px - 101.7).abs() < 1e-9 && (s[0].exit_px - 101.7 * 1.04).abs() < 1e-9);
+        assert!((s[0].legs[0].px - 101.78).abs() < 1e-9 && (s[0].exit_px - 101.78 * 1.04).abs() < 1e-9);
+        // no minutes that day: no entry (the daily high says nothing about the time)
+        let mut y = gap_up("fh0", 104., 101.8, &["09:30,102,104,101.8,103"]);
+        y.minutes = Some(minutes("fh00", &[("2001-01-02", &["09:30,100,101,99,100"])]));
+        assert!(run("stkch_gap_fgu_long", &y, 0, 2, &Params::new()).unwrap().is_empty());
+    }
+
+    /// Lane K79 (R4 #290 (2)): with p.ticks = 0 the stop is the first-hour high itself, which the daily high always reaches; the
+    /// high was made at 09:45 and no minute from 10:30 reaches it again: no trade.
+    #[test]
+    fn first_hour_high_not_retouched_after_1030_no_trade() {
+        let x = gap_up("k79a", 106., 101.5, &["09:30,102,103,101.5,102.5", "09:45,102.5,106,102.4,103", "10:30,103,105.9,102,103.5", "15:59,103.5,105,103,105"]);
+        let p: Params = [("ticks".to_string(), 0.)].into_iter().collect();
+        assert!(run("stkch_gap_fgu_long", &x, 0, 2, &p).unwrap().is_empty());
+    }
+
+    /// Lane K79 (R4 #290 (3)): a minute after 10:30 opening at 106 over the 105.02 stop fills at 106, not at the stop.
+    #[test]
+    fn minute_opening_through_the_stop_fills_at_its_open() {
+        let x = gap_up("k79b", 105., 101.6, &["09:30,102,105,101.6,104", "10:30,104.5,105,104,105", "10:31,106,106.5,105.8,106.2"]);
+        let l = run("stkch_gap_fgu_long", &x, 0, 2, &Params::new()).unwrap();
+        assert_eq!(l[0].legs[0].i, 1);
+        assert_eq!(l[0].legs[0].px, 106.);
     }
 
     #[test]
@@ -322,5 +537,37 @@ mod tests {
         let (h, l) = prev_week_closes(&x, true);
         assert!(h[1].is_nan());
         assert_eq!((h[2], l[2]), (7., 5.));
+    }
+    #[test]
+    fn murphy_macd_entries_follow_the_signal_rule() {
+        // lane R2A (R4 #297): with p.wk = 0 every long entry is a daily buy signal (MACD crosses its 9-EMA, both below zero), at that close,
+        // and every exit is a daily sell signal; the weekly filter (default) only removes trades.
+        let r: Vec<Row> = (0..600).map(|i| { let v = 100. + 10. * (i as f64 / 15.).sin();
+            let d = 7305 + i as i64 + 2 * (i as i64 / 5); // weekdays from 1990-01-01 (a Monday)
+            let (y, m, dd) = { let z = d + 719468; let era = z.div_euclid(146097); let doe = z - era * 146097; let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+                let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); let mp = (5 * doy + 2) / 153; let dd = doy - (153 * mp + 2) / 5 + 1; let m = if mp < 10 { mp + 3 } else { mp - 9 };
+                (yoe + era * 400 + if m <= 2 { 1 } else { 0 }, m, dd) };
+            row(&format!("{y:04}-{m:02}-{dd:02}"), v, v + 1., v - 1., v) }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let sig = macd_signals(&x.c, 12, 26, 9);
+        let daily: Params = [("wk".to_string(), 0.)].into_iter().collect();
+        let t = run("stkch_murphy_macd", &x, 0, 599, &daily).unwrap();
+        assert!(t.len() >= 3);
+        for tr in &t { assert!(tr.dir == 1. && sig[tr.legs[0].i] == 1 && tr.legs[0].px == x.c[tr.legs[0].i]); if !tr.open { assert_eq!(sig[tr.exit_i], -1); } }
+        let w = run("stkch_murphy_macd", &x, 0, 599, &Params::new()).unwrap();
+        assert!(w.iter().all(|tr| sig[tr.legs[0].i] == 1) && w.len() <= t.len());
+    }
+    #[test]
+    fn preholiday_july_4_2000_like_the_ge_example() {
+        // lane R2A (R4 #297): July 4 2000 was a Tuesday; Jun 30 (Fri) is the second trading day before -> buy its open; sell the open of Jul 5.
+        let d = ["2000-06-28", "2000-06-29", "2000-06-30", "2000-07-03", "2000-07-05", "2000-07-06"];
+        let r: Vec<Row> = d.iter().enumerate().map(|(i, s)| row(s, 10. + i as f64, 11. + i as f64, 9. + i as f64, 10.5 + i as f64)).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("stkch_preholiday", &x, 0, 5, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px)).collect::<Vec<_>>(), vec![(2, 12., 4, 14.)]);
+        let one: Params = [("days".to_string(), 1.), ("fill".to_string(), 1.)].into_iter().collect();
+        let t = run("stkch_preholiday", &x, 0, 5, &one).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i)).collect::<Vec<_>>(), vec![(3, 13.5, 4)]);
+        assert!(holiday9(days("2000-02-21")) && holiday9(days("1972-11-07")) && holiday9(days("2006-01-02")) && !holiday9(days("2000-01-17")));
     }
 }

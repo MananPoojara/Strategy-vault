@@ -48,7 +48,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"If you don't get a gap, do not place any order! Cancel your order if not filled by the close of the same day! Do NOT reverse your position! Enter a new trade only when you are flat!\" (p.12)",
               "X|Long: \"Place a sell limit order 32 ticks above your entry. Place a sell stop market order 16 ticks below your entry\"; short mirror (p.12-13). \"We do hold position overnight!\" - no time stop",
               "X|[Not from the book] the optional move of the stop to breakeven when the target is touched but not filled (p.13: \"experiment\") is not used"],
-            "Book: CBOT soybeans (1 tick = 1/4 cent; 32 ticks = 8 cents). Default tick = 0.04% of price, the book's own soybean ratio (1/4 cent at 585 1/4 cents, pp.14-16), so the target / stop are about 1.28% / 0.64%; tick_pct -1 = 0.01% on an index/ETF or the real stock tick [labelled option]. Index, ETF and stock runs are a declared application."),
+            "Book: CBOT soybeans (1 tick = 1/4 cent; 32 ticks = 8 cents). Default tick = 0.04% of price, the book's own soybean ratio (1/4 cent at 585 1/4 cents, pp.14-16), so the target / stop are about 1.28% / 0.64%; tick_pct -1 = 0.01% on an index/ETF or the real stock tick [labelled option]. Index, ETF and stock runs are a declared application. Decision #243 (lane K63, EP6 wave 5): the share of trades that depend on the order inside the day, resolved on real 1-minute bars where they exist (the rest by the module's reading: held bars the stop before the target; the entry bar the stop only when the close proves it, the target by the extreme): SPY minute window 2000-2025: 24.6% order-dependent, 24.4% resolved on minutes, 0.2% ambiguous; #177 tests FLAGGED (average trade +0.011% resolved vs +0.048% convention, compounded +7.8% vs +68.8%), so only the minute window is published, resolved (SPY 2000-2025); the earlier years and the tickers without minutes are withdrawn. Decision #246: #179 on the resolved version still fails (SPY 2014-2017 +0.003% vs SPX +0.140%, 2017-2020 -0.042% vs +0.011%), so the SPX result stays withdrawn and NIFTY 50/NIFTYBANK held (M3)."),
         def!("jr_ambush", "AMBUSH gap fade", "Course package · Ambush Trading Method (wheat, corn)", "Long/Short", AMBUSH,
             &["E|\"Buy at the high of the last trading day using a Limit Order, but only when the market opens with a gap up (this is when the market opens above the high of the last trading day)\" (Ambush p.9)",
               "E|\"Sell at the low of the last trading day using a Limit Order, but only when the market opens with a gap down\" (p.9); \"Cancel your order if not filled by the close of the same day!\" (p.10)",
@@ -145,6 +145,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let tick = || p("tick_pct", "1 tick = % of the previous close (-1 = auto: 0.01% on an index/ETF, the real tick on a stock) [declared convention]", -1.0, -1.0, 0.2, 0.01);
     // the book's own market: 1 tick / price in its worked example (lead decision 23 Oct); -1 = auto stays an option
@@ -173,6 +179,7 @@ fn getp(id: &str, p: &Params, key: &str) -> f64 {
     p.get(key).copied().unwrap_or_else(|| params(id).and_then(|s| s.iter().find(|d| d.key == key).map(|d| d.def)).unwrap_or_else(|| panic!("{id} has no param {key}")))
 }
 
+#[derive(Clone, Copy)]
 struct Pos { dir: f64, e: usize, px: f64, stop: f64, tgt: f64, kind: &'static str }
 
 fn trade(p: &Pos, k: usize, px: f64, sig: usize, why: &str) -> Trade {
@@ -214,7 +221,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let tick = |k: usize| match (tp < 0.0, x.stock_tick()) { (true, Some(t)) => t, (true, None) => c[k - 1] * 0.01 / 100.0, (false, _) => c[k - 1] * tp / 100.0 };
     let from = from.max(1);
     Some(match id {
-        "jr_zulu" => zulu(x, from, to, g("target_ticks"), g("stop_ticks"), &tick),
+        "jr_zulu" => {
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+            zulu(x, from, to, g("target_ticks"), g("stop_ticks"), &tick, crate::intraday_ep6::on(id, p)) // EP6 (#243, lane K63)
+        }
         "jr_ambush" => ambush(x, from, to, g("target_ticks"), g("stop_ticks"), g("days").round().max(1.0) as usize, &tick),
         "jr_ledge_tbtb" => ledge(x, from, to, g("match_ticks"), g("match_pct"), g("with_ticks"), g("against_ticks"), &tick),
         "jr_sne_l" | "jr_sne_s" => {
@@ -239,13 +249,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 // ---------------------------------------------------------------- course packages
 
-fn zulu(x: &Ctx, from: usize, to: usize, tt: f64, st: f64, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
+/// ZULU with EP6 (#243, lane K63): with `on`, a held bar with the stop and the target both inside the range is walked on the
+/// real 1-minute path (intraday_ep6::stop_target), and an entry bar whose outcome differs between its two extreme orders is
+/// walked on the minutes too (the stop entry where the minutes reach it, a gapped minute at its open; then the stop and the
+/// target as reached), in place of the entry-bar proof rule; days without minutes keep the daily rules.
+fn zulu(x: &Ctx, from: usize, to: usize, tt: f64, st: f64, tick: &dyn Fn(usize) -> f64, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, stop_target, Day, Ev, Seg};
     let (o, h, l) = (&x.o, &x.h, &x.l);
     let (mut out, mut pos): (Vec<Trade>, Option<Pos>) = (Vec::new(), None);
+    let mut od = Day::Plain;
     for k in from..=to {
         if let Some(p) = &pos {
-            if let Some((px, why)) = bar_exit(x, k, p.dir, p.stop, p.tgt) {
-                out.push(trade(p, k, px, k, why));
+            let (r, day) = stop_target(x, k, p.dir, p.stop, p.tgt, on, ("stop", "target"), || bar_exit(x, k, p.dir, p.stop, p.tgt));
+            od = od.worst(day);
+            if let Some((px, why)) = r {
+                let mut t = trade(p, k, px, k, why);
+                mark(&mut t, od);
+                out.push(t);
                 pos = None;
             }
             continue; // a new trade needs a flat book at the previous close
@@ -258,11 +278,44 @@ fn zulu(x: &Ctx, from: usize, to: usize, tt: f64, st: f64, tick: &dyn Fn(usize) 
             let px = h[k - 1] - t;
             Some(Pos { dir: -1.0, e: k, px, stop: px + st * t, tgt: px - tt * t, kind: "stop" })
         } else { None };
-        if let Some(p) = new {
-            if let Some((px, why)) = entry_bar_exit(x, k, &p) { out.push(trade(&p, k, px, k, why)); } else { pos = Some(p); }
+        if let Some(mut p) = new {
+            // (entered at, exit)
+            let mut z: (Option<f64>, Option<(f64, &'static str)>) = (None, None);
+            let day = if on {
+                let (d, lv) = (p.dir, p.px);
+                // the 16 / 32 ticks are counted from the actual fill ("below / above your entry", p.12-13): a minute that
+                // gaps through the entry level fills at its open and moves both levels with it
+                let lv_of = |f: f64| (f - d * st * t, f + d * tt * t);
+                let walk = |w: &mut (Option<f64>, Option<(f64, &'static str)>), sg: &[Seg]| -> Vec<Ev> {
+                    let mut ev = vec![];
+                    for g in sg {
+                        if w.1.is_some() { break; }
+                        let Some(f) = w.0 else {
+                            if g.up() == (d > 0.0) && g.inside(lv) {
+                                let px = g.fill(lv); w.0 = Some(px); ev.push(Ev { k: 0, px, up: d > 0.0 });
+                                let tg = lv_of(px).1;
+                                if !g.gap && (Seg { a: lv, b: g.b, gap: false }).inside(tg) { w.1 = Some((tg, "target")); ev.push(Ev { k: 2, px: tg, up: d > 0.0 }); }
+                            }
+                            continue;
+                        };
+                        let (sp, tg) = lv_of(f);
+                        if g.up() == (d > 0.0) { if g.inside(tg) { w.1 = Some((g.fill(tg), "target")); ev.push(Ev { k: 2, px: g.fill(tg), up: d > 0.0 }); } }
+                        else if g.inside(sp) { w.1 = Some((g.fill(sp), "stop")); ev.push(Ev { k: 1, px: g.fill(sp), up: d < 0.0 }); }
+                    }
+                    ev
+                };
+                let pc = Pos { ..p };
+                resolve_conv(x, k, true, &mut z, |w: &mut (Option<f64>, Option<(f64, &'static str)>)| { w.0 = Some(pc.px); w.1 = entry_bar_exit(x, k, &pc); },
+                    |w: &mut (Option<f64>, Option<(f64, &'static str)>), hf: bool| walk(w, &bar_segs(o[k], h[k], l[k], x.c[k], hf)), walk)
+            } else { z = (Some(p.px), entry_bar_exit(x, k, &p)); Day::Plain };
+            let Some(fill) = z.0 else { continue }; // the minutes never reached the entry level: no trade
+            if fill != p.px { (p.stop, p.tgt) = (fill - p.dir * st * t, fill + p.dir * tt * t); } // levels from the actual fill
+            p.px = fill;
+            od = day;
+            if let Some((px, why)) = z.1 { let mut t = trade(&p, k, px, k, why); mark(&mut t, od); out.push(t); } else { pos = Some(p); }
         }
     }
-    if let Some(p) = pos { out.push(open_trade(&p, x, to)); }
+    if let Some(p) = pos { let mut t = open_trade(&p, x, to); mark(&mut t, od); out.push(t); }
     out
 }
 

@@ -10,6 +10,14 @@ pub const REVIEWED: &[&str] = &["jcurt_jk24_hl_bands", "jcurt_jk31_pattern"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const J24: &str = "jcurt_jk24_hl_bands";
 const J31: &str = "jcurt_jk31_pattern";
+const J23: &str = "jcurt_jk23_jy";
+const J26: &str = "jcurt_jk26_bp";
+const J20: &str = "jcurt_jk20_usb";
+const J29: &str = "jcurt_jk29_bp_lw19";
+const JK20_NOTE: &str = "[Literal code; R4 #293 (1)] Run only on the Norgate continuous contract of the market the block is named for (back-adjusted daily bars), with the vault's TradeStation daily-bar fills (ajmisc.rs: market orders and stops the open is through fill at the open, exits first; then open -> the extreme nearer the open -> the other extreme -> close, stops filling at their level in price order; an exit acts only on the position held at the bar's open; '1 point' = the contract's tick, R4 #57). Order check (R4 #240): 0 of the 1,074 1978-2020 trades give different fills when a bar is run in its other path order. No performance is printed in the package: no book check (unverified). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
+const JK29_NOTE: &str = "[Literal code; R4 #293 (1)] Run only on the Norgate continuous contract of the market the block is named for (back-adjusted daily bars), with the vault's TradeStation daily-bar fills (ajmisc.rs: market orders and stops the open is through fill at the open, exits first; then open -> the extreme nearer the open -> the other extreme -> close, stops filling at their level in price order; an exit acts only on the position held at the bar's open; '1 point' = the contract's tick, R4 #57). Order check (R4 #240): 2 of the 207 1979-2020 trades (1.0%) give different fills when a bar is run in its other path order. No performance is printed in the package: no book check (unverified). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
+/// Lane PH (14 Nov 2026, D1 RULE UNCHECKED row jcurt_other, R4 #293 (1)): JK-23 / JK-26 are the JK-24 code with the inputs of their named market.
+const FUT_LIVE: &str = "[Literal code; R4 #293 (1)] The JK-24 code (IF L > Average(H,Input2) Then Buy; IF H < Average(L,Input1) Then Sell Short; TradeStation market orders = the next bar's open; the opposite order reverses) with this block's inputs, run only on the Norgate continuous contract of the market the block is named for (back-adjusted daily bars). No performance is printed in the package, so there is no book check (unverified). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.";
 
 const FUT: &str = "The system is named for one futures market; the vault has no futures contracts (vault convention: non-equity futures systems are NeedsData).";
 
@@ -28,34 +36,39 @@ Daily cash indices (instrument swap). Fills: market orders at the next open. Ind
             "E|\"IF H>H[1] and H[1]>H[2] and L>L[1] and L[1]>L[2] Then Sell Short Next Bar Lowest(o,2)- 1 point Stop\"",
             "X|Stop and reverse; no other exit in the code."],
             "1 point = 1/PriceScale = 0.01. No market named. Daily cash indices (instrument swap). Fills: vault TradeStation daily-bar convention (ajmisc.rs header). India: instrument swap; index shorts hypothetical."),
-        d("jcurt_jk20_usb", "JK-20-SC-USBB (US T-Bonds): close up -> buy C + 0.9 range stop, 5-bar exit", NeedsData("US T-Bond futures (the block is named USBB); the vault has no bond futures"), &[
+        d("jcurt_jk20_usb", "JK-20-SC-USBB (US T-Bonds): close up -> buy C + 0.9 range stop, 5-bar exit", Live, &[
             "E|\"IF C > C[1] Then Buy Next Bar C + (Range*0.9) Stop\"; \"IF C < C[1] Then Sell Short Next Bar C-(Range*1.8) Stop\"",
-            "X|\"IF MarketPosition=1 and BarsSinceEntry>=VarA-1 Then Sell Next Bar at Market\" (VarA 5); short mirror"], FUT),
+            "X|\"IF MarketPosition=1 and BarsSinceEntry>=VarA-1 Then Sell Next Bar at Market\" (VarA 5); short mirror"], JK20_NOTE),
         d("jcurt_jk21_sp_dt", "JK-21-SC-SP-DTBB (S&P day trade): close in lower 5/6 and up -> buy stop at the high", NotTestable("named a day-trade (DT) system but the code has no exit except the opposite entry; the day-trade exit is outside the code (its DT sibling JK-27 has no exit at all)"), &[
             "E|\"IF C < H-(Range/6) and C > C[1] Then Buy Next Bar h Stop\"; \"IF C > L+(Range/6) and C < C[1] Then Sell Short Next Bar l Stop\""], ""),
         d("jcurt_jk22_index", "JK-22-SC-INDEXBB: Friday close below its 3-bar MA -> buy", NotTestable("no exit in the code"), &[
             "E|\"IF DayOfWeek(Date)=5 and C < Average(C,3) Then Buy Next Bar at Market\""], ""),
-        d("jcurt_jk23_jy", "JK-23-SC-JY-LTBB (Japanese yen): L > MA(H,50) buy, H < MA(L,65) sell short", NeedsData("Japanese yen futures (block named JY)"), &["E|\"IF L > Average(H,Input2) Then Buy\" (50); \"IF H<Average(L,Input1) Then Sell Short\" (65)"], FUT),
+        d("jcurt_jk23_jy", "JK-23-SC-JY-LTBB (Japanese yen): L > MA(H,50) buy, H < MA(L,65) sell short", Live, &["E|\"IF L > Average(H,Input2) Then Buy\" (50); \"IF H<Average(L,Input1) Then Sell Short\" (65)", "X|No exit statement: the opposite order reverses the position (TradeStation Buy / Sell Short)"], FUT_LIVE),
         d("jcurt_jk25_dm", "JK-25-SC-DM-LTBB (Deutsche mark): L > MA(H,60) buy, H < MA(L,45) sell short", NeedsData("Deutsche mark futures (block named DM)"), &["E|\"IF L > Average(H,Input2) Then Buy\" (60); \"IF H<Average(L,Input1) Then Sell Short\" (45)"], FUT),
-        d("jcurt_jk26_bp", "JK-26-SC-BP-LTBB (British pound): L > MA(H,45) buy, H < MA(L,45) sell short", NeedsData("British pound futures (block named BP)"), &["E|\"IF L > Average(H,Input2) Then Buy\" (45); \"IF H<Average(L,Input1) Then Sell Short\" (45)"], FUT),
+        d("jcurt_jk26_bp", "JK-26-SC-BP-LTBB (British pound): L > MA(H,45) buy, H < MA(L,45) sell short", Live, &["E|\"IF L > Average(H,Input2) Then Buy\" (45); \"IF H<Average(L,Input1) Then Sell Short\" (45)", "X|No exit statement: the opposite order reverses the position (TradeStation Buy / Sell Short)"], FUT_LIVE),
         d("jcurt_jk27_nyse_dt", "JK-27-SC-NYSE-DTBB: day-of-week x 3-bar MA buys", NotTestable("no exit in the code (day-trade exit not stated)"), &[
             "E|\"IF (DayOfWeek(date)=VarA and C < Average(C,3)) OR (DayOfWeek(date)=VarB and C > Average(C,3)) OR (DayOfWeek(Date)=VarC and C > Average(C,3)) Then Buy Next Bar at Market\" (5/4/3)"], ""),
         d("jcurt_jk28_dual", "JK-28-SC-DualBB: data2 close vs its 9-bar MA", NotTestable("trades on data2, a second market the code never names"), &[
             "E|\"IF C of data2 < Average(C of data2,VarA) Then Buy Next Bar at Market; IF C of data2 > Average(C of data2,VarA) Then Sell Short Next Bar at Market\" (VarA 9)"], ""),
-        d("jcurt_jk29_bp_lw19", "JK-29-SC-BP-LW-19BB (British pound): pivot-channel stops", NeedsData("British pound futures (block named BP)"), &[
-            "E|\"Buy Next Bar Highest(PH,Length)+1 point Stop; Sell Next Bar Lowest(L,Length2) Stop; Sell Short Next Bar Lowest(PL,Length)- 1 point Stop; Buy to Cover Next Bar Highest(H,Length2) Stop\" (28/28)"], FUT),
+        d("jcurt_jk29_bp_lw19", "JK-29-SC-BP-LW-19BB (British pound): pivot-channel stops", Live, &[
+            "F|\"Input: PH(((H+L+C)/3*2)-L),PL(((H+L+C)/3*2)-H),Length(28),Length2(28)\" (Codes.txt)",
+            "E|\"Buy Next Bar Highest(PH,Length)+1 point Stop; Sell Next Bar Lowest(L,Length2) Stop; Sell Short Next Bar Lowest(PL,Length)- 1 point Stop; Buy to Cover Next Bar Highest(H,Length2) Stop\" (28/28)", "X|\"Sell Next Bar Lowest(L,Length2) Stop\"; \"Buy to Cover Next Bar Highest(H,Length2) Stop\"; the opposite entry stop reverses"], JK29_NOTE),
         d("jcurt_jk30_dual", "JK-30-SC-DualBB: data2 9-bar channel close breakout", NotTestable("trades on data2, a second market the code never names"), &[
             "E|\"IF (C of data2 > Highest(High of data2,Length)[1]) and (C[1] of data2 < Highest(High of data2,Length)[2]) Then Buy Next Bar at Market\"; mirror 'Sell Next Bar at Market' (exit)"], ""),
     ]
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    id.starts_with("jcurt_").then(|| (match id { J24 => J24, J31 => J31, _ => "jcurt_other" }, "J.Curtis package", "code"))
+    id.starts_with("jcurt_").then(|| (match id { J24 => J24, J31 => J31, J23 => J23, J26 => J26, J20 => J20, J29 => J29, _ => "jcurt_other" }, "J.Curtis package", "code"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    match id { J24 => Some(vec![p("input1", "Input1 (MA of lows)", 45., 5., 150., 1.), p("input2", "Input2 (MA of highs)", 45., 5., 150., 1.)]), _ => None }
+    match id {
+        J24 | J26 => Some(vec![p("input1", "Input1 (MA of lows)", 45., 5., 150., 1.), p("input2", "Input2 (MA of highs)", 45., 5., 150., 1.)]),
+        J23 => Some(vec![p("input1", "Input1 (MA of lows)", 65., 5., 150., 1.), p("input2", "Input2 (MA of highs)", 50., 5., 150., 1.)]),
+        _ => None,
+    }
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -63,12 +76,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let mut s = Sim::new();
     match id {
-        J24 => {
-            let (ml, mh) = (sma(&x.l, g("input1", 45.).max(1.) as usize), sma(&x.h, g("input2", 45.).max(1.) as usize));
+        J24 | J23 | J26 => {
+            let (d1, d2) = if id == J23 { (65., 50.) } else { (45., 45.) };
+            let (ml, mh) = (sma(&x.l, g("input1", d1).max(1.) as usize), sma(&x.h, g("input2", d2).max(1.) as usize));
             for i in first_ok(x.c.len(), from, &[&ml, &mh])..to {
                 let mut q = vec![];
-                if x.l[i] > mh[i] { q.push(ord(K::Buy, Ty::Mkt, "L > Average(H,45)")); }
-                if x.h[i] < ml[i] { q.push(ord(K::Short, Ty::Mkt, "H < Average(L,45)")); }
+                if x.l[i] > mh[i] { q.push(ord(K::Buy, Ty::Mkt, "L > Average(H,Input2)")); }
+                if x.h[i] < ml[i] { q.push(ord(K::Short, Ty::Mkt, "H < Average(L,Input1)")); }
                 s.bar(x, i + 1, &q);
             }
         }
@@ -80,6 +94,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if h[i] < h[i - 1] && h[i - 1] < h[i - 2] && l[i] < l[i - 1] && l[i - 1] < l[i - 2] { q.push(ord(K::Buy, Ty::Stop(ho[i] + POINT), "Highest(o,2)+1 point")); }
                 if h[i] > h[i - 1] && h[i - 1] > h[i - 2] && l[i] > l[i - 1] && l[i - 1] > l[i - 2] { q.push(ord(K::Short, Ty::Stop(lo[i] - POINT), "Lowest(o,2)-1 point")); }
                 s.bar(x, i + 1, &q);
+            }
+        }
+        J20 => {
+            for i in from.max(1)..to {
+                let (c, rng, bse) = (x.c[i], x.h[i] - x.l[i], s.bse(i));
+                let mut q = vec![];
+                if c > x.c[i - 1] { q.push(ord(K::Buy, Ty::Stop(c + rng * 0.9), "C + Range*0.9 stop")); }
+                if s.pos == 1 && bse >= 4 { q.push(ord(K::XL, Ty::Mkt, "BarsSinceEntry >= VarA-1")); }
+                if c < x.c[i - 1] { q.push(ord(K::Short, Ty::Stop(c - rng * 1.8), "C - Range*1.8 stop")); }
+                if s.pos == -1 && bse >= 4 { q.push(ord(K::XS, Ty::Mkt, "BarsSinceEntry >= VarA-1")); }
+                s.bar(x, i + 1, &q);
+            }
+        }
+        J29 => {
+            let pt = crate::futures::ctx_market(x).map_or(POINT, |m| m.tick);
+            let piv = |i: usize| (x.h[i] + x.l[i] + x.c[i]) / 3. * 2.;
+            let (ph, pl): (Vec<f64>, Vec<f64>) = (0..x.c.len()).map(|i| (piv(i) - x.l[i], piv(i) - x.h[i])).unzip();
+            let (hph, lpl, ll, hh) = (highest(&ph, 28), lowest(&pl, 28), lowest(&x.l, 28), highest(&x.h, 28));
+            for i in first_ok(x.c.len(), from, &[&hph, &lpl, &ll, &hh])..to {
+                s.bar(x, i + 1, &[ord(K::Buy, Ty::Stop(hph[i] + pt), "Highest(PH,28)+1 point"), ord(K::XL, Ty::Stop(ll[i]), "Lowest(L,28)"),
+                    ord(K::Short, Ty::Stop(lpl[i] - pt), "Lowest(PL,28)-1 point"), ord(K::XS, Ty::Stop(hh[i]), "Highest(H,28)")]);
             }
         }
         _ => return None,

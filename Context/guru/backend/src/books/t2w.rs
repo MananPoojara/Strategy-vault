@@ -8,7 +8,7 @@ use crate::connors::{claim, rsi, sma, wilder, Ctx, Leg, ParamDef, Params, Status
 
 pub const BOOK: &str = "t2w";
 /// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["t2w_cts", "t2w_cts_plus", "t2w_cts_stock", "t2w_mrx", "t2w_mrx_plus", "t2w_mrx_stock", "t2w_oops_11", "t2w_oops_12", "t2w_oops_13", "t2w_oops_14", "t2w_oops_21", "t2w_oops_22", "t2w_oops_23", "t2w_oops_31", "t2w_oops_32", "t2w_oops_33", "t2w_oops_34", "t2w_oops_i1", "t2w_oops_i2", "t2w_oops_i3"];
+pub const REVIEWED: &[&str] = &["t2w_r90" /* R4 #260 (3), lane BC2 */, "t2w_cts", "t2w_cts_plus", "t2w_cts_stock", "t2w_mrx", "t2w_mrx_plus", "t2w_mrx_stock", "t2w_oops_11", "t2w_oops_12", "t2w_oops_13", "t2w_oops_14", "t2w_oops_21", "t2w_oops_22", "t2w_oops_23", "t2w_oops_31", "t2w_oops_32", "t2w_oops_33", "t2w_oops_34", "t2w_oops_i1", "t2w_oops_i2", "t2w_oops_i3"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ indicators
@@ -98,7 +98,7 @@ const CTSN: &str = "Manual: 'The Crouching Tiger System' (tradingsystemsthatwork
 const OOPSN: &str = "Manual: 'The Oops 1-2-3 Trading Systems' (scanned, read visually). Rules 1-3 are evaluated on the prior close, the gap on today's open; the buy (sell short) stop at the prior low (high) fills at that price when the bar trades back to it (the open is beyond it by the gap rule); valid that day only. 'Gaps more than 1%' = open below prior low x (1 - 1%) (input PcntGap p.27: 'more than 1% below the previous low'). Exit: close >= 5MA (<= for shorts) -> next open; can fire on the entry bar's close. Index systems were tested on the S&P 500 E-mini (@ES.D, 09/11/97-05/01/09, 1 contract): here the cash index (instrument swap; cash-index gaps differ from ES day-session gaps). Equity systems: S&P 500 members 01/01/95-05/01/09, $10,000 per trade, compiled over all 500 stocks: here per NSE basket ticker.";
 const STEN: &str = "Manual: 'Swing Traders Edge - System Manual'. Limit 3% below the close for the next day only (ATI example: 60.79 -> 58.96). Exit can trigger on the fill day's close. HV(100) = sample stdev of ln returns x sqrt(252) x 100 (book gives no formula; the examples' table header says '20 Day HV' while rule 6 says 100 - rule text kept). Rule 7 is in US dollars: on NSE tickers the money flow is converted with series USDINR (INR per USD, needed; not in the vault yet -> data gap). Book results are a 10-slot portfolio over a US stock universe ranked by 4-day % drop (t2w_ste_portfolio) - not reproducible per ticker.";
 const RVTN: &str = "Manual: 'The ReVersal Twelve (RVT) Trading System'. Limit 8% below the close, placed before the next open (next day only). Rule 5 threshold 5,000,000 is dollars ('average daily money flow of at least $5,000,000', p.3) -> USDINR conversion on NSE (series needed). Wilder RSI(3). No stop (FAQ: 'stops harm the overall performance'). Book prints no statistics.";
-const PR1N: &str = "Manual: 'The PR1 Portfolio Trading System' (scanned). Predictive RSI 50 band = the price at which today's RSI(2) would read 50, from yesterday's Wilder averages: C[1] + (n-1)(AvgDown[1]-AvgUp[1]); limit = the price at which tomorrow's RSI(2) is half today's: C - (n-1)(AvgUp(100-R)/R - AvgDown) [the manual names the indicator but prints no formula; inversion of Wilder RSI, TradeStation's RSI]. 'Drop by half (50%)' read as RSI(2) <= 0.5 x yesterday (input RSIDrop 0.5 = 'minimum amount RSI must fall'). Liquidity $4,000,000 -> USDINR series on NSE. Book results are a 10-slot portfolio (t2w_pr1_portfolio).";
+const PR1N: &str = "Manual: 'The PR1 Portfolio Trading System' (scanned). Predictive RSI 50 band = the price at which today's RSI(2) would read 50, from yesterday's Wilder averages: C[1] + (n-1)(AvgDown[1]-AvgUp[1]); limit = the price at which tomorrow's RSI(2) is half today's: C - (n-1)(AvgUp(100-R)/R - AvgDown) [the manual names the indicator but prints no formula; inversion of Wilder RSI, TradeStation's RSI]. 'Drop by half (50%)' read as RSI(2) <= 0.5 x yesterday (input RSIDrop 0.5 = 'minimum amount RSI must fall'). Book results are a 10-slot portfolio (t2w_pr1_portfolio).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status: Status::Live,
@@ -209,7 +209,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "E|\"enter a limit order 8% below the close before the market opens the next morning\"",
           "X|\"6. The close of the 3 day RSI is above 55\" -> \"market order to exit the entire position at the next open\""],
         RVTN, None)));
-    v.push(StrategyDef { status: Status::NotTestable("the entry needs the \"2 day predictive RSI 50 band\", which the manual names but never defines; solving RSI backwards for a price would be our formula, not the vendor's"), ..usd(d("t2w_pr1", "PR1 setup (per stock)", "PR1 Portfolio Trading System", "Long",
+    v.push(StrategyDef { status: Status::NotTestable("a per-stock method of a stock-universe portfolio (index and ETF series cannot stand in for the stock universe); the \"2 day predictive RSI 50 band\" is never printed (solving RSI backwards for the band and for the limit is our formula, not the vendor's); six or more unstated readings are needed (band, half-drop test, limit inversion, universe, dollar-volume currency, ETF liquidity). Lane D1 pass 2 coded it on SPY/QQQ/MDY/IWM/DIA (0 mismatches against a reference) and held it again on review"), ..usd(d("t2w_pr1", "PR1 setup (per stock)", "PR1 Portfolio Trading System", "Long",
         &["F|\"1. The 20 day price/volume average liquidity must be greater than $4,000,000. 2. The close must be greater than the 200 day simple moving average. 3. The 14 day ADX must be greater than 25.\" (p.3)",
           "F|\"4. The high of the day must be less than the 2 day predictive RSI 50 band\"",
           "E|\"5. The 2 day RSI must drop by half (50%) since yesterday\"",
@@ -423,15 +423,25 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 fn oops(x: &Ctx, from: usize, to: usize, kind: u8, shorts: bool, trend: usize, exit_ma: usize, rlo: f64, rhi: f64, gap: f64, ext: f64) -> Vec<Trade> {
     let (c, o, h, l) = (&x.c, &x.o, &x.h, &x.l);
     let (tr, m5, r2) = (x.sma_n(trend), x.sma_n(exit_ma), &x.rsi2);
+    // R4 #253: the close against the 200-day / 5-day average in exact arithmetic on the printed prices (n*C vs the window
+    // sum); floats only when a price cannot be read exactly
+    let ex = crate::connors::ExactSeries::new(&[c]);
+    let (st, s5) = ex.as_ref().map_or((vec![], vec![]), |e| (e.sums(0, trend), e.sums(0, exit_ma)));
+    let cv = |sm: &[Option<i128>], n: usize, v: &[f64], i: usize| -> Option<std::cmp::Ordering> { // close vs the average
+        if !v[i].is_finite() { return None; }
+        match &ex { Some(e) => crate::connors::exact_avg_vs(e, sm, n, 0, i).map(|o| o.reverse()), None => c[i].partial_cmp(&v[i]) }
+    };
+    use std::cmp::Ordering::{Equal, Greater, Less};
     let setup = |j: usize, d: f64| -> bool {
         if j < 1 || !tr[j].is_finite() || !m5[j].is_finite() { return false; }
-        let base = if d > 0.0 { c[j] > tr[j] && c[j] < m5[j] } else { c[j] < tr[j] && c[j] > m5[j] };
+        let (ct, c5) = (cv(&st, trend, &tr, j), cv(&s5, exit_ma, &m5, j));
+        let base = if d > 0.0 { ct == Some(Greater) && c5 == Some(Less) } else { ct == Some(Less) && c5 == Some(Greater) };
         base && if kind == 1 {
             if d > 0.0 { r2[j] < rlo } else { r2[j] > rhi }
         } else if d > 0.0 { r2[j - 1] < rlo && c[j] < c[j - 1] * (1.0 - ext / 100.0) } else { r2[j - 1] > rhi && c[j] > c[j - 1] * (1.0 + ext / 100.0) }
     };
     let dirs: &[f64] = if shorts { &[1.0, -1.0] } else { &[1.0] };
-    let exit = |i: usize, d: f64| if d > 0.0 { c[i] >= m5[i] } else { c[i] <= m5[i] };
+    let exit = |i: usize, d: f64| { let o = cv(&s5, exit_ma, &m5, i); if d > 0.0 { matches!(o, Some(Greater | Equal)) } else { matches!(o, Some(Less | Equal)) } };
     if kind == 2 {
         let entry = |i: usize| -> i8 { dirs.iter().find(|&&d| setup(i, d)).map_or(0, |&d| d as i8) };
         return next_open_sim(x, from, to, 1, &entry, &|_, _, _| false, &exit, "close vs 5MA · next open");

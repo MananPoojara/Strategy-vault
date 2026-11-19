@@ -10,12 +10,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_vix: false, needs_series: &[], book, rules, notes: "Read 2026-10-24 (authors/murphy/agents).", claim: None };
     vec![
         d("jjmtafm_weekly_rule", "Donchian 4 week rule (continuous)", "Ch 9 · The Weekly Rule (p.215-217)", "jjmtafm",
-          "same rule as the live kftsm_donchian_4wk (Murphy p.215-217; Kaufman p.177); Murphy reports it, he did not devise it, so it has no separate card result",
+          "Duplicate of kftsm_donchian_4wk (live) (Murphy p.215-217; Kaufman p.177); Murphy reports it, he did not devise it, so it has no separate card result",
           &["E|\"Cover short positions and buy long whenever the price exceeds the highs of the four preceding full calendar weeks\" (p.216)", "X|\"Liquidate long positions and sell short whenever the price falls below the lows of the four preceding full calendar weeks\" (p.216)"]),
         d("jjmtafm_4_9_18", "4-9-18-day moving average method", "Ch 9 (p.204-206)", "jjmtafm",
-          "same rule as the live kftsm_4_9_18 (Murphy p.204-206), so it has no separate card result", &["E|4-day crosses above the 9 and 18 = buy alert; the 9 then crossing above the 18 confirms (p.205)"]),
+          "Duplicate of kftsm_4_9_18 (live) (Murphy p.204-206), so it has no separate card result", &["E|4-day crosses above the 9 and 18 = buy alert; the 9 then crossing above the 18 confirms (p.205)"]),
         d("jjmtafm_crossovers", "Double moving-average crossovers (5/20, 10/40, 4/9, 9/18)", "Ch 9 (p.203-204, 221)", "jjmtafm",
-          "the generic double crossover runs in the vault as kftsm_hh_cross with these periods (Murphy p.203-204, 221), so it has no separate card result", &["E|Buy when the shorter average crosses above the longer; sell when it crosses below (p.203)"]),
+          "Duplicate of kftsm_hh_cross: the generic double crossover runs in the vault as kftsm_hh_cross with these periods (Murphy p.203-204, 221), so it has no separate card result", &["E|Buy when the shorter average crosses above the longer; sell when it crosses below (p.203)"]),
         d("jjmtafm_oscillators", "RSI 70/30 and stochastic crossings, MACD", "Ch 10 (p.239-256)", "jjmtafm",
           "rules not fully defined: described as what 'many traders' do ('a crossing back above the 30 line ... is taken by many traders as a confirmation', p.245), with no exit or position rule (Ch 10, p.239-256)",
           &["E|RSI crossing back above 30 = buy, back under 70 = sell (p.245)"]),

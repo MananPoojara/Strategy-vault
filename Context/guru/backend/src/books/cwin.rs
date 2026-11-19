@@ -13,6 +13,7 @@
 //! when a stop and the entry fall on the same bar the stop is assumed hit after the fill (conservative).
 #![allow(unused_imports, dead_code, unused_variables)]
 use crate::connors::*;
+use crate::intraday_ep6::{bar_segs, Ev, Seg};
 use crate::Row;
 
 pub const BOOK: &str = "cwin";
@@ -219,6 +220,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         _ => return None,
     }
     v.extend(volume_params());
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
     Some(v)
 }
 
@@ -367,6 +369,10 @@ struct Pos {
     parts: Vec<String>,
     pieces: Vec<(usize, f64, f64)>, // (bar, price, fraction) of pieces already out
     kind: &'static str,
+    /// EP6 (#243, lane K63): the entry day decided on real 1-minute bars: Some(stop fill) or None (not stopped that day);
+    /// unset = the daily rule (the stop is assumed hit after the fill).
+    entry_stop: Option<Option<f64>>,
+    od: crate::intraday_ep6::Day,
 }
 
 /// Entry fill on bar i: (price, daily bar it traded on).
@@ -407,6 +413,7 @@ fn open_pos(b: &Bars, i: usize, px: f64, de: usize, s: &Setup) -> Pos {
         dir: d, e: i, de, px, day1: if intraday { i } else { i + 1 }, stop, stop_from,
         open_stop_today: matches!(s.stop, StopRule::EntryOpen), risk: (px - stop).abs(), rem: 1.0, acc: 0.0,
         took_first: false, took_day2: false, in_row: 0, exit_next_open: false, parts: vec![], pieces: vec![], kind,
+        entry_stop: None, od: crate::intraday_ep6::Day::Plain,
     }
 }
 
@@ -417,7 +424,7 @@ fn close_trade(p: Pos, i: usize, px: f64, why: String, signal_i: usize, open: bo
     if !exits.is_empty() {
         exits.push((i, px, p.rem));
     }
-    Trade {
+    let mut t = Trade {
         dir: p.dir,
         legs: vec![Leg { i: p.de, px: p.px, w: 1.0 }],
         exit_i: i,
@@ -427,7 +434,9 @@ fn close_trade(p: Pos, i: usize, px: f64, why: String, signal_i: usize, open: bo
         signal_i,
         open,
         exits,
-    }
+    };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    t
 }
 
 fn fmt(x: f64) -> String {
@@ -456,6 +465,13 @@ fn manage(b: &Bars, i: usize, pos: &mut Option<Pos>, m: Mgmt, to: usize) -> Opti
     let on_entry = |px: f64| if d > 0.0 { p.stop.min(px) } else { p.stop.max(px) };
     let stop_hit = if !p.stop.is_finite() || i < p.stop_from {
         None
+    } else if let (true, Some(es)) = (i == p.e, p.entry_stop) {
+        // EP6: the entry day was walked on the minutes; on weekly bars the rest of the entry week as before
+        match (es, &b.wk) {
+            (Some(px), _) => Some((p.de, px)),
+            (None, Some(w)) if p.de < w.span[i].1 => w.touch(i, p.de + 1, -d, p.stop),
+            (None, _) => None,
+        }
     } else if let Some(w) = &b.wk {
         // first day of the week (from the entry day in the entry week) through the stop
         w.touch(i, if i == p.e { p.de } else { w.span[i].0 }, -d, p.stop).map(|(k, px)| (k, if k == p.de { on_entry(p.px) } else { px }))
@@ -512,14 +528,65 @@ fn manage(b: &Bars, i: usize, pos: &mut Option<Pos>, m: Mgmt, to: usize) -> Opti
 
 /// One position at a time over bars [from, to]. `sig(i)` = setups seen on bar i's close: Close orders fill now,
 /// the others are next-bar orders (tried in the order given). Returns trades + the stop level that closed each (if any).
-fn sim(b: &Bars, sig: &dyn Fn(usize) -> Vec<Setup>, m: Mgmt, from: usize, to: usize) -> Vec<(Trade, Option<f64>)> {
+fn sim(b: &Bars, sig: &dyn Fn(usize) -> Vec<Setup>, m: Mgmt, from: usize, to: usize) -> Vec<(Trade, Option<f64>)> { sim_ep6(b, sig, m, from, to, None) }
+
+/// EP6 (#243, lane K63): the entry day of a next-bar stop entry whose protective stop works the same day, walked along a
+/// price path (`segs` empty = the open: an open at or through the trigger fills there): the trigger fills where the path
+/// reaches it (a gapped piece at its end), then the stop where the path comes back to it.
+#[derive(Clone, Default)]
+struct Ed { fill: Option<f64>, stop: Option<f64> }
+fn entry_walk(o: f64, d: f64, t: f64, stop: f64, s: &mut Ed, segs: &[Seg]) -> Vec<Ev> {
+    let mut ev = vec![];
+    if segs.is_empty() {
+        if s.fill.is_none() && d * (o - t) >= 0.0 { s.fill = Some(o); }
+        return ev;
+    }
+    for g in segs {
+        let mut a = g.a;
+        if s.fill.is_none() {
+            if (d > 0.0) != g.up() || !(Seg { a, b: g.b, gap: g.gap }).inside(t) { continue; }
+            let px = g.fill(t);
+            s.fill = Some(px);
+            ev.push(Ev { k: 0, px, up: g.up() });
+            a = t;
+        }
+        if s.stop.is_none() && (d > 0.0) != g.up() && (Seg { a, b: g.b, gap: g.gap }).inside(stop) {
+            let px = g.fill(stop);
+            s.stop = Some(px);
+            ev.push(Ev { k: 1, px, up: g.up() });
+        }
+    }
+    ev
+}
+
+/// `sim` with EP6 (`ep6` = the daily bars, resolver on): an entry day on which the stop entry and the same-day protective
+/// stop are order-dependent is walked on the real 1-minute path (entry_walk); the daily rule otherwise.
+fn sim_ep6(b: &Bars, sig: &dyn Fn(usize) -> Vec<Setup>, m: Mgmt, from: usize, to: usize, ep6: Option<&Ctx>) -> Vec<(Trade, Option<f64>)> {
     let mut out = Vec::new();
     let mut pend: Vec<Setup> = Vec::new();
     let mut pos: Option<Pos> = None;
     for i in from..=to {
         if pos.is_none() {
             if let Some((s, (px, de))) = pend.iter().find_map(|s| fill(b, i, s).map(|f| (s, f))) {
-                pos = Some(open_pos(b, i, px, de, s));
+                let mut p = open_pos(b, i, px, de, s);
+                let mut keep = true;
+                if let (Some(x), Ord::NextStop(t)) = (ep6, s.ord) {
+                    if p.stop.is_finite() && p.stop_from <= i {
+                        let (o, h, l, c, d, st) = (x.o[de], x.h[de], x.l[de], x.c[de], p.dir, p.stop);
+                        let mut e = Ed::default();
+                        let day = crate::intraday_ep6::resolve_conv(x, de, true, &mut e, |_| {},
+                            |z, hf| { let mut v = entry_walk(o, d, t, st, z, &[]); v.extend(entry_walk(o, d, t, st, z, &bar_segs(o, h, l, c, hf))); v },
+                            |z, g| entry_walk(o, d, t, st, z, g));
+                        p.od = day;
+                        if matches!(day, crate::intraday_ep6::Day::Minutes | crate::intraday_ep6::Day::Ambiguous) {
+                            match e.fill {
+                                Some(f) => { p.px = f; p.risk = (f - st).abs(); p.entry_stop = Some(e.stop); }
+                                None => keep = false, // the minutes never reach the trigger: no entry that day
+                            }
+                        }
+                    }
+                }
+                if keep { pos = Some(p); }
             }
         }
         pend.clear();
@@ -610,6 +677,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if id == "cwin_vix_gap_window" {
         return Some(vix_gap(x, from, to, u("vix_ma_len"), g("hold_days").round().max(0.0) as usize, side));
     }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c), lane K63
 
     // Volume (p56 Q&A), actual stocks only: no setup unless the vol_n-day average share volume ending on the setup day
     // (daily bar k) is at least min_avg_vol; a day without reported volume counts as 0 shares. Index/ETF runs: no filter.
@@ -639,7 +707,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             Some(f) if f < tw => f,
             _ => return Some(vec![]),
         };
-        return Some(sim(&b, &sig, mgmt("max_hold_weeks"), fw, tw).into_iter().map(|(t, _)| t).collect());
+        return Some(sim_ep6(&b, &sig, mgmt("max_hold_weeks"), fw, tw, crate::intraday_ep6::on(id, p).then_some(x)).into_iter().map(|(t, _)| t).collect());
     }
 
     let (up, dn, adx) = trend_of(x.r);
@@ -663,7 +731,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let prev = |i: usize| i > 0 && ((lt_ma(h[i - 1], ma[i - 1]) && lt_ma(h[i], ma[i]) && (!tb || up[i - 1]))
                 || (gt_ma(l[i - 1], ma[i - 1]) && gt_ma(l[i], ma[i]) && (!tb || dn[i - 1])));
             let sig = |i: usize| keep(i, single_setups(&b, &up, &dn, i, tick, gap, !dbl || prev(i)));
-            sim(&b, &sig, mgmt("max_hold_days"), from, to)
+            sim_ep6(&b, &sig, mgmt("max_hold_days"), from, to, crate::intraday_ep6::on(id, p).then_some(x)) // EP6 (#243, lane K63)
         }
         "cwin_first_window" => {
             let (tick, gap, amin) = (g("entry_tick"), g("gap_stop") >= 0.5, g("adx_min"));
@@ -682,7 +750,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             }
             let sig = |i: usize| keep(i, single_setups(&b, &up, &dn, i, tick, gap, first[i]));
-            sim(&b, &sig, mgmt("max_hold_days"), from, to)
+            sim_ep6(&b, &sig, mgmt("max_hold_days"), from, to, crate::intraday_ep6::on(id, p).then_some(x)) // EP6 (#243, lane K63)
         }
         "cwin_aggressive_window" => {
             let (k, next) = (g("close_pct"), g("entry_mode") >= 0.5);

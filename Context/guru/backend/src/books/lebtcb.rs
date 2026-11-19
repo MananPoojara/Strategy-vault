@@ -7,7 +7,7 @@
 use super::apwms::sma;
 use crate::connors::{dmi, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade, claim};
 // Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
-pub const REVIEWED: &[&str] = &["lebtcb_acb", "lebtcb_acb_int", "lebtcb_adavol", "lebtcb_tba", "lebtcb_pgo"];
+pub const REVIEWED: &[&str] = &["lebtcb_acb", "lebtcb_acb_int", "lebtcb_adavol", "lebtcb_tba", "lebtcb_pgo", "lebtcb_atr_bands" /* lane R2A, R4 #297 */, "lebtcb_ma_consec" /* lane R2A, R4 #297 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 
@@ -53,14 +53,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Signals at the close, orders at the next open. 'go long' is a state: whenever PGO > 3 and not long, buy (reversing a short); 'crosses 0' = PGO < 0 after >= 0 (long) or > 0 after <= 0 (short). ",
             "XAverage = TradeStation exponential average (2/(n+1), seeded with the first bar). The published test is 20 futures with every fill at the day's worst price; run here on the indices with normal next-open fills."),
           claim("648 (269 won, 379 lost)", "41.5%", "$438.95 per one-lot trade", "", "20 futures (BP CD CL CT DM DX FY HG HO HU JO JY KC LB MB NG SF TU TY US), 1/1/1987-8/7/1999, buys at the day's high, sells at the low, $25 commission")),
-        d("lebtcb_atr_bands", "ATR bands breakout (Nortwangler)", "Traderclub Forum", "Long/Short", Status::NotTestable("the post gives no parameter values, only ranges: 'Ndays ... anywhere between 70 and 110', 'BWidth ... anywhere between 2 and 4'"),
-          &["F|\"middle line\" = EXPONENTIAL moving average of the close over Ndays; Z = EXPONENTIAL moving average of TrueRange over Ndays; bands = middle +/- BWidth x Z (forum 'ATR Bands', Oct 14 1999)",
+        d("lebtcb_atr_bands", "ATR bands breakout (Nortwangler) · EMA(90) +/- 3 x EMA(TrueRange, 90)", "Traderclub Forum", "Long/Short", Status::Live,
+          &["F|\"Choose a number of days and call it 'Ndays'. We find that anywhere between 70 and 110 gives good results\"; \"Choose a number 'BWidth' ... anywhere between 2 and 4 gives good results\" (forum 'ATR Bands', Oct 14 1999)",
+            "F|\"middle line\" = EXPONENTIAL moving average of the close over Ndays; Z = EXPONENTIAL moving average of TrueRange over Ndays; bands = middle +/- BWidth x Z (same post)",
             "E|\"When price closes above the 'upper band', BUY on the next day's open ... When price closes below the 'lower band', SELL on the next day's open\"",
             "X|\"If you're long and price closes below the 'middle line', EXITLONG on the next day's open ... If you're short and proce closes above the 'middle line', EXITSHORT on the next day's open\""],
-          "Forum 'ATR Bands', post of Oct 14 1999; the rules are complete but no single Ndays/BWidth is stated, so there is no book default.", None),
-        d("lebtcb_ma_consec", "Moving average consecutive close (Bryan Bonner)", "Traderclub Forum", "Long/Short", Status::NotTestable("the moving-average length is given only as a range ('profitable anywhere from 25 to 50'); no default"),
-          &["E|\"Buy if the close is above the X days moving average for Y days in a row. Sell if the close is below the X days moving average for Y days in a row. I usually use 3 days for Y.\" (forum, B. Bonner, Oct 4 1998)"],
-          "Forum post 'Moving Average Consecutive Close' (Oct 4 1998). X has no stated value.", None),
+          concat!("Adapted: 2 unstated details (R4 #297). Unstated in the book: Ndays (only 'anywhere between 70 and 110'); vault reading: 90, the middle of the stated range (p.ndays). ",
+            "Unstated in the book: BWidth (only 'anywhere between 2 and 4'); vault reading: 3, the middle of the stated range (p.bwidth). ",
+            "Module conventions (not new readings): EXPONENTIAL = TradeStation XAverage (2/(n+1), seeded with the first bar); TrueRange = TradeStation TrueRange (first bar H-L); no signals before bar Ndays (MaxBarsBack); a close above the upper band while short reverses at the next open (TradeStation Buy). ",
+            "Source: TRADERCLUBFORUM.PDF, thread 'ATR Bands', post by Nortwangler, Oct 14 1999. Futures in the post (\"a diversified portfolio of many different futures\"); run on indices, ETFs and stocks (instrument swap). No results printed."), None),
+        d("lebtcb_ma_consec", "Moving average consecutive close (Bryan Bonner) · close vs SMA(38) for 3 days", "Traderclub Forum", "Long/Short", Status::Live,
+          &["E|\"Buy if the close is above the X days moving average for Y days in a row. Sell if the close is below the X days moving average for Y days in a row. I usually use 3 days for Y.\" (forum, B. Bonner, Oct 4 1998)",
+            "F|\"In many markets, the system is profitable anywhere from 25 to 50 for the moving average length. This is a longer term type system\" (same post)",
+            "X|No other exit: the opposite signal reverses the position (always in after the first signal)"],
+          concat!("Adapted: 1 unstated detail (R4 #297). Unstated in the book: the moving-average length X (only 'anywhere from 25 to 50'); vault reading: 38, the middle of the stated range rounded up (p.x). ",
+            "Y = 3 is the poster's own value (p.y). Module conventions (not new readings): 'moving average' = simple average of closes; signals at the close, filled at the next day's open as the club's TradeStation posts do; 'in a row' = the signal day and the Y-1 days before it. ",
+            "The optional 'exit on Z ATR's for a quicker version' has no Z and is not coded. Source: TRADERCLUBFORUM.PDF, thread 'Moving Average Consecutive Close' (posted Oct 4 1998). Futures markets in the post; run on indices, ETFs and stocks (instrument swap). No results printed."), None),
         d("lebtcb_cooper_5dm", "Jeff Cooper 'Five Day Momentum' setup (posted by Johan Ginyard)", "Traderclub Forum", "Long/Short", Status::NotTestable("entry only; the post gives no exit"),
           &["E|\"When ADX (14 days) > 35 and Stochastic(8 days) < 40 to go long (or > 60 to go short) then buy next bar when price exceeds highest price in the set up-bar\" (forum, J. Ginyard, Aug 28 1998)"],
           "No exit is stated; none is added.", None),
@@ -82,8 +90,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lebtcb_adavol" => ("lebtcb_adavol", "ADAVOL volatility breakout (Ronco)", "len 5 / LT 21 / ST 6"),
         "lebtcb_tba" => ("lebtcb_tba", "TBond Attack! 1.0 (Ronco)", "80 / 2"),
         "lebtcb_pgo" => ("lebtcb_pgo", "Pretty Good Oscillator (Johnson)", "89, +/-3, 0"),
-        "lebtcb_atr_bands" => ("lebtcb_ideas", "Traderclub forum ideas (not testable)", "ATR bands"),
-        "lebtcb_ma_consec" => ("lebtcb_ideas", "Traderclub forum ideas (not testable)", "MA consecutive closes"),
+        "lebtcb_atr_bands" => ("lebtcb_atr_bands", "ATR bands breakout (Nortwangler)", "90 / 3 (middle of the stated ranges)"),
+        "lebtcb_ma_consec" => ("lebtcb_ma_consec", "MA consecutive close (Bonner)", "SMA 38 / 3 days"),
         "lebtcb_cooper_5dm" => ("lebtcb_ideas", "Traderclub forum ideas (not testable)", "Cooper 5-day momentum"),
         "lebtcb_weekly_tse" => ("lebtcb_ideas", "Traderclub forum ideas (not testable)", "Weekly TSE breakout"),
         "lebtcb_atr_dip" => ("lebtcb_ideas", "Traderclub forum ideas (not testable)", "ATR dip trigger"),
@@ -101,6 +109,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lebtcb_adavol" => vec![p("len", "len: XAverage(TrueRange) for 'activity'", 5., 2., 10., 1.), p("lt", "LT: long XAverage(TrueRange)", 21., 10., 50., 1.),
             p("st", "ST: short XAverage(TrueRange)", 6., 3., 30., 1.)],
         "lebtcb_tba" => vec![p("length", "Length: SMA of the close and of TrueRange", 80., 20., 150., 5.), p("pct", "Pct: ATR multiple for the breakout", 2., 0.5, 5., 0.25)],
+        "lebtcb_atr_bands" => vec![p("ndays", "Ndays: EMA of the close and of TrueRange (post: 70-110; 90 = vault reading)", 90., 70., 110., 1.),
+            p("bwidth", "BWidth: band width in EMA(TrueRange) units (post: 2-4; 3 = vault reading)", 3., 2., 4., 0.25)],
+        "lebtcb_ma_consec" => vec![p("x", "X: SMA length (post: 25-50; 38 = vault reading)", 38., 25., 50., 1.), p("y", "Y: closes in a row (post: 3)", 3., 1., 10., 1.)],
         "lebtcb_pgo" => vec![p("n", "PGO length (SMA of close, XAverage of TrueRange)", 89., 20., 200., 1.), p("thr", "Entry threshold (+/-)", 3., 1., 6., 0.25)],
         _ => return None,
     })
@@ -215,6 +226,25 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 else if pos == 1 && below(&ma, i) { Some(0) } else if pos == -1 && above(&ma, i) { Some(0) } else { None }
             })
         }
+        "lebtcb_atr_bands" => {
+            let (len, w) = (u("ndays"), g("bwidth"));
+            let (mid, z) = (xavg(&x.c, len), xavg(&tr, len));
+            sar_open(x, from, to, |i, pos| {
+                if i < len { return None; }
+                let (c, up, dn) = (x.c[i], mid[i] + w * z[i], mid[i] - w * z[i]);
+                if c > up { Some(1) } else if c < dn { Some(-1) }
+                else if pos == 1 && c < mid[i] { Some(0) } else if pos == -1 && c > mid[i] { Some(0) } else { None }
+            })
+        }
+        "lebtcb_ma_consec" => {
+            let (len, y) = (u("x"), u("y"));
+            let ma = sma(&x.c, len);
+            sar_open(x, from, to, |i, _| {
+                if i + 1 < y { return None; }
+                let k = i + 1 - y..=i;
+                if k.clone().all(|j| x.c[j] > ma[j]) { Some(1) } else if k.into_iter().all(|j| x.c[j] < ma[j]) { Some(-1) } else { None }
+            })
+        }
         "lebtcb_pgo" => {
             let (len, thr) = (u("n"), g("thr"));
             let (ma, xa) = (sma(&x.c, len), xavg(&tr, len));
@@ -251,5 +281,26 @@ mod tests {
         let got: Vec<(f64, usize, f64, usize, f64)> = t.iter().map(|t| (t.dir, t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px)).collect();
         assert_eq!(got, vec![(1., 1, 10.5, 2, 8.5), (-1., 2, 8.5, 4, 9.6), (1., 4, 9.6, 4, 9.8)]);
         assert!(t[2].open);
+    }
+    #[test]
+    fn ma_consec_and_atr_bands_hand_checked() {
+        // lane R2A (R4 #297). ma_consec with X = 2, Y = 2: SMA2 at 2..6 = 10, 10.5, 11.5, 11.5, 10.5; closes above on bars 2-3 -> long at the
+        // open of 4; below on bars 4-5 -> short at the open of 6.
+        let c = [10., 10., 11., 12., 11., 10., 9., 9.];
+        let r = rows(&c.iter().map(|&v| (v, v + 1., v - 1., v)).collect::<Vec<_>>());
+        let x = Ctx::new(&r, &r, &[]);
+        let p: Params = [("x".to_string(), 2.), ("y".to_string(), 2.)].into_iter().collect();
+        let t = run("lebtcb_ma_consec", &x, 0, 7, &p).unwrap();
+        let got: Vec<(f64, usize, usize)> = t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i)).collect();
+        assert_eq!(got, vec![(1., 4, 6), (-1., 6, 7)]);
+        // atr_bands defaults (90 / 3): flat at 100 (TR 2), bar 95 closes 110 (> upper ~106.8) -> long at the open of 96;
+        // bar 96 closes 95 (< middle ~100.1, > lower) -> exit at the open of 97.
+        let mut b: Vec<(f64, f64, f64, f64)> = (0..99).map(|_| (100., 101., 99., 100.)).collect();
+        b[95] = (110., 111., 109., 110.); b[96] = (95., 96., 94., 95.);
+        let r = rows(&b);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("lebtcb_atr_bands", &x, 0, 98, &Params::new()).unwrap();
+        let got: Vec<(f64, usize, usize, f64)> = t.iter().map(|t| (t.dir, t.legs[0].i, t.exit_i, t.exit_px)).collect();
+        assert_eq!(got, vec![(1., 96, 97, 100.)]);
     }
 }

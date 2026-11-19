@@ -67,3 +67,11 @@ test('a failed request remains unavailable even when its note records the known 
  const result=availability(['one'],[def('a')],{a:{blocked:'Some backtests could not be loaded. Available history: 2000-01-03 to 2020-09-11.',readiness:'unavailable'}},{a:{status:'ready'}});
  assert.equal(result.status,'no_eligible_results');assert.equal(result.counts.needs_data,0);assert.equal(result.availableVariants,0);
 });
+test('etf_or_stock and stock_or_equity_etf are known requirements; source_review_required is still not',()=>{
+ for(const requirement of ['etf_or_stock','stock_or_equity_etf']){
+  const d={...def('a'),instrument_policy:{requirement,allowed_types:['etf','individual_stock']}};
+  assert.equal(availability(['one'],[d],{a:measured()},{a:{status:'ready'}}).status,'available',requirement);
+ }
+ const held={...def('a'),instrument_policy:{requirement:'source_review_required',allowed_types:[]}};
+ assert.equal(availability(['one'],[held],{a:measured()},{a:{status:'ready'}}).status,'source_review');
+});

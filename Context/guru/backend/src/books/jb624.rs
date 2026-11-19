@@ -159,6 +159,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let mac = || vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars for a trigger", 2., 1., 4., 1.)];
     Some(match id {
@@ -330,6 +336,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("jb624_") || params(id).is_none() || to >= x.c.len() || from > to {
         return None;
     }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = |k: &str| getp(id, p, k);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let mut out = Vec::new();
@@ -586,13 +593,15 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "jb624_fri_mon" => {
             let (bo, so, sl, ss) = (g("buy_off"), g("sell_off"), g("stop_long"), g("stop_short"));
             let mut stop = f64::NAN;
+            let (on, mut od) = (crate::intraday_ep6::on(id, p) && g("entry_day") < 0.5, crate::intraday_ep6::Day::Plain); // EP6 (#243)
+            let fin = |t: Trade, od| { let mut t = t; crate::intraday_ep6::mark(&mut t, od); t };
             for i in from..=to {
                 if let Some(t) = cur.as_ref().filter(|t| t.legs[0].i < i) {
                     let (d, e) = (t.dir, t.legs[0].px);
                     if (x.o[i] - e) * d > 0.0 {
-                        out.push(finish(cur.take().unwrap(), i, x.o[i], i, "First profitable opening"));
+                        out.push(fin(finish(cur.take().unwrap(), i, x.o[i], i, "First profitable opening"), od));
                     } else if let Some(px) = stop_fill(x, i, -d, stop) {
-                        out.push(finish(cur.take().unwrap(), i, px, i, "Stop loss"));
+                        out.push(fin(finish(cur.take().unwrap(), i, px, i, "Stop loss"), od));
                     }
                 }
                 if cur.is_none() && i < to && i + 1 <= to && week_changes(x, i) {
@@ -602,21 +611,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                         continue;
                     }
                     let lvl = if d > 0.0 { x.h[i] + bo } else { x.l[i] - so };
-                    if let Some(px) = stop_fill(x, j, d, lvl) {
-                        stop = px - d * if d > 0.0 { sl } else { ss };
+                    // stop on the entry bar: TradeStation bar path O -> nearer extreme -> other extreme -> C
+                    // (p.entry_day=1: counted whenever the bar reaches it); EP6: order-dependent bars on real minutes
+                    let conv = |_px: f64, stop: f64| if g("entry_day") >= 0.5 { if d > 0.0 { x.l[j] <= stop } else { x.h[j] >= stop } } else { hit_after_entry(x, j, d, lvl, stop) };
+                    if let Some((px, st, hit, day)) = entry_bar(x, j, d, lvl, if d > 0.0 { sl } else { ss }, on, conv) {
+                        stop = st;
                         let t = new_trade(d, j, px, "stop", i);
-                        // stop on the entry bar: TradeStation bar path O -> nearer extreme -> other extreme -> C
-                        // (p.entry_day=1: counted whenever the bar reaches it)
-                        let hit = if g("entry_day") >= 0.5 { if d > 0.0 { x.l[j] <= stop } else { x.h[j] >= stop } } else { hit_after_entry(x, j, d, lvl, stop) };
-                        if hit {
-                            out.push(finish(t, j, stop, j, "Stop loss (entry day)"));
+                        if let Some(xp) = hit {
+                            out.push(fin(finish(t, j, xp, j, "Stop loss (entry day)"), day));
                         } else {
                             cur = Some(t);
+                            od = day;
                         }
                     }
                 }
             }
             // a trade entered on bar `to` (possible only when i+1 == to) stays open
+            if let Some(t) = cur.take() { let mut v = vec![]; mark_open(&mut v, Some(t), x, to); out.extend(v.into_iter().map(|t| fin(t, od))); }
         }
         _ => return Some(vec![]),
     }
@@ -627,6 +638,41 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 /// Bar path as TradeStation assumes it without intrabar data: open, the extreme nearer the open, the other extreme, close.
 pub fn bar_path(x: &Ctx, i: usize) -> [f64; 4] {
     if x.h[i] - x.o[i] <= x.o[i] - x.l[i] { [x.o[i], x.h[i], x.l[i], x.c[i]] } else { [x.o[i], x.l[i], x.h[i], x.c[i]] }
+}
+
+/// EP6 (lane K62, decision #243): the entry bar of a stop entry at `lvl` (direction `d`) whose protective stop lies `sl`
+/// points from the fill. Some((entry price, stop level, Some(exit price) when stopped on the entry bar, the day's mark));
+/// None = no fill. The daily reading (`conv`: the module's own code, unchanged) decides every day that is not
+/// order-dependent; with `on` an order-dependent bar (entry level and stop both inside it) is walked on the real 1-minute
+/// path (intraday_ep6::resolve_conv). An entry at the open (gap) with one exit level is never order-dependent (#240).
+pub fn entry_bar(x: &Ctx, j: usize, d: f64, lvl: f64, sl: f64, on: bool, conv: impl Fn(f64, f64) -> bool) -> Option<(f64, f64, Option<f64>, crate::intraday_ep6::Day)> {
+    use crate::intraday_ep6::{resolve_conv, Ev, Seg};
+    #[derive(Clone)]
+    struct S { e: Option<f64>, out: Option<f64> }
+    let walk = |s: &mut S, segs: &[Seg]| -> Vec<Ev> {
+        let mut ev = vec![];
+        for g in segs {
+            if s.out.is_some() { break; }
+            if s.e.is_none() {
+                if g.up() != (d > 0.0) || !g.inside(lvl) { continue; }
+                let px = g.fill(lvl);
+                s.e = Some(px);
+                ev.push(Ev { k: 0, px, up: g.up() });
+                continue; // the rest of this segment moves away from the stop
+            }
+            let stop = s.e.unwrap() - d * sl;
+            if g.up() == (d < 0.0) && g.inside(stop) { let px = g.fill(stop); s.out = Some(px); ev.push(Ev { k: 1, px, up: g.up() }); }
+        }
+        ev
+    };
+    let gap = if d > 0.0 { x.o[j] >= lvl } else { x.o[j] <= lvl };
+    let mut st = S { e: gap.then_some(x.o[j]), out: None };
+    let day = resolve_conv(x, j, on, &mut st, |s| {
+        // the module's daily reading
+        *s = match stop_fill(x, j, d, lvl) { Some(px) => S { e: Some(px), out: conv(px, px - d * sl).then_some(px - d * sl) }, None => S { e: None, out: None } };
+    }, |s, hf| walk(s, &crate::intraday_ep6::bar_segs(x.o[j], x.h[j], x.l[j], x.c[j], hf)), walk);
+    let e = st.e?;
+    Some((e, e - d * sl, st.out, day))
 }
 
 /// After a stop entry in direction d at level `lvl` on bar i, does the path later reach the protective `stop`?

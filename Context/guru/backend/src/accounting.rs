@@ -32,36 +32,82 @@ impl Costs {
 
 /// Excursion status / plain-English basis shared by every report that publishes MAE/MFE.
 pub const EXCURSION_STATUS:&str="fill_aware_ohlc_path";
-pub const EXCURSION_BASIS:&str="MAE = lowest price the position lived through / entry - 1, MFE = highest / entry - 1 (shorts mirrored; gross, on the trade's allocation; not clamped, so MAE can be above 0 and MFE below 0). Window: an entry at the close starts with the next bar; an entry at the open counts its whole bar; a stop/limit entry inside a bar counts only its fill price on that bar (a gap fill counts as the open). An exit at the close or an end-of-data mark counts its whole bar; an exit at the open or by a stop/limit counts only its fill price on that bar. When 1-minute bars exist for a stop/limit fill day, the minutes after the fill (before the exit) are used instead.";
+pub const EXCURSION_BASIS:&str="MAE = lowest price the position lived through / entry - 1, MFE = highest / entry - 1 (shorts mirrored; gross, on the trade's allocation; not clamped, so MAE can be above 0 and MFE below 0). Window: an entry at the close starts with the next bar; an entry at the open counts its whole bar; a stop/limit entry inside a bar counts only its fill price on that bar (a gap fill counts as the open). An exit at the close or an end-of-data mark counts its whole bar; an exit at the open or by a stop/limit counts only its fill price on that bar. When 1-minute bars exist for a stop/limit fill day, the minutes after the fill (before the exit) are used instead. A minute bar that trades outside the day's daily low..high is treated as missing (never altered); a day where more than a tenth of its bars do so is not used (daily bars instead).";
 
 #[derive(Clone,Copy,PartialEq,Debug)]
 enum Fill { Close, Open, At(f64) }
 
 /// The one MAE/MFE rule for every strategy (research-team verified 2026-10-26): the price points the position lived
 /// through, as (bar, price). See EXCURSION_BASIS for the window.
-pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
+pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {path_points_with(ctx,t,true)}
+
+/// T1 18 Nov 2026 (R4 #361 (2), lead decision): a 1-minute bar is read through the DAILY bar the engine trades on. A minute bar whose high/low lies outside the
+/// day's daily low..high is dropped (missing, never altered or clamped: NIFTY 50 15:20-15:29 spikes from Aug 2026, source-C stress days); a day with more than a tenth
+/// of its bars outside (wrong-day or source-mismatched minutes) is rejected and the daily-bar convention is used for it. Fills, trades and equity do not change.
+/// R4 #349 (unified 17 Nov 2026, lanes W1+W2+W3, ALL cards): `level` = the trade's stop / target / reversal exit is a
+/// price-LEVEL fill, never a close fill, even when that level equals the exit bar's close or open (the close-fill test below is by price and
+/// signal_i == exit_i, which a stop on its own bar also satisfies). Then (1) an exit at the bar's open counts only its fill price (the minute file's
+/// first open differs from the daily open on some days), and (2) a level no minute reaches (daily and minute highs/lows differ by a tick or two)
+/// is placed on the minute that came nearest to it instead of dropping the whole minute path.
+pub fn path_points_with(ctx:&Ctx,t:&Trade,level:bool)->Vec<(usize,f64)> {
+    let level=level&&!t.open&&["stop","target","reversal"].iter().any(|w|t.reason.starts_with(w));
     let (e,x,epx)=(t.legs[0].i,t.exit_i,t.legs[0].px);
     let xpx=t.exits.last().map_or(t.exit_px,|p|p.1);
-    let entry=if t.entry_kind=="open"&&epx==ctx.o[e] {Fill::Open} else if t.entry_kind=="close"&&epx==ctx.c[e] {Fill::Close} else {Fill::At(epx)};
-    let exit=if t.open||(xpx==ctx.c[x]&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
+    // lane F3 (lead review): a futures trade is priced on the unadjusted contract (futures::raw_basis); read the context's
+    // back-adjusted bars on the same footing. off = 0 on every other context, so nothing else changes.
+    let off=crate::futures::trade_offset(ctx,t);
+    let o=|k:usize|ctx.o[k]+off; let h=|k:usize|ctx.h[k]+off; let l=|k:usize|ctx.l[k]+off; let c=|k:usize|ctx.c[k]+off;
+    let pday=|k:usize|->Option<Vec<crate::intraday::Bar1>>{
+        let m=ctx.minutes.and_then(|m|m.day(&ctx.r[k].date))?;
+        let (lo,hi)=(l(k),h(k));let eps=1e-9*hi.abs();
+        let keep:Vec<crate::intraday::Bar1>=m.iter().filter(|b|b.l>=lo-eps&&b.h<=hi+eps).cloned().collect();
+        if (m.len()-keep.len())*10>m.len() {None} else {Some(keep)}
+    };
+    let entry=if t.entry_kind=="open"&&epx==o(e) {Fill::Open} else if t.entry_kind=="close"&&epx==c(e) {Fill::Close} else {Fill::At(epx)};
+    let exit=if level {if x>e&&xpx==o(x) {Fill::Open} else {Fill::At(xpx)}} else if t.open||(xpx==c(x)&&t.signal_i==x) {Fill::Close} else {Fill::At(xpx)};
+    // W3 17 Nov (R4 #349): trades that registered their fill minutes (kftsm_zones) count only the minutes after the entry fill and up to the exit fill
+    if let Some((em,xm,xc))=crate::intraday::fill_minutes(&ctx.r[e].ticker,t) {
+        let mut p=Vec::new();let mut ok=true;
+        for k in e..=x {
+            let day=pday(k);
+            match day {
+                Some(m)=>{
+                    if k==e {p.push((k,epx));}
+                    for b in m.iter().filter(|b|(k!=e||b.m>em)&&(k!=x||if xc {b.m<=xm} else {b.m<xm})) {p.push((k,b.l));p.push((k,b.h));}
+                    if k==x {p.push((k,xpx));}
+                }
+                None if k!=e&&k!=x=>{p.push((k,l(k)));p.push((k,h(k)));}
+                None=>{ok=false;break;}
+            }
+        }
+        if ok {return p;}
+    }
     let mut pts=Vec::new();
     for k in e..=x {
         let start=if k==e {entry} else {Fill::Open};
         let end=if k==x {exit} else {Fill::Close};
-        if start==Fill::Close {if k==x {pts.push((k,ctx.c[k]));} continue;} // entered at this close: nothing after it on this bar
-        if start==Fill::Open&&end==Fill::Close {pts.push((k,ctx.l[k]));pts.push((k,ctx.h[k]));continue;}
+        if start==Fill::Close {if k==x {pts.push((k,c(k)));} continue;} // entered at this close: nothing after it on this bar
+        if k==x&&end==Fill::Open&&start==Fill::Open {pts.push((k,o(k)));continue;} // level exit at the open (gap through the stop): only its fill price
+        // W3 17 Nov: entered at the open and left at that same open (a reversal that fires on the entry bar; an exit AT THE CLOSE of a doji bar is not this): the position never lived
+        // through the bar, so only the fill price counts (the minute search below would count every minute before the open price traded again)
+        if k==e&&k==x&&start==Fill::Open&&exit!=Fill::Close&&xpx==o(k) {pts.push((k,xpx));continue;}
+        if start==Fill::Open&&end==Fill::Close {pts.push((k,l(k)));pts.push((k,h(k)));continue;}
         // part of a bar: 1-minute bars between the fill(s) when they exist, else only the fill prices
-        let inside=|m:&[crate::intraday::Bar1],from:usize,px:f64|m.iter().skip(from).position(|b|b.l<=px&&px<=b.h).map(|j|j+from);
-        let minute=ctx.minutes.and_then(|m|m.day(&ctx.r[k].date)).and_then(|m|{
-            let (lo,mut p)=match start {Fill::At(px)=>(inside(&m,0,px)?+1,vec![px]),_=>(0,vec![])};
-            let hi=match end {Fill::At(px)=>{let j=inside(&m,lo.saturating_sub(1),px)?;p.push(px);j.max(lo)},_=>m.len()};
+        // the minute that traded at px; else (a fill price between two ticks, e.g. a 3%-below-close limit, or a price the minutes jump over) the first
+        // minute whose open lies beyond px from the previous close; None = no minute path, the fill prices only
+        // returns (minute, gap): gap = no minute traded at px, the minute opened beyond it (its whole range lies after a start fill)
+        let inside=|m:&[crate::intraday::Bar1],from:usize,px:f64|m.iter().skip(from).position(|b|b.l<=px&&px<=b.h).map(|j|(j+from,false)).or_else(||
+            (from.max(1)..m.len()).find(|&j|(m[j-1].c-px)*(m[j].o-px)<0.).map(|j|(j,true)));
+        let minute=pday(k).and_then(|m|{
+            let (lo,mut p)=match start {Fill::At(px)=>{let (j,gap)=if t.entry_kind=="limit" {first_touch(&m,px,t.dir>0.).or_else(||inside(&m,0,px))?} else {inside(&m,0,px)?};(if gap {j} else {j+1},vec![px])},_=>(0,vec![])};
+            let hi=match end {Fill::At(px)=>{let from=lo.saturating_sub(1);let j=match inside(&m,from,px) {Some(r)=>r.0,None if level=>nearest(&m,from,px)?,None=>return None};p.push(px);j.max(lo)},_=>m.len()};
             for b in &m[lo..hi] {p.push(b.l);p.push(b.h);}
             Some(p)
         });
         let daily=||{
             let mut p=vec![];
-            match start {Fill::At(px)=>p.push(px),_ if k==e=>p.push(ctx.o[k]),_=>{}}
-            if k==x {p.push(match end {Fill::At(px)=>px,_=>ctx.c[k]});}
+            match start {Fill::At(px)=>p.push(px),_ if k==e=>p.push(o(k)),_=>{}}
+            if k==x {p.push(match end {Fill::At(px)=>px,_=>c(k)});}
             p
         };
         pts.extend(minute.unwrap_or_else(daily).into_iter().map(|px|(k,px)));
@@ -69,18 +115,48 @@ pub fn path_points(ctx:&Ctx,t:&Trade)->Vec<(usize,f64)> {
     pts
 }
 
+/// The minute whose range lies nearest to `px` (first on ties), from `from` on; used only for level exits no minute reaches.
+fn nearest(m:&[crate::intraday::Bar1],from:usize,px:f64)->Option<usize> {
+    let d=|b:&crate::intraday::Bar1|if b.l<=px&&px<=b.h {0.} else {(b.l-px).abs().min((b.h-px).abs())};
+    (from..m.len()).fold(None,|best:Option<(usize,f64)>,j|{let dj=d(&m[j]);if best.map_or(true,|(_,db)|dj<db){Some((j,dj))}else{best}}).map(|b|b.0)
+}
+
+/// The minute where a LIMIT entry at `px` was first touched: a buy limit (`buy`) when a low is <= px, a sell limit when a high is >= px; a minute that
+/// opened beyond px is a gap (its whole range lies after the fill). The old "first minute whose range holds px" came later than a minute that jumped
+/// over px, so a rebound after the jump was left out of MFE (r3r4 limit 5735.804 on 18-01-2008: touched 14:52, found 15:03). R4 #349 (2).
+fn first_touch(m:&[crate::intraday::Bar1],px:f64,buy:bool)->Option<(usize,bool)> {
+    // W4 (R4 #351 (3)): a first touch at the session's FIRST minute that already opens beyond px means the order was not live at the open (an intraday-placed limit: stad7_fibret,
+    // twsifp_cci); a live-from-open limit would have filled at that open. No order time is known here, so keep the old reading (first minute that trades px) for those.
+    m.iter().position(|b|if buy {b.l<=px} else {b.h>=px}).map(|j|(j,if buy {m[j].o<px} else {m[j].o>px})).filter(|&(j,gap)|!(j==0&&gap))
+}
+
 /// (MAE, MFE, bars counted) as fractions of the trade's allocation, gross; None when no finite point exists.
 /// One leg of weight 1: MAE = min(price) / entry - 1 and MFE = max(price) / entry - 1 (shorts mirrored).
 /// Scale-ins count from their fill bar on (the whole bar for an open fill, else the next bar); scale-out pieces
 /// stay banked at their fill price from their bar on.
-pub fn excursion(ctx:&Ctx,t:&Trade)->Option<(f64,f64,usize)> {
-    let pts=path_points(ctx,t);
+pub fn excursion(ctx:&Ctx,t:&Trade)->Option<(f64,f64,usize)> {excursion_with(ctx,t,true)}
+pub fn excursion_with(ctx:&Ctx,t:&Trade,level:bool)->Option<(f64,f64,usize)> {
+    let pts=path_points_with(ctx,t,level);
+    let off=crate::futures::trade_offset(ctx,t); // lane F3: 0 off futures contexts
     let mut out:Option<(f64,f64)>=None;
+    // T1 18 Nov 2026 (R4 #361, scale-outs): a piece that leaves on the FINAL bar is banked at its fill price from the point the path reaches that price
+    // (at once for a gap fill at the open); before that the whole position is still open. A piece filled at the close is never banked inside its bar
+    // (the position lived through the whole bar). Points are in time order, minutes before the exit fill.
+    let x=t.exit_i;
+    let mut reached:Vec<bool>=t.exits.iter().map(|&(i,q,_)|i==x&&x>t.legs[0].i&&q==ctx.o[x]+off).collect();
+    let mut prev:Option<f64>=None;
     for &(k,px) in &pts {
+        if k!=x {prev=None;}
+        else {
+            for (n,&(i,q,_)) in t.exits.iter().enumerate() {
+                if i==x&&!reached[n]&&q!=ctx.c[x]+off&&(px==q||prev.map_or(false,|v|(v-q)*(px-q)<=0.)) {reached[n]=true;}
+            }
+            prev=Some(px);
+        }
         let (mut mark,mut done)=(0.,0.);
-        for &(i,q,f) in &t.exits {if i<k||(i==k&&k<t.exit_i) {mark+=f*q;done+=f;}}
+        for (n,&(i,q,f)) in t.exits.iter().enumerate() {if i<k||(i==k&&(k<x||reached[n])) {mark+=f*q;done+=f;}}
         let mark=mark+(1.-done)*px;
-        let r:f64=t.legs.iter().enumerate().filter(|(n,l)|l.i<k||l.i==k&&(*n==0||t.entry_kind=="open"&&l.px==ctx.o[k])).map(|(_,l)|l.w*t.dir*(mark/l.px-1.)).sum();
+        let r:f64=t.legs.iter().enumerate().filter(|(n,l)|l.i<k||l.i==k&&(*n==0||t.entry_kind=="open"&&l.px==ctx.o[k]+off)).map(|(_,l)|l.w*t.dir*(mark/l.px-1.)).sum();
         if !r.is_finite() {return None;}
         out=Some(out.map_or((r,r),|(a,b)|(a.min(r),b.max(r))));
     }
@@ -191,11 +267,52 @@ mod tests {
         pair(ex(&x,&one(1.,1,100.,"close",2,103.,2)),(100.5/100.-1.,108./100.-1.));
     }
     #[test]
+    fn level_exit_equal_to_its_bar_close_or_open_counts_only_its_fill_price(){
+        let r=path_rows();let x=Ctx::new(&r,&r,&[]);
+        let stop=|xpx:f64,why:&str|Trade{reason:why.into(),..one(1.,1,100.,"close",2,xpx,2)};
+        let lv=|t:&Trade|{let e=excursion_with(&x,t,true).unwrap();(e.0,e.1)};
+        // stop filled at 103 = bar 2's close: the legacy test reads a close exit (whole bar 100.5..108); level mode counts only 103
+        let legacy=|t:&Trade|{let e=excursion_with(&x,t,false).unwrap();(e.0,e.1)};
+        pair(legacy(&stop(103.,"stop")),(100.5/100.-1.,108./100.-1.));pair(lv(&stop(103.,"stop")),(0.03,0.03));
+        // gap through the stop at bar 2's open (101): only that price
+        pair(lv(&stop(101.,"target")),(0.01,0.01));
+        // other reasons keep the legacy reading even in level mode
+        pair(lv(&stop(103.,"time (close)")),(100.5/100.-1.,108./100.-1.));
+    }
+    #[test]
     fn open_entry_counts_its_bar_and_open_exit_counts_only_the_open(){
         let r=path_rows();let x=Ctx::new(&r,&r,&[]);
         pair(ex(&x,&one(1.,1,104.,"open",3,102.,2)),(95./104.-1.,112./104.-1.));
         // same-bar open entry, close exit: the whole bar
         pair(ex(&x,&one(1.,3,102.,"open",3,110.,3)),(99./102.-1.,115./102.-1.));
+    }
+    #[test]
+    fn entered_and_left_at_the_same_open_lived_through_nothing(){
+        // W3 17 Nov (pbwts_seasonal NIFTYBANK 3 Feb 2012): a reversal at the open on the entry bar; the bar's low is not its MAE, with or without minutes
+        let dir=std::env::temp_dir().join(format!("mae-zero-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-04,09:30,99,103,98,102\n2020-01-04,09:31,102,104,101,103\n2020-01-04,09:32,102,102.5,90,95\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-04,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        pair(ex(&x,&one(1.,3,102.,"open",3,102.,2)),(0.,0.));
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,3,102.,"open",3,102.,2)),(0.,0.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn registered_fill_minutes_cut_the_excursion_at_the_fills(){
+        // W3 17 Nov (kftsm_zones): short filled at the close of the 09:31 minute (price 104.5); the minutes before it and the exit minute do not count
+        let dir=std::env::temp_dir().join(format!("mae-fm-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,110,103,104\n2020-01-02,09:31,104,104.6,104,104.5\n2020-01-02,09:32,104.5,104.8,103,103.5\n2020-01-02,09:33,103.5,104,102,102.5\n2020-01-02,09:34,102.5,112,95,100\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        let t=one(-1.,1,104.5,"close",1,101.,1);
+        crate::intraday::note_fill("TEST",&t,(9*60+31,9*60+34,false));
+        // after 09:31: 09:32 high 104.8 (adverse), 09:33 low 102 (favourable), the exit at 101; minute 09:34 itself is not counted
+        pair(ex(&x,&t),(-(104.8/104.5-1.),1.-101./104.5));
+        let _=std::fs::remove_dir_all(&dir);
     }
     #[test]
     fn stop_fills_count_only_their_price_and_gap_fills_count_as_the_open(){
@@ -227,6 +344,103 @@ mod tests {
         pair(ex(&x,&one(1.,1,106.,"stop",3,110.,3)),(99./106.-1.,115./106.-1.));
         // a day without minutes (bar 3) falls back to the daily rule
         pair(ex(&x,&one(1.,2,103.,"close",3,107.,3)),(107./103.-1.,107./103.-1.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn scale_out_pieces_on_the_final_bar_are_banked_from_their_fill(){
+        // T1 18 Nov 2026 (stad13_tripleplay NIFTYBANK 2023-08-02): half leaves at the open of the exit bar (gap through the stop), the rest at the stop: the stop level
+        // is not a price the whole position lived through. Bar 2 opens at 101; pieces 101 (0.5, the open) and 100.5 (0.5, the stop, final fill).
+        let r=path_rows();let x=Ctx::new(&r,&r,&[]);
+        let t=Trade{dir:1.,legs:vec![Leg{i:1,px:100.,w:1.}],exit_i:2,exit_px:100.75,reason:"stop fixture".into(),entry_kind:"close",signal_i:1,open:false,exits:vec![(2,101.,0.5),(2,100.5,0.5)]};
+        pair(ex(&x,&t),(100.75/100.-1.,100.75/100.-1.));
+        // a piece filled at the bar's close was open the whole bar: not banked, the stop mark stays the full-position mark
+        let t=Trade{exits:vec![(2,103.,0.5),(2,100.5,0.5)],..t};
+        pair(ex(&x,&t),(100.5/100.-1.,100.5/100.-1.));
+    }
+    #[test]
+    fn minute_bars_outside_the_daily_bar_are_dropped_and_mismatched_days_rejected(){
+        // T1 18 Nov 2026 (lead decision): a minute bar outside the day's daily low..high is missing (never clamped); a day with more than a tenth of its bars outside is not used
+        let dir=std::env::temp_dir().join(format!("mae-clamp-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let fill:String=(0..12).map(|i|format!("{{d}},09:{:02},104,105,103,104\n",i)).collect();
+        let mk=|d:&str,up:f64|{
+            let mut s=fill.replace("{d}",d);
+            for (m,o,h,l,c) in [("09:30",104.,105.,103.,104.5),("09:31",104.5,106.5,104.,106.),("09:32",106.,113.,102.,105.5),("09:33",105.5,105.6,99.5,100.)] {s+=&format!("{d},{m},{},{},{},{}\n",o+up,h+up,l+up,c+up);}
+            s};
+        let (a,b)=(mk("2020-01-02",0.),mk("2026-08-12",50.));
+        std::fs::write(dir.join("TEST.m1.csv"),format!("{a}{b}")).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n2026-08-12,{},{}\n",a.len(),a.len(),b.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        // bar 1 daily high is 112: the 09:32 bar (high 113) is missing, so only 09:33 follows the 106 entry fill, and the 101 exit fill lies in it: nothing between
+        pair(ex(&x,&one(1.,1,106.,"stop",1,101.,1)),(101./106.-1.,0.));
+        let rn:Vec<Row>=[(100.,110.,90.,105.),(104.,112.,95.,100.)].iter().zip(["2026-08-11","2026-08-12"]).map(|(&(o,h,l,c),d)|Row{ticker:"TEST".into(),date:d.into(),open:o,high:h,low:l,close:c,volume:None}).collect();
+        let mut y=Ctx::new(&rn,&rn,&[]);
+        y.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        // 2026-08-12: every bar is outside the daily bar, the day is rejected: only the fill prices count
+        pair(ex(&y,&one(1.,1,106.,"stop",1,101.,1)),(101./106.-1.,0.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn fill_price_between_ticks_still_finds_its_minute(){
+        // E5: a limit at 105.5 (e.g. 3% under a close) lies in no minute's range: the price jumped from 104.5 to 106; the minutes after the jump count
+        let dir=std::env::temp_dir().join(format!("mae-gap-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,104.5,103,104.5\n2020-01-02,09:31,106,106.2,105.9,106\n2020-01-02,09:32,106,108,105.9,107\n2020-01-02,09:33,107,107.5,105.6,105.7\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,105.5,"stop",1,100.,1)),(0.,108./105.5-1.)); // the daily fallback would give (100/105.5-1, 0)
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_limit_whose_first_touch_is_the_session_open_keeps_the_old_reading(){
+        // W4 (R4 #351 (3); stad7_fibret NIFTYBANK 2018-10-31): the session's first minute already opens through the limit, so the order was placed later in the day;
+        // the minutes before the first minute that trades the price (09:31) are not the position's path
+        let dir=std::env::temp_dir().join(format!("mae-late-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,104.5,103,103.5\n2020-01-02,09:31,104,106,104,105.8\n2020-01-02,09:32,105.8,107,105.6,106.5\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,105.5,"limit",1,106.5,1)),(0.,106.5/105.5-1.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_limit_reached_by_a_gap_counts_from_that_minute_not_from_a_later_minute_that_holds_the_price(){
+        // W2 (r3r4 18-01-2008): price jumps from 108.2 to 105.4 (through the limit 105.5), later a minute holds 105.5 again;
+        // the position lived through the low of the jump minute (104), not only what followed the later minute (low 106)
+        let dir=std::env::temp_dir().join(format!("mae-reach-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,108,108.5,107.9,108.2\n2020-01-02,09:31,105.4,105.4,104,104.5\n2020-01-02,09:32,104.5,107,104.5,106.5\n2020-01-02,09:33,106.5,108.2,106,107\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,105.5,"limit",1,100.,1)),(104./105.5-1.,108.2/105.5-1.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_stop_that_ends_at_the_days_close_price_is_still_an_intrabar_fill(){
+        // W2 (lwlts_vb_sp_tdw 05-12-2017): stop 100 equals bar 1's close by coincidence; the low after the stop (99) is not part of the trade
+        let dir=std::env::temp_dir().join(format!("mae-stopclose-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,105,103,104\n2020-01-02,09:31,104,104.5,99.9,100.5\n2020-01-02,09:32,100.5,101,99,100\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        let mut t=one(1.,1,104.5,"stop",1,100.,1);t.reason="stop".into();
+        pair(ex(&x,&t),(100./104.5-1.,0.)); // stop at 100 = the bar close
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn gap_minute_own_high_counts_after_a_fill_inside_the_gap(){
+        // review 1116d: the minute that opens beyond the fill (106, high 110) lies wholly after the fill; its own high is the MFE
+        let dir=std::env::temp_dir().join(format!("mae-gap2-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,104,104.5,103,104.5\n2020-01-02,09:31,106,110,105.9,106\n2020-01-02,09:32,106,107,105.9,106.5\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,105.5,"stop",1,100.,1)),(0.,110./105.5-1.));
         let _=std::fs::remove_dir_all(&dir);
     }
     #[test]

@@ -13,7 +13,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "30-minute forex bars, a 15-pip minimum start-bar range and 1-pip entry/stop offsets; the trend and risk-reward filters are judgement",
            &["E|after the next bar breaks the start bar's low and crosses back over its close, buy 1 pip above (p.4)", "X|stop 1 pip below the entry bar's low; exit at the entry bar's close (p.4)"]),
         nt("kdsfp_inside", "Simplest Forex Pips (inside-close candle with trend filter)", "The Simplest Forex Pips System", "kdsfp",
-           "rules not fully defined: the exit is a 10-30 pip target with an unspecified trailing stop, or 'the first strong resistance level' on the chart, and the trend average is only an example (200 SMA or EMA) (The Simplest Forex Pips System p.8, p.10, p.13); it is a forex rule (decision #205(1)) (user option: daily bars, 200-day SMA, standard exits)",
+           "rules not fully defined: the exit is a 10-30 pip target with an unspecified trailing stop, or 'the first strong resistance level' on the chart, and the trend average is only an example (200 SMA or EMA) (The Simplest Forex Pips System p.8, p.10, p.13); it is a forex rule (decision #205(1)) (user choice: daily bars, 200-day SMA, standard exits)",
            &["F|\"The 2nd - signal candle must close 'inside' the 1st - start candle\" (p.8)", "E|buy at the breakout of the high of the signal candle + 1 pip if the trend is up and the signal candle is going up (p.10)", "X|stop 1 pip below the signal candle (p.13); profit target 10-30 pips with a trailing stop (p.12)"]),
     ]
 }

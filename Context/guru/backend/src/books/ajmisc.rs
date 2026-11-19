@@ -16,7 +16,8 @@ use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 
 pub const BOOK: &str = "ajmisc";
 /// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["ajmisc_delayed_cbo", "ajmisc_r_osc", "ajmisc_tr_breakout", "ajmisc_turtle", "ajmisc_vol_rev"];
+pub const REVIEWED: &[&str] = &["ajmisc_delayed_cbo", "ajmisc_r_osc", "ajmisc_tr_breakout", "ajmisc_turtle", "ajmisc_vol_rev",
+    "ajmisc_dual_tf_ma" /* lane R2B (13 Nov 2026, R4 #297): data2 read as weekly bars */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------------------------------------ simulator
@@ -31,12 +32,13 @@ pub fn ord(k: K, ty: Ty, nm: &'static str) -> Ord { Ord { k, ty, nm } }
 
 fn buy_side(k: K) -> bool { matches!(k, K::Buy | K::XS) }
 
-pub struct Sim { pub out: Vec<Trade>, pub cur: Option<Trade>, pub pos: i8 }
+#[derive(Clone)]
+pub struct Sim { pub out: Vec<Trade>, pub cur: Option<Trade>, pub pos: i8, od: crate::intraday_ep6::Day } // od: EP6 (K62) mark of the open position
 
 impl Default for Sim { fn default() -> Self { Self::new() } }
 
 impl Sim {
-    pub fn new() -> Self { Sim { out: vec![], cur: None, pos: 0 } }
+    pub fn new() -> Self { Sim { out: vec![], cur: None, pos: 0, od: crate::intraday_ep6::Day::Plain } }
     /// TradeStation EntryPrice (0 when flat).
     pub fn ep(&self) -> f64 { self.cur.as_ref().map_or(0., |t| t.legs[0].px) }
     /// Bar index of the current entry.
@@ -50,12 +52,14 @@ impl Sim {
         if let Some(mut t) = self.cur.take() {
             t.exit_i = i; t.exit_px = px; t.signal_i = sig;
             t.reason = if matches!(k, K::XL | K::XS) { nm.to_string() } else { format!("reversed by {nm}") };
+            crate::intraday_ep6::mark(&mut t, self.od);
             self.out.push(t);
         }
         self.pos = 0;
         if matches!(k, K::Buy | K::Short) {
             let dir = if k == K::Buy { 1. } else { -1. };
             self.pos = dir as i8;
+            self.od = crate::intraday_ep6::Day::Plain;
             self.cur = Some(Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] });
         }
         true
@@ -65,7 +69,11 @@ impl Sim {
     pub fn on_close(&mut self, x: &Ctx, i: usize, k: K, nm: &str) -> bool { let p = self.pos; self.apply(i, i, x.c[i], k, nm, p, "close") }
 
     /// Bar j with the orders generated at the close of bar j-1.
-    pub fn bar(&mut self, x: &Ctx, j: usize, ords: &[Ord]) {
+    pub fn bar(&mut self, x: &Ctx, j: usize, ords: &[Ord]) { self.bar_ep6(x, j, ords, false) }
+
+    /// `bar` with EP6 (#243, lane K62): with `on` (intraday_ep6::on for the id) the path after the open is walked as segments,
+    /// and an order-dependent bar on its real 1-minute path where minutes exist; off = `bar` unchanged.
+    pub fn bar_ep6(&mut self, x: &Ctx, j: usize, ords: &[Ord], on: bool) {
         let (o, h, l, c) = (x.o[j], x.h[j], x.l[j], x.c[j]);
         let pos_open = self.pos;
         let sig = j.saturating_sub(1);
@@ -82,6 +90,41 @@ impl Sim {
                 };
                 if at_open && self.apply(j, sig, o, q.k, q.nm, pos_open, kind(q.ty)) { done[n] = true; }
             }
+        }
+        if on {
+            use crate::intraday_ep6::{bar_segs, remark, resolve, Ev, Seg};
+            let walk = |st: &mut (Sim, Vec<bool>), segs: &[Seg]| -> Vec<Ev> {
+                let mut ev = vec![];
+                for g in segs {
+                    let (a, b) = (g.a, g.b);
+                    if a == b { continue; }
+                    let up = b > a;
+                    let mut cand: Vec<(f64, usize)> = ords.iter().enumerate().filter(|(n, _)| !st.1[*n]).filter_map(|(n, q)| {
+                        let lv = match q.ty { Ty::Mkt => return None, Ty::Stop(v) | Ty::Lim(v) => v };
+                        let trig = match q.ty { Ty::Stop(_) => buy_side(q.k) == up, _ => buy_side(q.k) != up };
+                        let inside = if up { lv > a && lv <= b } else { lv < a && lv >= b };
+                        (trig && inside).then_some((lv, n))
+                    }).collect();
+                    cand.sort_by(|p, q| {
+                        let c = if up { p.0.total_cmp(&q.0) } else { q.0.total_cmp(&p.0) };
+                        c.then_with(|| (!matches!(ords[p.1].k, K::XL | K::XS)).cmp(&!matches!(ords[q.1].k, K::XL | K::XS)))
+                    });
+                    for (lv, n) in cand {
+                        let px = g.fill(lv);
+                        if !st.1[n] && st.0.apply(j, sig, px, ords[n].k, ords[n].nm, pos_open, kind(ords[n].ty)) { st.1[n] = true; ev.push(Ev { k: n as u8, px, up }); }
+                    }
+                }
+                ev
+            };
+            let keep = std::mem::take(&mut self.out);
+            let mut st = (self.clone(), done);
+            let day = resolve(x, j, true, h - o <= o - l, &mut st, |s, hf| walk(s, &bar_segs(o, h, l, c, hf)), &walk);
+            *self = st.0;
+            let mut today = std::mem::replace(&mut self.out, keep);
+            for t in today.iter_mut() { remark(t, day); }
+            self.out.extend(today);
+            if self.pos != 0 { self.od = self.od.worst(day); }
+            return;
         }
         let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
         for s in path.windows(2) {
@@ -105,7 +148,7 @@ impl Sim {
     }
 
     pub fn done(mut self, x: &Ctx, to: usize) -> Vec<Trade> {
-        if let Some(mut t) = self.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; self.out.push(t); }
+        if let Some(mut t) = self.cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; crate::intraday_ep6::mark(&mut t, self.od); self.out.push(t); }
         self.out
     }
 }
@@ -154,6 +197,7 @@ const TRBO: &str = "ajmisc_tr_breakout";
 const ROSC: &str = "ajmisc_r_osc";
 const TURT: &str = "ajmisc_turtle";
 const VREV: &str = "ajmisc_vol_rev";
+const DUAL: &str = "ajmisc_dual_tf_ma";
 
 const NOTE: &str = "Angus Jackson's Omega-list post of TradeStation 2000i code (no market, bar size or results given). TS2000i syntax: \"Sell\" opens a short and reverses a long; \"ExitLong/ExitShort\" close. \
 Run on daily bars of the cash indices (instrument swap; the post names no market). Fills: vault TradeStation daily-bar convention (see ajmisc.rs header). India: instrument swap; index shorts hypothetical.";
@@ -192,9 +236,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Sell next bar at Open of next bar - Value1 stop\"",
             "X|Stop and reverse: no other exit in the code."],
             "AvgTrueRange = simple average of TradeStation TrueRange (help.tradestation.com). "),
-        def("ajmisc_dual_tf_ma", "Dual time frame moving average (13-bar XAverage on data1 and data2)", Status::NotTestable("data2 is a second time frame the post never names, so the confirming series is unknown"), &[
+        def("ajmisc_dual_tf_ma", "Dual time frame moving average (13-bar XAverage on data1 and data2)", Status::Live, &[
+            "F|\"Inputs: Price(Close), Length(13);\"",
             "E|\"IF XAverage(Price,Length) > XAverage(Price,Length)[1] and XAverage(Price,Length) of data2 > XAverage(Price,Length)[1] of data2 then Buy this bar on Close\"",
-            "X|\"IF XAverage(Price,Length) < XAverage(Price,Length)[1] then ExitLong this bar on Close\"; short mirror"], NOTE),
+            "X|\"IF XAverage(Price,Length) < XAverage(Price,Length)[1] then ExitLong this bar on Close\"",
+            "E|\"IF XAverage(Price,Length) < XAverage(Price,Length)[1] and XAverage(Price,Length) of data2 < XAverage(Price,Length)[1] of data2 then Sell this bar on Close\" (TS2000i Sell: short, reversing a long). The code prints no ExitShort: a short ends only when a Buy reverses it.",
+            "F|Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated in the post: (1) which series data2 is; vault reading: weekly bars of the same instrument (weeks from Monday; p.d2 = 2: monthly bars); (2) which data2 bar a daily bar sees; vault reading: the last weekly bar completed at or before that day's close (a week completes on its last trading day, as TradeStation closes a weekly bar on the week's last daily bar). XAverage = TradeStation's: alpha 2/(Length+1), started at the first price."], NOTE),
         def("ajmisc_divergence", "Divergence (RSI(14) bullish/bearish divergence, 5-bar breakout stop)", Status::NotTestable("BullishDivergence / BearishDivergence are TradeStation library functions whose code is not in the source"), &[
             "E|\"IF BullishDivergence(Close,Osc,2,30) = 1 Then Buy Highest(High,5) + 1 point Stop\"; \"IF BearishDivergence(Close,Osc,2,30) = 1 Then Sell Lowest(Low,5) - 1 point Stop\""], NOTE),
     ]
@@ -221,6 +268,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         ROSC => vec![p("avg_len", "AvgLen", 30., 5., 100., 1.), p("pr_len", "PrctRLen", 10., 3., 40., 1.), p("buy_lvl", "BuyLvl", 20., 5., 50., 5.), p("sell_lvl", "SellLvl", 80., 50., 95., 5.)],
         TURT => vec![p("entry_len", "EntryLen", 20., 5., 100., 1.), p("exit_len", "ExitLen (short exit)", 10., 2., 50., 1.), p("long_exit_len", "Long exit length (code: EntryLen)", 20., 2., 100., 1.)],
         VREV => vec![p("lkbk", "lkbk (ATR bars)", 5., 1., 30., 1.), p("ent", "Ent (ATR multiple)", 0.65, 0.1, 2., 0.05)],
+        DUAL => vec![p("length", "Length (XAverage bars, code input 13)", 13., 2., 100., 1.), p("d2", "data2 bars: 1 = weekly (vault reading), 2 = monthly", 1., 1., 2., 1.)],
         _ => return None,
     })
 }
@@ -228,6 +276,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if from >= to || to >= x.r.len() { return None; }
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+    if id == DUAL { return Some(dual_tf(x, from, to, g("length", 13.).round().max(1.) as usize, if g("d2", 1.).round() >= 2. { 2 } else { 1 })); }
     let n = x.c.len();
     let mut s = Sim::new();
     match id {
@@ -293,10 +342,57 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(s.done(x, to))
 }
 
+/// TradeStation XAverage: alpha 2/(n+1), the first value = the first price.
+fn xaverage(v: &[f64], n: usize) -> Vec<f64> {
+    let a = 2. / (n as f64 + 1.);
+    let mut out = Vec::with_capacity(v.len());
+    for (i, &x) in v.iter().enumerate() { out.push(if i == 0 { x } else { out[i - 1] + a * (x - out[i - 1]) }); }
+    out
+}
+
+/// Angus Jackson's dual time frame MA (lane R2B readings: data2 = weekly (tf 1) or monthly (tf 2) bars of the same series; a
+/// daily bar sees the last data2 bar completed at or before its close). Orders "this bar on close": Buy (reverses a short),
+/// ExitLong, Sell (short, reverses a long); no ExitShort in the code.
+fn dual_tf(x: &Ctx, from: usize, to: usize, n: usize, tf: u8) -> Vec<Trade> {
+    let c = &x.c;
+    let ends = super::apta::bars(x, tf);
+    let w = xaverage(&ends.iter().map(|&i| c[i]).collect::<Vec<_>>(), n);
+    let d1 = xaverage(c, n);
+    let mut b = super::tselhs::Book::new();
+    let mut k = 0usize; // ends[..k] completed at or before bar i
+    for i in 0..=to {
+        while k < ends.len() && ends[k] <= i { k += 1; }
+        if i < from || i == 0 || k < 2 { continue; }
+        let (up1, dn1) = (d1[i] > d1[i - 1], d1[i] < d1[i - 1]);
+        let (up2, dn2) = (w[k - 1] > w[k - 2], w[k - 1] < w[k - 2]);
+        if up1 && up2 { b.enter(1., i, c[i], "close"); }
+        if dn1 && b.side() > 0. { b.exit(i, c[i], "ExitLong: XAverage turned down"); }
+        if dn1 && dn2 { b.enter(-1., i, c[i], "close"); }
+    }
+    b.done(to, c[to])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Row;
+    #[test]
+    fn dual_tf_buys_only_when_the_completed_week_rises_and_never_exits_shorts_itself() {
+        // 2001-01-01 is a Monday: the weekdays of Jan-Mar 2001, rising then falling
+        let mut r: Vec<Row> = vec![];
+        let mut wd = 0;
+        for (m, days) in [(1, 31), (2, 28), (3, 31)] { for dd in 1..=days { if wd < 5 && r.len() < 60 {
+            let i = r.len(); let v = if i < 30 { 100. + i as f64 } else { 130. - 2. * (i - 30) as f64 };
+            r.push(Row { ticker: "T".into(), date: format!("2001-{m:02}-{dd:02}"), open: v, high: v, low: v, close: v, volume: None }); }
+            wd = (wd + 1) % 7; } }
+        assert_eq!(r[0].date, "2001-01-01");
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run(DUAL, &x, 0, 59, &Params::new()).unwrap();
+        assert_eq!(t[0].dir, 1.);
+        assert!(t[0].legs[0].i >= 9); // needs two completed weeks (the second ends on bar 9)
+        assert!(t.iter().any(|z| z.dir < 0.));
+        for z in t.iter().filter(|z| z.dir < 0. && !z.open) { assert!(z.reason == "reversed"); }
+    }
     fn ctx(bars: &[(f64, f64, f64, f64)]) -> Vec<Row> {
         bars.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect()
     }

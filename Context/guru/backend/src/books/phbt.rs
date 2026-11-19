@@ -4,10 +4,14 @@
 //! put/call, Rydex or survey data are NeedsData; judgement material is NotTestable. Sources: library/phbt/.
 use crate::connors::{sma, claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/headley/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly", "phbt_rs_lines"];
+pub const REVIEWED: &[&str] = &["phbt_volume_bb" /* R4 #265 (1), lane K68 */, "phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly", "phbt_rs_lines"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "phbt";
+/// Lane I1: NSE stock-option put/call volume ratio (NSE F&O bhavcopy), India engine only.
+pub const PCR: &str = "NSE_EQ_PCR";
+/// Lane I1: admitted as an Indian application (own admission block below; gate `allowed` = the NSE indices).
+pub const REVIEWED_I1: &[&str] = &["phbt_pc_bb_long"];
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mk = |id, name, group, dir, status, rules, notes, claim| StrategyDef {
@@ -52,13 +56,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Long Exit: BarsSinceEntry = 10 (p.55).",
               "E|Short Entry: Volume of Data2[2] > BollingerBand(Volume of Data2,21,-2)[2] and Volume of Data2[3] [?] BollingerBand(Volume of Data2,21,-2)[3] or Volume of Data2[4] < BollingerBand(Volume of Data2,21,-2)[4] (p.55). Read as: volume 2 days ago above its lower band AND (3 or 4 days ago below its lower band).",
               "X|Short Exit: BarsSinceEntry = 2 (p.55).",
-              "F|Orders: the code gives no 'on Close'; this book's sentiment systems fill \"on the following morning's opening price\" (p.10), = TradeStation's default next-bar market order. Signals on the close, entries and time exits at the next open; opposite signal reverses; same-direction signal while in position ignored. Data2 = the traded ETF's own volume."],
+              "F|Orders (R4 #264 (2), lane K67): the p.55 code states no fill. Default: entries, reversals and the 10-bar / 2-bar time exits fill at the close of the signal bar, the reading that reproduces both printed summaries (Figs 4.5 and 4.6b). Option p.fill = 1: the next morning's open (the earlier reading, taken from the put/call system of p.10). Opposite signal reverses; same-direction signal while in position ignored. Data2 = the traded ETF's own volume."],
             "Book: Fig 4.5 QQQ 03/10/1999-09/24/2001 24 trades 67% net 32.38 points; Fig 4.6b SPY 02/03/1993-09/24/2001 84 trades 71% net 67.95 points (p.52-53). Fig 4.8 (QQQ traded on combined QQQ+SPY volume) is not coded. India: NIFTY 50 index volume (where the vault has volume).",
             claim("84", "71%", "0.81 SPY points (net 67.95)", "9 bars winners / 9 bars losers", "SPY daily 02/03/1993-09/24/2001, Fig 4.6b p.53")) },
-        mk("phbt_pc_bb_long", "CBOE equity put/call Bollinger buy (15-day hold)", "Ch. 1 · The CBOE Equity Put/Call Ratio", "Long",
-            Status::NeedsData("the CBOE equity put/call ratio, daily (Big Trends in Trading p.10, p.14), which is not in the vault (CBOE publishes it from Nov 2003) and cannot be built from the SPY/QQQ/IWM chains we hold; there is no NSE equity put/call history either"),
-            &["E|Long Entry: Close < BollingerBand(Close,21,2) and Close[1] > BollingerBand(Close,21,2)[1] or Close[2] > BollingerBand(Close,21,2)[2] or Close[3] > BollingerBand(Close,21,2)[3] (p.14; Close = the put/call ratio)", "E|\"you implement your buy order on the following morning's opening price\" (p.10)", "X|Long Exit: BarsSinceEntry=15 (p.14)"],
-            "Book Fig 1.7 p.13 (with a 50-day MA filter whose exact rule is not printed): Nasdaq Composite 01/02/1990-09/21/2001, 114 trades, 70%, net 3532.37 points. The printed short side (p.14) contradicts the text (exit after 2 bars vs 'eight trading days' on p.8, +2 band instead of -2) and is not listed as testable.", None),
+        StrategyDef { needs_series: &[PCR], ..mk("phbt_pc_bb_long", "CBOE equity put/call Bollinger buy (15-day hold)", "Ch. 1 · The CBOE Equity Put/Call Ratio", "Long",
+            Status::Live,
+            &["E|Long Entry: Close < BollingerBand(Close,21,2) and Close[1] > BollingerBand(Close,21,2)[1] or Close[2] > BollingerBand(Close,21,2)[2] or Close[3] > BollingerBand(Close,21,2)[3] (p.14; Close = the put/call ratio)", "E|\"The buy signal occurs at the closing price on January 10th. Therefore, you implement your buy order on the following morning's opening price.\" (p.9)", "X|Long Exit: BarsSinceEntry=15 (p.14); \"hold the Nasdaq Composite for 15 days\" (p.8)",
+              "F|[reading] The put/call close is below its upper band today AND it closed above the band on at least one of the 3 prior days (the case study p.9-10: 'crossed back below the upper band ... after a 55 percent number occurred the prior day'); a strict AND-before-OR parse of the printed line would fire on any day 2-3 days after a close above the band.",
+              "F|[reading] The 15 days count from the signal day: out at the close of the 15th trading day after it (Feb 16 2000 signal -> exit March 9 at the close, 'held for the 15 trading days', p.10). A buy signal while long is ignored ('stay with the signal', p.10). Bollinger = 21-day simple average +/- 2 population standard deviations of the ratio.",
+              "F|[Indian application, lane I1] Put/call = NSE stock options (OPTSTK) put contracts traded / call contracts traded that day, all stocks summed, from the NSE F&O bhavcopy (NSE stock options from July 2001); traded on the NSE index at the next open."],
+            "Indian application of a US-market rule (lane I1, 13 Nov 2026): the book read the CBOE equity put/call ratio (CBOE equity options, volume puts / calls) and traded the Nasdaq Composite; India uses the NSE stock-option put/call volume ratio from the NSE F&O bhavcopy and trades NSE indices. The Bollinger test is scale-free, so 21 / 2 stay. Book Fig 1.7 p.13 (with a 50-day MA filter whose exact rule is not printed): Nasdaq Composite 01/02/1990-09/21/2001, 114 trades, 70%, net 3532.37 points; p.8: 89 buy signals since 1990, 73% profitable (no filter stated). The printed short side (p.14) contradicts the text (exit after 2 bars vs 'eight trading days' on p.8, +2 band instead of -2) and is not coded, so a sell signal does not end a long here. The p.13-14 advice to exit a trade not profitable after five days is prose, not in the printed code, and is not applied.", None) },
         mk("phbt_pc_weekly80", "Weekly equity put/call > 80% buy, 10-week minimum, 10-week MA exit", "Ch. 1 · The CBOE Equity Put/Call Ratio", "Long",
             Status::NeedsData("the CBOE weekly equity put/call ratio from 1990 (Big Trends in Trading p.15-17), which is not in the vault and cannot be built from the SPY/QQQ/IWM chains we hold"),
             &["F|\"when the weekly equity put/call ratio finished over 80 percent on a given week\" (p.15)", "E|\"Once the market confirms this with a technical breakout as defined by a weekly close above the high of five weeks ago, you should buy\" (p.15; the confirmation window is not stated)", "X|\"You hold this trade for 10 weeks at a minimum ... then trail with a 10-week moving average so that any weekly close in the Nasdaq Composite under the 10-week average after the first 10 weeks have passed will take you out\" (p.15)"],
@@ -136,10 +143,15 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("len", "Band average length (bars)", 20., 10., 40., 1.), p("factor", "Band width factor", 2., 1., 4., 0.5),
             p("confirm", "Consecutive closes above the upper band", 2., 1., 4., 1.),
         ]),
+        "phbt_pc_bb_long" => Some(vec![
+            p("bb_n", "Put/call Bollinger length", 21., 10., 40., 1.), p("bb_k", "Put/call Bollinger standard deviations", 2., 1., 3., 0.25),
+            p("hold", "Exit at the close N trading days after the signal day", 15., 2., 30., 1.),
+        ]),
         "phbt_volume_bb" => Some(vec![
             p("bb_n", "Volume Bollinger length", 21., 10., 40., 1.), p("bb_k", "Volume Bollinger standard deviations", 2., 1., 3., 0.25),
             p("hold_long", "Long exit: BarsSinceEntry", 10., 2., 20., 1.), p("hold_short", "Short exit: BarsSinceEntry", 2., 1., 10., 1.),
             p("side", "0 long and short (book), 1 long only, -1 short only", 0., -1., 1., 1.),
+            p("fill", "Fills: 0 = at the signal bar's close (fits Figs 4.5/4.6b; default), 1 = at the next open (option)", 0., 0., 1., 1.),
         ]),
         _ => None,
     }
@@ -305,29 +317,51 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             finish(&mut out, cur, x, to);
         }
+        "phbt_pc_bb_long" => {
+            let Some(v) = x.series(PCR) else { return Some(out) };
+            let (up, _) = bands(v, u("bb_n").max(2), g("bb_k"));
+            let hold = u("hold").max(1);
+            let mut cur: Option<Trade> = None;
+            for i in from.max(3)..=to {
+                if let Some(t) = cur.as_ref() {
+                    if i - t.signal_i == hold { out.push(close_t(cur.take().unwrap(), i, x.c[i], i, "BarsSinceEntry exit (15 days after the signal)")); }
+                }
+                if cur.is_some() || i == to { continue; }
+                if v[i] < up[i] && (1..=3).any(|k| v[i - k] > up[i - k]) {
+                    let mut t = open_t(1., i + 1, x.o[i + 1], "open");
+                    t.signal_i = i;
+                    cur = Some(t);
+                }
+            }
+            finish(&mut out, cur, x, to);
+        }
         "phbt_volume_bb" => {
             let v: Vec<f64> = x.r.iter().map(|r| r.volume.filter(|z| *z > 0.).unwrap_or(f64::NAN)).collect();
             let (bn, hl, hsh) = (u("bb_n").max(2), u("hold_long").max(1), u("hold_short").max(1));
             let side = g("side").round();
             let (up, lo) = bands(&v, bn, g("bb_k"));
             let mut cur: Option<Trade> = None;
-            for i in from.max(4)..to {
-                // decisions on the close of i, fills at the open of i + 1
+            // decisions on the close of i; R4 #264 (2), lane K67: filled at that close (default) or at the open of i + 1 (option)
+            let nxt = g("fill").round() >= 1.;
+            let at = |i: usize| if nxt { (i + 1, x.o[i + 1]) } else { (i, x.c[i]) };
+            for i in from.max(4)..if nxt { to } else { to + 1 } {
                 if let Some(t) = cur.as_ref() {
                     let hold = if t.dir > 0. { hl } else { hsh };
                     if i - t.legs[0].i == hold {
-                        out.push(close_t(cur.take().unwrap(), i + 1, x.o[i + 1], i, "BarsSinceEntry exit"));
+                        let (j, px) = at(i);
+                        out.push(close_t(cur.take().unwrap(), j, px, i, "BarsSinceEntry exit"));
                     }
                 }
                 let long = v[i] > up[i] && (v[i - 1] < up[i - 1] || v[i - 2] < up[i - 2] || v[i - 3] < up[i - 3]);
                 let short = v[i - 2] > lo[i - 2] && (v[i - 3] < lo[i - 3] || v[i - 4] < lo[i - 4]);
                 let dir = match (long, short) { (true, false) => 1., (false, true) => -1., _ => continue };
                 if cur.as_ref().is_some_and(|t| t.dir == dir) { continue; }
+                let (j, px) = at(i);
                 if let Some(t) = cur.take() {
-                    out.push(close_t(t, i + 1, x.o[i + 1], i, "reversed by an opposite volume signal"));
+                    out.push(close_t(t, j, px, i, "reversed by an opposite volume signal"));
                 }
                 if side == 0. || side == dir {
-                    let mut t = open_t(dir, i + 1, x.o[i + 1], "open");
+                    let mut t = open_t(dir, j, px, if nxt { "open" } else { "close" });
                     t.signal_i = i;
                     cur = Some(t);
                 }
@@ -355,6 +389,18 @@ mod tests {
         let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
         let mp = (5 * doy + 2) / 153; let d = doy - (153 * mp + 2) / 5 + 1; let m = if mp < 10 { mp + 3 } else { mp - 9 };
         (yoe + era * 400 + if m <= 2 { 1 } else { 0 }, m, d)
+    }
+    #[test]
+    fn pc_bb_long_buys_next_open_after_a_close_back_under_the_band_and_exits_15_days_after_the_signal() {
+        let r = rows(80);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let mut v: Vec<f64> = (0..80).map(|i| 0.5 + 0.01 * ((i % 3) as f64)).collect();
+        v[40] = 1.5; v[41] = 0.5; // above the upper band on bar 40, back under it on bar 41
+        x.extra.insert(PCR.into(), v);
+        let t = run("phbt_pc_bb_long", &x, 0, 79, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1, "{t:?}");
+        assert_eq!((t[0].legs[0].i, t[0].signal_i, t[0].exit_i, t[0].open), (42, 56, 56, false)); // signal 41 -> open 42; close of 41 + 15
+        assert!(run("phbt_pc_bb_long", &Ctx::new(&r, &r, &[]), 0, 79, &Params::new()).unwrap().is_empty()); // no series, no trades
     }
     #[test]
     fn days_and_weeks() {
@@ -401,6 +447,12 @@ mod tests {
 // Instrument admission: Headley 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/headley/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 // Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+// Lane I1 (13 Nov 2026): the put/call Bollinger buy as an Indian application (NSE stock-option put/call, NSE indices only).
+pub const ADMISSION_I1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "phbt" && REVIEWED_I1.contains(&def.id),
+    label: "Indian application of a US-market rule: the book read the CBOE equity put/call ratio and traded the Nasdaq Composite; here the ratio is the NSE stock-option put/call volume ratio (NSE F&O bhavcopy) and the trades are on NSE indices. Not the author's test.",
+    basis: "Big Trends in Trading (Wiley 2002) ch.1 p.8-14 (page images read again by OCR, lane I1): TradeStation Long Entry/Long Exit code p.14, next-morning-open entry p.9, 15-day hold p.8 and the Feb-Mar 2000 example p.10. Independent Python reference authors/i1/w/i1_ref.py.",
+};
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| (def.book=="phbt" && crate::books::phbt::reviewed(def.id)) || (def.book=="phbttk" && crate::books::phbttk::reviewed(def.id)),
     label: "Price Headley tested the VIX systems on the S&P 100 (OEX) with the CBOE VIX and applied Acceleration Bands and Percent R to US stocks; runs on other indices, ETFs and single stocks (US and India, India VIX in India) are a declared application.",

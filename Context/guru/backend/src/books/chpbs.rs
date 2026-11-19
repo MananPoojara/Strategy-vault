@@ -5,6 +5,9 @@ use crate::books::chbta2::{hh1, ll, none_exit, run_sys, Kind, Pos, Sys};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "chpbs";
+/// Lane K74 (R4 #277, #196(2)): the workshop's $1,500 initial stop on the named contract SPU5 ($500 per S&P point) = 3.00 S&P
+/// index points, so the rule runs on SPX only (gate list), from 2014 (real opens, clamp_open). Admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["ch_pbs_cbpb_trail3"];
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, status, rules, notes| StrategyDef { id, name, group: "TAG XVIII workshop · patterns", session: 0, dir, status,
@@ -16,8 +19,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Buy on the open of next day\" (p.23); \"Long trades only!\" (p.21)",
             "X|\"CB-PB PATTERN ON SPU5 / AFTER NEW 20 DAY HIGH, SET TRAILING STOP AT 3-DAY LOW\" (p.24, chart 11)",
             "X|Read: a new 20-day high = a bar from the entry bar on whose high is above the highest high of the 20 bars before it; from that bar's close a sell stop sits at the lowest low of the last 3 bars (that bar included), re-set every bar; a gap through it fills at the open",
-            "X|No initial stop on the chart: stop_pts (index points, 0 = off) is a labelled option; the workshop's CB-PB tests use $1,500 (p.23) = 3 S&P points at $500/point (BTA p.134)"],
-            "Workshop pp.21-24 (slides 33-36, chart 11: S&P-500 Sep-95 futures, Apr-Jul 1995, entries/exits shown, no statistics). Index instead of futures. Until a new 20-day high is made in the trade there is no exit (the book gives none): the trade stays open. One position at a time; a signal while long is ignored."),
+            "X|Initial stop: the workshop's CB-PB test strategy uses a \"$1,500 initial stop\" (p.23); on the chart's contract SPU5 (S&P 500 Sep-95, $500 per point) that is exactly 3.00 S&P index points below the entry (param stop_pts; 0 = the chart's trail only). Read [lane K74, R4 #277]: the chart prints no stop of its own, so the workshop's test stop is the default",
+            "X|Read: before the trail is armed the 3.00-point stop alone protects the trade; afterwards the higher of the two stops counts"],
+            "Workshop pp.21-24 (slides 33-36, chart 11: S&P-500 Sep-95 futures, Apr-Jul 1995, entries/exits shown, no statistics). SPX only (lane K74, decisions #196(2), #277): the 3.00-point stop is the $1,500 of the named contract, so it is literal S&P index points and no other instrument is published; results from 2014 (real SPX opens, the entry is at the open). One position at a time; a signal while long is ignored."),
         d("ch_pbs_bfp_weekly_stocks", "Bottom-fishing pattern on stocks (weekly)", "Long", NotTestable("rules incomplete: the slides give only (H-L) > 1 and, for one chart, a trailing 30-week-low exit; the weekly low lookback, the 'recently' window, the entry order, the stop and the Goodyear exit are not stated, and Chande says he has no systematic test data ('two well chosen examples')"), &[
             "F|\"BFP on Stocks: Use weekly data ... Don't have systematic test data ... Two 'well chosen' examples\" (p.18, slide 29)",
             "E|Caterpillar weekly: \"BOTTOM FISHING PATTERN ON STOCKS (H-L) > 1 Exit on trailing 30 week low\" (p.19, chart 8)",
@@ -48,7 +52,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("low_n", "New N-day low", 5., 2., 10., 1.),
             p("nh_n", "New N-day high arms the trail", 20., 5., 40., 5.),
             p("trail_n", "Trailing stop at N-day low", 3., 1., 10., 1.),
-            p("stop_pts", "Initial stop, index points (0 = off)", 0., 0., 50., 1.)]),
+            p("stop_pts", "Initial stop, S&P index points ($1,500 / $500 on SPU5 = 3; 0 = off)", 3., 0., 50., 1.)]),
         _ => None,
     }
 }
@@ -98,13 +102,27 @@ mod tests {
         r[30].high = 111.; r[30].low = 99.5;      // new 20-day high on bar 30 -> stop = min(L[28..30]) = 99 for bar 31
         r[31].open = 100.; r[31].low = 98.5;      // hits 99
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("ch_pbs_cbpb_trail3", &x, 0, 59, &Params::new()).unwrap();
+        let t = run("ch_pbs_cbpb_trail3", &x, 0, 59, &stop0()).unwrap();
         assert_eq!(t[0].legs[0].i, 26); assert_eq!(t[0].legs[0].px, 100.5);
         assert_eq!(t[0].exit_i, 31); assert_eq!(t[0].exit_px, 99.);
         // without the new high the trade never exits
         let mut r2 = r.clone(); r2[30].high = 101.;
         let x2 = Ctx::new(&r2, &r2, &[]);
-        let t2 = run("ch_pbs_cbpb_trail3", &x2, 0, 59, &Params::new()).unwrap();
+        let t2 = run("ch_pbs_cbpb_trail3", &x2, 0, 59, &stop0()).unwrap();
         assert_eq!(t2.len(), 1); assert!(t2[0].open);
+        // the default 3.00-point initial stop (workshop $1,500 / $500 per point) protects it before the trail is armed
+        let mut r3 = r2.clone(); r3[28].low = 97.;
+        let x3 = Ctx::new(&r3, &r3, &[]);
+        let t3 = run("ch_pbs_cbpb_trail3", &x3, 0, 59, &Params::new()).unwrap();
+        assert_eq!((t3[0].exit_i, t3[0].exit_px, t3[0].reason.as_str()), (28, 97.5, "Initial stop"));
+        assert!(crate::gate::get("ch_pbs_cbpb_trail3").is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open));
     }
+    fn stop0() -> Params { [("stop_pts".to_string(), 0.0)].into_iter().collect() }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 / #196(2)): CB-PB with the 3-day-low trail, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Tushar Chande showed this CB-PB trade on S&P 500 futures (SPU5, 1995) and tested CB-PB with a $1,500 initial stop per contract, which on that contract ($500 per index point) is 3.00 points. It runs on the S&P 500 index (SPX) only, the 3.00 points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index. Other instruments would need a conversion the workshop does not give.",
+    basis: "Tushar Chande: Developing & Implementing Pattern-Based Trading Systems (TAG XVIII workshop 1996, INO workbook) p.21-24 (CB-PB definition, test strategy with the $1,500 initial stop, chart 11 'CB-PB pattern on SPU5 after new 20 day high, set trailing stop at 3-day low'), Beyond Technical Analysis p.103 (the CB-PB TradeStation line); decisions #196(2), #240, #277; independent check authors/titles-1030/K74w (k74_spx.py).",
+};

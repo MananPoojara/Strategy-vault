@@ -86,7 +86,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|\"1. LF > 20 2. Close > 200MA 3. RSI(2) < 5 4. HV100 < 20 and HV100 > 15 5. Close > 10\" (Session 2 slide 17)", "E|\"6. Buy at next open.\"",
             "X|\"1. If close is X% above or below entry price then exit next open.\" (slide 18)"], "", None),
         d("pstc08_espy", "E-SPY (SPY core + R5 5% limit stock sleeve)", "Session 4 · E-SPY", "Long",
-          NeedsData("a US stock universe on one portfolio equity curve (10 R5 positions ranked by HV next to a 90% SPY holding); the engine runs one instrument at a time"),
+          NotTestable("held (lane K56, EP5): the slides never define the Liquidity Factor of rule 1 (\"LF > 3 (or LF >10 for more bigger cap stocks)\", Session 4 slide 19), and give no cap size for switching to LF > 10; the vault's LF reading is a ratio to the NIFTY 50 benchmark with no US counterpart. The basket account (EP5) could hold the SPY core and the 10% R5 slots, but the stock filter is not complete"),
           &["F|Long 100% SPY, replace 10% with R5 + 5% limit (Session 4 slides 17-23)", "E|\"R5 with 5% limit: 1 LF>3 (or LF>10 for bigger caps) 2 HV100>30 3 enter when limit price = 5% below close of setup\"",
             "X|\"1 RSI(2)>75 2 exit on open of following bar\"; highest HV first, max 10 positions"], "", None),
         d("pstc08_options", "ETF options, STC Options Income Program, Busted Options", "Session 8 · Options", "Long/Short",

@@ -90,7 +90,7 @@ mod tests {
         let k = r.iter().position(|b| b.date == "2002-12-02").unwrap();
         assert!(t.iter().any(|q| q.legs[0].i < k && q.exit_i >= k));
         let def = catalogue().remove(0);
-        assert!(crate::instrument_policy::check(&def, "NIFTY 50", false).is_some());
+        assert!(crate::instrument_policy::check(&def, "NIFTY 50", false).is_none()); // R4 #364: India on derived NSE closures
         assert!(crate::instrument_policy::check(&def, "SPY", false).is_none());
     }
 }
@@ -98,6 +98,6 @@ mod tests {
 // Instrument admission: Kaeppel S&C V.20:12 seasonal index 2026-11-02 (titles lane K15). US only (instrument_policy).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "sckcal" && reviewed(def.id),
-    label: "Kaeppel tested the Nasdaq Composite, which the vault does not hold; runs on US indices, ETFs and stocks are a declared application (US exchange holidays: US instruments only).",
+    label: "Kaeppel tested the Nasdaq Composite, which the vault does not hold; runs on US indices, ETFs and stocks are a declared application (US exchange holidays: US instruments only). India (R4 #364, declared adaptation under R4 #340, UNVERIFIED): the closures are the weekdays with no NIFTY 50 bar in the vault's daily file (nse-holidays-derived; a data gap and a holiday cannot be told apart), counted exactly as the US holiday list is; no NSE holiday list is held. Only the pre-holiday tendency changes; the other tendencies are unchanged.",
     basis: "Technical Analysis of Stocks & Commodities V.20:12 (Dec 2002) pp.52-61; tendencies as live kpss cards; independent check authors/titles-1030/K15w/k15_ref.py",
 };

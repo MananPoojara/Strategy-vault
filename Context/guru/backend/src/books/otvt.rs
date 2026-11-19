@@ -139,8 +139,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "At-the-money put (otm% = 0), priced like the put-selling version. Stop: the index rises 10 S&P points (1.28% of the OEX 781.98 example level) above the entry close, priced at that level or the open if it gaps through. Return = put P&L / underlying price. Runs only on SPY and NIFTY 50, the two tickers whose own option IV the volatility index measures; other tickers return a data gap (their numbers would be priced off another index's IV) [Not from the book]. Model biases [Not from the book]: p.r = risk-free rate (default 0; about 5 for 1990s US, 6.5 for India; r = 0 overprices puts about 8-10%); p.vxo_adj=1 scales VXO by sqrt(22/30) to undo its trading-day upward bias (Carr & Wu 2006); no skew (optimistic for sold puts in sell-offs); no bid/ask. Equity inside a trade moves with the underlying (delta 1), so max DD and Sharpe are approximate; closed-trade returns are exact.", None)),
         d("otvt_split_call_selling", "Sell calls after stock-split announcements", "Options on Stock Splits", "Short", NotTestable("rules not fully defined: after a split announcement the article sells the calls while their implied volatility stays inflated (Barnes & Noble, 21 Aug 1997) but gives no volatility threshold, strike, exit or stop (Options on Stock Splits, PTJ Dec 1997, book p.21-23); it would also need single-stock option prices and split-announcement dates"), &[], SPLIT,
           "Barnes & Noble example (Aug 21, 1997): 100-day HV 27%, call IV 39.3%. No trade rule. Not applicable to index data.", None),
-        d("otvt_sector_options_overpriced", "Overpriced sector options · sell IV >= 3x HV50", "Exploiting Overpriced Stock Sector Options", "Long/Short", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), IV, SECTOR,
-          "Per-ticker IV30 stands in for both legs' IV (no IV30 series is shipped, so this is a data gap until real per-ticker IV or option data exists; one ATM IV for both legs reduces the test to index IV vs HV50). \"Combined\" read as the SUM of put and call IV (2 x IV30 >= 3 x HV50); p.comb=0 reads it as each leg's IV >= 3 x HV50 (the ptjopt transcription's reading). HV50 annualised with 260 days (the book's own factor). Strikes otm% either side of the close (book: 195/200 around 197.02), dte 19 (REIT example). Stop checked at the close: combined price >= credit x (1 + stop%). Otherwise held to expiry (intrinsic value). p.side=1 calls only, 2 puts only. Book recommends indices; run on indices/ETFs. Return = option P&L / underlying price.", None),
+        d("otvt_sector_options_overpriced", "Overpriced sector options · sell IV >= 3x HV50", "Exploiting Overpriced Stock Sector Options", "Long/Short", Live, IV, SECTOR,
+          "Options phase 2, Indian application (lane I1, R4 #303 (3)): NIFTY BANK is the sector index and the legs are real BANKNIFTY monthly option contracts from the NSE F&O bhavcopy (traded close fills, exchange settlement marks, final settlement at intrinsic value); no pricing model. The article (PTJ Oct 1996, book p.25-27; page images re-read) traded US stock-sector index options (Real Estate Index example). IV test [reading]: the article's 'combined implied volatility' example (HV50 10%, options at 30% = three times) compares the near-the-money options' implied volatility with 3 x HV50, so the default reads IV30 (the index's own 30-day at-the-money implied volatility, from the real ATM BANKNIFTY options) >= 3 x HV50; p.comb=1 = the sum reading 2 x IV30 >= 3 x HV50 [labelled]. HV50 = sample standard deviation of 50 daily log returns x sqrt(260) (the book's factor). Strikes: the listed put at or below the close and the listed call at or above it (book: 195 put / 200 call around 197.02); expiry: the monthly expiry whose last trading day is nearest to p.dte = 19 calendar days away (the article's Real Estate example) [reading]. Both legs sold at the signal day's traded close; no trade if either did not trade. Stop at the close: the two legs' marks summed >= credit x (1 + 37.5%) (the article's 30-45%: 4 -> 5 1/4-5 3/4); each leg is bought back at its next traded close; otherwise held to the last trading day. One position at a time. p.side=1 calls only, 2 puts only. Return = option points / the index close at entry, one option per index unit.", None),
         d("otvt_hv_ratio_under_50", "HV 6/100 or 10/100 under 50% (multi-day)", "Additional Volatility Research", "Long/Short", NotTestable("event study: no entry or exit"), &[], HV50,
           "Predicts a large move in either direction; the tradeable form is HV Thrusts (otvt_hv_thrust). Same material as Advanced Trading Strategies' HV chapter.", None),
         d("otvt_hv_ratio_combined", "HV 6/100 and 10/100 both under 50%", "Additional Volatility Research", "Long/Short", NotTestable("event study: no entry or exit"), &[], HV_COMB,
@@ -191,9 +191,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "otvt_sector_options_overpriced" => vec![
             p("mult", "IV at least N x HV", 3.0, 1.5, 4.0, 0.25),
             p("hv_n", "HV length", 50.0, 25.0, 200.0, 5.0),
-            p("comb", "IV test: 1 = put + call IV, 0 = each leg", 1.0, 0.0, 1.0, 1.0),
-            p("otm", "Strikes: % from the close", 1.0, 0.0, 5.0, 0.5),
-            p("dte", "Calendar days to expiry", 19.0, 7.0, 60.0, 1.0),
+            p("comb", "IV test: 0 = IV30 >= N x HV (article's example), 1 = 2 x IV30 (sum of the two legs) [labelled]", 0.0, 0.0, 1.0, 1.0),
+            p("dte", "Expiry: the monthly expiry whose last trading day is nearest to N calendar days away [reading]", 19.0, 7.0, 60.0, 1.0),
             p("stop", "Stop: % of the credit risked", 37.5, 30.0, 45.0, 2.5),
             p("side", "Sell: 0 = put + call, 1 = calls, 2 = puts", 0.0, 0.0, 2.0, 1.0),
         ],
@@ -369,6 +368,7 @@ fn diz_conf(c: &[f64], short_n: usize, long_n: usize, nm1: bool, tick_ratio: boo
 pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
     use crate::options::{self as opt, Contract, Exit};
     if id == "otvt_diz_short_strangle" { return Some(diz_strangles(x, from, to, p)); }
+    if id == "otvt_sector_options_overpriced" { return Some(sector_strangles(x, from, to, p)); }
     if id != "otvt_cvr1_sell_puts" { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
@@ -400,6 +400,59 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
         i = j + 1;
     }
     Some(Ok(out))
+}
+
+/// Overpriced sector options on real option chains (lane I1, R4 #303 (3)): when IV30 >= mult x HV50 (p.comb=1: 2 x IV30), sell
+/// the listed put at or below and the call at or above the close of the monthly expiry whose last trading day is nearest to
+/// `dte` calendar days; stop on the first close where the legs' marks sum to >= credit x (1 + stop); else hold to expiry.
+fn sector_strangles(x: &Ctx, from: usize, to: usize, p: &Params) -> Result<Vec<crate::options::Pos>, String> {
+    use crate::options::{self as opt, Contract, Exit};
+    let schema = params("otvt_sector_options_overpriced").unwrap_or_default();
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
+    let Some(chain) = x.options else { return Err(crate::books::oiss::NO_CHAIN.into()) };
+    let Some(iv) = x.series("IV30") else { return Err("needs_data: the at-the-money implied volatility series (IV30) is not loaded for this instrument".into()) };
+    let c = &x.c;
+    let hvn: Vec<f64> = hv(c, g("hv_n").round().max(2.0) as usize).iter().map(|v| v * (260f64 / 252.0).sqrt()).collect();
+    let (mult, comb, dte, stop, side) = (g("mult"), g("comb").round() >= 1.0, g("dte"), g("stop") / 100.0, g("side").round() as i64);
+    let mut w = opt::Window::new(chain, x, 64);
+    let mut out = Vec::new();
+    let mut e = from;
+    while e <= to {
+        let ivt = if comb { 2.0 * iv[e] } else { iv[e] };
+        if !(iv[e].is_finite() && hvn[e].is_finite() && ivt >= mult * hvn[e]) { e += 1; continue; }
+        let (s0, today) = (c[e], opt::ymd(&x.r[e].date));
+        let day = w.at(e).to_vec();
+        let away = |k: u32| opt::day_no(opt::ltd(x, k)) - opt::day_no(today);
+        let ex = opt::expiries(&day).into_iter().filter(|&k| away(k) > 0)
+            .min_by(|a, b| ((away(*a) as f64 - dte).abs(), *a).partial_cmp(&((away(*b) as f64 - dte).abs(), *b)).unwrap());
+        let Some(ex) = ex else { e += 1; continue };
+        let put = opt::strikes(&day, ex, true).into_iter().rev().find(|&v| v <= s0).map(|k| Contract { expiry: ex, put: true, strike: k });
+        let call = opt::strikes(&day, ex, false).into_iter().find(|&v| v >= s0).map(|k| Contract { expiry: ex, put: false, strike: k });
+        let legs: Vec<Contract> = match side { 1 => call.into_iter().collect(), 2 => put.into_iter().collect(), _ => put.into_iter().chain(call).collect() };
+        if legs.len() != if side == 0 { 2 } else { 1 } { e += 1; continue; }
+        let px0: Vec<Option<f64>> = legs.iter().map(|&l| opt::find(&day, l).and_then(|q| q.fill_close())).collect();
+        if px0.iter().any(|v| v.is_none()) { e += 1; continue; }
+        let px0: Vec<f64> = px0.into_iter().flatten().collect();
+        let credit: f64 = px0.iter().sum();
+        // the combined stop: legs' marks (traded close, else settlement, else the last mark) summed on each later close
+        let end = opt::last_day(x, ex);
+        let mut last = px0.clone();
+        let mut stop_k = None;
+        for k in e + 1..=to {
+            for (n, &l) in legs.iter().enumerate() { if let Some((m, _)) = w.quote(k, l).and_then(|q| q.mark()) { last[n] = m; } }
+            if end.is_some_and(|z| k >= z) { break; }
+            if last.iter().sum::<f64>() >= credit * (1.0 + stop) { stop_k = Some(k); break; }
+        }
+        let mut rule = |k: usize| (Some(k) == stop_k).then(|| (Exit::Close, format!("stop: the legs' marks reached credit x {:.3}", 1.0 + stop)));
+        let res: Vec<_> = legs.iter().zip(&px0).map(|(&l, &p0)| opt::follow(&mut w, x, l, -1.0, e, p0, to, &mut rule)).collect();
+        let j = res.iter().map(|r| r.0).max().unwrap_or(e);
+        let pnl: Vec<f64> = (e..=j).map(|k| res.iter().map(|r| r.1[(k - e).min(r.1.len() - 1)]).sum()).collect();
+        let what: Vec<String> = legs.iter().zip(&px0).zip(&res).map(|((l, p0), r)| format!("{} {} at {p0:.2}: {} ({})", if l.put { "put" } else { "call" }, l.strike, r.2, r.4.text())).collect();
+        out.push(opt::Pos { dir: if side == 1 { -1.0 } else { 1.0 }, s0, entry_i: e, exit_i: j, pnl, open: res.iter().any(|r| r.3),
+            reason: format!("IV30 {:.2} vs HV{} {:.2} · sold exp {ex} on {} (credit {credit:.2}) · {}", iv[e], g("hv_n"), hvn[e], x.r[e].date, what.join(" · ")) });
+        e = j + 1;
+    }
+    Ok(out)
 }
 
 /// Diz short strangle on real option chains (lane K54, decision #229 (4)): sell the put and the call of the nearest monthly
@@ -507,50 +560,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let Some((j, v1, why, open)) = done else { break };
                 let lab = if long_puts { "bought" } else { "sold" };
                 out.push(opt_trade(-q, i, s0, j, v1 - v0, format!("{why} · {lab} {} put {} -> {}", f2(k), f2(v0.abs()), f2(v1.abs())), open));
-                i = j + 1;
-            }
-            out
-        }
-        "otvt_sector_options_overpriced" => {
-            let Some(iv) = x.series("IV30") else { return Some(vec![]) };
-            let hvn: Vec<f64> = hv(c, u("hv_n")).iter().map(|v| v * (260f64 / 252.0).sqrt()).collect();
-            let (mult, comb, otm, dte, stop, side) = (g("mult"), b("comb"), g("otm") / 100.0, g("dte").round() as i64, g("stop") / 100.0, g("side").round() as i64);
-            let mut out = Vec::new();
-            let mut i = from;
-            while i < to {
-                let ivsum = if comb { 2.0 * iv[i] } else { iv[i] };
-                if !(ivsum >= mult * hvn[i]) {
-                    i += 1;
-                    continue;
-                }
-                let s0 = c[i];
-                let mut legs = Vec::new();
-                if side != 1 {
-                    legs.push((true, s0 * (1.0 - otm), -1.0));
-                }
-                if side != 2 {
-                    legs.push((false, s0 * (1.0 + otm), -1.0));
-                }
-                let bk = Book { legs, exp: days[i] + dte, r: 0.0 };
-                let credit = -bk.value(s0, days[i], iv[i]);
-                let mut done = None;
-                for j in i + 1..=to {
-                    let debit = -bk.value(c[j], days[j], last(iv, j));
-                    let why = if days[j] >= bk.exp {
-                        "expiry"
-                    } else if debit >= credit * (1.0 + stop) {
-                        "stop"
-                    } else if j == to {
-                        "open"
-                    } else {
-                        continue;
-                    };
-                    done = Some((j, debit, why));
-                    break;
-                }
-                let Some((j, debit, why)) = done else { break };
-                let dir = if side == 1 { -1.0 } else { 1.0 };
-                out.push(opt_trade(dir, i, s0, j, credit - debit, format!("{why} · credit {} -> {} (IV {} vs HV{} {})", f2(credit), f2(debit), f2(iv[i]), u("hv_n"), f2(hvn[i])), why == "open"));
                 i = j + 1;
             }
             out

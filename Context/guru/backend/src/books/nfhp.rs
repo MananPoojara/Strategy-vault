@@ -5,11 +5,14 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "nfhp";
+/// Lane K74 (R4 #277 (3), #196(2)): the Fig. 44 header gives the test's contract value for the whole 1982-2000 run ($250 a point),
+/// so the $500 stops are exactly 2.0 S&P index points: SPX only (gate list), from 2014 (real opens, clamp_open). The countertrend
+/// mode fails #179 (held); the NSE twins have no exact conversion (held). Admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["nfhp_quadram_tf"];
 
-const FX: &str = "daily Swiss franc, D-mark, British pound and Japanese yen FUTURES with contract point values ($ stops); the vault has no currency futures (index points cannot stand in for a $2,000 currency-contract stop)";
 const METALS: &str = "Comex silver/gold futures, Swiss franc futures, US T-bill yield and CPI inflation (real T-bill rate); none in the vault";
 const TBOND: &str = "T-Bond / 10-year note futures, LME nickel, Dow Jones Utilities, Fidelity Select Chemicals (FSCHX) and Financial (FIDSX) prices; none in the vault";
-const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+pub const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
 const NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 
 const Q_ENTRY_CT: &[&str] = &[
@@ -30,7 +33,7 @@ const Q_ENTRY_TF: &[&str] = &[
     "X|Trailing stop as the author codes it (Channel 25 TradeStation code, Ground-Up p.20): once (highest close since entry - entry) >= $500, stop at that highest close - $500",
     "X|An opposite entry signal while in a trade reverses the position at the next open (TradeStation long/short entries)",
 ];
-const Q_NOTE: &str = "Book (Fig. 44, p.21): S&P 500 futures 1982-2000, 2 lots, $250/pt, $150 slippage+commission: 827 trades, 40% profitable, avg $357.32, avg bars in winners 1 / losers 0, PF 1.94 - the two modes together (max 2 contracts held). Here one mode per strategy, one unit. Bands = n-day SMA of CHAD +/- 0.8 x population standard deviation (TradeStation StdDev / Bollinger, Figs 42-43 'Bollinger Bands (4, 0.8)' / '(25, 0.8)'). 'Crosses above' = CHAD > band today and CHAD <= band yesterday. Stops in index points = $ / pt_usd (S&P futures $250; same points on SPX - instrument swap only; on NIFTY the same 2-point stop is used, as the vault's lwlts precedent). The $500 initial stop is armed on the entry day (book: losers average 0 bars = stopped on the entry bar); stops fill at the stop or at the open if it gaps through. Trailing-stop formula is the author's own Channel 25 code (the Quadram page gives only '$500 Trailing Stop').";
+const Q_NOTE: &str = "Book (Fig. 44, p.21): S&P 500 futures 1982-2000, 2 lots, $250/pt, $150 slippage+commission: 827 trades, 40% profitable, avg $357.32, avg bars in winners 1 / losers 0, PF 1.94 - the two modes together (max 2 contracts held). Here one mode per strategy, one unit. Bands = n-day SMA of CHAD +/- 0.8 x population standard deviation (TradeStation StdDev / Bollinger, Figs 42-43 'Bollinger Bands (4, 0.8)' / '(25, 0.8)'). 'Crosses above' = CHAD > band today and CHAD <= band yesterday. Stops in index points = $ / pt_usd (S&P futures $250 a point for the whole 1982-2000 test, Fig. 44 header) = 2.0 points, literal on the S&P 500 index: published on SPX only, from 2014 (real opens), new signals until the NYSE breadth file ends (2020-02-10) (lane K74, decision #277 (3)); the countertrend mode fails the cash-index check (#179) and the NSE twins have no exact conversion, so those are held. The $500 initial stop is armed on the entry day (book: losers average 0 bars = stopped on the entry bar); stops fill at the stop or at the open if it gaps through. Trailing-stop formula is the author's own Channel 25 code (the Quadram page gives only '$500 Trailing Stop').";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -49,15 +52,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
         q("nfhp_quadram_tf", "Quadram trend-following mode · NYSE breadth", NYSE, Q_ENTRY_TF, Q_NOTE),
         q("nfhp_quadram_tf_nse", "Quadram trend-following mode · NSE breadth", NSE, Q_ENTRY_TF,
           "India mapping: NSE_ADV_DEC instead of NYSE, run on NIFTY indices. Otherwise identical to nfhp_quadram_tf."),
-        d("nfhp_channel25", "Channel 25 Currency Trading System", "Channel 25 Currency System", "Long/Short", NeedsData(FX), &[],
+        d("nfhp_channel25", "Channel 25 Currency Trading System", "Channel 25 Currency System", "Long/Short", NotTestable("Duplicate of nfgu_channel25 (lane F1C, R4 #293): the 2000 handout's Fig. 20 prints the same Channel 25 rules as the 1996 workbook (25-day high/low stop entries, $2,000 protective and $2,000 trailing stop, reversing signal), whose TradeStation code (Fig. 27) runs on the Norgate currency contracts there; counted once."), &[],
           &["E|\"Enter Long Tomorrow on a Stop Placed at Highest High of Past 25 Days. ... Enter Short ... Lowest Low of Past 25 Days. If Order Not Filled, Adjust Stops and Place New Order for Next Session\" (Fig. 20, p.12)",
             "X|\"Protective Stop $2,000; Trailing Stop $2,000; Reversing Signal\" (Fig. 20)"],
           "Book (Figs 16-19, 1978-2000): SF 221 trades 49%, DM 178 44%, BP 259 42%, JY 208 42%. Not run: $ stops on currency contracts."),
-        d("nfhp_r2_metals", "R-Squared Precious Metals System", "R-Squared Precious Metals", "Long/Short", NeedsData(METALS), &[],
-          &["E|Long: Silver > 12-day SMA, real T-bill rate < 1.0%, Swiss franc > 4-day SMA; short: the reverse (Fig. 24, p.15)",
-            "X|Protective stop $2,000; trailing stop $2,500 (Fig. 24)"],
-          "Book: silver 1975-2000 205 trades 48%; gold (3 lots) 119 trades 47% (Figs 22-23)."),
-        d("nfhp_cqiii", "CQIII Currency Trading System", "CQIII Currency System", "Long/Short", NeedsData(FX), &[],
+        d("nfhp_r2_metals", "R-Squared Precious Metals System", "R-Squared Precious Metals", "Long/Short", NotTestable("Duplicate of nfgu_r2_metals (lane M3, R4 #346): the 2000 handout's Fig. 24 prints the same R-Squared rules as the 1996 workbook p.2 (silver above its 12-day average, real T-bill rate below 1.0%, Swiss franc above its 4-day average, short the reverse, $2,000 initial and $2,500 trailing stop), with 'Enter on Tomorrow's Open' and <= on the short side; run as nfgu_r2_metals on the Norgate silver contract it gives the same 492 trades with either boundary (independent reference r2_ref.py, 0 mismatches for both), so it is counted once."), &[],
+          &["E|Long: Silver > 12-day SMA, real T-bill rate < 1.0%, Swiss franc > 4-day SMA, 'Enter Long on Tomorrow's Open'; short: Silver <= 12-DMA, real rate >= 1.0%, Swiss franc <= 4-DMA (Fig. 24, p.11)",
+            "X|\"$2,000 Initial Stop; $2,500 Trailing Stop\" (Fig. 24)"],
+          "Book: silver 1975-2000 205 trades 48%; gold (3 lots) 119 trades 47% (Figs 22-23). Same rules as nfgu_r2_metals, which is run."),
+        d("nfhp_cqiii", "CQIII Currency Trading System", "CQIII Currency System", "Long/Short", NotTestable("Duplicate of nfgu_cqiii (lane F1C, R4 #293): the 2000 handout's Fig. 41 lists the same CQIII entries (close vs 10-day MA, 10-day MA vs ten days ago, close vs 40 days ago, next day open) and the $2,000 protective stop, an abbreviated list of the 1996 rules (which add the adaptive trailing stop); its yen results continue the 1996 table (1978-99: 87 trades 54%, avg winner 101 bars). Run as nfgu_cqiii on the Norgate currency contracts; counted once."), &[],
           &["E|Long next day open: Close > 10-day MA, 10-day MA today > 10-day MA of ten days ago, Close > close of 40 days ago; short the reverse (Fig. 41, p.19)",
             "X|\"Protective Stop: $2000\" (Fig. 41)"],
           "Book (Figs 37-40, 1978-1999): SF 93 trades 44%, DM 97 46%, BP 115 33%, JY 87 54%."),
@@ -79,9 +82,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "nfhp_quadram_ct_nse" => (q.0, q.1, "Countertrend · NSE (2000)"),
         "nfhp_quadram_tf" => (q.0, q.1, "Trend-following · NYSE (2000)"),
         "nfhp_quadram_tf_nse" => (q.0, q.1, "Trend-following · NSE (2000)"),
-        "nfhp_channel25" => ("nf_channel25", "Freeburg Channel 25", "2000 · Data missing"),
-        "nfhp_cqiii" => ("nf_cqiii", "Freeburg CQIII", "2000 · Data missing"),
-        "nfhp_r2_metals" => ("nf_r2", "Freeburg R-Squared metals", "2000 · Data missing"),
+        "nfhp_channel25" => ("nf_channel25", "Freeburg Channel 25", "2000 · duplicate of the 1996 code"),
+        "nfhp_cqiii" => ("nf_cqiii", "Freeburg CQIII", "2000 · duplicate of the 1996 rules"),
+        "nfhp_r2_metals" => ("nf_r2", "Freeburg R-Squared metals", "2000 · duplicate of the 1996 rules"),
         "nfhp_tbond_intermarket" => ("nf_tbond", "Freeburg intermarket T-Bond", "2000 · Data missing"),
         "nfhp_vl_swing" => ("nf_vlswing", "Value Line percent swing", "2000 · not testable"),
         "nfhp_results_only" => ("nf_results", "Freeburg results-only examples", "2000"),
@@ -235,3 +238,10 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px), (2, 98.));
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 (3)): Quadram trend-following mode with the 2.0-point stops, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Nelson Freeburg tested the Quadram system on S&P 500 futures (1982-2000, $250 a point) with $500 initial and trailing stops = 2.0 index points. The trend-following mode runs on the S&P 500 index (SPX) only, the 2 points literal, from 2014 (real opens) to the end of the NYSE breadth file (February 2020) for new signals, as a declared application of the futures rule to the cash index.",
+    basis: "Nelson Freeburg, Building High-Performance Trading Systems (TAG 2000 workshop) Fig. 44 p.21 ('S&P 500 Futures (2 Lots; $250/pt; $150 S&C) Performance: 1982 to 2000'), Fig. 46 p.22 (Quadram rules); Building a Mechanical Trading System from the Ground Up p.6 (next-day-open entries), p.20 (trailing-stop code); decisions #196(2), #240 (2), #277 (3); independent check authors/titles-1030/K74w/k74_spx.py.",
+};

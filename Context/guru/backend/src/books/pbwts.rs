@@ -40,7 +40,7 @@ pub fn exit(side: f64, kind: Kind, px: f64, name: &'static str) -> Order { Order
 pub struct Pos { pub dir: f64, pub px: f64, pub i: usize, pub name: &'static str, pub id: usize, pub kind: &'static str }
 
 /// Strategy state at a bar's close (what EasyLanguage sees).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct St {
     pub pos: Option<Pos>,
     pub prev_dir: f64,       // position at the previous bar's close
@@ -88,41 +88,113 @@ fn close_trade(out: &mut Vec<Trade>, p: Pos, kind: Kind, i: usize, px: f64, why:
 /// Run a TradeStation-style strategy over bars from..=to. `gen(i, st)` is the strategy code evaluated at bar i's
 /// close; it returns the orders for bar i+1 (it may read bar i+1's open, like EasyLanguage "Open of tomorrow").
 /// Flat at `from`; earlier bars only warm the indicators.
-pub fn sim(x: &Ctx, from: usize, to: usize, mut gen: impl FnMut(usize, &St) -> Vec<Order>) -> Vec<Trade> {
+pub fn sim(x: &Ctx, from: usize, to: usize, gen: impl FnMut(usize, &St) -> Vec<Order>) -> Vec<Trade> { sim_ep6(x, from, to, false, gen) }
+
+/// Apply one triggered order `k` at `px` on bar i (the simulator's own rule; EP6 shares it).
+fn apply(st: &mut St, out: &mut Vec<Trade>, od: &mut crate::intraday_ep6::Day, next_id: &mut usize, orders: &[(Order, Option<usize>)], k: usize, i: usize, px: f64) -> bool {
+    let (o, tid) = orders[k];
+    if o.exit {
+        let ok = st.pos.as_ref().is_some_and(|q| q.dir == -o.side && (o.kind == Kind::Close || tid == Some(q.id)) && o.from.map_or(true, |f| f == q.name));
+        if ok {
+            let q = st.pos.take().unwrap();
+            st.last_dir = q.dir;
+            close_trade(out, q, o.kind, i, px, format!("{} {}", o.name, kind_str(o.kind)));
+            crate::intraday_ep6::mark(out.last_mut().unwrap(), *od);
+            st.exits_today += 1;
+            return true;
+        }
+        false
+    } else {
+        if st.mp() == o.side { return false; }
+        if let Some(q) = st.pos.take() {
+            st.last_dir = q.dir;
+            close_trade(out, q, o.kind, i, px, format!("reversed by {} {}", o.name, kind_str(o.kind)));
+            crate::intraday_ep6::mark(out.last_mut().unwrap(), *od);
+            st.exits_today += 1;
+        }
+        st.pos = Some(Pos { dir: o.side, px, i, name: o.name, id: *next_id, kind: kind_str(o.kind) });
+        *od = crate::intraday_ep6::Day::Plain;
+        *next_id += 1;
+        st.entries_today += 1;
+        true
+    }
+}
+
+/// The state of one bar for EP6: strategy state, trades closed on the bar, the position's mark, the next position id,
+/// and which orders have triggered (each order triggers at most once a bar, as on the daily path).
+#[derive(Clone)]
+struct Ep { st: St, out: Vec<Trade>, od: crate::intraday_ep6::Day, next_id: usize, done: Vec<bool> }
+
+/// EP6 walk (lane K63): no segments = the open (market-on-open orders and levels the open is through, at the open); on
+/// segments each untriggered stop/limit triggers where the path first reaches it (at its level; on a gap segment at the
+/// gap's end); triggers in path order, at one instant exits first, then code order. Close orders are left for the close.
+fn ep6_walk(e: &mut Ep, orders: &[(Order, Option<usize>)], i: usize, open: f64, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    let mut ev: Vec<(usize, f64, usize, f64)> = vec![]; // (segment, fraction, order, fill)
+    for (k, (o, _)) in orders.iter().enumerate() {
+        if e.done[k] || o.kind == Kind::Close { continue; }
+        let up = (o.kind == Kind::Stop) == (o.side > 0.0);
+        if segs.is_empty() {
+            let at = o.kind == Kind::Open || (o.px.is_finite() && o.kind != Kind::Open && if up { open >= o.px } else { open <= o.px });
+            if at { ev.push((0, 0.0, k, open)); }
+            continue;
+        }
+        if o.kind == Kind::Open || !o.px.is_finite() { continue; }
+        for (s, g) in segs.iter().enumerate() {
+            let (a, b) = (g.a, g.b);
+            let hit = if up { a < o.px && o.px <= b } else { a > o.px && o.px >= b };
+            if hit { ev.push((s, (o.px - a) / (b - a), k, g.fill(o.px))); break; }
+        }
+    }
+    ev.sort_by(|p, q| p.0.cmp(&q.0).then(p.1.partial_cmp(&q.1).unwrap()).then((!orders[p.2].0.exit).cmp(&!orders[q.2].0.exit)).then(p.2.cmp(&q.2)));
+    let mut out = vec![];
+    for (_, _, k, px) in ev {
+        e.done[k] = true;
+        let up = (orders[k].0.kind == Kind::Stop) == (orders[k].0.side > 0.0);
+        let Ep { st, out: tr, od, next_id, .. } = e;
+        // an order that triggers but does not apply (no matching position) is used up without an event
+        if apply(st, tr, od, next_id, orders, k, i, px) { out.push(crate::intraday_ep6::Ev { k: k as u8, px, up }); }
+    }
+    out
+}
+
+/// `sim` with EP6 (#243, lane K63): with `on`, a bar whose fills differ between its two extreme orders is walked on its real
+/// 1-minute path where minutes exist (intraday_ep6::resolve_conv); every other bar is the daily path, unchanged.
+pub fn sim_ep6(x: &Ctx, from: usize, to: usize, on: bool, mut gen: impl FnMut(usize, &St) -> Vec<Order>) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, remark, resolve_conv, Day, Seg};
     let mut st = St::default();
     let mut out = Vec::new();
     let mut next_id = 0usize;
+    let mut od = Day::Plain;
     let mut orders: Vec<(Order, Option<usize>)> = if from >= 1 { gen(from - 1, &st).into_iter().map(|o| (o, None)).collect() } else { vec![] };
     for i in from..=to {
         let before = st.mp();
         st.exits_today = 0;
         st.entries_today = 0;
-        let p = path(x, i);
-        let mut ev: Vec<(f64, usize, f64)> = orders.iter().enumerate().filter_map(|(k, (o, _))| trigger(o, &p).map(|(t, px)| (t, k, px))).collect();
-        // same instant: exits first, then the order nearest the market (TradeStation p.71), then code order
-        ev.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then((!orders[a.1].0.exit).cmp(&!orders[b.1].0.exit)).then(a.1.cmp(&b.1)));
-        for (_, k, px) in ev {
-            let (o, tid) = orders[k];
-            if o.exit {
-                let ok = st.pos.as_ref().is_some_and(|q| q.dir == -o.side && (o.kind == Kind::Close || tid == Some(q.id)) && o.from.map_or(true, |f| f == q.name));
-                if ok {
-                    let q = st.pos.take().unwrap();
-                    st.last_dir = q.dir;
-                    close_trade(&mut out, q, o.kind, i, px, format!("{} {}", o.name, kind_str(o.kind)));
-                    st.exits_today += 1;
-                }
-            } else {
-                if st.mp() == o.side { continue; }
-                if let Some(q) = st.pos.take() {
-                    st.last_dir = q.dir;
-                    close_trade(&mut out, q, o.kind, i, px, format!("reversed by {} {}", o.name, kind_str(o.kind)));
-                    st.exits_today += 1;
-                }
-                st.pos = Some(Pos { dir: o.side, px, i, name: o.name, id: next_id, kind: kind_str(o.kind) });
-                next_id += 1;
-                st.entries_today += 1;
+        let daily = |e: &mut Ep| {
+            let p = path(x, i);
+            let mut ev: Vec<(f64, usize, f64)> = orders.iter().enumerate().filter_map(|(k, (o, _))| trigger(o, &p).map(|(t, px)| (t, k, px))).collect();
+            // same instant: exits first, then the order nearest the market (TradeStation p.71), then code order
+            ev.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then((!orders[a.1].0.exit).cmp(&!orders[b.1].0.exit)).then(a.1.cmp(&b.1)));
+            for (_, k, px) in ev { let Ep { st, out, od, next_id, .. } = e; apply(st, out, od, next_id, &orders, k, i, px); }
+        };
+        let mut e = Ep { st: std::mem::take(&mut st), out: vec![], od, next_id, done: vec![false; orders.len()] };
+        if on {
+            let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            let probe = |e: &mut Ep, hf: bool| { let mut v = ep6_walk(e, &orders, i, o, &[]); v.extend(ep6_walk(e, &orders, i, o, &bar_segs(o, h, l, c, hf))); v };
+            let day = resolve_conv(x, i, true, &mut e, &daily, &probe, |e: &mut Ep, g: &[Seg]| ep6_walk(e, &orders, i, o, g));
+            if day != Day::Plain && day != Day::Convention {
+                // the close: Close orders not yet triggered (exits first, then code order)
+                let mut ks: Vec<usize> = (0..orders.len()).filter(|&k| !e.done[k] && orders[k].0.kind == Kind::Close).collect();
+                ks.sort_by_key(|&k| (!orders[k].0.exit, k));
+                for k in ks { let Ep { st, out, od, next_id, .. } = &mut e; apply(st, out, od, next_id, &orders, k, i, c); }
             }
+            for mut t in e.out.drain(..) { remark(&mut t, day); out.push(t); }
+            if e.st.pos.is_some() { e.od = e.od.worst(day); }
+        } else {
+            daily(&mut e);
+            out.append(&mut e.out);
         }
+        (st, od, next_id) = (e.st, e.od, e.next_id);
         st.prev_dir = before;
         if i < to {
             let tid = st.pos.as_ref().map(|q| q.id);
@@ -131,8 +203,10 @@ pub fn sim(x: &Ctx, from: usize, to: usize, mut gen: impl FnMut(usize, &St) -> V
         }
     }
     if let Some(q) = st.pos.take() {
-        out.push(Trade { dir: q.dir, legs: vec![Leg { i: q.i, px: q.px, w: 1.0 }], exit_i: to, exit_px: x.c[to],
-            reason: format!("{} → open", q.name), entry_kind: q.kind, signal_i: to, open: true, exits: vec![] });
+        let mut t = Trade { dir: q.dir, legs: vec![Leg { i: q.i, px: q.px, w: 1.0 }], exit_i: to, exit_px: x.c[to],
+            reason: format!("{} → open", q.name), entry_kind: q.kind, signal_i: to, open: true, exits: vec![] };
+        crate::intraday_ep6::mark(&mut t, od);
+        out.push(t);
     }
     out
 }

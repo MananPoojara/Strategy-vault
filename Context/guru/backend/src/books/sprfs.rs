@@ -65,6 +65,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("hv_long", "Long HV days", 100.0, 50.0, 250.0, 10.0), p("ratio", "HVR trigger (short/long below)", 0.5, 0.2, 1.0, 0.05)]),
         _ => return None,
     }
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
     Some(v)
 }
 
@@ -84,23 +85,73 @@ pub(crate) fn inside(x: &Ctx, j: usize) -> bool {
     j >= 1 && x.h[j] <= x.h[j - 1] && x.l[j] >= x.l[j - 1] && !(x.h[j] == x.h[j - 1] && x.l[j] == x.l[j - 1])
 }
 
-/// Next-session stop entries around setup bar s, protective stop at the other extreme, MOC on day `hold`.
-fn nr4_trades(x: &Ctx, from: usize, to: usize, tick: f64, hold: usize, setup: &dyn Fn(usize) -> bool) -> Vec<Trade> {
+/// The entry bar's outcome: the side entered (0 = none), its fill, and the protective stop's fill if it came back the
+/// same day (EP6 state, lane K63).
+#[derive(Clone, Copy)]
+struct E { dir: f64, fill: f64, stopped: Option<f64> }
+
+/// The entry bar on the daily TradeStation path (the module's convention): the first stop entry reached; the protective
+/// stop counts only if the path comes back to it after the fill (at the stop level).
+fn entry_bar(x: &Ctx, i: usize, up: f64, dn: f64) -> E {
+    let pts = ts_path(x, i);
+    let Some((dir, fill, seg)) = path_entry(&pts, up, dn) else { return E { dir: 0.0, fill: f64::NAN, stopped: None } };
+    let stop = if dir > 0.0 { dn } else { up };
+    let after = pts[seg + 1..].iter().copied().fold(dir * f64::INFINITY, |m, v| if dir > 0.0 { m.min(v) } else { m.max(v) });
+    E { dir, fill, stopped: (dir * (after - stop) <= 0.0).then_some(stop) }
+}
+
+/// EP6 walk of the entry bar (no segments = the open: an entry the open is through fills at the open); a level fills where
+/// the path reaches it (on a gap segment at the gap's end); after the fill only the protective stop is live.
+fn entry_walk(x: &Ctx, i: usize, up: f64, dn: f64, s: &mut E, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    use crate::intraday_ep6::Ev;
+    let mut ev = vec![];
+    if segs.is_empty() {
+        let o = x.o[i];
+        if s.dir == 0.0 && o >= up { *s = E { dir: 1.0, fill: o, stopped: None }; ev.push(Ev { k: 0, px: o, up: true }); }
+        else if s.dir == 0.0 && o <= dn { *s = E { dir: -1.0, fill: o, stopped: None }; ev.push(Ev { k: 1, px: o, up: false }); }
+        return ev;
+    }
+    for g in segs {
+        if s.stopped.is_some() { break; }
+        if s.dir == 0.0 {
+            if g.up() && g.inside(up) { *s = E { dir: 1.0, fill: g.fill(up), stopped: None }; ev.push(Ev { k: 0, px: s.fill, up: true }); }
+            else if !g.up() && g.inside(dn) { *s = E { dir: -1.0, fill: g.fill(dn), stopped: None }; ev.push(Ev { k: 1, px: s.fill, up: false }); }
+        } else {
+            let stop = if s.dir > 0.0 { dn } else { up };
+            if g.up() != (s.dir > 0.0) && g.inside(stop) { let px = g.fill(stop); s.stopped = Some(px); ev.push(Ev { k: 2, px, up: s.dir < 0.0 }); }
+        }
+    }
+    ev
+}
+
+/// Next-session stop entries around setup bar s, protective stop at the other extreme, MOC on day `hold`. EP6 (#243,
+/// lane K63): with `on`, an entry bar whose outcome differs between its two extreme orders
+/// is walked on its real 1-minute path where minutes exist (intraday_ep6::resolve_conv); later days are not order-dependent
+/// (one protective stop and the close).
+fn nr4_trades_ep6(x: &Ctx, from: usize, to: usize, tick: f64, hold: usize, setup: &dyn Fn(usize) -> bool, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, Day, Seg};
     let mut out = vec![];
     let mut i = from.max(1);
     while i <= to {
         let s = i - 1;
         if !setup(s) { i += 1; continue; }
         let (up, dn) = (x.h[s] + tick, x.l[s] - tick);
-        let pts = ts_path(x, i);
-        let Some((dir, fill, seg)) = path_entry(&pts, up, dn) else { i += 1; continue };
+        let mut e = E { dir: 0.0, fill: f64::NAN, stopped: None };
+        let day = if on {
+            let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            resolve_conv(x, i, true, &mut e, |z: &mut E| *z = entry_bar(x, i, up, dn),
+                |z: &mut E, hf: bool| { let mut v = entry_walk(x, i, up, dn, z, &[]); v.extend(entry_walk(x, i, up, dn, z, &bar_segs(o, h, l, c, hf))); v },
+                |z: &mut E, g: &[Seg]| entry_walk(x, i, up, dn, z, g))
+        } else { e = entry_bar(x, i, up, dn); Day::Plain };
+        let E { dir, fill, stopped } = e;
+        if dir == 0.0 { i += 1; continue; }
         let stop = if dir > 0.0 { dn } else { up };
         let mut t = Trade { dir, legs: vec![Leg { i, px: fill, w: 1.0 }], exit_i: i, exit_px: fill, reason: String::new(),
             entry_kind: "stop", signal_i: s, open: false, exits: vec![] };
         // entry bar: the protective stop counts only if the path comes back to it after the fill
-        let after = pts[seg + 1..].iter().copied().fold(dir * f64::INFINITY, |m, v| if dir > 0.0 { m.min(v) } else { m.max(v) });
-        if dir * (after - stop) <= 0.0 {
-            t.exit_px = stop; t.reason = "protective stop".into(); t.signal_i = i;
+        if let Some(px) = stopped {
+            t.exit_px = px; t.reason = "protective stop".into(); t.signal_i = i;
+            mark(&mut t, day);
             out.push(t); i += 1; continue;
         }
         let mut j = i;
@@ -115,6 +166,7 @@ fn nr4_trades(x: &Ctx, from: usize, to: usize, tick: f64, hold: usize, setup: &d
             break;
         }
         t.exit_i = j; t.signal_i = j;
+        mark(&mut t, day);
         out.push(t);
         i = j + 1;
     }
@@ -126,14 +178,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if validate(id, p).is_some() || from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let (tick, hold) = (if g("tick") < 0.0 { x.market_tick() } else { g("tick") }, g("hold") as usize);
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     Some(match id {
-        "sprfs_nr4ib" => nr4_trades(x, from, to, tick, hold, &|s| nr4(x, s) && inside(x, s)),
+        "sprfs_nr4ib" => nr4_trades_ep6(x, from, to, tick, hold, &|s| nr4(x, s) && inside(x, s), on),
         _ => {
             let (a, b, l) = (hv(&x.c, g("hv_a") as usize), hv(&x.c, g("hv_b") as usize), hv(&x.c, g("hv_long") as usize));
             let r = g("ratio");
             let hvr = |s: usize| l[s] > 0.0 && (a[s] / l[s] < r || b[s] / l[s] < r);
             let ib = id == "sprfs_hvr_nr4ib";
-            nr4_trades(x, from, to, tick, hold, &|s| nr4(x, s) && (!ib || inside(x, s)) && hvr(s))
+            nr4_trades_ep6(x, from, to, tick, hold, &|s| nr4(x, s) && (!ib || inside(x, s)) && hvr(s), on)
         }
     })
 }

@@ -28,6 +28,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
         "jbid_inside_day" => Some(vec![p("side", "Sides: 0 = long and short (book), 1 = long only, 2 = short only", 0., 0., 2., 1.),
@@ -41,6 +47,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let schema = params(id)?;
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K62)
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, Day, Ev, Seg};
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (side, last, ratio, tk) = (g("side").round() as i64, g("day").round() as usize, g("ratio"), g("tick"));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
@@ -54,18 +63,59 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let (bu, se, rg, e) = (h[t] + tk, l[t] - tk, h[t] - l[t], t + 1);
         let long_ok = side != 2 && (o[e] >= bu || h[e] >= bu);
         let short_ok = side != 1 && (o[e] <= se || l[e] <= se);
+        let mut od = Day::Plain;
         let (d, ep, kind) = if long_ok && o[e] >= bu { (1., o[e], "open") } else if short_ok && o[e] <= se { (-1., o[e], "open") }
-            else if long_ok && !(l[e] <= se) { (1., bu, "stop") } else if short_ok && !(h[e] >= bu) { (-1., se, "stop") } else { t += 1; continue; };
+            else if long_ok && !(l[e] <= se) { (1., bu, "stop") } else if short_ok && !(h[e] >= bu) { (-1., se, "stop") }
+            else if on && side == 0 {
+                // EP6: day 2 reached both levels without opening beyond either: the daily bar cannot order them (no trade, the
+                // convention); the real minutes say which stop filled first (the other is then the protective stop, not checked
+                // on day 2, as in the daily rule)
+                let walk = |s: &mut Option<(f64, f64)>, segs: &[Seg]| -> Vec<Ev> {
+                    for g in segs {
+                        if s.is_some() { break; }
+                        let lv = if g.up() { bu } else { se };
+                        if g.inside(lv) { let px = g.fill(lv); *s = Some((if g.up() { 1. } else { -1. }, px)); return vec![Ev { k: 0, px, up: g.up() }]; }
+                    }
+                    vec![]
+                };
+                let mut st = None;
+                od = resolve_conv(x, e, true, &mut st, |z| *z = None, |z, hf| walk(z, &bar_segs(o[e], h[e], l[e], c[e], hf)), walk);
+                match st { Some((d, px)) => (d, px, "stop"), None => { t += 1; continue; } }
+            } else { t += 1; continue; };
         let (stop, tgt) = if d > 0. { (se, ep + rg) } else { (bu, ep - rg) };
         let end = (t + last - 1).min(to);
         let mut done = None;
         for k in e + 1..=end {
+            // EP6: a day that reaches both the stop and the target (opening beyond neither) on the real minutes; the daily
+            // convention (and days without minutes): the stop
+            let gapped = if d > 0. { o[k] <= stop || o[k] >= tgt } else { o[k] >= stop || o[k] <= tgt };
+            if on && !gapped {
+                let walk = |s: &mut Option<(f64, &'static str)>, segs: &[Seg]| -> Vec<Ev> {
+                    for g in segs {
+                        if s.is_some() { break; }
+                        let (lv, why, kk) = if g.up() != (d > 0.) { (stop, "stop", 0u8) } else { (tgt, "target 1", 1u8) };
+                        if g.inside(lv) { let px = g.fill(lv); *s = Some((px, why)); return vec![Ev { k: kk, px, up: g.up() }]; }
+                    }
+                    vec![]
+                };
+                let conv = |z: &mut Option<(f64, &'static str)>| {
+                    let (hs, ht) = if d > 0. { (l[k] <= stop, h[k] >= tgt) } else { (h[k] >= stop, l[k] <= tgt) };
+                    *z = if hs { Some((stop, "stop")) } else if ht { Some((tgt, "target 1")) } else { None };
+                };
+                let mut st = None;
+                let day = resolve_conv(x, k, true, &mut st, conv, |z, hf| walk(z, &bar_segs(o[k], h[k], l[k], c[k], hf)), walk);
+                od = od.worst(day);
+                if let Some((px, why)) = st { done = Some((k, px, why, false)); break; }
+                continue;
+            }
             let (hs, ht) = if d > 0. { (l[k] <= stop, h[k] >= tgt) } else { (h[k] >= stop, l[k] <= tgt) };
             if hs { done = Some((k, if d > 0. { o[k].min(stop) } else { o[k].max(stop) }, "stop", false)); break; }
             if ht { done = Some((k, if d > 0. { o[k].max(tgt) } else { o[k].min(tgt) }, "target 1", false)); break; }
         }
         let (xi, xp, why, open) = done.unwrap_or(if end == t + last - 1 { (end, c[end], "day close", false) } else { (end, c[end], "open", true) });
-        out.push(mk(d, e, ep, kind, xi, xp, why, open));
+        let mut tr = mk(d, e, ep, kind, xi, xp, why, open);
+        mark(&mut tr, od);
+        out.push(tr);
         t = xi + 1;
     }
     Some(out)

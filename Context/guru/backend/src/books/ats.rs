@@ -38,7 +38,7 @@ pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "ats_cvr1" | "ats_trin_thrust" | "ats_padi" => matches!(ticker, "SPX" | "SPY"),
         "ats_cvr2" | "ats_cvr3" => matches!(ticker, "SPX" | "SPY" | "NIFTY 50"),
-        "ats_trin_thrust_nse" | "ats_padi_nse" => ticker == "NIFTY 50",
+        "ats_trin_thrust_nse" | "ats_padi_nse" => matches!(ticker, "NIFTY 50" | "NIFTYBANK" | "NIFTYMIDCAP100"), // R4 #340
         "ats_hv_thrust" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
         // CVR I reads the VIX open: US instruments with the CBOE VIX only (India VIX open = previous close)
         "ats_cvr_equities" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "QQQ" | "IWM" | "MDY" | "SMH" | "DIA"),
@@ -182,7 +182,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Market leaders / high-volatility names", "E|Stock market down at least 1 percent in the first hour; find leaders up for the day or down only a little",
               "E|If the overall market begins to bounce back, buy the strongest stock(s)", "X|Risk one point from entry; re-entry allowed; let profits run"],
             "No short-sale torpedoes.", None),
-        d("ats_hv_ratio_short_strangle", "Trading Volatility with Options (10/100 HV strangle)", "Ch 16 · Trading Volatility with Options", "Short vol", NotTestable("same article as otvt_diz_short_strangle (Fernando Diz, Ch 16, p.119-128), which runs the rule once, on real exchange prices of the sold put and call; this copy has no separate result"),
+        d("ats_hv_ratio_short_strangle", "Trading Volatility with Options (10/100 HV strangle)", "Ch 16 · Trading Volatility with Options", "Short vol", NotTestable("Duplicate of otvt_diz_short_strangle (the same article, Fernando Diz, Ch 16, p.119-128), which runs the rule once, on real exchange prices of the sold put and call; this copy has no separate result"),
             &["F|10-day HV reaches 1.65 times the 100-day HV or higher", "E|Wait for two consecutive down-ticks in the 10-day reading, then sell an OTM strangle",
               "X|Exit when HV10 reverts to HV100; close anyway after 10-15 days"],
             "Fernando Diz. Gold, silver, soybean examples. Signal is daily_ohlc; the P&L needs option prices.", None),
@@ -194,7 +194,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|After a split announcement, sell the overpriced calls while implied volatility stays inflated"], "No mechanical thresholds; needs split announcement dates and option IV.", None),
         d("ats_sector_options_overpriced", "Exploiting Overpriced Sector Options", "Ch 19 · Overpriced Sector Options", "Short vol", opt,
             &["E|Sector index whose near-the-money put and call implied volatility (combined) is three times the 50-day HV: sell them",
-              "X|Risk 30 to 45 percent of the combined premium"], "RIX example (HV50 4.76%, IVs about 13%).", None),
+              "X|Risk 30 to 45 percent of the combined premium"], "RIX example (HV50 4.76%, IVs about 13%). Duplicate of otvt_sector_options_overpriced: the same Professional Traders Journal article (Oct 1996), which runs it on real BANKNIFTY option prices (lane I1, R4 #303 (3)); not run a second time here.", None),
         // ---- Section 6 day trading
         ser(d("ats_15min_adx_breakout", "15-Minute ADX Breakout", "Ch 20 · 15-Minute ADX Breakout", "Long/Short", Live, ADX15_RULES, ADX15_NOTE, None), ADX15_SERIES),
         ser(d("ats_15min_adx_breakout_equities", "15-Minute ADX Breakout · equities filter", "Ch 20 · 15-Minute ADX Breakout", "Long/Short", Live, ADX15_RULES,
@@ -237,7 +237,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|[Not from the book] 'tighten the stop' = trailing stop at the prior 3-day low (shorts: high), from the day after the half exit (trail_n)"],
             "Derek Gipson. IBM, Pediatrix, crude and Dec 96 S&P examples (S&P signal Nov 13, 1996, buy Nov 14). Half exits are folded into one trade (exit price = average of the two halves), as btp's Gipsons. HV per the Appendix (N-1 returns; hv_rets=0 for N).", None),
         d("ats_short_term_decline_playbook", "Maximizing Profits in Short-Term Market Declines", "Ch 26 · Short-Term Market Declines", "Short",
-            NotTestable("rules not fully defined: the trigger is late-Friday negative news after a long rally, and the five plays (puts on XBD/NDX/IUX, selling OEX calls, shorting brokerage and fund stocks, selling S&P futures at the close, shorting SPY) are chosen by the trader (Ch 26, p.205-213)"),
+            NotTestable("rules not fully defined: the trigger is late-Friday negative news after a long rally, and the five plays (puts on XBD/NDX/IUX, selling OEX calls, shorting brokerage and fund stocks, selling S&P futures at the close, shorting SPY) are chosen by the trader; entry and exit are not specified (Ch 26, p.205-213)"),
             &["E|Buy puts on XBD/NDX/IUX, sell OEX calls, short brokerage and fund stocks, sell S&P futures MOC, or short SPY"], "", None),
         d("ats_large_range_day_combo", "Large-Range Days (sell a combination)", "Ch 27 · Large-Range Days", "Short vol", NotTestable("rules not fully defined: sell a naked combination one standard deviation beyond the large day's high and low, with no expiry and no exit (Ch 27, p.215-217); same article as lrd and btp_large_range_day_strangle"),
             &["F|Market closed two standard deviations from the previous close (1 SD = HV100 / sqrt(256))", "F|Not in trending markets (ADX greater than 25)",
@@ -286,6 +286,12 @@ const ADX15_NOTE: &str = "Coded against the per-ticker daily series built from r
 // ---------------------------------------------------------------- params
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let side = || p("side", "Side: 0 both, 1 long only, -1 short only", 0.0, -1.0, 1.0, 1.0);
     let rev = || p("reverse", "Opposite signal reverses (1) or is ignored (0)", 1.0, 0.0, 1.0, 1.0);
@@ -423,11 +429,53 @@ struct Pos {
     risk: f64,               // |entry - initial stop|, 0 = no stop
     half: Option<(usize, f64)>, // (bar, price) of the half already taken off
     why_half: String,
+    lvl: f64, // EP6 (#243, lane K63): the stop-entry level on the entry bar (NaN = filled at the open or on a close)
+    od: crate::intraday_ep6::Day,
 }
 impl Pos {
     fn new(dir: f64, i0: usize, px: f64, stop: f64, at_open: bool, kind: &'static str) -> Pos {
-        Pos { dir, i0, px, stop, at_open, count_i: i0, kind, risk: if stop.is_finite() { (px - stop).abs() } else { 0.0 }, half: None, why_half: String::new() }
+        Pos { dir, i0, px, stop, at_open, count_i: i0, kind, risk: if stop.is_finite() { (px - stop).abs() } else { 0.0 }, half: None, why_half: String::new(),
+            lvl: f64::NAN, od: crate::intraday_ep6::Day::Plain }
     }
+}
+
+/// EP6 (#243, lane K63) bar walk state: the entry fill, the protective-stop exit and the half-off fill.
+#[derive(Clone, Default)]
+struct Ab { filled: Option<f64>, stop: Option<f64>, half: Option<f64> }
+
+/// One bar along a price path (`segs` empty = the open). On the entry bar (`entry`) the stop entry at `lvl` fills where the
+/// path reaches it (NaN = it filled at the open); then the protective stop `stop` (against the trade) and the half-off target
+/// `tgf(fill)` (with it) act where the path reaches them, a gapped piece filling at its end. On a held bar an open through the
+/// stop exits there, an open through the target takes the half there (as the daily rule).
+fn ats_walk(o: f64, d: f64, entry: bool, lvl: f64, stop: f64, tgf: &dyn Fn(f64) -> Option<f64>, z: &mut Ab, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    use crate::intraday_ep6::{Ev, Seg};
+    let mut ev = vec![];
+    if segs.is_empty() {
+        if entry && z.filled.is_none() && !lvl.is_finite() { z.filled = Some(o); }
+        if !entry && z.stop.is_none() {
+            if stop.is_finite() && d * (o - stop) <= 0.0 { z.stop = Some(o); }
+            else if let (None, Some(t)) = (z.half, z.filled.and_then(|f| tgf(f))) { if d * (o - t) >= 0.0 { z.half = Some(o); } }
+        }
+        return ev;
+    }
+    for g in segs {
+        let mut a = g.a;
+        loop {
+            let seg = Seg { a, b: g.b, gap: g.gap };
+            let Some(f) = z.filled else {
+                if (d > 0.0) == g.up() && seg.inside(lvl) { let px = g.fill(lvl); z.filled = Some(px); ev.push(Ev { k: 0, px, up: g.up() }); a = lvl; continue; }
+                break;
+            };
+            if z.stop.is_some() { break; }
+            if (d > 0.0) != g.up() {
+                if stop.is_finite() && seg.inside(stop) { let px = g.fill(stop); z.stop = Some(px); ev.push(Ev { k: 1, px, up: g.up() }); }
+            } else if let (None, Some(t)) = (z.half, tgf(f)) {
+                if seg.inside(t) { let px = g.fill(t); z.half = Some(px); ev.push(Ev { k: 2, px, up: g.up() }); }
+            }
+            break;
+        }
+    }
+    ev
 }
 /// Half exits and trailing stops. Half exits are folded into one Trade: exit_px = 0.5 * half price + 0.5 * rest price
 /// (the vault convention, as btp.rs / cwin.rs).
@@ -450,13 +498,17 @@ struct Rules<'a> {
     mm: Mm,
     /// [Not from the book] standard-exit trailing level for bar i (ratchets into the protective stop), None = off
     trail: Option<&'a dyn Fn(usize, &Pos) -> f64>,
+    /// EP6 (#243, lane K63): resolve order-dependent bars on the real 1-minute path
+    ep6: bool,
 }
 
 fn trade(p: &Pos, i: usize, px: f64, why: String, sig_i: usize) -> Trade {
     let exit_px = p.half.map_or(px, |(_, hp)| 0.5 * hp + 0.5 * px);
     let exits = p.half.map_or(Vec::new(), |(hi, hp)| vec![(hi, hp, 0.5), (i, px, 0.5)]);
     let reason = if p.half.is_some() { format!("{}; rest: {why}", p.why_half) } else { why };
-    Trade { dir: p.dir, legs: vec![Leg { i: p.i0, px: p.px, w: 1.0 }], exit_i: i, exit_px, reason, entry_kind: p.kind, signal_i: sig_i, open: false, exits }
+    let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.i0, px: p.px, w: 1.0 }], exit_i: i, exit_px, reason, entry_kind: p.kind, signal_i: sig_i, open: false, exits };
+    crate::intraday_ep6::mark(&mut t, p.od);
+    t
 }
 
 fn sim(x: &Ctx, from: usize, to: usize, r: &Rules) -> Vec<Trade> {
@@ -476,7 +528,7 @@ fn sim(x: &Ctx, from: usize, to: usize, r: &Rules) -> Vec<Trade> {
                     if let Kind::Stop { px, .. } = ord.kind {
                         let fill = if ord.dir > 0.0 { (h[i] >= px).then(|| o[i].max(px)) } else { (l[i] <= px).then(|| o[i].min(px)) };
                         match fill {
-                            Some(f) => pos = Some(Pos::new(ord.dir, i, f, ord.stop, f == o[i], "stop")),
+                            Some(f) => pos = Some(Pos { lvl: if f == o[i] { f64::NAN } else { px }, ..Pos::new(ord.dir, i, f, ord.stop, f == o[i], "stop") }),
                             None => pend = Some((ord, until)),
                         }
                     }
@@ -484,7 +536,7 @@ fn sim(x: &Ctx, from: usize, to: usize, r: &Rules) -> Vec<Trade> {
             }
             if pos.is_none() {
                 if let Some((dir, px, stop, at_open)) = r.touch.and_then(|t| t(i)) {
-                    pos = Some(Pos::new(dir, i, px, stop, at_open, "stop"));
+                    pos = Some(Pos { lvl: if at_open { f64::NAN } else { px }, ..Pos::new(dir, i, px, stop, at_open, "stop") });
                     pend = None;
                 }
             }
@@ -507,13 +559,48 @@ fn sim(x: &Ctx, from: usize, to: usize, r: &Rules) -> Vec<Trade> {
             let s = p.stop;
             let hit = if p.dir > 0.0 { l[i] <= s } else { h[i] >= s };
             let after_fill = i > p.i0 || p.at_open || (if p.dir > 0.0 { c[i] <= s } else { c[i] >= s });
-            if s.is_finite() && hit && after_fill {
-                let px = if i > p.i0 { if p.dir > 0.0 { o[i].min(s) } else { o[i].max(s) } } else { s };
+            // EP6 (#243, lane K63): a bar whose stop entry / stop / half-off target differ between its two extreme orders
+            let entry_bar = i == p.i0 && p.kind == "stop";
+            let mut minute: Option<Ab> = None;
+            if r.ep6 {
+                let (d, lv, has_half, risk0) = (p.dir, p.lvl, p.half.is_some(), p.risk);
+                let tgf = |f: f64| -> Option<f64> {
+                    let rk = if entry_bar { if s.is_finite() { (f - s).abs() } else { 0.0 } } else { risk0 };
+                    if has_half { None } else if mm.half_r && rk > 0.0 { Some(f + d * rk) } else if mm.half_pct > 0.0 { Some(f * (1.0 + d * mm.half_pct / 100.0)) } else { None }
+                };
+                let o_i = o[i];
+                let walk = |z: &mut Ab, g: &[crate::intraday_ep6::Seg]| ats_walk(o_i, d, entry_bar, lv, s, &tgf, z, g);
+                let mut z = Ab { filled: (!entry_bar).then_some(p.px), ..Ab::default() };
+                let day = crate::intraday_ep6::resolve_conv(x, i, true, &mut z, |_| {},
+                    |q, hf| { let mut e = walk(q, &[]); e.extend(walk(q, &crate::intraday_ep6::bar_segs(o[i], h[i], l[i], c[i], hf))); e }, &walk);
+                p.od = if entry_bar { day } else { p.od.worst(day) };
+                if matches!(day, crate::intraday_ep6::Day::Minutes | crate::intraday_ep6::Day::Ambiguous) { minute = Some(z); }
+            }
+            let mut stopped: Option<f64> = None;
+            let mut gone = false;
+            if let Some(z) = &minute {
+                match z.filled {
+                    None => gone = true, // the minutes never reach the entry level: no entry that day
+                    Some(f) => {
+                        if entry_bar { p.px = f; p.risk = if s.is_finite() { (f - s).abs() } else { 0.0 }; }
+                        stopped = z.stop;
+                        if let Some(hp) = z.half { // a half reached before the stop is kept (the walk records no half after the stop)
+                            p.half = Some((i, hp));
+                            p.why_half = if mm.half_r { "half off at +1R (2-for-1)".to_string() } else { format!("half off at {}% profit", mm.half_pct) };
+                        }
+                    }
+                }
+            } else if s.is_finite() && hit && after_fill {
+                stopped = Some(if i > p.i0 { if p.dir > 0.0 { o[i].min(s) } else { o[i].max(s) } } else { s });
+            }
+            if gone {
+                pos = None;
+            } else if let Some(px) = stopped {
                 out.push(trade(p, i, px, "protective stop".into(), i));
                 pos = None;
             } else {
                 // half off at a price (stop before target on one bar, so only when the stop did not hit)
-                if p.half.is_none() {
+                if p.half.is_none() && minute.is_none() {
                     let tg = if mm.half_r && p.risk > 0.0 {
                         Some((p.px + p.dir * p.risk, "half off at +1R (2-for-1)".to_string()))
                     } else if mm.half_pct > 0.0 {
@@ -693,7 +780,7 @@ fn cvr(k: u8, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<T
             });
         }
     }
-    sim(x, from, to, &Rules { sig: &*sig, touch: None, exit: &*exit, reverse: g("reverse") > 0.5, extend, stop_pct: 0.0, mm: MM0, trail: None })
+    sim(x, from, to, &Rules { sig: &*sig, touch: None, exit: &*exit, reverse: g("reverse") > 0.5, extend, stop_pct: 0.0, mm: MM0, trail: None, ep6: false })
 }
 
 /// Ch 28 Two-for-One on a base pattern (param two_for_one = 1): half off at +1x initial risk, the rest on the original stop
@@ -711,6 +798,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         return run(base, x, from, to, &q);
     }
     let schema = params(id)?;
+    let ep6 = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
@@ -749,7 +838,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             };
             let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: g("reverse") > 0.5, extend: false, stop_pct: g("stop"), mm: MM0, trail: None })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: g("reverse") > 0.5, extend: false, stop_pct: g("stop"), mm: MM0, trail: None, ep6 })
         }
         "ats_padi" | "ats_padi_nse" => {
             let pre = if id == "ats_padi" { "NYSE_ADV_DEC" } else { "NSE_ADV_DEC" };
@@ -773,7 +862,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             };
             let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: true, extend: false, stop_pct: g("stop"), mm: MM0, trail: None })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: true, extend: false, stop_pct: g("stop"), mm: MM0, trail: None, ep6 })
         }
         "ats_hv_thrust" => {
             let (a, b, lg) = (book_hv(c, u("short1"), hvr()), book_hv(c, u("short2"), hvr()), book_hv(c, u("long"), hvr()));
@@ -792,7 +881,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 (d != 0.0 && ok(d)).then(|| Ord { dir: d, kind: Kind::Close, stop: f64::NAN })
             };
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref(), ep6 })
         }
         "ats_1234" => {
             let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
@@ -814,7 +903,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 None
             };
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g), trail: trail.as_deref() })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g), trail: trail.as_deref(), ep6 })
         }
         "ats_8day_hl_reversal" => {
             let (nn, c3, win, t) = (u("n"), u("c3_days"), u("window"), tick());
@@ -853,7 +942,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 None
             };
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
-            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g), trail: trail.as_deref() })
+            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g), trail: trail.as_deref(), ep6 })
         }
         "ats_smtp" => {
             let (nn, loc, days, t) = (u("n"), g("loc") / 100.0, u("days"), tick());
@@ -870,7 +959,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 None
             };
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref(), ep6 })
         }
         "ats_cbp" => {
             // weekly bars (Monday-based weeks) resampled from the daily bars
@@ -915,7 +1004,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 (!half && l[i] <= t).then(|| (At::Px(o[i].min(t)), format!("{tg}% profit")))
             };
             let mm = if half { Mm { half_pct: tg, trail: u("trail_n"), after_half: true, ..MM0 } } else { MM0 };
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm, trail: None })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm, trail: None, ep6 })
         }
         "ats_dvmtm" => {
             if !x.has_volume {
@@ -934,7 +1023,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 hit.then(|| Ord { dir: -1.0, kind: Kind::Stop { px: l[r] - t, bars: 2 }, stop: h[r] })
             };
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref(), ep6 })
         }
         // ---- intraday phase 1: real 1-minute path (default path = 1); the series reading below stays as path = 0
         "ats_15min_adx_breakout" if g("path") >= 0.5 => {
@@ -1050,7 +1139,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 None
             };
             let ex = |_: usize, _: &Pos| Some((At::Close, "MOC".to_string()));
-            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: None })
+            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: None, ep6 })
         }
         "ats_wide_range_gap" => {
             let hv = book_hv(c, u("hv_n"), hvr());
@@ -1074,7 +1163,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let strong = if p.dir > 0.0 { x.close_loc(i) >= 1.0 - carry } else { x.close_loc(i) <= carry };
                 Some(if strong { (At::NextOpen, "closed in the extreme of its range: exit next morning".to_string()) } else { (At::Close, "locked in near the close".to_string()) })
             };
-            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: None })
+            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: None, ep6 })
         }
         "ats_gipsons" => {
             let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
@@ -1098,7 +1187,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     .then(|| if all { (At::Close, "6-day HV reached the 100-day HV".to_string()) } else { (At::Half, "half off: 6-day HV reached the 100-day HV".to_string()) })
             };
             let mm = if all { MM0 } else { Mm { trail: u("trail_n"), after_half: true, ..MM0 } };
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm, trail: None })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm, trail: None, ep6 })
         }
         _ => return None,
     };
@@ -1166,11 +1255,11 @@ mod tests {
         let ctx = Ctx::new(&rows, &rows, &[]);
         let sig = |i: usize| if i == 0 { at_close(1.0) } else { None };
         let (ex, tr) = std_exit(&ctx, 2.0, 10);
-        let t = sim(&ctx, 0, 3, &Rules { sig: &sig, touch: None, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: tr.as_deref() });
+        let t = sim(&ctx, 0, 3, &Rules { sig: &sig, touch: None, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: tr.as_deref(), ep6: false });
         assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (2, 100.5, "first up close"));
         // ATR trail: level = best price since entry - 2 x ATR5[i-1]; NaN ATR (first bars) leaves the position untouched
         let (ex, tr) = std_exit(&ctx, 1.0, 10);
-        let t = sim(&ctx, 0, 3, &Rules { sig: &sig, touch: None, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: tr.as_deref() });
+        let t = sim(&ctx, 0, 3, &Rules { sig: &sig, touch: None, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: tr.as_deref(), ep6: false });
         assert!(t[0].open, "ATR(5) is not defined before bar 4: {:?}", t);
     }
 
@@ -1216,7 +1305,7 @@ mod tests {
         let ctx = Ctx::new(&rows, &rows, &[]);
         let sig = |i: usize| if i == 0 { Some(Ord { dir: 1.0, kind: Kind::Close, stop: 95.0 }) } else { None };
         let ex = hold_exit(2);
-        let r = Rules { sig: &sig, touch: None, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: Mm { half_r: true, ..MM0 }, trail: None };
+        let r = Rules { sig: &sig, touch: None, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: Mm { half_r: true, ..MM0 }, trail: None, ep6: false };
         let t = sim(&ctx, 0, 2, &r);
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].exit_i, t[0].exit_px), (2, 103.5)); // 0.5 x 105 + 0.5 x 102

@@ -90,16 +90,19 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
     "acbff_rsi_5min", "atm04_60min", "jmls_bar_breakout", "jmls_ma_cross_30m"];
 /// Rules whose time filter is a US Eastern clock time the book gives no NSE equivalent for: SPY and SPX only.
 pub const US: &[&str] = &["jmls_ls_model"];
-pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) }
-pub fn us_id(id: &str) -> bool { US.contains(&id) }
-pub fn book(b: &str) -> bool { matches!(b, "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1") }
+/// Lane M1 (17 Nov 2026, R4 #340 / #346 (4)): rules on the NIFTY / BANKNIFTY futures 1-minute series with volume (Ctx::fut, lane DI): NIFTY 50 and NIFTYBANK only.
+pub const M1: &[&str] = &["jbudt_volspike"];
+pub fn m1(id: &str) -> bool { M1.contains(&id) }
+pub fn id(id: &str) -> bool { M1.contains(&id) || IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) || PA1.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) || CV4_US.contains(&id) }
+pub fn us_id(id: &str) -> bool { US.contains(&id) || CV4_US.contains(&id) }
+pub fn book(b: &str) -> bool { matches!(b, "stkch" | "atm03" /* K75 */ | "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm" | "pbwts" | "jbeft" | "hhoct" | "bbgf" | "twsifp" | "jraeb" | "fot08" | "sgbic" | "rsrl" | "vkdcs" | "vdso" | "jbcdt" | "jbudt" | "jb30d" | "stad2" | "mlhpt" | "rwmts" | "jchr1" | "as51ts" | "jr_tbtm" | "scchem" | "sckzthr" | "clomw" | "lpgap" | "lbspx") }
 // ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
 /// No fixed amount: all four minute tickers. Ford's three NinjaTrader systems on 60-minute bars (EP2) and the STAD Vol 3
 /// inside-day breakout failure on 30-minute bars with a daily Data2 (EP1).
 pub const K42: &[&str] = &["gfstsb_ema_cross", "gfstsb_channel", "gfstsb_perfect_order", "stad3_idbf"];
 /// Book amounts in S&P points ('20 point' = 0.20 S&P points, McNutt): SPX only (instrument_policy::intraday_w1_spx_id).
 pub const K42_SPX: &[&str] = &["kftsm_first_hour"];
-pub fn spx_id(id: &str) -> bool { K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46_SPX.contains(&id) || K48_SPX.contains(&id) }
+pub fn spx_id(id: &str) -> bool { K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46_SPX.contains(&id) || K48_SPX.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) }
 // jbcdt2_or30 (30-Minute Breakout, S&P points) is coded in books/jbcdt2.rs but held: 29.3% of its SPX trades depend on the
 // order inside one minute (decision #175 limit 5%); the #177b scaled-SPY check passed (K42w/check177b.out).
 // ---- end lane K42 block
@@ -144,8 +147,44 @@ pub const K53: &[&str] = &["jb30d_or30", "stad7_idbo", "stad7_fibret", "mlhpt_ma
 /// Cooper's Lizards: the 1-point risk and 1/8 offset are literal dollars, run on SPY only, an ETF that has never split
 /// (decision #229 (1), as #205(2)).
 pub const K53_SPY: &[&str] = &["jchr1_lizard_long", "jchr1_lizard_short"];
-pub fn spy_only(id: &str) -> bool { K53_SPY.contains(&id) }
+pub fn spy_only(id: &str) -> bool { K53_SPY.contains(&id) || K75_SPY.contains(&id) }
 // ---- end lane K53 block
+// ---- lane K57 block (5 Nov 2026, decision #236; authors/titles-1030/K57.tsv; books/lebcafm.rs)
+// lebcafm_dt_5_25 and lebcafm_dt_kane (LeBeau & Lucas Ch.4, S&P points, SPX only) are coded on the minute bars but held:
+// 5-25: 1,853 of 3,593 SPX trades (51.6%, 2014-2026) depend on the order inside one minute (the literal 0.75-point break-even
+// trigger and the return to the entry in the same minute), decision #175 limit 5%; Kane: #177b test a fires (scaled SPY avg
+// -0.0004% vs SPX +0.0113%, 2014-01-02..2025-10-21). K57w/check177b.out, ambiguity_breakdown.txt.
+// ---- end lane K57 block
+// ---- lane K70 block (8 Nov 2026, decision #268; authors/titles-1030/K70.tsv; books/as51ts.rs)
+/// No fixed amount: all four minute tickers. Singhal's Supertrend + pivot R1/S1 (5-minute), double RSI (5-minute + 1-hour),
+/// Heikin Ashi + SAR + RSI (3-minute) and first-hour EMA scalp (5-minute).
+pub const K70: &[&str] = crate::books::as51ts::INTRA;
+// ---- end lane K70 block
+// ---- lane K80 block (13 Nov 2026; authors/titles-1030/K80.tsv; books/jrtbtm.rs)
+/// No fixed amount (one tick of the instrument, #57): all four minute tickers. Joe Ross, Trading by the Minute: Sagging Highs /
+/// Rising Lows and the three-day extreme breakout, day trades on 5-minute bars with the violation-method exit.
+pub const K80: &[&str] = crate::books::jrtbtm::INTRA;
+// ---- end lane K80 block
+// ---- lane CV4 block (19 Nov 2026; books/lbspx.rs)
+/// Labunsky 60-minute SPX system (SPX index): SPX and SPY only.
+pub const CV4_US: &[&str] = crate::books::lbspx::INTRA;
+// ---- end lane CV4 block
+// ---- lane PA1 block (13 Nov 2026; authors/pa1/FINAL.md; books/scchem.rs)
+/// No fixed amount: all four minute tickers. Chan's S&P e-mini 5-minute stochastic day trade on the reduced session (S&C V.21:8).
+pub const PA1: &[&str] = crate::books::scchem::INTRA;
+/// Katz & McCormick thrust retracement (S&C V.14:12): its $350 stop is S&P points (0.70 at 1996's $500 a point): SPX only.
+pub const PA1_SPX: &[&str] = crate::books::sckzthr::INTRA;
+// ---- end lane PA1 block
+// ---- lane D1 block (16 Nov 2026; authors/relax-339/D1/FINAL.md; R4 #339/#340): S&P-point minute rules, SPX only, always UNVERIFIED
+pub const D1_SPX: &[&str] = &["clomw_early_range_breakout", "lpgap_fade_spx"];
+// ---- end lane D1 block
+// ---- lane K75 block (11 Nov 2026, R4 #279 (2); authors/titles-1030/K75.tsv)
+/// Daily rules that read the first-hour / last-hour series built from the real 1-minute bars (intraday::session_series):
+/// they run only on the minute tickers, over the minute years; a day without minutes makes no trade. No fixed amount.
+pub const K75: &[&str] = &["ss_smart_money_index", "stkch_gap_fgu_long", "stkch_gap_fgu_short", "stkch_gap_fgd_short"];
+/// Shirley's 10-minute breakout (R4 #279 (5)): its $1.75 stop and floor are dollars a share on SPY (Table 1's 200 shares): SPY only.
+pub const K75_SPY: &[&str] = &["atm03_shirley"];
+// ---- end lane K75 block
 // Decision #177a for these rules (flagged on the SPY/SPX overlap: SPY only) goes into intraday_w3::SPY, the one #177a list.
 
 #[cfg(test)]
@@ -263,7 +302,7 @@ mod tests {
     fn ep_admission_and_tickers() {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
-        for id in IDS.iter().chain(US).chain(K42).chain(K42_SPX).chain(K44_SPX).chain(K45_SPX).chain(K46).chain(K46_SPX).chain(K48).chain(K48_SPX).chain(K55).chain(K53).chain(K53_SPY) {
+        for id in IDS.iter().chain(US).chain(K42).chain(K42_SPX).chain(K44_SPX).chain(K45_SPX).chain(K46).chain(K46_SPX).chain(K48).chain(K48_SPX).chain(K55).chain(K53).chain(K53_SPY).chain(K70).chain(K75).chain(K75_SPY).chain(PA1).chain(PA1_SPX) {
             let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             assert!(d.status == crate::connors::Status::Live && ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
@@ -271,7 +310,7 @@ mod tests {
             for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t) && !crate::intraday_w3::india_held(id, t), "{id} {t}"); } // #231/#234: India pairs withdrawn
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             let g = crate::gate::get(id).unwrap_or_else(|| panic!("gate {id}"));
-            assert!((matches!(g.verdict, "unverified" | "verified") || (crate::intraday_w3::spx_held(id) && g.verdict == "withheld")) && (g.reason.contains("K39") || g.reason.contains("K42") || g.reason.contains("K44") || g.reason.contains("K45") || g.reason.contains("K46") || g.reason.contains("K48") || g.reason.contains("K55") || g.reason.contains("K53")) && (g.reason.contains("p.") || g.reason.contains(".txt")), "{id}");
+            assert!((matches!(g.verdict, "unverified" | "verified") || (crate::intraday_w3::spx_held(id) && g.verdict == "withheld")) && (g.reason.contains("K39") || g.reason.contains("K42") || g.reason.contains("K44") || g.reason.contains("K45") || g.reason.contains("K46") || g.reason.contains("K48") || g.reason.contains("K55") || g.reason.contains("K53") || g.reason.contains("K70") || g.reason.contains("K75") || g.reason.contains("PA1")) && (g.reason.contains("p.") || g.reason.contains(".txt")), "{id}");
         }
         assert!(ip::check(cat.iter().find(|d| d.id == "jmls_ls_model").unwrap(), "NIFTY 50", false).unwrap().note.contains("US Eastern clock time"));
     }

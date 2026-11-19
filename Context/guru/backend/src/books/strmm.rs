@@ -186,6 +186,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let hyb = || vec![p("retrace", "RetracePeriod (bars)", 6., 2., 20., 1.), p("aggr", "Aggressiveness (range divisor)", 3., 1., 5., 0.5)];
     let sct = |sl: f64, tr: f64, pt: f64, bars: f64, atr: bool| {
@@ -314,18 +320,32 @@ fn fill_exit(x: &Ctx, i: usize, dir: f64, e: &Ex) -> Option<(f64, &'static str)>
 /// (when flat) or exit orders (when in a position) for bar i+1; "on close" exits act on bar i itself.
 /// No exit orders exist on the entry bar (they are placed at its close); a stop exit frees the next close for a new entry.
 fn sim(x: &Ctx, from: usize, to: usize,
+       entry: impl FnMut(usize) -> Vec<(f64, Ord, &'static str)>,
+       on_close: impl FnMut(usize, &mut Pos) -> Option<&'static str>,
+       exits: impl FnMut(usize, &Pos) -> Ex) -> Vec<Trade> { sim_ep6(x, from, to, entry, on_close, exits, false) }
+
+/// `sim` with EP6 (#243, lane K63): with `on`, a bar on which the stop and the target are both inside the range (the open
+/// through neither) is walked on the real 1-minute path (intraday_ep6::stop_target); fill_exit (the stop first) otherwise.
+/// No exits work on the entry bar, so a trade is decided only on the bar it exits.
+fn sim_ep6(x: &Ctx, from: usize, to: usize,
        mut entry: impl FnMut(usize) -> Vec<(f64, Ord, &'static str)>,
        mut on_close: impl FnMut(usize, &mut Pos) -> Option<&'static str>,
-       mut exits: impl FnMut(usize, &Pos) -> Ex) -> Vec<Trade> {
+       mut exits: impl FnMut(usize, &Pos) -> Ex, on: bool) -> Vec<Trade> {
     let mut out = vec![];
+    let mut od = crate::intraday_ep6::Day::Plain; // EP6 mark of the open position
     let (mut pend_e, mut pend_x): (Vec<(f64, Ord, &'static str)>, Ex) = (vec![], Ex::default());
     let mut pos: Option<Pos> = None;
     for i in from..=to {
         if let Some(p) = pos.as_mut() {
             p.bse += 1;
-            if let Some((px, why)) = fill_exit(x, i, p.t.dir, &pend_x) {
+            let (st, tg) = (pend_x.stop.unwrap_or(f64::NAN), pend_x.limit.unwrap_or(f64::NAN));
+            let (fill, day) = crate::intraday_ep6::stop_target(x, i, p.t.dir, st, tg, on && pend_x.mkt.is_none(), ("stop", "target"), || fill_exit(x, i, p.t.dir, &pend_x));
+            od = od.worst(day);
+            if let Some((px, why)) = fill {
                 let t = pos.take().unwrap().t;
-                out.push(close_trade(t, i, px, why, if pend_x.mkt.is_some() { i - 1 } else { i }));
+                let mut t = close_trade(t, i, px, why, if pend_x.mkt.is_some() { i - 1 } else { i });
+                crate::intraday_ep6::mark(&mut t, od);
+                out.push(t);
             }
         } else if !pend_e.is_empty() {
             // several pending entry orders: markets first, then the stop/limit nearest the open
@@ -338,6 +358,7 @@ fn sim(x: &Ctx, from: usize, to: usize,
             }
             if let Some((dir, px, kind, _)) = best {
                 pos = Some(Pos { t: open_trade(dir, i, px, kind, i - 1), bse: 0, fix: f64::NAN, top: x.h[i], bot: x.l[i] });
+                od = crate::intraday_ep6::Day::Plain;
             }
         }
         pend_e.clear();
@@ -355,7 +376,7 @@ fn sim(x: &Ctx, from: usize, to: usize,
             pend_e = entry(i);
         }
     }
-    if let Some(p) = pos { let mut t = close_trade(p.t, to, x.c[to], "open", to); t.open = true; out.push(t); }
+    if let Some(p) = pos { let mut t = close_trade(p.t, to, x.c[to], "open", to); t.open = true; crate::intraday_ep6::mark(&mut t, od); out.push(t); }
     out
 }
 
@@ -598,8 +619,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "strmm_meander" => {
             let lb = u("lookback").min(25);
-            sim(x, from, to, meander_entry(x, lb), no_close,
-                |i, _| meander(x, i, lb).map_or(Ex::default(), |m| Ex { stop: Some(m.1), limit: Some(m.3), mkt: None }))
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+            sim_ep6(x, from, to, meander_entry(x, lb), no_close,
+                |i, _| meander(x, i, lb).map_or(Ex::default(), |m| Ex { stop: Some(m.1), limit: Some(m.3), mkt: None }), crate::intraday_ep6::on(id, p)) // EP6 (#243, lane K63)
         }
         "strmm_meander_sl" | "strmm_meander_ts" => {
             let s = Sct::new(x, &g, true);

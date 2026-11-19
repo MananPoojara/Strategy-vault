@@ -35,8 +35,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NotTestable("The dollar stop amount and the 4-day %R buy/sell zone levels are not given, and the four exits are listed without saying how they combine."),
             &["F|21-day RSI > 50 only buys, < 50 only sells; 4-day %R for pullbacks (p.93)", "E|Original Oops!, hidden Oops!, ringed high/low formation", "X|$ stop loss; %R going to overbought/sold; trail a stop at prior days high/low; an opposite Oops! signal"], ""),
         sd!("lwic6_bonds", "Bonds: TDW, TDOM (with gold), holidays ($1,400 stop), gold filter", "Inside Circle short term", "Long/Short",
-            NeedsData("Needs daily T-Bond futures and Gold futures."),
-            &["E|Buy each weekday open, exit first profitable opening (TDW table); TDOM table with gold below 25 days ago; holiday table with a $1,400 stop, 01/10/78-07/06/99 190 trades $52,200 (p.86 ff.)"], "Same family as lwicw_bond_shortterm; different holiday offsets."),
+            NotTestable("Duplicate (lane F1D, R4 #293): pages 86-89 reprint the Inner Circle Workshop 2000 notes p.33-35 word for word (the same TDW, TDOM and gold tables, the same holiday table with the same offsets, and the same printout, DAY T-BONDS 01/10/78-07/06/99, 190 trades, $52,200). Live as lwicw_bond_holidays, lwicw_bond_tdw, lwicw_bond_tdw_gold, lwicw_bond_tdom and lwicw_bond_tdom_gold on the Norgate T-bond contract; counted once there."),
+            &["E|Buy each weekday open, exit first profitable opening (TDW table); TDOM table with gold below 25 days ago; holiday table with a $1,400 stop, 01/10/78-07/06/99 190 trades $52,200 (p.86 ff.)"], "Duplicate of the 2000 workshop bond section (same offsets and printout); see the status reason."),
         sd!("lwic6_setups", "WillVal, COT, large traders, ADX +60, pinch/paunch, sentiment, seasonals, OI, premiums", "Set ups", "Long/Short",
             NeedsData("Needs futures, gold/bond/dollar spreads, CFTC COT, sentiment and open interest; the set-ups are clustered by judgement (\"at least 4 ... 3 is the bare minimum\")."),
             &["F|See lwstc_setups (same text, p.5-51)"], ""),
@@ -52,7 +52,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwic6_pctr_ma50_long" => f("lwic6_pctr", "%R with the trend", "Long"),
         "lwic6_pctr_ma50_short" => f("lwic6_pctr", "%R with the trend", "Short · not testable"),
         "lwic6_rnr" | "lwic6_entries_exits" => f("lwic6_other", "Other techniques", "Not testable"),
-        "lwic6_bonds" | "lwic6_setups" => f("lwic6_other", "Other techniques", "Needs data"),
+        "lwic6_bonds" => f("lwicw_holidays", "Holiday trades", "T-Bonds (2006 reprint: duplicate)"),
+        "lwic6_setups" => f("lwic6_other", "Other techniques", "Needs data"),
         _ => None,
     }
 }

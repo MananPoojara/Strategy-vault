@@ -82,7 +82,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Sell next open after C < BBandBot(C,180,0.5), or delisting, or leaving the index (pdf p.393)",
             "F|Rank simultaneous signals by 100 + Ref(ROC(C,300),-1); 0.25% commission per side (pdf p.393)",
         ], "Book: S&P 500 universe 1989-2018 (Tables 9.3-9.4); the EasyLanguage version App. 4.2 differs (BarsBlw 2, 180/3/1, stop orders)."),
-        d("jt_triangle", "Triangle System (low volatility / flat MA breakout)", "Appendix 2 · The Triangle System", "Long/Short", NotTestable("code not disclosed: \"we do not disclose this code but just describe its logic\" (App. 2.2); volatility indicator, 'nearly horizontal' MA, entry distance, target and trailing stop are not quantified; 5-minute futures"), &[
+        d("jt_triangle", "Triangle System (low volatility / flat MA breakout)", "Appendix 2 · The Triangle System", "Long/Short", NotTestable("code not disclosed: \"we do not disclose this code but just describe its logic\" (App. 2.2); volatility indicator, 'nearly horizontal' MA, entry distance, target and trailing stop are not quantified; shown on short-period futures charts"), &[
             "F|300-bar volatility at its lowest point and 200-bar SMA nearly horizontal (App. 2.2)",
             "E|Long stop a fixed amount above and short stop the same amount below the market (App. 2.2)",
             "X|Target from the 300-bar high-low range, else a trailing stop (App. 2.2)",

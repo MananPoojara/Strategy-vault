@@ -5,7 +5,7 @@ use super::apta::{ema, macd_run, run_long, Macd};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["apmacd_neutral", "apmacd_uptrend", "apmacd_downtrend", "apmacd_ad_stay"]; // _nse held: +450 is an NYSE A-D amount (engine guard)
+pub const REVIEWED: &[&str] = &["apmacd_neutral", "apmacd_uptrend", "apmacd_downtrend", "apmacd_ad_stay", "apmacd_ad_stay_nse"]; // _nse opened by IN1 17 Nov 2026 (R4 #340)
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "apmacd";
@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("apmacd_ad_stay", "Super stay-in: 19-39 MACD of the A-D line above +450 · NYSE breadth", "Supplementary Chart F", Live, &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"], AD_STAY,
             "Book examples: HOLD 2/3/1995 (NYSE 260.44) to 10/9/1995 (310.35, +19.2%); 12/21/1995 (327.60) to 4/10/1996 (340.93, +4.1%) (p.43). Days without breadth data leave the A-D line unchanged."),
         d("apmacd_ad_stay_nse", "Super stay-in: 19-39 MACD of the A-D line above +450 · NSE breadth", "Supplementary Chart F", Live, &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"], AD_STAY,
-            "India mapping: NSE advances/declines, same +450 level (NSE lists a similar number of issues)."),
+            "India mapping (R4 #347): real NSE advances/declines, same +450 level, a count of issues applied unchanged. Measured: MACD above +450 on 9.6% of NSE days (5.8% over 1999-11..2020-02) against 68.5% of NYSE days over the same overlap; UNVERIFIED declared adaptation."),
     ]
 }
 

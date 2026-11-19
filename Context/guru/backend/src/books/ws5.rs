@@ -232,6 +232,12 @@ fn trend_filters(weekly: bool) -> Vec<ParamDef> {
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let windows = |extra: Vec<ParamDef>| {
         let mut v = trend_filters(false);
         v.extend([
@@ -403,6 +409,7 @@ fn le(a: f64, b: f64) -> bool {
     a <= b + TIE * b.abs()
 }
 
+#[derive(Clone)]
 pub(crate) struct Fill {
     pub day: usize, // 1-based day of the trade
     pub px: f64,
@@ -495,6 +502,84 @@ pub(crate) fn manage3(e: f64, stop0: f64, r: &Rules, days: &[Vec<f64>], below: &
     }
     fills.push(Fill { day: days.len().max(1), px: f64::NAN, frac: rem, why: "open".into() });
     (fills, true)
+}
+
+/// EP6 (#243, lane K63): `manage3` as a point-by-point state, so that one day can be walked on the real 1-minute path.
+/// `point(.., gap)`: a level the path jumps over (`gap`, a minute that opened beyond it) fills at the jump's end, not at
+/// the level; otherwise every rule is manage3's.
+#[derive(Clone)]
+pub(crate) struct M3 { e: f64, r: Rules, stop: f64, rem: f64, tgt: f64, profit: bool, prev_close: f64, hi: f64, last: f64, pub fills: Vec<Fill>, pub done: bool }
+
+impl M3 {
+    pub(crate) fn new(e: f64, stop0: f64, r: &Rules) -> M3 {
+        let mut m = M3 { e, r: *r, stop: stop0, rem: 1.0, tgt: e + (e - stop0), profit: false, prev_close: e, hi: f64::NEG_INFINITY, last: f64::NAN, fills: vec![], done: false };
+        if !(e - stop0 > 0.0) || !(r.pt > 0.0) || !(r.step > 0.0) {
+            m.fills.push(Fill { day: 1, px: e, frac: 1.0, why: "no risk: flat".into() });
+            m.done = true;
+        }
+        m
+    }
+    pub(crate) fn start_day(&mut self, day: usize) {
+        if day == 3 { self.stop = self.stop.max(self.prev_close - self.r.d3_close * self.r.pt); }
+        self.hi = f64::NEG_INFINITY;
+        self.last = f64::NAN;
+    }
+    /// One point of day `day`'s path (`j0`: its first point: the open, or day 1's entry fill).
+    pub(crate) fn point(&mut self, day: usize, j0: bool, px: f64, gap: bool) {
+        if self.done { return; }
+        let r = self.r;
+        if j0 && day > 1 && px <= self.stop + EPS {
+            self.fills.push(Fill { day, px, frac: self.rem, why: format!("stop gapped, out at the open (D{day})") });
+            self.done = true;
+            return;
+        }
+        if j0 || px > self.last {
+            while self.tgt <= px + EPS && self.rem > 1e-12 {
+                let f = self.rem / r.part;
+                let tag = if self.profit { "+1 pt" } else { "R=R" };
+                self.fills.push(Fill { day, px: if j0 || gap { px } else { self.tgt }, frac: f, why: format!("1/{} {tag} (D{day})", r.part) });
+                self.rem -= f;
+                self.profit = true;
+                self.stop = self.stop.max(self.e);
+                self.tgt += r.step * r.pt;
+            }
+            self.hi = self.hi.max(px);
+            if day >= 2 && self.hi - self.e >= r.trail2_start * r.pt { self.stop = self.stop.max(self.hi - r.trail2 * r.pt); }
+            if day >= 3 { self.stop = self.stop.max(self.hi - r.d3_trail * r.pt); }
+        } else if px <= self.stop + EPS {
+            let why = if self.stop > self.e { "trailing stop" } else if self.stop == self.e { "breakeven stop" } else { "stop" };
+            self.fills.push(Fill { day, px: if gap { px } else { self.stop }, frac: self.rem, why: format!("{why} (D{day})") });
+            self.done = true;
+            return;
+        }
+        self.last = px;
+    }
+    /// The day's close rules (`below`: this day's and the previous day's close below the 4-period SMA).
+    pub(crate) fn end_day(&mut self, day: usize, below: &[bool]) {
+        if self.done { return; }
+        let r = self.r;
+        let last = self.last;
+        self.prev_close = last;
+        if day == 2 && r.ma_rule && below.get(1) == Some(&true) {
+            if below[0] {
+                self.fills.push(Fill { day, px: last, frac: self.rem, why: "2 closes below 4-SMA (D2)".into() });
+                self.done = true;
+                return;
+            }
+            let f = self.rem / r.part;
+            self.fills.push(Fill { day, px: last, frac: f, why: "1/3 close below 4-SMA (D2)".into() });
+            self.rem -= f;
+        } else if day == 2 && r.day2_extra.map_or(false, |mx| self.fills.len() <= mx) {
+            let f = self.rem / r.part;
+            let n = self.fills.len();
+            self.fills.push(Fill { day, px: last, frac: f, why: format!("1/3 at Day-2 close, {n} piece(s) taken (D2)") });
+            self.rem -= f;
+        }
+        if day >= r.max_days {
+            self.fills.push(Fill { day, px: last, frac: self.rem, why: format!("Day {day} close") });
+            self.done = true;
+        }
+    }
 }
 
 /// Weekly Windows money management (Session 3 rules 1-4), long space, managed on daily paths, no time limit.
@@ -603,7 +688,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
         "ws5_emini_spy_daytrade" => return Some(emini(x, from, to, &g, &u)),
         _ => return None,
     };
-    Some(daily_windows(kind, x, from, to, &g, &u))
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, prm) else { return Some(vec![]) }; // EP6 #243 (c)
+    Some(daily_windows(kind, x, from, to, &g, &u, crate::intraday_ep6::on(id, prm))) // EP6 (#243, lane K63)
 }
 
 fn sides(g: &dyn Fn(&str) -> f64) -> Vec<f64> {
@@ -680,10 +766,11 @@ fn sector_ok(g: &dyn Fn(&str) -> f64, sec: Option<&(Vec<f64>, Vec<f64>)>, k: usi
     sec.map_or(false, |(s, m)| if d > 0.0 { gt(s[k], m[k]) } else { lt(s[k], m[k]) })
 }
 
-fn daily_windows(kind: Kind, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize) -> Vec<Trade> {
+fn daily_windows(kind: Kind, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize, on: bool) -> Vec<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
     let m = sma(c, u("window_ma"));
+    let m4 = |k: usize| m[k];
     let atr90 = avg_tr(h, l, c, u("range_n"));
     let pt = point_fn(x, g, &atr90);
     let tf = Trend::new(h, l, c, g, u, sma(c, u("trend")));
@@ -767,6 +854,90 @@ fn daily_windows(kind: Kind, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -
                 None
             };
             let Some((e, s0, day1, label)) = ent else { continue };
+            if on {
+                // EP6 (#243, lane K63): day by day; a day whose fills differ between its two extreme orders is walked on the
+                // real 1-minute path (long space: a short's minutes are negated); the adverse extreme first otherwise.
+                // Day 1 starts before the fill: the stop entry (or the Intraday Gap Window level) fills where the path
+                // reaches it; an entry at the open fills at the open.
+                let r_i = rules(i);
+                let lvl = if label == "Window, filled at the open" { f64::NAN } else { e };
+                let lsp = |g: &crate::intraday_ep6::Seg| crate::intraday_ep6::Seg { a: d * g.a, b: d * g.b, gap: g.gap };
+                let evs = |z: &M3, n0: usize| -> Vec<crate::intraday_ep6::Ev> {
+                    z.fills[n0..].iter().enumerate().map(|(q, f)| crate::intraday_ep6::Ev { k: (n0 + q) as u8, px: d * f.px, up: f.why.starts_with("1/") == (d > 0.0) }).collect() // real prices; a target piece is reached moving with the trade
+                };
+                let walk1 = |z: &mut Option<M3>, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+                    let mut ev = vec![];
+                    if segs.is_empty() {
+                        if z.is_none() && !lvl.is_finite() {
+                            let mut mm = M3::new(d * o[e_i], s0, &r_i);
+                            mm.start_day(1);
+                            mm.point(1, true, d * o[e_i], false);
+                            *z = Some(mm);
+                        }
+                        return ev;
+                    }
+                    for g in segs {
+                        let g = lsp(g);
+                        if z.is_none() {
+                            if !(g.up() && g.inside(lvl)) { continue; }
+                            let f = g.fill(lvl);
+                            let mut mm = M3::new(f, s0, &r_i);
+                            mm.start_day(1);
+                            mm.point(1, true, f, false);
+                            ev.push(crate::intraday_ep6::Ev { k: 255, px: d * f, up: d > 0.0 });
+                            *z = Some(mm);
+                        }
+                        let mm = z.as_mut().unwrap();
+                        let n0 = mm.fills.len();
+                        mm.point(1, false, g.b, g.gap);
+                        ev.extend(evs(mm, n0));
+                    }
+                    ev
+                };
+                let conv1 = |z: &mut Option<M3>| {
+                    let mut mm = M3::new(e, s0, &r_i);
+                    mm.start_day(1);
+                    for (j, &px) in day1.iter().enumerate() { mm.point(1, j == 0, px, false); }
+                    *z = Some(mm);
+                };
+                let mut z1: Option<M3> = None;
+                let mut od = crate::intraday_ep6::resolve_conv(x, e_i, true, &mut z1, conv1,
+                    |q, hf| { let mut v = walk1(q, &[]); v.extend(walk1(q, &crate::intraday_ep6::bar_segs(o[e_i], h[e_i], l[e_i], c[e_i], hf))); v }, &walk1);
+                let Some(mut m) = z1 else { continue }; // the minutes never reach the entry level: no trade that day
+                let below_of = |k: usize| lt(d * c[k], d * m4(k));
+                let mut prev_below = below_of(e_i);
+                m.end_day(1, &[false, prev_below]);
+                let (mut day, mut k) = (2usize, e_i + 1);
+                while !m.done && day <= max_days && k <= to {
+                    m.start_day(day);
+                    let walk = |z: &mut M3, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+                        let n0 = z.fills.len();
+                        if segs.is_empty() { z.point(day, true, d * o[k], false); }
+                        for g in segs { let g = lsp(g); z.point(day, false, g.b, g.gap); }
+                        evs(z, n0)
+                    };
+                    let day_k = day;
+                    let bp = bar_path(x, k, d);
+                    let conv = |z: &mut M3| { for (j, &px) in bp.iter().enumerate() { z.point(day_k, j == 0, px, false); } };
+                    let dk = crate::intraday_ep6::resolve_conv(x, k, true, &mut m, conv,
+                        |z, hf| { let mut v = walk(z, &[]); v.extend(walk(z, &crate::intraday_ep6::bar_segs(o[k], h[k], l[k], c[k], hf))); v }, &walk);
+                    od = od.worst(dk);
+                    let b = below_of(k);
+                    m.end_day(day, &[prev_below, b]);
+                    prev_below = b;
+                    day += 1;
+                    k += 1;
+                }
+                let open = !m.done;
+                let ef = m.e;
+                let mut fills = m.fills;
+                if open { fills.push(Fill { day: (day - 1).max(1), px: f64::NAN, frac: m.rem, why: "open".into() }); }
+                let side = if d > 0.0 { "Long" } else { "Short" };
+                let mut t = to_trade(x, d, e_i, ef, &fills, open, to, "stop", &format!("{side} {label}, risk {:.2}", ef - s0));
+                crate::intraday_ep6::mark(&mut t, od);
+                done = Some(t);
+                break;
+            }
             let mut days = vec![day1];
             let mut below = vec![lt(d * c[e_i], d * m[e_i])];
             let mut k = e_i + 1;

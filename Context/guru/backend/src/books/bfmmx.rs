@@ -2,7 +2,7 @@
 //! S4 (e-mini S&P / Nasdaq short). Source (research drive, read in place, read-only): `USB HDD 1/TradeStation Systems &
 //! Indicators/MiniMax I & II for TS,TS8, Excel + Manuals, $525 (breakoutfutures.com)/v1/Code.rar` -> `Code.txt`
 //! (extracted as data). Book id `bfmmx`. Notes: library/bfmmx/README.md. Engine: books::rrsim.
-use crate::books::rrsim::{g, o, pd, run_ts, sdef, sma, true_range, A, P};
+use crate::books::rrsim::{g, o, pd, run_ts_ep6, sdef, sma, true_range, A, P};
 use crate::connors::{wilder, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bfmmx";
@@ -51,6 +51,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         ESL4 => Some(vec![pd("ent_frac", "EntFrac (x prior day's true range)", 0.70, 0.2, 1.5, 0.05), pd("mm_mult", "MMmult (x 10-day range)", 0.75, 0.25, 2., 0.05), pd("trail_fr", "TrailFr (x true range)", 1.5, 0.5, 3., 0.1)]),
         NQL4 => Some(vec![pd("ent_frac", "EntFrac (x prior day's true range)", 0.65, 0.2, 1.5, 0.05), pd("mm_mult", "MMmult (x 10-day range; also trail)", 0.75, 0.25, 2., 0.05)]),
@@ -83,6 +89,8 @@ pub fn dmi3(x: &Ctx, n: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let ep6 = crate::intraday_ep6::on(id, p);
     let (h, l, c, op) = (&x.h, &x.l, &x.c, &x.o);
     let tr = true_range(x);
     let hl: Vec<f64> = (0..c.len()).map(|i| h[i] - l[i]).collect();
@@ -93,7 +101,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (dp, dm, adx) = dmi3(x, 14);
             let ave14 = sma(&hl, 14);
             let (mut entpr, mut xmm, mut xtrail, mut trail_on) = (0f64, 0f64, 0f64, false);
-            Some(run_ts(x, from, to, |i, st, now, next| {
+            Some(run_ts_ep6(x, from, to, ep6, |i, st, now, next| {
                 let ep = if st.pos != 0 { st.entry_px } else { 0. };
                 let bse = if st.pos != 0 { st.bse(i) } else { 0 };
                 if st.pos == 1 && !trail_on && c[i] >= ep && dp[i] > dm[i] { trail_on = true; }
@@ -119,7 +127,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (ef, mm) = (g(p, "ent_frac", 0.65), g(p, "mm_mult", 0.75));
             let atr14 = sma(&tr, 14);
             let (mut xmm, mut xtrail, mut trail_on) = (0f64, 0f64, false);
-            Some(run_ts(x, from, to, |i, st, _now, next| {
+            Some(run_ts_ep6(x, from, to, ep6, |i, st, _now, next| {
                 if i >= 2 && c[i] < c[i - 2] && atr14[i].is_finite() && ave10[i].is_finite() {
                     let brk = (ef * tr[i]).max(0.5 * atr14[i]).min(1.5 * atr14[i]);
                     let entpr = c[i] + brk;
@@ -141,7 +149,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (ef, mmf, tx) = (g(p, "ent_fr", 0.75), g(p, "mm_fr", 1.0), g(p, "trail_x", 0.5));
             let (dp, dm, _) = dmi3(x, 14);
             let (mut entpr, mut xshort) = (0f64, 99999999f64);
-            Some(run_ts(x, from, to, |i, st, _now, next| {
+            Some(run_ts_ep6(x, from, to, ep6, |i, st, _now, next| {
                 if i >= 2 && dm[i] > dp[i] && c[i] > c[i - 1] && c[i - 1] > c[i - 2] && ave10[i].is_finite() {
                     entpr = c[i] - ef * ave10[i];
                     next.push(o(A::Sell, P::Stop(entpr), "Sell Short (S4)"));

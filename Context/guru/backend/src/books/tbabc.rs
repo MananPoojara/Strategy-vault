@@ -18,7 +18,7 @@
 //! the protective stop and target as soon as the entry fills.
 use crate::books::bwntd::tick_of;
 /// Admitted ids (authors/bierovic/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool"];
+pub const REVIEWED: &[&str] = &["tbabc_ma_cross" /* lane K60, #244 (4) */, "tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 use crate::connors::{true_range, sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
@@ -99,10 +99,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|Basic buy signal: an X column exceeds the previous X column; basic sell signal: an O column falls below the previous O column (p.53-54)",
             "X|Basic long/short exit (p.54-55); big profit exit: \"When your open profits reach ten boxes or more, take profits on the next reversal\" (p.57)"],
           "Three-box reversal (p.52).", None),
-        d("tbabc_ma_cross", "Moving-average crossover chart examples", "Moving Averages", "Long",
-          NotTestable("chart captions only (charts #77-78: \"Buy at A when SMA:5 crosses above SMA:12\", \"Sell at B\"); the fill bar/price is not stated and chart #78 (SMA 5/15) does not say whether a sell reverses"),
-          &["E|\"Buy at A when SMA:5 crosses above SMA:12\"; \"Sell at B when SMA:5 crosses below SMA:12\"; \"Buy again at C\" (chart #77, p.61)"],
-          "Chart #93 (\"Buy at A when the stock closes above the SMA [100] / Sell at B when the stock closes below\") duplicates apta_ma100_dji and is not added.", None),
+        d("tbabc_ma_cross", "Moving-average crossover chart examples", "Moving Averages", "Long", Live,
+          &["E|\"Buy at A when SMA:5 crosses above SMA:12\" (chart #77, ADCT, p.61): the 5-bar simple average of the close ends a bar above the 12-bar average after ending the bar before at or below it",
+            "X|\"Sell at B when SMA:5 crosses below SMA:12\"; \"Buy again at C\" (chart #77): the sell ends the long position; out of the market until the next buy",
+            "F|Chart #78 (p.61, \"Dual moving average crossover method\", SMA:5 and SMA:15): the same rule with a 15-bar slow average = option slow = 15",
+            "F|[Declared reading, decisions #230 (1) and #244 (4)] the captions do not say on which bar the order fills: default = the next bar's open after the crossing close; option fill = 1 fills at the crossing bar's close. Long only: the charts mark buys and sells of a long position, never a short"],
+          "Chart #93 (\"Buy at A when the stock closes above the SMA [100] / Sell at B when the stock closes below\") duplicates apta_ma100_dji and is not added. Bierovic shows the rule on two stock charts without results; runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K60w/k60_ref.py.", None),
         d("tbabc_discretionary", "Chart patterns, candlesticks, Fibonacci, indicators", "Bar-chart & candlestick patterns", "Long/Short",
           NotTestable("discretionary: trendlines, flags, triangles, wedges, head-and-shoulders, double tops, candlestick patterns, Fibonacci zones and indicator divergences are drawn/judged by eye and have no exit rules (p.15-74)"),
           &["F|Swing highs/lows, trendlines, gaps, key/closing-price reversals, chart patterns, candlesticks, Bollinger, momentum, RSI, OBV, Fibonacci (p.15-74)"],
@@ -128,6 +130,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let stops = || vec![p("ips", "Initial stop (ATRs)", 3., 2., 4., 1.), p("bes", "Breakeven trigger (ATRs)", 3., 2., 4., 1.),
         p("ts", "Trailing stop (ATRs)", 4., 3., 5., 1.), p("vs", "Volatility stop (ATRs)", 3., 2., 4., 1.),
@@ -140,6 +148,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.extend(stops());
             v
         }
+        "tbabc_ma_cross" => vec![p("fast", "Fast SMA (bars)", 5., 2., 20., 1.), p("slow", "Slow SMA (bars): 12 = chart #77, 15 = chart #78", 12., 5., 50., 1.),
+            p("fill", "Fill: 0 = next bar's open, 1 = the crossing bar's close", 0., 0., 1., 1.)],
         "tbabc_powertool" => {
             let mut v = vec![p("timing", "Timing EMA", 10., 5., 15., 2.), p("trend", "Trend EMA", 50., 30., 70., 5.), p("atr", "ATR length", 20., 10., 30., 5.)];
             v.extend(stops());
@@ -193,46 +203,134 @@ fn close_trade(ps: &Pos, b: usize, px: f64, why: &str) -> Trade {
 /// `gen(t, pos)` = orders resting through bar t+1, built at bar t's close. If `immediate`,
 /// `on_entry(pos)` adds the exit orders of a position the moment it fills.
 fn sim(x: &Ctx, from: usize, to: usize, immediate: bool, gen: &dyn Fn(usize, Option<&Pos>) -> Vec<Ord>,
-       on_entry: &dyn Fn(&Pos) -> Vec<Ord>) -> Vec<Trade> {
-    let mut out = vec![];
-    let mut pos: Option<Pos> = None;
-    for t in from..to {
-        let b = t + 1;
-        let mut ords = gen(t, pos.as_ref());
+       on_entry: &dyn Fn(&Pos) -> Vec<Ord>) -> Vec<Trade> { sim_ep6(x, from, to, immediate, gen, on_entry, false) }
+
+/// The simulator's state during one bar (EP6, lane K63): the position, the orders still working, the trades closed on
+/// this bar, the position's same-day-order mark.
+#[derive(Clone)]
+struct St { pos: Option<Pos>, ords: Vec<Ord>, out: Vec<Trade>, od: crate::intraday_ep6::Day }
+
+impl St {
+    fn fill(&mut self, b: usize, t: usize, o: Ord, px: f64, immediate: bool, on_entry: &dyn Fn(&Pos) -> Vec<Ord>) {
+        if let Some(ps) = self.pos.take() {
+            let mut tr = close_trade(&ps, b, px, if o.entry { "reversed by opposite entry" } else { o.tag });
+            crate::intraday_ep6::mark(&mut tr, self.od);
+            self.out.push(tr);
+            self.ords.retain(|q| q.entry);
+        }
+        if o.entry {
+            let kind = if o.k == K::Open { "open" } else { "stop" };
+            let ps = Pos { dir: o.dir, px, i: b, sig: t, ext: f64::NAN, aux: o.aux, kind };
+            if immediate { self.ords.extend(on_entry(&ps)); }
+            self.pos = Some(ps);
+            self.od = crate::intraday_ep6::Day::Plain;
+        }
+    }
+    fn live(&self, o: &Ord) -> bool { match &self.pos { None => o.entry, Some(ps) => !o.entry || o.dir != ps.dir } }
+    /// The daily bar b on the TradeStation path (the simulator's own convention, unchanged).
+    fn bar(&mut self, x: &Ctx, b: usize, t: usize, immediate: bool, on_entry: &dyn Fn(&Pos) -> Vec<Ord>) {
         let p = path(x.o[b], x.h[b], x.l[b], x.c[b]);
         let mut now = 0.;
         loop {
             let mut best: Option<(f64, u8, usize, f64)> = None;
-            for (j, o) in ords.iter().enumerate() {
+            for (j, o) in self.ords.iter().enumerate() {
                 if !o.px.is_finite() && o.k != K::Open { continue; }
-                let live = match &pos { None => o.entry, Some(ps) => !o.entry || o.dir != ps.dir };
-                if !live { continue; }
+                if !self.live(o) { continue; }
                 let Some((tm, px)) = when(&p, now, o) else { continue };
                 let rank = if o.entry { 2 } else if o.k == K::Stop { 0 } else { 1 };
                 if best.map_or(true, |(bt, br, _, _)| tm < bt || (tm == bt && rank < br)) { best = Some((tm, rank, j, px)); }
             }
             let Some((tm, _, j, px)) = best else { break };
-            let o = ords.remove(j);
+            let o = self.ords.remove(j);
             now = tm;
-            if let Some(ps) = pos.take() {
-                out.push(close_trade(&ps, b, px, if o.entry { "reversed by opposite entry" } else { o.tag }));
-                ords.retain(|q| q.entry);
+            self.fill(b, t, o, px, immediate, on_entry);
+        }
+    }
+    /// EP6 walk of bar b along `segs` (no segments = the open: market-on-open orders and levels the open is through, at the
+    /// open). On each segment the earliest level fills next (at its level; on a gap segment at the gap's end); a level an
+    /// order is already through when it is placed fills at once at the current price; at equal times stops, then limits,
+    /// then entries (the simulator's ranking).
+    fn walk(&mut self, x: &Ctx, b: usize, t: usize, segs: &[crate::intraday_ep6::Seg], immediate: bool, on_entry: &dyn Fn(&Pos) -> Vec<Ord>) -> Vec<crate::intraday_ep6::Ev> {
+        let mut ev = vec![];
+        let rank = |o: &Ord| if o.entry { 2u8 } else if o.k == K::Stop { 0 } else { 1 };
+        let rising = |o: &Ord| if o.k == K::Limit { o.dir < 0. } else { o.dir > 0. };
+        let code = |o: &Ord| rank(o) * 2 + u8::from(o.dir > 0.);
+        if segs.is_empty() {
+            let op = x.o[b];
+            loop {
+                let mut best: Option<(u8, usize)> = None;
+                for (j, o) in self.ords.iter().enumerate() {
+                    if !self.live(o) { continue; }
+                    let at = match o.k { K::Open => true, _ => o.px.is_finite() && if rising(o) { op >= o.px } else { op <= o.px } };
+                    if at && best.map_or(true, |(br, _)| rank(o) < br) { best = Some((rank(o), j)); }
+                }
+                let Some((_, j)) = best else { break };
+                let o = self.ords.remove(j);
+                ev.push(crate::intraday_ep6::Ev { k: code(&o), px: op, up: rising(&o) });
+                self.fill(b, t, o, op, immediate, on_entry);
             }
-            if o.entry {
-                let kind = if o.k == K::Open { "open" } else { "stop" };
-                let ps = Pos { dir: o.dir, px, i: b, sig: t, ext: f64::NAN, aux: o.aux, kind };
-                if immediate { ords.extend(on_entry(&ps)); }
-                pos = Some(ps);
+            return ev;
+        }
+        self.ords.retain(|o| o.k != K::Open); // market-on-open orders live only at the open
+        for g in segs {
+            if g.a == g.b { continue; }
+            let (mut now, mut cur) = (0f64, g.a);
+            loop {
+                let mut best: Option<(f64, u8, usize, f64)> = None;
+                for (j, o) in self.ords.iter().enumerate() {
+                    if !o.px.is_finite() || !self.live(o) { continue; }
+                    let up = rising(o);
+                    let through = |v: f64| if up { v >= o.px } else { v <= o.px };
+                    let hit = if through(cur) { Some((now, if g.gap { g.b } else { cur })) }
+                        else if through(g.b) { Some(((o.px - g.a) / (g.b - g.a), g.fill(o.px))) } else { None };
+                    let Some((tm, px)) = hit else { continue };
+                    let r = rank(o);
+                    if best.map_or(true, |(bt, br, _, _)| tm < bt || (tm == bt && r < br)) { best = Some((tm, r, j, px)); }
+                }
+                let Some((tm, _, j, px)) = best else { break };
+                let o = self.ords.remove(j);
+                (now, cur) = (tm, if through_now(&o, cur) { cur } else { o.px });
+                ev.push(crate::intraday_ep6::Ev { k: code(&o), px, up: rising(&o) });
+                self.fill(b, t, o, px, immediate, on_entry);
             }
         }
-        if let Some(ps) = pos.as_mut() {
+        ev
+    }
+}
+
+/// The order was already through `cur` (filled at once at the current price).
+fn through_now(o: &Ord, cur: f64) -> bool { if (o.k == K::Limit) == (o.dir < 0.) { cur >= o.px } else { cur <= o.px } }
+
+/// `sim` with EP6 (#243, lane K63): with `on`, a bar whose fills differ between the two extreme orders is walked on its
+/// real 1-minute path where minutes exist (intraday_ep6::resolve_conv); every other bar is the simulator's own path.
+fn sim_ep6(x: &Ctx, from: usize, to: usize, immediate: bool, gen: &dyn Fn(usize, Option<&Pos>) -> Vec<Ord>,
+       on_entry: &dyn Fn(&Pos) -> Vec<Ord>, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{bar_segs, remark, resolve_conv, Day};
+    let mut out = vec![];
+    let mut st = St { pos: None, ords: vec![], out: vec![], od: Day::Plain };
+    for t in from..to {
+        let b = t + 1;
+        st.ords = gen(t, st.pos.as_ref());
+        if on {
+            let (o, h, l, c) = (x.o[b], x.h[b], x.l[b], x.c[b]);
+            let day = resolve_conv(x, b, true, &mut st, |s: &mut St| s.bar(x, b, t, immediate, on_entry),
+                |s: &mut St, hf: bool| { let mut e = s.walk(x, b, t, &[], immediate, on_entry); e.extend(s.walk(x, b, t, &bar_segs(o, h, l, c, hf), immediate, on_entry)); e },
+                |s: &mut St, g: &[crate::intraday_ep6::Seg]| s.walk(x, b, t, g, immediate, on_entry));
+            for mut tr in st.out.drain(..) { remark(&mut tr, day); out.push(tr); }
+            if st.pos.is_some() { st.od = st.od.worst(day); }
+        } else {
+            st.bar(x, b, t, immediate, on_entry);
+            out.append(&mut st.out);
+        }
+        if let Some(ps) = st.pos.as_mut() {
             let c = x.c[b];
             ps.ext = if ps.ext.is_nan() { c } else if ps.dir > 0. { ps.ext.max(c) } else { ps.ext.min(c) };
         }
     }
-    if let Some(ps) = pos {
+    if let Some(ps) = st.pos {
         let mut t = close_trade(&ps, to, x.c[to], "open");
         t.open = true;
+        crate::intraday_ep6::mark(&mut t, st.od);
         out.push(t);
     }
     out
@@ -278,6 +376,8 @@ fn prev_extreme_bar(x: &Ctx, i: usize, n: usize, hi: bool) -> Option<usize> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let defs = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| defs.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let tk = tick_of(x);
     let none = |_: &Pos| vec![];
@@ -307,7 +407,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     Ord { aux: stop, ..ord(d, lvl_of(j), K::Stop, true, "") }
                 }).into_iter().collect()
             };
-            sim(x, from, to, true, &gen, &exits)
+            sim_ep6(x, from, to, true, &gen, &exits, on)
         }
         "tbabc_six_long" | "tbabc_six_short" => {
             let d = if id == "tbabc_six_long" { 1. } else { -1. };
@@ -340,7 +440,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 vec![Ord { aux: if d > 0. { x.l[t] - tk } else { x.h[t] + tk }, ..ord(d, f64::NAN, K::Open, true, "") }]
             };
             let on_entry = |ps: &Pos| exits_at(ps.sig, ps);
-            sim(x, from, to, true, &gen, &on_entry)
+            sim_ep6(x, from, to, true, &gen, &on_entry, on)
         }
         "tbabc_stampede_long" | "tbabc_stampede_short" => {
             let d = if id == "tbabc_stampede_long" { 1. } else { -1. };
@@ -355,6 +455,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 v
             };
             sim(x, from, to, false, &gen, &none)
+        }
+        "tbabc_ma_cross" => {
+            let (f, sl, at_close) = (g("fast").round() as usize, g("slow").round() as usize, g("fill") >= 0.5);
+            // each average summed over its own window (the shared rolling sma carries rounding into exact ties of 1/8 prices)
+            let wsma = |n: usize| -> Vec<f64> { (0..x.c.len()).map(|i| if i + 1 < n { f64::NAN } else { x.c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect() };
+            let (a, b) = (wsma(f.max(1)), wsma(sl.max(1)));
+            let cross = |i: usize, up: bool| i >= 1 && [a[i], b[i], a[i - 1], b[i - 1]].iter().all(|v| v.is_finite())
+                && if up { a[i] > b[i] && a[i - 1] <= b[i - 1] } else { a[i] < b[i] && a[i - 1] >= b[i - 1] };
+            let fill = |i: usize| if at_close { Some((i, x.c[i])) } else if i < to { Some((i + 1, x.o[i + 1])) } else { None };
+            let kind = if at_close { "close" } else { "open" };
+            let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
+            for i in from..=to {
+                if let Some(t) = cur.as_ref() { if t.legs[0].i > i { continue; } }
+                if cur.is_some() && cross(i, false) {
+                    if let Some((k, px)) = fill(i) { let mut t = cur.take().unwrap(); t.exit_i = k; t.exit_px = px; t.signal_i = i; t.reason = "SMA fast crosses below slow".into(); out.push(t); }
+                } else if cur.is_none() && cross(i, true) {
+                    if let Some((k, px)) = fill(i) { cur = Some(Trade { dir: 1., legs: vec![Leg { i: k, px, w: 1. }], exit_i: k, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i, open: false, exits: vec![] }); }
+                }
+            }
+            if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.open = true; t.reason = "open".into(); out.push(t); }
+            out
         }
         "tbabc_powertool" => {
             let timing = xaverage(&x.c, g("timing") as usize);
@@ -395,6 +516,24 @@ mod tests {
         assert_eq!(touch(&p, 0., 99., false).map(|v| v.1), Some(99.));
         assert_eq!(touch(&p, 0., 102., false).map(|v| v.1), Some(100.)); // gap through a sell stop = open
         assert!(touch(&p, 0., 102., true).is_none());
+    }
+
+    /// Lane K60: SMA(2) vs SMA(3) by hand: up-cross at bar 4 -> buy at bar 5's open; down-cross at bar 7 -> sell at bar 8's open.
+    #[test]
+    fn ma_cross_buys_and_sells_at_the_next_open() {
+        let c = [10., 10., 10., 9., 12., 13., 13., 9., 8., 8.];
+        let b: Vec<(f64, f64, f64, f64)> = c.iter().enumerate().map(|(i, &v)| (v + 0.1 * i as f64, v + 1., v - 1., v)).collect();
+        let r = rows(&b);
+        let x = Ctx::new(&r, &r, &[]);
+        let mut p = Params::new(); p.insert("fast".into(), 2.); p.insert("slow".into(), 3.);
+        // sma2: -,10,10,9.5,10.5,12.5,13,11,8.5,8 ; sma3: -,-,10,9.67,10.33,11.33,12.67,11.67,10,8.33
+        let t = run("tbabc_ma_cross", &x, 0, 9, &p).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].signal_i, t[0].exit_i), (5, b[5].0, 7, 8));
+        assert!((t[0].exit_px - b[8].0).abs() < 1e-12 && !t[0].open && t[0].entry_kind == "open");
+        p.insert("fill".into(), 1.);
+        let t = run("tbabc_ma_cross", &x, 0, 9, &p).unwrap();
+        assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (4, 12., 7, 9.));
     }
 
     #[test]

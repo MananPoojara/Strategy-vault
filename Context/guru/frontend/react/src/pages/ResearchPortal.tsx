@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
+import { VerificationView } from "./VerificationView";
+import { SnapshotModal } from "./SnapshotModal";
 import {
-  research, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, ago, dayKey, readHashParams, hashWith,
-  type Card, type Employee, type Me, type Note, type NoteType, type Page, type Site, type Strategy, type TimelineItem, type Verdict,
+  research, snapshotDetail, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
+  type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareFolder, type ShareInventory, type ShareSource, type Site, type Strategy,
+  type TimelineItem, type Verdict,
 } from "../services/research";
 
 /* Research page: employees enter with their name and the team PIN, then browse author → book → strategy cards,
@@ -36,11 +39,20 @@ function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
 }
 
 export function ResearchPortal() {
-  const me = useLoad(research.me, []);
+  const me = useLoad(research.me, []), view = useHash().get("v");
   useEffect(() => { document.title = "Research · Strategy Vault"; }, []);
   if (me.error) return <div className="rp"><Problem error={me.error} retry={me.reload} /></div>;
   if (!me.data) return <div className="rp"><p className="rp-loading">Loading…</p></div>;
-  if (!me.data.employee && !me.data.admin) return <div className="rp"><Gate me={me.data} done={me.reload} /></div>;
+  // The verification tracker is read-only, so every signed-in user sees it without the reviewer PIN.
+  if (!me.data.employee && !me.data.admin) return (
+    <div className="rp">
+      {view === "verify" ? <>
+        <header className="rp-bar"><a className="rp-brand" href="#/research">Research</a><nav><a href={hashWith({ v: "verify" }, "#/research")} aria-current="page">Verification</a></nav>
+          <span className="rp-who"><a href="#/research">Enter as a reviewer</a></span></header>
+        <VerificationView />
+      </> : <Gate me={me.data} done={me.reload} />}
+    </div>
+  );
   return <div className="rp"><Signed me={me.data} reload={me.reload} /></div>;
 }
 
@@ -64,6 +76,7 @@ function Gate({ me, done }: { me: Me; done: () => void }) {
       {error && <p className="rp-problem" role="alert">{error}</p>}
       <button className="rp-primary" type="submit" disabled={busy}>{busy ? "Checking…" : "Enter"}</button>
       <button type="button" className="rp-link" onClick={() => { setAdmin(!admin); setPin(""); setError(""); }}>{admin ? "Back to employee entry" : "I am the admin"}</button>
+      <a className="rp-small" href={hashWith({ v: "verify" }, "#/research")}>Only looking? Open the verification tracker</a>
     </form>
   );
 }
@@ -78,7 +91,9 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
   if (p.get("s")) body = <StrategyView key={p.get("s")} sKey={p.get("s")!} me={me} />;
   else if (v === "mine" && who) body = <WorkView person={who} title="My work" admin={false} />;
   else if (v === "team" && me.admin) body = <TeamView />;
+  else if (v === "share" && me.admin) body = <ShareView />;
   else if (v === "claude") body = <ClaudeView />;
+  else if (v === "verify") body = <VerificationView />;
   else if (v === "emp" && me.admin && p.get("emp")) body = <WorkView person={p.get("emp")!} title={`${p.get("emp")}'s work`} admin />;
   else if (p.get("book")) body = <BookView author={p.get("author") || ""} book={p.get("book")!} />;
   else if (p.get("author")) body = <AuthorView author={p.get("author")!} />;
@@ -90,8 +105,10 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
         <nav>
           <a href="#/research" aria-current={!v && !p.get("author") && !p.get("s") ? "page" : undefined}>Authors</a>
           {who && <a href={hashWith({ v: "mine" }, "#/research")} aria-current={v === "mine" ? "page" : undefined}>My work</a>}
+          <a href={hashWith({ v: "verify" }, "#/research")} aria-current={v === "verify" ? "page" : undefined}>Verification</a>
           <a href={hashWith({ v: "claude" }, "#/research")} aria-current={v === "claude" ? "page" : undefined}>Claude's work</a>
           {me.admin && <a href={hashWith({ v: "team" }, "#/research")} aria-current={v === "team" || v === "emp" ? "page" : undefined}>Employees</a>}
+          {me.admin && <a href={hashWith({ v: "share" }, "#/research")} aria-current={v === "share" ? "page" : undefined}>Research share</a>}
         </nav>
         <span className="rp-who">{who ? <>Hi, <b>{who}</b></> : null}{me.admin && <span className="rp-tag">Admin</span>}
           <button type="button" className="rp-link" onClick={leave}>Switch person</button></span>
@@ -432,6 +449,11 @@ function PersonWork({ person }: { person: string }) {
 
 function ClaudeView() {
   const [page, setPage] = usePage();
+  const detail = useLoad(snapshotDetail, []);
+  const [open, setOpen] = useState<TimelineItem | null>(null);
+  const closeSnap = useCallback(() => setOpen(null), []);
+  const isSnap = (it: TimelineItem) => it.detail === "Live snapshot";
+  const snapEv = (it: TimelineItem) => Object.values(detail.data?.events || {}).find(e => Date.parse(e.at) === Date.parse(it.at)) || null;
   const list = useLoad(() => research.timeline({ kind: "platform", page, size: 30 }), [page]);
   const days = new Map<string, TimelineItem[]>();
   for (const it of list.data?.items || []) { const k = dayKey(it.at); days.set(k, [...(days.get(k) || []), it]); }
@@ -447,7 +469,9 @@ function ClaudeView() {
               <h3>{fmtDate(items[0].at)}</h3>
               <ul className="rp-feed rp-claude">
                 {items.map((it, i) => (
-                  <li key={i} className={`w-${it.who.toLowerCase().replace(/\W+/g, "-")}`}>
+                  <li key={i} className={`w-${it.who.toLowerCase().replace(/\W+/g, "-")}`}
+                    {...(isSnap(it) ? { role: "button", tabIndex: 0, style: { cursor: "pointer" }, title: "Open the detail of this snapshot",
+                      onClick: () => setOpen(it), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(it); } } } : {})}>
                     <span className="rp-count">{it.backtested != null ? <><b>{num(it.backtested)}</b><small>backtested</small></> : null}</span>
                     <div>
                       <p className="rp-meta"><span className="rp-pill">{it.who}</span>{it.detail && it.detail !== day && <span> {it.detail}</span>}</p>
@@ -462,8 +486,15 @@ function ClaudeView() {
           <Pager page={list.data} set={setPage} />
         </>
       )}
+      {open && <SnapshotModal ev={snapEv(open)} at={fmtStamp(open.at)} healthStarts={detail.data?.health_starts_ist} onClose={closeSnap}
+        stats={snapEv(open)?.stats ?? snapStats(open)} />}
     </section>
   );
+}
+/** Numbers from the timeline row itself when no detail file is served: "N of M strategies backtested, H held ... (B books)". */
+function snapStats(it: TimelineItem) {
+  const m = /(\d+) of (\d+) strategies backtested, (\d+) held.*\((\d+) books\)/.exec(it.text || "");
+  return m ? { backtested: +m[1], total: +m[2], held: +m[3], books: +m[4] } : it.backtested != null ? { backtested: it.backtested, total: 0, held: 0, books: 0 } : null;
 }
 
 /* ---------------------------------------------------------------- admin: employee cards */
@@ -488,5 +519,357 @@ function TeamView() {
         </div>
       )}
     </section>
+  );
+}
+
+/* ---------------------------------------------------------------- admin: what the research share holds */
+
+const KIND_ORDER = ["author", "company", "website", "magazine", "publisher", "course", "platform", "unknown"];
+const Check = ({ ok, children }: { ok: boolean; children: ReactNode }) => (
+  <p className={`rp-check ${ok ? "ok" : "bad"}`}><b aria-hidden="true">{ok ? "✓" : "✗"}</b> <span className="rp-visually-hidden">{ok ? "Check passed:" : "Check failed:"}</span> {children}</p>
+);
+type SortKey = "name" | "kind" | "files" | "titles" | "bytes" | "opened" | "strategies" | "backtested";
+const SHARE_PER = 50;
+
+function ShareView() {
+  const inv = useLoad(research.share, []);
+  if (inv.error) return <section><h1>Research share</h1><Problem error={inv.error} retry={inv.reload} /></section>;
+  if (!inv.data) return <p className="rp-loading">Counting…</p>;
+  return <ShareBody d={inv.data} />;
+}
+
+function ShareBody({ d }: { d: ShareInventory }) {
+  const L = d.listing, c = d.claude;
+  const typeSum = d.types.reduce((a, t) => a + t.files, 0), typeBytes = d.types.reduce((a, t) => a + t.bytes, 0);
+  const srcSum = d.sources.reduce((a, s) => a + s.files, 0), kindSum = d.kinds.reduce((a, k) => a + k.files, 0);
+  const people = d.kinds.find(k => k.kind === "author")?.sources ?? 0;
+  const unnamed = d.kinds.filter(k => k.kind !== "author").reduce((a, k) => a + k.sources, 0);
+  const strategiesOnSources = d.sources.reduce((a, s) => a + s.strategies, 0);
+  const listed = fmtDate(L.date);
+  const cov = L.coverage;
+  return (
+    <section className="rp-share">
+      <h1>Research share</h1>
+      <p className="rp-muted">What <code>{L.root}</code> holds, counted file by file from the read-only listing of <b>{fmtStamp(L.date)}</b>, and what Claude has done with it so far.</p>
+      <div className="rp-stats">
+        <Stat n={L.files} label="Files" cls="team" />
+        <div className="rp-stat team" title={`${L.bytes.toLocaleString("en-IN")} bytes`}><b>{fmtBytesBoth(L.bytes)}</b><span>Total size</span></div>
+        <Stat n={L.folders} label="Folders" cls="team" />
+        <Stat n={people} label="Named authors (people)" cls="todo" />
+        <Stat n={unnamed} label="Unnamed sources (company, website, magazine…)" cls="todo" />
+        {c.strategies != null && <Stat n={c.strategies} label="Strategies found" cls="held" />}
+        {c.backtested != null && <Stat n={c.backtested} label="Backtested" cls="ok" />}
+      </div>
+      {cov && <p className="rp-small rp-muted" data-share-volume>
+        The NAS volume at 192.168.4.50 is {fmtBytesBoth(cov.volume.size_bytes)}, {fmtBytesBoth(cov.volume.used_bytes)} used, shared with the other shares on this NAS (e.g. share); the research share is {fmtBytesBoth(L.bytes)} of it. SMB reports one size for the whole volume, so it cannot be read per share. Volume read {fmtStamp(cov.volume.as_of)}.
+      </p>}
+      <div className="rp-checks">
+        {cov && <Check ok={cov.listed >= cov.top_level.length - cov.unreadable.length}>Whole share covered: {cov.listed === cov.top_level.length - cov.unreadable.length ? `all ${cov.listed} top-level folders and files` : `${cov.listed} of ${cov.top_level.length} top-level entries`} are in the listing{cov.unreadable.length ? ` (${cov.unreadable.join(", ")}${cov.unreadable.includes("#recycle") ? ", the share's recycle bin," : ""} ${cov.unreadable.length > 1 ? "are" : "is"} not readable to this account)` : ""}.</Check>}
+        <Check ok={typeSum === L.files && typeBytes === L.bytes}>Every file is in exactly one resource type: {d.types.length} types add up to {num(typeSum)} files and {typeBytes.toLocaleString("en-IN")} bytes (listing: {num(L.files)} files, {L.bytes.toLocaleString("en-IN")} bytes).</Check>
+        <Check ok={srcSum === L.files && kindSum === L.files}>Every file has exactly one source: {num(d.sources.length)} sources in {d.kinds.length} kinds add up to {num(srcSum)} files.</Check>
+        {c.strategies != null && <Check ok={strategiesOnSources + c.unmatched.strategies === c.strategies}>Strategies: {num(strategiesOnSources)} sit on a share source + {num(c.unmatched.strategies)} whose site author has no matching share name = {num(c.strategies)} on the site.</Check>}
+        {d.compare && <Check ok={d.compare.base_files + d.compare.added - d.compare.removed === L.files}>
+          Since the listing of {fmtDate(d.compare.base_date)} ({num(d.compare.base_files)} files): <b>{num(d.compare.added)}</b> added, <b>{num(d.compare.removed)}</b> removed, {num(d.compare.size_changed)} changed size; {num(d.compare.base_files)} + {num(d.compare.added)} − {num(d.compare.removed)} = {num(L.files)}.
+        </Check>}
+      </div>
+
+      {L.top_folders.length > 0 && <>
+        <h2 className="rp-section">By folder</h2>
+        <FolderView d={d} />
+      </>}
+
+      <h2 className="rp-section">By resource type</h2>
+      <TypeBars d={d} />
+
+      <h2 className="rp-section">By author or source</h2>
+      <SourceTable d={d} />
+
+      <h2 className="rp-section">What Claude has done</h2>
+      <ClaudeDone d={d} />
+
+      <h2 className="rp-section">How these numbers are counted</h2>
+      <div className="rp-panel rp-how">
+        <p><b>The listing.</b> One read-only <code>find</code> run over the whole share on {fmtStamp(L.date)} ({L.file}): every file with its size. Nothing on the share is changed. Folders: {L.folders_method}. Sizes are binary (1 GiB = 1024³ bytes, shown by Windows Explorer as GB); the share total also shows decimal TB. Hover a size for the exact bytes.</p>
+        <p><b>Copies.</b> {num(L.duplicate_copies)} of the {num(L.files)} files are extra copies (same file name and size somewhere else, mostly the USB HDD backups); every count on this page includes them, so the totals match what Explorer shows. Without the copies: {num(L.unique_files)} files.</p>
+        <p><b>Resource types.</b> {d.rules.types}</p>
+        <table className="rp-table rp-rules-table">
+          <thead><tr><th>Type</th><th>Rule</th></tr></thead>
+          <tbody>{d.types.map(t => <tr key={t.id}><td>{t.label}</td><td>{t.rule}</td></tr>)}</tbody>
+        </table>
+        <p><b>Sources.</b></p>
+        <ul>{d.rules.sources.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        <p><b>Claude's work.</b></p>
+        <ul>{d.rules.claude.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        <p><b>Reconciliation.</b> The generator stops without writing the page data if the types, the sources, or the source kinds do not add up to the listing's file and byte totals, or the strategies do not add up to the site's count. The green ticks above repeat that check in your browser.</p>
+        <p className="rp-small rp-muted">Listing {listed}; page data generated {fmtStamp(d.generated_at)}{c.as_of ? `; site counts as of ${fmtStamp(c.as_of)} (run ${c.run})` : ""}.</p>
+      </div>
+    </section>
+  );
+}
+
+/* Research share by top-level folder (17 Nov 2026): a pie of files per folder (largest six + Other) and a table of every folder
+   with its resource types, Claude's progress and its largest subfolders. Slice colours are the validated categorical slots 1-6;
+   the light-theme contrast warning is relieved by the legend and the table, which carry every figure. */
+const PIE_TOP = 6;
+const pct = (n: number, of: number) => {
+  const r = n / Math.max(1, of);
+  return n > 0 && r < 0.0001 ? "<0.01%" : `${(100 * r).toLocaleString("en-IN", { maximumFractionDigits: r < 0.01 ? 2 : 1 })}%`;
+};
+function arc(cx: number, cy: number, r0: number, r1: number, a0: number, a1: number) {
+  const pt = (r: number, a: number) => `${(cx + r * Math.sin(a)).toFixed(2)} ${(cy - r * Math.cos(a)).toFixed(2)}`;
+  const big = a1 - a0 > Math.PI ? 1 : 0;
+  return `M ${pt(r1, a0)} A ${r1} ${r1} 0 ${big} 1 ${pt(r1, a1)} L ${pt(r0, a1)} A ${r0} ${r0} 0 ${big} 0 ${pt(r0, a0)} Z`;
+}
+function FolderPie({ slices, total }: { slices: { name: string; files: number; bytes: number; cls: string }[]; total: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  let a = 0;
+  const parts = slices.map((sl, i) => {
+    const a0 = a, a1 = a + (2 * Math.PI * sl.files) / Math.max(1, total); a = a1;
+    return { ...sl, i, d: sl.files >= total ? "" : arc(100, 100, 58, 96, a0, a1) };
+  });
+  const h = hover == null ? null : parts[hover];
+  return (
+    <div className="rp-pie">
+      <svg viewBox="0 0 200 200" role="img" aria-label={`Files per folder: ${parts.map(p => `${p.name} ${p.files}`).join(", ")}`}>
+        {parts.map(p => p.d
+          ? <path key={p.name} d={p.d} className={`rp-slice ${p.cls}${hover === p.i ? " on" : ""}`} onMouseEnter={() => setHover(p.i)} onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(p.i)} onBlur={() => setHover(null)} tabIndex={0}><title>{`${p.name}: ${num(p.files)} files (${pct(p.files, total)}), ${fmtBytes(p.bytes)}`}</title></path>
+          : <circle key={p.name} cx={100} cy={100} r={77} className={`rp-slice ${p.cls}`} style={{ strokeWidth: 38, fill: "none" }} />)}
+        <text x={100} y={94} className="rp-pie-n">{h ? num(h.files) : num(total)}</text>
+        <text x={100} y={112} className="rp-pie-l">{h ? `${pct(h.files, total)} · ${h.name.length > 22 ? h.name.slice(0, 21) + "…" : h.name}` : "files"}</text>
+      </svg>
+      <ul className="rp-pie-legend">
+        {parts.map(p => (
+          <li key={p.name} className={hover === p.i ? "on" : ""} onMouseEnter={() => setHover(p.i)} onMouseLeave={() => setHover(null)}>
+            <i className={p.cls} /><span>{p.name}</span><b>{num(p.files)}</b><span className="rp-muted">{pct(p.files, total)}</span><span className="rp-small rp-muted">{fmtBytes(p.bytes)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+function FolderView({ d }: { d: ShareInventory }) {
+  const L = d.listing, folders: ShareFolder[] = L.top_folders, total = L.files;
+  const label = useMemo(() => new Map(d.types.map(t => [t.id, t.label])), [d.types]);
+  const [open, setOpen] = useState<string | null>(null);
+  const top = folders.slice(0, PIE_TOP), rest = folders.slice(PIE_TOP);
+  const slices = [...top.map((f, i) => ({ name: f.name, files: f.files, bytes: f.bytes, cls: `c${i + 1}` })),
+    ...(rest.length ? [{ name: `Other ${rest.length} folders`, files: rest.reduce((a, f) => a + f.files, 0), bytes: rest.reduce((a, f) => a + f.bytes, 0), cls: "c0" }] : [])];
+  const sum = folders.reduce((a, f) => a + f.files, 0), bytes = folders.reduce((a, f) => a + f.bytes, 0);
+  const detailed = folders.some(f => f.claude);
+  return (
+    <>
+      <div className="rp-panel rp-folders">
+        <FolderPie slices={slices} total={total} />
+        <Check ok={sum === total && bytes === L.bytes}>{num(folders.length)} top-level folders add up to {num(sum)} files and {fmtBytesBoth(bytes)} (listing: {num(total)} files).</Check>
+      </div>
+      <div className="rp-panel rp-scroll">
+        <table className="rp-table rp-folder-table">
+          <thead><tr><th>Folder</th><th className="n">Files</th><th className="n">Share</th><th className="n">Size</th><th>Main resource types</th>{detailed && <><th className="n">Opened</th><th>Claude's progress</th></>}</tr></thead>
+          <tbody>
+            {folders.map((f, i) => {
+              const c = f.claude, decided = c ? c.title + c.stated : 0;
+              const types = f.types ? Object.entries(f.types).sort((a, b) => b[1] - a[1]).slice(0, 3) : [];
+              const subs = f.largest_subfolders || [];
+              return (
+                <Fragment key={f.name}>
+                  <tr>
+                    <td>{i < PIE_TOP ? <i className={`rp-swatch c${i + 1}`} /> : <i className="rp-swatch c0" />}
+                      {subs.length > 1 ? <button className="rp-linkbtn" aria-expanded={open === f.name} onClick={() => setOpen(open === f.name ? null : f.name)}>{f.name}</button> : f.name}
+                      {f.subfolders ? <span className="rp-small rp-muted"> · {num(f.subfolders)} subfolder{f.subfolders === 1 ? "" : "s"}</span> : null}</td>
+                    <td className="n">{num(f.files)}</td><td className="n">{pct(f.files, total)}</td><td className="n" title={`${f.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(f.bytes)}</td>
+                    <td className="rp-small">{types.map(([k, n]) => `${label.get(k) || k} ${num(n)}`).join(" · ") || "–"}</td>
+                    {detailed && <><td className="n">{c ? num(c.opened) : "–"}</td>
+                      <td>{c ? <div className="rp-bar3 rp-bar5 rp-thin" role="img" title={`Opened ${num(c.opened)} · decided from title or record ${num(decided)} · folder-level decision ${num(c.folder)} · no record yet ${num(c.none)}`}
+                        aria-label={`Opened ${c.opened}, decided ${decided}, folder-level ${c.folder}, no record ${c.none}`}>
+                        <i className="ok" style={{ width: pct(c.opened, f.files) }} /><i className="held" style={{ width: pct(decided, f.files) }} />
+                        <i className="fold" style={{ width: pct(c.folder, f.files) }} /><i className="todo" style={{ width: pct(c.none, f.files) }} /></div> : "–"}</td></>}
+                  </tr>
+                  {open === f.name && subs.map(s => (
+                    <tr key={f.name + "/" + s.name} className="rp-subrow">
+                      <td>{s.other ? <span className="rp-muted">{s.name}</span> : s.name}</td><td className="n">{num(s.files)}</td><td className="n">{pct(s.files, f.files)} of folder</td>
+                      <td className="n">{fmtBytes(s.bytes)}</td><td />{detailed && <><td className="n">{num(s.opened)}</td><td /></>}
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        {detailed && <ul className="rp-legend rp-legend5"><li><i className="ok" />Opened (text read)</li><li><i className="held" />Decided from the title or a record</li><li><i className="fold" />Covered by a folder-level decision</li><li><i className="todo" />No record yet</li></ul>}
+        <p className="rp-small rp-muted">Click a folder name to see its largest subfolders. “Share” is the folder's part of all {num(total)} files; the USB HDD folders are backup drives copied onto the share and hold most of the extra copies.</p>
+      </div>
+    </>
+  );
+}
+
+function TypeBars({ d }: { d: ShareInventory }) {
+  const max = Math.max(1, ...d.types.map(t => t.files));
+  const groups = [...new Set(d.types.map(t => t.group))];
+  return (
+    <div className="rp-panel">
+      {groups.map(g => {
+        const rows = d.types.filter(t => t.group === g);
+        return (
+          <div key={g} className="rp-hgroup">
+            <h3>{g} <span className="rp-muted">· {num(rows.reduce((a, t) => a + t.files, 0))} files</span></h3>
+            <ul className="rp-hbars">
+              {rows.map(t => (
+                <li key={t.id} title={t.rule}>
+                  <span className="rp-hlabel">{t.label}</span>
+                  <span className="rp-htrack"><i style={{ width: `${(100 * t.files) / max}%` }} /></span>
+                  <b>{num(t.files)}</b>
+                  <span className="rp-small rp-muted" title={`${t.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(t.bytes)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function topTypes(s: ShareSource, label: Map<string, string>) {
+  return Object.entries(s.types).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${label.get(k) || k} ${n.toLocaleString("en-IN")}`);
+}
+
+function SourceTable({ d }: { d: ShareInventory }) {
+  const [q, setQ] = useState(""), [kind, setKind] = useState(""), [page, setPage] = useState(1);
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "files", desc: true });
+  const label = useMemo(() => new Map(d.types.map(t => [t.id, t.label])), [d]);
+  const kindLabel = useMemo(() => new Map(d.kinds.map(k => [k.kind, k.label])), [d]);
+  const rows = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const list = d.sources.filter(s => (!kind || s.kind === kind) && words.every(w => s.name.toLowerCase().includes(w) || s.aliases.some(a => a.toLowerCase().includes(w))));
+    const k = sort.key, dir = sort.desc ? -1 : 1;
+    return list.sort((a, b) => (k === "name" || k === "kind" ? a[k].localeCompare(b[k]) : a[k] - b[k]) * dir || a.name.localeCompare(b.name));
+  }, [d, q, kind, sort]);
+  const pages = Math.max(1, Math.ceil(rows.length / SHARE_PER)), at = Math.min(page, pages);
+  const head = (key: SortKey, text: string, numeric = true) => (
+    <th aria-sort={sort.key === key ? (sort.desc ? "descending" : "ascending") : undefined} className={numeric ? "n" : undefined}>
+      <button type="button" onClick={() => { setSort({ key, desc: sort.key === key ? !sort.desc : numeric }); setPage(1); }}>{text}{sort.key === key ? (sort.desc ? " ↓" : " ↑") : ""}</button>
+    </th>
+  );
+  const download = () => {
+    const cols = ["Source", "Kind", "Files", "Bytes", "Titles", "Files opened by Claude", "Files with a Claude decision", "Strategies found", "Backtested", "Held", "Not reviewed", "Resource types", "Other spellings"];
+    const lines = [cols, ...rows.map(s => [s.name, kindLabel.get(s.kind) || s.kind, s.files, s.bytes, s.titles, s.opened, s.decided, s.strategies, s.backtested, s.held, s.unreviewed, topTypes(s, label).join("; "), s.aliases.join("; ")])];
+    const blob = new Blob(["﻿" + lines.map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `research-share-sources-${d.listing.date.slice(0, 10)}.csv`;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const kinds = [...d.kinds].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+  return (
+    <>
+      <div className="rp-panel">
+        <table className="rp-table">
+          <thead><tr><th>Kind</th><th className="n">Sources</th><th className="n">Files</th><th className="n">Titles</th><th className="n">Size</th></tr></thead>
+          <tbody>
+            {kinds.map(k => (
+              <tr key={k.kind}><td>{k.label}</td><td className="n">{num(k.sources)}</td><td className="n">{num(k.files)}</td><td className="n">{num(k.titles)}</td><td className="n" title={`${k.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(k.bytes)}</td></tr>
+            ))}
+          </tbody>
+          <tfoot><tr><td>Total</td><td className="n">{num(d.sources.length)}</td><td className="n">{num(kinds.reduce((a, k) => a + k.files, 0))}</td><td className="n">{num(kinds.reduce((a, k) => a + k.titles, 0))}</td><td className="n">{fmtBytes(kinds.reduce((a, k) => a + k.bytes, 0))}</td></tr></tfoot>
+        </table>
+      </div>
+      <div className="rp-tools">
+        <input type="search" placeholder="Find an author or source…" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} aria-label="Find an author or source" />
+        <div className="rp-chips" role="group" aria-label="Kind of source">
+          <button type="button" aria-pressed={!kind} onClick={() => { setKind(""); setPage(1); }}>All</button>
+          {kinds.map(k => <button key={k.kind} type="button" aria-pressed={kind === k.kind} onClick={() => { setKind(k.kind); setPage(1); }}>{k.label.replace(/ \(.*\)$/, "")}</button>)}
+        </div>
+        <button type="button" onClick={download}>Download CSV ({num(rows.length)} rows)</button>
+      </div>
+      <div className="rp-panel rp-scroll">
+        <table className="rp-table rp-sources">
+          <thead><tr>{head("name", "Source", false)}{head("kind", "Kind", false)}{head("files", "Files")}{head("titles", "Titles")}{head("bytes", "Size")}<th>Resource types</th>{head("opened", "Opened")}{head("strategies", "Strategies")}{head("backtested", "Backtested")}</tr></thead>
+          <tbody>
+            {rows.slice((at - 1) * SHARE_PER, at * SHARE_PER).map(s => (
+              <tr key={s.id}>
+                <td><b>{s.name}</b>{s.aliases.length > 0 && <span className="rp-small rp-muted"> also {s.aliases.slice(0, 3).join(", ")}</span>}</td>
+                <td className="rp-small">{(kindLabel.get(s.kind) || s.kind).replace(/ \(.*\)$/, "")}</td>
+                <td className="n">{num(s.files)}</td><td className="n">{num(s.titles)}</td>
+                <td className="n" title={`${s.bytes.toLocaleString("en-IN")} bytes`}>{fmtBytes(s.bytes)}</td>
+                <td className="rp-small rp-muted">{topTypes(s, label).slice(0, 3).join(" · ")}{Object.keys(s.types).length > 3 ? " …" : ""}</td>
+                <td className="n">{num(s.opened)}</td><td className="n">{s.strategies ? num(s.strategies) : "–"}</td><td className="n">{s.strategies ? num(s.backtested) : "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length && <p className="rp-empty">No source matches “{q}”.</p>}
+      </div>
+      <p className="rp-small rp-muted">{num(rows.length)} of {num(d.sources.length)} sources · {num(rows.reduce((a, s) => a + s.files, 0))} files. “Opened” = files Claude's records say were read; “–” = no strategy on the site for this source.</p>
+      <Pager page={{ page: at, pages }} set={setPage} />
+    </>
+  );
+}
+
+/* Why the counts move slowly (17 Nov 2026, user: explain what is happening and why it takes time). Figures come from the page data. */
+function WhySlow({ d }: { d: ShareInventory }) {
+  const f = d.claude.files, t = new Map(d.types.map(x => [x.id, x.files]));
+  const g = (ids: string[]) => ids.reduce((a, id) => a + (t.get(id) || 0), 0);
+  return (
+    <details className="rp-why">
+      <summary>Why these numbers grow slowly, and what is happening</summary>
+      <p>The share holds <b>{num(f.total)}</b> files, but most of them are not strategy text: {num(g(["image"]))} images, {num(g(["web"]))} saved web pages, {num(g(["video", "audio"]))} video and audio files and {num(g(["data"]))} data files. Those are judged a folder at a time ({num(f.folder)} files so far) instead of being read one by one; {num(f.opened)} files with rule text have been opened and read.</p>
+      <p>Each strategy then goes through the same steps before it counts as backtested:</p>
+      <ol>
+        <li><b>Read the rule</b> in the book or article. Many are scanned pages that first need text recognition (OCR).</li>
+        <li><b>Code it</b> in the Rust engine, exactly as printed.</li>
+        <li><b>Check it independently</b>: a second program, written from the book's text alone, must reproduce every single trade (0 mismatches).</li>
+        <li><b>Review</b>: a separate reviewer compares the code with the book, counts any detail the book leaves out, and holds the strategy if more than four are missing or the book gives no entry or exit.</li>
+        <li><b>Release</b>: the whole site (about 47,000 results) is recomputed and compared value by value with the live site; a release goes live only if no existing result changed or disappeared. One build and refresh takes about 45 minutes, and builds run one at a time so the PC does not run out of memory.</li>
+      </ol>
+      <p>Strategies found grows faster than backtested because many books describe a rule without everything needed to trade it (no exit, “use your judgement”, parameters left unstated). Those are held with the reason written down rather than guessed. The work runs continuously, so these numbers keep rising.</p>
+    </details>
+  );
+}
+
+const counted = (n: number | undefined) => (n == null ? "not counted" : num(n));
+function ClaudeDone({ d }: { d: ShareInventory }) {
+  const c = d.claude, f = c.files;
+  const parts: [string, number, string][] = [["Opened (text read)", f.opened, "ok"], ["Decided from the title or name", f.title, "held"],
+    ["Decided, reading not stated", f.stated, "team"], ["Covered by a folder-level decision", f.folder, "fold"], ["No record yet", f.none, "todo"]];
+  return (
+    <>
+      <div className="rp-panel">
+        <p className="rp-big"><b>{num(f.opened)}</b> of <b>{num(f.total)}</b> files opened, <b>{counted(c.strategies)}</b> strategies found, <b>{counted(c.backtested)}</b> backtested.</p>
+        <WhySlow d={d} />
+        <div className="rp-bar3 rp-bar5" role="img" aria-label={parts.map(([l, n]) => `${l}: ${n}`).join(", ")}>
+          {parts.map(([l, n, cls]) => <i key={l} className={cls} style={{ width: `${(100 * n) / Math.max(1, f.total)}%` }} />)}
+        </div>
+        <ul className="rp-legend rp-legend5">
+          {parts.map(([l, n, cls]) => <li key={l}><i className={cls} />{l}: <b>{num(n)}</b></li>)}
+        </ul>
+        <Check ok={parts.reduce((a, p) => a + p[1], 0) === f.total}>{parts.map(p => num(p[1])).join(" + ")} = {num(f.total)} files.</Check>
+        {c.strategies != null && (
+          <>
+            <h3>Strategies on the site</h3>
+            <p>{num(c.strategies)} found: <b>{num(c.backtested)}</b> backtested, <b>{num(c.held)}</b> held with a reason, <b>{num(c.unreviewed)}</b> not reviewed yet (site counts as of {fmtStamp(c.as_of!)}).</p>
+            {c.reasons && <ul className="rp-reasons">{c.reasons.map(r => <li key={r.reason}><span>{r.reason}</span><b>{num(r.count)}</b></li>)}</ul>}
+            {c.unmatched.strategies > 0 && <p className="rp-small rp-muted">{num(c.unmatched.strategies)} strategies ({num(c.unmatched.backtested)} backtested) belong to {num(c.unmatched.authors.length)} site authors whose name is not a source name in the share (for example company packs or book co-authors filed under another name): {c.unmatched.authors.slice(0, 12).join(", ")}{c.unmatched.authors.length > 12 ? "…" : ""}. They are counted in the totals, not on a source row.</p>}
+          </>
+        )}
+      </div>
+      <div className="rp-panel rp-scroll">
+        <h3>By batch of work</h3>
+        <table className="rp-table">
+          <thead><tr><th>Batch</th><th>Last record</th><th className="n">Records</th><th className="n">Files named</th><th className="n">Opened</th><th className="n">From title</th><th className="n">In folder decisions</th><th className="n">Paths not in today's listing</th></tr></thead>
+          <tbody>
+            {c.batches.map(b => (
+              <tr key={b.id} title={b.record_files.join("\n")}>
+                <td>{b.label}</td><td>{b.date ? fmtDate(b.date) : "not counted"}</td><td className="n">{num(b.records)}</td><td className="n">{num(b.files)}</td>
+                <td className="n">{num(b.opened)}</td><td className="n">{num(b.title)}</td><td className="n">{num(b.folder_files)}</td><td className="n">{num(b.paths_not_found)}</td>
+              </tr>
+            ))}
+            {c.ocr.map(o => (
+              <tr key={o.file}><td>OCR of scanned rule pages ({o.file.split("/").pop()})</td><td>{fmtDate(o.date)}</td><td className="n">{num(o.methods)}</td><td className="n" colSpan={5}>records name methods and pages, not files: files not counted</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="rp-small rp-muted">A file can appear in more than one batch, so the batch rows do not add up to the file total above; the total counts each file once, with its strongest evidence.</p>
+      </div>
+    </>
   );
 }

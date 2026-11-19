@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "kets";
 /// Admitted ids (authors/katz/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
+pub const REVIEWED: &[&str] = &["kets_macd_sig_open", "kets_rsi_div_open", "kets_macd_div_open" /* lane D2, R4 #340/#343 */, "kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// No orders before this bar: the book's price files began ~6 months (about 120 bars) before its first trade
@@ -35,6 +35,7 @@ enum M {
     HhllStop,               // ch5 T6
     Vb { long_only: bool, adx: bool }, // ch5 T7, T8, T10, T12
     StochObos, RsiObos, StochSig, StochDiv, // ch7
+    MacdSig, RsiDiv, MacdDiv, // ch7 Tests 10, 16, 19 (lane D2, R4 #340/#343: lengths not printed, borrowed standard lengths labelled)
     Seas(u8), Lunar(u8),    // ch8 / ch9: 1 momentum, 2 crossover, 3 + confirmation, 4 + confirmation & inversion
     Cycle,                  // ch10
     RandSes,                // ch13 T1-T3: random entries + SES
@@ -128,6 +129,12 @@ static TESTS: &[T] = &[
     t!("kets_stoch_div_stop", "Fast %K / price divergence · stop (Test 15)", G7, M::StochDiv, Stop, "Long/Short", "pp.149-150 (PDF 162-163)",
         [("len", "Fast %K length", 25., 5., 25., 1.), ("lb", "Divergence look-back", 15., 15., 25., 5.)], Some(("", "", "IS $-3,008 / OOS $-2,179", "", "36-futures portfolio; ROA IS -9.8% / OOS -19.9% (Table 7-3)"))),
     // ---------------------------------------------------------------- Chapter 8
+    t!("kets_macd_sig_open", "MACD / 9-bar signal-line cross · next open (Test 10)", G7, M::MacdSig, Open, "Long/Short", "p.148 (PDF 161)",
+        [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.)], Some(("", "", "IS $-1,808 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_rsi_div_open", "RSI / price divergence · next open (Test 16)", G7, M::RsiDiv, Open, "Long/Short", "p.149 (PDF 162)",
+        [("len", "RSI length (borrowed standard 14; the book optimised 5-25 and does not print the winner)", 14., 5., 25., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $-2,278 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_macd_div_open", "MACD / price divergence · next open (Test 19)", G7, M::MacdDiv, Open, "Long/Short", "p.150 (PDF 163)",
+        [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $1,393 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
     t!("kets_seas_xo_open", "Seasonal crossover · next open (Test 1)", G8, M::Seas(2), Open, "Long/Short", "pp.159-170 (PDF 172-183)",
         [("avglen", "Moving-average length", 20., 5., 20., 5.), ("disp", "Displacement (bars ahead)", 5., 0., 20., 1.)], Some(("", "40-43% (all orders)", "IS $-1,127 / OOS $-300", "", "36-futures portfolio; ROA IS -9.7% / OOS -5.8% (Table 8-3)"))),
     t!("kets_seas_xo_limit", "Seasonal crossover · limit (Test 2)", G8, M::Seas(2), Limit, "Long/Short", "pp.159-170 (PDF 172-183)",
@@ -257,6 +264,12 @@ fn model_rules(m: M) -> &'static [&'static str] {
         M::StochObos => &["E|Lane's original Fast %K (x11mod01.c osctype 1). Buy when %K crosses above 20 (%K[t] >= 20 and %K[t-1] < 20); sell when %K crosses below 80 (%K[t] < 80, %K[t-1] >= 80) (pp.141-146)"],
         M::RsiObos => &["E|Classic RSI (RsiOsc type 1). Buy when RSI crosses above 30; sell when RSI crosses below 70 (p.147)"],
         M::StochSig => &["E|Lane's Slow %K (osctype 2) and a 3-bar simple moving average of it as signal line; buy when Slow %K crosses above the signal line, sell when it crosses below (p.147)"],
+        M::MacdSig => &["E|Classic MACD = EMA(close, fast) - EMA(close, slow) crosses above its 9-bar EMA signal line: buy; crosses below: sell short (x11mod01.c model 2, osctype 4; p.148)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised fast 3-15 and slow 10-40 and does not print the winners: (1) fast EMA 12 and (2) slow EMA 26, borrowed standard MACD lengths that are not the CD's (X11MOD01.C reads the lengths from its parameter list and the CD's X11SCR01.DAT holds only the optimisation grids) and are off the book's grid (fast 3-15 step 2, slow 10-40 step 5), each counted. Printed, not choices: the 9-bar EMA signal line, the next-open entry (Test 10) and the Standard Exit Strategy."],
+        M::RsiDiv => &["E|Over the look-back lb: lowest close at bar i and lowest classic RSI (RsiOsc type 1) at bar j. Buy if i < today and i > today-6, j > today-lb+1, i-j > 4 and RSI turns up (RSI[t] >= RSI[t-1] < RSI[t-2]); otherwise sell short on the mirror (highest close / highest RSI, RSI turns down) (p.149, x11mod01.c model 3, osctype 3)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised RSI 5-25 and look-back 15-25 and does not print the winners: (1) RSI length 14, a borrowed standard length (the CD's X11MOD01.C reads the length from its parameter list; X11SCR01.DAT holds only the optimisation grid 5-25, which does not print the winner), (2) look-back 20, the middle of the book's grid 15-25. Printed, not choices: the divergence algorithm, the next-open entry (Test 16) and the Standard Exit Strategy."],
+        M::MacdDiv => &["E|The same divergence rule as the RSI test on the classic MACD line (EMA fast - EMA slow of closes) (p.150, x11mod01.c model 3, osctype 4)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 3 card-specific details] The book optimised fast 3-15, slow 10-40 and look-back 15-25 and does not print the winners: (1) fast EMA 12 and (2) slow EMA 26, borrowed standard MACD lengths that are not the CD's (X11MOD01.C reads them from its parameter list; X11SCR01.DAT holds only the optimisation grids) and are off the book's grids (fast 3-15 step 2, slow 10-40 step 5), each counted, (3) look-back 20, the middle of the book's grid 15-25. Printed, not choices: the divergence algorithm, the next-open entry (Test 19) and the Standard Exit Strategy."],
         M::StochDiv => &["E|Over the look-back lb: lowest close at bar i and lowest Fast %K at bar j. Buy if i < today and i > today-6, j > today-lb+1, i-j > 4 and %K turns up (%K[t] >= %K[t-1] < %K[t-2]) (pp.148-149, x11mod01.c model 3)",
             "E|Otherwise sell on the mirror image (highest close / highest %K, %K turns down)"],
         M::Seas(k) | M::Lunar(k) => {
@@ -349,7 +362,7 @@ fn rules_of() -> &'static Vec<(&'static [&'static str], &'static str)> {
 }
 
 const NT_MA: &str = "the book never prints the optimised moving-average lengths of these tests (only ROA%/$TRD in Tables 6-3 and 6-6), so the default rule cannot be stated without inventing it";
-const NT_OSC: &str = "the book never prints the optimised oscillator lengths / look-back of these tests (only ROA%/$TRD in Table 7-3), so the default rule cannot be stated without inventing it";
+const NT_OSC: &str = "the book never prints the optimised oscillator lengths / look-back of these tests (only ROA%/$TRD in Table 7-3); lane D2 (R4 #343) runs the next-open Tests 10, 16 and 19 as kets_macd_sig_open, kets_rsi_div_open and kets_macd_div_open with borrowed standard lengths labelled and counted; the limit and stop variants stay held";
 
 macro_rules! off {
     ($id:expr, $name:expr, $g:expr, $dir:expr, $st:expr, $rules:expr, $notes:expr) => {
@@ -390,13 +403,21 @@ fn off_list() -> Vec<StrategyDef> {
             NeedsData("daily sunspot numbers (Royal Observatory of Belgium / SILSO), which the vault does not have; the model's code is only on the CD and its adaptive response vector reads prices up to 10 bars after each event"),
             &["E|Sunspot count above the highest of the previous lb1 counts (or below the lowest) with no such breakout in the previous lb2 counts; direction chosen adaptively from earlier market responses; acted on disp bars later (pp.197-199)", "E|Best: open 35/15/2, limit 40/15/0, stop 35/15/2 (p.199)", "X|Standard exit"],
             "Book: with the stop order the S&P 500 made $4,991/trade IS (37 trades, 40% wins, ROA 20.4%) and $5,640 OOS (11 trades, 45%, ROA 39.5%) (pp.199-200)."),
-        off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · open/limit/stop (Ch.12 Tests 1-3)", "Ch.12 Genetic algorithms", "Long",
-            NeedsData("futures open interest, which is not in the vault for any index, ETF or stock: two of the three evolved rules read it (a decline of at least 4.2% over 36 bars, a rise of at least 5.6% over 44 bars; Encyclopedia of Trading Strategies p.263-264, p.276-277)"),
-            &["E|Buy when all three hold: open interest 36 bars ago - open interest 1 bar ago > 4.2% of the former; close 3 bars ago > close 14 bars ago + 3.47 x ATR; open interest risen >= 5.6% over 44 bars (p.276-277)", "F|Values decoded from the printed chromosome (4,850,65,653), (1,256,530,709), (5,940,47,610) with the printed macros BiasedPosScale/LinearScale (code p.263-264): the tested system (decision 186, FR-13). The prose (p.276) says 34 bars and 3.46 x ATR [option]", "X|Standard exit"],
-            "Book: IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades (p.273)."),
-        off!("kets_ga_short", "Genetically evolved short entry (open-interest + MACD rules) · open/limit/stop (Ch.12 Tests 4-6)", "Ch.12 Genetic algorithms", "Short",
-            NeedsData("futures open interest, which is not in the vault for any index, ETF or stock: two of the three evolved rules read it (Encyclopedia of Trading Strategies p.263-264, p.278)"),
-            &["E|Sell when open interest 1 bar ago > 1.393 x that 40 bars ago, > 1.755 x that 25 bars ago, and the MACD(2,50) slope is down (p.278)", "F|Values decoded from the printed chromosome (5,890,391,532), (5,705,760,956), (10,163,999,196) with the printed macros (code p.263-264): the tested system (decision 186, FR-13). The prose (p.278) says 38% over 38 bars for gene 1 [option]", "X|Standard exit"], "Book: profitable IS, lost OOS (p.274)."),
+        // lane I1 (13 Nov 2026): Indian application on NSE index futures open interest (see `ga` below)
+        StrategyDef { status: Live, needs_series: &[GA_OI], ..off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · entry at the open (Ch.12 Test 1)", "Ch.12 Genetic algorithms", "Long", Live,
+            &["F|Chromosome for long entries at the open (p.276): genes (4,850,65,653), (1,256,530,709), (5,940,47,610), decoded with the printed Rules() templates and macros (p.263-264; CD x16mod01.c): LinearScale(x,a,b) = x(b-a)/1000 + a, BiasedPosScale(x,a) = 0.000001 x^2 a, look-backs truncated to whole bars",
+              "E|Buy at the next open when all three hold on the signal bar: (OI 36 bars ago - OI 1 bar ago) / OI 36 bars ago > 0.04185; close 3 bars ago - close 14 bars ago > 3.4659 x ATR(50) (LinearScale(709,-2.5,2.5) x sqrt(11)); (OI 1 bar ago - OI 44 bars ago) / OI 44 bars ago > 0.05606; no order while long, none on a bar whose next bar has high = low",
+              "X|Standard exit (p.76-77): close-only profit target entry + 4 x ATR(50), close-only stop entry - 1 x ATR(50), out at the close after 10 bars",
+              "F|p.prose = 1 (labelled option): the prose values p.276 (34 bars, 3.46 x ATR) instead of the decoded ones (decision 186)",
+              "F|[Indian application, lane I1] OI = the index's NSE futures (NIFTY / BANKNIFTY), all expiries summed ('total open interest', p.262), NSE F&O bhavcopy; prices = the NSE index (the book: a 36-market futures portfolio, one contract set per market)."],
+            "Indian application of a US-market rule (lane I1): the book evolved and tested the rule on 36 US futures 1985-1999 (IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades, p.273); here NIFTY 50 / NIFTYBANK with their NSE futures open interest, one unit, no costs. Only the open-entry chromosome is printed, so the limit and stop tests (Tests 2-3) are not coded.") },
+        StrategyDef { status: Live, needs_series: &[GA_OI], ..off!("kets_ga_short", "Genetically evolved short entry (open-interest + MACD rules) · entry at the open (Ch.12 Test 4)", "Ch.12 Genetic algorithms", "Short", Live,
+            &["F|Chromosome for short entries at the open (p.278): genes (5,890,391,532), (5,705,760,956), (10,163,999,196), decoded with the printed Rules() templates (p.263-264; CD x16mod01.c)",
+              "E|Sell short at the next open when all three hold: (OI 1 bar ago - OI 40 bars ago) / OI 40 bars ago > 0.39318; (OI 1 bar ago - OI 25 bars ago) / OI 25 bars ago > 0.7548; MACD(2,50) (classic, exponential averages seeded with the first close, MovAvg type 2) below its value 2 bars earlier; no order while short, none on a bar whose next bar has high = low",
+              "X|Standard exit (p.76-77): close-only target entry - 4 x ATR(50), close-only stop entry + 1 x ATR(50), out at the close after 10 bars",
+              "F|p.prose = 1 (labelled option): the prose value p.278 for gene 1 (38% over 38 bars)",
+              "F|[Indian application, lane I1] OI = the index's NSE futures, all expiries summed, NSE F&O bhavcopy; prices = the NSE index."],
+            "Indian application of a US-market rule (lane I1): book IS profitable, OOS lost (p.274) on 36 US futures; here NIFTY 50 / NIFTYBANK with NSE futures open interest. Only the open-entry chromosome is printed (Tests 5-6 not coded).") },
         off!("kets_ga_exit", "Genetically evolved rule-based exits (Ch.15)", "Ch.15 AI exits", "Long/Short",
             NotTestable("the evolved exit rules are printed in prose (long: close above its 12-bar EMA and below its 49-bar EMA with a 6-bar new high; short: close above its 16-bar EMA and 22-bar SMA with the MACD(6,10) slope down, pp.345-346), but the new-high recency window and the random-entry sequence they were evolved and tested on are not printed, so the test cannot be reproduced"),
             &["X|Rule-template exits evolved by a genetic algorithm (pp.345-351)"], "Not reproducible from the book text."),
@@ -415,6 +436,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    if REVIEWED_I1.contains(&id) {
+        return Some([("prose", "Values: 0 = decoded from the printed chromosome (default), 1 = the prose p.276-278", 0., 0., 1., 1.), SES[0], SES[1], SES[2]]
+            .iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect());
+    }
     let t = TESTS.iter().find(|t| t.id == id)?;
     Some(t.defs.iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect())
 }
@@ -432,6 +457,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
             M::RsiObos => ("kets_rsi_obos", "RSI overbought/oversold"),
             M::StochSig => ("kets_stoch_sig", "Stochastic signal line"),
             M::StochDiv => ("kets_stoch_div", "Stochastic divergence"),
+            M::MacdSig => ("kets_macd_sig", "MACD signal-line cross"),
+            M::RsiDiv => ("kets_rsi_div", "RSI divergence"),
+            M::MacdDiv => ("kets_macd_div", "MACD divergence"),
             M::Seas(1) => ("kets_seas_mom", "Seasonal momentum"),
             M::Seas(2) => ("kets_seas_xo", "Seasonal crossover"),
             M::Seas(3) => ("kets_seas_conf", "Seasonal crossover + confirmation"),
@@ -467,7 +495,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kets_ma_trend_xo" | "kets_ma_slope" | "kets_ma_ct_xo" | "kets_ma_sr" => f("kets_ma", "Moving-average entries (Ch.6)", "Not testable"),
         "kets_macd_sig" | "kets_rsi_div" | "kets_macd_div" => f("kets_osc_nt", "Oscillator entries, unprinted parameters", "Not testable"),
         "kets_solar" => f("kets_solar", "Sunspot breakout", "Data missing"),
-        "kets_ga_long" | "kets_ga_short" => f("kets_ga", "Genetically evolved entries", "Data missing"),
+        "kets_ga_long" | "kets_ga_short" => f("kets_ga", "Genetically evolved entries", "Open-interest rules (NSE futures OI)"),
         "kets_ga_exit" => f("kets_ai", "Neural / genetic models", "Not testable"),
         _ => None,
     }
@@ -945,6 +973,7 @@ fn turns_up(a: &[f64], c: usize) -> bool { a[c] >= a[c - 1] && a[c - 1] < a[c - 
 fn turns_dn(a: &[f64], c: usize) -> bool { a[c] < a[c - 1] && a[c - 1] >= a[c - 2] }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if REVIEWED_I1.contains(&id) { return Some(ga(id == "kets_ga_short", x, from, to, p)); }
     let t = TESTS.iter().find(|t| t.id == id)?;
     let n = x.c.len();
     if n < 3 || from > to || to >= n { return Some(vec![]); }
@@ -992,6 +1021,30 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             drive(x, from, to, WARM, false, t.ord, false, ses, &atr50, |cb, _| {
                 let s = if obos { if cross_up(&osc, &lov, cb) { 1 } else if cross_dn(&osc, &hiv, cb) { -1 } else { 0 } }
                     else if cross_up(&osc, &sig, cb) { 1 } else if cross_dn(&osc, &sig, cb) { -1 } else { 0 };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::MacdSig => {
+            let m: Vec<f64> = { let (f, sl) = (xavg(&x.c, u("fast")), xavg(&x.c, u("slow"))); (0..n).map(|i| f[i] - sl[i]).collect() };
+            let sig = xavg(&m, 9);
+            drive(x, from, to, WARM, false, t.ord, false, ses, &atr50, |cb, _| {
+                let s = if cross_up(&m, &sig, cb) { 1 } else if cross_dn(&m, &sig, cb) { -1 } else { 0 };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::RsiDiv | M::MacdDiv => {
+            let osc: Vec<f64> = if t.m == M::RsiDiv { rsi_k(&x.c, u("len")) } else { let (f, sl) = (xavg(&x.c, u("fast")), xavg(&x.c, u("slow"))); (0..n).map(|i| f[i] - sl[i]).collect() };
+            let lb = u("lb").max(2);
+            drive(x, from, to, WARM.max(lb + 1), false, t.ord, false, ses, &atr50, |cb, _| {
+                let lim = cb as i64 - lb as i64 + 1;
+                let (i, j) = (lowest_bar(&x.c, lb, cb) as i64, lowest_bar(&osc, lb, cb) as i64);
+                let c = cb as i64;
+                let mut s = 0;
+                if i < c && i > c - 6 && j > lim && i - j > 4 && turns_up(&osc, cb) { s = 1; }
+                else {
+                    let (i, j) = (highest_bar(&x.c, lb, cb) as i64, highest_bar(&osc, lb, cb) as i64);
+                    if i < c && i > c - 6 && j > lim && i - j > 4 && turns_dn(&osc, cb) { s = -1; }
+                }
                 (s, std_stop(cb, s))
             })
         }
@@ -1115,6 +1168,21 @@ mod tests {
             open: v, high: v + 1., low: v - 1., close: v, volume: None }).collect()
     }
     #[test]
+    fn ga_chromosomes_decode_as_printed() {
+        assert_eq!(2 + biased_pos_scale(850., 48.) as usize, 36); assert!((linear_scale(65., 0.01, 0.50) - 0.04185).abs() < 1e-12);
+        assert_eq!((biased_pos_scale(256., 50.) as usize, biased_pos_scale(530., 50.) as usize), (3, 14));
+        assert!((linear_scale(709., -2.5, 2.5) * 11f64.sqrt() - 3.46586).abs() < 1e-4);
+        assert_eq!(2 + biased_pos_scale(940., 48.) as usize, 44); assert!((linear_scale(47., 0.01, 0.99) - 0.05606).abs() < 1e-12);
+        assert_eq!((2 + biased_pos_scale(890., 48.) as usize, 2 + biased_pos_scale(705., 48.) as usize), (40, 25));
+        assert_eq!((2 + biased_pos_scale(163., 18.) as usize, 3 + biased_pos_scale(999., 48.) as usize), (2, 50));
+        // OI-only rule template 5 fires when OI 1 bar ago is > 1.05606 x OI 44 bars ago, never in the first 100 bars
+        let c: Vec<f64> = (0..200).map(|i| 100. + i as f64).collect(); let r = rows(&c); let x = Ctx::new(&r, &r, &[]);
+        let oi: Vec<f64> = (0..200).map(|i| if i < 150 { 1000. } else { 1100. }).collect();
+        let a = ga_rule(&x, &oi, &vec![1.; 200], (5, 940., 47., 610.));
+        assert!(!a[150] && a[151] && a[193] && !a[194] && !a[99]);
+        assert!(ga(false, &x, 0, 199, &Params::new()).is_empty()); // no FUT_OI series: no trades
+    }
+    #[test]
     fn ses_is_close_only_and_counts_the_entry_bar() {
         // flat 100 with range 2 -> ATR50 = 2; long entered at the open of bar 1 is closed at the close of bar 10 (10 bars held)
         let r = rows(&vec![100.; 40]); let x = Ctx::new(&r, &r, &[]);
@@ -1151,6 +1219,70 @@ mod tests {
         let m = va.iter().sum::<f64>() / 1000.; assert!((m - 0.5).abs() < 0.05);
     }
 }
+
+// ---------------------------------------------------------------- lane I1: Ch.12 GA entries (x16mod01.c) on NSE futures OI
+/// Admitted as an Indian application (own block ADMISSION_I1; gate `allowed` = NIFTY 50, NIFTYBANK).
+pub const REVIEWED_I1: &[&str] = &["kets_ga_long", "kets_ga_short"];
+/// Daily open interest of the index's NSE futures (all expiries), the same series as mhnats_oi7.
+const GA_OI: &str = "FUT_OI";
+fn linear_scale(x: f64, a: f64, b: f64) -> f64 { x * (b - a) / 1000. + a }
+fn biased_pos_scale(x: f64, a: f64) -> f64 { 0.000001 * x * x * a }
+/// MovAvg type 2: exponential average seeded with the first value.
+fn ema_seed(v: &[f64], m: usize) -> Vec<f64> {
+    let k = 2. / (1. + m as f64); let mut s = v[0];
+    v.iter().map(|&d| { s += k * (d - s); s }).collect()
+}
+/// One instantiated rule template of Rules() (templates 1, 4, 5, 10 only: the ones the printed chromosomes use).
+fn ga_rule(x: &Ctx, oi: &[f64], atr: &[f64], g: (u8, f64, f64, f64)) -> Vec<bool> {
+    let (v1, v2, v3, v4) = g; let n = x.c.len(); let tiny = 1.0e-20;
+    let mut ans = vec![false; n];
+    let lb = |v: f64, a: f64| 2 + biased_pos_scale(v, a) as usize;
+    match v1 {
+        1 => {
+            let (l1, l2) = (biased_pos_scale(v2, 50.) as usize, biased_pos_scale(v3, 50.) as usize);
+            let fac = linear_scale(v4, -2.5, 2.5) * ((l1 as f64 - l2 as f64).abs()).sqrt();
+            for cb in l1.max(l2)..n { ans[cb] = x.c[cb - l1] - x.c[cb - l2] > fac * atr[cb]; }
+        }
+        4 => { let (l1, thr) = (lb(v2, 48.), linear_scale(v3, 0.01, 0.50)); for cb in l1..n { ans[cb] = (oi[cb - l1] - oi[cb - 1]) / (oi[cb - l1] + tiny) > thr; } }
+        5 => { let (l1, thr) = (lb(v2, 48.), linear_scale(v3, 0.01, 0.99)); for cb in l1..n { ans[cb] = (oi[cb - 1] - oi[cb - l1]) / (oi[cb - l1] + tiny) > thr; } }
+        _ => { // 10: MACD slope (classic, MovAvg type 2)
+            let l1 = lb(v2, 18.); let l2 = l1 + 1 + biased_pos_scale(v3, 48.) as usize;
+            let (a, b) = (ema_seed(&x.c, l1), ema_seed(&x.c, l2));
+            let m: Vec<f64> = a.iter().zip(&b).map(|(p, q)| p - q).collect();
+            for cb in 2..n { ans[cb] = if v4 - 500. >= 0. { m[cb] > m[cb - 2] } else { m[cb] < m[cb - 2] }; }
+        }
+    }
+    for v in ans.iter_mut().take(100) { *v = false; } // maxlb: the first 100 bars are FALSE
+    ans
+}
+fn ga(short: bool, x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
+    let n = x.c.len();
+    let Some(oi) = x.series(GA_OI) else { return vec![] };
+    if n < 3 || from > to || to >= n { return vec![]; }
+    let gv = |k: &str, d: f64| p.get(k).copied().filter(|v| v.is_finite()).unwrap_or(d);
+    let prose = gv("prose", 0.) >= 0.5;
+    let atr50 = sma(&true_range(x), 50);
+    let genes: [(u8, f64, f64, f64); 3] = if short { [(5, 890., 391., 532.), (5, 705., 760., 956.), (10, 163., 999., 196.)] }
+        else { [(4, 850., 65., 653.), (1, 256., 530., 709.), (5, 940., 47., 610.)] };
+    let mut r: Vec<Vec<bool>> = genes.iter().map(|&g| ga_rule(x, oi, &atr50, g)).collect();
+    if prose { // p.276 / p.278 prose: 34 bars + 3.46 ATR (long gene 1/2), 38% over 38 bars (short gene 1)
+        let tiny = 1.0e-20;
+        if short { for cb in 38..n { r[0][cb] = cb >= 100 && (oi[cb - 1] - oi[cb - 38]) / (oi[cb - 38] + tiny) > 0.38; } }
+        else {
+            for cb in 34..n { r[0][cb] = cb >= 100 && (oi[cb - 34] - oi[cb - 1]) / (oi[cb - 34] + tiny) > 0.042; }
+            for cb in 14..n { r[1][cb] = cb >= 100 && x.c[cb - 3] - x.c[cb - 14] > 3.46 * atr50[cb]; }
+        }
+    }
+    let s = if short { -1 } else { 1 };
+    let ses = (gv("pt", 4.), gv("sl", 1.), gv("hold", 10.).round().max(1.) as usize);
+    drive(x, from, to, WARM, false, Od::Open, false, ses, &atr50, |cb, _| (if r.iter().all(|v| v[cb]) { s } else { 0 }, 0.))
+}
+// Instrument admission (lane I1): the GA entries as an Indian application (NSE index futures OI; gate allowed NIFTY 50, NIFTYBANK).
+pub const ADMISSION_I1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "kets" && REVIEWED_I1.contains(&def.id),
+    label: "Indian application of a US-market rule: Katz and McCormick evolved these entries on a 36-market US futures portfolio with each market's total open interest; here the open interest is the index's NSE futures (NSE F&O bhavcopy, all expiries summed) and the trades are on the NIFTY 50 / NIFTYBANK index, one unit. Not the authors' test.",
+    basis: "The Encyclopedia of Trading Strategies Ch.12: Rules() templates and macros p.262-264 (page images read again by OCR, lane I1; = CD TRMODS/CHAP16/X16MOD01.C), chromosomes p.276-278, entry at the open + standard exit (x16mod01 Model). Independent Python reference authors/i1/w/i1_ref.py (with the Katz TRDSIM reference authors/katz/admission/kets_ref.py).",
+};
 
 // Instrument admission: Katz 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/katz/admission/SOURCE-CONTRACT.md); kept in one block to merge.

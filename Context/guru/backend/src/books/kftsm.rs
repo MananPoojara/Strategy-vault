@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Boxes = intportion(price/box); reversal = revboxes (3) boxes (CD code; p.155-175)",
             "F|Box size: Table 5.2 (p.160) 'Point-and-Figure Box Sizes—Futures 2003': e-mini SP 5, e-mini NQ 5, 3-box reversal",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Default box = 5 index points (Table 5.2 value for the S&P and Nasdaq e-minis); the book gives no box for Indian indices, so NIFTY runs use the same 5 points unless changed. The CD code's quirks are kept literally (initial column from close >= (high-low)/2; 'if mod(xlow,box)=0 then boxlow = boxlow - 1')."),
+        ], "Lane K75 (R4 #277 (1)): the box defines the signal, so the default is its percent equivalent at the book's own period, on a log scale (box k = prices from (1+p)^k up to (1+p)^(k+1)): Table 5.2's 5 points were 0.518% of the 2003 S&P average (965.23, vault SPX closes) and 0.410% of the 2003 Nasdaq-100 average (1,220.37; used on NDX and QQQ); every other index, ETF and stock (US and India) uses the S&P figure (declared application). p.mode = 1 (labelled option): the literal 5 points, meaningful on SPX and NDX only. The CD code's quirks are kept literally (initial column from close >= (high-low)/2; 'if mod(xlow,box)=0 then boxlow = boxlow - 1')."),
         // ------------------------------------------------ Ch 8: bands and other single-trend systems (CD Ch08)
         d("kftsm_bb_ma", "Moving average with Bollinger bands", "Ch 8 · Bands and channels", "Long/Short", Live, &[
             "E|\"if close crosses above bandup then buy next bar market; if close crosses below banddn then sell next bar market\" bandup = BollingerBand(close,20,2) (TSM MA BBands, CD Ch08; rules p.269)",
@@ -78,7 +78,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("kftsm_triple_smooth", "Triple exponential smoothing", "Ch 8 · Triple smoothing", "Long/Short", Live, &[
             "E|\"savg1 = savg1[1] + (2/(length1+1))*(close - savg1[1]); savg2 ... of savg1; savg3 ... of savg2; if savg3 > savg3[1] then buy on close else if savg3 < savg3[1] then sell on close\" (TSM Triple Smoothing, CD Ch08, lengths 20, 10, 5)",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Seeds: all three = first close (code). Hutson's TRIX variant on p.273 (log prices, same constant, two-day rule) gives no constant: not coded."),
+        ], "Seeds: all three = first close (code). Hutson's TRIX variant on p.273 (log prices, same constant, two-day rule) is the separate card kftsm_trix (unverified, vault n = 10)."),
         d("kftsm_vol_breakout", "Volatility system (Bookstaber)", "Ch 8/20 · Volatility system", "Long/Short", Live, &[
             "E|\"Buy if the close rises by more than k × V(n)t-1 from the previous close. Sell if the close drops by more than k × V(n)t-1\" V = average true range (p.273-274; p.656-657)",
             "E|\"The value of k is generally about 3.0.\" \"the current price change is compared to the previous volatility calculation\" (p.273-274)",
@@ -199,13 +199,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
         // ------------------------------------------------ Not testable
         d("kftsm_mptdi", "MPTDI step-weighted average", "Ch 8 · Applications of single trends", "Long/Short", NotTestable("Table 8.1 gives steps only for gold in points; no table for any index"), &["F|Table 8.1 MPTDI variables for gold (p.272)"], "Futures-specific table."),
         d("kftsm_mart", "Mart's Master Trading Formula", "Ch 8 · Applications of single trends", "Long/Short", NotTestable("the smoothing-constant lookup table and band formula are not printed"), &["E|\"look up a smoothing constant in a modified log-scale table\" (p.276)"], ""),
-        d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", "Long/Short", NotTestable("smoothing constant not given (only 'less than a 20-day equivalent')"), &["E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)"], ""),
+d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", "Long/Short", Live, &[
+            "F|\"Substituting the log of the price to account for growth, he applied an exponential smoothing three times using the same smoothing constant.\" (p.273)",
+            "E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)",
+            "X|\"a sell signal followed a two-day decline in the trendline\" (p.273)",
+        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) the smoothing period and the seed, 'less than a 20-day equivalent when 2/(n + 1) is used': vault reading n = 10 (p.period; alpha = 2/(n+1)) and all three averages start at the first log close (a warm-up convention, the book gives none); (2) the order and fill: vault reading = at the close of the second consecutive rise (fall); (3) whether the sell signal exits or reverses: vault reading = stop-and-reverse (always in the market after the first signal, as the chapter's other trend systems); (4) a day that is neither a second rise nor a second fall (one up one down, or an exact tie): vault reading = hold the position. Declared application on index, ETF and stock daily closes. The book prints no result for it."),
         d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", NotTestable("N weeks not given"), &["E|\"Buy if the closing price on Friday exceeds the highest closing price of the past N weeks\" (p.178)"], ""),
         d("kftsm_4wk_final3m", "Four-Week Rule, final three months", "Ch 5 · N-day breakout", "Long/Short", NeedsData("individual futures contracts with delivery months"), &["E|Plot the four-week high/low from 3 months before delivery, 2.5% stop, exit the last day of the month before delivery (p.177)"], ""),
         d("kftsm_dunnigan", "Dunnigan thrust / one-way formula", "Ch 4 · Dunnigan", "Long/Short", NotTestable("'predetermined percentage' and thrust size per market not given"), &["E|Two of four patterns followed by a thrust (p.121-122)"], ""),
         d("kftsm_nofri", "Nofri congestion-phase system", "Ch 4 · Nofri", "Long/Short", NotTestable("congestion area needs judgement ('almost unchanged', 'adequate time has elapsed')"), &["E|In a congestion range after two closes in the same direction take the opposite position on the close; exit the next close (p.124)"], ""),
         d("kftsm_regression_channel", "Regression channel breakout", "Ch 4 · Channel breakout", "Long/Short", NotTestable("minimum swing value (MSV) and 'within 15%' entries not fixed"), &["E|Trend turns when the close breaks the projected regression channel (p.132-133)"], ""),
-        d("kftsm_moving_channel", "Moving channel (midpoint + range)", "Ch 4 · Moving channels", "Long/Short", NotTestable("n and the scaling factor w are not given"), &["E|Long when P > M + (M - M[1]) + wR (p.135)"], ""),
+d("kftsm_moving_channel", "Moving channel (midpoint + range)", "Ch 4 · Moving channels", "Long/Short", Live, &[
+            "F|\"the average of the high, low, and close to designate the center of the channel ... the upper and lower bands are constructed using the average daily range. The midpoint of the price move M and range R can be calculated over the past n days\" (p.135); the bands forecast for the next day: U(t+1) = M(t) + (M(t) - M(t-1)) + w R(t), L(t+1) = M(t) + (M(t) - M(t-1)) - w R(t)",
+            "E|\"A long position is taken when the new price P(t+1) > U(t+1); a short is taken when P(t+1) < L(t+1).\" (p.135)",
+            "X|The profit objective is optional (\"If a channel profit objective is needed\", 2wR beyond the band): not coded; the position is held until the opposite band is broken",
+        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) n, the number of days: vault reading n = 20 (p.n); (2) the scaling factor w: vault reading w = 1.0 (p.w); (3) how a band break is traded: vault reading = a stop order at the band computed on the prior day's data, filled at the band, or at the open when the open is already beyond it, and when one bar breaks both bands the band nearer the open is taken (upper on a tie; the order within the bar is unknown, counted for #240 in the gate text); (4) the exit: vault reading = stop-and-reverse at the opposite band (always in the market after the first break; the optional profit objective is not coded). Stated and read literally: M = n-day average of (high + low + close)/3, R = n-day average of (high - low). Declared application on index, ETF and stock daily bars."),
         d("kftsm_momentum_fade", "Momentum extremes fade", "Ch 9 · Momentum", "Long/Short", NotTestable("bands 'selected visually'; no span or threshold given"), &["E|Aggressive / minor / major confirmation entries; exit when momentum reaches zero (p.315-316)"], ""),
         d("kftsm_macd_threshold", "MACD crossover with thresholds", "Ch 9 · MACD", "Long/Short", NotTestable("thresholds 'based on observing the MACD movement for less than one year' on one chart"), &["E|Sell only after MACD above +2.00, buy only below -2.00 (p.318-319)"], ""),
         d("kftsm_holiday", "Pre-holiday strategy (Fosback)", "Ch 10 · Seasonality", "Long", NotTestable("'major holiday' list not defined"), &["E|\"bought two days prior to a major holiday and exited on the day prior to the holiday\" (p.374)"], ""),
@@ -246,6 +254,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kftsm_raschke_first_cross" => Some(("kftsm_raschke_first_cross", "First Cross with Kaufman exit", "")),
         "kftsm_outside_day" => Some(("kftsm_outside_day", "Outside day with outside close", "")),
         "kftsm_fc_bb_abx" => Some(("kftsm_fc_bb_abx", "Two-band half-position profit taking", "")),
+        "kftsm_trix" => Some(("kftsm_trix", "Hutson log triple smoothing (two-day rule)", "")),
+        "kftsm_moving_channel" => Some(("kftsm_moving_channel", "Moving channel breakout", "")),
         _ => None,
     };
     if reviewed.is_some() { return reviewed; }
@@ -267,6 +277,23 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         _ => return None,
     })
 }
+/// R1-1116: Kaufman p.135 moving channel. M = n-day mean of (H+L+C)/3, R = n-day mean of (H-L); bands for the next day
+/// M(t) + (M(t)-M(t-1)) +/- w R(t); a stop at the band, filled at the band or at the open when the open is beyond it; always reversed.
+fn moving_channel(x: &Ctx, from: usize, to: usize, n: usize, w: f64) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let tp: Vec<f64> = (0..c.len()).map(|i| (h[i] + l[i] + c[i]) / 3.).collect();
+    let rg: Vec<f64> = (0..c.len()).map(|i| h[i] - l[i]).collect();
+    let (m, r) = (sma(&tp, n), sma(&rg, n));
+    let mut b = Bk::new(x, from, to);
+    for i in from.max(n + 1)..=to {
+        let (ub, lb) = (m[i - 1] + (m[i - 1] - m[i - 2]) + w * r[i - 1], m[i - 1] + (m[i - 1] - m[i - 2]) - w * r[i - 1]);
+        let eps = 1e-9 * ub.abs().max(1.); // a band equal to the high or low to rounding is a touch, not a break (prices have 2-4 decimals)
+        let (up, dn) = (h[i] > ub + eps, l[i] < lb - eps);
+        let go_long = match (up, dn) { (true, false) => true, (false, true) => false, (true, true) => (o[i] - ub).abs() <= (o[i] - lb).abs(), _ => continue };
+        if go_long { b.go(i, 1, o[i].max(ub), "stop", "upper channel band broken"); } else { b.go(i, -1, o[i].min(lb), "stop", "lower channel band broken"); }
+    }
+    b.done()
+}
 fn s_static(s: &str) -> &'static str {
     catalogue().into_iter().find(|d| d.id == s).map_or("kftsm_other", |d| d.id)
 }
@@ -281,7 +308,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_lrs" => vec![p("period", "Regression period", 20., 2., 250., 1.), p("filter", "Slope filter", 0., 0., 10., 0.1), p("lag", "Entry lag (bars)", 0., 0., 5., 1.)],
         "kftsm_ndb" => vec![p("period", "Breakout period N", 20., 1., 250., 1.), p("printed", "Window: 0 CD code (N bars), 1 printed Table 8.2 (N-1 bars)", 0., 0., 1., 1.)],
         "kftsm_swg" | "kftsm_swing" => vec![p("swing", "Minimum swing (%)", 2.5, 0.25, 10., 0.25)],
-        "kftsm_pf" => vec![p("box", "Box size (points)", 5., 0.05, 500., 0.05), p("rev", "Reversal boxes", 3., 1., 5., 1.)],
+        "kftsm_pf" => vec![p("mode", "Box: 0 = percent of price (default, R4 #277 (1)); 1 = the book's literal index points (literal 5 points: meaningful on SPX/NDX only)", 0., 0., 1., 1.),
+            p("pct", "Percent box (0 = auto: 0.518% = 5 S&P points at the 2003 average 965; 0.410% on NDX/QQQ = 5 NQ points at 1,220)", 0., 0., 5., 0.01),
+            p("box", "Literal box size (points, mode 1; Table 5.2: 5)", 5., 0.05, 500., 0.05), p("rev", "Reversal boxes", 3., 1., 5., 1.)],
         "kftsm_bb_ma" => vec![p("period", "MA / std-dev period", 20., 5., 100., 1.), p("nsd", "Band std devs", 2., 0.5, 4., 0.1)],
         "kftsm_fc_bb_abx" => vec![p("period", "MA / std-dev period", 21., 5., 100., 1.), p("nsd", "Outer band std devs (inner = half)", 2., 0.5, 4., 0.1)],
         "kftsm_ma_pct_band" => vec![p("period", "MA period", 20., 2., 250., 1.), p("pcband", "Band (% of MA)", 2., 0.1, 10., 0.1)],
@@ -290,6 +319,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_vol_breakout" => vec![p("length", "ATR period", 20., 2., 100., 1.), p("factor", "Volatility factor k", 3., 0.5, 5., 0.1), p("vlag", "1 = previous bar's ATR (text), 0 = include today (CD Ch08)", 1., 0., 1., 1.)],
         "kftsm_raschke_first_cross" => vec![p("osc1", "Fast MA", 3., 2., 10., 1.), p("osc2", "Slow MA", 10., 5., 30., 1.), p("ntrend", "Oscillator smoothing", 16., 5., 40., 1.), p("vfilter", "Trend reach filter", 0., 0., 100., 1.)],
         "kftsm_keltner" => vec![p("period", "Average period", 10., 2., 50., 1.)],
+        "kftsm_trix" => vec![p("period", "Smoothing period n (alpha = 2/(n+1); book: under 20)", 10., 2., 19., 1.)],
+        "kftsm_moving_channel" => vec![p("n", "Midpoint / range days n", 20., 10., 250., 1.), p("w", "Range scaling factor w", 1., 1., 5., 0.1)],
         "kftsm_parabolic" => vec![p("afmin", "Starting AF", 0.02, 0.01, 0.1, 0.01), p("afinc", "AF increment", 0.02, 0.01, 0.1, 0.01), p("afmax", "Maximum AF", 0.2, 0.05, 0.5, 0.01)],
         "kftsm_outside_day" => vec![p("length", "Prior range (days)", 1., 1., 5., 1.), p("hold", "Exit on the close N days after entry", 3., 1., 10., 1.), p("stop_ref", "Stop: 0 outside day's extreme (text), 1 prior range (CD code)", 0., 0., 1., 1.)],
         "kftsm_donchian_4wk" => vec![p("weeks", "Calendar weeks", 4., 1., 12., 1.)],
@@ -410,6 +441,28 @@ fn run_signal(x: &Ctx, from: usize, to: usize, sig: &[i8], why: &str) -> Vec<Tra
     b.done()
 }
 /// change = (trend - trend[1])*100/close[1], latched by filter and lag (TSMMAsignal / TSMExpSignal).
+/// SMA_a vs SMA_b of one series (a length of 1 = the price itself), exact on printed prices (R4 #253); floats as the fallback.
+struct AvgCmp { a: Vec<f64>, b: Vec<f64>, sa: Vec<Option<i128>>, sb: Vec<Option<i128>>, na: usize, nb: usize, exact: bool }
+impl AvgCmp {
+    fn new(c: &[f64], na: usize, nb: usize) -> AvgCmp {
+        let e = crate::connors::ExactSeries::new(&[c]);
+        let (sa, sb) = e.as_ref().map_or((vec![], vec![]), |e| (e.sums(0, na), e.sums(0, nb)));
+        AvgCmp { a: sma(c, na), b: sma(c, nb), sa, sb, na, nb, exact: e.is_some() }
+    }
+    fn at(&self, i: usize) -> Option<std::cmp::Ordering> {
+        if !(self.a[i].is_finite() && self.b[i].is_finite()) { return None; }
+        if self.exact { crate::connors::exact_avg_vs_avg(&self.sa, self.na, &self.sb, self.nb, i) } else { self.a[i].partial_cmp(&self.b[i]) }
+    }
+}
+fn latch(ch: &[f64], filter: f64, lag: usize) -> Vec<i8> {
+    let mut s = vec![0i8; ch.len()];
+    let mut cur = 0;
+    for i in 0..ch.len() {
+        if i >= lag { let v = ch[i - lag]; if v > filter { cur = 1 } else if v < -filter { cur = -1 } }
+        s[i] = cur;
+    }
+    s
+}
 fn latch_change(c: &[f64], tr: &[f64], filter: f64, lag: usize, pct: bool) -> Vec<i8> {
     let n = c.len();
     let mut ch = vec![f64::NAN; n];
@@ -477,7 +530,7 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
             return Some(format!("Unknown Kaufman TSM parameter: {key}"));
         };
         let integer = matches!(key.as_str(), "period" | "lag" | "kind" | "printed" | "rev" |
-            "len1" | "len2" | "len3" | "length" | "vlag" | "osc1" | "osc2" | "ntrend" |
+            "len1" | "len2" | "len3" | "length" | "n" | "vlag" | "osc1" | "osc2" | "ntrend" |
             "length1" | "length2" | "length3" | "hold" | "stop_ref" | "weeks" | "per2" |
             "fast" | "slow" | "fstoch" | "holddays" | "day" | "exit_day" | "in_month" | "out_month");
         if !value.is_finite() || value < def.min || value > def.max || (integer && value.fract() != 0.) {
@@ -514,8 +567,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     Some(match id {
         "kftsm_ma" => {
-            let ma = sma(c, u("period").max(1));
-            run_signal(x, from, to, &latch_change(c, &ma, g("filter"), u("lag"), true), "trendline turned")
+            let pn = u("period").max(1);
+            let ma = sma(c, pn);
+            // R4 #253: SMA_t - SMA_t-1 = (C[t] - C[t-n]) / n, exact in sign (the filter compares the same value in %)
+            let ch: Vec<f64> = (0..n).map(|i| if i >= pn && ma[i].is_finite() && ma[i - 1].is_finite() { (c[i] - c[i - pn]) / pn as f64 * 100. / c[i - 1] } else { f64::NAN }).collect();
+            run_signal(x, from, to, &latch(&ch, g("filter"), u("lag")), "trendline turned")
         }
         "kftsm_exp" => {
             let pn = u("period").max(1);
@@ -578,8 +634,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "kftsm_pf" => {
             let (bx, rev) = (g("box").max(1e-9), g("rev"));
-            let ip = |v: f64| (v / bx).trunc();
-            let md0 = |v: f64| (v % bx).abs() < 1e-9;
+            // lane K75 (R4 #277 (1)): default = a percent box on a log scale (box k spans [(1+p)^k, (1+p)^(k+1))), p = the
+            // 5 points' share of the 2003 price (Table 5.2 'Futures 2003'): S&P average 965.23 -> 0.518%; NDX/QQQ 1,220.37 -> 0.410%
+            let pct = match g("pct") { v if v > 0. => v, _ if matches!(x.r[0].ticker.as_str(), "NDX" | "QQQ") => 500. / 1220.37, _ => 500. / 965.23 };
+            let (lit, k) = (g("mode") >= 0.5, (1. + pct / 100.).ln());
+            let ip = |v: f64| if lit { (v / bx).trunc() } else { (v.ln() / k).trunc() };
+            let md0 = |v: f64| if lit { (v % bx).abs() < 1e-9 } else { let q = v.ln() / k; (q - q.round()).abs() < 1e-9 };
             let mut b = Bk::new(x, from, to);
             let mut bh = ip(c[0]);
             let mut bl = ip(c[0]) + 1.;
@@ -702,23 +762,19 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             adaptive_driver(x, from, to, &tr, pn, g("sdfilter"), g("mfilter"))
         }
-        "kftsm_hh_ma" => {
-            let ma = sma(c, u("period").max(1));
+        "kftsm_hh_ma" | "kftsm_hh_cross" => {
+            // R4 #253: the close (an average of length 1) or the fast average against the slow one, in exact arithmetic
+            let (na, nb) = if id == "kftsm_hh_ma" { (1, u("period").max(1)) } else { (u("fast").max(1), u("slow").max(1)) };
+            let ac = AvgCmp::new(c, na, nb);
             let mut b = Bk::new(x, from, to);
             for i in from..=to {
                 if h[i] == l[i] { continue; }
-                if crosses_above(c, &ma, i) { b.at_close(i, 1, "close crossed above MA"); }
-                else if crosses_below(c, &ma, i) { b.at_close(i, -1, "close crossed below MA"); }
-            }
-            b.done()
-        }
-        "kftsm_hh_cross" => {
-            let (f, s) = (sma(c, u("fast").max(1)), sma(c, u("slow").max(1)));
-            let mut b = Bk::new(x, from, to);
-            for i in from..=to {
-                if h[i] == l[i] { continue; }
-                if crosses_above(&f, &s, i) { b.at_close(i, 1, "fast MA crossed above slow MA"); }
-                else if crosses_below(&f, &s, i) { b.at_close(i, -1, "fast MA crossed below slow MA"); }
+                let (now, prev) = (ac.at(i), if i > 0 { ac.at(i - 1) } else { None });
+                use std::cmp::Ordering::{Greater, Less};
+                let up = now == Some(Greater) && matches!(prev, Some(o) if o != Greater);
+                let dn = now == Some(Less) && matches!(prev, Some(o) if o != Less);
+                let what = if id == "kftsm_hh_ma" { ("close crossed above MA", "close crossed below MA") } else { ("fast MA crossed above slow MA", "fast MA crossed below slow MA") };
+                if up { b.at_close(i, 1, what.0); } else if dn { b.at_close(i, -1, what.1); }
             }
             b.done()
         }
@@ -731,11 +787,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             b.done()
         }
         "kftsm_mod_3ma" | "kftsm_4_9_18" => {
-            let (m1, m2, m3) = (sma(c, u("length1").max(1)), sma(c, u("length2").max(1)), sma(c, u("length3").max(1)));
+            let (n1, n2, n3) = (u("length1").max(1), u("length2").max(1), u("length3").max(1));
+            let m3 = sma(c, n3);
+            let ac = AvgCmp::new(c, n2, n1); // fast vs slow, exact (R4 #253)
             let mut b = Bk::new(x, from, to);
             for i in from.max(1)..=to {
-                if m2[i] > m1[i] && m3[i] > m3[i - 1] { b.at_close(i, 1, "crossover up, confirming MA rising"); }
-                if m2[i] < m1[i] && m3[i] < m3[i - 1] { b.at_close(i, -1, "crossover down, confirming MA falling"); }
+                // confirming average rising/falling: sign of C[i] - C[i-n3] (R4 #253), both averages defined
+                let rise = if m3[i].is_finite() && m3[i - 1].is_finite() { c[i] - c[i - n3] } else { f64::NAN };
+                let fs = ac.at(i);
+                if fs == Some(std::cmp::Ordering::Greater) && rise > 0. { b.at_close(i, 1, "crossover up, confirming MA rising"); }
+                if fs == Some(std::cmp::Ordering::Less) && rise < 0. { b.at_close(i, -1, "crossover down, confirming MA falling"); }
             }
             b.done()
         }
@@ -743,6 +804,19 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kftsm_multi_tf" => multi_tf(x, from, to, u("fast").max(1), u("slow").max(2), g("overbot"), g("oversold")),
         "kftsm_month_end" => month_end(x, from, to, u("day").min(1), u("exit_day").max(1)),
         "kftsm_hirsch" => hirsch(x, from, to, g("in_month").round() as i64, g("out_month").round() as i64),
+        "kftsm_trix" => {
+            // R1-1116: Hutson (p.273): log price, one smoothing constant, three times; two-day rise = buy, two-day fall = sell (reverse).
+            let a = 2. / (u("period").max(1) as f64 + 1.);
+            let lc: Vec<f64> = c.iter().map(|v| v.ln()).collect();
+            let s3 = expo(&expo(&expo(&lc, a), a), a);
+            let mut b = Bk::new(x, from, to);
+            for i in from.max(2)..=to {
+                if s3[i] > s3[i - 1] && s3[i - 1] > s3[i - 2] { b.at_close(i, 1, "two-day rise of the triple smoothing"); }
+                else if s3[i] < s3[i - 1] && s3[i - 1] < s3[i - 2] { b.at_close(i, -1, "two-day decline of the triple smoothing"); }
+            }
+            b.done()
+        }
+        "kftsm_moving_channel" => moving_channel(x, from, to, u("n").max(2), g("w")),
         _ => return None,
     })
 }
@@ -796,27 +870,52 @@ fn fc_abx(x: &Ctx, from: usize, to: usize, pn: usize, k: f64) -> Vec<Trade> {
 }
 
 fn raschke(x: &Ctx, from: usize, to: usize, o1: usize, o2: usize, nt: usize, vf: f64) -> Vec<Trade> {
-    let (h, l, c, n) = (&x.h, &x.l, &x.c, x.r.len());
+    let (c, n) = (&x.c, x.r.len());
+    // R4 #256 (K64): the oscillator SMA3 - SMA10 and its 16-day average are computed values, which connors::sma cannot read
+    // as printed decimals; on printed prices they are compared in exact integers (as #253): fast = (o2*S1 - o1*S2) /
+    // (o1*o2*10^k), trend = sum of nt fasts / nt, so fast vs trend = nt*num(fast) vs num(trend) (IWM 2003-03-27: fast of
+    // the 26th = trend of the 27th exactly). Floats only when a close cannot be read exactly.
+    if let Some((fk, tr, den)) = raschke_exact(c, o1, o2, nt) {
+        return raschke_core(x, from, to, &fk, &tr, 0, |m: i128| m as f64 / den > vf);
+    }
     let (m1, m2) = (sma(c, o1), sma(c, o2));
     let fast: Vec<f64> = (0..n).map(|i| m1[i] - m2[i]).collect();
-    let tr = sma(&fast, nt);
+    let tr: Vec<Option<f64>> = sma(&fast, nt).into_iter().map(|v| v.is_finite().then_some(v)).collect();
+    let fast: Vec<Option<f64>> = fast.into_iter().map(Some).collect();
+    raschke_core(x, from, to, &fast, &tr, 0., |m: f64| m > vf)
+}
+
+/// Exact Raschke oscillator on printed closes: (nt * num(fast), num(trend), the common denominator), or None.
+fn raschke_exact(c: &[f64], o1: usize, o2: usize, nt: usize) -> Option<(Vec<Option<i128>>, Vec<Option<i128>>, f64)> {
+    let e = crate::connors::ExactSeries::new(&[c])?;
+    let (s1, s2) = (e.sums(0, o1), e.sums(0, o2));
+    let f: Vec<Option<i128>> = (0..c.len()).map(|i| Some(o2 as i128 * s1[i]? - o1 as i128 * s2[i]?)).collect();
+    let tr = (0..c.len()).map(|i| if i + 1 < nt { None } else { f[i + 1 - nt..=i].iter().try_fold(0i128, |a, v| v.map(|v| a + v)) }).collect();
+    Some((f.iter().map(|v| v.map(|v| v * nt as i128)).collect(), tr, (nt * o1 * o2) as f64 * 10f64.powi(e.scale as i32)))
+}
+
+/// Raschke's first cross on an oscillator `fast` and its average `tr` (same units; None = not yet defined).
+fn raschke_core<T: Copy + PartialOrd + std::ops::Neg<Output = T>>(x: &Ctx, from: usize, to: usize, fast: &[Option<T>], tr: &[Option<T>], zero: T, above_vf: impl Fn(T) -> bool) -> Vec<Trade> {
+    let (h, l, c) = (&x.h, &x.l, &x.c);
     let mut b = Bk::new(x, from, to);
-    let (mut twait, mut owait, mut trmax, mut stage) = (0i8, 0i8, 0f64, 0i8);
+    let (mut twait, mut owait, mut trmax, mut stage) = (0i8, 0i8, zero, 0i8);
     for i in 1..=to {
-        if !tr[i - 1].is_finite() || !tr[i].is_finite() { continue; }
+        let (Some(t0), Some(t1)) = (tr[i - 1], tr[i]) else { continue };
+        // fast exists wherever its average does
+        let (f0, f1) = (fast[i - 1].unwrap(), fast[i].unwrap());
         let mp = b.pos();
-        if tr[i - 1] <= 0. && tr[i] > 0. { twait = -1; owait = 0; trmax = tr[i]; }
-        if tr[i - 1] >= 0. && tr[i] < 0. { twait = 1; owait = 0; trmax = -tr[i]; }
-        if tr[i] > 0. && tr[i - 1] > 0. && tr[i] > trmax { trmax = tr[i]; }
-        if tr[i] < 0. && tr[i - 1] < 0. && -tr[i] > trmax { trmax = -tr[i]; }
+        if t0 <= zero && t1 > zero { twait = -1; owait = 0; trmax = t1; }
+        if t0 >= zero && t1 < zero { twait = 1; owait = 0; trmax = -t1; }
+        if t1 > zero && t0 > zero && t1 > trmax { trmax = t1; }
+        if t1 < zero && t0 < zero && -t1 > trmax { trmax = -t1; }
         let mut order: Option<i8> = None;
-        if trmax > vf {
+        if above_vf(trmax) {
             if mp != 1 && twait < 0 {
-                if owait == 0 && fast[i - 1] > tr[i] && fast[i] <= tr[i] { owait = -1; }
+                if owait == 0 && f0 > t1 && f1 <= t1 { owait = -1; }
                 if owait == -1 && l[i] > l[i - 1] { order = Some(1); stage = 0; }
             }
             if mp != -1 && twait > 0 {
-                if owait == 0 && fast[i - 1] < tr[i] && fast[i] >= tr[i] { owait = 1; }
+                if owait == 0 && f0 < t1 && f1 >= t1 { owait = 1; }
                 if owait == 1 && h[i] < h[i - 1] { order = Some(-1); stage = 0; }
             }
         }
@@ -1114,6 +1213,17 @@ fn first_hour(x: &Ctx, from: usize, to: usize, len: usize, off: f64) -> Vec<Trad
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// R4 #256 (K64): IWM closes 2003-02-19..03-27. The oscillator of the 26th equals the trend (16-day average of
+    /// SMA3 - SMA10) of the 27th exactly (0.2198333...), so "fast[t-1] > trend[t]" is false and no pullback is armed.
+    #[test]
+    fn raschke_iwm_2003_03_27_exact_tie() {
+        let c = [35.925, 35.85, 36.16, 35.605, 35.93, 35.75, 35.945, 36.005, 35.895, 35.43, 35.5, 35.21, 35.225, 34.62, 34.375, 34.45, 35.38,
+                 35.425, 36.245, 36.72, 36.63, 36.87, 37.385, 36.585, 36.975, 36.52, 36.765];
+        let (fk, tr, _) = super::raschke_exact(&c, 3, 10, 16).unwrap();
+        assert!(tr[23].is_none() && tr[24].is_some());
+        assert_eq!(fk[25], tr[26]);
+        assert!(!(fk[25] > tr[26]));
+    }
     use crate::Row;
     fn rows(n: usize) -> Vec<Row> {
         (0..n).map(|i| Row { ticker: "T".into(), date: format!("{}", days_to(i as i64 + 10957)), open: 100., high: 101., low: 99., close: 100., volume: None }).collect()
@@ -1286,6 +1396,29 @@ mod tests {
         assert!(ts[0].open);assert_eq!(ts[0].exit_px,124.);assert_eq!(ts[0].entry_kind,"open");
     }
     #[test]
+    fn r1_trix_and_moving_channel() {
+        let r = super::super::sctraub::tests::bars(900);
+        let x = Ctx::new(&r, &r, &[]);
+        let tx = run("kftsm_trix", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(tx.len() > 5 && tx.windows(2).all(|w| w[1].legs[0].i == w[0].exit_i && w[1].dir == -w[0].dir) && tx.last().unwrap().open);
+        assert!(validate("kftsm_trix", &Params::from([("period".into(), 20.)])).is_some()); // the book says under 20
+        let mc = run("kftsm_moving_channel", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(mc.len() > 5 && mc.iter().all(|t| t.entry_kind == "stop" || t.entry_kind == "close"));
+        assert!(mc.windows(2).all(|w| w[1].dir == -w[0].dir && w[1].legs[0].i == w[0].exit_i));
+        assert!(crate::books::ADMISSIONS.iter().all(|a| !a.label.contains('"')));
+        for id in ["kftsm_trix", "kftsm_moving_channel"] { assert!((ADMISSION_R1.reviewed)(&catalogue().into_iter().find(|d| d.id == id).unwrap()), "{id}"); }
+    }
+    #[test]
+    fn moving_channel_fills_at_the_band_or_the_open() {
+        let mut r = rows(40);
+        for i in 0..40 { r[i].open = 100.; r[i].high = 101.; r[i].low = 99.; r[i].close = 100.; }
+        // flat bars: M constant, M(t)-M(t-1) = 0, R = 2: U = 102, L = 98 (w = 1); bar 30 gaps up through U, bar 35 trades through L
+        r[30].open = 104.; r[30].high = 105.; r[30].low = 103.; r[30].close = 104.;
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("kftsm_moving_channel", &x, 0, 39, &Params::from([("n".into(), 10.)])).unwrap();
+        assert_eq!(t[0].dir, 1.); assert_eq!(t[0].legs[0].i, 30); assert_eq!(t[0].legs[0].px, 104.); // the open is beyond the band
+    }
+    #[test]
     fn first_cross_rejects_inverted_oscillator_lengths() {
         assert!(validate("kftsm_raschke_first_cross",&Params::from([("osc1".into(),10.),("osc2".into(),5.)])).is_some());
     }
@@ -1300,3 +1433,10 @@ mod tests {
         assert!(run("kftsm_adapt_rsi",&x,0,49,&Params::new()).unwrap().is_empty());
     }
 }
+
+// Instrument admission: lane R1-1116 (R4 #297/#339): Hutson triple smoothing and the Kaufman moving channel, each with 4 labelled unstated details.
+pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "kftsm_trix" | "kftsm_moving_channel"),
+    label: "Kaufman describes both rules on futures and stocks without naming a market; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 4 unstated details each (n or w, the fill, the exit, the in-between day), labelled on the card.",
+    basis: "New Trading Systems and Methods 4th ed. p.273 (triple smoothing), p.135 (moving channel); R4 #297/#339; independent check authors/relax-339/R1/w/r1_ref.py",
+};

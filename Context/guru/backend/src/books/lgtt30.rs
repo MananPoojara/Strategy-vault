@@ -7,7 +7,7 @@
 //! fills at the open; intrabar path open -> nearer extreme -> other extreme (tie: low first). Buy and sell entry stops
 //! are both working every day, so an opposite entry reverses the position (System Writer behaviour). Non-re-entry rule
 //! (p.5, p.56): no entry in the direction the position had coming into the day.
-use crate::books::jkbwts::{entry, exit, sim, Ty};
+use crate::books::jkbwts::{entry, exit, sim, sim_ep6, Ty};
 use crate::books::lg3k::roundup;
 use crate::books::jkbwts::Ord;
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -53,11 +53,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Book (System Writer, 'S&P Plan 93', S&P INDEX roll, 1/1/93-12/31/93): 48 trades, 81% profitable, avg $162.50, net $7,800 (p.58). 20 S&P points = 0.20 index points ($500/point => $1,250 = 2.50 points). Run on SPY/SPX/NIFTY (instrument swap): the 20-point target and the $1,250 stop are kept in index points (params). The book: 'if you are in any doubt at all as to whether a market opened higher or lower ... DON'T TAKE ANY TRADE' - with vault data an open equal to the prior close is 'no pattern' (no trade).",
           claim("48", "81%", "$162.50", "1 bar", "S&P 500 futures 1993 (p.58)")),
         d("lgtt30_bond_plan", "T-Bond Plan (Daily Market Mapping)", "Daily Market Mapping (p.37-58)",
-          NeedsData("T-Bond futures day-session data (the vault has no bond futures)"),
+          NotTestable("Held under R4 #240 (lane F1D screen, authors/f1d/f1d_lgtt_screen.py, w/screen_lgtt.out): with the T-Bonds columns of the tables (p.51-54, OCR authors/f1d/w/lgtt_p51..54.txt; two illegible cells read as NT) and the S&P Plan's coded exits on the Norgate T-bond contract, each day run in both path orders: 205 of 2,265 trades (9.1%) are order-dependent (both entry stops, or an entry and the target/stop, inside one daily bar), 5 of 55 (9.1%) in the book's 1993 window, and no T-bond minute bars exist (limit 5%). The screen reproduces the book's 1993 test closely (55 trades, 76% winners vs 57 trades, 75%, p.57), so the hold rests on #240 alone; no engine code."),
           &["E|T-Bonds columns of the same day-type tables (p.51-54); BndPlan Hi/In/Lo/Out code (p.41-44)", "X|Profitable open; target max(high of entry day, entry + 2 ticks); $625 money stop from the day after entry"],
           "Book 'Bond Plan 93' 1993: 57 trades, 75%, avg $92 (p.57).", claim("57", "75%", "$92.00", "1 bar", "T-Bond futures 1993 (p.57)")),
         d("lgtt30_intraday", "Intraday Market Mapping (1-2-3 patterns, 3-bar filter)", "Intraday Market Mapping (p.23-36)",
-          NotTestable("rules not fully defined: the 1-2-3 swings 'of some degree' are recognised by eye on 15-30 minute charts (TT30 with Market Mapping p.23-36); price bars at that size now exist, the judgement remains"),
+          NotTestable("rules not fully defined: the 1-2-3 swings 'of some degree' are recognised by eye on 15- to 30-min charts (TT30 with Market Mapping p.23-36); price bars at that size now exist, the judgement remains"),
           &["F|1-2-3 swing patterns and a 3-bar average filter used to fine-tune system entries (p.23-36)"], "", None),
     ]
 }
@@ -67,6 +67,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "lgtt30_tt30" => vec![p("days", "Kris-Kross days", 3., 2., 10., 1.), p("mult", "Multiplier of the Kris-Kross figure", 0.5, 0.1, 2.0, 0.05),
@@ -122,13 +128,15 @@ fn sp_table(day: usize, cl: usize, op: usize) -> (Option<f64>, Option<f64>) {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.c.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     Some(match id {
         "lgtt30_tt30" => {
             let n = g("days").max(1.0).round() as usize;
             let (mult, tick, sref) = (g("mult"), if g("tick") > 0.0 { g("tick") } else { x.market_tick() }, g("stop_ref") >= 0.5);
-            sim(x, from, to, 0.0, false, |i, pos, _| {
+            sim_ep6(x, from, to, 0.0, false, false, on, |i, pos, _| {
                 if i + 1 < n { return vec![]; }
                 let w = i + 1 - n..=i;
                 let hh = w.clone().map(|j| h[j]).fold(f64::MIN, f64::max); let ll = w.clone().map(|j| l[j]).fold(f64::MAX, f64::min);

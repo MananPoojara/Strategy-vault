@@ -906,6 +906,12 @@ window.JoeRossEvidence = {
       "title": "Electronic Trading TNT III - Technical Trading Stuff",
       "year": 1998,
       "blurb": "Technical volume of the stock course. Bollinger Bands Method #2 (9-bar bands, touch of the average, break of that bar) is a complete rule, run on daily bars as a declared application."
+    },
+    {
+      "id": "jr_tbtm",
+      "title": "Trading by the Minute",
+      "year": 1999,
+      "blurb": "Futures day-trading manual (1991 and 1999 editions). Two complete day trades run on the vault's 5-minute bars from the 1-minute files: Sagging Highs / Rising Lows and the three-day extreme breakout, both with the violation-method exit and out by the close. The other methods are held with the reason."
     }
   ],
   "finding": "The Manual prints 96.5% for two standard deviations; normal coverage is approximately 95.45%, without guaranteed market-band coverage. The printed CCI divisor is 1.5 versus standard 0.015; the source conflict is explicit and no CCI backtest is enabled."

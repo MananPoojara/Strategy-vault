@@ -8,7 +8,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "svmws";
 /// Admitted ids (authors/sperandeo/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["svmws_10w30w_long", "svmws_10w30w_short"];
+pub const REVIEWED: &[&str] = &["svmws_10w30w_long", "svmws_10w30w_short", "svmws_200d_gordon"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const LONG: &[&str] = &["E|\"When the 10-week moving average crosses the 30-week moving average and the slope of both averages is up, this comprises a buy signal, provided that prices are above both moving average lines\" (p. 90)", "X|\"When the 10-week moving average crosses the 30-week moving average and the slope of both averages is down, this comprises a sell signal, provided prices are below both moving average lines\" (p. 93)"];
@@ -27,11 +27,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         d("svmws_10w30w_long", "10-week / 30-week MA cross · buys", "Long", Live, LONG, NOTE),
         d("svmws_10w30w_short", "10-week / 30-week MA cross · sells", "Short", Live, SHORT, NOTE),
-        d("svmws_200d_gordon", "Gordon 200-day moving average rule", "Long/Short",
-          NotTestable("rules not fully defined: 'flattens out' is not quantified: \"If the 200-day moving average line flattens out following a previous decline or is advancing, and prices penetrate the moving average line on the upside\" (Methods of a Wall Street Master p. 90)"),
+        d("svmws_200d_gordon", "Gordon 200-day moving average rule", "Long/Short", Live,
           &["E|\"If the 200-day moving average line flattens out following a previous decline or is advancing, and prices penetrate the moving average line on the upside, this comprises a major buying signal\" (p. 90)",
             "X|\"If the 200-day moving average line flattens out following a previous rise or is declining, and prices penetrate the moving average line on the downside, this comprises a major selling signal\" (p. 90)"],
-          "Book cites W. Gordon: Dow stocks 1917-1967, 18.5% average simple yearly return (p. 90). Dropping 'flattens out' would change the rule, so not coded."),
+          "Adapted: 3 card-specific unstated details (lane R2, 16 Nov 2026, R4 #297/#339/#343), UNVERIFIED. (1) 'flattens out ... or is advancing' = the 200-day SMA today is not below its value 5 days ago (p.slope sets the days); the mirror, 'declining', = not above it; the book gives no number. \
+(2) 'penetrate' = a close above (below) the SMA after a close at or below (at or above) it. (3) The short side is not printed as a separate rule: a major selling signal also opens a short and a buying signal closes it, so the card is always in the market after the first signal (the book names no other exit; same convention as the 10/30-week card). \
+Engine conventions, labelled and not counted (R4 #343): fill at the close of the signal day; one position at a time; warm-up from the first full 200-day window. Book cites W. Gordon: Dow stocks 1917-1967, 18.5% average simple yearly return (p. 90): a different universe and period, so no #168 check. Near sibling: apta_ma200_dji (Appel p.48) is the plain 200-day close crossing with no slope condition, long only/flat; this card adds Sperandeo's slope condition and always-in reversal, so it is a different rule."),
         d("svmws_123", "1-2-3 change of trend", "Long/Short",
           NotTestable("trendline drawn by eye from the lowest low to the 'highest minor low'; 'test' and 'minor' highs/lows are chart judgement; no exit rule"),
           &["F|\"(1) a break in the trend line; (2) a test of the preceding high or low; (3) the breaking of a preceding minor rally high or minor sell-off low\" (p. 76)"],
@@ -59,7 +60,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "svmws_10w30w_long" => ("svmws_10w30w", "Sperandeo 10/30-week MA rule", "Buys"),
         "svmws_10w30w_short" => ("svmws_10w30w", "Sperandeo 10/30-week MA rule", "Sells"),
-        "svmws_200d_gordon" | "svmws_oscillators" => ("svmws_ma", "Sperandeo MA & oscillators", "not testable"),
+        "svmws_200d_gordon" => ("svmws_200d_gordon", "Sperandeo Gordon 200-day rule", "Long/Short"),
+        "svmws_oscillators" => ("svmws_ma", "Sperandeo MA & oscillators", "not testable"),
         "svmws_123" | "svmws_2b" | "svmws_dow_theory" => ("svmws_trend_change", "Sperandeo change of trend", "not testable"),
         "svmws_stock_selection" => ("svmws_stocks", "Sperandeo stock selection", "not testable"),
         _ => return None,
@@ -72,11 +74,16 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             ParamDef { key: "fast", label: "Fast MA (weeks)", def: 10., min: 4., max: 20., step: 1. },
             ParamDef { key: "slow", label: "Slow MA (weeks)", def: 30., min: 11., max: 50., step: 1. },
         ]),
+        "svmws_200d_gordon" => Some(vec![
+            ParamDef { key: "ma", label: "SMA length (days)", def: 200., min: 50., max: 300., step: 10. },
+            ParamDef { key: "slope", label: "Slope look-back (days; the book gives none, vault reading 5)", def: 5., min: 1., max: 20., step: 1. },
+        ]),
         _ => None,
     }
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "svmws_200d_gordon" { return run_gordon(x, from, to, p); }
     let dir = match id { "svmws_10w30w_long" => 1., "svmws_10w30w_short" => -1., _ => return None };
     if from >= to || to >= x.r.len() { return None; }
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d).round().max(2.) as usize;
@@ -103,6 +110,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             cur = Some(Trade { dir, legs: vec![Leg { i, px: x.c[i], w: 1. }], exit_i: i, exit_px: x.c[i], reason: String::new(),
                 entry_kind: "close", signal_i: i, open: false, exits: vec![] });
         }
+    }
+    if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+    Some(out)
+}
+
+/// Gordon's 200-day rule (lane R2): reversal at the close; signal and fill at the same close.
+fn run_gordon(x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if from >= to || to >= x.r.len() { return None; }
+    let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d).round().max(1.) as usize;
+    let (n, k) = (g("ma", 200.), g("slope", 5.));
+    let m = sma_exact(&x.c, n);
+    let (mut out, mut cur) = (vec![], None::<Trade>);
+    for i in from.max(n + k)..to { // a signal on the window's last bar would open a zero-length trade: not opened
+        if !(m[i].is_finite() && m[i - 1].is_finite() && m[i - k].is_finite()) { continue; }
+        let buy = x.c[i] > m[i] && x.c[i - 1] <= m[i - 1] && m[i] >= m[i - k];
+        let sell = x.c[i] < m[i] && x.c[i - 1] >= m[i - 1] && m[i] <= m[i - k];
+        let dir = if buy { 1. } else if sell { -1. } else { continue };
+        if cur.as_ref().map_or(false, |t| t.dir == dir) { continue; }
+        if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = x.c[i]; t.signal_i = i; t.reason = "opposite 200-day signal".into(); out.push(t); }
+        cur = Some(Trade { dir, legs: vec![Leg { i, px: x.c[i], w: 1. }], exit_i: i, exit_px: x.c[i], reason: String::new(),
+            entry_kind: "close", signal_i: i, open: false, exits: vec![] });
     }
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)

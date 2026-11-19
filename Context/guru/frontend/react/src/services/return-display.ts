@@ -41,6 +41,16 @@ export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", 
       + sourceAccountCopy(account).displayNote;
   }
   const unavailable = (reason: string): ReturnDisplay => ({...result, unavailableReason: reason});
+  // Lane E6: a run over the engine's trade cap arrives summary-only (trades_page); its trade list is not here, so the
+  // additive view is the engine's own closed-trade return sum, and the compounded view (not computed by the engine) is withheld.
+  const page = data && typeof data === "object" ? (data as {trades_page?: unknown}).trades_page : undefined;
+  if (page !== undefined && !account) {
+    const stats = (data as {stats?: {net_profit?: unknown; trades?: unknown}}).stats;
+    if (mode === "compound") return unavailable("This run's trades load page by page; the compounded closed-trade view needs every trade at once.");
+    if (typeof stats?.net_profit !== "number" || !Number.isFinite(stats.net_profit) || typeof stats.trades !== "number")
+      return unavailable("Closed-trade returns are unavailable.");
+    return {...result, value: stats.net_profit, closedTrades: stats.trades, description: result.description + " Summed by the engine over every closed trade (six decimals)."};
+  }
   if (!data || typeof data !== "object" || !Array.isArray((data as {trades?: unknown}).trades)) {
     return unavailable("Closed-trade returns are unavailable.");
   }

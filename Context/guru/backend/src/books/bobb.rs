@@ -6,7 +6,7 @@ use crate::connors::{pct_b, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "bobb";
 /// Admitted ids (authors/bollinger/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["bobb_m2_band", "bobb_m2_sar", "bobb_m3_long"];
+pub const REVIEWED: &[&str] = &["bobb_m2_band", "bobb_m2_sar", "bobb_m3_long", "bobb_m1_squeeze"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -33,11 +33,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("bobb_m3_short", "Method III · reversal sell: upper-band tag with negative AD%", "Ch 20 · Method III", "Short", NotTestable("The book gives the sell setup (\"go short if %b is greater than 0.95 and AD% is less than zero\", p.165) but no exit for it; the 'logical target' is stated only for the buy."), true, &[
             "E|\"go short if %b is greater than 0.95 and AD% is less than zero\" (p.165), AD% = 20-day Accumulation Distribution normalised (p.151, p.165)",
         ], "Not testable: no exit (user rule)."),
-        d("bobb_m1_squeeze", "Method I · volatility breakout after The Squeeze", "Ch 15-16 · Method I", "Long/Short", NotTestable("Setup 'BandWidth at a six-month low' is exact, but the book never says how long after a Squeeze a breakout still counts (\"Just wait for a Squeeze and go with the first breakout\"), nor whether 'exceeded' means a close or an intraday trade beyond the band, and it calls the selection a visual skill (\"instructs the eye ... as no hard-and-fast rules ever can\", p.129)."), false, &[
-            "F|\"BandWidth is at a six-month low\" (p.67, p.129); BandWidth = (upper BB - lower BB)/middle BB (Table 8.2, p.63)",
-            "E|\"we'll actually buy when the upper band is exceeded and short when the lower band is broken to the downside\" (p.126)",
-            "X|Parabolic started \"just below the range of the breakout formation\" or \"a tag of the opposite band\" (p.127)",
-        ], "Not testable: setup-to-breakout window undefined; head-fake handling is discretionary (p.128-129)."),
+        d("bobb_m1_squeeze", "Method I · volatility breakout after The Squeeze", "Ch 15-16 · Method I", "Long/Short", Live, false, &[
+            "F|BandWidth = (upper BB - lower BB)/middle BB (Table 8.2, p.63); \"a Squeeze is triggered when BandWidth drops to its lowest level in six months\" (p.120; \"BandWidth is at a six-month low\", p.67)",
+            "E|\"we'll actually buy when the upper band is exceeded and short when the lower band is broken to the downside\" (p.126); \"Just wait for a Squeeze and go with the first breakout\" (p.129)",
+            "X|\"a tag of the opposite band is an excellent exit signal ... in a buy use a tag of the lower band as an exit, and in a sell use a tag of the upper band as an exit\" (p.127)",
+        ], "Readings [labelled]: (1) six months = 125 trading days, the look-back of the book's own six-month Squeeze definition (Endnote 2 to Ch 15: '125-day ... Bollinger Bands of the standard deviation'); a Squeeze day is one whose BandWidth is the lowest of the last 125 days. (2) Breakout window: the first close beyond a band after the latest Squeeze, however long it takes (the book's 'go with the first breakout', p.129); that breakout uses up the setup whether or not a trade is open (one position at a time, so a breakout during a trade is skipped), and the next Squeeze arms it again. p.win = N keeps a setup for N days only (option, not from the book). (3) 'Exceeded' / 'broken' = the close beyond the band (the bands are known only at the close); entry at the next open. Method I 'straight up' (p.129): the head-fake half-position tactics, volume confirmation and the Parabolic exit (whose start, 'just below the range of the breakout formation', is not defined) are not modelled. Exit at the close of the day whose low (long) or high (short) reaches the opposite band. Bands SMA(20) +/- 2 population SD (p.129: 'the standard parameters'). No stop in the book."),
         d("bobb_ch8_examples", "Ch 8 · example system statements (%b with II / %b of an indicator)", "Ch 8 · %b and BandWidth", "Long/Short", NotTestable("Illustrations of how to program a rule, with no exit: \"If %b is greater than one and 21-day II is less than zero, sell\" (p.61); \"If %b(price) is greater than 0.9 and %b(indicator) is less than 0.3, sell\" (p.63); the W-bottom statement needs a judged 'first low' (p.61)."), true, &[
             "E|\"If %b is greater than one and 21-day II is less than zero, sell\" (p.61)",
         ], "Not testable: no exit."),
@@ -56,7 +56,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "bobb_m2_sar" => ("bobb_m2", "Bollinger Method II", "Parabolic stop"),
         "bobb_m3_long" => ("bobb_m3", "Bollinger Method III", "Buy · upper-band target"),
         "bobb_m3_short" => ("bobb_m3", "Bollinger Method III", "Sell · no exit"),
-        "bobb_m1_squeeze" => ("bobb_m1", "Bollinger Method I", "Not testable"),
+        "bobb_m1_squeeze" => ("bobb_m1", "Bollinger Method I", "Squeeze breakout · opposite-band exit"),
         "bobb_ch8_examples" | "bobb_ch20_breadth" | "bobb_patterns" => ("bobb_other", "Bollinger examples", "Not testable"),
         _ => return None,
     })
@@ -74,6 +74,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v
         }
         "bobb_m3_long" => { let mut v = bands(); v.extend([p("pb", "%b below", 0.05, -0.2, 0.3, 0.05), p("ii_n", "II% days", 21., 5., 40., 1.)]); v }
+        "bobb_m1_squeeze" => { let mut v = bands(); v.extend([p("look", "Squeeze look-back (days; six months = 125)", 125., 60., 250., 5.), p("win", "Breakout window after the Squeeze (days; 0 = the first breakout, however late)", 0., 0., 60., 1.)]); v }
         _ => return None,
     })
 }
@@ -121,6 +122,22 @@ pub fn ii_pct(x: &Ctx, n: usize) -> Vec<f64> {
     out
 }
 
+/// Method I signal at each close: +1 / -1 on the first close above the upper / below the lower band after the latest Squeeze
+/// (BandWidth the lowest of the last `look` days, the Squeeze day included); the breakout uses up the setup (`win` > 0: the
+/// setup lapses `win` days after its Squeeze). Market events only, independent of any open position.
+fn m1_signals(c: &[f64], up: &[f64], lo: &[f64], look: usize, win: usize) -> Vec<f64> {
+    let bw: Vec<f64> = (0..c.len()).map(|i| { let m = (up[i] + lo[i]) / 2.; if m > 0. { (up[i] - lo[i]) / m } else { f64::NAN } }).collect();
+    let (mut out, mut armed) = (vec![0.; c.len()], None::<usize>);
+    for i in 0..c.len() {
+        if let Some(s) = armed {
+            if win > 0 && i - s > win { armed = None; }
+            else if c[i] > up[i] { out[i] = 1.; armed = None; } else if c[i] < lo[i] { out[i] = -1.; armed = None; }
+        }
+        if i + 1 >= look && bw[i + 1 - look..=i].iter().all(|v| v.is_finite()) && bw[i + 1 - look..=i].iter().all(|v| bw[i] <= *v) { armed = Some(i); }
+    }
+    out
+}
+
 fn open_t(dir: f64, i: usize, px: f64, sig: usize) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] }
 }
@@ -144,6 +161,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ii = ii_pct(x, u("ii_n"));
             let t = g("pb");
             Box::new(move |i| if pb[i] < t && ii[i] > 0. { 1. } else { 0. })
+        }
+        "bobb_m1_squeeze" => {
+            let s = m1_signals(&x.c, &up, &lo, u("look"), g("win").round().max(0.) as usize);
+            Box::new(move |i| s[i])
         }
         _ => return None,
     };

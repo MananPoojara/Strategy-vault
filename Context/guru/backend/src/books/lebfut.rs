@@ -709,9 +709,11 @@ mod tests {
         // Roughneck: 58/59 identical (first book trade starts later; mbb 58 gives all 59 = $43,100)
         let Some(got) = book("lebfut_roughneck", "cl_rough.csv", "1988-10-17", "1998-12-31", 1000., &[("mbb", 58.)]) else { return };
         assert_eq!(got, (59, 43100., 46));
-        // First Sword: all 85 printed trades plus one extra (12/19/94), from an exact close = SMA(5) tie on 12/16/94
+        // First Sword (lane K61, R4 #249 window sums): 83 of the 85 printed trades identical, as the card says. Two exact ties
+        // close = SMA(5): 12/16/94 (no trade, as printed) and 3/11/96 (printed short 3/12/96 and 4/4/96; ours a 3/26/96 short
+        // instead); TradeStation's running sum resolved the second tie as 'below'. The old running sum here gave 85 + 1 extra.
         let got = book("lebfut_firstsword", "jy_fsy.csv", "1988-01-04", "1998-12-17", 1250., &[]).unwrap();
-        assert_eq!(got, (86, 115800., 47));
+        assert_eq!(got, (84, 115900., 46));
         // Wildcat with the printed list's next-close profit fills: 38 trades (26 identical; 1984-88 data differs)
         let got = book("lebfut_wildcat", "cl_wildcat.csv", "1984-01-03", "1998-04-22", 1000., &[("pfill_close", 1.)]).unwrap();
         assert_eq!(got.0, 40);

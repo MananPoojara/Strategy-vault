@@ -9,7 +9,7 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::books::mpts::sma;
 
-pub const REVIEWED: &[&str] = &["fgitc_volex", "fgitc_rocadx", "fgitc_qqqvol", "fgitc_ema1020", "fgitsm_revvolex", "fgitsm_volspike", "fgsmc_ma50_200", "fgtofd_ema20_50"];
+pub const REVIEWED: &[&str] = &["fgitc_volex", "fgitc_rocadx", "fgitc_qqqvol", "fgitc_ema1020", "fgitsm_revvolex", "fgitsm_volspike", "fgsmc_ma50_200", "fgtofd_ema20_50", "fgsmc_vix" /* lane K75, R4 #279 (3) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! note { ($s:expr) => { concat!($s, " [Declared conventions, not from the book] A run starts flat; history before the window builds the indicators; an open trade is marked at the window's last close; one unit, no commissions. Index, ETF and stock runs (US and India) are a declared application where the book used another market; cash-index shorts are hypothetical.") }; }
@@ -65,11 +65,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"... until the end of the next month. Then repeat this process.\" (p.252): at the next month end every position is closed and the new five are bought"],
             "Jay Kaeppel's Pure Momentum system (S&C, July 1999) applied to country ETFs, as presented in The Index Trading Course. Book: Table 11.9 'Top 5 Monthly' yearly returns 4/1/97-5/12/04. [Declared readings, book silent] 240-day gain = month-end close / close 240 trading days earlier - 1; the ranking and the equal-fifth rebalance both use the month's last close (p.fill=1: buy at the next session's open), each fifth reset to equal dollars every month; ties by ticker; price-only closes (no dividends). The rotation runs once all 20 ETFs have 240 trading days of history (EWZ from July 2000, so from mid-2001): Kaeppel's 1997-2000 test necessarily had fewer funds, and a rotation with members missing would be a different rule (decision #229 (10)). Runs on the SPY calendar (rotation account, books::rotation). Lane K54."),
         held("fgitc_seasonal", "Presidential cycle, Kaeppel seasonal windows, Santa Claus rally", "Ch.10 (p.213-216)", "fgitc",
-            NotTestable("the same rules as Kaeppel's Seasonal Stock Market Trends (kpss) and the Stock Trader's Almanac (hsta) already on the site; the book's turn-of-month window is the last 1 + first 4 days (kpss: last 2 + first 4)"), &["E|Buy the year before the election"]),
+            NotTestable("Duplicate of kpss_monthly10 and the Stock Trader's Almanac (hsta) rules already on the site (Kaeppel's Seasonal Stock Market Trends); the book's turn-of-month window is the last 1 + first 4 days (kpss: last 2 + first 4)"), &["E|Buy the year before the election"]),
         held("fgitcwb_dia_expiry", "DIA option-expiration Friday short", "Workbook (p.118-119)", "fgitc",
-            NeedsData("needs DIA prices (not in the vault) and is a classroom exercise 'created for this exercise (but not implemented)' from one week of data"), &["E|Short DIA at the close before expiration Friday after a down close"]),
-        held("fgsmc_vix", "VIX above 30 buy, below 20 out", "p.292-294", "fgsmc",
-            NeedsData("the book's VIX is the old S&P 100 (OEX) volatility index, now VXO; the vault holds the newer VIX, a different index"), &["E|\"When the VIX is high (>30), it's time to buy\" (p.293)"]),
+            NotTestable("has no exit: a classroom exercise 'created for this exercise (but not implemented)' from one week of data; DIA prices are held (us_data.csv), so the block is the missing exit"), &["E|Short DIA at the close before expiration Friday after a down close"]),
+        StrategyDef { needs_series: &["VXO_OHLC.Close"], // lane K75 (R4 #279 (3))
+            ..live("fgsmc_vix", "VIX above 30 buy, below 20 out (the book's OEX VIX = VXO)", "Ch.10 · Sentiment analysis, CBOE Volatility Index (p.292-294)", "fgsmc", "Long", false,
+            &["F|\"The CBOE Volatility Index (ticker = VIX) computes implied volatility of four S&P 100 (OEX) option contracts in the two front months\" (p.293): the index the CBOE renamed VXO in 2003 when the new S&P 500 VIX took the name; the vault holds VXO 1986-01-02..2021-09-23 (extra_data VXO_OHLC, CBOE), so p.src = 0 (default) reads the VXO close",
+              "E|\"When the VIX is high (>30), it's time to buy.\" (p.293); \"Remember, 30+ is generally considered a good entry point!\" (p.294): flat and the VXO closes above 30 -> buy",
+              "X|\"When the VIX is low (<20), it's time to go.\" (p.293): long and the VXO closes below 20 -> sell",
+              "F|p.src = 1 (labelled option): the market's own volatility index instead of the book's VXO: today's CBOE VIX (S&P 500 options, 1990-) on US instruments, the India VIX on NSE instruments (declared application)"],
+            note!("Long only (the book names no short). The VXO close (4:15 pm ET) comes after the stock market's 4:00 close, so a signal fills at the next session's open [declared]; while flat every close above 30 is a buy signal (a level, not a cross); 30 and 20 exactly give no signal. Runs where the VXO exists (to 2021-09-23, when the CBOE stopped it): US indices, ETFs and US stocks. [R4 #340 / #365 declared adaptation, UNVERIFIED] On Indian instruments the India VIX CLOSE stands in for the VXO close (the rule never reads the open; the India VIX is another index: NIFTY options, not S&P 100), with the book's 30 / 20 levels unchanged; measured firing rate over the overlap 2009-03-02..2021-09-23: India VIX closes above 30 on 8.4% of days against 7.8% for the VXO, and the buy-at-30 / out-at-20 cycle has 6 entries on the India VIX against 10 on the VXO. Data from 2009-03-02.")) },
         StrategyDef { claim: crate::connors::claim("20", "70%", "n/a", "weeks to months", "Select Sector SPDRs, 3 Jan 2000 - 21 Sep 2007, two bullish periods: 4 trades (3 gains) $5,000 -> $5,135, and 16 trades (11 gains) $5,000 -> $14,080 (Table 13-5, p.233-234)"),
             ..live("fgtofd_sector_tilt", "Select Sector SPDR tilt: hold the top 3-month ETF while SPY's 50-day SMA is above its 200-day", "Ch.13 · Tilting your portfolio with sector ETFs (p.230-234)", "fgtofd", "Long", false,
             &["F|\"Using SPY and the nine major Select Sector SPDR ETFs\" (Table 13-4: XLB XLE XLF XLI XLK XLP XLU XLV XLY) (p.231-232)",
@@ -79,7 +84,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Readings [book silent]: three-month return = close / close 63 trading days earlier - 1; the weekly ranking is taken at each week's last close and a switch fills there; the two weeks are counted from the purchase (two weekly rankings in a row at rank 4-9 while held); SMAs are simple averages of SPY's daily closes, checked every day: a close with the 50-day below the 200-day sells at that close, and a close with the 50-day above the 200-day while flat buys the top-ranked ETF at that close (the book's tilt starts on its first data day, 3 Jan 2000, already bullish); ties by ticker. Price-only ETF closes; the book's $5,000 tilt sits next to a protected SPY core that is not part of this card. Runs on the SPY calendar (SPY is also the bullish/bearish filter); the holdings are the ETFs named in each trade. US only (no NIFTY sector index series, decision #11).") },
         held("fgitsm_elliott", "ProfitSource Elliott-wave trades", "Seminar manual", "fgitsm", NotTestable("depends on proprietary Elliott-wave counts"), &["E|Proprietary"]),
         held("fg_options", "Option strategies (straddles, spreads, covered calls ...)", "Options Course, Trading Options For Dummies, seminar manuals", "fgtofd",
-            NotTestable("rules not fully defined: the option positions (calls, puts, spreads, straddles, covered calls) are chosen to a market view with no entry or exit rule (The Index Trading Course Ch.4-7 and 13, p.47-132 and 287-308; Trading Options For Dummies; The Stock Market Course Ch.5 p.117-157); real option prices are now held for SPY/QQQ/IWM and NIFTY, but there is no rule to run"), &["E|Option positions"]),
+            NotTestable("rules not fully defined: the positions (calls, puts, spreads, straddles, covered calls) are chosen to a market view; entry and exit rules are not specified (The Index Trading Course Ch.4-7 and 13, p.47-132 and 287-308; the For Dummies trading guide; The Stock Market Course Ch.5 p.117-157); real SPY/QQQ/IWM and NIFTY chains are now held, but there is no rule to run"), &["E|Option positions"]),
     ]
 }
 
@@ -108,6 +113,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "fgitc_qqqvol" => vec![p("target", "Profit target % (book: 3.5)", 3.5, 0.5, 20., 0.5)],
         "fgitc_ema1020" => vec![p("s", "Short EMA (book: 10)", 10., 2., 100., 1.), p("l", "Long EMA (book: 20)", 20., 3., 250., 1.), p("stop", "Stop % (book: 15)", 15., 1., 50., 1.)],
         "fgitsm_volspike" => vec![p("mult", "Spike = volume above x times average (book: 3)", 3., 1.5, 10., 0.5), p("n", "Average volume days (book: 30)", 30., 5., 200., 1.)],
+        "fgsmc_vix" => vec![p("buy", "Buy above (book: 30)", 30., 10., 80., 1.), p("sell", "Sell below (book: 20)", 20., 5., 60., 1.), p("src", "0 = VXO, the book's OEX index (default); 1 = the market's volatility index (US VIX, India VIX)", 0., 0., 1., 1.)],
         "fgsmc_ma50_200" => vec![p("s", "Short average (book: 50)", 50., 2., 200., 1.), p("l", "Long average (book: 200)", 200., 3., 400., 1.)],
         "fgtofd_ema20_50" => vec![p("s", "Short EMA (book: 20)", 20., 2., 100., 1.), p("l", "Long EMA (book: 50)", 50., 3., 250., 1.)],
         "fgtofd_sector_tilt" => vec![], // lane K28: runs in books::rotation
@@ -256,6 +262,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 else if let Some(t) = cur.take() { close(t, fi, px, i, "short average crossed below the long", &mut out); }
             }
         }
+        "fgsmc_vix" => { // lane K75 (R4 #279 (3))
+            let Some(v) = x.series(if g("src", 0.) >= 0.5 || super::tselhs::india(x) { "VIX.Close" } else { "VXO_OHLC.Close" }) else { return Some(vec![]) };
+            let (buy, sell) = (g("buy", 30.), g("sell", 20.));
+            for i in from..to {
+                if cur.is_none() && v[i] > buy { cur = Some(trade(1., i + 1, o[i + 1], "open", i)); }
+                else if cur.is_some() && v[i] < sell { close(cur.take().unwrap(), i + 1, o[i + 1], i, "VIX closed below 20 · next open", &mut out); }
+            }
+        }
         _ => return None,
     }
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
@@ -269,6 +283,18 @@ mod tests {
     fn catalogue_admits_exactly_the_reviewed_ids() {
         let live: Vec<_> = catalogue().into_iter().filter(|d| d.status == Status::Live && !crate::books::rotation::is_rotation(d.id)).map(|d| d.id).collect();
         assert_eq!(live, REVIEWED);
+    }
+    #[test]
+    fn vix_30_buy_20_out_next_open() {
+        // lane K75: VXO closes 25, 31 (buy day 2 open), 35 (held), 19 (sell day 4 open), 32 on the window's last bar (no fill)
+        let r: Vec<crate::Row> = (0..6).map(|i| crate::Row { ticker: "SPY".into(), date: format!("2020-01-{:02}", i + 1), open: 100. + i as f64, high: 110., low: 90., close: 101. + i as f64, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("VXO_OHLC.Close".into(), vec![25., 31., 35., 19., 22., 32.]);
+        let t = run("fgsmc_vix", &x, 0, 5, &Params::new()).unwrap();
+        assert_eq!(t.iter().map(|z| (z.legs[0].i, z.legs[0].px, z.exit_i, z.exit_px, z.open)).collect::<Vec<_>>(), vec![(2, 102., 4, 104., false)]);
+        x.extra.insert("VIX.Close".into(), vec![31., 25., 25., 25., 25., 25.]);
+        let v = run("fgsmc_vix", &x, 0, 5, &[("src".to_string(), 1.)].into_iter().collect()).unwrap();
+        assert_eq!((v.len(), v[0].legs[0].i, v[0].open), (1, 1, true));
     }
 }
 

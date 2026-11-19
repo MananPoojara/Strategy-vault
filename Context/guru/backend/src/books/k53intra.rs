@@ -30,8 +30,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             pd("tick", "Tick in index points (S&P 0.05)", 0.05, 0.01, 1., 0.01)],
         "rwmts_2h_rsi400" | "rwmts_60m_rsi200h" => vec![stop(2.5)],
         "rwmts_30m_rsi100h" => vec![stop(1.5)],
-        "rwmts_15m_5m_rsi" => vec![pd("bars", "Bar minutes: 15 (Table 5.13, 50-hour MA) or 5 (Table 5.14, 16.67-hour MA)", 15., 5., 15., 10.), stop(1.)],
-        "rwmts_2h_stoch_cci" => vec![stop(1.5), pd("time", "Exit when bars since entry exceed (30 hours = 15 two-hour bars)", 14., 3., 40., 1.)],
+        // decision #248 (3): Tables 5.13-5.14 print an S&P (SP) row, 0.5% stop (p.101); the Nasdaq-100 row's 1% is the option
+        "rwmts_15m_5m_rsi" => vec![pd("bars", "Bar minutes: 15 (Table 5.13, 50-hour MA) or 5 (Table 5.14, 16.67-hour MA)", 15., 5., 15., 10.), stop(0.5)],
+        "rwmts_2h_stoch_cci" => vec![stop(1.5), pd("time", "Exit when BarsSinceEntry exceeds (the code's 14; 30 hours = 15 two-hour bars)", 14., 3., 40., 1.),
+            pd("count", "BarsSinceEntry on the entry bar: 1 = CQG (default, 15 bars = 30 hours), 0 = TradeStation (16 bars)", 1., 0., 1., 1.)],
         "rwmts_60m_seven" => vec![pd("tgt", "Profit target % of entry", 1., 0.25, 5., 0.25), stop(1.)],
         "rwmts_60m_rsi_cross" => vec![pd("tgt", "Profit target % of entry", 3., 0.25, 6., 0.25), stop(1.)],
         "rwmts_30m_rsi_cross" => vec![pd("tgt", "Profit target % of entry", 1., 0.25, 6., 0.25), stop(1.)],
@@ -53,7 +55,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "rwmts_60m_rsi200h" => rw(60, Sys::RsiExt),
         "rwmts_30m_rsi100h" => rw(30, Sys::RsiExt),
         "rwmts_15m_5m_rsi" => rw(if g("bars") < 10. { 5 } else { 15 }, Sys::RsiExt),
-        "rwmts_2h_stoch_cci" => rw(120, Sys::StochCci(g("time").round() as usize)),
+        "rwmts_2h_stoch_cci" => rw(120, Sys::StochCci(g("time").round() as usize, (g("count") >= 0.5) as usize)),
         "rwmts_60m_seven" => rw(60, Sys::Seven(g("tgt") / 100.0)),
         _ => rw(if id == "rwmts_60m_rsi_cross" { 60 } else { 30 }, Sys::RsiCross(g("tgt") / 100.0)),
     })
@@ -272,7 +274,7 @@ fn stoops_fill(m: &[Bar1], d: f64, lv: f64, cap: f64, tick: f64) -> Option<(f64,
 }
 
 #[derive(Clone, Copy)]
-enum Sys { RsiExt, StochCci(usize), Seven(f64), RsiCross(f64) }
+enum Sys { RsiExt, StochCci(usize, usize), Seven(f64), RsiCross(f64) }
 
 /// Weissman's Chapter 4/5 CQG systems on one continuous series of session-aligned N-minute bars (day session): signals on
 /// the close of bar s fill at the open of bar s+1 (its first minute's open); an opposite signal reverses; condition exits
@@ -284,7 +286,7 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
     let c: Vec<f64> = bars.iter().map(|b| b.c).collect();
     let nb = c.len();
     let (ri, ro, ma) = (rsi(&c, 9), rsi(&c, 14), sma(&c, 200));
-    let (ssd, cc) = if matches!(sys, Sys::StochCci(_)) {
+    let (ssd, cc) = if matches!(sys, Sys::StochCci(..)) {
         let fk: Vec<f64> = (0..nb).map(|i| if i < 13 { f64::NAN } else {
             let hh = bars[i - 13..=i].iter().map(|b| b.h).fold(f64::MIN, f64::max);
             let ll = bars[i - 13..=i].iter().map(|b| b.l).fold(f64::MAX, f64::min);
@@ -301,7 +303,7 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
     let ent = |s: usize| -> f64 {
         match sys {
             Sys::RsiExt => if ri[s] < 35.0 && c[s] > ma[s] { 1.0 } else if ri[s] > 65.0 && c[s] < ma[s] { -1.0 } else { 0.0 },
-            Sys::StochCci(_) => if xb(&ssd, 15.0, s) && cc[s] < -100.0 { 1.0 } else if xa(&ssd, 85.0, s) && cc[s] > 100.0 { -1.0 } else { 0.0 },
+            Sys::StochCci(..) => if xb(&ssd, 15.0, s) && cc[s] < -100.0 { 1.0 } else if xa(&ssd, 85.0, s) && cc[s] > 100.0 { -1.0 } else { 0.0 },
             Sys::Seven(_) => if s < 7 { 0.0 } else if (s - 7..s - 1).all(|k| c[k] > c[k + 1]) && c[s - 1] < c[s] { 1.0 }
                 else if (s - 7..s - 1).all(|k| c[k] < c[k + 1]) && c[s - 1] > c[s] { -1.0 } else { 0.0 },
             Sys::RsiCross(_) => if s > 0 && ro[s - 1] < 25.0 && xa(&ro, 25.0, s) { 1.0 } else if s > 0 && ro[s - 1] > 75.0 && xb(&ro, 75.0, s) { -1.0 } else { 0.0 },
@@ -310,7 +312,8 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
     let cx = |s: usize, d: f64, ei: usize| -> Option<&'static str> {
         match sys {
             Sys::RsiExt => ((d > 0.0 && xa(&ro, 60.0, s)) || (d < 0.0 && xb(&ro, 40.0, s))).then_some("RSI(14) exit cross"),
-            Sys::StochCci(b) => if (d > 0.0 && xa(&ssd, 30.0, s)) || (d < 0.0 && xb(&ssd, 70.0, s)) { Some("SSD exit cross") } else if s >= ei && s - ei > b { Some("time exit") } else { None },
+            // BarsSinceEntry at the signal bar s: s - ei (0-based, TradeStation) + cnt (1 = CQG counts the entry bar as 1, #248 (2))
+            Sys::StochCci(b, cnt) => if (d > 0.0 && xa(&ssd, 30.0, s)) || (d < 0.0 && xb(&ssd, 70.0, s)) { Some("SSD exit cross") } else if s >= ei && s + cnt - ei > b { Some("time exit") } else { None },
             Sys::Seven(_) => (s >= 6 && (s - 6..s).all(|k| if d > 0.0 { c[k] < c[k + 1] } else { c[k] > c[k + 1] })).then_some("seven-period reversal exit"),
             Sys::RsiCross(_) => None,
         }
@@ -394,7 +397,8 @@ mod tests {
             let opts: &[(&str, &[(&str, f64)])] = &[("jb30d_or30", &[]), ("stad7_idbo", &[]), ("stad7_fibret", &[]), ("stad7_fibret", &[("r66", 1.)]), ("mlhpt_ma3", &[]),
                 ("baboops_stoops_rules", &[]), ("baboops_stoops_rules", &[("gap", 30.)]), ("jchr1_lizard_long", &[]), ("jchr1_lizard_short", &[]), ("tdperl_rebo", &[]),
                 ("rwmts_2h_rsi400", &[]), ("rwmts_2h_stoch_cci", &[]), ("rwmts_60m_rsi200h", &[]), ("rwmts_60m_seven", &[]), ("rwmts_60m_rsi_cross", &[]),
-                ("rwmts_30m_rsi100h", &[]), ("rwmts_30m_rsi100h", &[("stop", 2.5)]), ("rwmts_30m_rsi_cross", &[]), ("rwmts_15m_5m_rsi", &[]), ("rwmts_15m_5m_rsi", &[("bars", 5.)])];
+                ("rwmts_30m_rsi100h", &[]), ("rwmts_30m_rsi100h", &[("stop", 2.5)]), ("rwmts_30m_rsi_cross", &[]), ("rwmts_15m_5m_rsi", &[]), ("rwmts_15m_5m_rsi", &[("bars", 5.)]),
+                ("rwmts_15m_5m_rsi", &[("stop", 1.)]), ("rwmts_2h_stoch_cci", &[("count", 0.)])]; // + K61 (#248 options)
             for (id, kv) in opts {
                 if *id == "baboops_stoops_rules" && t != "SPX" { continue; }
                 if id.starts_with("jchr1") && t != "SPY" { continue; }

@@ -21,10 +21,10 @@ const MAC_RULES: [&str; 2] = [
 ];
 
 /// Daily rules admitted after the 2026-10-22 full reading (authors/bernstein/agents/jbudt) and an independent
-/// chronological Python ledger check (authors/bernstein/g2-admission). The gap trades are held (no stop: one short
-/// stays open for decades and loses more than the account). The rest are intraday, chart judgement or
-/// left to per-market optimisation (held with the reason on the card).
-pub const REVIEWED_DAILY: &[&str] = &["jbudt_mac_ad57", "jbudt_tb16", "jbudt_tb16_mom"];
+/// chronological Python ledger check (authors/bernstein/g2-admission). The gap trades were held (no stop: one short
+/// stayed open for decades); lane R2D (13 Nov 2026, R4 #297) admits them UNVERIFIED with the labelled stop reading
+/// (p.stop). The rest are intraday, chart judgement or left to per-market optimisation (held with the reason on the card).
+pub const REVIEWED_DAILY: &[&str] = &["jbudt_mac_ad57", "jbudt_tb16", "jbudt_tb16_mom", "jbudt_gap_fpo", "jbudt_gap_split"];
 pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// The MAC / Williams A/D rule trades on the close only; the others read the open (gap setup, FPO, stop gaps).
 pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "jbudt_mac_ad57" }
@@ -36,13 +36,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"Buy Set-Up: A gap buy setup occurs when the opening price today is lower than the low price yesterday. Sell Set-Up: ... the opening price today is higher than the high price yesterday\" (ch.5, Gap Set-Ups)",
               "E|\"A gap buy Trigger occurs when the price, after an opening drop, rises above the low of the previous day\"; \"a gap sell Trigger when the market price opens above the high of the previous day and then falls below the high of the previous day\" (ch.5, Gap Triggers): stop order at yesterday's low (high)",
               "X|\"Another method for exit is to hold the trade overnight and to exit on the first profitable opening (FPO). An FPO is simply an opening that is profitable based on your entry price\" (ch.5, First Profitable Opening Follow-Through)",
-              "X|No stop is given for the FPO exit (\"Stops should be based on market behavior\", no level printed)"],
+              "X|Unstated in the book: the stop (\"Stops should be based on market behavior such as indicators, volatility, price ranges\", ch.5 Stop Loss Exit, PDF p.77; no level printed); vault reading: a price-range stop at the entry day's low (buys) / high (sells), working from the next day: filled at that level, or at the open when the market opens through it; p.stop = 0 = no stop (the literal text: a position can stay open for decades)",
+              "X|Unstated in the book: the order inside a day when the stop is hit after the open and a new gap trigger trades the same day; vault reading: no new entry on that day (an exit at the open, by FPO or a gapped stop, still allows one)",
+              "X|Adapted: 2 unstated details (R4 #297); published UNVERIFIED (the book prints no results for a held instrument)"],
             "The end-of-day exit version of the same trade is already in the vault (ss_study_oops_buy / ss_study_oops_sell with p.exit=0), so only the FPO exit is added here. Book examples are stocks and futures; run on the indices (instrument swap). SPX opens before about 1999 often equal the prior close, so few gaps there."),
         def!("jbudt_gap_split", "Gap trade · losers out at the close, winners half at the close and half on the FPO", "Ch.5 · Gap Day Trading", "Long/Short", Live,
             &["F|Gap buy / sell setup as jbudt_gap_fpo (ch.5, Gap Set-Ups)",
               "E|Stop order at yesterday's low (buy) / high (sell) after the gap opening (ch.5, Gap Triggers)",
-              "X|\"you would exit all shares if the trade is not profitable at the end of the day (EOD). On the other hand, if the trade is profitable you could exit half the position at the end of the day and keep the remainder of the position for an FPO exit\" (ch.5, First Profitable Opening Follow-Through)"],
-            "Book example: 400 shares, half = 200. The half kept overnight has no printed stop; it leaves on the first opening beyond the entry price."),
+              "X|\"you would exit all shares if the trade is not profitable at the end of the day (EOD). On the other hand, if the trade is profitable you could exit half the position at the end of the day and keep the remainder of the position for an FPO exit\" (ch.5, First Profitable Opening Follow-Through)",
+              "X|Unstated in the book: the stop (\"Stops should be based on market behavior such as indicators, volatility, price ranges\", ch.5 Stop Loss Exit, PDF p.77; no level printed); vault reading: a price-range stop at the entry day's low (buys) / high (sells), working from the next day: filled at that level, or at the open when the market opens through it; p.stop = 0 = no stop (the literal text: a position can stay open for decades)",
+              "X|Unstated in the book: the order inside a day when the stop is hit after the open and a new gap trigger trades the same day; vault reading: no new entry on that day (an exit at the open, by FPO or a gapped stop, still allows one)",
+              "X|Adapted: 2 unstated details (R4 #297); published UNVERIFIED (the book prints no results for a held instrument)"],
+            "Book example: 400 shares, half = 200. The half kept overnight has no printed stop; it leaves on the first opening beyond the entry price, or at the labelled stop reading (p.stop)."),
         def!("jbudt_mac_ad57", "MAC with Williams A/D 57 confirmation (daily)", "Ch.6 · Moving Average Channel", "Long/Short", Live,
             &[MAC_RULES[0], MAC_RULES[1],
               "F|\"Some readers may be familiar with my MAC application on daily charts. In such cases I prefer to use ... Williams Accumulation/ Distribution (AD) with its 57 period moving average\" (ch.6)",
@@ -74,10 +79,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|POT Friday-Monday: \"Buy trade triggers at Friday high plus 48 cents with a $2,700 stop loss and sell trades trigger at Friday low minus 48 cents with a $2,200 stop loss\", 300 shares, FPO (Fig. 7.3)",
               "E|GOOG Wednesday-Thursday: \"using 45 cents as the buy and sell trigger with $4,800 stop loss on longs and $3,400 stops on shorts and FPO exit\" (Fig. 7.4)"],
             "Printed: GOOG Fri-Mon PF 1.5, 75% winners, payout ratio .50, return 357% (Fig. 7.2); POT PF 1.89, 83.1% (Fig. 7.3); GOOG Wed-Thu 68.4% (Fig. 7.4). Test periods are not printed."),
-        def!("jbudt_volspike", "Volume spike trigger", "Ch.8 · Volume Spikes", "Long/Short", NeedsData("intraday bars with volume (ten-minute chart preferred)"),
+        def!("jbudt_volspike", "Volume spike trigger on NIFTY / BANKNIFTY futures (10-minute): buy a close above the spike bar's high, sell a close below its low; opposite side stops; out at the close", "Ch.8 · Volume Spikes", "Long/Short", Status::Live,
             &["F|\"we will define a VS as an increase of at least fourfold in volume over a period of a maximum of at least four price bars\" (ch.8)",
-              "E|\"Isolate a volume spike on an intra-day chart. I prefer the ten-minute chart ... Buy on a bar close above the price high. Sell on a bar close below the price low\" (ch.8)",
-              "X|\"Use the opposite side of the trade for a stop loss. Exit by the end of the session\" (ch.8)"], ""),
+              "E|\"Isolate a volume spike on an intra-day chart. I prefer the ten-minute chart ... Note the price bar high and low for the period of the spike. Buy on a bar close above the price high. Sell on a bar close below the price low\" (ch.8, src.txt PDF p.103-105)",
+              "X|\"Use the opposite side of the trade for a stop loss. Exit by the end of the session\" (ch.8); the optional trailing part (item 7) and 'active markets only' (item 8) are not modelled",
+              "A|Adapted (R4 #340, #346 (4)): 4 unstated details, UNVERIFIED. The book trades stocks and futures with their own volume; the vault's NIFTY 50 / NIFTYBANK cash minutes carry no volume, so the rule runs on the NIFTY / BANKNIFTY FUTURES 1-minute series with traded volume staged by lane DI (NIFTY_50.FUT1 2018-12-28 to 2026-11-12, NIFTYBANK.FUT1 2023-09-06 to 2026-08-05; nearest-expiry continuous, no back-adjustment; days with a blank volume are absent; the 15:30 auction minute is dropped; authors/data-1117/DI/VERIFY.md). Volume is futures volume in units. Readings: (1) a spike = a session-aligned 10-minute bar whose volume is at least p.mult (4) times the lowest volume of the previous p.win (4) bars of the same day (so the first possible spike is the 5th bar); (2) 'the price bar high and low for the period of the spike' = the spike bar's own high and low; (3) the latest spike's range is armed until it triggers, a newer spike replaces it, a spike arms one trade only (no re-entry after the stop), one position at a time, no entry on the day's last bar; (4) the protective stop is a stop order at the opposite extreme of the spike bar, working from the bar after entry, filled at its level or at the minute's open when the minute opens through it (one level, so no ambiguous minute, #240 0%); out at the last bar's close. Entries fill at the trigger bar's close.", FUTMIN],
+            ""),
         def!("jbudt_divergence", "Momentum / MACD divergence (A-B-C-D-E)", "Ch.9-11 · Divergence", "Long/Short", NotTestable("chart judgement: \"divergence is not a trading system. It is, rather, a trading methodology incorporating some subjectivity\" (ch.10)"),
             &["F|28-period momentum and the one-line MACD 9/18 (ch.9, ch.11)", "E|\"A buy signal is generated when ... a new closing Momentum high is created that is higher than the highest Momentum during the period of bullish convergence\" (ch.10); three-month window, at least six bars (ch.10)",
               "X|\"The first target, P1, was one half the range of the highest price high and lowest price low during the time frame from A to D inclusive\" (ch.11)"],
@@ -116,12 +123,17 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     })
 }
 
+/// Lane M1 ids: NIFTY / BANKNIFTY futures minutes with volume (x.fut).
+pub const FUT: &[&str] = &["jbudt_volspike"];
+const FUTMIN: &str = "A|Minute path [convention, intraday_ep6]: the stop fills at its level, or at the minute's open when the minute opens through it.";
+
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
-        "jbudt_gap_fpo" | "jbudt_gap_split" => vec![],
+        "jbudt_gap_fpo" | "jbudt_gap_split" => vec![p("stop", "Stop [unstated in the book, R4 #297 reading]: 1 = the entry day's low (buys) / high (sells) from the next day, 0 = no stop (literal)", 1., 0., 1., 1.)], // lane R2D
         "jbudt_pop" => vec![p("bar", "Bar size (minutes; 5 default; 10, 15, 30 the chapter's other figures)", 5., 5., 30., 5.), p("k", "Stochastic length (bars)", 9., 2., 50., 1.),
             p("smooth", "%K smoothing (bars)", 3., 1., 10., 1.), p("upper", "Buy above (%K)", 70., 50., 95., 5.), p("lower", "Sell below (%K)", 30., 5., 50., 5.)], // intraday EP block (K55)
+        "jbudt_volspike" => vec![p("bar", "Bar size (minutes; 10 preferred, ch.8)", 10., 5., 30., 5.), p("mult", "Spike: volume at least this multiple (4)", 4., 2., 10., 0.5), p("win", "of the lowest of the previous bars (4)", 4., 1., 10., 1.)],
         "jbudt_mac_ad57" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars", 2., 1., 4., 1.), p("ad_ma", "MA of Williams A/D (bars)", 57., 20., 80., 1.)],
         "jbudt_tb16" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01)],
         "jbudt_tb16_mom" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01), p("mom", "Momentum length", 14., 5., 40., 1.), p("ma", "MA of momentum (bars)", 14., 5., 40., 1.),
@@ -137,25 +149,41 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| getp(id, p, k);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     if id == "jbudt_pop" { return Some(pop(x, from, to, u("bar") as u16, u("k"), u("smooth"), g("upper"), g("lower"))); } // intraday EP block (K55)
+    if id == "jbudt_volspike" { return Some(volspike(x, from, to, u("bar") as u16, g("mult"), u("win"))); } // lane M1
     let mut out = Vec::new();
     let mut cur: Option<Trade> = None;
     match id {
         "jbudt_gap_fpo" | "jbudt_gap_split" => {
             let split = id == "jbudt_gap_split";
+            let use_stop = g("stop").round() >= 1.0; // lane R2D (R4 #297): entry-day extreme stop from the next day
+            let mut sl = f64::NAN;
             for i in from.max(1)..=to {
+                let mut stopped_intraday = false;
                 if let Some(t) = cur.as_mut().filter(|t| t.legs[0].i < i) {
-                    if (x.o[i] - t.legs[0].px) * t.dir > 0.0 {
+                    let d = t.dir;
+                    let hit = if (x.o[i] - t.legs[0].px) * d > 0.0 {
+                        Some((x.o[i], "First profitable opening"))
+                    } else if use_stop && (x.o[i] - sl) * d <= 0.0 {
+                        Some((x.o[i], "Stop at the entry day's extreme (gapped open)"))
+                    } else if use_stop && (if d > 0.0 { x.l[i] <= sl } else { x.h[i] >= sl }) {
+                        stopped_intraday = true;
+                        Some((sl, "Stop at the entry day's extreme"))
+                    } else {
+                        None
+                    };
+                    if let Some((xp, why)) = hit {
                         let mut t = cur.take().unwrap();
-                        let px = if split { t.exits.push((i, x.o[i], 0.5)); t.exits.iter().map(|e| e.1 * e.2).sum() } else { x.o[i] };
-                        out.push(finish(t, i, px, i, "First profitable opening"));
+                        let px = if split { t.exits.push((i, xp, 0.5)); t.exits.iter().map(|e| e.1 * e.2).sum() } else { xp };
+                        out.push(finish(t, i, px, i, why));
                     }
                 }
-                if cur.is_some() || i == to {
+                if cur.is_some() || i == to || stopped_intraday {
                     continue;
                 }
                 let d = if x.o[i] < x.l[i - 1] && x.h[i] >= x.l[i - 1] { 1.0 } else if x.o[i] > x.h[i - 1] && x.l[i] <= x.h[i - 1] { -1.0 } else { continue };
                 let e = if d > 0.0 { x.l[i - 1] } else { x.h[i - 1] };
                 let mut t = new_trade(d, i, e, "stop", i - 1);
+                sl = if d > 0.0 { x.l[i] } else { x.h[i] };
                 if split {
                     if (x.c[i] - e) * d > 0.0 {
                         t.exits.push((i, x.c[i], 0.5));
@@ -268,6 +296,27 @@ mod tests {
         assert_eq!(ts.len(), 1);
         assert_eq!((ts[0].legs[0].i, ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (1, 99., 3, 99.2));
     }
+    #[test]
+    fn gap_stop_reading_r2d() {
+        // lane R2D (R4 #297): stop at the entry day's low from the next day; no new entry on an intraday stop day
+        let r = vec![
+            row("2009-01-05", 100., 102., 99., 101.),
+            row("2009-01-06", 98., 100., 97., 99.5), // long at 99, stop 97
+            row("2009-01-07", 98.5, 98.6, 96., 96.5), // open not profitable, low 96 <= 97 -> out at 97
+            row("2009-01-08", 95., 97., 94.5, 96.), // gap below 96 traded back: long at 96 (stop 94.5)
+            row("2009-01-09", 94., 95., 93., 94.5), // opens through the stop -> out at the open 94
+        ];
+        let x = Ctx::new(&r, &r, &[]);
+        let ts = run("jbudt_gap_fpo", &x, 0, 4, &Params::new()).unwrap();
+        let got: Vec<_> = ts.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px)).collect();
+        assert_eq!(got, vec![(1, 99., 2, 97.), (3, 96., 4, 94.)]);
+        let mut p = Params::new();
+        p.insert("stop".into(), 0.0);
+        let lit = run("jbudt_gap_fpo", &x, 0, 4, &p).unwrap();
+        assert!(lit.len() == 1 && lit[0].open); // literal: no stop, still open at the end
+        assert!(reviewed_daily("jbudt_gap_fpo") && reviewed_daily("jbudt_gap_split"));
+        assert!(!crate::books::ss::reviewed_daily("ss_study_fresh_adx_buy")); // R4 #303: Fresh ADX withheld
+    }
 }
 
 // ---- intraday EP block (lane K55, 5 Nov 2026, decision #230 (2); authors/titles-1030/K55.tsv, check K55w/k55_ref.py)
@@ -299,4 +348,40 @@ fn pop(x: &Ctx, from: usize, to: usize, n: u16, len: usize, smooth: usize, up: f
     }
     out
 }
+
+// ---- lane M1 block (17 Nov 2026, R4 #340 / #346 (4)): NIFTY / BANKNIFTY futures minutes with volume
+/// Volume spike (ch.8): see the card's reading. Returns trades at daily-row indices of `x`; needs `x.fut`.
+fn volspike(x: &Ctx, from: usize, to: usize, n: u16, mult: f64, win: usize) -> Vec<Trade> {
+    use crate::intraday::{first_touch, Level, Touch};
+    let Some(f) = x.fut else { return vec![] };
+    let mut out = vec![];
+    for i in from..=to {
+        let r = &x.r[i];
+        let Some((m, mv)) = f.fut_day(&r.date) else { continue };
+        let (open, close) = (crate::intraday::session_open(&r.ticker, &r.date), crate::intraday_ep::session_close(&r.ticker));
+        let b = crate::intraday_ep::nbars(&m, open, n, close);
+        let vol: Vec<f64> = b.iter().map(|z| mv[z.a..z.b].iter().sum()).collect();
+        let (mut armed, mut pos) = (None::<(f64, f64)>, None::<(f64, f64, f64)>); // (high, low) | (dir, entry, stop)
+        for k in 0..b.len() {
+            let z = &b[k];
+            if let Some((d, ep, st)) = pos {
+                match first_touch(&m[z.a..z.b], 0, &[Level { up: d < 0.0, px: st }]) {
+                    Touch::Hit { px, .. } => { out.push(crate::intraday::day_trade(d, i, ep, i, px, "stop at the opposite side of the spike bar", "close", false)); pos = None; }
+                    _ if k + 1 == b.len() => { out.push(crate::intraday::day_trade(d, i, ep, i, z.c, "end of session", "close", false)); pos = None; }
+                    _ => continue,
+                }
+            } else if let Some((h, l)) = armed {
+                if k + 1 < b.len() && (z.c > h || z.c < l) {
+                    let d = if z.c > h { 1.0 } else { -1.0 };
+                    pos = Some((d, z.c, if d > 0.0 { l } else { h }));
+                    armed = None;
+                    continue;
+                }
+            }
+            if k >= win && vol[k] >= mult * vol[k - win..k].iter().copied().fold(f64::INFINITY, f64::min) { armed = Some((z.h, z.l)); }
+        }
+    }
+    out
+}
+// ---- end lane M1 block
 // ---- end intraday EP block

@@ -92,6 +92,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 fn sb() -> ParamDef { ParamDef { key: "same_bar", label: "Entry-day low through the money-management stop counts (0 = no: stops work from the bar after entry, as in the TradeStation daily backtests that produced the book figures; 1 = yes, conservative)", def: 0., min: 0., max: 1., step: 1. } }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "bfmm_esl" => vec![
@@ -163,12 +169,14 @@ fn close_t(mut t: Trade, i: usize, px: f64, why: &str) -> Trade {
 }
 
 /// Open position state shared by the MiniMax systems.
-struct Pos { t: Trade, entry: f64, ei: usize, mm: f64, trail: Option<f64>, target: Option<f64> }
+struct Pos { t: Trade, entry: f64, ei: usize, mm: f64, trail: Option<f64>, target: Option<f64>, od: crate::intraday_ep6::Day }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let defs = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| defs.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(f64::NAN));
     let to = to.min(x.c.len().saturating_sub(1));
+    let ep6 = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let tr = true_range(x.r);
     let rng: Vec<f64> = (0..c.len()).map(|i| h[i] - l[i]).collect();
@@ -198,7 +206,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                         if hit {
                             let fill = if short { o[t].min(px) } else { o[t].max(px) };
                             let mm = fill - dir * mmd;
-                            pos = Some(Pos { t: new_trade(dir, t, fill, sig), entry: fill, ei: t, mm, trail: None, target: None });
+                            pos = Some(Pos { t: new_trade(dir, t, fill, sig), entry: fill, ei: t, mm, trail: None, target: None, od: crate::intraday_ep6::Day::Plain });
                             if same_bar && (if short { h[t] >= mm } else { l[t] <= mm }) {
                                 let q = pos.take().unwrap();
                                 out.push(close_t(q.t, t, mm, "money management stop (entry day)"));
@@ -291,6 +299,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut pend: Vec<(f64, f64, f64, usize)> = vec![];
             for t in from.max(2)..=to {
                 let pe = std::mem::take(&mut pend);
+                // EP6: a reversal decided on the minutes (fill price, mark): the opposite entry fills at the same price
+                let mut rev_at: Option<(f64, crate::intraday_ep6::Day)> = None;
                 // 1) exits of a position held from before today (adverse orders first)
                 if let Some(q) = pos.as_mut().filter(|q| q.ei < t) {
                     let d = q.t.dir;
@@ -300,18 +310,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     let eff = match rev { Some(r) => if d > 0. { stop.max(r) } else { stop.min(r) }, None => stop };
                     let why = if rev.map_or(false, |r| r == eff && r != stop) { "reversed by opposite entry stop" } else if q.trail.map_or(false, |s| s == stop && s != q.mm) { "trailing stop" } else { "money management stop" };
                     let tgt = q.target.unwrap_or(f64::NAN);
-                    if (d > 0. && o[t] <= eff) || (d < 0. && o[t] >= eff) {
-                        out.push(close_t(pos.take().unwrap().t, t, o[t], why));
-                    } else if (d > 0. && l[t] <= eff) || (d < 0. && h[t] >= eff) {
-                        out.push(close_t(pos.take().unwrap().t, t, eff, why));
-                    } else if (d > 0. && o[t] >= tgt) || (d < 0. && o[t] <= tgt) {
-                        out.push(close_t(pos.take().unwrap().t, t, o[t], "profit target"));
-                    } else if (d > 0. && h[t] >= tgt) || (d < 0. && l[t] <= tgt) {
-                        out.push(close_t(pos.take().unwrap().t, t, tgt, "profit target"));
+                    // EP6 (#243, lane K63): a bar whose range holds the stop and the target (the open through neither) is
+                    // walked on the real 1-minute path; the module's order (the stop first, a gap at the open first) otherwise
+                    let (hit, day) = crate::intraday_ep6::stop_target(x, t, d, eff, tgt, ep6, (why, "profit target"), || {
+                        if (d > 0. && o[t] <= eff) || (d < 0. && o[t] >= eff) { Some((o[t], why)) }
+                        else if (d > 0. && l[t] <= eff) || (d < 0. && h[t] >= eff) { Some((eff, why)) }
+                        else if (d > 0. && o[t] >= tgt) || (d < 0. && o[t] <= tgt) { Some((o[t], "profit target")) }
+                        else if (d > 0. && h[t] >= tgt) || (d < 0. && l[t] <= tgt) { Some((tgt, "profit target")) } else { None }
+                    });
+                    q.od = q.od.worst(day);
+                    if let Some((px, w)) = hit {
+                        if w == "reversed by opposite entry stop" && day != crate::intraday_ep6::Day::Plain { rev_at = Some((px, day)); }
+                        let q = pos.take().unwrap();
+                        let mut tr = close_t(q.t, t, px, w);
+                        crate::intraday_ep6::mark(&mut tr, q.od);
+                        out.push(tr);
                     } else {
                         let counter = if d > 0. { !trend[t] } else { trend[t] };
                         if counter && d * (o[t] - q.entry) > 0. {
-                            out.push(close_t(pos.take().unwrap().t, t, c[t], "counter-trend: exit on the close, profitable at the open"));
+                            let q = pos.take().unwrap();
+                            let mut tr = close_t(q.t, t, c[t], "counter-trend: exit on the close, profitable at the open");
+                            crate::intraday_ep6::mark(&mut tr, q.od);
+                            out.push(tr);
                         }
                     }
                 }
@@ -320,10 +340,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if pos.is_none() {
                     let mut hits: Vec<&(f64, f64, f64, usize)> = pe.iter().filter(|e| if e.0 > 0. { h[t] >= e.1 } else { l[t] <= e.1 }).collect();
                     hits.sort_by(|a, b| (a.1 - o[t]).abs().partial_cmp(&(b.1 - o[t]).abs()).unwrap());
-                    if let Some(&&(d, px, mmd, sig)) = hits.first() {
+                    let rev_hit = rev_at.and_then(|(rp, day)| pe.iter().find(|e| if e.0 > 0. { h[t] >= e.1 } else { l[t] <= e.1 }).map(|e| (e, rp, day)));
+                    if let Some((&(d, _, mmd, sig), rp, day)) = rev_hit {
+                        // the reversing stop filled on the minutes: the new position opens at that fill, with its mark
+                        let mm = rp - d * mmd;
+                        pos = Some(Pos { t: new_trade(d, t, rp, sig), entry: rp, ei: t, mm, trail: None, target: None, od: day });
+                        if d > 0. { set_l = None } else { set_s = None }
+                    } else if let Some(&&(d, px, mmd, sig)) = hits.first() {
                         let fill = if d > 0. { o[t].max(px) } else { o[t].min(px) };
                         let mm = fill - d * mmd;
-                        pos = Some(Pos { t: new_trade(d, t, fill, sig), entry: fill, ei: t, mm, trail: None, target: None });
+                        pos = Some(Pos { t: new_trade(d, t, fill, sig), entry: fill, ei: t, mm, trail: None, target: None, od: crate::intraday_ep6::Day::Plain });
                         if d > 0. { set_l = None } else { set_s = None }
                         if same_bar && (if d > 0. { l[t] <= mm } else { h[t] >= mm }) {
                             out.push(close_t(pos.take().unwrap().t, t, mm, "money management stop (entry day)"));
@@ -354,6 +380,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if let Some(q) = pos {
                 let mut t = close_t(q.t, to, c[to], "open");
                 t.open = true;
+                crate::intraday_ep6::mark(&mut t, q.od);
                 out.push(t);
             }
         }

@@ -25,7 +25,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad2";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri"];
+pub const REVIEWED: &[&str] = &["stad5_im1" /* lane M2 */, "stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_dow" /* lane PG: Dow averages from Norgate */, "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri", "stad13_tripleplay" /* lane K60, decision #244 (1) */, "stad6_asi" /* lane K60 code; admitted by lane K62: #240 order resolved on minutes (#243) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -63,6 +63,25 @@ fn xunder_k(a: &[f64], k: f64, i: usize) -> bool { i > 0 && a[i] < k && a[i - 1]
 /// SwingHigh(1, v, s, s+1) on bar i: bar i-s is >= the s bars before it and > the s bars after it.
 fn swing_high(h: &[f64], s: usize, i: usize) -> bool { i >= 2 * s && (1..=s).all(|k| h[i - s] >= h[i - s - k] && h[i - s] > h[i - s + k]) }
 fn swing_low(l: &[f64], s: usize, i: usize) -> bool { i >= 2 * s && (1..=s).all(|k| l[i - s] <= l[i - s - k] && l[i - s] < l[i - s + k]) }
+/// SwingHighBar / SwingLowBar(inst, v, s, len) on bar i: bars ago of the inst-th most recent swing bar (strength s) at
+/// 0 <= bars ago < len (a swing bar needs its s later bars, so the nearest is s bars ago); None = not found (-1).
+fn swing_bar(v: &[f64], hi: bool, s: usize, len: usize, inst: usize, i: usize) -> Option<usize> {
+    let mut k = 0;
+    for off in s..len.min(i + 1) {
+        if if hi { swing_high(v, s, i - off + s) } else { swing_low(v, s, i - off + s) } { k += 1; if k == inst { return Some(off); } }
+    }
+    None
+}
+/// Wilder's Swing Index (New Concepts, Spanish ed. p.88-91) with the limit move L = 1: 50 x N / R x K; 0 on the first bar and
+/// where R = 0. N = C - C1 + 0.5(C - O) + 0.25(C1 - O1); K = max(|H - C1|, |L - C1|); R from the largest of |H - C1|, |L - C1|, |H - L|.
+fn swing_index(x: &Ctx) -> Vec<f64> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    (0..c.len()).map(|i| if i == 0 { 0.0 } else {
+        let (a, b, d, e) = ((h[i] - c[i - 1]).abs(), (l[i] - c[i - 1]).abs(), (h[i] - l[i]).abs(), (c[i - 1] - o[i - 1]).abs());
+        let r = if a >= b && a >= d { a - 0.5 * b + 0.25 * e } else if b >= d { b - 0.5 * a + 0.25 * e } else { d + 0.25 * e };
+        if r == 0.0 { 0.0 } else { 50.0 * (c[i] - c[i - 1] + 0.5 * (c[i] - o[i]) + 0.25 * (c[i - 1] - o[i - 1])) / r * a.max(b) }
+    }).collect()
+}
 fn stdev(v: &[f64], n: usize) -> Vec<f64> {
     let m = sma(v, n);
     (0..v.len()).map(|i| if i + 1 < n { f64::NAN } else { (v[i + 1 - n..=i].iter().map(|x| (x - m[i]).powi(2)).sum::<f64>() / n as f64).sqrt() }).collect()
@@ -202,10 +221,12 @@ fn oq(a: A, p: P, qty: f64, tag: &'static str) -> O { O { qty, ..o(a, p, tag) } 
 
 /// Built-in stops in points (0 = off).
 #[derive(Clone, Copy, Default)]
-struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool }
+struct SetStops { sl: f64, pt: f64, be: f64, dtr: f64, pfloor: f64, ppct: f64, sl_entry_bar_only: bool, sl_pos_basis: bool, dtr_short: f64 /* lane D3: $ risk trailing amount for shorts when it differs (0 = same as dtr) */, entry_close: bool /* lane D3: entries 'this bar on close': the entry bar's own range is not favourable excursion */ }
 #[derive(Clone, Copy)]
-struct Cfg { max_ent: usize, ss: SetStops }
-fn cfg() -> Cfg { Cfg { max_ent: 1, ss: SetStops::default() } }
+struct Cfg { max_ent: usize, ss: SetStops, minute: bool, ep6: bool } // ep6: EP6 (#243, lane K62) resolver on for the id
+/// `minute` (lane K58, decision #240): each bar's stop/limit orders are walked on the day's real 1-minute bars instead of the
+/// daily bar path; false for every rule except stad13_volex's default.
+fn cfg() -> Cfg { Cfg { max_ent: 1, ss: SetStops::default(), minute: false, ep6: false } }
 
 /// What the code can read at the start of its evaluation of a bar.
 #[derive(Clone, Copy, Default)]
@@ -214,15 +235,16 @@ impl St {
     fn bse(&self, i: usize) -> usize { if self.pos == 0 { 0 } else { i - self.entry_i } }
 }
 
+#[derive(Clone)]
 struct Eng<'a> { x: &'a Ctx<'a>, pos: i8, units: f64, tot: f64, nent: usize, cur: Option<Trade>, prev_pos: i8, out: Vec<Trade>,
-    tag: &'static str, prot: f64, cfg: Cfg, mfe: f64 }
+    tag: &'static str, prot: f64, cfg: Cfg, mfe: f64, od: crate::intraday_ep6::Day } // od: EP6 (K62) mark of the open position
 
 impl<'a> Eng<'a> {
     fn close_pos(&mut self, i: usize, px: f64, why: &str, sig: usize) {
         if let Some(mut t) = self.cur.take() {
             if !t.exits.is_empty() { let f = self.units / self.tot; t.exits.push((i, px, f));
                 t.exit_px = t.exits.iter().map(|e| e.1 * e.2).sum::<f64>() / t.exits.iter().map(|e| e.2).sum::<f64>(); } else { t.exit_px = px; }
-            t.exit_i = i; t.reason = why.into(); t.signal_i = sig; self.out.push(t);
+            t.exit_i = i; t.reason = why.into(); t.signal_i = sig; crate::intraday_ep6::mark(&mut t, self.od); self.out.push(t);
         }
         self.prev_pos = self.pos; self.pos = 0; self.units = 0.0; self.prot = f64::NAN;
     }
@@ -237,7 +259,7 @@ impl<'a> Eng<'a> {
                     return;
                 }
                 if self.pos == -d { self.close_pos(i, px, od.tag, sig); }
-                self.pos = d; self.tag = od.tag; self.prot = od.prot; self.units = od.w; self.tot = od.w; self.nent = 1; self.mfe = 0.0;
+                self.pos = d; self.tag = od.tag; self.prot = od.prot; self.units = od.w; self.tot = od.w; self.nent = 1; self.mfe = 0.0; self.od = crate::intraday_ep6::Day::Plain;
                 self.cur = Some(Trade { dir: d as f64, legs: vec![Leg { i, px, w: od.w }], exit_i: i, exit_px: px,
                     reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] });
             }
@@ -303,6 +325,41 @@ impl<'a> Eng<'a> {
             }
         }
         let rising = |a: A| matches!(a, A::Buy | A::Xs);
+        if self.cfg.minute {
+            match crate::intraday_w2b::day(x, i) {
+                // K58 / #240: the real minute path. In each minute: orders its open is already through fill at that open; then
+                // open -> nearer extreme -> farther extreme -> close (the daily bar rule applied to the minute; no bounce)
+                Some(bars) => {
+                    for z in &bars {
+                        loop {
+                            let hit = ords.iter().enumerate().find(|(k, od)| !done[*k] && self.valid(od) && match od.p {
+                                P::Stop(s) => if rising(od.a) { z.o >= s } else { z.o <= s },
+                                P::Lim(s) => if rising(od.a) { z.o <= s } else { z.o >= s },
+                                P::Mkt => false,
+                            }).map(|(k, _)| k);
+                            match hit { Some(k) => { fire!(k, z.o); } None => break }
+                        }
+                        let mut path: std::collections::VecDeque<f64> = if z.h - z.o < z.o - z.l { [z.h, z.l, z.c].into() } else { [z.l, z.h, z.c].into() };
+                        let mut cur = z.o;
+                        while let Some(&t) = path.front() {
+                            let up = t > cur;
+                            let mut best: Option<(usize, f64)> = None;
+                            for (k, od) in ords.iter().enumerate() {
+                                if done[k] || !self.valid(od) { continue; }
+                                let lv = match od.p { P::Stop(s) if rising(od.a) == up => s, P::Lim(s) if rising(od.a) != up => s, _ => continue };
+                                let inside = if up { lv > cur && lv <= t } else { lv < cur && lv >= t };
+                                if inside && best.map_or(true, |(_, b)| (lv - cur).abs() < (b - cur).abs()) { best = Some((k, lv)); }
+                            }
+                            match best { Some((k, lv)) => { fire!(k, lv); cur = lv; } None => { cur = t; path.pop_front(); } }
+                        }
+                    }
+                    return;
+                }
+                // no minutes for the day: the order of a new entry and its stop cannot be known, so no entry today; exits keep
+                // the daily path (one direction each, so their order does not matter)
+                None => for k in 0..ords.len() { if matches!(ords[k].a, A::Buy | A::Sell) { done[k] = true; } },
+            }
+        }
         loop {
             let hit = ords.iter().enumerate().find(|(k, od)| !done[*k] && self.valid(od) && match od.p {
                 P::Stop(s) => if rising(od.a) { op >= s } else { op <= s },
@@ -310,6 +367,21 @@ impl<'a> Eng<'a> {
                 P::Mkt => false,
             }).map(|(k, _)| k);
             match hit { Some(k) => { fire!(k, op); } None => break }
+        }
+        if self.cfg.ep6 {
+            // EP6 (#243, lane K62): an order-dependent bar (its fills differ between the two extreme orders, walked without the
+            // bounce) is walked on its real 1-minute path; every other bar keeps the daily path with the 10% bounce (ep6_bounce)
+            let keep = std::mem::take(&mut self.out);
+            let mut st = (self.clone(), ords, done);
+            let walk = |s: &mut (Eng<'a>, Vec<O>, Vec<bool>), segs: &[crate::intraday_ep6::Seg]| ep6_walk(s, i, segs);
+            let day = crate::intraday_ep6::resolve_conv(x, i, true, &mut st, |s| ep6_bounce(s, i),
+                |s, hf| walk(s, &crate::intraday_ep6::bar_segs(op, hi, lo, cl, hf)), walk);
+            *self = st.0;
+            let mut today = std::mem::replace(&mut self.out, keep);
+            for t in today.iter_mut() { crate::intraday_ep6::remark(t, day); }
+            self.out.extend(today);
+            if self.pos != 0 { self.od = self.od.worst(day); }
+            return;
         }
         let bounce = 0.1 * (hi - lo);
         let mut path: std::collections::VecDeque<f64> = if hi - op < op - lo { [hi, lo, cl].into() } else { [lo, hi, cl].into() };
@@ -339,19 +411,80 @@ impl<'a> Eng<'a> {
         if self.pos == 0 { return; }
         let ss = self.cfg.ss;
         let (e, d) = (self.entry_px(), self.pos as f64);
-        let fav = if self.pos == 1 { self.x.h[i] - e } else { e - self.x.l[i] };
+        let fav = if ss.entry_close && self.entry_i() == i { 0.0 } else if self.pos == 1 { self.x.h[i] - e } else { e - self.x.l[i] };
         if fav > self.mfe { self.mfe = fav; }
         let xa = if self.pos == 1 { A::Xl } else { A::Xs };
         if ss.be > 0.0 && self.mfe >= ss.be { nx.push(o(xa, P::Stop(e), "Breakeven")); }
-        if ss.dtr > 0.0 { nx.push(o(xa, P::Stop(e + d * (self.mfe - ss.dtr)), "$ Risk Trailing")); }
+        let dtr = if self.pos == -1 && ss.dtr_short > 0.0 { ss.dtr_short } else { ss.dtr };
+        if dtr > 0.0 { nx.push(o(xa, P::Stop(e + d * (self.mfe - dtr)), "$ Risk Trailing")); }
         if ss.ppct > 0.0 && self.mfe >= ss.pfloor && self.mfe > 0.0 { nx.push(o(xa, P::Stop(e + d * self.mfe * (1.0 - ss.ppct / 100.0)), "% Risk Trailing")); }
     }
 }
 fn kind_of(od: &O) -> &'static str { match od.p { P::Mkt => "open", P::Stop(_) => "stop", P::Lim(_) => "limit" } }
 
+// ---- EP6 (#243, lane K62): the fill step of `fill_bar` on a cloned state (engine, orders, done flags)
+fn ep6_fire(s: &mut (Eng, Vec<O>, Vec<bool>), i: usize, k: usize, px: f64) {
+    s.2[k] = true; let od = s.1[k]; let was = s.0.pos;
+    s.0.exec(&od, i, px, kind_of(&od), i - 1);
+    if matches!(od.a, A::Buy | A::Sell) && s.0.pos != was {
+        if od.prot.is_finite() {
+            s.1.push(O { a: if od.a == A::Buy { A::Xl } else { A::Xs }, p: P::Stop(od.prot), from: od.tag, ..o(A::Xl, P::Mkt, "Entry-bar stop (at$)") });
+            s.2.push(false);
+        }
+        for so in s.0.set_orders(i) { s.1.push(so); s.2.push(false); }
+    }
+}
+/// The nearest live level on a segment from `cur` towards `t` (fill_bar's rule).
+fn ep6_best(s: &(Eng, Vec<O>, Vec<bool>), cur: f64, t: f64) -> Option<(usize, f64)> {
+    let rising = |a: A| matches!(a, A::Buy | A::Xs);
+    let up = t > cur;
+    let mut best: Option<(usize, f64)> = None;
+    for (k, od) in s.1.iter().enumerate() {
+        if s.2[k] || !s.0.valid(od) { continue; }
+        let lv = match od.p { P::Stop(v) if rising(od.a) == up => v, P::Lim(v) if rising(od.a) != up => v, _ => continue };
+        let inside = if up { lv > cur && lv <= t } else { lv < cur && lv >= t };
+        if inside && best.map_or(true, |(_, b)| (lv - cur).abs() < (b - cur).abs()) { best = Some((k, lv)); }
+    }
+    best
+}
+/// The daily path with the 10% bounce (fill_bar's convention, unchanged).
+fn ep6_bounce(s: &mut (Eng, Vec<O>, Vec<bool>), i: usize) {
+    let x = s.0.x;
+    let (op, hi, lo, cl) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+    let bounce = 0.1 * (hi - lo);
+    let mut path: std::collections::VecDeque<f64> = if hi - op < op - lo { [hi, lo, cl].into() } else { [lo, hi, cl].into() };
+    let mut cur = op;
+    while let Some(&t) = path.front() {
+        let up = t > cur;
+        match ep6_best(s, cur, t) {
+            Some((k, lv)) => {
+                ep6_fire(s, i, k, lv);
+                cur = lv;
+                let back = if up { (lv - bounce).max(lo) } else { (lv + bounce).min(hi) };
+                if back != lv { path.push_front(back); }
+            }
+            None => { cur = t; path.pop_front(); }
+        }
+    }
+}
+/// The same fills along path segments without the bounce (a gap fills at its end).
+fn ep6_walk(s: &mut (Eng, Vec<O>, Vec<bool>), i: usize, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    let mut ev = vec![];
+    for g in segs {
+        let mut cur = g.a;
+        while let Some((k, lv)) = ep6_best(s, cur, g.b) {
+            let px = g.fill(lv);
+            ep6_fire(s, i, k, px);
+            ev.push(crate::intraday_ep6::Ev { k: k as u8, px, up: g.b > cur });
+            cur = lv;
+        }
+    }
+    ev
+}
+
 /// Run TradeStation-style strategy code `f(i, state, close_orders, next_bar_orders)` over bars 0..=to.
 fn run_ts(x: &Ctx, from: usize, to: usize, mbb: usize, cf: Cfg, mut f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
-    let mut e = Eng { x, pos: 0, units: 0.0, tot: 0.0, nent: 0, cur: None, prev_pos: 0, out: vec![], tag: "", prot: f64::NAN, cfg: cf, mfe: 0.0 };
+    let mut e = Eng { x, pos: 0, units: 0.0, tot: 0.0, nent: 0, cur: None, prev_pos: 0, out: vec![], tag: "", prot: f64::NAN, cfg: cf, mfe: 0.0, od: crate::intraday_ep6::Day::Plain };
     let mut pending: Vec<O> = vec![];
     for i in 0..=to {
         if i > from { e.fill_bar(i, &pending); }
@@ -369,7 +502,7 @@ fn run_ts(x: &Ctx, from: usize, to: usize, mbb: usize, cf: Cfg, mut f: impl FnMu
     }
     if let Some(mut t) = e.cur.take() {
         if !t.exits.is_empty() { let f = e.units / e.tot; t.exits.push((to, x.c[to], f)); t.exit_px = t.exits.iter().map(|q| q.1 * q.2).sum::<f64>(); } else { t.exit_px = x.c[to]; }
-        t.exit_i = to; t.signal_i = to; t.reason = "open".into(); t.open = true; e.out.push(t);
+        t.exit_i = to; t.signal_i = to; t.reason = "open".into(); t.open = true; crate::intraday_ep6::mark(&mut t, e.od); e.out.push(t);
     }
     e.out
 }
@@ -460,29 +593,35 @@ fn defs_a() -> Vec<Def> {
     let d = |id, name, group, dir, status, rules, notes, family| Def { id, name, group, dir, status, needs_volume: false, rules, notes, family };
     vec![
     // ================= Volume 5 (1998)
-    d("stad5_curbond", "Currency/Bond System", "Vol 5 · Trending", "Long/Short",
-      NeedsData("Needs a second aligned data stream: Data1 = a currency future, Data2 = US Treasury Bond futures (XAverage(Close,50) of Data2). No bond or currency futures in the vault."),
+    d("stad5_curbond", "Currency/Bond System", "Vol 5 · Trending", "Long/Short", Live,
       &["F|FastXAvg = XAverage(C,4), MedXAvg = XAverage(C,12), SlowXAvg = XAverage(C,23); LongXAvg = XAverage(Close,50) of Data2 (bonds) (Vol 5 p.13-14 code)",
         "E|FastXAvg > FastXAvg[1] and Med > Slow and LongXAvg > LongXAvg[1]: BuyLevel = High + .50*Average(TrueRange,10); buy stop for 5 bars (sell mirror)",
-        "X|MedXAvg < SlowXAvg: ExitLong next bar at market (short mirror); ExitLong next bar at Close - StopAmt($1000)/BigPointValue stop"],
-      "Vol 5 ch.2 p.12-20. Book: Swiss Franc + bonds 6/93-5/98: $28,425 on 56 trades, 62% winners, win/loss 1.47, PF 2.45.", ("stad5_curbond", "Currency/Bond", "Vol 5")),
-    d("stad5_im1", "Intermarket I", "Vol 5 · Trending", "Long",
-      NeedsData("Needs Data2 = the US Treasury bond yield (daily); no rate series in the vault."),
-      &["E|If Close of Data2 < Close[1] of Data2 + LYldTrg(.25): Buy this bar on close (Vol 5 p.21 code; prose '25% of the yield' - code adds .25)",
-        "X|BarsSinceEntry > TNBars(50): ExitLong this bar on close"],
-      "Vol 5 ch.2 p.20-25. Book: S&P index 1/88-9/98: 132 trades, 88% profitable, PF 5.58.", ("stad5_im1", "Intermarket I", "Vol 5")),
-    d("stad5_im2", "Intermarket II", "Vol 5 · Trending", "Long",
-      NeedsData("Needs Data3 = the US prime rate (daily); no rate series in the vault."),
+        "X|MedXAvg < SlowXAvg: ExitLong next bar at market (short mirror); ExitLong next bar at Close - StopAmt($1000)/BigPointValue stop",
+        "X|Format dialog: \"Under the Stops tab, we enabled a money management stop of $1,200\" (p.16); no slippage or commission (p.16)"],
+      "Vol 5 ch.2 p.12-20. Book: Swiss Franc + bonds 6/93-5/98: $28,425 on 56 trades, 62% winners, win/loss 1.47, PF 2.45. Runs on the Norgate Swiss franc continuous contract with the Norgate T-bond contract as Data2 (its XAverage on its own bars, carried to the franc's dates, TradeStation Data2; lane F1C, R4 #293, #314 (4)): $1,000 and $1,200 at $125,000 per 1.00 (0.008 and 0.0096). Variables start at 0 as declared, so in the first 4 bars of the data (1979) the buy stop at BuyLevel 0 fills at the open (literal). MaxBarsBack 11 (Average(TrueRange,10)). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad5_curbond", "Currency/Bond", "Vol 5")),
+    d("stad5_im1", "Intermarket I", "Vol 5 · Trending", "Long", Live,
+      &["E|If Close of Data2 < Close[1] of Data2 + LYldTrg(.25): Buy this bar on close (Vol 5 p.21 code; the prose says '25% of the yield', the code adds .25)",
+        "X|BarsSinceEntry > TNBars(50): ExitLong this bar on close",
+        "A|[Declared reading 1, lane M2 17 Nov 2026, R4 #346] Data2 = the US Treasury long-bond yield: FRED DGS30 (Treasury.gov 30 Yr par, verified exact by lane DA, 1977-02-15..); a bar without a yield print (bond-market holidays, and the 2002-02-19..2006-02-08 gap where the 30-year was discontinued) gives no signal, nothing is filled in; Daily FRED values are used on their own date (same-day publication assumed; the H.15 posts the next business day); option bond = 10 reads DGS10 instead (labelled adaptation, never spliced)",
+        "A|[Declared reading 2] .25 is added to the previous bar's yield in percentage points (the code), and the order fills at this bar's close (the code), not the next open (the prose)",
+        "A|[Declared reading 3] BarsSinceEntry counts bars from the entry bar (0): the exit is at the close of the 51st bar after the entry bar",
+        "A|[Declared reading 4] a new entry is possible from the bar after an exit, never on the exit bar"],
+      "Vol 5 ch.2 p.20-25 (STAD05 p.21 re-read). Book: S&P index 1/88-9/98: 132 trades, 88% profitable, PF 5.58 (the book's yield series is not named; ours is FRED DGS30, so the count is compared, not matched). Runs on SPX only (the S&P index of the book), US only; UNVERIFIED.", ("stad5_im1", "Intermarket I", "Vol 5")),
+    d("stad5_im2", "Intermarket II", "Vol 5 · Trending", "Long", Live,
       &["F|If Close of Data3 < Close[1] of Data3 then prSteps += 1 else if Close of Data3 > Close[1] then prSteps = 0 (Vol 5 p.26-27 code)",
-        "E|prSteps >= PStepTrg(1) and prSteps > prSteps[1]: Buy this bar on close", "X|BarsSinceEntry > PNBars(100): ExitLong this bar on close; Format: $4,500 money-management stop"],
-      "Vol 5 ch.2 p.26-32. Book: S&P futures 1/78-9/98: 15 trades, 53% winners, win/loss 3.17, PF 3.63, avg trade $5,005.", ("stad5_im2", "Intermarket II", "Vol 5")),
+        "E|prSteps >= PStepTrg(1) and prSteps > prSteps[1]: Buy this bar on close", "X|BarsSinceEntry > PNBars(100): ExitLong this bar on close; Format: $4,500 money-management stop",
+        "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] Data3 = the US prime rate: FRED DPRIME, daily (Fed H.15 monthly average matched by lane DA in 854 of 855 months; the daily values are checked against the NY Fed target rate + 3.00 only from 2008-12-16, so the span before 2008-12-16 is monthly-checked only); FRED stamps an FOMC cut on the announcement day; Daily FRED values are used on their own date (same-day publication assumed; the H.15 posts the next business day)",
+        "A|[Declared reading 2] a bar without a prime print (a day FRED leaves blank) neither changes prSteps nor gives a signal, and the next print is compared with the last print on the card's own bars (TradeStation Data3 repeats the last close); nothing is filled in",
+        "A|[Declared reading 3] the $4,500 money-management stop is at $500 per S&P point (the book's contract, bpv 500), working from the bar after the entry bar, filled at the stop or at the open when it gaps through",
+        "A|[Declared reading 4] BarsSinceEntry counts from the entry bar (0): the exit is at the close of the 101st bar after the entry bar; a new entry is possible from the bar of a stop exit, never on the bar of the time exit"],
+      "Vol 5 ch.2 p.26-32. Book: S&P futures 1/78-9/98: 15 trades, 53% winners, win/loss 3.17, PF 3.63, avg trade $5,005. Runs on the Norgate S&P 500 continuous contract (from 1982-04-21; the book starts 1/78, so the count is compared on 1982-98, not matched); US only; UNVERIFIED.", ("stad5_im2", "Intermarket II", "Vol 5")),
     d("stad5_fib382", "Fibonacci .382 Retracement", "Vol 5 · Support/Resistance", "Long/Short", Live,
       &["F|XAvg = XAverage(Close,15); HiHi/LoLo = Highest(High,50)/Lowest(Low,50); HiHiBar/LoLoBar = HighestBar/LowestBar; Retracement = (HiHi-LoLo)*.382 (Vol 5 p.35-36 code)",
         "F|Close <= HiHi - Retracement and HiHiBar < LoLoBar: BuySetup = 0; Close >= LoLo + Retracement and HiHiBar > LoLoBar: SellSetup = 0; both counters +1 every bar",
         "E|BuySetup <= SetUpLen(24) and (SwingLow(1,XAvg,1,2) <> -1 or Close > XAvg): Buy next bar at market; BuySetup = SetUpLen",
         "E|SellSetup <= 24 and (SwingHigh(1,XAvg,1,2) <> -1 or Close < XAvg): Sell next bar at market; SellSetup = SetUpLen",
         "X|Format dialog (p.38): $200 money-management stop and $400 $ Risk Trailing stop (book's Gold test: $100/point -> 2 and 4 points; params mm_usd, tr_usd, bpv)"],
-      "Vol 5 ch.3 p.34-41. Setup counters start at 0 (as declared), so the first 24 bars after MaxBarsBack can enter without a setup (literal). Book: Gold futures 6/93-7/98: 85 trades, 35% profitable, win/loss 2.76, PF 1.51.",
+      "Vol 5 ch.3 p.34-41. Setup counters start at 0 (as declared), so the first 24 bars after MaxBarsBack can enter without a setup (literal). Book: Gold futures 6/93-7/98: 85 trades, 35% profitable, win/loss 2.76, PF 1.51. Runs on the Norgate continuous contract of the book's market only (lane F1B, R4 #293): the Format stops are native contract points; Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.",
       ("stad5_fib382", "Fibonacci .382 Retracement", "Vol 5")),
     d("stad5_hlosc", "High/Low Oscillator", "Vol 5 · Support/Resistance", "Long/Short", Live,
       &["F|HighOsc = High - XAverage(High,10); LowOsc = Low - XAverage(Low,10); CloseAvg = XAverage(Close,60) (Vol 5 p.43-44 code)",
@@ -525,7 +664,7 @@ fn defs_a() -> Vec<Def> {
         "E|MRO(Close < LoChannel,10,1) > -1 and High > Highest(High,4)[1]: Sell next bar at market",
         "X|High > Highest(High,8)[1]: ExitLong this bar on close; Low < Lowest(Low,8)[1]: ExitShort this bar on close",
         "X|Format dialog (p.80): $1,000 money-management stop, breakeven floor $200 (book's T-bond test: 1.0 and 0.2 points)"],
-      "Vol 5 ch.4 p.77-84. Book: T-bonds 6/93-9/98: 220 trades, 69% profitable, win/loss .73, PF 1.66.", ("stad5_chbopb", "Channel Breakout with Pullback", "Vol 5")),
+      "Vol 5 ch.4 p.77-84. Book: T-bonds 6/93-9/98: 220 trades, 69% profitable, win/loss .73, PF 1.66. Runs on the Norgate continuous contract of the book's market only (lane F1B, R4 #293): the Format stops are native contract points; Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad5_chbopb", "Channel Breakout with Pullback", "Vol 5")),
     d("stad5_dsdb", "Displaced Standard Deviation Bands", "Vol 5 · Volatility breakout", "Long/Short", Live,
       &["F|AvgVal = Average(Close,3); SDmult = StdDev(Close,SDLen=12)*2; DispTop = AvgVal[16] + SDmult; DispBottom = AvgVal[16] - SDmult (Vol 5 p.86 code; prose says 15 bars - code wins)",
         "E|CurrentBar > 16: Buy next bar at DispTop stop; Sell next bar at DispBottom stop",
@@ -540,12 +679,15 @@ fn defs_a() -> Vec<Def> {
         "F|[Reading, decision 217 / #57] '1 point' = one tick of the traded instrument (0.01 US, 0.05 NSE)",
         "X|HELD: the Chart 14 variants with a $500 money-management stop, $900 $ risk trailing stop and $500 breakeven floor are dollar amounts on D-Mark futures and are not run"],
       "Vol 6 ch.1 p.12-16. Book (Chart 14, p.16, D-Mark futures daily): stop and reverse $72,762 on 148 trades, 45% profitable, profit factor 1.88, average trade $491; with all the dollar stops $85,150 on 312 trades, 57% (not run). The book's test is on D-Mark futures; runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K47w/k47_ref.py.", ("stad6_tenbar", "Ten-Bar Channel Breakout", "Vol 6")),
-    d("stad6_asi", "Accumulation Swing Index", "Vol 6 · Trending", "Long/Short",
-      NotTestable("AccumSwingIndex is weighted by the symbol's DailyLimit (the futures limit move; TradeStation help, AccumSwingIndex/SwingIndex). Indices and stocks have no daily limit, so the indicator's value is undefined here, and the book does not give the formula."),
-      &["F|ASI = AccumSwingIndex; SH = SwingHighBar(1,High,2,3); SHAgo = SwingHighBar(2,High,2,40) (Vol 6 p.19-20 code)",
-        "E|SH <> -1 and ASI[SH] > ASI[SHAgo] and MP <> 1: BuyPrice = Highest(High,2); buy stop BuyPrice + 1 point for 5 bars (sell mirror)",
-        "X|ExitLong at Lowest(Low,2) - 1 point; trailing at the latest strength-1 swing low - 1 point"],
-      "Vol 6 ch.2 p.18-26. Book: weekly Sears 1/78-10/98: $2,173 on 23 trades, 57% profitable (no stops).", ("stad6_asi", "Accumulation Swing Index", "Vol 6")),
+    d("stad6_asi", "Accumulation Swing Index", "Vol 6 · Trending", "Long/Short", Live,
+      &["F|ASI = AccumSwingIndex = running sum of Wilder's Swing Index SI = 50 x [C2 - C1 + 0.5(C2 - O2) + 0.25(C1 - O1)] / R x K / L; K = the larger of |H2 - C1| and |L2 - C1|; R by the largest of |H2 - C1|, |L2 - C1|, |H2 - L2| (Wilder, New Concepts, Spanish ed. p.88-91)",
+        "F|[Declared reading, decision #244 (2)] L (the futures daily limit move) is a positive constant per market; the system only compares ASI on two swing-high (swing-low) bars, and that comparison has the same answer for every positive L, so L = 1 is used; SI = 0 on a bar where R = 0 (then K = 0 too)",
+        "F|SH = SwingHighBar(1,High,2,3); SHAgo = SwingHighBar(2,High,2,40); SL/SLAgo the same on lows; trailing levels SwingHigh(1,High,1,2) / SwingLow(1,Low,1,2), each kept until the next one (Vol 6 p.19-21 code)",
+        "E|SH <> -1 and ASI[SH] > ASI[SHAgo] and MarketPosition <> 1: BuyPrice = Highest(High,2), ILX = Lowest(Low,2); for 5 bars: Buy next bar at BuyPrice + 1 point stop and ExitLong next bar at ILX - 1 point stop (sell mirror on swing lows); an opposite entry reverses",
+        "X|While in a position: ExitLong next bar at the latest strength-1 swing low - 1 point stop; ExitShort at the latest strength-1 swing high + 1 point stop (p.20, 23)",
+        "F|[Declared reading] No second swing high (low) within 40 bars = no setup; '1 point' = one tick of the traded instrument (decision #57: 0.01 US, 0.05 NSE); the Format-dialog money-management, breakeven and $ trailing stops are off (the book's first result is 'without enabling any stops', p.23); the code runs from bar 42 on (SwingLen + Strength, TradeStation's MaxBarsBack), so swing levels before it are not kept; the swing tests are the module's (a swing high is >= the bars before it and > the bars after it)",
+        "F|Option side = 1: long side only (the book's Sears test, p.19)"],
+      "Vol 6 ch.2 p.18-26 (code p.19-20). Book: weekly Sears 1/78-10/98, long side only, no stops: $2,173 on 23 trades, 57% profitable (p.23). The book's test is a weekly stock chart; runs on daily indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K60w/k60_ref.py.", ("stad6_asi", "Accumulation Swing Index", "Vol 6")),
     d("stad6_adxmac", "ADX & Moving-Average Channel", "Vol 6 · Trending", "Long/Short", Live,
       &["F|UpperMA = XAverage(High,30)[1]; LowerMA = XAverage(Low,30)[1]; ChanSpread = (UpperMA-LowerMA)/2; ADX(12) (Vol 6 p.27-28 code)",
         "F|BuySetup = Close > UpperMA and ADX > ADX[1] -> BuyTarget = Close + ChanSpread; SellSetup = Close < LowerMA and ADX > ADX[1] -> SellTarget = Close - ChanSpread",
@@ -617,11 +759,10 @@ fn defs_b() -> Vec<Def> {
     let d = |id, name, group, dir, status, rules, notes, family| Def { id, name, group, dir, status, needs_volume: false, rules, notes, family };
     vec![
     // ================= Volume 7 (1999)
-    d("stad7_dow", "Dow Theory (Chris Evans)", "Vol 7 · Trending", "Long",
-      NeedsData("Needs four aligned streams: a Dow 30 stock (Data1), the Dow Industrials (Data2), Dow Transports (Data3) and Dow Utilities (Data4). The vault has the Industrials (DJI) only - no Transports or Utilities and no single stocks with the indices aligned."),
+    d("stad7_dow", "Dow Theory (Chris Evans)", "Vol 7 · Trending", "Long", Live,
       &["E|High Data1 > Highest(High Data1,50)[1] starts a 10-bar confirmation window; all three Dow averages make new 50-bar highs in it -> Buy next bar at market (Vol 7 p.15 code)",
         "X|ExitLong next bar at highest High since entry - 5*AvgTrueRange(10) stop"],
-      "Vol 7 ch.2 p.14-20. Book (parameters 3/6/5/10, 1/2/90-4/1/98): CAT 31 trades 58%; T 31 trades 42%; KO 24 trades 63% ...", ("stad7_dow", "Dow Theory", "Vol 7")),
+      "[Literal printed code; unverified] Vol 7 ch.2 p.14-20 (code p.15). Data1 = the selected instrument (the book: any Dow 30 stock); Data2-4 = the Dow Jones Industrial, Transportation and Utility Averages' daily highs from Norgate ($DJI, $DJT, $DJU; lane PG, 14 Nov 2026, SOURCES norgate-us-indices-20200908-pg/-pf/-pb), aligned by date (an average without a bar that day, or with a missing day in its Length window, gives no new high). Defaults are the printed Inputs (Length 50, Confirm 10, ATRStop 5, ATRLen 10); the book's results table uses 3/6/5/10 (set them as parameters). Book (parameters 3/6/5/10, 1/2/90-4/1/98): CAT 31 trades 58%; T 31 42%; IBM 37 41%; KO 24 63% ...; ours on that window: CAT 33 trades 55%, AA (HWM) 40 52%, ALD (HON) 27 44%, IBM 37 41% pass; MRK 36 42% and KO 26 54% miss the win-rate tolerance by 2 and 1 points; T is not comparable (the vault's T is SBC before 2005), S not held - UNVERIFIED pending a lead ruling. Norgate's Dow averages' highs before 1992 appear to be theoretical intraday highs (never equal to the close), actual highs after. US instruments only (the Dow averages are US series).", ("stad7_dow", "Dow Theory", "Vol 7")),
     d("stad7_dma", "Derivative Moving Average (Hans Stimming)", "Vol 7 · Trending", "Long/Short", Live,
       &["F|AvgVal = Average(Close,9); DerivMA1 = (AvgVal - AvgVal[9])/9; DerivMA2 = DerivMA1 - DerivMA1[1] (Vol 7 p.25 code)",
         "F|DerivMA2 crosses above 0: BuyFlag = True; DerivMA2 crosses below 0: SellFlag = True",
@@ -653,7 +794,7 @@ fn defs_b() -> Vec<Def> {
         crate::books::n1intra2::MIN],
       "Vol 7 ch.3 p.47-53. Book: 10-minute IBM/AMZN/LU/BA, 1/12-2/1/99 (with a money management stop the code does not print), too short to compare. Runs on SPY and SPX minutes (declared application); the NIFTY 50 and NIFTYBANK minute results are withdrawn (decisions #231/#234: NSE cash-index minutes are dominated by stale component prices). No costs in the vault's run. Cash-index shorts are hypothetical.", ("stad7_idbo", "Intraday Breakout", "Vol 7")),
     d("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7 · Support/Resistance", "Long",
-      NeedsData("Needs weekly Treasury bond (Data2) and Treasury bill (Data3) futures aligned to the traded index; no bond/bill futures in the vault."),
+      NeedsData("Held (lane D2, 16 Nov 2026, R4 #340/#240): the printed rule is complete and Norgate holds the S&P 500 (&SP), T-bond (&ZB) and Eurodollar (&GE, for the bills) futures, but run that way 9 of the 78 trades to the 1995-07-31 open-price limit (R4 #330), 11.5%, have a bar where a long position's exit stop and the buy stop are both touched and the order inside the bar cannot be known (no futures minutes), over the 5% of R4 #240."),
       &["E|Close Data2 > XAverage(Close,30) Data2 and Close Data3 > XAverage(Close,30) Data3 and SlowK(9) crosses above 30: buy stop at Close + .30*ATR for 5 bars (Vol 7 p.55 code)",
         "X|ExitLong at EntryPrice - 1.5*ATR stop; after SlowK > 70: ExitLong at Lowest(Low,2)[1] stop"],
       "Vol 7 ch.3 p.54-60. Book: 57% profitable, win/loss 1.43, PF 1.88.", ("stad7_imsbb", "Intermarket S&P/Bonds/Bills", "Vol 7")),
@@ -662,7 +803,7 @@ fn defs_b() -> Vec<Def> {
       &["F|\"If Date <> Date[1] Then Begin NewHigh=High; NewLow = Low; NewHighTime = TimeToMinutes(Time); NewLowTime = TimeToMinutes(Time); NoTradesToday = True\"; \"Condition1 = TimeToMinutes(Time) > TimeToMinutes(StartTme)\"; while Condition1 is false the new highs/lows and their times are recorded and \"Price66 = NewLow + (NewHigh - NewLow) * .66; Price50 = (NewLow + NewHigh) / 2; Price33 = NewLow + (NewHigh - NewLow) * .33\"; StartTme 1200, R66 False, R50 True, R33 True (Vol 7 p.62-63 code)",
         "E|\"If Condition1 AND NoTradesToday Then Begin If NewHighTime > NewLowTime Then Begin ... Buy (\"L50\") Next Bar at Price50 Limit; ... Buy (\"L33\") Next Bar at Price33 Limit; End Else Begin ... Sell (\"S50\") Next Bar at Price50 Limit; ... Sell (\"S33\")\"; \"If MP = 1 OR MP =-1 Then NoTradesToday = False\" (p.62-63); 'Do not allow multiple entries in the same direction' (p.65)",
         "X|\"If MP = 1 Then Begin If MP[1] <> 1 Then LExitPrice = EntryPrice - Average(Range, 4) * 2 Else LExitPrice = LExitPrice + (Low - LExitPrice) / 2; ExitLong Next Bar at LExitPrice Stop\"; short mirror (p.63); no end-of-day exit and no money management stop (p.65)",
-        "A|Read [lane K53, decision 229]: session-aligned 5-minute bars (\"we used 5 minute charts\", p.60) from the 1-minute file, one continuous series (Range and the stop carry across days, as the code has no session exit); Time = the bar's end stamp; StartTme 12:00 ET = 150 minutes after the session open, used the same way on NSE (11:45 IST); orders the code places on a session's last bar work in the next bar (the next session's first), as TradeStation runs it.",
+        "A|Read [lane K53, decision 229]: session-aligned 5-minute bars (\"we used 5 minute charts\", p.60) from the 1-minute file, one continuous series (Range and the stop carry across days, as the code has no session exit); Time = the bar's end stamp; StartTme 12:00 ET = 150 minutes after the session open, used the same way on NSE (11:45 IST) [decision #248 (1), lane K61: the STAD volumes give no Chicago-time evidence: Vol 7's other minute system (Intraday Breakout) uses Sess1StartTime, its S&P chart and summary (Figures 15-16, p.67) print no session times, no volume's code uses 0830/1515, and the only absolute session clock printed, Vol 2 BullBeater StartTme 930 on an S&P day-session chart (Vol 2 p.63-65), is the 9:30 Eastern open; so 12:00 ET stays, a labelled reading; 13:00 ET = 210 minutes is the p.start option]; orders the code places on a session's last bar work in the next bar (the next session's first), as TradeStation runs it.",
         crate::books::n1intra2::MIN],
       "Vol 7 ch.3 p.60-68. Book: 5-minute S&P futures, 10 trading days: 7 trades, 71% profitable, $2,350 (too short to compare). Runs on SPY, SPX, NIFTY 50 and NIFTYBANK minutes (declared application). No costs in the vault's run. Cash-index shorts are hypothetical.", ("stad7_fibret", "Fibonacci Retracement", "Vol 7")),
     d("stad7_trbo", "Trading Range Breakout", "Vol 7 · Volatility breakout", "Long/Short", Live,
@@ -743,12 +884,13 @@ fn defs_b() -> Vec<Def> {
       NotTestable("Short-side code is not printed ('analogous ... included on the STAD 9 CD', p.74). The printed long code uses the previous bar's high while the prose uses the naked-close bar's extreme, so the mirror is not unambiguous."),
       &["E|Close below both EMAs and above the previous bar's high: sell 1 point below the low of the naked-close bar (prose p.71)"],
       "Vol 9 ch.6 p.71-80.", ("stad9_skinny", "Skinny Dipper", "Vol 9 short")),
-    d("stad9_djnikkei", "DJ vs. Nikkei (intermarket example)", "Vol 9 · Strategies", "Long/Short",
-      NeedsData("The traded market is the Nikkei 225 ('Insert in Data1 the Nikkei Index since 1/1/98 and in Data2 the Dow Jones', Vol 9 p.82), which the vault does not hold. The DJI second series exists (EP4), but no other market stands in for the traded leg (lane K52; EWJ tracks the MSCI Japan index, not the Nikkei)."),
-      &["E|Close[1] of Data2 < Close of Data2: Buy next bar at Open; else Sell next bar at Open (Vol 9 p.82)"],
-      "Vol 9 ch.7 p.82-84 (Hans Stimming). Book: Nikkei since 1/1/98: 61% profitable.", ("stad9_iic", "International Index Composite", "DJ vs Nikkei")),
+    d("stad9_djnikkei", "DJ vs. Nikkei (intermarket example)", "Vol 9 · Strategies", "Long/Short", Live,
+      &["E|Close[1] of Data2 < Close of Data2: Buy next bar at Open; else Sell next bar at Open (Vol 9 p.82)",
+        "X|No separate exit: the opposite signal (Sell / Buy next bar at Open) reverses the position (Vol 9 p.82)",
+        "A|Declared adaptation (R4 #340, UNVERIFIED): the book trades the Nikkei 225 index (Data1) with the Dow Jones (Data2) from 1/1/98; the vault holds no Nikkei cash index, so Data1 = the Norgate Nikkei 225 Dollar continuous futures (&NKD, the same index, from 1990, filled at its session open) and Data2 = the Dow Jones Industrial Average close (Norgate $DJI). Four unstated details: (1) a contract date without a Dow bar keeps the last Dow bar and Close[1] stays the Dow bar before it (TradeStation Data2); (2) a Dow bar older than 5 contract bars is missing data: no signal, and none after the Dow file ends (2020-09-04); (3) the run starts at the first bar with two Dow bars; (4) one unit, no costs"],
+      "Vol 9 ch.7 p.82-84 (Hans Stimming). Book: Nikkei since 1/1/98: 61% profitable (System Report image, trades and profit not printed).", ("stad9_iic", "International Index Composite", "DJ vs Nikkei")),
     d("stad9_iic", "International Index Composite", "Vol 9 · Strategies", "Long/Short",
-      NeedsData("Needs six aligned foreign index streams (TSE 300, CAC 40, DAX, MIBTel, Nikkei, FTSE 100) as Data2-Data7."),
+      NeedsData("HELD (lane D3, 16 Nov 2026, R4 #339/#343): the rule is printed, and Norgate futures could stand in for the six foreign indices (the MIBTel is not held), but it needs more than 4 card-specific unstated details (AverageFC definition, '1 point' as a tick, printed 9/18 versus the optimised 10/9, composite start and Data2 carry, cross tie). The engine branch and the reference (authors/relax-339/D3/w/iic_ref.py) are kept, not published."),
       &["F|Composite = weighted average of the closes of Data2-Data7 (weights .49/.07/.09/.02/.22/.11) (Vol 9 p.86-87)",
         "E|AverageFC(Composite,9) crosses above AverageFC(Composite,18): Buy next bar at Close + 1 point stop; crosses below: Sell at Close - 1 point stop"],
       "Vol 9 ch.7 p.81-89. Book (S&P 500, optimised 10/9): 81% winners.", ("stad9_iic", "International Index Composite", "Composite")),
@@ -830,11 +972,12 @@ fn defs_c() -> Vec<Def> {
         "E|Short: Low = Lowest(Low,5) and Close < Low[2] and XAverage falling: Sell next bar at SellEntry = MedianPrice[2] limit; ShortExitTarget = Low - 3*(SellEntry - Low)",
         "X|ATR Protective 3, ATR length 10 (strategy inputs p.29)"],
       "Vol 11 ch.2 p.27-44. Book (optimised): IBM 27 trades 48%, PF 5.15; MSFT 19 trades 73%; crude 52 trades 55%.", ("stad11_bullseye", "Hit the Bull's Eye", "Vol 11")),
-    d("stad11_miser", "MISER (Murray's Intermarket Strategy Revisited)", "Vol 11 · Strategies", "Long",
-      NeedsData("Needs US Treasury Bond futures as Data2 aligned to the traded index (Average(Close of Data2,26)); no bond series in the vault."),
-      &["E|Close < Average(Close,16) and Close of Data2 > Average(Close of Data2,26): Buy next bar at market (Vol 11 p.48 code)",
-        "X|Close > SPAvg and bonds below their average: ExitLong next bar at market; ATR Breakeven 4, Big Profit 7/3, Protective 3, Trailing LX 3 (+ entry-bar version), Volatility 2"],
-      "Vol 11 ch.3 p.45-56. Book: S&P long-only 2/92-11/99 (optimised): $178,727 on 42 trades, 78%.", ("stad11_miser", "MISER", "Vol 11")),
+    d("stad11_miser", "MISER (Murray's Intermarket Strategy Revisited)", "Vol 11 · Strategies", "Long", Live,
+      &["E|\"If Close of Data1 < SPAvg AND Close of Data2 > BondsAvg Then Buy next bar at market\"; SPAvg = Average(Close of Data1, SPLength), BondsAvg = Average(Close of Data2, BondsLength) (Vol 11 p.48 code); Data2 = T-bond futures",
+        "X|\"If Close of Data1 > SPAvg AND Close of Data2 < BondsAvg Then ExitLong next bar at market\" (p.48)",
+        "X|ATR Trailing LX (p.49): PosHigh - ATRs x AvgTrueRange(10) stop while long, \"ATR eb\" High - ATRs x AvgTrueRange(10) stop otherwise (the entry bar); ATR Volatility Stop (p.50): EntryPrice - VolatilityATRs x ATR; ATR Breakeven, Big Profit and Protective Stops (Appendix A p.150-154): EntryPrice stop once the highest close since entry > EntryPrice + ATRs x ATR; Lowest(Low, ExitBarLen) stop once it > EntryPrice + BigProfitATRs x ATR; EntryPrice - ProtectiveATRs x ATR",
+        "F|Defaults = the optimized values of the printed test (p.52): Breakeven 4, Protective 4, Big Profit 9 / ExitBarLength 2, Volatility 3, Trailing 5 ATRs (ten-day ATR), SP SMA 14, US SMA 40; the Strategy Inputs table's 3/4/7/3/2/3, 16/26 are the starting values (p.47); long side only, as tested; MaxBarsBack 50; $40 slippage + $10 commission per trade (p.52)"],
+      "Vol 11 ch.3 p.45-56. Book: S&P long-only 2/92-11/99 (optimised): $178,727 on 42 trades, 78%, avg $4,255. Runs on the Norgate S&P 500 continuous contract with the Norgate T-bond contract as Data2 (its closes and average on its own bars, carried to the S&P dates, TradeStation Data2; lane F1C, R4 #293, #314 (4)); every stop is in ATRs of the S&P bars, so no dollar amount is converted. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor.", ("stad11_miser", "MISER", "Vol 11")),
     d("stad11_exits", "Chandelier and Yo-Yo exits (LeBeau & Tan)", "Vol 11 · Articles", "Long/Short",
       NotTestable("Exit techniques only: the printed examples use placeholder entries ('Buy_Condition'), so there is no complete system to test."),
       &["X|Chandelier: highest high (or close) since entry - 3*AvgTrueRange(20) stop", "X|Yo-Yo: Close -/+ 2*AvgTrueRange(20) stop"],
@@ -956,11 +1099,12 @@ fn defs_c() -> Vec<Def> {
       "Vol 13 ch.10 p.123-134. Needs volume. Book: GE long-only 4/96-4/00: 29 trades, 55%, PF 3.43.", ("stad13_add", "Advance-Decline Divergence", "Vol 13")) },
     d("stad13_tripleplay", "Triple Play (Vol 11 & 13)", "Vol 13 · Revisited", "Long/Short", Live,
       &["F|Bollinger Bands(11, 2); strong swing high (strength 7) above the upper band -> RecentLow = MRO(swing low, StrongLowBar - StrongHighBar, 1) (Vol 13 p.138-140 code; Vol 11 p.118-120 identical with fixed divisors)",
-        "F|WeakLow = SwingLow(1,Low,7,8)[Value1] - Value1 is never assigned in the printed code, so it reads the current bar (literal; option weak_src=1 uses RecentLow as the explanation says)",
+        "F|WeakLow = SwingLow(1,Low,7,8)[Value1] - Value1 is never assigned in the printed code; EasyLanguage starts it at 0, so it reads the current bar (SwingLow returns -1 when that bar is no swing low). [Declared reading, decisions #218 and #244 (1)] the literal platform behaviour is the default; option weak_src = 1 uses RecentLow as the explanation says",
         "E|Long formation within PatternLength(25)+7 bars: LongEntryPrice = (StrongHigh - StrongLow)/4 + WeakLow; while flat for BarsToEnter(10) bars: Buy 2 units next bar at LongEntryPrice stop (short mirror)",
         "X|2 units: ExitLong at WeakLow - 1 point stop; exit 1 unit at LongTarget1 = (WeakLow + LongTarget2)/2 limit, LongTarget2 = WeakLow + (StrongHigh - StrongLow)",
-        "X|1 unit left: ExitLong at EntryPrice stop; after a close above StrongHigh trail at highest close - (StrongHigh - WeakLow)/4; ExitLong at LongTarget2 limit"],
-      "Vol 13 ch.11 p.135-151 (after Charles Lindsay's Trident). Book (optimised): IBM long-only 6 trades 50%; BP 12 trades 75%.", ("stad13_tripleplay", "Triple Play", "Vol 13")),
+        "X|1 unit left: ExitLong at EntryPrice stop; after a close above StrongHigh trail at highest close - (StrongHigh - WeakLow)/4; ExitLong at LongTarget2 limit",
+        "F|[Declared reading] '1 point' = one tick of the traded instrument (decision #57: 0.01 US, 0.05 NSE); the two units are one position scaled out in halves; option side = 1: long side only (the book's IBM test, p.148)"],
+      "Vol 13 ch.11 p.135-151 (after Charles Lindsay's Trident). Book (optimised, the defaults are the IBM inputs): IBM daily 6/92-4/00 long only, per 100 shares: $12,187 on 6 trades, 50% profitable; British Pound futures: 12 trades, 75% (p.148-150). [Book-vs-results gap, R4 #259 (6)] The book's run cannot have been the printed code: with Value1 never assigned, the literal WeakLow is -1 unless the same bar confirms a swing low, so the entry stop, both targets and the stop sit near zero and every position exits within 2 bars, while the book reports losers held 35 bars and winners 123 bars on average (p.148); even the explained reading (p.weak_src = 1) finds only 2-4 formations on IBM 6/92-4/00 against the book's 6 trades. The literal default stays (decision #244 (1)). Runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K60w/k60_ref.py.", ("stad13_tripleplay", "Triple Play", "Vol 13")),
     d("stad13_volex", "VolEx (revisited)", "Vol 13 · Revisited", "Long/Short", Live,
       &["E|Buy next bar at Open of next bar + 1.2*Average(Range,4) stop; Sell next bar at Open of next bar - 1.8*Average(Range,4) stop (Vol 13 p.156 code)",
         "X|Price Trailing Exit: ExitLong next bar at Lowest(Low,4) stop; ExitShort at Highest(High,4) stop",
@@ -976,11 +1120,13 @@ fn defs_c() -> Vec<Def> {
     ]
 }
 
+/// Lane PG: the three Dow averages' daily highs stad7_dow reads (futures::INDEX_HIGHS).
+const DOW_SERIES: &[&str] = &["DJ_IND_HIGH", "DJ_TRANS_HIGH", "DJ_UTIL_HIGH"];
 fn defs() -> Vec<Def> { let mut v = defs_a(); v.extend(defs_b()); v.extend(defs_c()); v }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     defs().into_iter().map(|d| StrategyDef { id: d.id, name: d.name, group: d.group, session: 0, dir: d.dir, status: d.status,
-        needs_volume: d.needs_volume, needs_vix: false, needs_series: &[], book: BOOK, rules: d.rules, notes: d.notes, claim: None }).collect()
+        needs_volume: d.needs_volume, needs_vix: false, needs_series: if d.id == "stad7_dow" { DOW_SERIES } else if d.id == "stad5_im2" { &["DPRIME"] } else { &[] }, book: BOOK, rules: d.rules, notes: d.notes, claim: None }).collect()
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     defs().into_iter().find(|d| d.id == id).map(|d| d.family)
@@ -993,6 +1139,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let usd = |key, label, def: f64| ParamDef { key, label, def, min: 0.0, max: def.max(1.0) * 5.0, step: (def / 4.0).max(1.0) };
     let bpv = |def: f64, qty: f64| vec![ParamDef { key: "bpv", label: "BigPointValue of the book's test instrument ($ per point)", def, min: 1.0, max: 250000.0, step: 1.0 },
         ParamDef { key: "qty", label: "Shares/contracts in the book's test (dollar stops -> points)", def: qty, min: 1.0, max: 1000.0, step: 1.0 }];
+    // lane K60 (#57): N ticks of the traded instrument; one side only
+    let tick = || p("tick", "Offset '1 point' in ticks of the traded instrument (0.01 US, 0.05 NSE)", 1., 0., 10., 1.);
+    let side = || p("side", "Sides: 0 = long and short (the code), 1 = long only (the book's test)", 0., 0., 1., 1.);
     let atrx = |prot: f64, be: f64, trail: f64, volat: f64, bp: f64, bpn: f64, pt: f64, len: f64| {
         let mut v = vec![];
         if prot > 0.0 { v.push(p("prot", "ATR Protective stop (ATRs)", prot, 0., 10., 0.5)); }
@@ -1005,6 +1154,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         v
     };
     let mut v: Vec<ParamDef> = match id {
+        "stad11_miser" => [vec![p("splen", "SP SMA length", 14., 5., 40., 1.), p("bondlen", "US (Data2) SMA length", 40., 10., 80., 1.)], atrx(4., 4., 5., 3., 9., 2., 0., 10.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad5_curbond" => [vec![p("fast", "Fast XAverage", 4., 2., 20., 1.), p("med", "Medium XAverage", 12., 5., 40., 1.), p("slow", "Slow XAverage", 23., 10., 60., 1.),
+            p("bondma", "Bond XAverage (Data2)", 50., 10., 100., 1.), p("actvbar", "Bars the entry stop stays active", 5., 1., 20., 1.), usd("stop_usd", "StopAmt: risk trailing stop from the close ($)", 1000.),
+            usd("mm_usd", "Money-management stop ($, Format dialog)", 1200.)], bpv(125000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad5_im2" => [vec![p("pstep", "PStepTrg: consecutive cuts needed", 1., 1., 5., 1.), p("pnbars", "PNBars: exit when BarsSinceEntry exceeds", 100., 10., 250., 1.), usd("mm_usd", "Money-management stop ($, Format dialog)", 4500.)], bpv(500., 1.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad5_im1" => vec![p("tnbars", "TNBars: exit when BarsSinceEntry exceeds", 50., 5., 250., 1.), p("lyldtrg", "LYldTrg (yield points added to the previous yield)", 0.25, 0., 2., 0.05), p("bond", "Data2: 30 = DGS30, 10 = DGS10 (adaptation)", 30., 10., 30., 20.)],
         "stad5_fib382" => [vec![p("xavglen", "XAverage length", 15., 5., 40., 1.), p("hilolen", "High/low range bars", 50., 20., 100., 5.), p("retrace", "Retracement", 0.382, 0.2, 0.618, 0.01),
             p("setuplen", "Setup length bars", 24., 5., 50., 1.), usd("mm_usd", "Money-management stop ($)", 200.), usd("tr_usd", "$ Risk trailing ($)", 400.)], bpv(100., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_hlosc" => [vec![p("len1", "High/Low XAverage length", 10., 3., 30., 1.), p("len2", "Close XAverage length", 60., 20., 120., 5.), p("trailstp", "TrailStp ($ / BigPointValue)", 700., 0., 2000., 50.),
@@ -1018,6 +1173,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             usd("mm_usd", "Money-management stop ($)", 1000.), usd("be_usd", "Breakeven floor ($)", 200.)], bpv(1000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_dsdb" => vec![p("avglen", "Average length", 3., 1., 10., 1.), p("disp", "Displacement", 16., 0., 30., 1.), p("sdlen", "StdDev length", 12., 5., 30., 1.), p("sdev", "StdDevs", 2., 0.5, 4., 0.25)],
         "stad6_tenbar" => vec![p("length", "Channel length (bars, including today)", 10., 2., 60., 1.), p("tick", "Offset beyond the channel, ticks of the traded instrument", 1., 0., 10., 1.)],
+        "stad6_asi" => vec![p("strength", "Swing strength", 2., 1., 6., 1.), p("swinglen", "Bars for the two swings", 40., 10., 100., 1.), p("setuplen", "Bars the setup stays live", 5., 1., 15., 1.), tick(), side()],
         "stad6_adxmac" => vec![p("avglen", "Channel XAverage length", 30., 5., 60., 1.), p("adxlen", "ADX length", 12., 5., 30., 1.), p("entrybar", "Entry window bars", 2., 1., 10., 1.)],
         "stad6_dmachan" => [vec![p("avglen", "Average length", 20., 5., 50., 1.), p("disp", "Displacement", 5., 0., 15., 1.), p("exitbar", "ExitAvg stop bars", 5., 1., 20., 1.),
             usd("mm_usd", "Money-management stop ($)", 200.), usd("be_usd", "Breakeven floor ($)", 100.), usd("dtr_usd", "$ Risk trailing ($)", 600.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
@@ -1033,6 +1189,13 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad6_parvol" => vec![p("acc", "Parabolic acceleration", 0.03, 0.01, 0.1, 0.01), p("volavg", "Volume average length", 5., 2., 20., 1.), p("pcntdiff", "Entry fraction of SAR move", 0.3, 0., 1., 0.05), p("setuplen", "Setup window bars", 4., 1., 10., 1.)],
         "stad6_vwm" => vec![p("momlen", "Momentum length", 5., 2., 20., 1.), p("avglen", "XAverage length", 20., 5., 50., 1.), p("atrlen", "ATR length", 5., 2., 20., 1.), p("atrpcnt", "ATR fraction", 0.25, 0., 1., 0.05), p("setuplen", "Setup length bars", 5., 1., 15., 1.)],
         "stad7_dma" => vec![p("len", "Average length", 9., 3., 30., 1.)],
+        "stad9_djnikkei" => vec![],
+        "stad9_iic" => vec![p("fast", "FastLength (printed default 9; the book's optimised report: 10)", 9., 2., 40., 1.), p("slow", "SlowLength (printed default 18; optimised: 9)", 18., 2., 60., 1.),
+            p("w2", "Weight Data2 (TSE 300 -> TSX 60)", 0.49, 0., 1., 0.01), p("w3", "Weight Data3 (CAC 40)", 0.07, 0., 1., 0.01), p("w4", "Weight Data4 (DAX)", 0.09, 0., 1., 0.01),
+            p("w5", "Weight Data5 (MIBTel -> EURO STOXX 50)", 0.02, 0., 1., 0.01), p("w6", "Weight Data6 (Nikkei)", 0.22, 0., 1., 0.01), p("w7", "Weight Data7 (FTSE 100)", 0.11, 0., 1., 0.01),
+            p("tick", "Offset '1 point' in ticks of the traded instrument", 1., 0., 10., 1.)],
+        "stad7_dow" => vec![p("len", "Length: bars for the new high (code 50; book table 3)", 50., 2., 200., 1.), p("confirm", "Confirm: bars to find all three confirmations (code 10; book table 6)", 10., 1., 50., 1.),
+            p("atrs", "ATRStop: trailing stop ATR multiple", 5., 0.5, 15., 0.5), p("atrlen", "ATRLen", 10., 2., 50., 1.)],
         "stad7_stsr" => vec![p("buylev", "Buy level", 0.3, 0.1, 0.5, 0.05), p("selllev", "Sell level", 0.7, 0.5, 0.9, 0.05), p("exitlen", "Trailing stop bars", 2., 1., 10., 1.)],
         "stad7_masr" => vec![p("len", "Average length", 10., 3., 40., 1.), p("patrs", "Protective ATRs", 1., 0.5, 5., 0.5), p("tatrs", "Trailing ATRs", 2.5, 0.5, 6., 0.5), p("atrlen", "ATR length", 10., 3., 30., 1.)],
         "stad7_trbo" => vec![p("rangelen", "Range bars", 7., 3., 20., 1.), p("rngpcnt", "No-trade % of range", 200., 50., 400., 10.), p("atrs", "Trailing ATRs", 8., 1., 15., 0.5), p("atrlen", "ATR length", 2., 1., 20., 1.)],
@@ -1104,14 +1267,16 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad13_tripleplay" => vec![p("patlen", "Pattern length", 25., 10., 60., 1.), p("strength", "Swing strength", 7., 2., 12., 1.), p("bte", "Bars to enter", 10., 1., 30., 1.), p("len", "Bollinger length", 11., 5., 30., 1.),
             p("dev", "Bollinger deviations", 2., 1., 3., 0.25), p("epd", "Entry price divisor", 4., 1., 10., 1.), p("t1d", "Target 1 divisor", 2., 1., 4., 1.), p("tsd", "Trailing stop divisor", 4., 1., 10., 1.),
-            p("weak_src", "WeakLow source: 0 = printed (Value1 never set -> current bar), 1 = RecentLow (explanation)", 0., 0., 1., 1.)],
+            p("weak_src", "WeakLow source: 0 = printed (Value1 never set -> current bar), 1 = RecentLow (explanation)", 0., 0., 1., 1.), tick(), side()],
         "stad13_volex" => [vec![p("lf", "Long factor", 1.2, 0.25, 3., 0.05), p("sf", "Short factor", 1.8, 0.25, 3., 0.05), usd("sl_usd", "Stop loss ($)", 1000.), p("stale_t", "Stale position bars", 0., 0., 20., 1.),
-            usd("stale_usd", "Stale minimum profit ($)", 0.), p("trail", "Trailing exit bars", 4., 1., 10., 1.), usd("go_usd", "First good open base profit ($)", 200.), p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(250., 1.)].into_iter().flatten().collect::<Vec<_>>(),
+            usd("stale_usd", "Stale minimum profit ($)", 0.), p("trail", "Trailing exit bars", 4., 1., 10., 1.), usd("go_usd", "First good open base profit ($)", 200.), p("delay", "Good open delay bars", 0., 0., 10., 1.),
+            p("path", "Intrabar order: 1 = real SPX 1-minute bars (#240; a day without minutes makes no entry), 0 = daily bar path with 10% bounce [Vol 5 ch.1 assumption]", 1., 0., 1., 1.)], bpv(250., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad13_volclus" => [vec![p("dev", "Deviations", 2., 0.5, 4., 0.25), p("len", "Length (strategy input)", 15., 5., 40., 1.), usd("sl_usd", "Stop loss ($)", 300.), usd("go_usd", "First good open base profit ($)", 0.),
             p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         _ => return None,
     };
-    if id != "stad6_tenbar" { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
+    if !matches!(id, "stad6_tenbar" | "stad6_asi" | "stad13_tripleplay" | "stad9_djnikkei" | "stad9_iic") { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
     Some(v)
 }
 
@@ -1133,12 +1298,16 @@ fn market_strength(c: &[f64], len: usize, i: usize) -> f64 {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.c.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let ep6 = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K62)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let u = |k: &str| g(k).max(1.0).round() as usize;
-    let usd = |k: &str| g(k) / (g("bpv") * g("qty"));
+    // lane D3 (R4 #340): the book's futures test of stad6_dmachan (British Pound): the Format-dialog dollar stops at the contract's $ per point, '1 point' = one tick (#57)
+    let fut_pv = if matches!(id, "stad6_dmachan" | "stad13_dmarl" | "stad12_shifty") { crate::futures::ctx_market(x).and_then(|m| crate::futures::usd_per_point(m, &x.r[from.min(x.r.len().saturating_sub(1))].date)) } else { None };
+    let usd = |k: &str| match fut_pv { Some(v) => g(k) / v, None => g(k) / (g("bpv") * g("qty")) };
     let (o_, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
-    let pt = g("point");
+    let pt = if fut_pv.is_some() { x.market_tick() } else { g("point") };
     let tr = true_range(x);
     let rg = rng(x);
     let nxo = |i: usize| if i + 1 < n { o_[i + 1] } else { c[i] };
@@ -1147,6 +1316,65 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut ast = AtrState::default();
     Some(match id {
         // ============================================================ Volume 5
+        "stad11_miser" => {
+            // lane F1C (R4 #293): Data2 = the Norgate T-bond contract (Close of Data2 carried; its Average on its own bars)
+            // readiness refuses a missing T-bond series (futures::data2_issue)
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) };
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let d2 = crate::second::align("&ZB", x.r, rows);
+            let (ba, bc) = (d2.own(|r| sma(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondlen"))), d2.carried(crate::second::Field::C));
+            let spa = sma(c, u("splen"));
+            let tr_atrs = g("trail");
+            run_ts(x, from, to, 50, cfg(), |i, st, _now, nx| {
+                if c[i] < spa[i] && bc[i] > ba[i] { nx.push(o(A::Buy, P::Mkt, "MISER Buy")); }
+                if c[i] > spa[i] && bc[i] < ba[i] { nx.push(o(A::Xl, P::Mkt, "MISER Exit")); }
+                atr_exits(x, i, st, &ax, atrv[i], &mut ast, nx);
+                // ATR Trailing LX's entry-bar branch (p.49): while not long, a stop for a position opened next bar
+                if st.pos != 1 { nx.push(o(A::Xl, P::Stop(h[i] - tr_atrs * atrv[i]), "ATR Trailing eb")); }
+            })
+        }
+        "stad5_curbond" => {
+            // lane F1C (R4 #293): Data2 = the Norgate T-bond contract; XAverage(Close, BondMA) of Data2 on its own bars, carried
+            let Some(rows) = crate::futures::rows("&ZB") else { return Some(vec![]) };
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let lx = crate::second::align("&ZB", x.r, rows).own(|r| xavg(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u("bondma")));
+            let (fx, mx, sx, av) = (xavg(c, u("fast")), xavg(c, u("med")), xavg(c, u("slow")), atr(x, 10));
+            let (actv, stp) = (g("actvbar"), usd("stop_usd"));
+            let mut cf = cfg(); cf.ss.sl = usd("mm_usd");
+            let (mut lsb, mut ssb, mut bl, mut sl) = (0i64, 0i64, 0.0, 0.0);
+            run_ts(x, from, to, 11, cf, |i, st, _now, nx| {
+                if fx[i] > fx[i - 1] && mx[i] > sx[i] && lx[i] > lx[i - 1] { lsb = st.bn; bl = h[i] + 0.5 * av[i]; }
+                if fx[i] < fx[i - 1] && mx[i] < sx[i] && lx[i] < lx[i - 1] { ssb = st.bn; sl = l[i] - 0.5 * av[i]; }
+                if ((st.bn - lsb) as f64) < actv { nx.push(o(A::Buy, P::Stop(bl), "CurBond Buy")); }
+                if ((st.bn - ssb) as f64) < actv { nx.push(o(A::Sell, P::Stop(sl), "CurBond Sell")); }
+                if mx[i] < sx[i] { nx.push(o(A::Xl, P::Mkt, "MedXAvg below SlowXAvg")); }
+                if mx[i] > sx[i] { nx.push(o(A::Xs, P::Mkt, "MedXAvg above SlowXAvg")); }
+                nx.push(o(A::Xl, P::Stop(c[i] - stp), "Risk trailing stop")); nx.push(o(A::Xs, P::Stop(c[i] + stp), "Risk trailing stop"));
+            })
+        }
+        "stad5_im2" => {
+            // lane M3 (R4 #346): Data3 = the staged US prime rate (extra_data DPRIME), aligned to this context's bars by date
+            let Some(y) = x.extra.get("DPRIME") else { return Some(vec![]) };
+            let (pst, pn) = (g("pstep"), g("pnbars"));
+            let mut cf = cfg(); cf.ss.sl = usd("mm_usd");
+            let (mut prev, mut steps, mut steps1) = (f64::NAN, 0.0f64, 0.0f64);
+            run_ts(x, from, to, 0, cf, |i, st, now, _nx| {
+                // prSteps is advanced on every bar from the start of the data (Data3 history), so the run window does not change it
+                steps1 = steps;
+                if y[i].is_finite() { if prev.is_finite() { if y[i] < prev { steps += 1.0; } else if y[i] > prev { steps = 0.0; } } prev = y[i]; }
+                if st.pos == 1 { if st.bse(i) as f64 > pn { now.push(o(A::Xl, P::Mkt, "PNBars")); } }
+                else if steps >= pst && steps > steps1 { now.push(o(A::Buy, P::Mkt, "Prime cut")); }
+            })
+        }
+        "stad5_im1" => {
+            // lane M2 (R4 #346): Data2 = the staged Treasury yield (extra_data DGS30 / DGS10), aligned to this context's bars by date
+            let Some(y) = x.extra.get(if g("bond") >= 20. { "DGS30" } else { "DGS10" }) else { return Some(vec![]) };
+            let (tn, ly) = (g("tnbars"), g("lyldtrg"));
+            run_ts(x, from, to, 2, cfg(), |i, st, now, _nx| {
+                if st.pos == 1 { if st.bse(i) as f64 > tn { now.push(o(A::Xl, P::Mkt, "TNBars")); } }
+                else if y[i].is_finite() && y[i - 1].is_finite() && y[i] < y[i - 1] + ly { now.push(o(A::Buy, P::Mkt, "TBond")); }
+            })
+        }
         "stad5_fib382" => {
             let (xa, hl, rt, sul) = (xavg(c, u("xavglen")), u("hilolen"), g("retrace"), g("setuplen"));
             let mut cf = cfg(); cf.ss.sl = usd("mm_usd"); cf.ss.dtr = usd("tr_usd");
@@ -1180,7 +1408,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (k, d) = slowkd(x, u("len"));
             let (ob, os, sul) = (g("ob"), g("os"), g("setuplen"));
             let (mut bsu, mut ssu, mut bp, mut sp, mut bstop, mut sstop) = (0.0, 0.0, 99.0, 99.0, 0.0, 0.0);
-            run_ts(x, from, to, u("len") + 1, cfg(), |i, st, _now, nx| {
+            run_ts(x, from, to, u("len") + 1, Cfg { ep6, ..cfg() }, |i, st, _now, nx| {
                 if k[i] < os && xover(&k, &d, i) { bsu = highest(h, 2, i); bstop = l[i]; bp = 0.0; }
                 if k[i] > ob && xunder(&k, &d, i) { ssu = lowest(l, 2, i); sstop = h[i]; sp = 0.0; }
                 if st.pos == 1 { bp = sul + 1.0; } else { bp += 1.0; }
@@ -1266,6 +1494,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 nx.push(o(A::Sell, P::Stop(lowest(l, len, i) - off), "Channel Brk SE"));
             })
         }
+        "stad6_asi" => {
+            // lane K60 (decision #244 (2)): Vol 6 p.19-20 code on Wilder's Swing Index with L = 1 (cancels in the only ASI test)
+            let (s, swl_, sul, long_only) = (u("strength"), u("swinglen"), g("setuplen"), g("side") >= 0.5);
+            let off = g("tick").max(0.0) * x.market_tick();
+            let mut acc = 0.0;
+            let asi: Vec<f64> = swing_index(x).into_iter().map(|v| { acc += v; acc }).collect();
+            let (mut bsu, mut ssu, mut bp, mut sp, mut ilx, mut isx, mut lex, mut sex) = (sul, sul, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            run_ts(x, from, to, swl_ + s, Cfg { ep6, ..cfg() }, |i, st, _now, nx| {
+                let (sh, sha) = (swing_bar(h, true, s, s + 1, 1, i), swing_bar(h, true, s, swl_, 2, i));
+                let (sl, sla) = (swing_bar(l, false, s, s + 1, 1, i), swing_bar(l, false, s, swl_, 2, i));
+                if swing_high(h, 1, i) { sex = h[i - 1]; }
+                if swing_low(l, 1, i) { lex = l[i - 1]; }
+                if let (Some(a), Some(b)) = (sh, sha) { if asi[i - a] > asi[i - b] && st.pos != 1 { bsu = 0.0; bp = highest(h, 2, i); ilx = lowest(l, 2, i); } }
+                if let (Some(a), Some(b)) = (sl, sla) { if asi[i - a] < asi[i - b] && st.pos != -1 { ssu = 0.0; sp = lowest(l, 2, i); isx = highest(h, 2, i); } }
+                bsu += 1.0; ssu += 1.0;
+                if bsu <= sul { nx.push(o(A::Buy, P::Stop(bp + off), "ASI Buy")); nx.push(o(A::Xl, P::Stop(ilx - off), "ASI initial stop")); }
+                if ssu <= sul && !long_only { nx.push(o(A::Sell, P::Stop(sp - off), "ASI Sell")); nx.push(o(A::Xs, P::Stop(isx + off), "ASI initial stop")); }
+                if st.pos == 1 { bsu = sul; }
+                if st.pos == -1 { ssu = sul; }
+                if st.pos != 0 { nx.push(o(A::Xl, P::Stop(lex - off), "ASI trailing swing low")); nx.push(o(A::Xs, P::Stop(sex + off), "ASI trailing swing high")); }
+            })
+        }
         "stad6_adxmac" => {
             let (al, eb) = (u("avglen"), u("entrybar"));
             let (xh, xl) = (xavg(h, al), xavg(l, al));
@@ -1275,7 +1525,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ss = bv(n, |k| k >= 2 && c[k] < lm[k] && adx[k] > adx[k - 1]);
             let mut mph = vec![0i8; n];
             let (mut bt, mut stt) = (0.0, 0.0);
-            run_ts(x, from, to, (al + 1).max(2 * u("adxlen") + 2), cfg(), |i, st, _now, nx| {
+            run_ts(x, from, to, (al + 1).max(2 * u("adxlen") + 2), Cfg { ep6, ..cfg() }, |i, st, _now, nx| {
                 mph[i] = st.pos;
                 let spread = (um[i] - lm[i]) / 2.0;
                 if bs[i] { bt = c[i] + spread; }
@@ -1292,6 +1542,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let med: Vec<f64> = (0..n).map(|i| (h[i] + l[i]) / 2.0).collect();
             let (ua, la, ea) = (shift(&sma(h, al), dp), shift(&sma(l, al), dp), shift(&sma(&med, al), dp));
             let mut cf = cfg(); cf.ss.sl = usd("mm_usd"); cf.ss.be = usd("be_usd"); cf.ss.dtr = usd("dtr_usd");
+            // the book's British Pound test (p.38): only the money-management stop changes, $200 -> $900
+            if fut_pv.is_some() { cf.ss.entry_close = true; }
+            if fut_pv.is_some() && !p.contains_key("mm_usd") { cf.ss.sl = 900.0 / fut_pv.unwrap_or(1.0); }
             run_ts(x, from, to, al + dp + 1, cf, |i, st, now, nx| {
                 let rlb = med[i] > h[i - 1] && rg[i] > rg[i - 1];
                 let rls = med[i] < l[i - 1] && rg[i] > rg[i - 1];
@@ -1449,6 +1702,63 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if st.pos == -1 { if st.bse(i) == 0 { pl = l[i]; } if l[i] < pl { pl = l[i]; }
                     nx.push(o(A::Xs, P::Stop(e + a[i] * pa), "Protective")); nx.push(o(A::Xs, P::Stop(pl + a[i] * ta), "Trailing")); }
                 lord_p = lord; sord_p = sord;
+            })
+        }
+        "stad9_djnikkei" => {
+            // lane D3 (R4 #340): Data1 = Norgate &NKD, Data2 = the Dow close (extra series DJ_INDUSTRIAL, NaN on dates without a Dow bar)
+            // TradeStation Data2: a date without a Dow bar keeps the last Dow bar, and Close[1] stays the Dow bar before it
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let ds = x.series("DJ_INDUSTRIAL").map(|v| v.to_vec()).unwrap_or_else(|| vec![f64::NAN; n]);
+            let last_dow = ds.iter().rposition(|v| v.is_finite()).unwrap_or(0); // nothing after the Dow file ends
+            let (mut cur, mut prev, mut gap) = (f64::NAN, f64::NAN, 0usize);
+            run_ts(x, from, to, 0, cfg(), |i, _st, _now, nx| {
+                // a carried Dow bar older than CAP (5) Data1 bars is missing data, not a signal (second::CAP, #223 (1))
+                if ds[i].is_finite() { prev = cur; cur = ds[i]; gap = 0; } else { gap += 1; }
+                if i <= last_dow && prev.is_finite() && cur.is_finite() && gap <= crate::second::CAP {
+                    if prev < cur { nx.push(o(A::Buy, P::Mkt, "Dow up: Buy")); } else { nx.push(o(A::Sell, P::Mkt, "Dow not up: Sell")); }
+                }
+            })
+        }
+        "stad9_iic" => {
+            // lane D3 (R4 #340): Data2-Data7 = Norgate futures of six foreign indices (back-adjusted closes, carried on Data1 dates)
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let mut cs = vec![];
+            for sym in ["&SXF", "&FCE", "&FDAX", "&FESX", "&NKD", "&LFT"] {
+                let Some(rows) = crate::futures::rows(sym) else { return Some(vec![]) };
+                cs.push(crate::second::align(sym, x.r, rows).carried(crate::second::Field::C));
+            }
+            let w = [g("w2"), g("w3"), g("w4"), g("w5"), g("w6"), g("w7")];
+            let den: f64 = w.iter().sum();
+            let comp: Vec<f64> = (0..n).map(|i| if (den - 1.0).abs() < 1e-9 && cs.iter().all(|s| s[i].is_finite()) { (0..6).map(|k| w[k] * cs[k][i]).sum::<f64>() / den } else { f64::NAN }).collect();
+            let (fa, sa) = (sma(&comp, u("fast")), sma(&comp, u("slow")));
+            let off = g("tick").max(0.0) * x.market_tick();
+            run_ts(x, from, to, 1, cfg(), |i, _st, _now, nx| {
+                if i == 0 { return; }
+                if fa[i] > sa[i] && fa[i - 1] <= sa[i - 1] { nx.push(o(A::Buy, P::Stop(c[i] + off), "Composite Buy")); }
+                if fa[i] < sa[i] && fa[i - 1] >= sa[i - 1] { nx.push(o(A::Sell, P::Stop(c[i] - off), "Composite Sell")); }
+            })
+        }
+        "stad7_dow" => {
+            // Vol 7 p.15, line by line; Data2-4 = the Dow averages' highs (aligned by date, NaN where an average has no bar)
+            let (len, conf, ats) = (u("len"), u("confirm") as i64, g("atrs"));
+            let a = atr(x, u("atrlen"));
+            let nan = vec![f64::NAN; n];
+            let ser = |k: &str| x.series(k).map(|v| v.to_vec()).unwrap_or_else(|| nan.clone());
+            let (d2, d3, d4) = (ser("DJ_IND_HIGH"), ser("DJ_TRANS_HIGH"), ser("DJ_UTIL_HIGH"));
+            let newhi = |v: &[f64], i: usize| v[i].is_finite() && v[i + 1 - len..i].iter().all(|z| z.is_finite()) && v[i] > highest(v, len, i - 1);
+            let (mut count, mut di, mut dt, mut du, mut hihi) = (0i64, 0, 0, 0, 0.0);
+            run_ts(x, from, to, len + 1, cfg(), |i, st, _now, nx| {
+                if h[i] > highest(h, len, i - 1) && count == 0 && st.pos != 1 { count = 1; }
+                if count != 0 && count <= conf {
+                    if newhi(&d2, i) { di = 1; }
+                    if newhi(&d3, i) { dt = 1; }
+                    if newhi(&d4, i) { du = 1; }
+                    count += 1;
+                } else { count = 0; }
+                if count != 0 && di + dt + du == 3 { nx.push(o(A::Buy, P::Mkt, "Dow Theory buy")); di = 0; dt = 0; du = 0; count = 0; }
+                if st.bse(i) == 0 { hihi = h[i]; }
+                if st.pos == 1 && h[i] > hihi { hihi = h[i]; }
+                if st.pos == 1 { nx.push(o(A::Xl, P::Stop(hihi - ats * a[i]), "ATR trailing stop")); }
             })
         }
         "stad7_trbo" => {
@@ -2022,10 +2332,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "stad12_shifty" => {
-            let (fa, sa) = (sma(c, u("fast")), sma(c, u("slow")));
+            // lane D3 (R4 #340): the book's crude-oil test (p.104-106): 40 / 80, Dllr Risk Trailing $1,000 long and $500 short
+            let cru = fut_pv.is_some();
+            let (fast, slow) = if cru && !p.contains_key("fast") { (40usize, 80usize) } else { (u("fast"), u("slow")) };
+            let (fa, sa) = (sma(c, fast), sma(c, slow));
             let mut cf = cfg(); cf.ss.dtr = usd("dtr_usd");
+            if cru && !p.contains_key("dtr_usd") { let pv = fut_pv.unwrap_or(1.0); cf.ss.dtr = 1000.0 / pv; cf.ss.dtr_short = 500.0 / pv; }
             let (mut tcu, mut lcu, mut tco, mut lco) = (0.0, 0.0, 0.0, 0.0);
-            run_ts(x, from, to, u("slow").max(u("fast")) + 1, cf, |i, st, now, nx| {
+            run_ts(x, from, to, slow.max(fast) + 1, cf, |i, st, now, nx| {
                 if c[i] > sa[i] { nx.push(o(A::Buy, P::Stop(fa[i] + pt), "Shifty Buy")); }
                 if xunder(c, &fa, i) { lcu = tcu; tcu = c[i]; }
                 if tcu < lcu && st.pos == 1 { nx.push(o(A::Xl, P::Stop(fa[i] - pt), "Lower cross")); } else if xunder(c, &sa, i) { now.push(o(A::Xl, P::Mkt, "Below slow")); }
@@ -2107,9 +2421,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "stad13_dmarl" => {
-            let (ln, dp) = (u("len"), g("disp").round() as usize);
+            // lane D3 (R4 #340): the book's Coffee test (p.56): StopLoss $3,000, BreakevenFloor $3,000, DllrRiskTrailing $5,000, DMAvgLength 50, Displacement 10
+            let cof = fut_pv.is_some();
+            let dflt = |k: &str, v: f64| if cof && !p.contains_key(k) { v } else { g(k) };
+            let (ln, dp) = (dflt("len", 50.).max(1.0).round() as usize, dflt("disp", 10.).round() as usize);
             let (ub, lb) = (shift(&sma(h, ln), dp), shift(&sma(l, ln), dp));
             let mut cf = cfg(); cf.ss.sl = usd("sl_usd"); cf.ss.be = usd("be_usd"); cf.ss.dtr = usd("dtr_usd");
+            if cof { for (k, v) in [("sl_usd", 3000.0), ("be_usd", 3000.0), ("dtr_usd", 5000.0)] { if !p.contains_key(k) { let q = v / fut_pv.unwrap_or(1.0); match k { "sl_usd" => cf.ss.sl = q, "be_usd" => cf.ss.be = q, _ => cf.ss.dtr = q } } } }
             run_ts(x, from, to, ln + dp + 1, cf, |i, _st, _now, nx| {
                 let med = (h[i] + l[i]) / 2.0;
                 if med > h[i - 1] && rg[i] > rg[i - 1] && c[i] > ub[i] { nx.push(o(A::Buy, P::Stop(h[i] + pt), "Range Leader Buy")); }
@@ -2229,6 +2547,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "stad13_tripleplay" => {
             let (pl, s, bte, epd, t1d, tsd) = (g("patlen"), u("strength"), g("bte"), g("epd"), g("t1d"), g("tsd"));
             let weak_rl = g("weak_src") >= 0.5;
+            let (pt, long_only) = (g("tick").max(0.0) * x.market_tick(), g("side") >= 0.5); // lane K60: #57 ticks; book's long-only test
             let (ub, lbd) = (bband(c, u("len"), g("dev")), bband(c, u("len"), -g("dev")));
             let swh = bv(n, |k| swing_high(h, s, k)); let swl = bv(n, |k| swing_low(l, s, k));
             let lim = pl + s as f64;
@@ -2262,7 +2581,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     if bc < bte { bc += 1.0; } else { mlt = false; }
                     if sc < bte { sc += 1.0; } else { mst = false; }
                     if mlt { nx.push(o(A::Buy, P::Stop(lep), "Buy 2")); }
-                    if mst { nx.push(o(A::Sell, P::Stop(sep), "Sell 2")); }
+                    if mst && !long_only { nx.push(o(A::Sell, P::Stop(sep), "Sell 2")); }
                 }
                 let full = (st.units - 1.0).abs() < 1e-9;
                 if st.pos == 1 {
@@ -2282,7 +2601,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "stad13_volex" => {
             let (lf, sf, trl, delay) = (g("lf"), g("sf"), u("trail"), g("delay") as usize);
             let (stale_t, stale_pts, go) = (g("stale_t") as usize, usd("stale_usd"), g("go_usd") / g("bpv"));
-            let mut cf = cfg(); cf.ss.sl = usd("sl_usd");
+            let mut cf = cfg(); cf.ss.sl = usd("sl_usd"); cf.minute = g("path") >= 0.5;
             run_ts(x, from, to, 4usize.max(trl), cf, |i, st, _now, nx| {
                 let on = nxo(i); let ar = avg_at(&rg, 4, i);
                 nx.push(o(A::Buy, P::Stop(on + ar * lf), "VolEx Buy")); nx.push(o(A::Sell, P::Stop(on - ar * sf), "VolEx Sell"));
@@ -2324,6 +2643,72 @@ mod tests {
     fn rows(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
         v.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: Some(1000.0) }).collect()
     }
+    /// Lane M2: STAD5 Intermarket I on a hand-made yield series.
+    #[test]
+    fn im1_buys_when_yield_is_below_previous_plus_quarter_and_exits_after_bar_51() {
+        let r = rows(&(0..70).map(|i| { let c = 100. + i as f64; (c, c, c, c) }).collect::<Vec<_>>());
+        let mut x = Ctx::new(&r, &r, &[]);
+        let mut y = vec![5.0; 70];
+        y[3] = 5.3; y[10] = f64::NAN; // a rise of 0.3 on bar 3 = no signal; a missing print = no signal on 10 and 11
+        x.extra.insert("DGS30".into(), y);
+        let t = run("stad5_im1", &x, 0, 69, &Params::new()).unwrap();
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (2, 53)); // bar 2: first with a previous print; BarsSinceEntry 51 on bar 53
+        assert_eq!(t[1].legs[0].i, 54); // flat after the exit bar, so the next entry is bar 54
+        assert!(run("stad5_im1", &Ctx::new(&r, &r, &[]), 0, 69, &Params::new()).unwrap().is_empty());
+    }
+    /// Lane M3: STAD5 Intermarket II on a hand-made prime-rate series.
+    #[test]
+    fn im2_buys_on_a_cut_bar_exits_after_bar_101_and_stops_at_nine_points() {
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..130).map(|i| { let c = 100. + i as f64 * 0.1; (c, c + 0.2, c - 0.2, c) }).collect();
+        v[20] = (102., 102., 90., 95.); // the low is more than 9 points below the entry close of bar 5
+        let r = rows(&v);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let mut y = vec![5.0; 130];
+        for i in 5..130 { y[i] = 4.75; } y[8] = f64::NAN; // a cut on bar 5; a missing print on bar 8 changes nothing
+        x.extra.insert("DPRIME".into(), y);
+        let t = run("stad5_im2", &x, 0, 129, &Params::new()).unwrap();
+        assert_eq!(t[0].legs[0].i, 5);
+        assert_eq!(t[0].exit_i, 20); // stop: entry 100.5 - 9 = 91.5, bar 20 low 90 with the open above it
+        assert!((t[0].exit_px - (100.5 - 9.0)).abs() < 1e-9);
+        assert!(run("stad5_im2", &Ctx::new(&r, &r, &[]), 0, 129, &Params::new()).unwrap().is_empty());
+    }
+    /// Lane M3 reference feed (Norgate &SP + DPRIME): `IM2_DUMP=out IM2_SP=&SP.csv IM2_Y=DPRIME.csv cargo test --release im2_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn im2_dump() {
+        let (Ok(out), Ok(sp), Ok(yf)) = (std::env::var("IM2_DUMP"), std::env::var("IM2_SP"), std::env::var("IM2_Y")) else { return };
+        let q = |s: &str| s.trim_matches('"').to_string();
+        let rows: Vec<Row> = std::fs::read_to_string(sp).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            Some(Row { ticker: "&SP".into(), date: q(f[0]), open: q(f[3]).parse().ok()?, high: q(f[4]).parse().ok()?, low: q(f[5]).parse().ok()?, close: q(f[6]).parse().ok()?, volume: None }) }).collect();
+        let ym: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(yf).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect();
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert("DPRIME".into(), rows.iter().map(|r| ym.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let end = std::env::var("IM2_END").unwrap_or("9999-12-31".into()); // the published window ends 1995-07-31 (mhstp::OPEN_WINDOW)
+        let last = rows.partition_point(|r| r.date.as_str() <= end.as_str()) - 1;
+        let t = run("stad5_im2", &x, 0, last, &Params::new()).unwrap();
+        let mut s = String::new();
+        for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, s).unwrap();
+    }
+    /// Lane M2 reference feed (SPX + DGS30 or DGS10): `IM_DUMP=out IM_US=us_data.csv IM_Y=DGS30.csv IM_BOND=30 cargo test --release im_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn im_dump() {
+        let (Ok(out), Ok(us), Ok(yf)) = (std::env::var("IM_DUMP"), std::env::var("IM_US"), std::env::var("IM_Y")) else { return };
+        let iso = |d: &str| { let v: Vec<&str> = d.split('-').collect(); format!("{}-{}-{}", v[2], v[1], v[0]) };
+        let rows: Vec<Row> = std::fs::read_to_string(us).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != "SPX" { return None; }
+            Some(Row { ticker: f[0].into(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let ym: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(yf).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect();
+        let bond: f64 = std::env::var("IM_BOND").ok().and_then(|v| v.parse().ok()).unwrap_or(30.);
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert(if bond >= 20. { "DGS30" } else { "DGS10" }.into(), rows.iter().map(|r| ym.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let mut p = Params::new(); p.insert("bond".into(), bond);
+        let t = run("stad5_im1", &x, 0, rows.len() - 1, &p).unwrap();
+        let mut s = String::new();
+        for z in &t { s += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, s).unwrap();
+    }
     #[test]
     fn pyramid_adds_legs_and_partial_exit_averages() {
         let r = rows(&[(100., 101., 99., 100.), (100., 102., 99., 101.), (101., 104., 100., 103.), (103., 106., 102., 105.), (105., 106., 104., 105.)]);
@@ -2359,6 +2744,22 @@ mod tests {
         assert_eq!(w.map, vec![-1, -1, -1, -1, 0, 0, 0, 0, 0, 1]);
         assert_eq!(w.h[0], 6.0);
     }
+    /// Lane K60: Wilder's worked example (New Concepts p.91: day 1 O 50.50 H 52.00 L 50.00 C 51.50; day 2 O 51.80 H 53.00
+    /// L 51.30 C 52.80): N = 2.05, the largest is H2 - L2 = 1.70 so R = 1.70 + 0.25 x 1.00 = 1.95, K = 1.50; with L = 3: 26.28.
+    #[test]
+    fn swing_index_follows_wilders_worked_example_and_swing_bars_count_instances() {
+        let r = rows(&[(50.50, 52.00, 50.00, 51.50), (51.80, 53.00, 51.30, 52.80)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let si = swing_index(&x);
+        assert_eq!(si[0], 0.0);
+        assert!((si[1] / 3.0 - 50.0 * 2.05 / 1.95 * 1.5 / 3.0).abs() < 1e-9 && (si[1] / 3.0 - 26.28).abs() < 0.01, "{}", si[1] / 3.0);
+        // highs with strength-1 swing highs at bars 1 and 4 (seen from bar 6): first instance 2 bars ago, second 5 bars ago
+        let h = [1., 3., 2., 2.5, 4., 3., 3.5];
+        assert_eq!(swing_bar(&h, true, 1, 7, 1, 6), Some(2));
+        assert_eq!(swing_bar(&h, true, 1, 7, 2, 6), Some(5));
+        assert_eq!(swing_bar(&h, true, 1, 5, 2, 6), None);
+        assert_eq!(swing_bar(&h, true, 1, 2, 1, 6), None); // 2 bars ago is outside a length of 2
+    }
     #[test]
     fn ids_unique_prefixed_and_every_live_strategy_runs() {
         let cat = catalogue();
@@ -2382,6 +2783,15 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 65); // + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 72); // + stad5_im2 (lane M3); + stad5_im1 (lane M2); + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
+
+// Lane K58 (5 Nov 2026, decision #202 extending #196(2)): VolEx revisited's $1,000 SetStopLoss and $200 First Good Open on the
+// 1999-2000 S&P contract at $250 a point (the module's bpv default; Vol 13 p.156 inputs) = 4 and 0.8 points, SPX only (gate `allowed`).
+pub const SPX_PTS: &[&str] = &["stad13_volex"];
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Omega Research tested VolEx revisited on S&P 500 futures (1/99-4/00) with a $1,000 stop and a $200 first-good-open exit per contract; at that contract's $250 per index point they are 4 and 0.8 points. It runs on the S&P 500 index (SPX) only, the points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index.",
+    basis: "Omega Research STAD Vol 13 ch.12 (printed p.153-162, code p.156); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_s13_ref.py (K43's stad2 oracle), #179 two-window check K58w/m3_s13.txt.",
+};

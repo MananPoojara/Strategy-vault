@@ -9,7 +9,7 @@
 //! US/India stocks here are a declared application.
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::apta::ema;
-use super::vrsdd::manage;
+use super::vrsdd::manage_ep6;
 /// Admitted ids (authors/dorfman/admission/hf_ref.py (header)).
 pub const REVIEWED: &[&str] = &["rdhft_ema3_turn"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
@@ -34,7 +34,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     (id == "rdhft_ema3_turn").then(|| vec![p("side", "Sides: 0 = long and short (book), 1 = long only, 2 = short only", 0., 0., 2., 1.),
-        p("pct", "First target when no 10/20-day average lies ahead, % (book 5-10)", 5., 5., 10., 1.)])
+        p("pct", "First target when no 10/20-day average lies ahead, % (book 5-10)", 5., 5., 10., 1.)]).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243, lane K63)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -42,6 +42,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (side, pct) = (g("side").round() as i64, g("pct") / 100.);
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let (e3, e10, s20, s50, s200) = (ema(c, 3), ema(c, 10), sma(c, 20), sma(c, 50), sma(c, 200));
     let mut out = vec![];
@@ -62,7 +64,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             Some(t1) => (t1, nearest(t1, &[e10[t], s20[t], s50[t], s200[t]]).unwrap_or(t1 * (1. + d * 0.05))),
             None => { let t1 = ep * (1. + d * pct); (t1, t1 * (1. + d * 0.05)) }
         };
-        let tr = manage(x, d, e, ep, kind, stop, &[(0.5, t1), (0.5, t2)], true, usize::MAX, to);
+        let tr = manage_ep6(x, d, e, ep, kind, stop, &[(0.5, t1), (0.5, t2)], true, usize::MAX, to, on);
         let (xi, op) = (tr.exit_i, tr.open);
         out.push(tr);
         if op { break; }

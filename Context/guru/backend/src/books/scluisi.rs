@@ -7,7 +7,7 @@ use super::lc3::Pos;
 pub const REVIEWED: &[&str] = &["scluisi_nr"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Day trade. When yesterday's range (high - low) is at most 0.6% of yesterday's close, today buy on a stop at yesterday's high or sell short on a stop at yesterday's low (a trade beyond the level; filled at the level, or at the open when the market opens beyond it); the protective stop is half of yesterday's range from the entry level ('If the high is 500.00 and the low is 497.00, the stop-loss order is placed at half the range, or 1.50 points from the entry (high or low)'), filled at that level; otherwise the position is liquidated at the close. One trade a day: if both levels trade, the one nearer the open is taken first; when the stop lies inside the entry day's range it is taken as hit (the order inside the day is unknown, so the worse case is used). The range cap: the article's '3.00 points' was set for the S&P 500 near 500 in 1995 ('in the S&P 500, 3.00 points is a good average'); it is a filter threshold, not a stop or target, so the default is its percentage equivalent, 0.6% of price (3.00 / 500, decision #207, as #187), which runs on indices, ETFs and stocks, US and India (a declared application). The literal 3.00 S&P points is option mode = 0, on SPX only (no SPX day since 2014 has a range of 3.00 points or less, the smallest is 3.79, so it has no trades there). The article's 'second method' (several days below the average range, a three-day high/low trigger) is not specified enough and is left out. Book: S&P 500 futures May-June 1995 chart examples, no test statistics. The default fails the M3 tradable-vs-cash daily check on SPX (decision #179): the SPX and NIFTY 50/NIFTYBANK results are withdrawn and SPY carries the S&P result.";
+const NOTE: &str = "[Declared readings] Day trade. When yesterday's range (high - low) is at most 0.6% of yesterday's close, today buy on a stop at yesterday's high or sell short on a stop at yesterday's low (a trade beyond the level; filled at the level, or at the open when the market opens beyond it); the protective stop is half of yesterday's range from the entry level ('If the high is 500.00 and the low is 497.00, the stop-loss order is placed at half the range, or 1.50 points from the entry (high or low)'), filled at that level; otherwise the position is liquidated at the close. One trade a day: if both levels trade, the one nearer the open is taken first; when the stop lies inside the entry day's range it is taken as hit (the order inside the day is unknown, so the worse case is used). On days the 1-minute files cover, a day whose order matters (both levels, or the entry and the stop) is decided on the real 1-minute path instead (decision #243, EP6, lane K62); the daily reading stays the rule on the other days. The range cap: the article's '3.00 points' was set for the S&P 500 near 500 in 1995 ('in the S&P 500, 3.00 points is a good average'); it is a filter threshold, not a stop or target, so the default is its percentage equivalent, 0.6% of price (3.00 / 500, decision #207, as #187), which runs on indices, ETFs and stocks, US and India (a declared application). The literal 3.00 S&P points is option mode = 0, on SPX only (no SPX day since 2014 has a range of 3.00 points or less, the smallest is 3.79, so it has no trades there). The article's 'second method' (several days below the average range, a three-day high/low trigger) is not specified enough and is left out. Book: S&P 500 futures May-June 1995 chart examples, no test statistics. The default fails the M3 tradable-vs-cash daily check on SPX (decision #179): the SPX and NIFTY 50/NIFTYBANK results are withdrawn and SPY carries the S&P result.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "scluisi_nr", name: "Luisi narrow range: after a day with a range of 0.6% of price or less (3.00 S&P points at 500), buy / sell the break of its high / low, stop at half the range, out at the close", group: "S&C: On Range Trading (Luisi, V.13:12)", session: 0, dir: "Long/Short", status: Status::Live,
@@ -24,7 +24,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     reviewed(id).then(|| vec![p("mode", "Range cap: 1 = % of yesterday's close (default, 0.6% = 3.00 / 500); 0 = the article's literal index points (SPX only)", 1., 0., 1., 1.),
         p("cap", "Range cap in index points for mode 0 (article 3.00)", 3., 0.25, 50., 0.25),
-        p("pct", "Range cap, % of yesterday's close (0.6 = 3.00 / 500)", 0.6, 0.05, 5., 0.05)])
+        p("pct", "Range cap, % of yesterday's close (0.6 = 3.00 / 500)", 0.6, 0.05, 5., 0.05)]).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243)
 }
 
 /// Decision #207: the literal-points option (mode 0) means what the article meant only on SPX.
@@ -37,24 +37,50 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (pct_mode, cap, pct) = (g("mode").round() == 1., g("cap"), g("pct") / 100.);
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p);
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut pos = Pos::new();
+    // EP6 (#243, lane K62): one day's events: (side, entry price, Some(stop exit price)); side 0 = no entry
+    #[derive(Clone)]
+    struct S { side: f64, e: f64, out: Option<f64> }
     for t in from.max(1)..=to {
         let (ph, pl) = (h[t - 1], l[t - 1]);
         let rng = ph - pl;
         let lim = if pct_mode { pct * c[t - 1] } else { cap };
         if !(rng > 0. && rng <= lim) { continue; }
-        let (up, dn) = (h[t] > ph, l[t] < pl);
-        let side = if up && dn { if ph - o[t] <= o[t] - pl { 1. } else { -1. } } else if up { 1. } else if dn { -1. } else { continue };
-        if side > 0. {
-            let stop = ph - rng / 2.;
-            pos.enter(1., t, o[t].max(ph), "stop");
-            if l[t] <= stop { pos.exit(t, stop, "stop: half the range"); } else { pos.exit(t, c[t], "close"); }
-        } else {
-            let stop = pl + rng / 2.;
-            pos.enter(-1., t, o[t].min(pl), "stop");
-            if h[t] >= stop { pos.exit(t, stop, "stop: half the range"); } else { pos.exit(t, c[t], "close"); }
-        }
+        // the daily reading (unchanged): both levels traded -> the one nearer the open; the stop counts whenever the day reaches it
+        let conv = |s: &mut S| {
+            let (up, dn) = (h[t] > ph, l[t] < pl);
+            let side = if up && dn { if ph - o[t] <= o[t] - pl { 1. } else { -1. } } else if up { 1. } else if dn { -1. } else { 0. };
+            *s = if side > 0. { let stop = ph - rng / 2.; S { side, e: o[t].max(ph), out: (l[t] <= stop).then_some(stop) } }
+                 else if side < 0. { let stop = pl + rng / 2.; S { side, e: o[t].min(pl), out: (h[t] >= stop).then_some(stop) } }
+                 else { S { side: 0., e: f64::NAN, out: None } };
+        };
+        // the path walk: the first level traded THROUGH (strictly beyond, as the daily rule's h > yesterday's high) opens the day's
+        // one trade; then only its stop (half the range from the level; a touch counts, as in the daily rule)
+        let walk = |s: &mut S, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+            let mut ev = vec![];
+            for g in segs {
+                if s.out.is_some() { break; }
+                if s.side == 0. {
+                    let lv = if g.up() { ph } else { pl };
+                    if !(if g.up() { lv >= g.a && lv < g.b } else { lv <= g.a && lv > g.b }) { continue; }
+                    *s = S { side: if g.up() { 1. } else { -1. }, e: g.fill(lv), out: None };
+                    ev.push(crate::intraday_ep6::Ev { k: 0, px: s.e, up: g.up() });
+                    continue; // the rest of the segment moves away from the stop
+                }
+                let stop = if s.side > 0. { ph - rng / 2. } else { pl + rng / 2. };
+                if g.up() == (s.side < 0.) && g.inside(stop) { s.out = Some(g.fill(stop)); ev.push(crate::intraday_ep6::Ev { k: 1, px: s.out.unwrap(), up: g.up() }); }
+            }
+            ev
+        };
+        let mut st = S { side: if o[t] > ph { 1. } else if o[t] < pl { -1. } else { 0. }, e: if o[t] > ph || o[t] < pl { o[t] } else { f64::NAN }, out: None };
+        let day = crate::intraday_ep6::resolve_conv(x, t, on, &mut st, conv, |s, hf| walk(s, &crate::intraday_ep6::bar_segs(o[t], h[t], l[t], c[t], hf)), walk);
+        if st.side == 0. { continue; }
+        pos.enter(st.side, t, st.e, "stop");
+        match st.out { Some(px) => pos.exit(t, px, "stop: half the range"), None => pos.exit(t, c[t], "close") }
+        if let Some(z) = pos.out.last_mut() { crate::intraday_ep6::mark(z, day); }
     }
     Some(pos.done(to, c[to]))
 }

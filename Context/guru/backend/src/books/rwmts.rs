@@ -12,10 +12,14 @@
 use crate::connors::{dmi, rsi, sma, true_range, wilder, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rwmts";
-/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: the three futures-dollar rules (macd_pt,
-/// macd_pt_sl, rsi200_usd: $2,500 per E-mini contract), the figure with an unstated ADX filter and the intraday systems.
+/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: macd_pt_sl ($2,500 per E-mini contract; fails the
+/// #168 book check), the figure with an unstated ADX filter and the intraday systems. macd_pt and rsi200_usd: SPX_PTS.
 pub const REVIEWED: &[&str] = &["rwmts_sma200_sar", "rwmts_sma26_sar", "rwmts_sma26_wait3", "rwmts_env_trend", "rwmts_env_fade", "rwmts_macd_sar", "rwmts_dmi_sar", "rwmts_psar", "rwmts_psar_fade", "rwmts_stoch_ext", "rwmts_rsi_ext", "rwmts_mom10_sar", "rwmts_bb_fade", "rwmts_cci_trend", "rwmts_cci_fade", "rwmts_ma2x", "rwmts_ichi2", "rwmts_ma3x", "rwmts_ichi3", "rwmts_macd", "rwmts_dmi", "rwmts_dmi_adx", "rwmts_cb20", "rwmts_bb_break", "rwmts_cb20_stop3", "rwmts_rsi200", "rwmts_bb200", "rwmts_bb_adx", "rwmts_stoch_cci", "rwmts_stoch_cci_time"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Lane K66 (R4 #262 / #196(2)): the book's $2,500 per contract on the NAMED CME E-mini S&P 500 (Table 3.1 p.44, note b
+/// "Cash S&P 500 Index x 50"; Table 4.3 p.78 contract size 50) = 50 S&P index points, exact. SPX only (gate list), from
+/// 2014 (real opens, clamp_open), admitted by ADMISSION_SPX.
+pub const SPX_PTS: &[&str] = &["rwmts_macd_pt", "rwmts_rsi200_usd"];
 
 // ------------------------------------------------------------------ indicators
 
@@ -84,20 +88,22 @@ fn lo_n(x: &Ctx, i: usize, n: usize) -> f64 { x.l[i + 1 - n..=i].iter().cloned()
 // ------------------------------------------------------------------ simulator
 
 #[derive(Clone, Copy)]
-struct Pos { dir: f64, ei: usize, epx: f64 }
+struct Pos { dir: f64, ei: usize, epx: f64, od: crate::intraday_ep6::Day } // od: EP6 (lane K62) mark of the position
 
 struct Book { out: Vec<Trade>, pos: Option<Pos> }
 impl Book {
     fn new() -> Self { Book { out: vec![], pos: None } }
-    fn enter(&mut self, dir: f64, i: usize, px: f64) { self.pos = Some(Pos { dir, ei: i, epx: px }); }
+    fn enter(&mut self, dir: f64, i: usize, px: f64) { self.pos = Some(Pos { dir, ei: i, epx: px, od: crate::intraday_ep6::Day::Plain }); }
     fn exit(&mut self, i: usize, px: f64, reason: &str, sig: usize) {
         if let Some(p) = self.pos.take() {
-            self.out.push(Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.epx, w: 1.0 }], exit_i: i, exit_px: px,
-                reason: reason.into(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] });
+            let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.ei, px: p.epx, w: 1.0 }], exit_i: i, exit_px: px,
+                reason: reason.into(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] };
+            crate::intraday_ep6::mark(&mut t, p.od);
+            self.out.push(t);
         }
     }
     fn finish(mut self, x: &Ctx, to: usize) -> Vec<Trade> {
-        if self.pos.is_some() { self.exit(to, x.c[to], "open", to); self.out.last_mut().unwrap().open = true; }
+        if self.pos.is_some() { self.exit(to, x.c[to], "open", to); self.out.last_mut().unwrap().open = true; } // the mark: exit()
         self.out
     }
 }
@@ -120,7 +126,12 @@ fn level_fill(x: &Ctx, t: usize, dir: f64, stop: Option<f64>, tgt: Option<f64>) 
 /// next open; an opposite signal reverses. `cx(s, p)` = condition exit on the close of s, filled at the next open.
 /// `lv(t, p)` = (stop, target) price orders working during bar t (including the entry bar).
 fn sim(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> i8, cx: &dyn Fn(usize, &Pos) -> Option<&'static str>,
-       lv: &dyn Fn(usize, &Pos) -> (Option<f64>, Option<f64>)) -> Vec<Trade> {
+       lv: &dyn Fn(usize, &Pos) -> (Option<f64>, Option<f64>)) -> Vec<Trade> { sim_ep6(x, from, to, ent, cx, lv, false) }
+
+/// `sim` with EP6 (#243, lane K62): with `on`, a bar on which the stop and the target are both inside the range (the open
+/// through neither) is decided on the real 1-minute path (intraday_ep6::stop_target); level_fill (stop first) otherwise.
+fn sim_ep6(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> i8, cx: &dyn Fn(usize, &Pos) -> Option<&'static str>,
+       lv: &dyn Fn(usize, &Pos) -> (Option<f64>, Option<f64>), on: bool) -> Vec<Trade> {
     let mut b = Book::new();
     for t in from + 1..=to {
         let s = t - 1;
@@ -136,7 +147,9 @@ fn sim(x: &Ctx, from: usize, to: usize, ent: &dyn Fn(usize) -> i8, cx: &dyn Fn(u
         }
         if let Some(p) = b.pos {
             let (st, tg) = lv(t, &p);
-            if let Some((px, why)) = level_fill(x, t, p.dir, st, tg) { b.exit(t, px, why, t); }
+            let (fill, day) = crate::intraday_ep6::stop_target(x, t, p.dir, st.unwrap_or(f64::NAN), tg.unwrap_or(f64::NAN), on, ("stop", "target"), || level_fill(x, t, p.dir, st, tg));
+            if let Some(q) = b.pos.as_mut() { q.od = q.od.worst(day); }
+            if let Some((px, why)) = fill { b.exit(t, px, why, t); }
         }
     }
     b.finish(x, to)
@@ -169,8 +182,12 @@ fn channel_sim(x: &Ctx, from: usize, to: usize, n: usize, stop_pct: Option<f64>)
     b.finish(x, to)
 }
 
-/// Wilder parabolic: returns per bar the flip (dir, price) if the SAR was hit on that bar.
-fn psar_flips(x: &Ctx, to: usize, af0: f64, afmax: f64) -> Vec<Option<(f64, f64)>> {
+/// Wilder parabolic: returns per bar the flip (dir, price) of that bar.
+/// `close` (lane K67, R4 #264 (1), the default): the parabolic flips only when a CLOSE crosses the SAR (long when the close
+/// is at or above it, short at or below); the new SAR is the prior extreme; the price is that close (the order fills at the
+/// next open). This reproduces the Fig 2.15 legend (31 Dec 2003 Para = 1095.28) on SPX. Otherwise (labelled option) it
+/// flips during the day when the low / high touches the SAR, filled at the SAR (the open when the bar opens beyond it).
+fn psar_flips(x: &Ctx, to: usize, af0: f64, afmax: f64, close: bool) -> Vec<Option<(f64, f64)>> {
     let n = to + 1;
     let mut out = vec![None; n];
     if n < 3 { return out; }
@@ -178,15 +195,19 @@ fn psar_flips(x: &Ctx, to: usize, af0: f64, afmax: f64) -> Vec<Option<(f64, f64)
     let mut af = af0;
     let (mut sar, mut ep) = if long { (x.l[0].min(x.l[1]), x.h[1].max(x.h[0])) } else { (x.h[0].max(x.h[1]), x.l[1].min(x.l[0])) };
     for i in 2..n {
+        if close {
+            if long && x.c[i] <= sar { out[i] = Some((-1.0, x.c[i])); long = false; sar = ep; ep = x.l[i]; af = af0; continue; }
+            if !long && x.c[i] >= sar { out[i] = Some((1.0, x.c[i])); long = true; sar = ep; ep = x.h[i]; af = af0; continue; }
+        }
         if long {
-            if x.l[i] <= sar {
+            if !close && x.l[i] <= sar {
                 out[i] = Some((-1.0, x.o[i].min(sar)));
                 long = false; sar = ep.max(x.h[i]).max(x.h[i - 1]); ep = x.l[i]; af = af0;
             } else {
                 if x.h[i] > ep { ep = x.h[i]; af = (af + af0).min(afmax); }
                 sar = (sar + af * (ep - sar)).min(x.l[i]).min(x.l[i - 1]);
             }
-        } else if x.h[i] >= sar {
+        } else if !close && x.h[i] >= sar {
             out[i] = Some((1.0, x.o[i].max(sar)));
             long = true; sar = ep.min(x.l[i]).min(x.l[i - 1]); ep = x.h[i]; af = af0;
         } else {
@@ -258,12 +279,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"Wilder's parabolic, or stop and reverse (SAR) ... always in the market and whose stop-and-reverse trigger points take on a parabolic shape\" (p.29)",
               "F|Acceleration factor 0.02 rising 0.02 per new extreme to 0.20 (Wilder's defaults; book p.15-16 uses the developer's defaults)",
               "X|Stop-and-reverse: the opposite entry signal closes the position at the same open and reverses it"],
-            "Stop-and-reverse at the SAR level during the day (gap = open). Book: spot GBP/USD 2003 (no index result).", None),
+            "Default (R4 #264 (1), lane K67): the parabolic flips only on a close across the SAR (new SAR = the prior extreme) and the reversal fills at the next open, the book's convention (p.42-43) and the reading that reproduces the Fig 2.15 legend (31 Dec 2003 Para = 1095.28 on the cash S&P 500). Option p.flip = 1: stop-and-reverse at the SAR level during the day (gap = open). Book: spot GBP/USD 2003 (no index result).", None),
         def!("rwmts_psar_fade", "Fade of the parabolic with 2.5 SD fail-safe (Fig 2.15)", C1, "Long/Short", Live,
             &["E|\"fade its stop and reverse signals\": when the parabolic turns long, go short at its stop level, and vice versa (p.29)",
               "F|\"all entries required the market to be trading at less than 2.5 standard deviations from the 20-day moving average\" (p.30)",
               "X|\"fail-safe stop loss 2.5 standard deviations from the 20-day moving average\" (p.30); otherwise the next parabolic flip reverses the faded position"],
-            "Fig 2.15 (cash S&P 500 x 250, 12/31/2002-12/31/2003): 24 trades, 70.83% winners, average duration 11 days, closed net $55,220. Bands use yesterday's 20-day SMA and population SD (CQG [-1] convention).",
+            "Fig 2.15 (cash S&P 500 x 250, 12/31/2002-12/31/2003): 24 trades, 70.83% winners, average duration 11 days, closed net $55,220. Default (R4 #264 (1), lane K67): the parabolic flips only on a close across the SAR (new SAR = the prior extreme; the Fig 2.15 legend's 31 Dec 2003 Para = 1095.28 is reproduced exactly, and the book's open short of 28 Nov 2003 at 1057.89, open loss -$13,608, to the dollar); the fade entry needs the flip day's close within 2.5 population SD of its 20-day SMA; the fail-safe is a close beyond SMA20 +/- 2.5 SD; every order fills at the next open (p.42-43). Option p.flip = 1 (the earlier reading): flips when the low / high touches the SAR, faded at the SAR level during the day, with the bands of the day before as a price stop.",
             Some(Claim { trades: "24", win: "70.83%", avg: "$1,734 avg profit (x250)", hold: "11 days", period: "Cash S&P 500, 2003" })),
         def!("rwmts_stoch_ext", "14-day slow stochastics extremes (Fig 2.17)", C1, "Long/Short", Live,
             &["F|Slow %K = 3-day moving average of Fast %K(14); Slow %D = 3-day moving average of Slow %K (p.32)",
@@ -350,7 +371,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "After the 3% stop the system waits flat for the next channel touch. Book: spot USD/JPY 1993-2002 (no index result). Stop checked from the entry bar on (book p.73-74: ambiguous same-day cases count as losses).", None),
         def!("rwmts_macd_pt", "MACD with $2,500 profit exit (Table 3.12)", C3, "Long/Short", Live,
             &["E|MACD system of Table 3.6 (p.55)", "X|\"MACD with the addition of a profit exit set to $2,500\" (p.66) = 50 index points for the book's ES row (cash S&P 500 x 50)"],
-            "After the profit exit the system is flat until the next MACD signal. Points param `pts` default 50 (= $2,500 / $50 per point, Table 3.1 note b).",
+            "After the profit exit the system is flat until the next MACD signal. Points param `pts` default 50 (= $2,500 / $50 per point, Table 3.1 note b). SPX only: the book names the CME E-mini S&P 500 and simulated it as the cash S&P 500 x 50 (Table 3.1 p.44), so 50 points is the book's own amount on the S&P 500 index; other instruments would need a conversion the book does not give. Results from 2014 (real SPX opens).",
             es("41", "68.29%", "$19,829 total", "46 days")),
         def!("rwmts_macd_pt_sl", "MACD with $2,500 profit and stop exit (Table 3.13)", C3, "Long/Short", Live,
             &["E|MACD system of Table 3.6 (p.55)", "X|\"profit exit and a stop loss set to $2,500\" (p.67) = 50 index points each for the ES row"],
@@ -364,7 +385,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NEXT_OPEN, Some(Claim { trades: "50", win: "48.00%", avg: "$8,711 total", hold: "16 days", period: "ES row of the mean-reversion portfolio (Table 4.4), 1993-2002" })),
         def!("rwmts_rsi200_usd", "RSI extremes with 200-day MA filter, $2,500 stop (Table 4.2)", C4, "Long/Short", Live,
             &["E|Entries and RSI exits as rwmts_rsi200 (p.75)", "X|Fixed $2,500 stop for ES (Table 4.1, p.76) = 50 index points: OpenPositionAverageEntryPrice - Dollar2Price(@,2500)"],
-            "Points param `pts` default 50 (ES conversion).", es("39", "66.67%", "$10,441 total", "22 days")),
+            "Points param `pts` default 50 (ES conversion). SPX only: the book names the CME E-mini S&P 500 and simulated it as the cash S&P 500 x 50 (Table 3.1 p.44), so 50 points is the book's own amount on the S&P 500 index; other instruments would need a conversion the book does not give. Results from 2014 (real SPX opens).", es("39", "66.67%", "$10,441 total", "22 days")),
         def!("rwmts_bb200", "Bollinger band fade with 200-day MA filter (Table 4.5)", C4, "Long/Short", Live,
             &["E|Long Entry: Close(@)[-1] XBELOW BLO(@,Sim,20,2)[-1] AND Close(@)[-1] > MA(@,Sim,200)[-1] (p.79)",
               "X|Long Exit #1 Price field: BMA(@,Sim,20)[-1]; #2: EntryPrice - .025*EntryPrice (p.79-80)",
@@ -385,7 +406,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "SSD = slow %D: CQG 'Smo' (smoothed, Wilder-type) averages of Fast %K(14), 3 and 3.", es("36", "44.44%", "-$2,048 total", "9 days")),
         def!("rwmts_stoch_cci_time", "Slow stochastics + CCI with 15-day time exit (Table 4.8)", C4, "Long/Short", Live,
             &["E|As rwmts_stoch_cci (p.83)", "X|\"Add This Third Condition to Both Long and Short Exits: BarsSinceEntry(@,0,All,ThisTradeOnly) > 14\" (p.84)"],
-            "Time exit read as: on the close of the bar where more than 14 bars have passed since the entry bar, exit at the next open.",
+            "Time exit (decision #248 (2)): CQG's BarsSinceEntry counts the entry bar as 1, so 'BarsSinceEntry > 14' is true on the close of the entry bar's 14th successor and the trade leaves at the next open after 15 bars held, the 15-day exit of the title. Option p.count=0: TradeStation's 0-based count (16 bars held).",
             es("39", "43.59%", "$2,161 total", "7 days")),
         // ----- Chapter 5 (intraday bars)
         def!("rwmts_2h_cb15_8", "Channel breakout 15/8 days with 7.5-day time exit on 2-hour bars (Table 5.4)", C5, "Long/Short", NeedsData(INTRADAY),
@@ -394,7 +415,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"the same trend-following mean reversion system that generated the best performance of those used throughout Chapter 4 and uses the same CQG code\" (p.94): Long Entry RSI(@,9)[-1] < 35 AND Close(@)[-1] > MA(@,Sim,200)[-1]; Short Entry RSI(@,9)[-1] > 65 AND Close(@)[-1] < MA(@,Sim,200)[-1] (p.75)", "X|Long Exit #1 RSI(@,14)[-1] XABOVE 60, Short Exit #1 RSI(@,14)[-1] XBELOW 40; Exit #2 EntryPrice -/+ the fail-safe stop percentage (p.75)", "F|120-minute bars, 400-hour moving average, 2.5% stop (p.94, Table 5.5)", "A|Read [lane K53, decision 229 (9)]: the Nasdaq-100 table only (no NDX minute file): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
             "Book Table 5.5: ND 11/30/1998-1/30/2004, 120-minute day-session bars: 138 trades, 36.23% winners, $105,027 after $75 a trade; the Nasdaq-100 has no minute file here, so it is not re-run. No costs in the vault's run. Cash-index shorts are hypothetical. Runs on SPY, SPX, NIFTY 50 and NIFTYBANK minutes (declared application of the Nasdaq-100 table).", Some(Claim { trades: "138", win: "36.23%", avg: "$105,027 total", hold: "2.75 days", period: "ND 120-minute bars 11/30/1998-1/30/2004 (Table 5.5)" })),
         def!("rwmts_2h_stoch_cci", "Slow stochastics + CCI with 30-hour time exit, 2-hour bars (Table 5.6)", C5, "Long/Short", Live, // lane K53: run in books/k53intra.rs
-            &["E|\"a mean reversion system that was originally introduced in Chapter 4\" (p.94): Long Entry SSD(@,14,Smo,3,Smo,3)[-1] XBELOW 15 AND CCI(@,10)[-1] < -100; Short SSD XABOVE 85 AND CCI > 100 (p.83)", "X|Exit #1 SSD XABOVE 30 (long) / XBELOW 70 (short); Exit #2 EntryPrice -/+ 1.5% (p.83); time exit \"BarsSinceEntry(@,0,All,ThisTradeOnly) > 14\" (p.84) = the 30-hour exit on 2-hour bars (Table 5.6)", "A|Read [lane K53, decision 229 (9)]: the Nasdaq-100 table only (no NDX minute file): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
+            &["E|\"a mean reversion system that was originally introduced in Chapter 4\" (p.94): Long Entry SSD(@,14,Smo,3,Smo,3)[-1] XBELOW 15 AND CCI(@,10)[-1] < -100; Short SSD XABOVE 85 AND CCI > 100 (p.83)", "X|Exit #1 SSD XABOVE 30 (long) / XBELOW 70 (short); Exit #2 EntryPrice -/+ 1.5% (p.83); time exit \"BarsSinceEntry(@,0,All,ThisTradeOnly) > 14\" (p.84) = the 30-hour exit on 2-hour bars (Table 5.6): CQG counts the entry bar as 1, so the trade leaves at the open after 15 bars held (decision #248 (2)); option p.count=0 = TradeStation's 0-based count (16 bars)", "A|Read [lane K53, decision 229 (9)]: the Nasdaq-100 table only (no NDX minute file): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
             "Book Table 5.6: ND 120-minute bars 11/30/1998-1/30/2004: 110 trades, 41.82% winners, $70,093; not re-run (no Nasdaq-100 minutes). No costs in the vault's run. Cash-index shorts are hypothetical. Runs on SPY, SPX, NIFTY 50 and NIFTYBANK minutes (declared application of the Nasdaq-100 table).", Some(Claim { trades: "110", win: "41.82%", avg: "$70,093 total", hold: "1.5 days", period: "ND 120-minute bars 11/30/1998-1/30/2004 (Table 5.6)" })),
         def!("rwmts_60m_rsi200h", "RSI extremes with 200-hour MA filter, 60-minute bars (Table 5.7)", C5, "Long/Short", Live, // lane K53: run in books/k53intra.rs
             &["E|\"the same trend-following mean reversion system that generated the best performance of those used throughout Chapter 4 and uses the same CQG code\" (p.94): Long Entry RSI(@,9)[-1] < 35 AND Close(@)[-1] > MA(@,Sim,200)[-1]; Short Entry RSI(@,9)[-1] > 65 AND Close(@)[-1] < MA(@,Sim,200)[-1] (p.75)", "X|Long Exit #1 RSI(@,14)[-1] XABOVE 60, Short Exit #1 RSI(@,14)[-1] XBELOW 40; Exit #2 EntryPrice -/+ the fail-safe stop percentage (p.75)", "F|60-minute bars, 200-hour moving average, 2.5% stop (p.95, Table 5.7)", "A|Read [lane K53, decision 229 (9)]: the Nasdaq-100 table only (no NDX minute file): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
@@ -412,8 +433,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"All programming code for this system is the same as shown in the 60-minute time frame with the exception of long and short exit conditions #1, which have been reduced from 3 percent to 1 percent beyond entry price\" (p.100): RSI(@,14) 25/75 crossover", "X|Exit #1 EntryPrice +/- 1%; #2 EntryPrice -/+ 1% (p.98, p.100)", "A|Read [lane K53, decision 229 (9)]: the Nasdaq-100 table only (no NDX minute file): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
             "Book Table 5.12: ND 30-minute bars 2/14/2000-1/30/2004: 204 trades, 25.00% winners, $10,158; not re-run (no Nasdaq-100 minutes). No costs in the vault's run. Cash-index shorts are hypothetical. Runs on SPY, SPX, NIFTY 50 and NIFTYBANK minutes (declared application of the Nasdaq-100 table).", Some(Claim { trades: "204", win: "25.00%", avg: "$10,158 total", hold: "0.9 days", period: "ND 30-minute bars 2/14/2000-1/30/2004 (Table 5.12)" })),
         def!("rwmts_15m_5m_rsi", "RSI extremes with 50-hour / 16.67-hour MA, 15- and 5-minute bars (Tables 5.13-5.14)", C5, "Long/Short", Live, // lane K53: run in books/k53intra.rs
-            &["E|\"the same trend-following mean reversion system that generated the best performance of those used throughout Chapter 4 and uses the same CQG code\" (p.94): Long Entry RSI(@,9)[-1] < 35 AND Close(@)[-1] > MA(@,Sim,200)[-1]; Short Entry RSI(@,9)[-1] > 65 AND Close(@)[-1] < MA(@,Sim,200)[-1] (p.75)", "X|Long Exit #1 RSI(@,14)[-1] XABOVE 60, Short Exit #1 RSI(@,14)[-1] XBELOW 40; Exit #2 EntryPrice -/+ the fail-safe stop percentage (p.75)", "F|15-minute bars with a 50-hour average (Table 5.13) and 5-minute bars with a 16.67-hour average (Table 5.14); \"we reduced our fail-safe stop-loss level to 1 percent of entry price for ND\" (p.101): default 15-minute bars and the ND 1%; option bars=5 (the SP rows' 0.5% stop is the S&P table, not coded as default)", "A|Read [lane K53, decision 229 (9)]: the Nasdaq-100 table only (no NDX minute file): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
-            "Book Table 5.13 ND row 2/5/2002-1/30/2004: 278 trades, 42.81% winners, -$9,048; Table 5.14 ND (5-minute) 6/25/2003-1/30/2004: 170 trades, 67.06%, -$622; not re-run (no Nasdaq-100 minutes). No costs in the vault's run. Cash-index shorts are hypothetical. Runs on SPY, SPX, NIFTY 50 and NIFTYBANK minutes (declared application of the Nasdaq-100 table).", Some(Claim { trades: "278", win: "42.81%", avg: "-$9,048 total", hold: "0.5 days", period: "ND 15-minute bars 2/5/2002-1/30/2004 (Table 5.13)" })),
+            &["E|\"the same trend-following mean reversion system that generated the best performance of those used throughout Chapter 4 and uses the same CQG code\" (p.94): Long Entry RSI(@,9)[-1] < 35 AND Close(@)[-1] > MA(@,Sim,200)[-1]; Short Entry RSI(@,9)[-1] > 65 AND Close(@)[-1] < MA(@,Sim,200)[-1] (p.75)", "X|Long Exit #1 RSI(@,14)[-1] XABOVE 60, Short Exit #1 RSI(@,14)[-1] XBELOW 40; Exit #2 EntryPrice -/+ the fail-safe stop percentage (p.75)", "F|15-minute bars with a 50-hour average (Table 5.13) and 5-minute bars with a 16.67-hour average (Table 5.14); \"we reduced our fail-safe stop-loss level to 1 percent of entry price for ND. In addition, because SP is less volatile than ND, we reduced its fail-safe stop loss to 0.5 percent of entry price\" (p.101): default 15-minute bars and the S&P row's 0.5% stop (decision #248 (3): the book prints an SP row for both tables); option bars=5, option stop=1 (the ND row)", "A|Read [lane K53, decision 229 (9); decision #248 (3), lane K61]: the book's S&P (SP) row of Tables 5.13-5.14 on SPY/SPX (the Nasdaq-100 row is the option stop=1): session-aligned N-minute bars of the day session (\"cash market trading hours for equity index trades (9:30 A.M.-4:00 P.M.)\", p.91) built from the 1-minute file, one continuous series (trades are held for days, Table columns 'Days'); the hour-count average is the Chapter 4 code's 200 bars on these bars (400 hours / 2-hour bars etc.); triggers on the close of a bar fill at the open of the next bar (its first minute); percentage exits work from the entry bar on, in minute order.", crate::books::n1intra2::MIN],
+            "Book Table 5.13 SP row (full-sized S&P 500 futures, day session) 2/5/2002-1/30/2004, 0.5% stop: 316 trades, 37.34% winners, $13,869 after $75 a trade (ND row, 1% stop: 278 trades, 42.81%, -$9,048); Table 5.14 (5-minute) 6/25/2003-1/30/2004: SP 191 trades, 66.49%, $3,042 (ND 170, 67.06%, -$622). The S&P row is the book's own row for SPY/SPX (decision #248 (3)); it is compared on SPY in the gate row. No costs in the vault's run. Cash-index shorts are hypothetical. Runs on the minute tickers (declared application on NIFTY 50 / NIFTYBANK).", Some(Claim { trades: "316", win: "37.34%", avg: "$13,869 total", hold: "0.4 days", period: "SP 15-minute bars 2/5/2002-1/30/2004 (Table 5.13)" })),
     ]
 }
 
@@ -436,7 +457,16 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some((fam.0, fam.1, d.name))
 }
 
+/// Lane K67 (R4 #264 (1)): the parabolic's flip reading.
+const PSAR_FLIP: &str = "Parabolic flip: 0 = on the close, orders at the next open (Fig 2.15 legend; default), 1 = intraday touch of the SAR (option)";
+
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "rwmts_sma200_sar" => vec![p("n", "Moving average days", 200., 20., 300., 10.)],
@@ -450,9 +480,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "rwmts_macd_pt" | "rwmts_macd_pt_sl" => vec![p("fast", "Fast EMA", 13., 5., 30., 1.), p("slow", "Slow EMA", 26., 15., 60., 1.), p("sig", "Signal EMA", 9., 3., 20., 1.),
             p("pts", "Profit (and stop) in index points ($2,500 / $50 ES)", 50., 10., 400., 10.)],
         "rwmts_dmi_sar" => vec![p("n", "DMI period", 14., 5., 30., 1.)],
-        "rwmts_psar" => vec![p("af", "Acceleration step", 0.02, 0.01, 0.05, 0.01), p("afmax", "Maximum acceleration", 0.2, 0.1, 0.5, 0.05)],
+        "rwmts_psar" => vec![p("af", "Acceleration step", 0.02, 0.01, 0.05, 0.01), p("afmax", "Maximum acceleration", 0.2, 0.1, 0.5, 0.05), p("flip", PSAR_FLIP, 0., 0., 1., 1.)],
         "rwmts_psar_fade" => vec![p("af", "Acceleration step", 0.02, 0.01, 0.05, 0.01), p("afmax", "Maximum acceleration", 0.2, 0.1, 0.5, 0.05),
-            p("n", "Band MA days", 20., 10., 50., 1.), p("k", "Standard deviations", 2.5, 1., 4., 0.25)],
+            p("n", "Band MA days", 20., 10., 50., 1.), p("k", "Standard deviations", 2.5, 1., 4., 0.25), p("flip", PSAR_FLIP, 0., 0., 1., 1.)],
         "rwmts_stoch_ext" => vec![p("n", "Stochastic days", 14., 5., 30., 1.), p("lo", "Buy below SD", 15., 5., 30., 1.), p("hi", "Sell above SD", 85., 70., 95., 1.),
             p("xl", "Long exit SD above", 30., 20., 50., 1.), p("xs", "Short exit SD below", 70., 50., 80., 1.), p("stop", "Fail-safe stop %", 2.5, 0.5, 6., 0.5)],
         "rwmts_rsi_ext" => vec![p("n", "RSI days", 14., 5., 30., 1.), p("lo", "Buy below", 30., 10., 40., 1.), p("hi", "Sell above", 70., 60., 90., 1.),
@@ -485,7 +515,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             let mut v = vec![p("n", "Stochastic days", 14., 5., 30., 1.), p("lo", "Long: SSD crosses below", 15., 5., 30., 1.), p("hi", "Short: SSD crosses above", 85., 70., 95., 1.),
                 p("xl", "Long exit SSD crosses above", 30., 20., 50., 1.), p("xs", "Short exit SSD crosses below", 70., 50., 80., 1.),
                 p("cci_n", "CCI period", 10., 5., 30., 1.), p("cci", "CCI beyond +/-", 100., 50., 200., 10.), p("stop", "Stop % of entry", 1.5, 0.5, 5., 0.25)];
-            if id == "rwmts_stoch_cci_time" { v.push(p("bars", "Exit when bars since entry exceed", 14., 3., 40., 1.)); }
+            if id == "rwmts_stoch_cci_time" { v.push(p("bars", "Exit when BarsSinceEntry exceeds (the code's 14)", 14., 3., 40., 1.));
+                // decision #248 (2): CQG counts the entry bar as 1 (15 bars held = the text's 15 days); TradeStation's 0-based count = 16
+                v.push(p("count", "BarsSinceEntry on the entry bar: 1 = CQG (default, 15-bar hold), 0 = TradeStation (16-bar hold)", 1., 0., 1., 1.)); }
             v
         }
         _ => return None,
@@ -498,6 +530,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("rwmts_") { return None; }
     let schema = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K62)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let c = &x.c;
@@ -551,8 +585,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (pd, md) = di(x, u("n"));
             sim(x, from, to, &|s| lvl(&pd, &md, s), &no_cx, &no_lv)
         }
+        "rwmts_psar" | "rwmts_psar_fade" if g("flip").round() < 0.5 => {
+            // R4 #264 (1), lane K67: close flips; every order (reversal, fade entry, fail-safe exit) at the next open (p.42-43)
+            let flips = psar_flips(x, to, g("af"), g("afmax"), true);
+            let fd = |s: usize| flips[s].map_or(0, |(d, _)| d as i8);
+            if id == "rwmts_psar" { sim(x, from, to, &fd, &no_cx, &no_lv) } else {
+                let (n, k) = (u("n"), g("k"));
+                let (m, sdv) = (sma(c, n), sd(c, n));
+                sim(x, from, to, &|s| if fd(s) != 0 && (c[s] - m[s]).abs() < k * sdv[s] { -fd(s) } else { 0 },
+                    &|s, q| if (q.dir > 0.0 && c[s] <= m[s] - k * sdv[s]) || (q.dir < 0.0 && c[s] >= m[s] + k * sdv[s]) { Some("2.5 SD fail-safe (close beyond the band)") }
+                        else if fd(s) != 0 { Some("parabolic flip (fade reverses)") } else { None }, &no_lv)
+            }
+        }
         "rwmts_psar" | "rwmts_psar_fade" => {
-            let flips = psar_flips(x, to, g("af"), g("afmax"));
+            let flips = psar_flips(x, to, g("af"), g("afmax"), false);
             let mut b = Book::new();
             if id == "rwmts_psar" {
                 for t in from + 1..=to {
@@ -603,10 +649,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let up = |i: usize| m[i] + k * s[i];
             let dn = |i: usize| m[i] - k * s[i];
             let cross = g("cross").round() >= 1.0;
-            sim(x, from, to, &|i| {
+            sim_ep6(x, from, to, &|i| {
                 if cross { if xbelow(c, dn, i) { 1 } else if xabove(c, up, i) { -1 } else { 0 } }
                 else if c[i] < dn(i) { 1 } else if c[i] > up(i) { -1 } else { 0 }
-            }, &no_cx, &|t, q| (Some(q.epx * (1.0 - q.dir * g("stop") / 100.0)), Some(m[t - 1])))
+            }, &no_cx, &|t, q| (Some(q.epx * (1.0 - q.dir * g("stop") / 100.0)), Some(m[t - 1])), on)
         }
         "rwmts_cci_trend" => {
             let (v, l) = (cci(x, u("n")), g("lvl"));
@@ -697,10 +743,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let v = cci(x, u("cci_n"));
             let (lo, hi, xl, xs, cl) = (g("lo"), g("hi"), g("xl"), g("xs"), g("cci"));
             let bars = if id == "rwmts_stoch_cci_time" { Some(u("bars")) } else { None };
+            let cnt = if id == "rwmts_stoch_cci_time" { (g("count") >= 0.5) as usize } else { 0 }; // not u(): it clamps 0 to 1
             sim(x, from, to, &|s| if xbelow(&ssd, |_| lo, s) && v[s] < -cl { 1 } else if xabove(&ssd, |_| hi, s) && v[s] > cl { -1 } else { 0 },
                 &|s, q| {
                     if (q.dir > 0.0 && xabove(&ssd, |_| xl, s)) || (q.dir < 0.0 && xbelow(&ssd, |_| xs, s)) { Some("SSD exit cross") }
-                    else if bars.is_some_and(|b| s >= q.ei && s - q.ei > b) { Some("time exit") } else { None }
+                    else if bars.is_some_and(|b| s >= q.ei && s + cnt - q.ei > b) { Some("time exit") } else { None }
                 }, &pct_stop(g("stop")))
         }
         _ => return None,
@@ -744,6 +791,29 @@ mod tests {
         assert_eq!(t.len(), 1); assert_eq!(t[0].legs[0].i, 25); assert!((t[0].legs[0].px - 101.95).abs() < 1e-9); assert_eq!(t[0].dir, 1.0);
     }
     #[test]
+    fn k67_parabolic_flips_on_the_close_and_fills_next_open() {
+        // R4 #264 (1): bar 12 dips through the SAR but closes above it (an intraday flip only); bar 20 closes below it
+        let mut v: Vec<f64> = (0..12).map(|i| 100.0 + i as f64).collect();
+        v.extend([111.0; 8]); v.push(105.0); v.extend([105.0; 5]);
+        let mut r = rows(&v); r[12].low = 100.0;
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("rwmts_psar", &x, 0, 25, &Params::new()).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px), (-1.0, 21, x.o[21]));
+        let mut p = Params::new(); p.insert("flip".into(), 1.0);
+        let t = run("rwmts_psar", &x, 0, 25, &p).unwrap();
+        assert_eq!((t[0].dir, t[0].legs[0].i), (-1.0, 12));
+    }
+    #[test]
+    fn k66_spx_points_are_the_books_2500_at_50_a_point() {
+        // Table 3.1 note b (p.44): cash S&P 500 x 50 simulates the E-mini; Table 4.1 (p.76) ES stop $2,500; Table 3.12 (p.67) $2,500 target
+        for id in SPX_PTS {
+            assert_eq!(params(id).unwrap().iter().find(|d| d.key == "pts").unwrap().def, 50.0, "{id}");
+            assert!(crate::gate::get(id).is_some_and(|g| g.allowed == Some(&["SPX"][..]) && g.clamp_open), "{id}");
+            assert!(!reviewed(id), "{id}");
+        }
+        assert!(crate::gate::get("rwmts_macd_pt_sl").is_some_and(|g| g.allowed == Some(&[][..]))); // fails #168: held
+    }
+    #[test]
     fn catalogue_ids_unique_and_live_have_params() {
         let c = catalogue(); let mut ids: Vec<_> = c.iter().map(|d| d.id).collect(); ids.sort(); ids.dedup();
         assert_eq!(ids.len(), c.len());
@@ -758,4 +828,10 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"rwmts"|"rwtlc") && (crate::books::rwmts::reviewed(def.id) || crate::books::rwtlc::reviewed(def.id)),
     label: "Richard Weissman tested these systems on futures, spot currencies and the cash S&P 500; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
     basis: "Richard L. Weissman: Mechanical Trading Systems (2004) indicator, trend-following and mean-reversion systems with printed CQG code (p.4-84); Trade Like a Casino (2011) volatility, RSI Trend and Ichimoku systems (p.57-154). Signals on the close, orders at the next open. Reviewed in authors/weissman/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};
+// Lane K66 (8 Nov 2026, R4 #262 / #196(2)): the two $2,500 E-mini rules, SPX only through the gate list.
+pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
+    label: "Richard Weissman tested these systems on the CME E-mini S&P 500, which he simulated as the cash S&P 500 index x 50 (Table 3.1 note b), with a fixed $2,500 profit exit (MACD) or stop (RSI extremes) per contract = 50 index points. They run on the S&P 500 index (SPX) only, the 50 points literal, from 2014 (real opens), as a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
+    basis: "Richard L. Weissman: Mechanical Trading Systems (2004) Table 3.1 p.44 (ES = cash S&P 500 x 50), Table 3.12 p.66-67 (MACD with $2,500 profit exit), p.75-77 and Tables 4.1-4.2 (RSI extremes, 200-day filter, $2,500 ES stop), Table 4.3 p.78 (ES contract size 50); decisions #196(2), #262; independent check authors/titles-1030/K65w/rw_ext.py, #179 two-window check and #168 book check with the book's $100 round turn authors/titles-1030/K66w/k66_check.txt.",
 };

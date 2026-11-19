@@ -33,5 +33,6 @@ export default {
     "jr_tbtb": {"type":"book","people":["Joe Ross"]},
     "jr_tnt1": {"type":"course_manual","people":["Joe Ross"]},
     "jr_tnt3": {"type":"course_manual","people":["Joe Ross"]},
+    "jr_tbtm": {"type":"book","people":["Joe Ross"]},
   },
 } satisfies AuthorFile;

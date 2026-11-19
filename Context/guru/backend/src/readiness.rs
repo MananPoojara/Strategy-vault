@@ -53,6 +53,11 @@ pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,
 }
 // ---------------------------------------------------------------- end VIX India
 
+/// R4 #361 (1) + Q9 (18 Nov 2026): cards whose arithmetic over the breadth / TRIN series is a FIXED look-back (a streak of N closes, a
+/// today-vs-yesterday ratio, a level test, an N-day simple average that blanks for exactly N bars) with no cumulative or EMA state carried
+/// through the gap: a missing INTERIOR day blanks the signal for that look-back (NaN compares false, nothing is filled) so it must not
+/// move the start. Leading gaps still refuse and auto-start says so. Each id is read in its module (see authors/backlog-1118/Q9/FINAL.md).
+const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10"];
 /// Series a rule reads (shared by check and auto_end). The minute path reads no derived series.
 fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static str> {
     let mut required=if minute_path {vec![]} else {def.needs_series.to_vec()};
@@ -60,7 +65,19 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
+    if def.id=="arebta_d_br" && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
+    if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
+}
+/// Lane CV6 (R4 #340 / #365): on Indian instruments `fgsmc_vix` reads the India VIX close (VIX.Close) where the book's VXO close is not held; it never reads the open.
+fn india_vxo_close(def:&StrategyDef,ctx:&Ctx,mut required:Vec<&'static str>)->Vec<&'static str> {
+    if def.id=="fgsmc_vix" && crate::books::tselhs::india(ctx) {for n in required.iter_mut() {if *n=="VXO_OHLC.Close" {*n="VIX.Close";}}}
+    required
+}
+/// Lane IN2 (R4 #340): the futures daily-volume series of an India index context, for the ids that opt in (connors::FUT_VOL_IDS).
+fn fut_vol_of<'a>(ctx:&'a Ctx,def:&StrategyDef)->Option<&'a [f64]> {
+    if !crate::connors::FUT_VOL_IDS.contains(&def.id) || !ctx.r.first().is_some_and(|r|r.ticker.starts_with("NIFTY")) {return None;}
+    ctx.extra.get(crate::connors::FUT_VOL).map(|v|v.as_slice())
 }
 fn minute_path(def:&StrategyDef,p:&Params)->bool {crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5)}
 
@@ -77,16 +94,22 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     if let (end,Some(_))=vix_open_end(ctx,def,to) {ends.push((Some(end),"real India VIX opens (from 1-minute India VIX)".into()));}
     let minutes=minute_path(def,p);
     if let Some(m)=ctx.minutes.filter(|_|minutes) {ends.push((upto(m.last()),format!("1-minute bars for {ticker}")));}
-    if let Some(ch)=ctx.options.filter(|_|crate::instrument_policy::options_p2(def)) {ends.push((upto(ch.last()),format!("option prices for {ticker}")));}
-    for name in required_series(def,p,minutes).into_iter().filter(|n|!event_column(n)) {
+    if let Some((_,last))=crate::options::coverage(def.id,ctx).filter(|_|crate::instrument_policy::options_p2(def)) {ends.push((upto(&last),format!("option prices for {ticker}")));}
+    for name in india_vxo_close(def,ctx,required_series(def,p,minutes)).into_iter().filter(|n|!event_column(n)) {
         if let Some(v)=ctx.series(name) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("{name} data")));}
     }
-    if def.needs_volume {ends.push(((0..=to).rev().find(|&i|ctx.r[i].volume.is_some_and(|v|v.is_finite()&&v>0.)),format!("daily volume figures for {ticker}")));}
+    if let Some(v)=fut_vol_of(ctx,def) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("futures volume figures for {ticker}")));}
+    else if def.needs_volume {ends.push(((0..=to).rev().find(|&i|ctx.r[i].volume.is_some_and(|v|v.is_finite()&&v>0.)),format!("daily volume figures for {ticker}")));}
     // same condition as the ccl08 Liquidity Filter check in `check` (instrument and benchmark close x volume)
     if def.book==books::ccl08::BOOK && books::ccl08::reviewed_daily(def.id) && books::ccl08::params(def.id).is_some_and(|ps|ps.iter().any(|d|d.key=="lf")) && to<ctx.lf.len() {
         ends.push(((0..=to).rev().find(|&i|ctx.lf[i].is_finite()),format!("the Liquidity Filter inputs (close x volume of {ticker} and its benchmark)")));
     }
     if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
+    if let Some((_,last,why))=books::mhstp::window(def.id) {ends.push((upto(&last),if books::mhstp::OPEN_WINDOW.iter().any(|o|o.0==def.id) || books::mhstp::OPEN_WINDOW_OTHER.iter().any(|o|o.0==def.id) {format!("the published window ({why})")} else {"the published window (Harris book test window, R4 #294 (1))".into()}));} // lane F3; lane PF (R4 #328)
+    if let Some(k)=crate::futures::first_nonpositive(def.id,ctx) {ends.push((k.checked_sub(1),format!("the positive unadjusted prices of {ticker} (on {} the unadjusted price is <= 0 and a % return has no base, R4 #316)",ctx.r[k].date)));} // lane X4
+    if let Some((_,last))=crate::futures::window(def.id,ticker) {ends.push((upto(last),format!("the published window ({})",crate::futures::window_why(def.id,ticker))));} // lane F1C; lane PF (R4 #334)
+    // lane K56 (EP5): a basket ranking rule ends where its basket's stock price files end
+    if let Some(end)=books::rotation::basket_end(def.id,ctx,p) {ends.push((Some(end),format!("the {} basket's stock prices",books::rotation::basket_for(def.id,&ctx.r[0].ticker,p).unwrap_or("stock"))));}
     let Some((end,what))=ends.into_iter().filter_map(|(e,w)|Some((e?,w))).filter(|(e,_)|*e<to).min_by_key(|(e,_)|*e) else {return (to,None)};
     if end<=from {return (to,None);} // nothing covered after the start: check refuses with the full message
     (end,Some(format!("Ended {}: {what} end then. The requested end {} is later; no prices are filled or estimated.",ctx.r[end].date,ctx.r[to].date)))
@@ -97,7 +120,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
 /// refuses it with its own message). Used by main.rs admit() when auto_start alone cannot find a usable window.
 pub fn series_gaps(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(Vec<usize>,Option<&'static str>) {
     let mut gaps=std::collections::BTreeSet::new();let mut first=None;
-    for name in required_series(def,p,minute_path(def,p)).into_iter().filter(|n|!event_column(n)) {
+    for name in india_vxo_close(def,ctx,required_series(def,p,minute_path(def,p))).into_iter().filter(|n|!event_column(n)) {
         let Some(v)=ctx.series(name) else {continue};
         let before=gaps.len();
         gaps.extend((from..=to).filter(|&i|!v.get(i).is_some_and(|x|x.is_finite())));
@@ -137,6 +160,69 @@ pub fn auto_start(ctx:&Ctx,from:usize,to:usize,requested:&str,refuse:impl Fn(usi
 }
 
 #[cfg(test)]
+mod adr191_gap_tests {
+    use super::*;
+    #[test]
+    fn a_missing_breadth_day_does_not_block_adr191_but_still_blocks_adline() {
+        let rows:Vec<crate::Row>=(0..100).map(|i|crate::Row {ticker:"DJI".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        let mut ctx=Ctx::new(&rows,&rows,&[]);
+        let mut adv=vec![2.0;100];adv[40]=f64::NAN;
+        ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),adv);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
+        let get=|id:&str|books::kdta::catalogue().into_iter().find(|d|d.id==id).unwrap();
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).is_none());
+        assert!(check(&ctx,&get("kdta_adline"),0,99,&Params::new()).unwrap().note.contains("is missing on 1 trading day"));
+        // leading missing data (the series has not begun) still refuses, so auto-start reports it
+        let mut lead=vec![2.0;100];for v in lead.iter_mut().take(10) {*v=f64::NAN;}lead[40]=f64::NAN;
+        ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),lead);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
+        assert!(check(&ctx,&get("kdta_adr191"),10,99,&Params::new()).is_none());
+        // trailing missing data (after the series' last value) is NOT exempt: check() refuses and auto-end ends the run there with its note
+        let mut tail=vec![2.0;100];for v in tail.iter_mut().skip(90) {*v=f64::NAN;}
+        ctx.extra.insert("NYSE_ADV_DEC.Advances".into(),tail);ctx.extra.insert("NYSE_ADV_DEC.Declines".into(),vec![1.0;100]);
+        // an EXPLICIT end past the series' last value must still refuse here and auto-end must say the series ended (no silent "no signals")
+        assert!(check(&ctx,&get("kdta_adr191"),0,99,&Params::new()).unwrap().note.contains("is missing on 10 trading day"));
+        assert!(check(&ctx,&get("kdta_adr191"),0,89,&Params::new()).is_none());
+        assert!(check(&ctx,&get("kdta_adline"),0,99,&Params::new()).is_some());
+        let (end,note)=auto_end(&ctx,&get("kdta_adr191"),0,99,&Params::new());
+        assert_eq!(end,89);assert!(note.unwrap().starts_with(&format!("Ended {}:",ctx.r[89].date)));
+    }
+}
+
+
+#[cfg(test)]
+mod gap_fixed_window_tests {
+    use super::*;
+    /// Q9: every declared id passes `check` with ONE interior gap in each series it reads, and still refuses a leading gap.
+    #[test]
+    fn declared_fixed_window_cards_pass_an_interior_gap_and_refuse_a_leading_one() {
+        let rows:Vec<crate::Row>=(0..300).map(|i|crate::Row {ticker:"DJI".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1e6)}).collect();
+        let defs=crate::connors::catalogue();
+        for id in GAP_FIXED_WINDOW {
+            let def=defs.iter().find(|d|d.id==*id).unwrap_or_else(|| panic!("{id} not in the catalogue"));
+            let mut ctx=Ctx::new(&rows,&rows,&[]);
+            for n in required_series(def,&Params::new(),false) {
+                let mut v=vec![1.5;300];v[150]=f64::NAN;ctx.extra.insert(n.to_string(),v);
+            }
+            let r=check(&ctx,def,0,299,&Params::new());
+            assert!(r.as_ref().map_or(true,|i|!i.note.contains("is missing on")),"{id}: {:?}",r.map(|i|i.note));
+            for n in required_series(def,&Params::new(),false) {
+                let mut v=vec![1.5;300];for k in 0..5 {v[k]=f64::NAN;}ctx.extra.insert(n.to_string(),v);
+            }
+            if !required_series(def,&Params::new(),false).is_empty() {
+                assert!(check(&ctx,def,0,299,&Params::new()).is_some_and(|i|i.note.contains("is missing on 5 trading day")),"{id} leading gap");
+            }
+            for n in required_series(def,&Params::new(),false) {
+                let mut v=vec![1.5;300];for k in 290..300 {v[k]=f64::NAN;}ctx.extra.insert(n.to_string(),v);
+            }
+            if !required_series(def,&Params::new(),false).is_empty() {
+                assert!(check(&ctx,def,0,299,&Params::new()).is_some_and(|i|i.note.contains("is missing on 10 trading day")),"{id} trailing gap inside the window refuses");
+                assert!(check(&ctx,def,0,289,&Params::new()).is_none(),"{id} window ending at the last value runs");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod short_course_readiness_tests {
     use super::*;
     #[test]
@@ -166,7 +252,66 @@ mod short_course_readiness_tests {
     }
 }
 
+#[cfg(test)]
+mod chaikin_candidate_readiness_tests {
+    use super::*;
+    fn rows(ticker: &str) -> Vec<crate::Row> {
+        (0..30).map(|i| crate::Row { ticker:ticker.into(), date:format!("2020-{:02}-{:02}", i/25+1, i%25+1), open:100., high:101., low:99., close:100., volume:None }).collect()
+    }
+    #[test]
+    fn only_reviewed_symbols_with_valid_prefix_and_warmup_are_accepted() {
+        let d=books::nkms2::catalogue().into_iter().find(|d|d.id==books::nkms2::CHAIKIN_ID).unwrap();
+        for ticker in ["SPY", "NIFTY 50"] {
+            let r=rows(ticker); let x=Ctx::new(&r,&r,&[]);
+            assert_eq!(check(&x,&d,19,29,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&x,&d,20,29,&Params::new()).is_none());
+        }
+        let r=rows("SPX");let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"not_testable");
+        let r=rows("SPY");let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::from([("reverse".into(),0.)])).unwrap().status,"not_testable");
+        let mut r=rows("SPY");r[5].date=r[4].date.clone();let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"needs_data");
+        let mut r=rows("SPY");r[2].high=f64::NAN;let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"needs_data");
+        let mut r=rows("SPY");for v in &mut r {v.high=100.;v.low=100.;}let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,20,29,&Params::new()).unwrap().status,"needs_data");
+    }
+}
+
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="apta" && matches!(def.id,"apta_nhnl"|"apta_nhnl_nse") {
+        if let Some(note)=books::apta::nhnl_params_issue(p) {return issue("not_testable",note);}
+        if let Some(note)=books::apta::nhnl_input_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
+    }
+    if def.book == books::bstar_candidate::BOOK && def.id == books::bstar_candidate::ID {
+        if !p.is_empty() { return issue("not_testable", "This source candidate accepts no alternate settings."); }
+        if ctx.native_market.is_some() || !ctx.r.first().is_some_and(|r| matches!(r.ticker.as_str(), "NIFTY 50" | "SPY")) {
+            return issue("not_testable", "This unverified candidate currently accepts actual NIFTY 50 and SPY contexts only; stocks, other indices and baskets need separate input review.");
+        }
+        if from < 35 || from >= to || to >= ctx.r.len() {
+            return issue("needs_data", "The first crossover requires 36 actual closes, including 12 fully defined price-excess values and their prior comparison.");
+        }
+        if books::bstar_candidate::signals(ctx, from, to).is_err() {
+            return issue("needs_data", "Close history is invalid, unordered or mixed, or decimal precision exceeds the supported range; no observations are filled or rounded.");
+        }
+    }
+    if def.book == books::nkms2::BOOK && def.id == books::nkms2::CHAIKIN_ID {
+        if !p.is_empty() { return issue("not_testable", "This source candidate accepts no alternate calculation, side or execution settings."); }
+        let Some(first) = ctx.r.first() else { return issue("needs_data", "No price history supplied."); };
+        if ctx.native_market.is_some() || !matches!(first.ticker.as_str(), "NIFTY 50" | "SPY") {
+            return issue("not_testable", "R4 #353 limits this unverified research candidate to actual NIFTY 50 and SPY contexts; other symbols, stocks and baskets require separate review.");
+        }
+        if from < 20 || from >= to || to >= ctx.r.len() {
+            return issue("needs_data", "The first signal needs 21 actual bars: ten seed ranges, ten more bars for ROC and a prior ROC for comparison.");
+        }
+        if ctx.r[..=to].iter().any(|r| r.ticker != first.ticker || !crate::baskets::valid_date(&r.date) || !r.open.is_finite() || r.open <= 0.0 || r.open < r.low || r.open > r.high) || ctx.r[..=to].windows(2).any(|w|w[0].date >= w[1].date) {
+            return issue("needs_data", "Price history has invalid opens or dates, mixed symbols or duplicate/out-of-order observations; no bars are replaced or dropped.");
+        }
+        if books::nkms2::chaikin_volatility(&ctx.h[..=to], &ctx.l[..=to], &ctx.c[..=to]).is_err() {
+            return issue("needs_data", "Actual high, low or close history is invalid, or the volatility calculation has a zero denominator; no prices or signals are filled.");
+        }
+    }
     // user-held NSE breadth / TRIN mappings: the hold note wins over any data-coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
     // decisions #177/#179: a withdrawn (rule, ticker) pair shows its tradable-vs-cash reason, never a coverage message
@@ -272,7 +417,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if let Some(r)=ctx.r.get(from) {
             // NYSE-breadth rules on NIFTY 50: say why (US series only; the NSE version is held), not just "series missing"
             if r.ticker=="NIFTY 50" && !def.id.starts_with("ptjmt_cvr") && !def.id.ends_with("_nse") {
-                return issue("needs_data","This version reads NYSE TRIN / NYSE advances-declines, a US market series; it is not run on NIFTY 50. The NSE-breadth version is held: it uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.");
+                return issue("needs_data","This version reads NYSE TRIN / NYSE advances-declines, a US market series; it is not run on NIFTY 50. The NYSE series measures another market (and its calendar differs from India), so it is not used for Indian instruments; the NSE-breadth twin card runs the same rule on the real NSE breadth held in the vault (R4 #340, labelled declared adaptation, UNVERIFIED).");
             }
             if def.id.starts_with("ptjmt_cvr") && r.date.as_str()<books::ptjmt::REAL_VIX_OHLC_FROM {
                 return issue("needs_data",format!("The CVR rules read the VIX high and low (CVR I and V also the open); the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::ptjmt::REAL_VIX_OHLC_FROM));
@@ -447,7 +592,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // These runners still price options with Black-Scholes. Loading IV or changing
     // a catalogue badge must never enable their modeled performance in the app.
-    if matches!(def.id,"otvt_cvr1_buy_puts" | "otvt_sector_options_overpriced") { // otvt_cvr1_sell_puts, otvt_diz_short_strangle (lane K54): options phase 2 (real prices)
+    if matches!(def.id,"otvt_cvr1_buy_puts") { // otvt_sector_options_overpriced: options phase 2 since lane I1 (R4 #303 (3)) // otvt_cvr1_sell_puts, otvt_diz_short_strangle (lane K54): options phase 2 (real prices)
         return issue("needs_data","This options runner uses a pricing model, not traded contract prices, and is disabled. Real prices of the exact contracts (strike, expiry and each leg) and a validated option-price implementation are required. Loading an IV or VIX series cannot enable this backtest.");
     }
     match def.status {
@@ -470,9 +615,23 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                     return issue("not_testable",format!("This independently checked plain open-to-close research application is limited to NIFTY 50 and policy-qualified SPX prices. {} is outside that reviewed symbol scope; no result is published.",row.ticker));
                 }
                 // lane F3: a rotation rule has no fixed amounts; its `allowed` list only names the SPY calendar (books::rotation)
+                // lane K56 (EP5): a basket ranking rule has no fixed amounts; its `allowed` list names the basket's index calendars
+                if books::rotation::is_basket(def.id) && crate::preloaded_market(&row.ticker)==Some(crate::baskets::Market::India) {
+                    return issue("not_testable", format!("Not published on {}. {}", row.ticker, books::rotation::INDIA_HELD));
+                }
+                if books::rotation::is_basket(def.id) {
+                    return issue("not_testable", format!("Not published on {}. Stock-basket ranking: runs only in the basket's index context ({}); the index is the calendar and the benchmark, the trades are the basket stocks named in each trade.", row.ticker, allowed.join(", ")));
+                }
+                if def.id==books::ecqt::PAIR { // lane P1
+                    return issue("not_testable", format!("Not published on {}. Chan's GLD/GDX pair holds both ETFs and runs only in the GLD context (GDX is the second leg). Open it on GLD for the results.", row.ticker));
+                }
+                if def.id=="vvqmm_pairs" { // lane P1: two actual stocks on the index calendar
+                    return issue("not_testable", format!("Not published on {}. Pairs trade of two actual stocks (pair chosen by the vault): runs only on the SPY calendar (US pairs) or the NIFTY 50 calendar (India pairs); the index is the calendar and the benchmark, the trades are the two stocks named in each trade.", row.ticker));
+                }
                 if books::rotation::is_rotation(def.id) {
                     return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
                 }
+                if let Some(h)=crate::futures::held(def.id,&row.ticker) {return issue("not_testable",format!("Not published on {}: {h}. {}",row.ticker,g.reason));} // lane F1C (#240): a held market says why
                 return issue("not_testable", format!("Not published on {}: this rule uses fixed point or dollar amounts set for {}; on this instrument they would not mean what the book meant. {}", row.ticker, if allowed.is_empty() { "an instrument this vault does not hold".to_string() } else { allowed.join(", ") }, g.reason));
             }
         }
@@ -480,10 +639,14 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if from >= ctx.r.len() || to >= ctx.r.len() || from > to || (from==to && !((def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id)) || crate::instrument_policy::reviewed_dema_index(def))) {
         return issue("needs_data", "No usable trading range is covered by the required data. Choose another period.");
     }
-    if ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high) {
+    let futures=crate::futures::ctx_market(ctx).is_some(); // lane F1 (#293): back-adjusted bars may be negative; the unadjusted ones must be positive
+    if (futures && (from..=to).any(|i| crate::futures::invalid_bar(ctx,i))) || (!futures && ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high)) {
         return issue("needs_data", "The selected period contains invalid or incomplete OHLC market prices. Results are withheld until the source data is corrected.");
     }
-    if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
+    if let Some(v)=fut_vol_of(ctx,def) { // lane IN2 (R4 #340): futures volume as the volume proxy; a day without a verified figure stays a gap (the rule then makes no entry on it)
+        let first=v.iter().position(|x|x.is_finite());
+        if first.map_or(true,|f|from<f) {return issue("needs_data",format!("Required futures volume begins on {}. The selected period includes earlier days with no volume figure; choose a fully covered period.",first.map_or("(none)",|f|ctx.r[f].date.as_str())));}
+    } else if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
         return issue("needs_data", "Required volume data is missing on one or more trading days in this period. A price-only index cannot substitute for this rule's volume or stock-universe filter.");
     }
     // ---- intraday phase 1: minute-path rules need this ticker's 1-minute bars over the whole window
@@ -496,11 +659,11 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     // ---- end intraday phase 1
     // ---- options phase 2: option rules need this underlying's real option prices over the whole window
     if crate::instrument_policy::options_p2(def) {
-        let Some(ch)=ctx.options else { return issue("needs_data","This rule trades real option contracts, and no traded option prices are loaded for this instrument. The underlying's own price cannot stand in for an option's, so no result is published.") };
-        if ctx.r[from].date.as_str()<ch.first() { return issue("needs_data",format!("Option prices for this instrument begin on {}. The selected period includes earlier days with no option prices; choose a fully covered period.",ch.first())); }
-        if ctx.r[to].date.as_str()>ch.last() { return issue("needs_data",format!("Option prices for this instrument end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",ch.last())); }
+        let Some((first,last))=crate::options::coverage(def.id,ctx) else { return issue("needs_data","This rule trades real option contracts, and no traded option prices are loaded for this instrument. The underlying's own price cannot stand in for an option's, so no result is published.") };
+        if ctx.r[from].date.as_str()<first.as_str() { return issue("needs_data",format!("Option prices for this instrument begin on {first}. The selected period includes earlier days with no option prices; choose a fully covered period.")); }
+        if ctx.r[to].date.as_str()>last.as_str() { return issue("needs_data",format!("Option prices for this instrument end on {last}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).")); }
     }
-    let required=required_series(def,p,minute_path);
+    let required=india_vxo_close(def,ctx,required_series(def,p,minute_path));
     if let Some(i)=crate::second::pair_issue(ctx,def.id,&required,p) {return Some(i);} // EP4 (#223 (7), #225): self-comparison, AccuTrack pair
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
@@ -508,9 +671,16 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // A series existing somewhere in history does not mean it covers the requested dates.
     for &name in &required {
+        // Q5a (18 Nov 2026): kdta_adr191 sums advances and declines over 10 days; a day with no value only blanks the ratio for
+        // 10 days (no signal, nothing filled), so a gap must not move the start past the last gap (it cut 1970-2005 to 2002-06-21..).
         if event_column(name) { continue; }
         let values=ctx.series(name).unwrap();
-        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite())).collect();
+        let tolerant=GAP_FIXED_WINDOW.contains(&def.id);
+        // only INTERIOR gaps (after the series' first value) are exempt; data that has not begun yet still refuses so auto-start says so
+        let first_valid=if tolerant {values.iter().position(|v| v.is_finite()).unwrap_or(usize::MAX)} else {usize::MAX};
+        let last_valid=if tolerant {values.iter().rposition(|v| v.is_finite()).unwrap_or(0)} else {0};
+        // exempt only gaps STRICTLY BETWEEN the first and last finite values; data not begun / already ended still refuses (auto-start / auto-end say so)
+        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && (!tolerant || i<first_valid || i>last_valid)).collect();
         if let Some(&first)=gaps.first() {
             let dates=values.iter().enumerate().filter(|(_,v)| v.is_finite()).map(|(i,_)| ctx.r[i].date.as_str()).collect::<Vec<_>>();
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
@@ -529,7 +699,11 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
     // lane K40 (decision #207): Luisi's literal-points option is SPX only; Blackman's gold season is GLD only
-    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
+    if let Some(note)=books::mhstp::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F3 (lead review): published window
+    if let Some(k)=crate::futures::first_nonpositive(def.id,ctx).filter(|&k|k<=to) {return issue("needs_data",format!("Results are published only before {}: the unadjusted price is <= 0 that day, so a % return has no base (R4 #316).",ctx.r[k].date));} // lane X4
+    if let Some(note)=crate::futures::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F1C (R4 #314 (3))
+    if let Some(note)=crate::futures::data2_issue(def.id,ctx) {return issue("needs_data",note);} // lane F1C (REV-F1B M3)
+    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
         return issue("not_testable",note);
     }
     if let Some(note)=books::otvt::gap(def.id,ctx,from,to,p) {
@@ -574,7 +748,7 @@ mod tests {
         }
         // other `allowed` rules keep the fixed-amount message
         let mut r=rows();for x in r.iter_mut(){x.ticker="SPY".into();}
-        assert!(check(&Ctx::new(&r,&r,&r),&definition("kftsm_pf"),0,4,&Params::new()).unwrap().note.contains("fixed point or dollar"));
+        assert!(check(&Ctx::new(&r,&r,&r),&definition("rwtlc_rsix"),0,4,&Params::new()).unwrap().note.contains("fixed point or dollar")); // kftsm_pf: percent box since lane K75
     }
     #[test]
     fn reviewed_burns_only_accepts_default_long_cash_lengths_and_exact_fill_modes() {
@@ -648,7 +822,7 @@ mod tests {
     fn joe_ross_rules_refuse_stale_us_index_opens() {
         let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
         for (t,y,refused) in [("SPX","2013",true),("SPX","2014",false),("NDX","2000",true),("DJI","2015",true),("NIFTY 50","1995",false),("SPY","1994",false)] {
-            for id in books::joe_ross_rules::REVIEWED {
+            for id in books::joe_ross_rules::REVIEWED { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
                 let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
                 assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::instrument_policy::m3_withdrawn(id,t),"{id} {t} {y}"); // #179
             }
@@ -672,7 +846,7 @@ mod tests {
             ("SPX","2013","jb624_mac2_sar",false),("SPX","1990","jbcaf_stoch_2575",false),("SPX","1990","jbssf_ma3",false),("NIFTY 50","2005","jb624_3hl",false),
             ("SPX","2013","jb624_mac5",false),("SPX","2013","jb624_fri_mon",true),("SPX","2014","jb624_fri_mon",false),("SPY","2014","jb624_fri_mon",true)] {
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::intraday_ep6::held_note(id,t).is_some(),"{id} {t} {y}"); // K62 #246: jb624_fri_mon held
         }
     }
     #[test]
@@ -690,7 +864,7 @@ mod tests {
         for (t,y,id,refused) in [("SPX","2013","jbsmsw_mac_pullback",true),("SPX","2014","jbsmsw_mac_pullback",false),("DJI","2015","jbsmsw_mac_pullback",true),
             ("SPX","2013","jbsmsw_mom_ma",false),("SPX","2013","jbhsms_sp_0113",false),("SPX","2013","jbeft_dow_fm97",true),("SPX","2014","jbeft_dow_fm97",false),("SPX","2014","jbeft_dow_wt",false),("NDX","2000","jbtifm_2000st",true),("NDX","2001","jbtifm_2000st",false),("NDX","2000","jbtifm_ma_9_18",false),("SPX","2013","jbtywr_crude_outside",false)] {
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::intraday_ep6::held_note(id,t).is_some(),"{id} {t} {y}"); // K62 #246: jbeft_dow held
         }
     }
     #[test]
@@ -717,8 +891,10 @@ mod tests {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+5);}r};
         let ok=|r:&Vec<crate::Row>,id:&str|{let mut ctx=Ctx::new(r,r,r);for s in definition(id).needs_series {ctx.extra.insert(s.to_string(),vec![1.0;r.len()]);}check(&ctx,&definition(id),0,4,&Params::new()).map(|i|i.status)};
         for &id in books::ptjmt::REVIEWED_DAILY {
-            if id.ends_with("_nse") { // held for every symbol and period (NSE breadth, 2026-10-21)
-                for (t,y) in [("SPY","1991"),("SPX","2013"),("SPX","2014"),("SPY","2013")] {assert_eq!(ok(&mk(t,y),id),Some("needs_data"),"{id}");}
+            if id.ends_with("_nse") { // R4 #340: no longer held; the readiness check adds no VIX-year or stale-open refusal (symbol scope is in instrument_policy, the NSE series are in the data)
+                // R1 audit: the twin is an Indian-market rule (open on Indian indices and stocks); US tickers are refused by the symbol layer
+                for (t,y) in [("NIFTY 50","1991"),("NIFTY 50","2013"),("NIFTY 50","2014"),("NIFTYBANK","2013")] {assert_eq!(ok(&mk(t,y),id),None,"{id}");}
+                for (t,y) in [("SPY","2014"),("SPX","2014")] {assert_eq!(ok(&mk(t,y),id),Some("needs_data"),"{id}");}
                 continue;
             }
             let cvr=id.starts_with("ptjmt_cvr");
@@ -736,6 +912,7 @@ mod tests {
             let guarded=!crate::gate::get(id).is_some_and(|g|g.clamp_open);
             assert_eq!(guarded,id=="cwin_window_two_rule_exit_test");
             let (old,new,spy)=(mk("SPX","2013"),mk("SPX","2014"),mk("SPY","1995"));
+            if crate::intraday_ep6::held_note(id,"SPX").is_some() {continue;} // K63 #246: cwin_single_window's SPX result withdrawn (#179)
             assert_eq!(check(&Ctx::new(&old,&old,&old),&d,0,4,&Params::new()).is_some(),guarded,"{id}");
             assert!(check(&Ctx::new(&new,&new,&new),&d,0,4,&Params::new()).is_none(),"{id}");
             assert!(check(&Ctx::new(&spy,&spy,&spy),&d,0,4,&Params::new()).is_none(),"{id}");
@@ -744,7 +921,7 @@ mod tests {
     #[test]
     fn btp_open_reading_rules_refuse_stale_index_opens() {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
-        for &id in books::btp::REVIEWED_DAILY {
+        for &id in books::btp::REVIEWED_DAILY { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=definition(id);
             let clamped=crate::gate::get(id).is_some_and(|g|g.clamp_open);
             let guarded=books::btp::reads_open(id) && !clamped;
@@ -757,7 +934,7 @@ mod tests {
     #[test]
     fn ws5_rules_refuse_stale_index_opens_and_close_only_vix() {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
-        for &id in books::ws5::REVIEWED_DAILY {
+        for &id in books::ws5::REVIEWED_DAILY { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=definition(id);
             let guarded=!crate::gate::get(id).is_some_and(|g|g.clamp_open);
             let (old,new,spy)=(mk("SPX","2013"),mk("SPX","2014"),mk("SPY","1991"));
@@ -825,7 +1002,7 @@ mod tests {
     fn modeled_options_are_blocked_even_with_real_underlying_and_iv() {
         let r=rows();let mut ctx=Ctx::new(&r,&r,&[]);
         ctx.extra.insert("IV30".into(),vec![20.0;5]);
-        for id in ["otvt_diz_short_strangle","otvt_cvr1_sell_puts","otvt_cvr1_buy_puts","otvt_sector_options_overpriced"] {
+        for id in ["otvt_diz_short_strangle","otvt_cvr1_sell_puts","otvt_cvr1_buy_puts","otvt_sector_options_overpriced"] { // no chain loaded: needs data
             assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).unwrap().status,"needs_data");
             let mut def=definition(id);def.status=Status::Live;
             assert_eq!(check(&ctx,&def,0,4,&Params::new()).unwrap().status,"needs_data");
@@ -834,8 +1011,9 @@ mod tests {
     #[test]
     fn option_rules_need_real_option_prices() {
         // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
-        let r=rows();
         for &id in crate::options::RULES {
+            let mut r=rows();
+            if id.starts_with("as51_opt") {let t=if crate::books::as51ts::BNF_IDS.contains(&id) {"NIFTYBANK"} else {"NIFTY 50"}; for x in r.iter_mut(){x.ticker=t.into();}} // lanes F2 / F4: gate-allowed on NIFTY 50 / NIFTYBANK only; no weekly store loaded here
             let mut ctx=Ctx::new(&r,&r,&[]);
             ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
             let e=check(&ctx,&definition(id),0,4,&Params::new()).unwrap();
@@ -844,7 +1022,8 @@ mod tests {
     }
     #[test]
     fn external_series_are_checked_in_the_selected_window() {
-        let r=rows();let mut ctx=Ctx::new(&r,&r,&[]);let def=definition("trin4");
+        let r=rows();let mut ctx=Ctx::new(&r,&r,&[]);let mut def=definition("trin4");
+        def.id="trin4_gap_sensitive_probe"; // trin4 itself is gap-tolerant (GAP_FIXED_WINDOW); the probe keeps the series-gap refusal under test
         ctx.extra.insert("TRIN".into(),vec![1.0,1.0,f64::NAN,f64::NAN,f64::NAN]);
         let e=check(&ctx,&def,2,4,&Params::new()).unwrap();
         assert_eq!(e.status,"needs_data");assert!(e.note.contains("2020-01-03"));
@@ -859,9 +1038,11 @@ mod tests {
             let p=Params::from([("stop_pts".into(),4.)]);
             assert!(check(&ctx,&def,0,4,&p).unwrap().note.contains("Futures dollar stops"));
         }
-        for id in ["ch_ntt_vidya_cmo","ch_ntt_to_buy","ch_ntt_to_buy_nse"] {
+        for id in ["ch_ntt_vidya_cmo","ch_ntt_to_buy"] { // R4 #306: ch_ntt_to_buy is US-only; the NSE twin runs on the Nifty indices since R4 #340 (lane N1)
             assert!(crate::instrument_policy::check(&definition(id),"NIFTY 50",false).is_some());
         }
+        assert!(crate::instrument_policy::check(&definition("ch_ntt_to_buy"),"SPY",false).is_none());
+        assert!(crate::instrument_policy::check(&definition("ch_ntt_to_buy_nse"),"NIFTY 50",false).is_none());
     }
     #[test]
     fn volume_is_required_on_each_day_and_prices_must_be_valid() {
@@ -1066,16 +1247,16 @@ mod vix_india_tests { // VIX India block (24 Oct 2026)
     fn vix_rules_run_on_indian_and_us_instruments_except_held_ties() {
         use crate::instrument_policy::{check as pol,check_native,vix_india,VIX_INDIA_RULES};
         let all=crate::connors::catalogue();
-        for (book,id) in VIX_INDIA_RULES {
+        for (book,id) in VIX_INDIA_RULES { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
             let d=all.iter().find(|d|d.id==*id&&d.book==*book).unwrap_or_else(||panic!("{book}:{id}"));
             assert!(vix_india(d) && (d.needs_vix || !d.needs_series.is_empty()));
-            let held_in=matches!(*id,"vixr_cvr11"|"vixr_all"); // vixr_all contains CVR 11 (lane K43)
-            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert_eq!(pol(d,t,false).is_none(),!(held_in&&t.starts_with("NIFTY")),"{id} {t}");}
+            let held_in=*id=="vixr_all"; // CVR 11 open on India (IN1, #347); vixr_all opened on the three indices by lane N1 (stocks held)
+            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert!(pol(d,t,false).is_none(),"{id} {t}");}
             assert_eq!(check_native(d,"RELIANCE",&crate::baskets::NativeEvidence::india_test_fixture()).is_none(),!held_in,"{id}");
             assert!(check_native(d,"AAPL",&crate::baskets::NativeEvidence::us_test_fixture()).is_none(),"{id}");
             assert_eq!(crate::instrument_policy::open_instrument_label(d),Some(crate::instrument_policy::VIX_INDIA_LABEL));
         }
-        assert_eq!(pol(all.iter().find(|d|d.id=="vixr_cvr11").unwrap(),"NIFTY 50",false).unwrap().status,"not_testable");
+        assert!(pol(all.iter().find(|d|d.id=="vixr_cvr11").unwrap(),"NIFTY 50",false).is_none());assert!(pol(all.iter().find(|d|d.id=="vixr_all").unwrap(),"NIFTY 50",false).is_none());
     }
 }
 
@@ -1130,5 +1311,33 @@ mod auto_end_tests { // auto-end (24 Oct 2026): data that ends before the reques
         assert_eq!(end,379);assert!(note.unwrap().starts_with(&format!("Ended {}: daily volume figures for SPX end then.",r[379].date)));
         assert!(check(&ctx,&d,0,end,&p).map_or(true,|i|!i.note.contains("Required volume")));
         assert_eq!(auto_end(&ctx,&def("vixr_cvr2"),0,399,&p),(399,None));
+    }
+}
+
+#[cfg(test)]
+mod star_candidate_readiness_tests {
+    use super::*;
+    fn rows(ticker:&str)->Vec<crate::Row> {
+        (0..45).map(|i|crate::Row {ticker:ticker.into(),date:format!("2020-{:02}-{:02}",i/25+1,i%25+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect()
+    }
+    #[test]
+    fn scope_warmup_and_inputs_are_checked_without_admitting_other_symbols() {
+        let d=books::bstar_candidate::catalogue().into_iter().next().unwrap();
+        for ticker in ["NIFTY 50","SPY"] {
+            let r=rows(ticker);let x=Ctx::new(&r,&r,&[]);
+            assert_eq!(check(&x,&d,34,44,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&x,&d,35,44,&Params::new()).is_none());
+            assert_eq!(check(&x,&d,35,44,&Params::from([("side".into(),1.)])).unwrap().status,"not_testable");
+        }
+        for ticker in ["SPX","NIFTYBANK","RELIANCE"] {
+            let r=rows(ticker);let x=Ctx::new(&r,&r,&[]);
+            assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"not_testable");
+        }
+        let r=rows("NIFTY 50");let mut x=Ctx::new(&r,&r,&[]);x.native_market=Some(crate::baskets::Market::India);
+        assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"not_testable");
+        let mut r=rows("NIFTY 50");r[5].date=r[4].date.clone();let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"needs_data");
+        let mut r=rows("SPY");r[5].close=f64::NAN;let x=Ctx::new(&r,&r,&[]);
+        assert_eq!(check(&x,&d,35,44,&Params::new()).unwrap().status,"needs_data");
     }
 }

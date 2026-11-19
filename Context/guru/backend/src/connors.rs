@@ -19,28 +19,90 @@ use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------- indicators
 
-/// Simple moving average. A missing value (NaN) blanks only the windows that contain it: the running sum is
-/// rebuilt once the gap leaves the window. Without NaNs the arithmetic is exactly the plain running sum.
+/// Simple moving average (R4 #249, #256). A window that contains a missing value (NaN) is NaN.
+/// Exact path: when every value reads as a printed decimal (connors::ExactSeries: at most 15 decimals), each window is
+/// summed in integers at the series' decimal scale and divided ONCE (correctly rounded), so an exact decimal tie gives the
+/// identical float everywhere: SMA10 of MSFT 2004-04-06..19 is exactly 25.53 = the close, not 25.529999999999998.
+/// Fallback: a series with any value that is not decimal-exact (computed values such as ratios or oscillators, not
+/// printed prices) or not finite, or whose window sums could overflow i128, keeps the float window sum, each window
+/// summed directly, left to right (#249).
+/// Limit: an exact tie gives equal floats, but two UNEQUAL averages (or a price and an average) can round to the same float
+/// once a window sum exceeds about 2^52 integer units. Vault series whose closes carry 13-15 decimals (float32 residue such
+/// as 170.67999267578125; K64w/exactscan.txt) reach that, so the #253 exact comparisons in bpqst/kftsm/t2w stay.
 pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
-    let mut out = vec![f64::NAN; v.len()];
-    let (mut sum, mut gaps) = (0.0, 0usize);
-    for i in 0..v.len() {
-        if v[i].is_nan() { gaps += 1 } else { sum += v[i] }
-        if i >= n {
-            if v[i - n].is_nan() {
-                gaps -= 1;
-                if gaps == 0 {
-                    sum = v[i + 1 - n..=i].iter().sum();
-                }
-            } else {
-                sum -= v[i - n];
-            }
-        }
-        if i + 1 >= n && gaps == 0 {
-            out[i] = sum / n as f64;
-        }
+    if n == 0 { return vec![f64::NAN; v.len()]; }
+    if let Some(e) = ExactSeries::new(&[v]).filter(|e| e.v[0].iter().flatten().map(|a| a.unsigned_abs()).max().unwrap_or(0).checked_mul(n as u128 + 1).is_some_and(|m| m < i128::MAX as u128)) {
+        let x = &e.v[0];
+        let den = n as i128 * 10i128.pow(e.scale);
+        // the integer running sum is exact, so it carries no drift
+        let (mut s, mut miss) = (0i128, 0usize);
+        return (0..x.len()).map(|i| {
+            match x[i] { Some(a) => s += a, None => miss += 1 }
+            if i >= n { match x[i - n] { Some(a) => s -= a, None => miss -= 1 } }
+            if i + 1 < n || miss > 0 { f64::NAN } else { ratio_f64(s, den) }
+        }).collect();
     }
-    out
+    (0..v.len())
+        .map(|i| {
+            if i + 1 < n {
+                return f64::NAN;
+            }
+            let w = &v[i + 1 - n..=i];
+            if w.iter().any(|x| x.is_nan()) { f64::NAN } else { w.iter().sum::<f64>() / n as f64 }
+        })
+        .collect()
+}
+
+/// num/den (den > 0) correctly rounded to f64. Both exact in f64 (<= 2^53): one IEEE division is correctly rounded.
+/// Otherwise the exact decimal quotient is parsed, which Rust rounds correctly: digits until the remainder is 0 (a
+/// quotient with den < 2^127 terminates within 127 digits if it terminates at all, so every halfway point between two
+/// floats is written exactly), else 200 digits plus a sticky 1 (a non-terminating quotient is not a halfway point).
+fn ratio_f64(num: i128, den: i128) -> f64 {
+    const P53: i128 = 1 << 53;
+    if num.abs() <= P53 && den <= P53 { return num as f64 / den as f64; }
+    let (q, mut r) = (num.abs() / den, num.abs() % den);
+    let mut t = format!("{}{q}.", if num < 0 { "-" } else { "" });
+    for _ in 0..200 { if r == 0 { break; } r *= 10; t.push((b'0' + (r / den) as u8) as char); r %= den; }
+    if r != 0 { t.push('1'); }
+    t.parse().unwrap()
+}
+
+/// Exact decimal arithmetic on printed prices (R4 #253): each value is read as the shortest decimal that round-trips to the
+/// stored f64 (the printed price), scaled to integers at one common scale for all the given series. Window sums are then
+/// exact, so an average can be compared with a price (n*P vs the sum) or with another average (m*S_n vs n*S_m) without
+/// rounding (#253), and `sma` divides each exact sum once (#256). `None` when a value has more than 15 decimals or is not
+/// finite: the caller keeps its float comparison.
+pub struct ExactSeries { pub v: Vec<Vec<Option<i128>>>, /** decimals of the common integer scale */ pub scale: u32 }
+impl ExactSeries {
+    pub fn new(series: &[&[f64]]) -> Option<ExactSeries> {
+        let parse = |x: f64| -> Option<(i128, u32)> {
+            if !x.is_finite() { return None; }
+            let s = format!("{x}");
+            let (neg, s) = s.strip_prefix('-').map_or((false, s.as_str()), |r| (true, r));
+            let (ip, fp) = s.split_once('.').unwrap_or((s, ""));
+            if fp.len() > 15 || ip.len() > 18 { return None; }
+            let m: i128 = format!("{ip}{fp}").parse().ok()?;
+            Some((if neg { -m } else { m }, fp.len() as u32))
+        };
+        let raw: Vec<Vec<Option<(i128, u32)>>> = series.iter().map(|s| s.iter().map(|&x| if x.is_nan() { None } else { parse(x) }).collect()).collect();
+        // a finite value that cannot be read exactly makes the whole set fall back to floats
+        for (s, r) in series.iter().zip(&raw) { if s.iter().zip(r).any(|(x, p)| !x.is_nan() && p.is_none()) { return None; } }
+        let sc = raw.iter().flatten().flatten().map(|p| p.1).max().unwrap_or(0);
+        Some(ExactSeries { v: raw.into_iter().map(|r| r.into_iter().map(|p| p.map(|(m, k)| m * 10i128.pow(sc - k))).collect()).collect(), scale: sc })
+    }
+    /// Exact window sums of series `k` (None in warm-up or when the window holds a missing value).
+    pub fn sums(&self, k: usize, n: usize) -> Vec<Option<i128>> {
+        let v = &self.v[k];
+        (0..v.len()).map(|i| if n == 0 || i + 1 < n { None } else { v[i + 1 - n..=i].iter().try_fold(0i128, |a, x| x.map(|x| a + x)) }).collect()
+    }
+}
+/// Sign of SMA_n(series k at bar i) - price (series j at bar i) in exact arithmetic: n*P vs the window sum.
+pub fn exact_avg_vs(e: &ExactSeries, sum: &[Option<i128>], n: usize, j: usize, i: usize) -> Option<std::cmp::Ordering> {
+    Some(sum[i]?.cmp(&(e.v[j][i]? * n as i128)))
+}
+/// Sign of SMA_a - SMA_b at bar i from exact window sums of lengths na and nb: nb*S_a vs na*S_b.
+pub fn exact_avg_vs_avg(sa: &[Option<i128>], na: usize, sb: &[Option<i128>], nb: usize, i: usize) -> Option<std::cmp::Ordering> {
+    Some((sa[i]? * nb as i128).cmp(&(sb[i]? * na as i128)))
 }
 
 /// Wilder smoothed moving average (SMMA, alpha = 1/n) seeded with the SMA of the
@@ -206,6 +268,9 @@ pub fn streak(n: usize, pred: impl Fn(usize) -> bool) -> Vec<usize> {
 
 // ---------------------------------------------------------------- context
 
+/// Lane IN2 (R4 #340): name of the NIFTY / BANKNIFTY futures daily-volume series, and the volume rules that may read it as a labelled adaptation.
+pub const FUT_VOL: &str = "FUT1.Volume";
+pub const FUT_VOL_IDS: &[&str] = &["scsaitta_volma", "fotol_bb_breakout"];
 pub struct Ctx<'a> {
     pub r: &'a [Row],
     pub o: Vec<f64>,
@@ -239,6 +304,8 @@ pub struct Ctx<'a> {
     pub native_market: Option<crate::baskets::Market>,
     /// intraday phase 1: real 1-minute bars of this ticker (None = not loaded; minute-path rules then report a data gap)
     pub minutes: Option<&'static crate::intraday::Minutes>,
+    /// lane M1: NIFTY / BANKNIFTY futures 1-minute with volume (None unless `<intraday dir>/<T>.FUT1.m1.csv` exists)
+    pub fut: Option<&'static crate::intraday::Minutes>,
     /// options phase 2: real EOD monthly-option chain of this underlying (None = not loaded; option rules report a data gap)
     pub options: Option<&'static crate::options::Chain>,
 }
@@ -334,6 +401,7 @@ impl<'a> Ctx<'a> {
             extra: BTreeMap::new(),
             native_market: None,
             minutes: None,
+            fut: None,
             options: None,
             c,
             r,
@@ -347,9 +415,15 @@ impl<'a> Ctx<'a> {
     /// One real tick of the traded instrument: a native stock's market tick, else 0.05 on the vault's NSE indices
     /// (tickers start "NIFTY") and 0.01 on US indices/ETFs (decimal quotes). Adaptation: the Connors books used 1/8-dollar ticks.
     pub fn market_tick(&self) -> f64 {
+        if let Some(m) = crate::futures::ctx_market(self) { return m.tick; } // lane F1 (R4 #293, #57): the contract's tick
         self.stock_tick().unwrap_or(if self.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 })
     }
     /// An external series by name, if it has any data for this ticker.
+    /// Lane IN2 (R4 #340): the daily volume a volume rule reads. On NIFTY 50 / NIFTYBANK it is the futures volume (FUT_VOL, NaN on days
+    /// without a verified figure) and only the ids in `FUT_VOL_IDS` call this; every other context reads the file's own volume.
+    pub fn fut_vol(&self) -> Vec<f64> {
+        match self.extra.get(FUT_VOL) { Some(v) if v.len() == self.r.len() => v.clone(), _ => self.r.iter().map(|r| r.volume.unwrap_or(f64::NAN)).collect() }
+    }
     pub fn series(&self, name: &str) -> Option<&[f64]> {
         self.extra.get(name).filter(|v| v.iter().any(|x| x.is_finite())).map(|v| v.as_slice())
     }
@@ -802,10 +876,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
         v.push(StrategyDef { id, name, group: "Market Timing · TRIN", session: 7, dir: "Long", status: Live, needs_volume: false, needs_vix: false, needs_series: &["TRIN"], book: "stc9", rules,
             notes: "TRIN = the exchange's Arms index (advancing ÷ declining issues) ÷ (advancing ÷ declining volume), daily close: NSE breadth for Indian indices, NYSE for US ones (NYSE data ends 2020-02-10). Buy on the close of the trigger day [Book silent: as every Session 7 rule].", claim });
     }
-    v.push(StrategyDef { id: "lev_calls", name: "Leveraged ETF Call Options", group: "Options", session: 8, dir: "Long", status: NotTestable("needs option chains"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
-        notes: "On the next-to-last 1-2-3-4-5 scale-in buy ½ position of the 2nd ITM front-month call, the other ½ on the final scale-in; exit RSI(2) > 50.", claim: None });
-    v.push(StrategyDef { id: "busted", name: "Busted Options Program", group: "Options", session: 8, dir: "Short", status: NotTestable("needs earnings + option chains"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
-        notes: "SPX < 200 SMA; stock misses earnings and opens ≥ 15% lower; sell 1st/2nd OTM next-month call (premium ≥ $1); hold to expiry, stop at 2× premium.", claim: None });
+    v.push(StrategyDef { id: "lev_calls", name: "Leveraged ETF Call Options", group: "Options", session: 8, dir: "Long", status: NotTestable("matching 2x/3x equity ETF and its option chain not yet verified; expiry and execution conventions need review"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
+        notes: "Session 8 p.8: buy half a front-month second-ITM call on the next-to-last scale-in and the other half of the same contract on the final signal; exit at RSI 50. Session 7 pp.7–9 specify 2x/3x equity ETFs and RSI(2) > 50; these cited rules name no ETF ticker. The current SPY/QQQ/IWM and Indian index option caches are not leveraged-ETF chains.", claim: None });
+    v.push(StrategyDef { id: "busted", name: "Busted Options Program", group: "Options", session: 8, dir: "Short", status: NotTestable("dated earnings misses not verified; source stock-option records not imported; execution and expiry rules need review"), needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules: na,
+        notes: "Session 8 pp.10–12: SPX below 200-day MA; a stock misses earnings and opens at least 15% lower; sell a first/second OTM next-month call for at least $1; expiry or discretionary early exit at very low option value, with a stop at twice the premium received. Indian stock-option records exist in the source bhavcopies but are not loaded by this card; an index option cannot replace a stock option.", claim: None });
  
     v.extend(crate::books::catalogue());
     v
@@ -1197,7 +1271,7 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
             let st = |i: usize| (hvv[i] / div).max(floor) / 100.0;
             let buy = |i: usize| c[i] > tr[i] && x.h[i] < ma[i] && c[i] <= ma[i] * (1.0 - st(i));
             let sell = |i: usize| c[i] < tr[i] && x.l[i] > ma[i] && c[i] >= ma[i] * (1.0 + st(i));
-            let side = |dir: f64| {
+            let side_from = |dir: f64, from: usize| {
                 let sig = |i: usize| if dir > 0.0 { buy(i) } else { sell(i) };
                 simulate(x, &Spec {
                     dir,
@@ -1210,6 +1284,7 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
                     },
                 }, from, to)
             };
+            let side = |dir: f64| side_from(dir, from);
             match id {
                 "ss_long" => side(1.0),
                 "ss_short" => side(-1.0),
@@ -1220,12 +1295,21 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
                     .map(|t| Trade { legs: vec![Leg { w: 1.0, ..t.legs[1] }], ..t })
                     .collect(),
                 _ => {
-                    // one position per ETF: merge both sides and skip a signal that starts while the other side is open
-                    // ponytail: skips the overlapping trade instead of re-simulating; rule 1 (200-day filter) makes overlaps rare
-                    let mut all = [side(1.0), side(-1.0)].concat();
-                    all.sort_by_key(|t| t.legs[0].i);
-                    let mut busy = None;
-                    all.into_iter().filter(|t| { let free = busy.map_or(true, |b| t.legs[0].i > b); if free { busy = Some(t.exit_i); } free }).collect()
+                    // one position per ETF (R4 #345 (4)): the earlier of the two sides' next entries opens the position, the other
+                    // side is ignored until it closes, then both are searched again from the bar after the exit (no entry on the exit bar)
+                    let (mut out, mut k) = (Vec::new(), from);
+                    while k < to {
+                        let (a, b) = (side_from(1.0, k), side_from(-1.0, k));
+                        let first = match (a.into_iter().next(), b.into_iter().next()) {
+                            (Some(a), Some(b)) => if a.legs[0].i < b.legs[0].i { a } else { b },
+                            (a, b) => match a.or(b) { Some(t) => t, None => break },
+                        };
+                        k = first.exit_i + 1;
+                        let open = first.open;
+                        out.push(first);
+                        if open { break; }
+                    }
+                    out
                 }
             }
         }
@@ -1337,5 +1421,63 @@ mod sma_gap_tests {
         assert_eq!((m[1], m[4], m[5], m[6]), (1.5, 4.5, 5.5, 6.5));
         let plain = [3.0, 1.0, 4.0, 1.0, 5.0];
         assert_eq!(sma(&plain, 3)[2..], [8.0 / 3.0, 2.0, 10.0 / 3.0]);
+    }
+
+    /// R4 #249 / M7: IBM closes 1980-06-09..06-25 (1/32 dollars). Summed per window, SMA5 = SMA12 = 14.6875 on 06-25,
+    /// a tie, so SMA5 does not cross below SMA12 (it was above on 06-24). A short non-dyadic prefix (like IBM's adjusted
+    /// 1950s prices) leaves rounding in a running sum, which then reports a false cross.
+    #[test]
+    fn ibm_1980_06_25_tie_is_not_a_cross() {
+        let mut v: Vec<f64> = (0..10).map(|k| 0.3083888 + 0.0137 * k as f64).collect();
+        v.extend([14.1875, 14.375, 14.5, 14.5, 14.71875, 15.09375, 14.71875, 14.90625, 14.46875, 14.46875, 14.71875, 14.84375, 14.9375]);
+        let (t, a, b) = (v.len() - 1, sma(&v, 5), sma(&v, 12));
+        assert_eq!((a[t], b[t]), (14.6875, 14.6875));
+        assert!(a[t - 1] > b[t - 1]);
+        assert!(!(a[t] < b[t]), "no 'crosses below' on a tie");
+        let running = |n: usize| { let mut s = 0.0; for i in 0..=t { s += v[i]; if i >= n { s -= v[i - n] } } s / n as f64 };
+        assert!(running(5) < running(12), "the old running sum flips this tie (the defect this guards)");
+    }
+
+    /// R4 #256: the same IBM tie on the vault's printed closes (us_sp500 IBM, 1950 prefix as stored): the exact path.
+    #[test]
+    fn ibm_1980_06_25_tie_exact_path() {
+        let mut v = vec![0.3083888, 0.3069409, 0.3127323];
+        v.extend([14.1875, 14.375, 14.5, 14.5, 14.71875, 15.09375, 14.71875, 14.90625, 14.46875, 14.46875, 14.71875, 14.84375, 14.9375]);
+        assert!(super::ExactSeries::new(&[&v]).is_some());
+        let (t, a, b) = (v.len() - 1, sma(&v, 5), sma(&v, 12));
+        assert_eq!((a[t], b[t]), (14.6875, 14.6875));
+        assert!(a[t - 1] > b[t - 1] && !(a[t] < b[t]));
+    }
+
+    /// R4 #256 / RA F1: MSFT (us_sp500) closes 2004-04-05..19. SMA10 on 04-19 is exactly 25.53 = the close, so
+    /// "Close > Average(Close,10)" is false (the float window sum gave 25.529999999999998, true).
+    #[test]
+    fn msft_2004_04_19_close_equals_sma10() {
+        let c = [25.95, 25.8, 25.59, 25.48, 25.61, 25.45, 25.51, 25.22, 25.16, 25.53];
+        let m = sma(&c, 10);
+        assert_eq!(m[9], 25.53);
+        assert!(!(c[9] > m[9]));
+        assert!(c.iter().sum::<f64>() / 10.0 < 25.53, "the float window sum misses this tie (the defect this guards)");
+    }
+
+    /// 200,000 decimal prices: the exact SMA equals the correctly rounded mean of each window (no drift), and a run of
+    /// identical closes after a long history averages to that close exactly.
+    #[test]
+    fn long_series_no_drift() {
+        let mut v: Vec<f64> = (0..200_000u64).map(|k| (k * 7919 % 100_003 + 1) as f64 / 100.0).collect();
+        assert!(super::ExactSeries::new(&[&v]).is_some());
+        v.extend([12.34; 50]);
+        let m = sma(&v, 50);
+        assert_eq!(*m.last().unwrap(), 12.34);
+        for i in [49usize, 1_000, 123_457, 199_999] {
+            let s: i128 = v[i - 49..=i].iter().map(|x| (x * 100.0).round() as i128).sum();
+            assert_eq!(m[i], s as f64 / 5000.0);
+        }
+        // the slow path (sums above 2^53) rounds the same as one IEEE division where both are exact
+        assert_eq!(super::ratio_f64(1 << 60, 3), (1i128 << 60) as f64 / 3.0);
+        assert_eq!(super::ratio_f64(255_300_000_000_000_000, 10_000_000_000_000_000), 25.53);
+        assert_eq!(super::ratio_f64(-7, 2), -3.5);
+        // a halfway point with a long terminating expansion (Codex review): ties-to-even, not truncated at 60 digits
+        assert_eq!(super::ratio_f64(274_877_906_944_000_091_552_734_375, 70_368_744_177_664_000_000_000_000_000), ((1u64 << 52) + 2) as f64 / 2f64.powi(60));
     }
 }

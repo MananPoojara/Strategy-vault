@@ -15,14 +15,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("elsss_targets", "Selling at a moving average, envelope or resistance", "Ch.4 Selling at a Target", "Long",
           Status::NotTestable("exit-only (profit targets); entries are discretionary 'value zone' buys and envelope width is fitted by eye (\"A well-drawn channel fits like a good shirt\", p.16)"), &[], ""),
         d("elsss_stops", "Nic's stop, SafeZone, Parabolic, Volatility-Drop and other stops", "Ch.5 Selling on a Stop", "Long/Short",
-          Status::NotTestable("rules not fully defined: stops only, no entry (Sell and Sell Short p.117-118, p.129, p.132-135); SafeZone is already coded as an option of elcim_ts_fi; the Volatility-Drop switch is discretionary (\"I need to see a positive enough action to switch to a trailing stop\", p.133)"),
+          Status::NotTestable("rules not fully defined: stops only, no entry (Sell and Sell Short p.117-118, p.129, p.132-135); SafeZone is already coded as a labelled stop setting of elcim_ts_fi; the Volatility-Drop switch is discretionary (\"I need to see a positive enough action to switch to a trailing stop\", p.133)"),
           &["X|Nic's stop: \"a little below the lower of those two bars\" bracketing the low (p.117-118)",
             "X|Parabolic: Stop(tomorrow) = Stop(today) + AF x (EP - Stop(today)), AF 0.02 step 0.02 max 0.20 (p.129)",
             "X|Volatility-Drop: after the 2.7-SD Autoenvelope target, sell when price closes inside a 1.7-SD envelope (p.132-135)"], ""),
         d("elsss_engine_noise", "Engine-noise exits, the market bell, earnings exits", "Ch.6 Selling Engine Noise", "Long",
           Status::NotTestable("discretionary (divergences, 'acting sloppy', psychological signals)"), &[], ""),
         d("elsss_shorting", "Shorting tops, downtrends, fundamentals, futures, options, forex", "Ch.7-8 How to Sell Short", "Short",
-          Status::NotTestable("rules not fully defined: discretionary chart reading (false breakouts, divergences, shorting near value and covering 'to or below the lower channel line', Sell and Sell Short p.186) and option writing chosen by the trader"), &[], ""),
+          Status::NotTestable("rules not fully defined: discretionary chart reading (false breakouts, divergences, shorting near value and covering 'to or below the lower channel line', Sell and Sell Short p.186) and call and put writing chosen by the trader"), &[], ""),
     ]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { catalogue().into_iter().find(|d| d.id == id).map(|d| (d.id, d.name, "")) }

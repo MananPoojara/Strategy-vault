@@ -55,7 +55,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "intraday YM futures with fixed 20-point stops and pivot +/- 3 point orders; YM intraday data are not in the vault and level choice ('multi-pivot', midpoints when levels are 40+ points apart) is judged",
            &["E|limit orders at daily/weekly pivots and midpoints +/- 3 points; \"My initial stop is almost always 20 points\""]),
         nt("jcags_grains", "Grain futures day and swing setups (with Hubert Senters)", "Online Day Trading Seminar on Grains", "jcags",
-           "corn, wheat and soybean futures (not in the vault) with cent-based stops; the setups repeat Mastering the Trade", &[]),
+           "Lane PH (14 Nov 2026, D1 RULE UNCHECKED row, R4 #293 (4)): daily corn, wheat and soybean futures are now held (Norgate &ZC/&ZW/&ZS, cents), and the cent stops would run literally, but the seminar (AGSSeminar.pdf, re-read in full) has no daily rule: the day-trading setups are on 3- or 5-minute pit-session charts ('let the markets trade for 30 minutes, then start taking the breaks of the highs and lows'), 144-tick charts and 15-minute 21-EMA closes (no grain minute bars exist), the 'Manage the Trade' third target is 'discretionary', and the swing setups place stops at hand-drawn RSI and price trendlines (slides 48-52) with a 'discretionary' second target. Held", &[]),
         nt("jccbot_lessons", "CBOT trading lessons (mini-sized Dow)", "CBOT Trading Lessons WorkBook", "jccbot",
            "introductory futures lessons and the YM pivot method (intraday, fixed points)", &[]),
     ]
@@ -74,6 +74,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "jcmtt_squeeze" => vec![p("bb", "Bollinger / Keltner length", 20., 10., 40., 1.), p("bb_k", "Bollinger standard deviations", 2., 1., 3., 0.25),
@@ -206,17 +212,27 @@ fn propulsion(x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<T
     let mut out = vec![];
     // trade, stop, target, watermark reached
     let mut cur: Option<(Trade, f64, f64, bool)> = None;
+    // EP6 (#243, lane K62): a bar with the stop and the target both inside its range on the real 1-minute path; `od` = the
+    // position's same-day-order mark
+    let on = schema_has_order(g);
+    let mut od = crate::intraday_ep6::Day::Plain;
+    let fin = |t: Trade, od| { let mut t = t; crate::intraday_ep6::mark(&mut t, od); t };
     for i in from..=to {
         if let Some((t, st, tg, wm)) = cur.as_mut() {
             let (d, e) = (t.dir, t.legs[0].i);
             let px = t.legs[0].px;
             if i > e {
-                if let Some(q) = stop_fill(x, i, d, *st) {
-                    let (t, ..) = cur.take().unwrap(); out.push(close_out(t, i, q, i, "stop")); continue;
-                }
-                let hit = if d > 0. { if x.o[i] >= *tg { Some(x.o[i]) } else if x.h[i] >= *tg { Some(*tg) } else { None } }
-                          else if x.o[i] <= *tg { Some(x.o[i]) } else if x.l[i] <= *tg { Some(*tg) } else { None };
-                if let Some(q) = hit { let (t, ..) = cur.take().unwrap(); out.push(close_out(t, i, q, i, "target")); continue; }
+                let (s0, t0) = (*st, *tg);
+                // the daily rule (unchanged): the stop first (at its level or a gapped open), then the target
+                let conv = || {
+                    if let Some(q) = stop_fill(x, i, d, s0) { return Some((q, "stop")); }
+                    let hit = if d > 0. { if x.o[i] >= t0 { Some(x.o[i]) } else if x.h[i] >= t0 { Some(t0) } else { None } }
+                              else if x.o[i] <= t0 { Some(x.o[i]) } else if x.l[i] <= t0 { Some(t0) } else { None };
+                    hit.map(|q| (q, "target"))
+                };
+                let (r, day) = crate::intraday_ep6::stop_target(x, i, d, s0, t0, on, ("stop", "target"), conv);
+                od = od.worst(day);
+                if let Some((q, why)) = r { let (t, ..) = cur.take().unwrap(); out.push(fin(close_out(t, i, q, i, why), od)); continue; }
             }
             if !*wm && d * (x.c[i] - px * (1. + d * wp)) >= 0. { *wm = true; }
             if *wm { *st = if d > 0. { st.max(s[i]) } else { st.min(s[i]) }; }
@@ -237,17 +253,21 @@ fn propulsion(x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<T
         if d * (x.c[i] - px * (1. + d * wp)) >= 0. { wm = true; }
         let st = if wm { if d > 0. { st.max(s[i]) } else { st.min(s[i]) } } else { st };
         cur = Some((t, st, px * (1. + d * tp), wm));
+        od = crate::intraday_ep6::Day::Plain;
     }
-    if let Some((mut t, ..)) = cur { t = close_out(t, to, x.c[to], to, "open"); t.open = true; out.push(t); }
+    if let Some((mut t, ..)) = cur { t = close_out(t, to, x.c[to], to, "open"); t.open = true; out.push(fin(t, od)); }
     out
 }
+/// EP6 (lane K62): the resolver's switch, present (and 1 by default) only for EP6 ids (intraday_ep6::add_param).
+fn schema_has_order(g: &dyn Fn(&str) -> f64) -> bool { g("order") >= 0.5 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !REVIEWED.contains(&id) { return if mine(id) { Some(vec![]) } else { None }; }
     let schema = params(id)?;
     if from > to || to >= x.c.len() { return None; }
     for k in p.keys() { if !schema.iter().any(|d| d.key == k) { return None; } }
-    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
     Some(match id {
         "jcmtt_squeeze" => squeeze(x, from, to, &g),
         "jcmtt_holp" => holp(x, from, to, &g),

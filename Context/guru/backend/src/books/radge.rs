@@ -21,7 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"Place the initial stop at the moving average line or 1 tick on the other side.\"",
             "X|\"the exit will be a trailing stop using the exact same moving average ... in an uptrend, place the trailing stop exit 1 tick back below the moving average. In a downtrend, place the stop 1 tick above the moving average.\"",
             "X|[Book silent, neutral] Stop level for a bar = prior close's SMA -/+ 1 tick (orders are known before the open; the course's EMA stop uses \"the closing price of the day prior\"). Gap through a stop fills at the open; a stop touched on the entry bar counts as hit (conservative). Entry stops are re-issued each bar while the last two lows (highs) are above (below) the SMA; one position at a time, entries only when flat."],
-          "Course text p. 'Moving Average Breakout' (Examples 40-50). Tick: the book's '10 ticks' uses the instrument's minimum move; here tick = 0.05 for NSE indices (NSE tick), 0.01 otherwise (index quote step); 'tick' param overrides. The book's only result is TradeStation 'Mov Avg X 2/20' on CL 63/00 crude-oil futures, Oct 1998-Mar 2000, 1 contract: 51 trades, 49.02% win, net $6,000, PF 1.40, avg win/loss 1.45 (Example 50) - a futures contract the vault does not have, so it is not reproduced. The course's 'From My Experience' note mentions a 20-day EMA; the rule text says simple, which is the default. Run on the cash index (vault convention); shorting a cash index is hypothetical."),
+          "Course text p. 'Moving Average Breakout' (Examples 40-50). Tick: the book's '10 ticks' uses the instrument's minimum move (#57): 0.05 on NSE indices and stocks, 0.01 on US instruments; 'tick' param overrides. The book's only result is TradeStation 'Mov Avg X 2/20' on CL 63/00 crude-oil futures, Oct 1998-Mar 2000, 1 contract: 51 trades, 49.02% win, net $6,000, PF 1.40, avg win/loss 1.45 (Example 50) - a futures contract the vault does not have, so it is not reproduced. The course's 'From My Experience' note mentions a 20-day EMA; the rule text says simple, which is the default. Runs on indices, ETFs and stocks, US and India, as a declared application (lane K74, decision #277 (2): the crude-oil example is an illustration, not the rule); shorting a cash index is hypothetical. Same-day order: an entry stop filled inside the bar whose bar also reaches the stop counts as stopped (1.0-3.8% of trades on the checked instruments, under the 5% limit of #240)."),
         d("radge_oc_long", "Buy every open, sell the close", "Successful Stock Trading · Ch.1", "Long", Status::Live,
           &["E|\"I then told the computer to buy at the open of every single day - all 1353 of them -\"",
             "X|\"and sell on the close each night.\""],
@@ -45,11 +45,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
           nt("needs judgement: gap must be 'during a sustained trend' and 'not a part of a pullback or retracement ... such as in a consolidation area'; trend 'if it's not already obvious'"),
           &["F|Gap away from preceding bar P in trend direction; filled within 4 days; P low not breached", "E|Stop 1 tick above the bar that fills the gap, lowered with each lower high", "X|Initial stop 1 tick below the entry bar; trailing stop"],
           "The 4-day fill and P-bar rules are mechanical but the qualifying gap needs a discretionary trend/consolidation call; exit is an unspecified trailing stop."),
-        d("radge_smash", "Smash Bars", "Trading Course · Trend Momentum", "Long/Short",
-          nt("trend EMA length is given only as 'somewhere around 10 to 15 days'; no exact value"),
-          &["F|Trend: EMA pointing up/down, length 'somewhere around 10 to 15 days'", "F|Uptrend: close in the lowest quartile of the day (downtrend: highest quartile)",
-            "E|Next day only: buy stop 1 tick above the Smash bar high (short: 1 tick below its low)", "X|Initial stop 1 tick beyond the other end of the Smash bar", "X|Exit on the first lower low (short: first higher high)"],
-          "Everything but the EMA length is mechanical; it becomes Live the moment one exact length is chosen by the user (would then be labelled as not from the book)."),
+        d("radge_smash", "Smash Bars", "Trading Course · Trend Momentum", "Long/Short", Status::Live,
+          &["F|\"Define the trend using a shorter moving average, somewhere around 10 to 15 days and again, use an exponential moving average. If the EMA is pointing down then the trend is down. If the EMA is pointing up the trend is up.\" (Trend Momentum Techniques)",
+            "F|\"In a downtrend we need a close near the highs, in fact in the highest quartile of the day. In an uptrend, we need a close near the lows or in the lowest quartile of the day.\" (Smash Bars, The Setup)",
+            "E|\"The entry is activated when the Smash Bar is broken the very next day in the direction of our trend ... in an uptrend the high of the Smash Bar must be breached by 1 tick\"; short: \"a stop entry 1 tick below the low of the Smash bar for the next day\" (The Entry)",
+            "X|\"Place the initial stop 1 tick outside the setup day\": 1 tick below the Smash bar's low (long), 1 tick above its high (short) (The Initial Stop)",
+            "X|\"the suggested method is a channel breakout of 1 day ... In an uptrend, as soon as the first lower low is made, exit the trade\"; downtrend: \"as soon as a new higher high is made over the prior bar\" (The Exit)"],
+          "Adapted: 2 unstated details (lane R2B, 13 Nov 2026, R4 #297). Unstated in the course: (1) the exact EMA length ('somewhere around 10 to 15 days'); vault reading: 12 days (inside the range; p.ema sets 10-15); (2) the exit order's level for 'as soon as the first lower low is made'; vault reading: a stop 1 tick below the prior bar's low (above its high for shorts), the course's 1-tick convention for its other stops (p.xticks = 0: at the prior low itself). Vault conventions: EMA alpha 2/(n+1) started from the mean of its first n closes; 'pointing up' = the EMA above the day before on the Smash day; the quartiles include their boundary (close - low <= 25% of the range); a day with no range is no Smash bar; ticks are the instrument's own (US 0.01, NSE 0.05). Same-day order (lane R2E, R4 #305 (3), #243 (c)): when the entry bar opens between the entry stop and the initial stop and reaches both, the day is walked on the real 1-minute bars (the first minute that reaches the entry level fills, at the level or that minute's open; the initial stop counts from then on; a fill minute that also reaches the stop without opening beyond it counts as stopped, marked ambiguous); the result is published on SPY's minute window only (#177 flags SPX against SPY: opposite sign, so SPX and the NSE minute results are withdrawn, #177a). p.order = 0: the daily-bar convention (stopped that day). A stop gapped through at the open fills at the open. The course gives no performance figures for this method."),
         d("radge_swing_target", "Swing Target Trading", "Trading Course · Trend Momentum", "Long/Short",
           nt("swing high/low points (HP/LP/R) are chart-identified; 'a strong trend or thrust' is required; target/risk filter '2.5 to 3 times'"),
           &["F|Retracement of at least 30% of the prior swing", "E|Buy stop 1 tick above bar R", "X|Stop 1 tick below R; target T = HP + 0.618 x (HP - R)"],
@@ -70,6 +72,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "radge_ma220" => ("radge_ma220", "2/20 MA breakout", "Long/Short"),
+        "radge_smash" => ("radge_smash", "Smash Bars", "Long/Short"),
         "radge_oc_long" => ("radge_oc", "Open-to-close day trade", "Long · no stop (Ch.1)"),
         "radge_oc_long_stop" => ("radge_oc", "Open-to-close day trade", "Long · point stop (App. A)"),
         "radge_oc_short_stop" => ("radge_oc", "Open-to-close day trade", "Short · point stop (App. B)"),
@@ -82,7 +85,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "radge_ma220" => vec![p("ma", "Simple moving average (days)", 20., 10., 60., 5.), p("days", "Lows/highs beyond the MA (days)", 2., 1., 4., 1.),
                               p("ticks", "Entry ticks beyond the 2-day high/low", 10., 0., 20., 1.),
-                              p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 other)", 0., 0., 1., 0.01)],
+                              p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 US)", 0., 0., 1., 0.01)],
+        "radge_smash" => vec![p("ema", "Trend EMA (days; course 'around 10 to 15', vault reading 12)", 12., 10., 15., 1.),
+                              p("xticks", "Exit stop ticks beyond the prior bar's low/high (vault reading 1; 0 = at it)", 1., 0., 5., 1.),
+                              p("tick", "Tick size (0 = instrument: 0.05 NSE, 0.01 US)", 0., 0., 1., 0.01),
+                              p("order", "Same-day order of the entry stop and the initial stop: 1 = real 1-minute path (#243, #305 (3)), 0 = the daily-bar convention (stopped that day)", 1., 0., 1., 1.)],
         "radge_oc_long" => vec![],
         "radge_oc_long_stop" | "radge_oc_short_stop" => vec![p("stop_pts", "Protective stop (index points; book table 1-50)", 1., 1., 50., 1.)],
         _ => return None,
@@ -114,7 +121,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "radge_ma220" => {
             let ma = x.sma_n(g("ma") as usize);
             let days = (g("days") as usize).max(1);
-            let tick = if g("tick") > 0. { g("tick") } else if x.r[0].ticker.to_uppercase().contains("NIFTY") { 0.05 } else { 0.01 };
+            // lane K74 (#57, #277 (2)): the instrument's own tick (NSE 0.05 indices and stocks, US 0.01); was 0.01 on NSE stocks
+            let tick = if g("tick") > 0. { g("tick") } else { x.market_tick() };
             let off = g("ticks") * tick;
             let mut cur: Option<Trade> = None;
             // pending entry order for bar i: (dir, stop level)
@@ -149,6 +157,71 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             if let Some(mut t) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
         }
+        "radge_smash" => { // lane R2B (R4 #297); EP6 entry day (lane R2E, R4 #305 (3))
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // #243 (c) minute window
+            let ep = crate::intraday_ep6::on(id, p);
+            let e = super::apta::ema(c, g("ema").round().max(1.) as usize);
+            let tick = if g("tick") > 0. { g("tick") } else { x.market_tick() };
+            let xoff = g("xticks").round() * tick;
+            let r8 = |v: f64| (v * 1e8).round() / 1e8;
+            let mut cur: Option<(Trade, f64)> = None; // (trade, initial stop)
+            let mut cm = crate::intraday_ep6::Day::Plain; // how the open trade's entry day was decided (EP6 mark)
+            let mut pend: Option<(f64, f64, f64)> = None; // (dir, entry stop, initial stop) for the next bar only
+            for i in from..=to {
+                let mut resolved = false; // the entry bar was walked on the minutes: its stop check is done
+                if let Some((dir, lvl, st)) = pend.take() {
+                    let fill = if dir > 0. { (h[i] >= lvl).then(|| o[i].max(lvl)) } else { (l[i] <= lvl).then(|| o[i].min(lvl)) };
+                    if let Some(px) = fill {
+                        // order-dependent: the open lies between the two levels and the bar reaches both
+                        let dual = if dir > 0. { o[i] < lvl && o[i] > st && l[i] <= st } else { o[i] > lvl && o[i] < st && h[i] >= st };
+                        match (ep && dual).then(|| crate::intraday_w2b::day(x, i)).flatten().filter(|b| !b.is_empty()) {
+                            Some(b) => {
+                                use crate::intraday::{first_touch, stop_entry_day, touched, Level, Touch};
+                                let (en, sl) = (Level { up: dir > 0., px: lvl }, Level { up: dir < 0., px: st });
+                                // the fill minute also reaches the stop without having opened beyond it: order inside one minute unknown (#175)
+                                let amb = matches!(first_touch(&b, 0, &[en]), Touch::Hit { bar, .. } if touched(&b[bar], sl) && !(if sl.up { b[bar].o >= st } else { b[bar].o <= st }));
+                                let mark = if amb { crate::intraday_ep6::Day::Ambiguous } else { crate::intraday_ep6::Day::Minutes };
+                                resolved = true;
+                                match stop_entry_day(&b, 0, &[en], &|_, _| Some(sl)) {
+                                    None => {} // the minutes never reach the entry level: no trade
+                                    Some((_, f, Some(xp))) => {
+                                        let mut t = trade(dir, i, f, "stop");
+                                        (t.exit_px, t.reason) = (xp, "initial stop (entry bar)".into());
+                                        crate::intraday_ep6::mark(&mut t, mark);
+                                        out.push(t);
+                                    }
+                                    Some((_, f, None)) => { cm = mark; cur = Some((trade(dir, i, f, "stop"), st)); }
+                                }
+                            }
+                            None => {
+                                cm = if ep && dual { crate::intraday_ep6::Day::Convention } else { crate::intraday_ep6::Day::Plain };
+                                cur = Some((trade(dir, i, px, "stop"), st));
+                            }
+                        }
+                    }
+                }
+                if let Some((t, st)) = cur.as_mut().filter(|_| !resolved) {
+                    let entry_bar = t.legs[0].i == i;
+                    // active stop: the initial stop, or from the day after entry the 1-day channel exit if nearer
+                    let lvl = if entry_bar { *st } else if t.dir > 0. { st.max(r8(l[i - 1] - xoff)) } else { st.min(r8(h[i - 1] + xoff)) };
+                    let px = if t.dir > 0. {
+                        if !entry_bar && o[i] <= lvl { Some(o[i]) } else if l[i] <= lvl { Some(lvl) } else { None }
+                    } else if !entry_bar && o[i] >= lvl { Some(o[i]) } else if h[i] >= lvl { Some(lvl) } else { None };
+                    if let Some(px) = px {
+                        t.exit_i = i; t.exit_px = px; t.signal_i = i;
+                        t.reason = if entry_bar { "initial stop (entry bar)".into() } else if lvl == *st { "initial stop".into() } else { "1-day channel exit".into() };
+                        crate::intraday_ep6::mark(t, cm);
+                        out.push(cur.take().unwrap().0);
+                    }
+                }
+                if cur.is_none() && i < to && i >= 1 && e[i].is_finite() && e[i - 1].is_finite() && h[i] > l[i] {
+                    let q = 0.25 * (h[i] - l[i]);
+                    if e[i] > e[i - 1] && c[i] - l[i] <= q { pend = Some((1., r8(h[i] + tick), r8(l[i] - tick))); }
+                    else if e[i] < e[i - 1] && h[i] - c[i] <= q { pend = Some((-1., r8(l[i] - tick), r8(h[i] + tick))); }
+                }
+            }
+            if let Some((mut t, _)) = cur { t.exit_i = to; t.exit_px = c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+        }
         _ => return None,
     }
     Some(out)
@@ -178,6 +251,32 @@ mod tests {
         assert_eq!(ts[0].exit_px, 90.);
     }
     #[test]
+    fn smash_bar_next_day_stop_entry_and_one_day_channel_exit() {
+        // rising closes -> EMA up; bar 30 closes on its low (lowest quartile): buy stop 1 tick over its high on bar 31 only
+        let mut r: Vec<Row> = (0..40).map(|i| { let v = 100. + i as f64; Row { ticker: "T".into(), date: format!("{:04}-01-01", 1900 + i), open: v, high: v + 1., low: v - 1., close: v + 0.9, volume: None } }).collect();
+        r[30].close = r[30].low + 0.1; // smash: 129.1 in 129..131
+        r[31] = Row { open: 130., high: 132., low: 129.5, close: 131.5, ..r[31].clone() }; // breaks 131.01 -> long 131.01
+        r[32] = Row { open: 131.6, high: 133., low: 131., close: 132.5, ..r[32].clone() };
+        r[33] = Row { open: 132.6, high: 133.2, low: 130.5, close: 131., ..r[33].clone() }; // low < prior low 131 - 0.01 -> out at 130.99
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("radge_smash", &x, 20, 39, &Params::new()).unwrap();
+        let s = t.iter().find(|z| z.legs[0].i == 31).unwrap();
+        assert!((s.legs[0].px - 131.01).abs() < 1e-9 && s.exit_i == 33 && (s.exit_px - 130.99).abs() < 1e-9, "{:?}", (s.legs[0].px, s.exit_i, s.exit_px));
+    }
+    #[test]
+    fn smash_ep6_switch_changes_nothing_without_minutes() {
+        // R2E (#305 (3)): without minute files the entry day keeps the daily convention, so order 1 and 0 agree
+        let mut r: Vec<Row> = (0..40).map(|i| { let v = 100. + i as f64; Row { ticker: "T".into(), date: format!("{:04}-01-01", 1900 + i), open: v, high: v + 1., low: v - 1., close: v + 0.9, volume: None } }).collect();
+        r[30].close = r[30].low + 0.1; // smash bar
+        r[31] = Row { open: 130., high: 132., low: 128.5, close: 131.5, ..r[31].clone() }; // fills 131.01 and reaches the 128.99 stop: order-dependent day
+        let x = Ctx::new(&r, &r, &[]);
+        let a = run("radge_smash", &x, 20, 39, &Params::new()).unwrap();
+        let b = run("radge_smash", &x, 20, 39, &Params::from([("order".into(), 0.)])).unwrap();
+        assert!(a.iter().any(|t| t.legs[0].i == 31 && t.exit_i == 31 && (t.exit_px - 128.99).abs() < 1e-9), "{:?}", a.iter().map(|t| (t.legs[0].i, t.exit_i, t.exit_px)).collect::<Vec<_>>());
+        assert_eq!(a.iter().map(|t| (t.legs[0].i, t.exit_i, t.exit_px)).collect::<Vec<_>>(), b.iter().map(|t| (t.legs[0].i, t.exit_i, t.exit_px)).collect::<Vec<_>>());
+        assert!(crate::intraday_ep6::IDS.contains(&"radge_smash") && crate::intraday_ep6::WINDOW_ONLY.contains(&"radge_smash"));
+    }
+    #[test]
     fn open_close_stop_fills_at_level() {
         let mut r = rows(3);
         r[1].low = 99.5; r[1].close = 100.7;
@@ -196,6 +295,21 @@ mod tests {
         ids.sort(); ids.dedup();
         assert_eq!(ids.len(), c.len());
         assert!(c.iter().all(|d| d.id.starts_with("radge_") && family_of(d.id).is_some()));
-        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 4);
+        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 5); // + radge_smash (lane R2B)
     }
 }
+
+// Lane K74 (11 Nov 2026, R4 #277 (2)): the 2/20 moving-average breakout is a generic course rule (no fixed money amount; its
+// offsets are instrument ticks, #57); the CL crude example is an illustration, so the routing rule applies.
+pub const ADMISSION_MA220: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "radge_ma220",
+    label: "Nick Radge's course teaches this breakout as a general rule; its only worked result is on CL crude-oil futures (Example 50). Runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test; the 10-tick and 1-tick offsets use each instrument's own tick. Cash-index shorts are hypothetical exposure.",
+    basis: "Nick Radge's Trading Course (c.2000), Moving Average Breakout (The Setup, Filters 1-2, initial and trailing stops; Examples 40-50); decision #277 (2), #57; #240 same-day order 1.0-3.8% of trades on the checked instruments (under 5%); independent check authors/titles-1030/K74w (k74_daily.py).",
+};
+
+// Lane R2E (13 Nov 2026, R4 #305 (3)): the Smash Bar's entry-day order is resolved on the real 1-minute path; minute window only.
+pub const ADMISSION_SMASH: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "radge_smash",
+    label: "Nick Radge's course teaches the Smash Bar on end-of-day data for any market; published on SPY only over its minute file (#177: the SPX result fails the tradable check, so SPX and the NSE minute results are withdrawn), because 30-37% of its trades enter on a stop and reach the initial stop the same day and only the minutes show which came first. Adapted: 2 unstated details, labelled on the card.",
+    basis: "Nick Radge's Trading Course (c.2000), Trend Momentum / Smash Bars (Setup, Entry, Initial Stop, Exit); R4 #297, #305 (3), #243 (c); independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};

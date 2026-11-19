@@ -1,6 +1,6 @@
 //! Chande & Kroll, "The New Technical Trader" (Wiley 1994). The CMO-driven VIDYA system (ch.8) needs
 //! actual futures ticks and its dollar stop. The thrust-oscillator table (ch.6) is a buy-signal event study
-//! without an executable exit. Neither is ready on the available price-only cash series.
+//! without an executable exit; lane R2E (R4 #297) runs it with the table's 3-month horizon as a labelled exit reading.
 //! Uses the small engine in chbta2.rs. Source + page per rule: library/chntt/README.md.
 use crate::books::chbta2::{getp, none_exit, no_trail, run_sys, Kind, Pos, Sys};
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -10,6 +10,9 @@ pub const BOOK: &str = "chntt";
 const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume"];
 const NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume"];
 
+/// Lane R2E (13 Nov 2026, R4 #297): the thrust-oscillator buy is unheld with two labelled readings.
+macro_rules! TO_READ { () => { "[R2E, R4 #297: adapted: 2 unstated details] Unstated in the book: the exit; vault reading: hold 3 calendar months, the first horizon of Table 6.2 (p.157), and sell at the close of the first trading day on or after the same day of the month 3 months later (6/12/24 = p.months). Unstated in the book: a new buy signal while a position is held; vault reading: ignored (one position at a time, the next signal after the sale is taken). Stated: TO = (AI*AV - DI*DV)/(AI*AV + DI*DV) without the optional x100, 21-day SMA of TO below -0.3 arms the signal, the buy is the SMA's first cross above its 13-day EMA (alpha 2/14, restarted after a missing day), entry at the next day's close. Published as UNVERIFIED." } }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, needs_series, rules, notes| StrategyDef { id, name, group, session: 0, dir, status,
         needs_volume: false, needs_vix: false, needs_series, book: BOOK, rules, notes, claim: None };
@@ -18,7 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let to_rules: &'static [&'static str] = &[
         "F|\"MT = (AI*AV - DI*DV)\" ... \"TO = (AI*AV - DI*DV)/(AI*AV + DI*DV) * 100\"; \"The multiplication by 100 is optional\" (eq. 6.3, 6.5, p.146); AI/DI = advancing/declining issues, AV/DV = advancing/declining volume (p.144)",
         "E|\"we first calculated TO and then plotted a 21-day simple moving average of the TO, adding a second 13-day exponential moving average of this SMA. A buy signal occurs when the 21-day SMA of TO goes below -0.3 then crosses above its own 13-day EMA. We enter the market on the close the next day.\" (p.157)",
-        "X|No exit rule: Table 6.2 reports the gain 3, 6, 12 and 24 months after each buy (p.157). Those observation horizons are not orders; the historical months runner is held."];
+        "X|Table 6.2 reports the gain 3, 6, 12 and 24 months after each buy (p.157); the book prints no sell rule. Vault reading (R4 #297): sell at the close of the first day on or after the same calendar day 3 months after the entry (the table's first horizon); p.months = 6, 12 or 24 for the other columns."];
     vec![
         d("ch_ntt_vidya_cmo", "CMO-driven VIDYA system", "Ch 8 · How to use this book", "Long/Short", Live, &[], &[
             "F|\"|CMO| = |(2*RSI9 - 100)/100|, A = t*|CMO| (t <= 0.5), VIDYA = A * Close + (1-A) * VIDYA[1]\" (eq. 8.1, p.180); RSI = System Writer's unsmoothed 9-day RSI (p.180)",
@@ -26,12 +29,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. The rule to open long positions. If the close of today and yesterday are both above the VIDYA of today, then buy tomorrow on a buy stop order. Place the order 1 tick above today's high.\" (p.181)",
             "E|\"2. The rule to short positions. If the close of today and the close of yesterday are both below the VIDYA of today, then sell tomorrow on a sell stop order. Place the order 1 tick below today's low.\" (p.181-183)",
             "X|\"We won't use any specific exit strategy in testing the model, which means a long entry signal will exit a short trade and vice versa.\" (p.183)",
-            "X|\"$1,500 initial stop\" (p.183), in futures contract dollars; held until actual contract inputs and causal fills are verified."],
-            "Printed pp.179-189; reviewed order/stop pages pp.180-183 are PDF spreads 101-102. Unsmoothed RSI9 implies |CMO|=|Su-Sd|/(Su+Sd) over 9 changes and t=0.1. One source contract tick is not a generic 0.01 cash-index point. The closing-basis suggestion for stocks does not define a replacement for the dollar stop. Historical runner retained for inspection; no prepared result or source-performance claim."),
+            "X|\"$1,500 initial stop\" (p.183), per Swiss franc contract (US$125,000 per 1.00 -> 0.012 points), live from the entry fill"],
+            "Printed pp.179-189; reviewed order/stop pages pp.180-183 are PDF spreads 101-102. Unsmoothed RSI9 implies |CMO|=|Su-Sd|/(Su+Sd) over 9 changes and t=0.1. One source contract tick is not a generic 0.01 cash-index point. The closing-basis suggestion for stocks does not define a replacement for the dollar stop. Historical runner retained for inspection; no prepared result or source-performance claim. Lane PH (14 Nov 2026, D1 RULE UNCHECKED row ch_vidya, R4 #293 (1), (3), (4); review REV-PH 51debbb9 B1/m1): runs only on the book's contract, Swiss franc futures (Norgate &6S, back-adjusted daily bars), with one tick (0.0001) and the US$1,500 initial stop (0.012 at US$125,000 per 1.00) literal; it has no index, ETF or stock application. Fills (own daily-bar engine, vidya_sim): stops the open is through fill at the open (the held stop first, then the entry), then the bar runs open -> the extreme nearer the open -> the other extreme -> close and each stop fills where the path reaches it; the initial stop is live from the entry fill, also on the entry bar. #240: 17 of 360 trades 1979-2020 (4.7%; 0 in both book blocks) give different fills in the other path order. Book check (R4 #168, Tables 8.2-8.3, CSI #39 perpetual contract, $50 commissions): 5/83-5/88 30 closed / 43% won / +$33,750 vs 33 / 36% / +$23,400; 6/88-4/93 29 / 34% / +$48,437 vs 27 / 37% / +$49,775: both pass, stated as a reference only: UNVERIFIED by lead ruling R4 #337 (B2), because the initial stop armed on the entry bar is an unstated reading (#297 (4), as #335). &6S opens: open = previous close on 16% of days in 1998 only (no #330/#331 episode). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
         d("ch_ntt_to_buy", "Thrust oscillator buy signal (NYSE breadth)", "Ch 6 · Market thrust", "Long", Live, NYSE, to_rules,
-            "Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal. No source exit or sequential account is supplied; the historical hold-month runner is retained for inspection and held."),
+            concat!("Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal (extra_data NYSE_ADV_DEC, 1965-03-01..2020-02-10). ", TO_READ!())),
         d("ch_ntt_to_buy_nse", "Thrust oscillator buy signal (NSE breadth)", "Ch 6 · Market thrust", "Long", Live, NSE, to_rules,
-            "Historical India mapping retained for inspection. No actual NSE breadth input or missing source exit is invented; held."),
+            concat!("R4 #340 (17 Nov 2026, lane N1): runs on the three Nifty indices as a labelled declared adaptation, UNVERIFIED (the 21 Oct #306 hold is lifted by #340). India mapping on NSE breadth (extra_data NSE_ADV_DEC advances, declines, advancing and declining volume, 1999-); the book's test is NYSE breadth on the DJIA. ", TO_READ!())),
         nt("ch_ntt_vidya_close", "VIDYA close crossover (std-dev VIDYA)", "Ch 3 · VIDYA",
             "VIDYA's volatility index k = sigma(x days)/sigma(reference) is left open (x and the reference are 'for example' choices), and order type/fill is not given.",
             &["E|\"Or, you can go long when prices close above VIDYA, and go short when prices close below VIDYA.\" (p.55)"], "Printed pp.49-72. The fully specified VIDYA system is ch_ntt_vidya_cmo."),
@@ -39,14 +42,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"You could have gone long the T-Bond when it bounced off the lower band, with a close stop\" (p.55-58)"], "Printed pp.54-58."),
         nt("ch_ntt_linreg", "Linear regression slope / r-squared", "Ch 2 · Linear regression", "Entry is 'when the slope first becomes significantly positive' with no exit ('you may choose to take profits, tighten your stops, or take an antitrend position').",
             &["E|\"You could open a long position when the slope first becomes significantly positive.\" (p.25)"], "Printed pp.19-48 (r2 critical values 0.40/0.20/0.13/0.08 for 10/20/30/50 days)."),
-        nt("ch_ntt_qstick_zero", "Qstick zero crossing", "Ch 4 · Qstick", "Order price/time is 'the next day' without an order type, the exit is 'go short ... or close out your long', and the length is 8 days (formula) or 20 days (daily intermediate) with no single choice.",
-            &["E|\"When Qstick is negative and then becomes positive, you can go long the next day. When Qstick is positive and becomes negative, you can go short the next day or close out your long position.\" (p.77)"], "Printed pp.73-91."),
+        d("ch_ntt_qstick_zero", "Qstick zero crossing", "Ch 4 · Qstick", "Long/Short", Live, &[], &["F|Qstick = the n-bar average of (close - open) (Ch 4; 8 days in the formula, 20 in the daily intermediate example)", "E|\"When Qstick is negative and then becomes positive, you can go long the next day.\" (p.77)", "X|\"When Qstick is positive and becomes negative, you can go short the next day or close out your long position.\" (p.77)"], "[R1-1116, R4 #297/#339/#343/#344: adapted, 3 unstated details, UNVERIFIED] Unstated in the book: (1) the length: eq. 4.1 and Figure 4.2 use 8 days, the daily intermediate example 20, and the authors say they prefer a 5-day Qstick for short-term futures (p.76); vault reading n = 8, the printed formula (p.n); (2) the sell: 'go short ... or close out your long': vault reading = reverse to short; (3) the crossing: previous Qstick at or below zero and today's above (buy), previous at or above and today's below (sell). The order 'the next day' fills at the next bar's open, so SPX, DJI and NDX results start where their real opens begin (clamp_open). Holding until the opposite signal is part of the printed reverse rule, not counted (R4 #344). Engine conventions, labelled and not counted: a signal fills at the stated bar's price (the close, or the next bar's open where the book says 'the next day'), one position at a time, indicators start at their first full lookback. Declared application: daily bars of indices, ETFs and stocks (the book's examples are futures and stocks). The book prints no result for this rule."),
         nt("ch_ntt_qstick_ma", "Qstick and its moving average", "Ch 4 · Qstick", "Only a chart reading of crossovers; no order type or exit.",
             &["E|\"A buy signal occurs when the shorter average crosses above the longer one.\" (p.76-77)"], "Printed pp.76-79."),
-        nt("ch_ntt_cmo_ma", "CMO and its 10-day SMA", "Ch 5 · CMO", "Offered as 'you could buy ... and sell'; whether a sell exits or reverses and the fill are not given.",
-            &["E|\"You could buy when the CMO crossed above its average, and sell when it fell below its moving average.\" (p.114)"], "Printed pp.94-119."),
-        nt("ch_ntt_cmo_zero", "Average CMO zero crossing", "Ch 5 · CMO", "'You would buy when the CMO turned positive, and sell when the CMO turned negative' has no order type or fill.",
-            &["E|CMO_A = (CMO5 + CMO10 + CMO20)/3; \"buy when the CMO turned positive, and sell when the CMO turned negative\" (p.113)"], "Printed p.113."),
+        d("ch_ntt_cmo_ma", "CMO and its 10-day SMA", "Ch 5 · CMO", "Long/Short", Live, &[], &["F|CMO(n) as on p.94-; its 10-day simple moving average (p.114)", "E|\"You could buy when the CMO crossed above its average\" (p.114)", "X|\"and sell when it fell below its moving average.\" (p.114)"], "[R1-1116, R4 #297/#339/#343/#344: adapted, 1 unstated detail, UNVERIFIED] Printed on p.114 (with Figure 5.17, a 10-day CMO with its 10-day simple moving average): buy when the CMO crosses above its average, sell when it falls below it, and the sell is the short signal (the approach later puts you back on the long side), so the 10-day length and the reverse to short are printed, not readings; the CMO is Chande's own, 100 x (Su - Sd) / (Su + Sd) (eq. 5.1, p.94-95). Unstated: (1) a cross = the CMO at or below its average the day before and above it today (sell: the mirror). Related card: lkcpt_cmo (Kestner's code of the same Chande rule, pp.115-119): level-based (always in from the first bar) with the next-bar fill, where this card trades the crossing at the same close. Close-only. Engine conventions, labelled and not counted: a signal fills at the signal close, one position at a time, indicators start at their first full lookback. Declared application: daily bars of indices, ETFs and stocks. The book prints no result for this rule."),
+        d("ch_ntt_cmo_zero", "Average CMO zero crossing", "Ch 5 · CMO", "Long/Short", Live, &[], &["F|CMO_A = (CMO5 + CMO10 + CMO20)/3 (p.113); CMO(n) = 100 x (sum of up changes - sum of down changes) / (sum of up + sum of down) over the last n closes", "E|\"You would buy when the CMO turned positive\" (p.113)", "X|\"and sell when the CMO turned negative\" (p.113)"], "[R1-1116, R4 #297/#339/#343/#344: adapted, 3 unstated details, UNVERIFIED] Stated: CMO_A is the mean of the 5-, 10- and 20-day CMOs; buy when it turns positive, sell when it turns negative (p.113). Unstated: (1) the CMO definition: Chande's, 100 x (Su - Sd) / (Su + Sd) with Su and Sd the sums of the up and down close-to-close changes of the last n closes (the book's own indicator, as used by ch_ntt_vidya_cmo); (2) 'turned' = the previous value at or below zero and today's above (buy), at or above and below (sell); (3) the sell reverses to short (no exit is printed). Holding until the opposite signal is part of the printed reverse rule, not counted (R4 #344). Close-only. Engine conventions, labelled and not counted: a signal fills at the stated bar's price (the close, or the next bar's open where the book says 'the next day'), one position at a time, indicators start at their first full lookback. Declared application: daily bars of indices, ETFs and stocks (the book's examples are futures and stocks). The book prints no result for this rule."),
         nt("ch_ntt_stochrsi", "StochRSI 0.2/0.8 signals", "Ch 5 · StochRSI", "Several alternative rules (buy above 0.80 or around 0.2, reverse or close, 0.50 midline, 3-day confirmation) with no single order type or exit.",
             &["E|\"you can buy when it rises above 0.80 and sell when it falls below 0.20. You can then close your position (or reverse) when the values fall below 0.80 or rise above 0.20. Or, you can trade only when the stochRSI falls below 0.50 or rises above 0.50.\" (p.129)"], "Printed pp.124-133."),
         nt("ch_ntt_to_short_term", "Thrust oscillator 5-day SMA vs 5-day EMA", "Ch 6 · Market thrust", "Two alternative triggers ('first turns up ... or crosses above') and no order type; the strategy is only 'suggested' by a chart.",
@@ -82,6 +82,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("tick", "Stop-entry offset (1 tick)", 0.01, 0., 5., 0.01), p("stop_pts", "Initial stop, index points (0 = off)", 0., 0., 50., 1.)],
         "ch_ntt_to_buy" | "ch_ntt_to_buy_nse" => vec![p("sma", "TO SMA days", 21., 5., 50., 1.), p("ema", "EMA of the SMA days", 13., 5., 30., 1.),
             p("level", "Oversold level", -0.3, -0.6, 0., 0.05), p("months", "Hold, calendar months (book: 3/6/12/24)", 3., 1., 24., 1.)],
+        "ch_ntt_qstick_zero" => vec![p("n", "Qstick days (book: 8 formula, 20 daily example, 5 preferred for short term)", 8., 2., 50., 1.)],
+        "ch_ntt_cmo_ma" => vec![p("n", "CMO days (book: 10, p.114)", 10., 2., 50., 1.)],
+        "ch_ntt_cmo_zero" => vec![],
         _ => return None,
     })
 }
@@ -101,6 +104,59 @@ pub(crate) fn abs_cmo(c: &[f64], n: usize) -> Vec<f64> {
 }
 
 /// VIDYA_t = A*C + (1-A)*VIDYA_{t-1}, A = t*|CMO|; seeded with the close of the bar before the first CMO.
+/// Lane PH (review REV-PH 51debbb9 B1): the VIDYA system's own daily-bar fills. At the open the held position's initial stop, then
+/// the pending entry stop, fill if the open is through them; then the bar runs open -> the extreme nearer the open -> the other
+/// extreme -> close and every live stop fills at its level in the order the path reaches it (the shared chbta2 run_sys always
+/// takes the held stop first, which misprices a reversal whose entry stop lies nearer the open). The initial stop is live from
+/// the entry fill (also on the entry bar); an opposite entry reverses. Entry stops live for one bar.
+fn vidya_sim(x: &Ctx, from: usize, to: usize, v: &[f64], tick: f64, stop: f64) -> Vec<Trade> {
+    let mk = |d: f64, ei: usize, ep: f64, xi: usize, xp: f64, why: &str, open: bool| Trade { dir: d, legs: vec![crate::connors::Leg { i: ei, px: ep, w: 1. }],
+        exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: "stop", signal_i: xi, open, exits: vec![] };
+    let (mut out, mut pos, mut pend) = (vec![], None::<(f64, usize, f64)>, None::<(f64, f64)>);
+    let st = |p: &(f64, usize, f64)| if stop > 0. { p.2 - p.0 * stop } else { f64::NAN };
+    for i in from..=to {
+        if i > from {
+            let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+            if let Some(p) = pos { let s = st(&p); if (p.0 > 0. && o <= s) || (p.0 < 0. && o >= s) { out.push(mk(p.0, p.1, p.2, i, o, "Initial stop", false)); pos = None; } }
+            if let Some((d, lv)) = pend {
+                if pos.map_or(true, |p| p.0 != d) && ((d > 0. && o >= lv) || (d < 0. && o <= lv)) {
+                    if let Some(p) = pos.take() { out.push(mk(p.0, p.1, p.2, i, o, "Opposite stop entry · reversal", false)); }
+                    pos = Some((d, i, o)); pend = None;
+                }
+            }
+            let path = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
+            let mut prev = o;
+            for &q in &path[1..] {
+                loop {
+                    let up = q > prev;
+                    let hit = |lv: f64| lv.is_finite() && if up { prev < lv && lv <= q } else { prev > lv && lv >= q };
+                    let ex = pos.map(|p| st(&p)).filter(|&s| hit(s) && pos.is_some_and(|p| (p.0 < 0.) == up));
+                    let en = pend.filter(|&(d, lv)| (d > 0.) == up && pos.map_or(true, |p| p.0 != d) && hit(lv)).map(|e| e.1);
+                    // the level the path reaches first; a tie fills the exit first
+                    let first_ex = match (ex, en) { (Some(a), Some(b)) => (if up { a <= b } else { a >= b }), (Some(_), None) => true, (None, Some(_)) => false, _ => break };
+                    if first_ex {
+                        let p = pos.take().unwrap(); let s = ex.unwrap();
+                        out.push(mk(p.0, p.1, p.2, i, s, "Initial stop", false)); prev = s;
+                    } else {
+                        let (d, lv) = pend.take().unwrap();
+                        if let Some(p) = pos.take() { out.push(mk(p.0, p.1, p.2, i, lv, "Opposite stop entry · reversal", false)); }
+                        pos = Some((d, i, lv)); prev = lv;
+                    }
+                }
+                prev = q;
+            }
+        }
+        pend = None;
+        if i < to && i > 0 && v[i].is_finite() {
+            let cur = pos.map_or(0., |p| p.0);
+            let d = if x.c[i] > v[i] && x.c[i - 1] > v[i] { 1. } else if x.c[i] < v[i] && x.c[i - 1] < v[i] { -1. } else { 0. };
+            if d != 0. && d != cur { pend = Some((d, if d > 0. { x.h[i] + tick } else { x.l[i] - tick })); }
+        }
+    }
+    if let Some(p) = pos { out.push(mk(p.0, p.1, p.2, to, x.c[to], "open", true)); }
+    out
+}
+
 pub(crate) fn vidya(c: &[f64], n: usize, t: f64) -> Vec<f64> {
     let cmo = abs_cmo(c, n);
     let mut v = vec![f64::NAN; c.len()];
@@ -126,15 +182,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| (g(k).round().max(1.)) as usize;
     Some(match id {
         "ch_ntt_vidya_cmo" => {
-            let (v, tick) = (vidya(&x.c, u("cmo_n"), g("t").clamp(0., 0.5)), g("tick").max(0.));
-            let entry = |i: usize, _: f64| {
-                if i == 0 { return [None, None]; }
-                let o = if x.c[i] > v[i] && x.c[i - 1] > v[i] { Some((1., Kind::Stop(x.h[i] + tick))) }
-                    else if x.c[i] < v[i] && x.c[i - 1] < v[i] { Some((-1., Kind::Stop(x.l[i] - tick))) } else { None };
-                [o, None]
-            };
-            run_sys(x, from, to, &Sys { entry: &entry, exit_close: &none_exit, exit_open: &none_exit, trail: &no_trail,
-                stop_pts: g("stop_pts").max(0.), oneway: false })
+            // lane PH (R4 #293 (1), (3)): on the book's Swiss franc contract the defaults are the contract's tick and the book's
+            // US$1,500 initial stop in points on the run's first day (p.183); elsewhere 0.01 and no stop, as before
+            let fut = crate::futures::ctx_market(x);
+            let set = |k: &str| p.contains_key(k) || fut.is_none();
+            let tick = if set("tick") { g("tick").max(0.) } else { fut.map_or(0.01, |m| m.tick) };
+            let stop = if set("stop_pts") { g("stop_pts").max(0.) } else { crate::futures::usd_points(x, from, 1500.).unwrap_or(0.) };
+            let v = vidya(&x.c, u("cmo_n"), g("t").clamp(0., 0.5));
+            vidya_sim(x, from, to, &v, tick, stop)
         }
         "ch_ntt_to_buy" | "ch_ntt_to_buy_nse" => {
             let names = if id == "ch_ntt_to_buy" { NYSE } else { NSE };
@@ -161,12 +216,66 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ex = |i: usize, q: &Pos| (x.r[i].date >= add_months(&x.r[q.i].date, m)).then(|| format!("{m} calendar months after entry · close"));
             run_sys(x, from, to, &Sys { entry: &entry, exit_close: &ex, exit_open: &none_exit, trail: &no_trail, stop_pts: 0., oneway: false })
         }
+        "ch_ntt_qstick_zero" | "ch_ntt_cmo_zero" | "ch_ntt_cmo_ma" => {
+            let n = x.r.len();
+            let (v, w): (Vec<f64>, Vec<f64>) = match id {
+                "ch_ntt_qstick_zero" => { let k = u("n"); (sma(&(0..n).map(|i| x.c[i] - x.o[i]).collect::<Vec<_>>(), k), vec![0.; n]) }
+                "ch_ntt_cmo_zero" => {
+                    let c5 = cmo_signed(&x.c, 5); let c10 = cmo_signed(&x.c, 10); let c20 = cmo_signed(&x.c, 20);
+                    ((0..n).map(|i| (c5[i] + c10[i] + c20[i]) / 3.).collect(), vec![0.; n])
+                }
+                _ => { let m = cmo_signed(&x.c, u("n")); let a = sma(&m, 10); (m, a) }
+            };
+            let next_open = id == "ch_ntt_qstick_zero";
+            let mut sig = vec![0i8; n];
+            for i in 1..n {
+                if !(v[i].is_finite() && v[i - 1].is_finite() && w[i].is_finite() && w[i - 1].is_finite()) { continue; }
+                if v[i - 1] <= w[i - 1] && v[i] > w[i] { sig[i] = 1; } else if v[i - 1] >= w[i - 1] && v[i] < w[i] { sig[i] = -1; }
+            }
+            let mut out: Vec<Trade> = vec![];
+            let mut cur: Option<Trade> = None;
+            for i in from..=to {
+                let dir = match sig[i] { 1 => 1., -1 => -1., _ => continue };
+                if cur.as_ref().map_or(false, |t| t.dir == dir) { continue; }
+                let (fi, px) = if next_open { if i + 1 > to { continue; } (i + 1, x.o[i + 1]) } else { (i, x.c[i]) };
+                if let Some(mut t) = cur.take() { t.exit_i = fi; t.exit_px = px; t.signal_i = i; t.reason = "opposite signal".into(); out.push(t); }
+                if !next_open && i == to { continue; } // a close signal on the last bar only closes
+                cur = Some(Trade { dir, legs: vec![crate::connors::Leg { i: fi, px, w: 1. }], exit_i: fi, exit_px: px, reason: String::new(), entry_kind: if next_open { "open" } else { "close" }, signal_i: i, open: false, exits: vec![] });
+            }
+            if let Some(mut t) = cur.take() { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+            out
+        }
         _ => return None,
     })
 }
 
+/// Signed CMO over n close changes: 100 x (Su - Sd) / (Su + Sd) (0 when flat). NaN before n changes.
+fn cmo_signed(c: &[f64], n: usize) -> Vec<f64> {
+    let mut out = vec![f64::NAN; c.len()];
+    for i in n..c.len() {
+        let (mut u, mut d) = (0., 0.);
+        for k in i + 1 - n..=i { let m = c[k] - c[k - 1]; if m > 0. { u += m } else { d -= m } }
+        out[i] = if u + d > 0. { 100. * (u - d) / (u + d) } else { 0. };
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vidya_sim_fills_in_path_order() {
+        // review REV-PH 51debbb9 B1. Bar 1 closes above VIDYA 99 twice -> buy stop 101.51; bar 2 gaps over it (long at the open 101.6,
+        // stop 5 -> 96.6) and closes below VIDYA 103 twice -> short stop 100.99. Bar 3 falls 101.2 -> 95: the short entry (nearer the
+        // open) reverses the long at 100.99 before the long's stop 96.6 is reached; the short (stop 105.99) is marked at the close.
+        let b = [(100., 100.2, 99.8, 100.), (100.5, 101.5, 100.4, 101.), (101.6, 102., 101., 101.2), (101.1, 101.2, 95., 95.5)];
+        let r: Vec<crate::Row> = b.iter().enumerate().map(|(i, &(o, h, l, c))| crate::Row { ticker: "X".into(), date: format!("1990-01-{:02}", i + 2), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = vidya_sim(&x, 0, 3, &[f64::NAN, 99., 103., f64::NAN], 0.01, 5.);
+        assert_eq!(t.len(), 2);
+        assert!(t[0].dir == 1. && t[0].legs[0].px == 101.6 && (t[0].exit_px - 100.99).abs() < 1e-9 && t[0].exit_i == 3, "{:?}", (t[0].legs[0].px, t[0].exit_px));
+        assert!(t[1].dir == -1. && (t[1].legs[0].px - 100.99).abs() < 1e-9 && t[1].open && t[1].exit_px == 95.5);
+    }
+
     use super::*;
     #[test]
     fn vidya_matches_table_3_7_with_t_half() {
@@ -182,8 +291,42 @@ mod tests {
         assert!((v[18] - 109.3646).abs() < 1e-3);
     }
     #[test]
+    fn thrust_buy_holds_the_three_month_horizon_and_ignores_signals_while_long() {
+        // R2E (R4 #297): exit = first close on/after entry + 3 calendar months; one position at a time
+        let r = super::super::sctraub::tests::bars(2500);
+        let mut x = Ctx::new(&r, &r, &[]);
+        let f = |i: usize| i as f64;
+        x.extra.insert(NYSE[0].into(), (0..r.len()).map(|i| 500. + 300. * (f(i) / 23.).sin()).collect());
+        x.extra.insert(NYSE[1].into(), (0..r.len()).map(|i| 500. - 300. * (f(i) / 23.).sin()).collect());
+        x.extra.insert(NYSE[2].into(), (0..r.len()).map(|i| 1e6 * (1.2 + (f(i) / 11.).sin())).collect());
+        x.extra.insert(NYSE[3].into(), (0..r.len()).map(|i| 1e6 * (1.2 - (f(i) / 13.).sin())).collect());
+        let t = run("ch_ntt_to_buy", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.len() > 3);
+        for z in t.iter().filter(|z| !z.open) {
+            let due = add_months(&r[z.legs[0].i].date, 3);
+            assert!(r[z.exit_i].date >= due && r[z.exit_i - 1].date < due, "{} {}", r[z.legs[0].i].date, r[z.exit_i].date);
+            assert_eq!(z.exit_px, r[z.exit_i].close);
+        }
+        assert!(t.windows(2).all(|w| w[1].legs[0].i > w[0].exit_i));
+        assert!(crate::books::ADMISSIONS.iter().any(|a| (a.reviewed)(&catalogue().into_iter().find(|d| d.id == "ch_ntt_to_buy_nse").unwrap()))); // R4 #340: NSE twin admitted on the Nifty indices
+    }
+    #[test]
     fn months_roll_over_year_end() {
         assert_eq!(add_months("1990-10-18", 3), "1991-01-18");
         assert_eq!(add_months("1980-04-03", 24), "1982-04-03");
     }
 }
+
+// Instrument admission: thrust-oscillator buy unheld 2026-11-13 by lane R2E (R4 #297: 3-month hold and overlap rule are labelled readings).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "ch_ntt_to_buy" | "ch_ntt_to_buy_nse"), // R4 #340: the NSE twin runs on the Nifty indices (gate list), labelled
+    label: "Chande & Kroll's thrust-oscillator buy (DJIA, NYSE breadth) on daily bars of the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (gate list, R4 #306): NYSE breadth; not on Indian instruments or single stocks. The NSE twin ch_ntt_to_buy_nse runs the same rule on the real NSE breadth with the book's -0.3 level unchanged on NIFTY 50, NIFTYBANK and NIFTYMIDCAP100 (R4 #340, declared adaptation, UNVERIFIED). Exit = the book's 3-month horizon (Table 6.2), a labelled reading. Adapted: 2 unstated details.",
+    basis: "The New Technical Trader p.143-159, Table 6.2 p.157; R4 #297; independent check authors/titles-1030/R2Ew/r2e_ref.py",
+};
+
+// Instrument admission: lane R1-1116 second pass (R4 #339/#343/#344): three Chande indicator rules with 3-4 labelled unstated details each.
+pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "ch_ntt_qstick_zero" | "ch_ntt_cmo_zero" | "ch_ntt_cmo_ma"),
+    label: "Chande & Kroll's Qstick and CMO rules are shown on futures and stocks; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 3-4 unstated details per card (length or CMO definition, the crossing reading, a sell reverses to short), labelled on each card.",
+    basis: "The New Technical Trader p.77 (Qstick), p.113-114 (CMO); R4 #297/#339/#343/#344; independent check authors/relax-339/R1/w/chntt_ref.py",
+};

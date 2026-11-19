@@ -6,6 +6,12 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "elmts4";
+/// Lane K73 (11 Nov 2026, R4 #276 (1), #71): admitted on DJI only (gate allowed [DJI], clamp_open: real DJI opens from 2016).
+pub const ADMISSION_DJI: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "elmts4_first_day",
+    label: "Elm Trader tested the Dow TS4 calendar trade on the Dow cash index (and placed it as Dow futures / spread bets) with a 150-point stop. It runs on the Dow Jones Industrial Average (DJI) only, the 150 points literal, from 2016 (real DJI opens), as a declared application; other instruments would need a conversion the guide does not give.",
+    basis: "Elm Trader, The Dow TS4 System guide (2005) pdf p.11-12 (entry/exit, no August), p.14-15 (150-point stop, guaranteed stops), App. B p.26-27 (results); decisions #71, #276 (1); independent check authors/titles-1030/K73w/k73_ref.py (elmts4).",
+};
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, status, rules, notes, claim| StrategyDef {
@@ -21,10 +27,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         ], concat!(
             "Instrument: the guide's research is on the Dow cash index (p.12; trades are placed in Dow futures / spread bets); here DJI daily bars. ",
             "Entry at the close of the bar before the month's first bar; exit at the close of the month's first bar. ",
-            "Stop: 150 index points below the entry close, live during the first trading day; a low at or below it fills at the stop, or at the open if the day opens through it [book: a 'guaranteed' spread-bet stop that caps the loss at exactly 150 even on a gap (p.15); a cash index has no such fill, so a gap fills at the open; the published table shows -150 on 3 trades]. ",
+            "Stop: 150 index points below the entry close, live during the first trading day; a low at or below it fills at the stop, or at the open if the day opens through it (decision #276 (1): the vault-wide fill of a stop gapped through at the open, #266). ",
+            "Option p.guaranteed=1 = the guide's guaranteed spread-bet stop, a broker product that exits at exactly entry - 150 even on a gap (p.14-15; the published table shows -150 on 3 trades). ",
             "Optional p.janfeb=1 skips the January and February trades (\"Traders may wish to ... resist trading during January and February\", p.17) [non-default]. ",
             "Staking (+£1 after a loss, back to £1 after a win, p.16) is money management and is not applied (one unit per trade). ",
-            "India: the same calendar rule on NIFTY 50 with a literal 150-point stop (instrument swap)."),
+            "DJI only (decisions #71, #276 (1)): the 150 points are Dow points, so the card runs on the Dow Jones Industrial Average itself, from 2016 (real DJI opens: a gap through the stop fills at the open); on any other instrument 150 points would mean something else."),
             claim("49", "63% (31/49)", "+38.1 Dow points (total +1,865)", "1 day", "Jan 2001-May 2005, Dow futures (Appendix B, p.26-27)")),
         d("elmts4_fixed_odds", "Dow TS4 fixed-odds 'Intraday Up Bet' on the first trading day", "Long",
             Status::NotTestable("a binary fixed-odds bet: the payout depends on the bookmaker's quoted price, and the time of day the bet is placed on the first trading day (its strike level) is not stated (p.20-22)"), &[
@@ -49,6 +56,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("stop_pts", "Stop loss below the entry close (index points)", 150., 10., 1000., 10.),
             p("skip_aug", "Skip the August trade (1 = book)", 1., 0., 1., 1.),
             p("janfeb", "Also skip January and February (optional, p.17)", 0., 0., 1., 1.),
+            p("guaranteed", "Stop fill: 0 = at the stop, or the open on a gap through it (#276); 1 = guaranteed stop (book's spread bet: exactly entry - 150)", 0., 0., 1., 1.),
         ]),
         "elmts4_fixed_odds" => Some(vec![]),
         _ => None,
@@ -62,7 +70,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
-    let (stop_pts, skip_aug, janfeb) = (g("stop_pts"), g("skip_aug") >= 0.5, g("janfeb") >= 0.5);
+    let (stop_pts, skip_aug, janfeb, gtd) = (g("stop_pts"), g("skip_aug") >= 0.5, g("janfeb") >= 0.5, g("guaranteed") >= 0.5);
     let mut out = vec![];
     for i in (from + 1)..=to {
         let m = month(x, i);
@@ -71,7 +79,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let e = i - 1;
         let px = x.c[e];
         let stop = px - stop_pts;
-        let (exit_px, reason) = if x.l[i] <= stop { (x.o[i].min(stop), "150-point stop") } else { (x.c[i], "close of the first trading day") };
+        let (exit_px, reason) = if x.l[i] <= stop { (if gtd { stop } else { x.o[i].min(stop) }, "150-point stop") } else { (x.c[i], "close of the first trading day") };
         out.push(Trade { dir: 1., legs: vec![Leg { i: e, px, w: 1. }], exit_i: i, exit_px, reason: reason.into(),
             entry_kind: "close", signal_i: i, open: false, exits: vec![] });
     }
@@ -101,6 +109,10 @@ mod tests {
         let ts = run("elmts4_first_day", &x, 0, r.len() - 1, &Params::new()).unwrap();
         let v: Vec<(usize, f64, usize, f64)> = ts.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px)).collect();
         assert_eq!(v, vec![(1, 1000., 2, 1050.), (5, 900., 6, 750.), (7, 720., 8, 500.)]);
+        // lane K73 (#276 (1)): the guaranteed-stop option exits the gapped October trade at exactly 720 - 150
+        let g = run("elmts4_first_day", &x, 0, r.len() - 1, &[("guaranteed".to_string(), 1.)].into_iter().collect()).unwrap();
+        assert_eq!(g.iter().map(|t| t.exit_px).collect::<Vec<_>>(), vec![1050., 750., 570.]);
+        assert!(crate::gate::get("elmts4_first_day").is_some_and(|g| g.allowed == Some(&["DJI"][..]) && g.clamp_open));
         assert!(catalogue().iter().all(|d| d.id.starts_with("elmts4_") && family_of(d.id).is_some()));
     }
 }

@@ -4,6 +4,15 @@
 //! Defaults = the article's "final optimum values" (p.341). Stop-and-reverse on the S&P 500 close.
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Lane PB (13 Nov 2026): admitted once the NYSE new highs/lows arrived (Norgate #NYSEHI/#NYSELO); independent check authors/pb/w/pb_ref.py.
+pub const REVIEWED: &[&str] = &["dmtad_turbo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && reviewed(def.id),
+    label: "Dennis Meyers tested the Turbo A/D, NH, NL system on the S&P 500's closes; it reads NYSE breadth and runs on the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (R4 #306).",
+    basis: "Dennis Meyers, The Turbo A/D, NH, NL Market System, Stocks & Commodities V15:7 p.337-346 (THETURB.PDF); NYSE new highs/lows from Norgate (SOURCES norgate-us-indices-20200908-pb); independent check authors/pb/w/pb_ref.py",
+};
+
 const BOOK: &str = "dmtad";
 const SERIES: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume", "NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 
@@ -19,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Stop and reverse: a buy covers the short, a sell closes the long (the article's long and short trade summaries, Figs 1-4)",
             "F|Final optimum values (p.341): buyr 1.2, xbuy 2, nbuy 4; buyvolr 7.5; sellr 1.9, xsell 3, nsell 4; sellvolr 10, sellvolr2 2.2; NLbx 0, NLsx 30, Ldays 50; NHbx -10, NHsx 0, Hdays 10; pctud 1.25",
         ],
-        notes: "Series: NYSE_ADV_DEC.* = daily NYSE advancing/declining issues and volume (in the vault, 1965-2020); NYSE_NEW_HIGHS / NYSE_NEW_LOWS = daily NYSE 52-week new highs / new lows counts (NOT in the vault yet: the API reports the data gap). Readings: 'lowest spx price found while in last sell' = lowest close from the sell bar to today; before the first opposite trade there is no such price and the confirmation is skipped (the article starts mid-history); a zero range makes Strength undefined, so no signal that day. The second sell rule's 'davr[1] >= sellvol' is read as sellvolr (typo in the article). India: no NSE 52-week new highs/lows series exists in the vault.",
+        notes: "Series: NYSE_ADV_DEC.* = daily NYSE advancing/declining issues and volume (in the vault, 1965-2020); NYSE_NEW_HIGHS / NYSE_NEW_LOWS = daily NYSE 52-week new highs / new lows counts (Norgate #NYSEHI/#NYSELO 1932-2020-09-04, added by lane PB; a day without a value carries the 3-day average). Readings: 'lowest spx price found while in last sell' = lowest close from the sell bar to today; before the first opposite trade there is no such price and the confirmation is skipped (the article starts mid-history); a zero range makes Strength undefined, so no signal that day. The second sell rule's 'davr[1] >= sellvol' is read as sellvolr (typo in the article). India: no NSE 52-week new highs/lows series exists in the vault.",
         claim: claim("17", "76%", "$30.95 (S&P 500 points)", "165 bars (winners)", "S&P 500 daily 01/02/87-12/29/95 (test segment); 29 trades 66% 01/03/78-02/27/87"),
     }]
 }
@@ -44,7 +53,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 fn ema_half(v: &[f64]) -> Vec<f64> {
     let mut x = 0.0; // TradeStation var starts at 0
-    v.iter().map(|&a| { if a.is_finite() { x += 0.5 * (a - x); } else { x = f64::NAN; } x }).collect()
+    // lane PB: a day without a breadth value carries the average (it used to turn NaN for the rest of the series)
+    v.iter().map(|&a| { if a.is_finite() { x += 0.5 * (a - x); } x }).collect()
 }
 fn strength(x: &[f64], i: usize, d: usize) -> f64 {
     if d == 0 || i + 1 < d { return f64::NAN; }

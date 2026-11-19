@@ -25,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|\"a buy signal flashes whenever the shorter moving average crosses above the trendline of the longer moving average. A sale is heralded when the trendline of the shorter indicator falls below that of the longer-term average\" (p.6)"],
           "Not coded: the meaning of \"sale\" is not stated."),
         d("jkofc_discretionary", "Oscillators, chart patterns and futures-options examples", "Long/Short",
-          Status::NotTestable("rules not fully defined: teaching material - indicator descriptions (ROC, PPO, stochastics, RSI), chart reading and strategy examples on futures, with no entry or exit rules (Optionetics Futures & Commodity Course, Ch.1-4 of Home Study Course 2 and the Quick Start Guide)"),
+          Status::NotTestable("rules not fully defined: teaching material - indicator descriptions (ROC, PPO, stochastics, RSI), chart reading and strategy examples on futures, with no entry or exit rules (Futures & Commodity Course, Ch.1-4 of Home Study Course 2 and the Quick Start Guide)"),
           &["F|Ch.1-4 of Home Study Course 2 and Home Study Course 1 / Quick Start Guide"], "Teaching material."),
     ]
 }

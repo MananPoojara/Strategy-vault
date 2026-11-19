@@ -11,7 +11,7 @@
 //! previous position (positions ago), EntriesToday(date) the entries filled on the current bar.
 //! The book tested 21-29 futures (one contract, $) and 12 stocks; here the rules run on an index or an NSE stock
 //! (instrument swap only, % returns, one unit per trade).
-use super::pbwts::{entry, exit, highest, lowest, sim, ts_avg_tr, Kind};
+use super::pbwts::{entry, exit, highest, lowest, sim, sim_ep6, ts_avg_tr, Kind};
 use crate::connors::{claim, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "putg";
@@ -171,6 +171,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let longs = || p("longs_only", "Longs only (stock version)", 0., 0., 1., 1.);
     Some(match id {
@@ -200,6 +206,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| { let v = g(k).round(); if v.is_finite() && v >= 1.0 { v as usize } else { 1 } };
     let n = x.r.len();
@@ -266,8 +274,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if mp == B { v.push(exit(S, Stop, lliq, if ma { "long exit (trail)" } else { "long exit (break-even)" })); v.push(exit(S, Stop, pls, "lprot exit")); }
                 if mp == S { v.push(exit(B, Stop, sliq, if ma { "short exit (trail)" } else { "short exit (break-even)" })); v.push(exit(B, Stop, pss, "sprot exit")); }
                 if ma {
-                    let cu = i >= 1 && fast[i - 1] < slow[i - 1] && fast[i] > slow[i];
-                    let cd = i >= 1 && fast[i - 1] > slow[i - 1] && fast[i] < slow[i];
+                    // TradeStation's CrossesAbove/CrossesBelow: now strictly across, the bar before at or on the other side (W3 17 Nov: an exact tie
+                    // on the bar before, e.g. NIFTY 50 11 Dec 2017 fast5 = slow55 = 10183.39, used to hide the cross)
+                    let cu = i >= 1 && fast[i - 1] <= slow[i - 1] && fast[i] > slow[i];
+                    let cd = i >= 1 && fast[i - 1] >= slow[i - 1] && fast[i] < slow[i];
                     if cu && i >= mom && c[i] > c[i - mom] { v.push(entry(B, Open, f64::NAN, "macross buy")); }
                     if cd && i >= mom && c[i] < c[i - mom] { v.push(entry(S, Open, f64::NAN, "macross sell")); }
                 } else if i >= 1 && i + 1 < n {
@@ -285,7 +295,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (hc, lc) = (highest(c, u("closes")), lowest(c, u("closes")));
             let tr = true_range(x.r);
             let (pct, pat) = (g("pct"), g("pattern") >= 0.5);
-            sim(x, from, to, |i, st| {
+            sim_ep6(x, from, to, on, |i, st| {
                 if i + 1 >= n { return vec![]; }
                 let can = !pat || hc[i] - lc[i] < atr[i];
                 let (stb, sts) = (o[i + 1] + pct * tr[i], o[i + 1] - pct * tr[i]);
@@ -460,6 +470,17 @@ mod tests {
         let t = run("putg_hook", &x, 1, 4, &Params::new()).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1., 4, 11.6, 4, 12.3));
+    }
+    #[test]
+    fn ma_cross_through_an_exact_tie_still_crosses() {
+        // W3 17 Nov: fast = slow on the bar before (NIFTY 50 11 Dec 2017) is not a reason to lose the cross (TradeStation: a > b, a[1] <= b[1])
+        let cl = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0];
+        let r: Vec<Row> = cl.iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: c, high: c + 0.2, low: c - 0.2, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let mut p = Params::new();
+        for (k, v) in [("fast", 2.0), ("slow", 3.0), ("mom", 1.0), ("atr_len", 2.0)] { p.insert(k.to_string(), v); }
+        let t = run("putg_ma_cross", &x, 3, 11, &p).unwrap();
+        assert!(t.iter().any(|tr| tr.dir > 0.0), "{} trades, none long", t.len());
     }
     #[test]
     fn every_live_strategy_runs_with_fills_inside_the_bar() {

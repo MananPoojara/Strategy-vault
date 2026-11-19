@@ -11,7 +11,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None };
     vec![
         d("lwmds_ma_uses", "Three ways to use moving averages", "Moving averages",
-            NotTestable("Only ideas: trade with the trend of the average, act on penetrations 'if, and only if, other technical or fundamental criteria have been met', momentum 'discussed later' (p.7-8); no entry, exit or parameters."),
+            NotTestable("Only ideas: trade with the trend of the average, act on penetrations only when other (unnamed) criteria have been met, momentum 'discussed later' (p.7-8); a filter only: no entry, no exit and no average length are given."),
             &["F|\"trade the long side of a stock only when the moving average is up and trade the short side only when the trend of the moving average is down\" (p.7)"], ""),
         d("lwmds_yield_payout", "Stock yield bands and payout time", "Fundamentals",
             NeedsData("Needs each stock's 10-20 year dividend-yield history and earnings growth; the levels are read off each stock's own chart (p.9-10)."),

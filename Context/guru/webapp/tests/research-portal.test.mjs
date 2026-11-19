@@ -135,3 +135,38 @@ test('research portal API', { skip: !url && 'set RESEARCH_TEST_DATABASE_URL to a
     });
   } finally { await pool.end(); }
 });
+
+// The research-share inventory is admin only. No database is needed: /admin and /share never query it.
+test('research share inventory: admin only', async t => {
+  process.env.BETTER_AUTH_SECRET ||= 'test-secret-for-signed-cookies-0123456789';
+  process.env.RESEARCH_ADMIN_PASSWORD = 'admin-test-pw';
+  const dir = await mkdtemp(join(tmpdir(), 'research-share-')), progress = join(dir, 'research-progress.json'), share = join(dir, 'share-inventory.json');
+  const pool = { query: async () => { throw new Error('no database in this test'); }, connect: async () => { throw new Error('no database in this test'); } };
+  const app = new Hono();
+  app.use('*', async (c, next) => { c.set('user', users[c.req.header('x-user')]); await next(); });
+  registerResearch(app, { pool, store: createResearchStore({ pool, progressPath: progress }) });
+  const call = async (path, { method = 'GET', body, cookie } = {}) => {
+    const r = await app.request(`/api/app/research${path}`, { method, headers: { 'x-user': 'asha', 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: body && JSON.stringify(body) });
+    return { status: r.status, body: await r.json(), cookie: (r.headers.get('set-cookie') || '').split(';')[0] };
+  };
+  await t.test('a researcher without the admin password gets 403', async () => {
+    await writeFile(share, JSON.stringify({ schema: 1, listing: { files: 3 } }));
+    assert.equal((await call('/share')).status, 403);
+    assert.equal((await call('/admin', { method: 'POST', body: { password: 'wrong' } })).status, 403);
+    assert.equal((await call('/share', { cookie: 'rp_admin=1' })).status, 403);   // an unsigned cookie is not enough
+  });
+  await t.test('the admin reads the generated file, and a regenerated file is picked up', async () => {
+    const login = await call('/admin', { method: 'POST', body: { password: 'admin-test-pw' } });
+    assert.equal(login.status, 200); assert.match(login.cookie, /^rp_admin=/);
+    const r = await call('/share', { cookie: login.cookie });
+    assert.equal(r.status, 200); assert.equal(r.body.listing.files, 3);
+    await writeFile(share, JSON.stringify({ schema: 1, listing: { files: 4 } })); await utimes(share, new Date(), new Date(Date.now() + 5000));
+    assert.equal((await call('/share', { cookie: login.cookie })).body.listing.files, 4);
+  });
+  await t.test('404 with a message until the inventory is generated', async () => {
+    const login = await call('/admin', { method: 'POST', body: { password: 'admin-test-pw' } });
+    const { rm } = await import('node:fs/promises'); await rm(share);
+    const r = await call('/share', { cookie: login.cookie });
+    assert.equal(r.status, 404); assert.match(r.body.error, /not been generated/);
+  });
+});

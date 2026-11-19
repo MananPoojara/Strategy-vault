@@ -251,6 +251,7 @@ details.rules .t { font: 700 10px "IBM Plex Mono", monospace; color: var(--ink3)
 @media (max-width:600px) {.report-tabs{margin-inline:-12px;padding-inline:2px;}.report-tabs [role="tab"]{padding-inline:11px;font-size:12px;}}
 @media print {.report-tabs{display:none!important;}.report-panel[hidden]{display:block!important;}.strategy-report{break-inside:auto;}.report-panel{margin-bottom:24px;}.report-panel .tlog{max-height:none;overflow:visible;}.bk-line{stroke-dashoffset:0!important;}.bk-fill{opacity:1!important;}.bk-bar{transform:none!important;}}
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .two .box { margin: 0; } .two { margin: 18px 0; }
+.concl-pair { align-items: start; } /* Claude's and GPT's conclusions keep their own height */
 .heatwrap { padding: 0 !important; background: transparent !important; } .heat { width: 100%; border-collapse: collapse; } .heat th { font: 600 11px var(--font); color: var(--ink2); padding: 3px; text-align: center; } .heat td { text-align: center; font: 600 11px "IBM Plex Mono", monospace; padding: 5px 0; border: 2px solid var(--panel); border-radius: 4px; }
 .check { margin: -4px 0 10px; font-size: 13.5px; color: var(--green); }
 .tlog { max-height: 560px; overflow: auto; border: 1px solid var(--steel); border-radius: var(--r-field); } .tbl.tl { border: 0; border-radius: 0; } .tbl.tl th { position: sticky; top: 0; background: var(--thead); z-index: 1; }
@@ -632,6 +633,7 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .metrics {grid-template-columns:repeat(7,minmax(0,1fr));}
 .metric b {font-size:28px;}
 .chart-tools,.detail-tools {display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;}
+.export-all [hidden] {display:none!important;} .export-all .rnote {flex:1 1 320px;margin:0;} .export-all progress {width:140px;}
 .equity-navigator {padding:12px;border:1px solid var(--rule);background:var(--card);margin-top:12px;border-radius:var(--r-field);display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
 .equity-navigator label {display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);}
 .equity-navigator input {width:100%;accent-color:var(--blue);cursor:ew-resize;}
@@ -746,6 +748,10 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .tbl.tl td.n, .tbl.tl th.n { text-align: right; white-space: nowrap; }
 .tbl.tl td.d { white-space: nowrap; color: var(--ink2); }
 
+/* Tradelist only: Familjen Grotesk (Google Fonts, index.html), current stack as fallback */
+[data-tradesheet] .box-h, .tbl.tl, .tbl.tl td.n, .tbl.tl td.d { font-family: 'Familjen Grotesk', 'Inter Numbers', 'IBM Plex Sans', system-ui, sans-serif; }
+.tbl.tl th { font-family: 'Familjen Grotesk', 'Inter Numbers', 'IBM Plex Sans', system-ui, sans-serif; font-size: 12px; text-transform: none; letter-spacing: 0; }
+
 /* Statistic tables (Strategy vs benchmark, Detailed statistics): compact, label column first, larger financial figures */
 .tbl.stat-table { width: 100%; table-layout: fixed; }
 .tbl.stat-table th:first-child, .tbl.stat-table td:first-child { width: 40%; }
@@ -765,7 +771,6 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .range-brush .rb-out{position:absolute;left:8px;bottom:1px;font:500 11px 'Inter Numbers','IBM Plex Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--ink2);pointer-events:none}
 @media print{.range-brush{display:none}}
 
-.share-files{margin:8px 0 28px}.share-files .section-h{margin:0 0 8px}.lstrip.share-files-strip{grid-template-columns:repeat(7,minmax(0,1fr))}.share-files-strip dd{font-size:26px}@media(max-width:760px){.lstrip.share-files-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Home hero figure (LivingBook, 30 Oct 2026): anatomy iso kit tones taken from the active site theme. */
 /* Stand rim flush with the 32px page gutter: the SVG leaves .0832 of its width empty right of the drawn rim

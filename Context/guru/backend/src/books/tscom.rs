@@ -21,7 +21,15 @@ fn def(id: &'static str, name: &'static str, group: &'static str, status: Status
     StrategyDef { id, name, group, session: 0, dir: "Long/Short", status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-pub fn catalogue() -> Vec<StrategyDef> {
+const AZT_RULES: &[&str] = &[
+            
+            "F|Mode 2 (default): track HighSoFar/LowSoFar of closes; \"IF pos1 > -1 AND Close < highsofar - abb.stddev(c,NumbarL2)*Pct2 then pos1 = -1; pos2 = 1; highsofar = lowsofar = close\"; up mirror (NumbarL2 70, Pct2 2.4)",
+            "F|\"BuyPoint = Close + Abb.stddev(Close,NumBars2)*1.5; SellPoint = Close - ...\" (NumBars2 20), at least 300/BigPointValue away; \"Sigma = Abb.stddev(Close,NumBars2)[1]*1.5*SStop2\" (SStop2 2.0), at least 300/BigPointValue",
+            "E|\"MarketPosition = 0 and pos1=1 and pos2 = 1 -> Buy Next Bar at Market\"; \"MarketPosition = 0 and pos1=1 and close > BuyPointP -> Buy\"; \"MarketPosition = -1 and pos1 = 1 -> Buy\" (reverse); short mirror",
+            "X|\"MarketPosition = 1 and pos1 = 1 and close < SellPointP -> Sell Next Bar at Market\"; \"MarketPosition = 1 and barssinceentry > 1 and Close < Longstop -> Sell\" (LongStop = EntryPrice - Sigma set on the entry bar); short mirror",
+            "F|[Labelled reading, R4 #340] BigPointValue = the E-mini S&P 500 contract multiplier, US$50 per index point, so the code's US$300 floors are 6 points; the code's Mode 1 (stop orders) is not published, only the default Mode 2 whose every order is a next-bar market order",
+        ];
+fn catalogue_raw() -> Vec<StrategyDef> {
     vec![
         def(ABP, "Aberration Plus (80-bar 2-sigma band, stepped MA exits)", "Aberration Plus (Open Code.txt)", Status::Live, &[
             "F|\"Avg.Out = Average(Close,Length)\"; Avg.Out2..5 = Average(Close, Length - int(Length/8)*k), k=1..4 (Length 80 -> 80/70/60/50/40); \"Sigma = Abb.stddev(Close,Length)*2\"; \"Vol.av = (Sigma+Sigma[1]+Sigma[2])/3\"",
@@ -60,6 +68,13 @@ The stop entries sit relative to the next bar's own open, so they become live af
     ]
 }
 
+/// Lane D2 (16 Nov 2026, R4 #340, #339): Fitschen's Aztec (mode 2, all market orders) runs on the Norgate E-mini S&P 500 contract
+/// (futures::CARDS_D2) with BigPointValue = the contract's US$ per point; UNVERIFIED, 4 labelled unstated details.
+const NOTE_AZT_FUT: &str = "[Declared adaptation, R4 #340; UNVERIFIED, 4 unstated details, R4 #339] The vendor code names no market and no point value. Unstated: (1) the market; vault reading: the Norgate E-mini S&P 500 continuous contract (back-adjusted daily bars, roll method not stated by the vendor, ends 2020-09-11); (2) BigPointValue; vault reading: US$50 per index point, the contract multiplier, so the code's US$300 floors are 6 points; (3) the run mode; vault reading: the code's default mode 2 (trend filter), whose every order is a next-bar market order (mode 1 uses stop orders and is not published); (4) the first bar; vault reading: the first bar after the 70-bar warm-up. Abb.stddev, the entry and exit rules are as in the Open Code.txt quotes. Fills at the next open (clamp_open). Same-day order (#240): none, no stop or limit is used.";
+pub fn catalogue() -> Vec<StrategyDef> {
+    catalogue_raw().into_iter().map(|mut d| { if d.id == AZT { d.status = Status::Live; d.notes = NOTE_AZT_FUT; d.rules = AZT_RULES; } d }).collect()
+}
+
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         ABP => ("tscom_aberration_plus", "Aberration Plus (Fitschen)", "code"),
@@ -74,9 +89,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         ABP => vec![p("length", "Length", 80., 20., 200., 5.), p("risk", "Risk ($ per contract; 99999 = off)", 99999., 100., 99999., 100.), p("bpv", "BigPointValue (1 = cash index)", 1., 1., 500., 1.)],
-        AZT => vec![p("mode", "Mode (2 trend filter, 1 reversal)", 2., 1., 2., 1.), p("numbars2", "NumBars2", 20., 5., 60., 1.), p("sstop2", "SStop2", 2., 0.5, 5., 0.1),
-            p("numbarl2", "NumbarL2", 70., 20., 200., 5.), p("pct2", "Pct2", 2.4, 0.5, 5., 0.1), p("numbars1", "NumBars1 (mode 1)", 8., 3., 40., 1.), p("sstop1", "SStop1 (mode 1)", 1.9, 0.5, 5., 0.1),
-            p("bpv", "BigPointValue (1 = cash index)", 1., 1., 500., 1.)],
+        AZT => vec![p("numbars2", "NumBars2", 20., 5., 60., 1.), p("sstop2", "SStop2", 2., 0.5, 5., 0.1),
+            p("numbarl2", "NumbarL2", 70., 20., 200., 5.), p("pct2", "Pct2", 2.4, 0.5, 5., 0.1)],
         IMS => vec![p("off", "Entry offset beyond the open-relative level (price units, printed .05)", 0.05, 0., 5., 0.05), p("stop", "Stopp: Average(Range,80)[2] multiple", 3., 0.5, 10., 0.5),
             p("target", "ProfitTarget: Average(Range,80)[2] multiple", 4., 0.5, 10., 0.5)],
         _ => return None,
@@ -139,12 +153,13 @@ fn aberration_plus(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
 
 fn aztec(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
-    let bpv = g("bpv", 1.);
+    // lane D2: on a futures contract BigPointValue is the contract multiplier
+    let bpv = crate::futures::ctx_market(x).and_then(|m| crate::futures::usd_per_point(m, &x.r[from.min(x.r.len() - 1)].date)).unwrap_or_else(|| g("bpv", 1.));
     let n = x.c.len();
     let mut s = Sim::new();
     let mut mp_prev = 0i8;
     let (mut long_stop, mut short_stop) = (0f64, 0f64);
-    if g("mode", 2.).round() as i32 == 1 {
+    if crate::futures::ctx_market(x).is_none() && g("mode", 2.).round() as i32 == 1 {
         let sd = abb_sd(&x.c, g("numbars1", 8.) as usize);
         let ss1 = g("sstop1", 1.9);
         let st = first_ok(n, from.max(1), &[&sd]) + 1;
@@ -263,6 +278,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn aztec_is_admitted_only_on_its_futures_contract() { // lane D2 review: the cash-index path must stay closed
+        let d = catalogue().into_iter().find(|d| d.id == "tscom_aztec").unwrap();
+        assert!(matches!(d.status, Status::Live) && d.rules.iter().all(|r| !r.contains("Mode 1 (p.mode")));
+        let es = crate::futures::ticker(crate::futures::MARKETS.iter().find(|m| m.sym == "&ES").unwrap());
+        assert!(crate::instrument_policy::check(&d, &es, false).is_none());
+        for t in ["SPY", "SPX", "NIFTY 50"] { assert!(crate::instrument_policy::check(&d, t, false).is_some(), "{t}"); }
+        assert!(crate::futures::home("tscom_aztec", "Gold (Norgate &GC)").is_some() && crate::futures::home("tscom_aztec", &es).is_none());
+        assert!(params("tscom_aztec").unwrap().iter().all(|p| p.key != "mode" && p.key != "bpv"));
+    }
     #[test]
     fn abb_sd_sample_and_flat_fallback() {
         let v = [1., 2., 3., 4., 4., 4., 4.];

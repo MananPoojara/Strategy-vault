@@ -28,11 +28,13 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    (id == ID).then(|| vec![p("gap_frac", "Gap filter (fraction of range, code .3)", 0.3, 0., 1., 0.05), p("buycent", "Buycent", 100., 10., 200., 10.), p("sellcent", "Sellcent", 100., 10., 200., 10.)])
+    (id == ID).then(|| vec![p("gap_frac", "Gap filter (fraction of range, code .3)", 0.3, 0., 1., 0.05), p("buycent", "Buycent", 100., 10., 200., 10.), p("sellcent", "Sellcent", 100., 10., 200., 10.)]).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if id != ID || from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p);
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let (gf, bc, sc) = (g("gap_frac", 0.3), g("buycent", 100.), g("sellcent", 100.));
     let mut s = Sim::new();
@@ -47,7 +49,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         if mp != 0 && s.bse(i) == 0 { edh = x.h[i]; edl = x.l[i]; }
         if mp == 1 { q.push(ord(K::XL, Ty::Lim(edh), "PROFIT long")); q.push(ord(K::XL, Ty::Stop(edl), "long STOP")); }
         if mp == -1 { q.push(ord(K::XS, Ty::Lim(edl), "PROFIT short")); q.push(ord(K::XS, Ty::Stop(edh), "short STOP")); }
-        s.bar(x, i + 1, &q);
+        s.bar_ep6(x, i + 1, &q, on);
     }
     Some(s.done(x, to))
 }

@@ -6,6 +6,7 @@
 //! Systems were tested in the magazine on futures or US stocks; here they run on the selected index (instrument swap
 //! only). Dollar figures in claims are as printed (per futures contract). No costs are deducted in the engine.
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use std::collections::BTreeMap;
 
 pub const BOOK: &str = "ftm";
 /// Admitted ids (authors/futuresmag/admission/SOURCE-CONTRACT.md).
@@ -156,11 +157,19 @@ fn defs() -> Vec<S> {
             status: NeedsData("US unemployment-report release calendar and 10-yr T-note futures"), vix: false,
             rules: &["E|\"If Volume>Average(Volume,20) and Close<Close[5] then buy at the next open\" (day before the unemployment report) (200206 PDF 53, p.53)", "X|\"If DaysSinceEntry>3 then Exitlong at yesterdays low - 0.03125 stop\""],
             notes: "Also: buy the morning after the two-year note auction if the 10-yr closes above its 40-day average, exit 8 days later (needs auction calendar).", claim: crate::connors::claim("124", "57.26%", "$286.65", "", "10-yr T-note 1/1990-3/8/2002") },
-        S { id: "ftm_rg_cot", name: "Ruggiero COT commercials model (S&P)", group: G_ND, dir: "Long", status: NeedsData("CFTC Commitments of Traders net commercial positions"), vix: false,
-            rules: &["F|\"Inputs: LookBack(50),Lev(0.80)\" ... \"If COTVal < 0.40 then exitlong at open\" (200204 PDF 59, p.59)"], notes: "", claim: None },
-        S { id: "ftm_rg_intermarket", name: "Ruggiero intermarket models (silver/T-note, RBPI, CRB)", group: G_ND, dir: "Long/Short", status: NeedsData("silver, 10-yr T-note and commodity futures series"), vix: false,
-            rules: &["E|\"If Ten Year>Average(Ten Year, 4) and Silver >Average(Silver, 28) then sell at open; If Ten Year<Average(Ten Year, 4) and Silver <Average(Silver, 28) then buy at open\" (200205 PDF 61, p.59)"],
-            notes: "Jan 2001 RBPI (6th root of 6 commodity prices) and seasonal T-bond windows (Feb 2002) also need futures data.", claim: crate::connors::claim("256", "62.11%", "$337.24", "", "10-yr T-note since 1/1/1988") },
+        S { id: "ftm_rg_cot", name: "Ruggiero COT commercials model (S&P)", group: G_ND, dir: "Long", status: Live, vix: false,
+            rules: &["F|\"Inputs: LookBack(50),Lev(0.80); NetCom = Open of Data2 - High of Data2; COTVal = (NetCom - Lowest(NetCom,LookBack)) / (Highest(NetCom,LookBack) - Lowest(NetCom,LookBack))\" (200204 PDF 59, p.59); the open of Data2 is the commercial long, the high the commercial short",
+                     "E|\"If COTVal > Lev and close < close[3] then buy at open\" (weekly bars, p.59)",
+                     "X|\"If COTVal < 0.40 then exitlong at open\" (p.59)",
+                     "A|[Declared reading 1, lane M3 17 Nov 2026, R4 #346] NetCom = CFTC legacy futures-only commercial long minus short for the full-size S&P 500 (CFTC contract 138741, verified by lane DA against the CFTC API); a COT row is used only on bars on or after its ReleaseDate (the Friday release, the next business day after a federal holiday; rule-derived before 2026), and the 162 semi-monthly rows before 1992-10-06 have no release date and are not used, so the first COTVal needs 50 released weeks",
+                     "A|[Declared reading 2] a weekly bar ends on the last trading day of its Monday-based week and uses the latest COT row released by then; the order is filled at the next weekly bar's open (the next trading day's open)",
+                     "A|[Declared reading 3] the code's close < close[3] is read literally (the close three weekly bars back), not the prose's 'four weeks ago'; the code tests the level, so a flat system buys again on any week with COTVal > 0.80 (the prose says 'crosses above')",
+                     "A|[Declared reading 4] the run is capped at the &SP open window 1992-10-06..1995-07-31 (R4 #330: Norgate's &SP open is not the pit open from August 1995), and the long side only is run (the article's short side uses 0.20 and 0.60 and is not coded)"],
+            notes: "Weekly bars; Data2 = CFTC commercial positions (COT_138741). Book: 14.82 years of S&P futures, long side 18 trades 88.89% winners, $201,037.50 at $250 per point (no costs).", claim: crate::connors::claim("18", "88.89%", "$11,168.75", "", "S&P 500 futures weekly, 14.82 years to 2002") },
+        S { id: "ftm_rg_intermarket", name: "Ruggiero silver / 10-year T-note intermarket model (stop and reverse at the open)", group: G_RG02, dir: "Long/Short", status: Live, vix: false,
+            rules: &["E|\"If Ten Year>Average(Ten Year, 4) and Silver >Average(Silver, 28) then sell at open; If Ten Year<Average(Ten Year, 4) and Silver <Average(Silver, 28) then buy at open\" (200205 PDF 61, p.59)",
+                     "X|Stop and reverse: each order at the next open reverses the position (the article's long and short results, $66,370 / $19,964)"],
+            notes: "[Lane PF, R4 #293, #297: adapted, 1 unstated detail] Runs only on the Norgate continuous 10-year T-note contract (&ZN, back-adjusted daily bars; signals and points on them, % on the unadjusted entry price, #293 (2)), with Norgate continuous silver (&SI, back-adjusted) as the second market: silver's close joined by exact date (no silver close = no signal that day), its 28-day average on silver's own bars (as rgc_im_sp_tbond). Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor. Unstated in the article: the end of its test (from 1/1/1988 to the May 2002 issue); the book check uses 1988-01-01..2002-03-28 (vault reading). No costs (the article states none). The Jan 2001 RBPI and Feb 2002 seasonal T-bond models of the same family are not run.", claim: crate::connors::claim("256", "62.11%", "$337.24", "", "10-yr T-note since 1/1/1988") },
         S { id: "ftm_zg_ranked", name: "Zamansky & Goldcamp relative-strength + intraday range variants", group: G_ZG, dir: "Long", status: NeedsData("a stock universe ranked by 20- and 60-day returns (book: Nasdaq 100 members on 1/1/1999)"), vix: false,
             rules: &["E|\"Buy if the stock trades during the day from the open minus X% of Y times the stock's average five-day range for the Z highest ranked securities\" (X=150%, Z=15) (p.38)", "X|Exit at the fifth opening following entry"],
             notes: "", claim: crate::connors::claim("225", "", "4.13%", "5 opens", "Nasdaq 100 top-15 1999-2001") },
@@ -192,7 +201,7 @@ fn defs() -> Vec<S> {
 
 pub fn catalogue() -> Vec<StrategyDef> {
     defs().into_iter().map(|s| StrategyDef { id: s.id, name: s.name, group: s.group, session: 0, dir: s.dir, status: s.status,
-        needs_volume: false, needs_vix: s.vix, needs_series: &[], book: BOOK, rules: s.rules, notes: s.notes, claim: s.claim }).collect()
+        needs_volume: false, needs_vix: s.vix, needs_series: if s.id == "ftm_rg_cot" { &["COT_138741.CommLong", "COT_138741.CommShort"] } else { &[] }, book: BOOK, rules: s.rules, notes: s.notes, claim: s.claim }).collect()
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -240,6 +249,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                               p("pts", "Entry stop distance from the close in S&P points (mode 1, SPX only)", 2., 0., 20., 0.5), p("hold", "Exit at next open once BarsSinceEntry > N", 2., 0., 10., 1.)],
         "ftm_rg_dip" => vec![p("lb", "Look-back (consecutive down closes)", 2., 1., 5., 1.), p("ent", "Entry stop: open + k x Average(Range,3)", 0.4, 0., 1.5, 0.1),
                              p("ext", "Exit stop: open - k x Average(Range,3)", 0.6, 0., 1.5, 0.1), p("rng", "Range average length", 3., 1., 10., 1.)],
+        "ftm_rg_cot" => vec![p("lb", "LookBack: weekly COT values", 50., 10., 104., 1.), p("lev", "Lev: buy when COTVal is above", 0.80, 0.5, 0.95, 0.05), p("xit", "Exit when COTVal is below", 0.40, 0.1, 0.7, 0.05), p("back", "Close compared with N weekly bars back", 3., 1., 8., 1.)],
+        "ftm_rg_intermarket" => vec![p("a", "10-year note average (days)", 4., 2., 20., 1.), p("b", "Silver average (days)", 28., 5., 60., 1.)],
         "ftm_rg_feedback" => vec![p("n", "Channel length (bars)", 20., 5., 60., 1.), p("lb", "Feedback look-back LB (bars)", 20., 10., 100., 5.),
                                   p("tick", "MinMove added beyond the channel", 0.05, 0., 1., 0.01), p("vcost", "Virtual cost per trade (points)", 0., 0., 10., 0.5)],
         "ftm_cvr9" => vec![p("n", "VIX high/low look-back", 10., 5., 20., 1.), p("rng", "Range largest of last N days", 3., 2., 5., 1.), p("hold", "Exit on the close after N days", 3., 1., 10., 1.)],
@@ -279,6 +290,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "ftm_km_hh_limit" => katz(x, from, to, true, true, u("m").max(2), g("stop"), g("target"), u("hold").max(1), u("cool")),
         "ftm_rg_oops" => oops(x, from, to, g("gap"), u("ma").max(1), if g("mode") >= 0.5 { g("pts") } else { g("ticks") * x.market_tick() }, u("hold")),
         "ftm_rg_dip" => dip(x, from, to, u("lb").max(1), g("ent"), g("ext"), u("rng").max(1)),
+        "ftm_rg_cot" => rg_cot(x, from, to, u("lb").max(2), g("lev"), g("xit"), u("back").max(1)),
+        "ftm_rg_intermarket" => rg_silver_note(x, from, to, u("a").max(1), u("b").max(1)),
         "ftm_rg_feedback" => feedback(x, from, to, u("n").max(2), u("lb").max(1), g("tick"), g("vcost")),
         "ftm_cvr9" => cvr9(x, from, to, u("n").max(2), u("rng").max(2), u("hold").max(1))?,
         "ftm_zg_weak2r" => zg(x, from, to, g("k"), u("n").max(1), u("hold").max(1)),
@@ -614,6 +627,47 @@ mod tests {
     fn rows(n: usize) -> Vec<Row> {
         (0..n).map(|i| Row { ticker: "T".into(), date: format!("{:04}-{:02}-{:02}", 2000 + i / 300, 1 + (i / 25) % 12, 1 + i % 25), open: 100., high: 101., low: 99., close: 100., volume: None }).collect()
     }
+    /// Lane M3: Ruggiero's COT rule on 14 hand-made weeks of 5 bars (2001-01-01 is a Monday).
+    #[test]
+    fn rg_cot_buys_at_the_next_weekly_open_when_cotval_is_high_and_exits_when_low() {
+        let n = 5 * 14;
+        let r: Vec<Row> = (0..n).map(|i| { let d = 7 * (i / 5) + i % 5; // days after 2001-01-01
+            let (m, dd) = match d { 0..=30 => (1, d + 1), 31..=58 => (2, d - 30), 59..=89 => (3, d - 58), _ => (4, d - 89) };
+            let c = if i / 5 == 5 { 90. } else { 100. + (i / 5) as f64 };
+            Row { ticker: "T".into(), date: format!("2001-{m:02}-{dd:02}"), open: c, high: c + 1., low: c - 1., close: c, volume: None } }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        // commercial net: 0,10,20,30 then 100 (a new high, COTVal 1.0) in weeks 4..8, then 0 (COTVal 0) from week 9
+        let net: Vec<f64> = (0..14).map(|w| match w { 0..=3 => 10. * w as f64, 4..=8 => 100., _ => 0. }).collect();
+        x.extra.insert("COT_138741.CommLong".into(), (0..n).map(|i| net[i / 5]).collect());
+        x.extra.insert("COT_138741.CommShort".into(), vec![0.; n]);
+        let t = rg_cot(&x, 0, n - 1, 4, 0.8, 0.4, 3);
+        // week 5 closes at 90 < the close three weeks back (week 2: 102): signal on its last bar, buy at the open of week 6
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].legs[0].i, 30);
+        assert_eq!(t[0].exit_i, 50); // COTVal 0 at the end of week 9 (net 100,100,100,0): exit at the open of week 10
+        assert!(rg_cot(&Ctx::new(&r, &r, &[]), 0, n - 1, 4, 0.8, 0.4, 3).is_empty());
+    }
+    /// Lane M3 reference feed: `COT_DUMP=out COT_SP=&SP.csv COT_FILE=COT_138741.csv cargo test --release cot_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn cot_dump() {
+        let (Ok(out), Ok(sp), Ok(cf)) = (std::env::var("COT_DUMP"), std::env::var("COT_SP"), std::env::var("COT_FILE")) else { return };
+        let q = |s: &str| s.trim_matches('"').to_string();
+        let rows: Vec<Row> = std::fs::read_to_string(sp).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            Some(Row { ticker: "&SP".into(), date: q(f[0]), open: q(f[3]).parse().ok()?, high: q(f[4]).parse().ok()?, low: q(f[5]).parse().ok()?, close: q(f[6]).parse().ok()?, volume: None }) }).collect();
+        let (mut l, mut s): (BTreeMap<String, f64>, BTreeMap<String, f64>) = Default::default();
+        for line in std::fs::read_to_string(cf).unwrap().lines().skip(1) { let f: Vec<&str> = line.split(',').collect();
+            if f[1].is_empty() { continue; } l.insert(f[1].into(), f[4].parse().unwrap()); s.insert(f[1].into(), f[5].parse().unwrap()); }
+        for k in ["COT_138741.CommLong", "COT_138741.CommShort"] { crate::release::mark(k); }
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert("COT_138741.CommLong".into(), crate::release::column("COT_138741.CommLong", rows.iter().map(|r| r.date.as_str()), &l));
+        x.extra.insert("COT_138741.CommShort".into(), crate::release::column("COT_138741.CommShort", rows.iter().map(|r| r.date.as_str()), &s));
+        let (a, b) = (rows.partition_point(|r| r.date.as_str() < "1992-10-06"), rows.partition_point(|r| r.date.as_str() <= std::env::var("COT_END").unwrap_or("1995-07-31".into()).as_str()) - 1);
+        let t = rg_cot(&x, a, b, 50, 0.8, 0.4, 3);
+        let mut o = String::new();
+        for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, o).unwrap();
+    }
     #[test]
     fn dip_buys_after_two_down_closes_on_open_plus_point4_range() {
         let mut r = rows(20);
@@ -681,3 +735,52 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Futures Magazine authors tested these systems on futures portfolios or US stocks; runs on indices, ETFs and single stocks (US and India; US calendar and VIX rules use the market's own index and volatility index) are a declared application, one unit per trade.",
     basis: "Futures Magazine 2001-2005 articles (PDF copies in Books/Futures Magazine)",
 };
+
+/// Lane PF (F1C list item 4): Ruggiero's silver / 10-year T-note model (200205 p.59) on &ZN with &SI as the second market.
+/// Signal on the close of bar i, fill at the open of i+1 (TradeStation "at open" = next bar); stop and reverse.
+/// Ruggiero's COT commercials model (FM April 2002 p.59, lane M3): weekly bars of the daily context, NetCom from the staged
+/// COT_138741 commercial long and short (extra series released on or after their ReleaseDate), orders at the next weekly open.
+fn rg_cot(x: &Ctx, from: usize, to: usize, lb: usize, lev: f64, xit: f64, back: usize) -> Vec<Trade> {
+    let (Some(cl), Some(cs)) = (x.extra.get("COT_138741.CommLong"), x.extra.get("COT_138741.CommShort")) else { return vec![] };
+    let mut ends = vec![]; // last daily bar of each Monday-based week that is followed by another bar
+    for i in 1..=to { if (days(&x.r[i].date) + 3).div_euclid(7) != (days(&x.r[i - 1].date) + 3).div_euclid(7) { ends.push(i - 1); } }
+    let nc: Vec<f64> = ends.iter().map(|&i| cl[i] - cs[i]).collect(); // NaN until a row is released
+    let (mut out, mut cur) = (vec![], None::<(usize, f64)>);
+    for (w, &li) in ends.iter().enumerate() {
+        let j = li + 1;
+        if j < from || w + 1 < lb { continue; }
+        let win = &nc[w + 1 - lb..=w];
+        if win.iter().any(|v| !v.is_finite()) { continue; }
+        let (hi, lo) = (win.iter().cloned().fold(f64::MIN, f64::max), win.iter().cloned().fold(f64::MAX, f64::min));
+        if hi <= lo { continue; }
+        let v = (nc[w] - lo) / (hi - lo);
+        match cur {
+            None if v > lev && w >= back && x.c[li] < x.c[ends[w - back]] => cur = Some((j, x.o[j])),
+            Some((e, ep)) if v < xit => { out.push(super::rbtie::mk(1., e, ep, "open", j, x.o[j], "COTVal below the exit level", false, li)); cur = None; }
+            _ => {}
+        }
+    }
+    if let Some((e, ep)) = cur { out.push(super::rbtie::mk(1., e, ep, "open", to, x.c[to], "open", true, to)); }
+    out
+}
+
+fn rg_silver_note(x: &Ctx, from: usize, to: usize, a: usize, b: usize) -> Vec<Trade> {
+    let Some(m) = crate::futures::MARKETS.iter().find(|m| m.sym == "&SI") else { return vec![] };
+    let Some(rows) = crate::books::rotation::PRELOADED.get().and_then(|d| d.get(&crate::futures::ticker(m))) else { return vec![] };
+    let s = crate::second::align("&SI", x.r, rows);
+    let (sc, sa) = (s.exact(crate::second::Field::C), s.own(|r| sma(&r.iter().map(|q| q.close).collect::<Vec<_>>(), b)));
+    let ta = sma(&x.c, a);
+    let (mut out, mut cur, mut pend) = (vec![], None::<(f64, usize, f64)>, 0i8);
+    for i in from..=to {
+        if pend != 0 {
+            if let Some((d, e, ep)) = cur.take() { out.push(super::rbtie::mk(d, e, ep, "open", i, x.o[i], "reverse at the open", false, i - 1)); }
+            cur = Some((pend as f64, i, x.o[i]));
+            pend = 0;
+        }
+        if i == to { break; }
+        let want = if x.c[i] > ta[i] && sc[i] > sa[i] { -1 } else if x.c[i] < ta[i] && sc[i] < sa[i] { 1 } else { 0 };
+        if want != 0 && cur.map_or(0, |c| c.0 as i8) != want { pend = want; }
+    }
+    if let Some((d, e, ep)) = cur { out.push(super::rbtie::mk(d, e, ep, "open", to, x.c[to], "open", true, to)); }
+    out
+}

@@ -27,11 +27,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { (id == ID).then_some((ID, "Coat Tails (longtermtrading.com)", "code")) }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == ID).then(|| vec![ParamDef { key: "len", label: "Range lookback (code 3)", def: 3., min: 1., max: 10., step: 1. }, ParamDef { key: "frac", label: "Range fraction (code 1/2)", def: 0.5, min: 0.1, max: 2., step: 0.05 }])
+    (id == ID).then(|| vec![ParamDef { key: "len", label: "Range lookback (code 3)", def: 3., min: 1., max: 10., step: 1. }, ParamDef { key: "frac", label: "Range fraction (code 1/2)", def: 0.5, min: 0.1, max: 2., step: 0.05 }]).map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if id != ID || from >= to || to >= x.r.len() { return None; }
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p);
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let (n, fr) = (g("len", 3.).max(1.) as usize, g("frac", 0.5));
     let (hh, lc, hc, ll) = (highest(&x.h, n), lowest(&x.c, n), highest(&x.c, n), lowest(&x.l, n));
@@ -55,7 +57,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             q.push(ord(K::XS, Ty::Lim(st), "sx.pTarget"));
             q.push(ord(K::XS, Ty::Stop(ss), "sx.pStop"));
         }
-        s.bar(x, i + 1, &q);
+        s.bar_ep6(x, i + 1, &q, on);
     }
     Some(s.done(x, to))
 }

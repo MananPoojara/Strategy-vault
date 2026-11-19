@@ -188,6 +188,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let mut v = params_base(id)?;
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243, lane K63)
+    Some(v)
+}
+
+fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     // final rules p.216 and the printed code p.288 have no gate (default, decision 186 FR-16); the research code p.206-207 gates the
     // stops by BarsSinceEntry >= 1 (option 1)
@@ -294,6 +300,47 @@ fn weekly_bars(x: &Ctx, wk: &[i64]) -> Vec<(usize, f64, f64, f64, f64)> {
 }
 
 /// Meander VS levels from 5 bars (o,h,l,c) and their previous closes: (VSLow, VSHigh).
+/// EP6 (#243, lane K63) Meander I day state: the entry fill, the stop fill, and whether the VS exit level was traded
+/// through after the entry.
+#[derive(Clone, Default)]
+struct Mw { entry: Option<f64>, stop: Option<f64>, vs: Option<f64> }
+
+/// Meander I's day along a price path (`segs` empty = the open: an open beyond the entry level fills there). The entry
+/// limit fills where the path trades strictly through `lv_in` (a gapped piece at its end); then, in path order, the risk
+/// stop (entry x (1 -/+ risk)) when traded strictly through, and the VS exit level `lv_out` when traded strictly through
+/// (it is the exit only if the day closes back inside it, the book's own condition, read at the close; a VS touch while the
+/// close is beyond it leaves the stop working). Event 2 is reported only when the close makes the VS exit count.
+fn meander_walk(o: f64, cl: f64, d: f64, lv_in: f64, lv_out: f64, risk: f64, z: &mut Mw, segs: &[crate::intraday_ep6::Seg]) -> Vec<crate::intraday_ep6::Ev> {
+    use crate::intraday_ep6::Ev;
+    let mut ev = vec![];
+    if segs.is_empty() {
+        if z.entry.is_none() && d * (o - lv_in) < 0. { z.entry = Some(o); }
+        return ev;
+    }
+    let vs_counts = d * (cl - lv_out) < 0.;
+    let through = |a: f64, b: f64, lv: f64, up: bool| if up { lv >= a && b > lv } else { lv <= a && b < lv };
+    for g in segs {
+        let mut a = g.a;
+        loop {
+            let Some(e) = z.entry else {
+                if (d > 0.) != g.up() && through(a, g.b, lv_in, g.up()) { let px = g.fill(lv_in); z.entry = Some(px); ev.push(Ev { k: 0, px, up: g.up() }); a = lv_in; continue; }
+                break;
+            };
+            if z.stop.is_some() || (z.vs.is_some() && vs_counts) { break; }
+            let r = e * (1. - d * risk);
+            if (d > 0.) != g.up() {
+                if through(a, g.b, r, g.up()) { let px = g.fill(r); z.stop = Some(px); ev.push(Ev { k: 1, px, up: g.up() }); }
+            } else if z.vs.is_none() && through(a, g.b, lv_out, g.up()) {
+                let px = g.fill(lv_out); // a minute that gaps beyond the VS level fills at its open
+                z.vs = Some(px);
+                if vs_counts { ev.push(Ev { k: 2, px, up: g.up() }); }
+            }
+            break;
+        }
+    }
+    ev
+}
+
 fn vs_levels(b: &[(f64, f64, f64, f64)], prev: &[f64], base: f64, k: f64) -> (f64, f64) {
     let mut d = Vec::with_capacity(20);
     for (j, &(o, h, l, c)) in b.iter().enumerate() { for v in [o, h, l, c] { d.push((v - prev[j]) / prev[j]); } }
@@ -562,6 +609,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "strtw_meander1_long" | "strtw_meander1_short" => {
             let (k, risk) = (g("vs_std"), g("risk") / 100.);
             let long = id.ends_with("long");
+            let ep6 = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
             let mut out = vec![];
             for i in from.max(6)..=to {
                 let j = i - 1; // levels from the prior bar
@@ -569,17 +618,34 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let prev: Vec<f64> = (0..5).map(|s| c[j - s - 1]).collect();
                 let (vlo, vhi) = vs_levels(&bars, &prev, c[j], k);
                 let (o, h, l, cl) = (x.o[i], x.h[i], x.l[i], c[i]);
-                let (entry, exit, why) = if long {
-                    let e = if o < vlo { o } else if l < vlo { vlo } else { continue };
+                let d = if long { 1. } else { -1. };
+                if !(if long { o < vlo || l < vlo } else { o > vhi || h > vhi }) { continue; }
+                // EP6 (#243, lane K63): a day whose entry, stop and VS exit differ between its two extreme orders is walked
+                // on the real 1-minute path (meander_walk); the book's spreadsheet order (the stop assumed first) otherwise
+                let (lv_in, lv_out) = if long { (vlo, vhi) } else { (vhi, vlo) };
+                let walk = |z: &mut Mw, g: &[crate::intraday_ep6::Seg]| meander_walk(o, cl, d, lv_in, lv_out, risk, z, g);
+                let mut z = Mw::default();
+                let day = crate::intraday_ep6::resolve_conv(x, i, ep6, &mut z, |_| {},
+                    |q, hf| { let mut e = walk(q, &[]); e.extend(walk(q, &crate::intraday_ep6::bar_segs(o, h, l, cl, hf))); e }, &walk);
+                let (entry, exit, why) = if matches!(day, crate::intraday_ep6::Day::Minutes | crate::intraday_ep6::Day::Ambiguous) {
+                    let Some(e) = z.entry else { continue }; // the minutes never trade through the entry level: no trade
+                    match (z.stop, z.vs.filter(|_| d * (cl - lv_out) < 0.)) {
+                        (Some(sp), _) => (e, sp, "stop"),
+                        (None, Some(vp)) => (e, vp, if long { "VS High" } else { "VS Low" }),
+                        _ => (e, cl, "close"),
+                    }
+                } else if long {
+                    let e = if o < vlo { o } else { vlo };
                     let r = e * (1. - risk);
                     if l < r { (e, r, "stop") } else if h > vhi && cl < vhi { (e, vhi, "VS High") } else { (e, cl, "close") }
                 } else {
-                    let e = if o > vhi { o } else if h > vhi { vhi } else { continue };
+                    let e = if o > vhi { o } else { vhi };
                     let r = e * (1. + risk);
                     if h > r { (e, r, "stop") } else if l < vlo && cl > vlo { (e, vlo, "VS Low") } else { (e, cl, "close") }
                 };
-                let mut t = open_trade(if long { 1. } else { -1. }, i, entry, if entry == o { "open" } else { "limit" }, j);
+                let mut t = open_trade(d, i, entry, if entry == o { "open" } else { "limit" }, j);
                 t = close_trade(t, i, exit, why);
+                crate::intraday_ep6::mark(&mut t, day);
                 out.push(t);
             }
             out

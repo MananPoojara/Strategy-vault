@@ -184,7 +184,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           claim("~1300 signals", "~65%", "-", "2-3 days", "1/1/93 - 8/6/01")),
         d("vixr_stocks", "Trading CVR signals with stocks", NotTestable("rules not fully defined: the stock half (on a CVR buy, buy the heavy-weight stocks with the highest relative strength, e.g. GE; on a sell, short the weakest; Section Four, 'Stocks', p.83-84) gives no relative-strength formula and no list of stocks. The SPY half is the CVR 1-11 cards, which run on SPY (D1 CUD-11, decision 186)"),
           &[], "On a CVR buy, buy SPY or the strongest heavy-weight stocks by relative strength (sell the weakest on sells). The SPY half is covered by the CVR 1-11 cards above, which run on SPY. The stock half stays held: no relative-strength formula or stock universe is given (D1 CUD-11, decision 186).", None),
-        d("vixr_options", "Trading CVR signals with options", NotTestable("rules not fully defined: on CVR signals the book suggests selling OEX puts or put spreads (Section Four, 'Options', p.84-85) but gives no strike, expiry or exit, so there is no mechanical rule to run; OEX option prices are not held either"),
+        d("vixr_options", "Trading CVR signals with options", NotTestable("rules not fully defined: on CVR signals the book suggests selling OEX puts or put spreads (Section Four, p.84-85) but gives no strike, no expiry and no exit, so there is no mechanical rule to run; OEX put prices are not held either"),
           &[], "Buy signals: sell OEX puts / put spreads; no mechanical rules.", None),
     ]
 }
@@ -494,7 +494,9 @@ fn signals(id: &str, x: &Ctx, v: &Vx, p: &Params) -> Option<Vec<i8>> {
         }
         "vixr_cvr11" => {
             let (f, s, thr, hl) = (sma(vc, u("fast")), sma(vc, u("slow")), g("thr"), u("hl_n"));
-            on_vix(&|k| sign(k > 0 && f[k - 1] - s[k - 1] >= thr && v.hh(k, hl), k > 0 && f[k - 1] - s[k - 1] <= -thr && v.ll(k, hl)))
+            // IN1 / R4 #347: float-tie tolerance ONLY on India contexts (exact -1.00 on 2-decimal India VIX, 2012-04-03); US runs keep the exact compare at every parameter
+            let eps = if x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY")) { 1e-9 } else { 0.0 };
+            on_vix(&|k| sign(k > 0 && f[k - 1] - s[k - 1] >= thr - eps && v.hh(k, hl), k > 0 && f[k - 1] - s[k - 1] <= -thr + eps && v.ll(k, hl)))
         }
         _ => return None, // listed, not testable
     })

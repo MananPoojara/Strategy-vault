@@ -8,10 +8,24 @@ use Status::*;
 
 pub const BOOK: &str = "wmny";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m"];
+pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m",
+    "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */, "wmny_pct_nh" /* lane PB batch 2: NYSE new highs/lows from Norgate #NYSEHI/#NYSELO; ref authors/pb/w/pb_ref4.py */,
+    "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse" /* lane CV6 (R4 #340 / #347 / #365): NSE new highs / lows twins */];
+/// Lane CV6: the NSE counts (extra_data/india NSE_NHNL.csv: stocks at a new 52-week high / low, 2019-10-16 on).
+pub const NHNL_NSE: &[&str] = &["NSE_NHNL.NH", "NSE_NHNL.NL"];
+const NSE_NOTE: &str = "[R4 #340 / #347 declared adaptation, UNVERIFIED] NSE twin of the Nasdaq new-high / new-low rule: the same MetaStock formulas, parameters and ratio levels (0.4, 0.3, 0.6, 1, ...; they are ratios, not counts) on the NSE's own daily counts of stocks at a new adjusted 52-week high / low (extra_data/india NSE_NHNL, 2019-10-16 on; the article's Nasdaq counts are not an NSE series). Runs on Indian indices and stocks; US instruments are refused. The article tested QQQ: no NSE result exists, and the NSE series is 7 years long. Measured firing rate, NSE vs Nasdaq: ";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
+    let mut v = base_catalogue();
+    for (base, id, name, rate) in [("wmny_nhnl_ratio", "wmny_nhnl_ratio_nse", "NSE new-high/new-low ratio MACD system (Peterson, A), NSE counts", "Ratio MACD rule, default inputs, over the overlap (NSE run 2019-10-27..2020-09-04, 216 bars; Nasdaq 2019-10-16..2020-09-04, 225 bars): NSE twin (NIFTY 50) 67.7 entries and exits a year, long 40.3% of days; Nasdaq original (SPX) 137.8 a year, long 40.9%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 103.1 a year, long 38.8%; Nasdaq original over 2014-01-02..2020-09-04: 115.7 a year, long 40.4%."), ("wmny_nhnl_cci", "wmny_nhnl_cci_nse", "NH/NL ratio + CCI(6) system (Peterson, B), NSE counts", "CCI rule, default inputs, over the same overlap (NSE run 2019-10-27..2020-09-04; Nasdaq 2019-10-16..2020-09-04): NSE twin (NIFTY 50) 24.5 trades a year, long 48.1% of days and short 48.6%; Nasdaq original (SPX) 16.8 a year, long 29.3% and short 68.4%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 25.6 a year; Nasdaq original over 2014-01-02..2020-09-04: 24.4 a year, long 37.7%, short 60.8%.")] {
+        let t = v.iter().find(|d| d.id == base).map(|b| StrategyDef { id, name, group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix, needs_series: NHNL_NSE, book: b.book, rules: b.rules,
+            notes: Box::leak(format!("{NSE_NOTE}{rate}").into_boxed_str()), claim: None });
+        v.extend(t);
+    }
+    v
+}
+fn base_catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, vol: bool, series: &'static [&'static str], rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: vol, needs_vix: false, needs_series: series, book: BOOK, rules, notes, claim };
     let c = crate::connors::claim;
     vec![
@@ -92,20 +106,20 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Enter Long: ratio>opt4 AND signal>diff; Enter Short: ratio<opt5 AND signal<diff",
             "X|Close Long: ratio<opt6 AND signal<diff; Close Short: ratio>opt7 AND signal<diff (as printed)",
             "F|\"opt1 through opt 7 were 7, 16, 2, 0.4, 1, 0.3, and 0.6\"; \"a one-day delay on entry but exits on the same day as the day of the close signal\""],
-          "Series: NASDAQ_NEW_HIGHS / NASDAQ_NEW_LOWS = daily count of Nasdaq issues at 52-week highs / lows (eSignal x.nasd-h / x.nasd-l). Not in the vault: data gap. MetaStock EMA seeded with the first value [B]. An opposite entry while in a trade reverses at the next open.",
+          "Series: NASDAQ_NEW_HIGHS / NASDAQ_NEW_LOWS = daily count of Nasdaq issues at 52-week highs / lows (the article used eSignal x.nasd-h / x.nasd-l; the vault reads Norgate #NASHI / #NASLO, 2005-10-27 to 2020-09-04, lane F3, R4 #294 (2)). MetaStock EMA seeded with the first day of the series [B]. An opposite entry while in a trade reverses at the next open. Article test: QQQ; runs on other US indices, ETFs and stocks are a declared application.",
           c("n/a", "n/a", "", "", "QQQ ~mid-1999-2002: $1,000 -> +$20,000 (50% margin)")),
         d("wmny_nhnl_cci", "NH/NL ratio + CCI(6) system (Peterson, B)", "WM2002 p.71-81 · Trading Systems Using Multiple Indicators", "Long/Short", Live, false, &["NASDAQ_NEW_HIGHS", "NASDAQ_NEW_LOWS"],
           &["E|Long: (nhnlratio>.4 AND Alert(CCI(opt1)<opt5,opt4)) OR (signal>diff AND Alert(CCI(opt1)<opt5,opt4)); diff = Mov(ratio,7,E)-Mov(ratio,16,E), signal = Mov(diff,2,E)",
             "X|Close long: nhnlratio<.6 AND signal<diff AND CCI(opt1)>opt8",
             "E|Enter short: Alert(CCI(opt2)>opt7,opt6)", "X|Close short: nhnlratio>.6 AND signal>diff AND CCI(opt2)<opt9",
             "F|\"opt1=6, opt2=6, opt4=9, opt5=-140, opt6=4, opt7=30, opt8=180, and opt9=-130\"; \"Entries are at the open of the day following the signal, while positions are closed on the same day.\""],
-          "Same series as wmny_nhnl_ratio (data gap). CCI = MetaStock CCI (typical price, mean deviation). Long entry has priority when both entries fire [B].",
+          "Same series as wmny_nhnl_ratio (Norgate #NASHI / #NASLO, 2005-10-27 to 2020-09-04, lane F3). CCI = MetaStock CCI (typical price, mean deviation). Long entry has priority when both entries fire [B].",
           c("161", "65.2% (105 W / 56 L)", "avg win $1,755.16 / avg loss $500.14", "", "QQQ ~1999-2002: $1,000 -> $160,000 (50% margin); max consecutive W 14 / L 4")),
         d("wmny_pct_nh", "% new highs: 10-day SMA of NH/(NH+NL) crosses 30 up / 70 down (Hurley, Appel)", "WM2003 p.147-156 · When The Market Speaks, It Pays To Listen", "Long", Live, false, &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"],
           &["F|\"% new highs: A 10-day simple moving average of new 52-week highs divided by the total of new 52-week highs and new 52-week lows (NH / (NH+NL)).\"",
             "E|\"The best signals come when the indicator crosses ... from below to above 30\" (\"flashed a buy signal on August 19 when it crossed back above 30\")",
             "X|\"crosses from above to below 70\" (\"flashed a sell signal by slipping through the key 70% mark\"; a decline before reaching 70 gives no sell: \"it has no ability to register a sell signal\")"],
-          "Series: NYSE_NEW_HIGHS / NYSE_NEW_LOWS (daily NYSE 52-week highs / lows); the exchange is not named (examples: S&P 500, Nasdaq) [B]. Not in the vault: data gap. Fills at the close [B].", None),
+          "Series: NYSE_NEW_HIGHS / NYSE_NEW_LOWS = daily NYSE 52-week new highs / new lows from Norgate (#NYSEHI/#NYSELO 1932-2020-09-04, lane PB); the exchange is not named (examples: S&P 500, Nasdaq) [B]. A day with no new highs and no new lows has no ratio, so the 10-day average is undefined for 10 days [B]. Fills at the close [B]. NYSE breadth: runs on the US indices and ETFs SPX, SPY, DJI, DIA, NDX, QQQ only (R4 #306); results end 2020-09-04.", None),
         d("wmny_bond_band", "Bonds above Wilder volatility-band average: own the S&P 500 (Blackman / Williams)", "WM2004 p.61-63 · Are Stocks And Bonds Recoupling?", "Long", Live, false, &["TBOND_FUT_HIGH", "TBOND_FUT_LOW", "TBOND_FUT_CLOSE"],
           &["F|x:=Input(\"MA Periods\",2,1000,10); z:=Input(\"VolatilityFactor\",1,5,2.5); LowerB:=(Ref(LLV(C,7),-1)+(Ref(ATR(7),-1)*z)); UpperB:=(Ref(HHV(C,7),-1)-(Ref(ATR(7),-1)*z)); Mov((LowerB+UpperB)/2,x,S) (weekly T-bond chart)",
             "E|\"buying the S&P 500 index when bonds move above the volatility band\"", "X|\"and exiting when bonds move below the magenta line\""],
@@ -125,7 +139,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "wmny_belt_hold" | "wmny_engulf" | "wmny_candle_short" => ("wmny_candles", "Working Money · candlestick systems", v),
         "wmny_trend_rsi21" | "wmny_trend_rsi_ma" | "wmny_trend_srsi" | "wmny_trend_srsi_ma" => ("wmny_trendilator", "Working Money · Trendilator (Blackman)", v),
-        "wmny_nhnl_ratio" | "wmny_nhnl_cci" | "wmny_pct_nh" | "wmny_bond_band" => ("wmny_breadth", "Working Money · breadth / intermarket (data gap)", v),
+        "wmny_nhnl_ratio" | "wmny_nhnl_cci" | "wmny_nhnl_ratio_nse" | "wmny_nhnl_cci_nse" | "wmny_pct_nh" | "wmny_bond_band" => ("wmny_breadth", "Working Money · breadth / intermarket (data gap)", v),
         "wmny_lazy_year" | "wmny_dji_5_21m" | "wmny_zscore" | "wmny_willr" | "wmny_pullback" => ("wmny_timing", "Working Money · timing systems", v),
         "wmny_not_testable" => ("wmny_other", "Working Money · not testable", v),
         _ => return None,
@@ -133,6 +147,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let id = id.trim_end_matches("_nse");
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "wmny_belt_hold" | "wmny_lazy_year" | "wmny_engulf" | "wmny_not_testable" => vec![],
@@ -224,6 +239,8 @@ fn month(d: &str) -> i64 { d[0..4].parse::<i64>().unwrap_or(0) * 12 + d[5..7].pa
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
+    let twin_nse = id.ends_with("_nse");
+    let id = id.trim_end_matches("_nse");
     let n = x.r.len();
     if !p.keys().all(|k| schema.iter().any(|d| d.key == k)) || from > to || to >= n { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
@@ -349,13 +366,21 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             out
         }
         "wmny_nhnl_ratio" | "wmny_nhnl_cci" => {
-            let (Some(nh), Some(nl)) = (x.series("NASDAQ_NEW_HIGHS"), x.series("NASDAQ_NEW_LOWS")) else { return Some(vec![]) };
+            let names: &[&str] = if twin_nse { NHNL_NSE } else { &["NASDAQ_NEW_HIGHS", "NASDAQ_NEW_LOWS"] };
+            let (Some(nh), Some(nl)) = (x.series(names[0]), x.series(names[1])) else { return Some(vec![]) };
             let ratio: Vec<f64> = (0..n).map(|i| nh[i] / (nh[i] + nl[i])).collect();
             let a = id == "wmny_nhnl_ratio";
             let (e1, e2, e3) = if a { (u("opt1"), u("opt2"), u("opt3")) } else { (7, 16, 2) };
-            let (f1, f2) = (xavg(&ratio, e1), xavg(&ratio, e2));
+            // lane F3 (R4 #294 (2)): the Norgate Nasdaq new highs/lows start 2005-10-27, so the MetaStock EMAs are seeded on the
+            // first day of the series' last unbroken stretch that reaches `from` (an EMA seeded on a NaN would stay NaN)
+            // lead review: seeded after the last gap at or before `from`, so one missing day earlier does not end the series
+            let from_first = |v: &[f64], k: usize| -> Vec<f64> {
+                let s = v[..=from.min(v.len().saturating_sub(1))].iter().rposition(|y| !y.is_finite()).map_or(0, |g| g + 1).min(v.len());
+                let mut out = vec![f64::NAN; s]; out.extend(xavg(&v[s..], k)); out
+            };
+            let (f1, f2) = (from_first(&ratio, e1), from_first(&ratio, e2));
             let diff: Vec<f64> = (0..n).map(|i| f1[i] - f2[i]).collect();
-            let sig = xavg(&diff, e3);
+            let sig = from_first(&diff, e3);
             if a {
                 let (o4, o5, o6, o7) = (g("opt4"), g("opt5"), g("opt6"), g("opt7"));
                 open_in_close_out(x, from, to, |i| if ratio[i] > o4 && sig[i] > diff[i] { 1 } else if ratio[i] < o5 && sig[i] < diff[i] { -1 } else { 0 },

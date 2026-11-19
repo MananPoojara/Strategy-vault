@@ -47,11 +47,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "dbnotp_abc_currency" | "dbnotp_abc_index" => Some(vec![side, adr]),
         "dbnotp_abc_trail" => Some(vec![]),
         _ => None,
-    }
+    }.map(|mut v| { crate::intraday_ep6::add_param(id, &mut v); v }) // EP6 (#243, lane K63)
 }
 
 /// One confirmed swing point: (+1 top / -1 bottom, price, bar that made it).
 type Pt = (i8, f64, usize);
+#[derive(Clone)]
 struct Pos { d: f64, ei: usize, ep: f64, kind: &'static str, c: f64, r: f64, stop: f64, tgt: f64, nxt: f64 }
 
 /// Favourable excursion fx: milestone stop moves (Stock/Trail: 50%; Currency: 50%, 75%; Index: every 25% from 50%),
@@ -80,9 +81,43 @@ fn bar(ps: &mut Pos, h: f64, l: f64, hf: bool, skip_first: bool, style: u8, comm
     None
 }
 
+/// One bar for EP6 (lane K63): the position (None = flat / no trade), how it ended on this bar, the setup cancelled.
+#[derive(Clone)]
+struct B6 { ps: Option<Pos>, closed: Option<(f64, &'static str)>, cancel: bool }
+
+/// EP6 walk of a held position along `segs` (no segments = the open: a gap through the stop or the target fills at the
+/// open, the open's excursion moves the milestones): favourable segments move the milestones and reach the target,
+/// adverse ones the stop (at its level; on a gap segment at the gap's end).
+fn held_walk(z: &mut B6, o: f64, segs: &[crate::intraday_ep6::Seg], style: u8, comm: f64, off: f64) -> Vec<crate::intraday_ep6::Ev> {
+    use crate::intraday_ep6::Ev;
+    let mut ev = vec![];
+    let Some(ps) = z.ps.as_mut() else { return ev };
+    let d = ps.d;
+    if segs.is_empty() {
+        if d * (o - ps.stop) <= 0. { z.closed = Some((o, "Stop")); ev.push(Ev { k: 0, px: o, up: d < 0. }); }
+        else if ps.tgt.is_finite() && d * (o - ps.tgt) >= 0. { z.closed = Some((o, "Target")); ev.push(Ev { k: 1, px: o, up: d > 0. }); }
+        else { fav(ps, o, style, comm, off); }
+        return ev;
+    }
+    for g in segs {
+        if z.closed.is_some() { break; }
+        if d * (g.b - g.a) > 0. {
+            if fav(ps, g.b, style, comm, off).is_some() { let px = if g.gap { g.b } else { ps.tgt }; z.closed = Some((px, "Target")); ev.push(Ev { k: 1, px, up: d > 0. }); }
+        } else if d * (g.b - g.a) < 0. && d * (g.b - ps.stop) <= 0. {
+            let px = if d * (g.a - ps.stop) <= 0. { g.a } else if g.gap { g.b } else { ps.stop };
+            z.closed = Some((px, "Stop")); ev.push(Ev { k: 0, px, up: d < 0. });
+        }
+    }
+    ev
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let schema = params(id)?;
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
+    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
+    use crate::intraday_ep6::{bar_segs, mark, resolve_conv, Day, Ev, Seg};
+    let mut od = Day::Plain; // EP6 mark of the open position
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
     let style: u8 = match id { "dbnotp_abc_stock" => 0, "dbnotp_abc_currency" => 1, "dbnotp_abc_index" => 2, _ => 3 };
     let side = if style == 3 { 1 } else { g("side").round() as i64 };
@@ -107,12 +142,23 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let hf = o[t] > c[t];
         let flat = pos.is_none();
         // open position from an earlier bar: gaps, then the bar's path
-        if let Some(ps) = pos.as_mut() {
+        if let Some(ps) = pos.take() {
             let d = ps.d;
-            let done = if d * (o[t] - ps.stop) <= 0. { Some((o[t], "Stop")) }
-                else if ps.tgt.is_finite() && d * (o[t] - ps.tgt) >= 0. { Some((o[t], "Target")) }
-                else { bar(ps, h[t], l[t], hf, false, style, comm, off(t)) };
-            if let Some((px, why)) = done { out.push(fin(ps, t, px, why, false)); pos = None; }
+            let conv = |z: &mut B6| {
+                let ps = z.ps.as_mut().unwrap();
+                z.closed = if d * (o[t] - ps.stop) <= 0. { Some((o[t], "Stop")) }
+                    else if ps.tgt.is_finite() && d * (o[t] - ps.tgt) >= 0. { Some((o[t], "Target")) }
+                    else { bar(ps, h[t], l[t], hf, false, style, comm, off(t)) };
+            };
+            let mut z = B6 { ps: Some(ps), closed: None, cancel: false };
+            let day = if on {
+                let ot = off(t);
+                resolve_conv(x, t, true, &mut z, conv, |w: &mut B6, f: bool| { let mut v = held_walk(w, o[t], &[], style, comm, ot); v.extend(held_walk(w, o[t], &bar_segs(o[t], h[t], l[t], c[t], f), style, comm, ot)); v },
+                    |w: &mut B6, sg: &[Seg]| held_walk(w, o[t], sg, style, comm, ot))
+            } else { conv(&mut z); Day::Plain };
+            od = od.worst(day);
+            let ps = z.ps.unwrap();
+            if let Some((px, why)) = z.closed { let mut tr = fin(&ps, t, px, why, false); mark(&mut tr, od); out.push(tr); } else { pos = Some(ps); }
         }
         // setups as of the close of t-1 (long first): B above the top before A, C beyond A, C bar not used
         let n = pts.len();
@@ -131,11 +177,50 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let fill = if gap { o[t] } else { stp };
             if !flat || pos.is_some() || t < from || t >= to || df * (fill - (cc + df * lim * r)) > 0. || (d > 0 && side == 2) || (d < 0 && side == 1) { continue; }
             let fav_first = if d > 0 { hf } else { !hf };
-            if !gap && !fav_first && df * ((if d > 0 { l[t] } else { h[t] }) - cc) < 0. { continue; } // C broken before the entry: C moves
             let tgt = match style { 0 => cc + df * 0.75 * r, 1 => cc + df * r, _ => f64::NAN };
-            let mut ps = Pos { d: df, ei: t, ep: fill, kind: if gap { "open" } else { "stop" }, c: cc, r, stop: cc - df * tick, tgt, nxt: 0.5 };
-            match bar(&mut ps, h[t], l[t], hf, !gap && !fav_first, style, comm, off(t)) {
-                Some((px, why)) => out.push(fin(&ps, t, px, why, false)),
+            let new = |fill: f64, gap: bool| Pos { d: df, ei: t, ep: fill, kind: if gap { "open" } else { "stop" }, c: cc, r, stop: cc - df * tick, tgt, nxt: 0.5 };
+            let conv = |z: &mut B6| {
+                if !gap && !fav_first && df * ((if d > 0 { l[t] } else { h[t] }) - cc) < 0. { z.cancel = true; return; } // C broken before the entry: C moves
+                let mut ps = new(fill, gap);
+                z.closed = bar(&mut ps, h[t], l[t], hf, !gap && !fav_first, style, comm, off(t));
+                z.ps = Some(ps);
+            };
+            let mut z = B6 { ps: None, closed: None, cancel: false };
+            let day = if on {
+                let (ot, lim_px) = (off(t), cc + df * lim * r);
+                // EP6 walk of the entry bar: before the fill, a break of C (strictly beyond it) cancels the setup; the stop entry
+                // fills where the path reaches it (a gap at the gap's end; beyond the limit price: no trade); then the held walk
+                let walk = |w: &mut B6, sg: &[Seg]| -> Vec<Ev> {
+                    let mut ev = vec![];
+                    if w.cancel { return ev; }
+                    if w.ps.is_some() { return held_walk(w, o[t], sg, style, comm, ot); }
+                    if sg.is_empty() {
+                        if df * (o[t] - stp) >= 0. { // the open at or through the stop entry fills at the open
+                            if df * (o[t] - lim_px) > 0. { w.cancel = true; ev.push(Ev { k: 4, px: o[t], up: d > 0 }); return ev; }
+                            w.ps = Some(new(o[t], df * (o[t] - stp) > 0.)); ev.push(Ev { k: 3, px: o[t], up: d > 0 });
+                        }
+                        return ev;
+                    }
+                    for (n, g) in sg.iter().enumerate() {
+                        if w.cancel || w.closed.is_some() { break; }
+                        if w.ps.is_some() { ev.extend(held_walk(w, o[t], &sg[n..n + 1], style, comm, ot)); continue; }
+                        if df * (g.b - g.a) < 0. && df * (g.b - cc) < 0. { w.cancel = true; ev.push(Ev { k: 4, px: g.b, up: d < 0 }); break; }
+                        if df * (g.b - g.a) > 0. && g.inside(stp) {
+                            let px = g.fill(stp);
+                            if df * (px - lim_px) > 0. { w.cancel = true; ev.push(Ev { k: 4, px, up: d > 0 }); break; }
+                            w.ps = Some(new(px, g.gap)); ev.push(Ev { k: 3, px, up: d > 0 });
+                            ev.extend(held_walk(w, o[t], &[Seg { a: px, b: g.b, gap: false }], style, comm, ot));
+                        }
+                    }
+                    ev
+                };
+                resolve_conv(x, t, true, &mut z, conv, |w: &mut B6, f: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[t], h[t], l[t], c[t], f))); v }, walk)
+            } else { conv(&mut z); Day::Plain };
+            if z.cancel { continue; }
+            let Some(ps) = z.ps else { continue };
+            od = day;
+            match z.closed {
+                Some((px, why)) => { let mut tr = fin(&ps, t, px, why, false); mark(&mut tr, od); out.push(tr) }
                 None => pos = Some(ps),
             }
         }
@@ -152,7 +237,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             dir = e; ext = px; extb = t;
         }
     }
-    if let Some(ps) = pos { out.push(fin(&ps, to, c[to], "open", true)); }
+    if let Some(ps) = pos { let mut tr = fin(&ps, to, c[to], "open", true); mark(&mut tr, od); out.push(tr); }
     Some(out)
 }
 

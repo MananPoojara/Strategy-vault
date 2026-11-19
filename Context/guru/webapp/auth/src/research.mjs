@@ -1,9 +1,11 @@
 // Research portal API: the research team's verdicts, notes and one shared timeline.
 // Identity and time come from the server (session user, database now()); request bodies never set them.
 // Platform progress is read from the generated research-progress.json (make_research_progress.py); it is never written here.
+// The admin-only research-share inventory is read from share-inventory.json in the same folder (make_share_inventory.py).
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { getSignedCookie, setSignedCookie, deleteCookie } from 'hono/cookie';
 import { readFile, stat } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { roleAllows } from './contracts.mjs';
 
 export const VERDICTS = { not_checked: 'Not checked', matches: 'Matches the book', mismatch: 'Mismatch', unclear: 'Unclear' };
@@ -62,8 +64,8 @@ const writer = user => { if (!roleAllows(user.role, 'write')) throw new HttpErro
 const EXCEL_VERDICT = { 'Matches the book': 'matches', Mismatch: 'mismatch', Unclear: 'unclear' };
 const EXCEL_NOTE_TYPE = { matches: 'verified_ok', mismatch: 'rule_error' };
 
-export function createResearchStore({ pool, progressPath }) {
-  let cache = { mtime: -1, data: EMPTY, index: null }, loading = null;
+export function createResearchStore({ pool, progressPath, sharePath = progressPath && join(dirname(progressPath), 'share-inventory.json') }) {
+  let cache = { mtime: -1, data: EMPTY, index: null }, loading = null, shared = { mtime: -1, data: null };
 
   function buildIndex(data) {
     const strategies = new Map(data.strategies.map(s => [s.key, s]));
@@ -124,7 +126,15 @@ export function createResearchStore({ pool, progressPath }) {
     await loading;
     return cache;
   }
-  return { load, get index() { return cache.index || buildIndex(EMPTY); } };
+  // The generated share inventory, re-read only when the file changes; null until it has been generated.
+  async function share() {
+    if (!sharePath) return null;
+    let info;
+    try { info = await stat(sharePath); } catch { return null; }
+    if (info.mtimeMs !== shared.mtime) shared = { mtime: info.mtimeMs, data: JSON.parse(await readFile(sharePath, 'utf8')) };
+    return shared.data;
+  }
+  return { load, share, get index() { return cache.index || buildIndex(EMPTY); } };
 }
 
 function targetLabel(index, type, key) {
@@ -191,6 +201,14 @@ export function registerResearch(app, { pool, store }) {
   app.post(`${base}/leave`, route(async c => {
     deleteCookie(c, EMP, COOKIE); deleteCookie(c, ADM, COOKIE);
     return c.json({ ok: true });
+  }));
+
+  // What the research share holds and what Claude has done with it: admin only.
+  app.get(`${base}/share`, route(async c => {
+    await needAdmin(c);
+    const data = await store.share();
+    if (!data) throw new HttpError(404, 'The research-share inventory has not been generated yet.');
+    return c.json(data);
   }));
 
   app.get(`${base}/employees`, route(async c => {
