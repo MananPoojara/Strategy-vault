@@ -41,7 +41,6 @@ macro_rules! sd {
 
 const SP: &str = "Book market: S&P 500 futures ($500/pt, $50 commission in the printed $). Rules with dollar or point amounts run on actual SPX only (from 2014, when SPX opens are real); rules without them run on indices, ETFs and stocks.";
 const BOND: &str = "Needs daily T-Bond futures (OHLC); the vault has no bond futures series.";
-const FUT: &str = "Needs daily commodity / currency futures (OHLC) for the named markets; the vault has none.";
 
 // ------------------------------------------------------------------ seasonal trading-day-of-month table
 // (id, month, trading day, dir, entry %, stop $, hold, bailout delay, repeat from td to month end)
@@ -384,7 +383,7 @@ fn catalogue_base() -> Vec<StrategyDef> {
               "E|Bond holiday, TDOM and day-of-month trades: Thanksgiving, Christmas, Memorial, July 4th, Labor Day, Jan TD18, Dec TD19, Oct 29th, Nov 3-8, May TD9, July TD12, Sep, Oct, Nov, Dec tables (1993-1997 letters). Coded (lane F1D): lwnl_bond_memorial_buy, lwnl_bond_labor_buy, lwnl_bond_sep_td9_sell, lwnl_bond_sep_td19_buy, lwnl_bond_jul_td12_sell, lwnl_bond_dec_td14_buy, lwnl_bond_dec_td22_buy, lwnl_bond_sep_td4_sell, lwnl_bond_sep_td20_buy; held: lwnl_bond_dec_td7_sell / _td8_sell (3 unstated details). Not coded yet: the Oct 1997 table (no stop or exit printed; the table is garbled) (the Christmas / New Year trades are lwnl_bond_xmas_buy / lwnl_bond_newyear_sell)",
               "E|Projected low/high contrarian on Bonds (Vol. 29 No. 9 p.3: 352 trades 73% $71,472.50) = lwnl_bond_projected (lane F1D); DOWM buys (May 1996 p.2)"],
             ""),
-        sd!("lwnl_commodity_systems", "Commodity and currency systems and seasonals", "Needs data", "Long/Short", NeedsData(FUT),
+        sd!("lwnl_commodity_systems", "Commodity and currency systems and seasonals", "Needs data", "Long/Short", NeedsData("Not coded (lane L1, 20 Nov 2026). The old reason 'the vault has none' is stale: the Norgate files hold gold, silver, copper, heating oil, lumber, cotton, coffee, cocoa, sugar, orange juice, soybeans, wheat, corn, live cattle and the currencies; pork bellies are not held. The real block: the card bundles at least five separate systems (Cup of Coffee; 13x13 gold channel; gold TDOM / month trades; monthly seasonal lists for about 15 markets; delayed-bailout trades), far more than 4 unstated details, and the source is a set of page scans with no text transcription held, so no printed $ table was checked in this pass (R4 #363, #367 (2)). A single system would need its own page read and a split card; none is coded or verified."),
             &["E|Larry's Cup of Coffee: open + 50% / - 40% of the 4-day average range, $1,750 stop or 6th close (Mar 1992 p.3; 2,117 trades $535,456)",
               "E|13x13 gold channel (May 1993 p.1-2); gold TDOM1 > close 4 days ago, 12-day exit (Mar 1995 p.3-4); gold Nov TD16, Sep TD1/2 (Oct 1995, Aug 1996)",
               "E|Monthly seasonal lists for cattle, bellies, cotton, coffee, cocoa, beans, wheat, corn, sugar, OJ, silver, copper, lumber, heating oil, currencies (Sep 1993 - Dec 1997)",

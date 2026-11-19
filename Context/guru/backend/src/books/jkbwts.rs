@@ -253,7 +253,7 @@ pub(crate) fn sim_ep6(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool, min
 
 // ------------------------------------------------------------------ catalogue
 
-const FUT: &str = "Built and tested on a futures market the vault has no data for (see rules); the vault holds only stock indices, ETFs and NSE stocks. Not run on an index: that would be a market substitution, not an instrument swap.";
+const FUT: &str = "Held for same-day order dependence (R4 #175/#240), not for missing data: &ZB daily bars are held but no bond minutes. See the status text.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -337,7 +337,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|No exit in the code: the opposite market entry reverses the position (stop and reverse)"],
           concat!("p.24-25. Book: Swiss Franc daily 01/02/90-12/26/97: 60 trades, 58%, avg $1,128.13. The code has no exit: after the first fill the system is always in the market, so the re-entry stops (LongPositionHigh / ShortPositionLow) act only at the start (the initial LastTrade = 1 puts a buy stop at 0, i.e. long at the first open). Runs on the Swiss Franc continuous futures contract only (R4 #293): signals, indicators and point P&L on the back-adjusted series, % per trade on the unadjusted price of the contract held, $ amounts at the contract's $ per point (futures::MARKETS). ", "Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
           claim("60", "58%", "$1,128.13", "", "Swiss Franc 1/1990-12/1997 (p.24)")),
-        d("jkbwts_saidenberg30_bonds", "Saidenberg30 (US Bonds)", "Currency / bond / commodity futures", "Long/Short", NeedsData("US Treasury bond futures daily data"),
+        d("jkbwts_saidenberg30_bonds", "Saidenberg30 (US Bonds)", "Currency / bond / commodity futures", "Long/Short", NeedsData("Held (lane L1, 20 Nov 2026; the old reason 'no bond futures' was stale: &ZB is held). Real block, R4 #175/#240: same code as jkbwts_saidenberg30, a range-breakout stop entry with a $500 money stop, so the same-day order of the entry stop and the money stop cannot be read from daily bars (the S&P card measured 100% same-day trades on SPX and NIFTY 50; not measured on &ZB), and no bond minute data are held to resolve it. Not coded."),
           &["E|Same code as jkbwts_saidenberg30 on daily US Bond bars", "X|$500 money management stop (p.27 comment)"], FUT, None),
         d("jkbwts_stuckey19", "Stuckey19", "Currency / bond / commodity futures", "Long/Short", Live,
           &["E|Close > Highest(High,40)[1]: Buy on Close; Close < Lowest(Low,40)[1]: Sell on Close (p.29)", "X|Stop and reverse; no stops"],
