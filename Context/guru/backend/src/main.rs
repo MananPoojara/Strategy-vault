@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod nse_firing; // R4 #347 / Q20: NSE vs NYSE firing-rate line on every NSE twin card
 mod nse_holidays; // R4 #364: NSE closures derived from the NIFTY 50 bars
 mod release; // lane M3 (R4 #346): extra_data series keyed by their ReleaseDate
 mod futures; // lane F1 (R4 #293): Norgate continuous futures
