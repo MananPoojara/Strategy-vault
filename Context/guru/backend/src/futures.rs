@@ -325,11 +325,20 @@ fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| 
 pub const NYA_TICKER: &str = "NYSE Composite (Norgate $NYA)";
 pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi",
     // lane PF: Appel & Hitschler's close-only NYSE Index systems (Stock Market Trading Systems, Tables 4-5, 4-6, 5-1, 6-2, 9-1)
-    "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_channel"];
-pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) {
-    let Some(rows) = read(&dir.join("$NYA.csv")).filter(|r| !r.is_empty()) else { eprintln!("warning: index $NYA context not loaded from {}", dir.display()); return };
-    println!("context {NYA_TICKER}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
-    data.insert(NYA_TICKER.into(), rows.into_iter().map(|r| Row { ticker: NYA_TICKER.into(), ..r }).collect());
+    "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_channel",
+    // lane U4 (Q30): Appel, Technical Analysis (2005) trades the NYSE Index for the breadth cards (p.144-145 trade list, Table 8.1 p.197-198)
+    "apta_breadth_impulse", "apta_breadth_macd"];
+pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$NYA", NYA_TICKER, data) }
+/// Lane U4 (Q30): the Nasdaq Composite as its own context, from Norgate $COMP (same directory and loader as $NYA). Appel, Technical
+/// Analysis (2005) p.59-61 trades the Nasdaq Composite (Triple Momentum, 15-day ROC). Close is real throughout; Norgate's open/high/low
+/// equal the close in the early years, so only these close-only cards are admitted (instrument_policy::check).
+pub const COMP_TICKER: &str = "Nasdaq Composite (Norgate $COMP)";
+pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom"];
+pub fn load_comp(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$COMP", COMP_TICKER, data) }
+fn load_index_ctx(dir: &std::path::Path, file: &str, ticker: &str, data: &mut BTreeMap<String, Vec<Row>>) {
+    let Some(rows) = read(&dir.join(format!("{file}.csv"))).filter(|r| !r.is_empty()) else { eprintln!("warning: index {file} context not loaded from {}", dir.display()); return };
+    println!("context {ticker}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
+    data.insert(ticker.into(), rows.into_iter().map(|r| Row { ticker: ticker.into(), ..r }).collect());
 }
 
 /// The unadjusted close of a futures context (RAW.Close), aligned to its bars.
@@ -832,6 +841,16 @@ mod tests {
         assert!(crate::instrument_policy::check(&cat[0], NYA_TICKER, false).is_none());
         let other = crate::books::scweiss::catalogue();
         assert!(crate::instrument_policy::check(&other[0], NYA_TICKER, false).is_some_and(|i| i.note.contains("Holt")));
+    }
+    /// Lane U4 (Q30): the four Appel cards run on the book's own NYSE Composite / Nasdaq Composite contexts; no other card does.
+    #[test]
+    fn u4_appel_cards_are_admitted_on_their_own_composite() {
+        let cat = crate::books::catalogue();
+        let get = |id: &str| cat.iter().find(|d| d.id == id).unwrap();
+        for id in ["apta_breadth_impulse", "apta_breadth_macd"] { assert!(crate::instrument_policy::check(get(id), NYA_TICKER, false).is_none(), "{id}"); assert!(crate::instrument_policy::check(get(id), COMP_TICKER, false).is_some(), "{id}"); }
+        for id in ["apta_roc15", "apta_triple_mom"] { assert!(crate::instrument_policy::check(get(id), COMP_TICKER, false).is_none(), "{id}"); assert!(crate::instrument_policy::check(get(id), NYA_TICKER, false).is_some(), "{id}"); }
+        assert!(crate::instrument_policy::check(get("apta_ma200_dji"), COMP_TICKER, false).is_some_and(|i| i.note.contains("Nasdaq Composite")));
+        assert!(crate::instrument_policy::check(get("apta_roc15"), "SPY", false).is_none()); // existing route unchanged
     }
     #[test]
     fn f3_excursion_and_gross_marks_on_the_unadjusted_contract() {

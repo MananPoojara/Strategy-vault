@@ -259,7 +259,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|\"add the percentage-based levels for the 5-day, 15-day, and 25-day rates of change ... the Triple Momentum figure for the day\" (p.59)",
               "E|\"You buy when the Triple Momentum Level ... crosses from below to above 4%.\" (p.60) Buy on the close.",
               "X|\"You sell when the Triple Momentum Level ... crosses from above to below 4%.\" (p.60) \"there are no further rules\" (p.60)"],
-            "Book index: Nasdaq Composite 1972-May 2004 (not in the vault: run on NDX from 1990, SPX, NIFTY). Year-by-year table p.60-61.",
+            "Book index: Nasdaq Composite 1972-May 2004. Lane U4 (Q30): runs on the Nasdaq Composite itself (Norgate $COMP close, 1971-02-05..2020-09-04), plus SPX, NDX, NIFTY as a declared application. Year-by-year table p.60-61.",
             c("288 (8.9/yr)", "54.4%", "+4.6% winners / -0.9% losers", "45.9% invested", "Nasdaq Composite 1972-5/5/2004")),
         d("apta_roc15", "15-day rate of change zero crossings", "Ch 3 · Triple Momentum (single-ROC comparison)", Live, &[], false,
             &["E|\"if the Nasdaq Composite was purchased on days that the 15-day rate of change alone rose from below to above 0\" (p.61). Buy on the close.",
@@ -748,6 +748,33 @@ mod tests {
         assert!(run("apta_nhnl_nse",&y,9,29,&Params::new()).is_none() && run("apta_nhnl",&y,9,29,&Params::new()).is_none());
         let mut z=Ctx::new(&r,&r,&[]); z.extra.insert("NYSE_NEW_HIGHS".into(),vec![9.;30]); z.extra.insert("NYSE_NEW_LOWS".into(),vec![1.;30]);
         assert!(run("apta_nhnl_nse",&z,9,29,&Params::new()).is_none());
+    }
+    /// Lane U4 (Q30) reference feed: `APTA_DUMP=outdir APTA_DIR=<futures/norgate-us-indices-20200908> APTA_ADV=<NYSE_ADV_DEC.csv> [APTA_FROM=1970-12-01 APTA_TO=2004-06-14]
+    /// cargo test --release apta_u4_dump -- --ignored` writes <id>.tsv (entry date, price, exit date, price, open) for the four cards on their book index.
+    #[test]
+    #[ignore]
+    fn apta_u4_dump() {
+        let (Ok(out), Ok(dir), Ok(adv)) = (std::env::var("APTA_DUMP"), std::env::var("APTA_DIR"), std::env::var("APTA_ADV")) else { return };
+        let mut data = std::collections::BTreeMap::new();
+        crate::futures::load_nya(std::path::Path::new(&dir), &mut data);
+        crate::futures::load_comp(std::path::Path::new(&dir), &mut data);
+        let ab: std::collections::BTreeMap<String, (f64, f64)> = std::fs::read_to_string(adv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), (f[1].parse().ok()?, f[2].parse().ok()?))) }).collect();
+        let (lo, hi) = (std::env::var("APTA_FROM").unwrap_or("0000".into()), std::env::var("APTA_TO").unwrap_or("9999".into()));
+        for (tk, ids) in [(crate::futures::NYA_TICKER, vec!["apta_breadth_impulse", "apta_breadth_macd"]), (crate::futures::COMP_TICKER, vec!["apta_roc15", "apta_triple_mom"])] {
+            let rows = &data[tk];
+            let mut x = Ctx::new(rows, rows, &[]);
+            x.extra.insert("NYSE_ADV_DEC.Advances".into(), rows.iter().map(|r| ab.get(&r.date).map_or(f64::NAN, |v| v.0)).collect());
+            x.extra.insert("NYSE_ADV_DEC.Declines".into(), rows.iter().map(|r| ab.get(&r.date).map_or(f64::NAN, |v| v.1)).collect());
+            let (a, b) = (rows.iter().position(|r| r.date >= lo).unwrap(), rows.iter().rposition(|r| r.date <= hi).unwrap());
+            for id in ids {
+                let def = catalogue().into_iter().find(|d| d.id == id).unwrap();
+                assert!(crate::instrument_policy::check(&def, tk, false).is_none(), "{id} on {tk}");
+                let t = run(id, &x, a, b, &Params::new()).unwrap();
+                let mut o = String::new();
+                for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+                std::fs::write(format!("{out}/{id}.tsv"), o).unwrap();
+            }
+        }
     }
     #[test]
     fn ema_is_seeded_by_the_simple_average_and_uses_2_over_n_plus_1() {
