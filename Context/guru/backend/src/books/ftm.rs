@@ -39,7 +39,7 @@ fn stdev_pop(c: &[f64], n: usize) -> Vec<f64> {
     }).collect()
 }
 /// Days since 1970-01-01 for "YYYY-MM-DD".
-fn days(d: &str) -> i64 {
+pub(crate) fn days(d: &str) -> i64 {
     let (y, m, dd): (i64, i64, i64) = (d[0..4].parse().unwrap_or(1970), d[5..7].parse().unwrap_or(1), d[8..10].parse().unwrap_or(1));
     let y2 = if m <= 2 { y - 1 } else { y };
     let era = y2.div_euclid(400); let yoe = y2 - era * 400;
