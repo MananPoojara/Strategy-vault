@@ -475,7 +475,7 @@ const GA_ORDERS: [(&str, &str, &str, &str, &str); 4] = [
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     if let Some(&(_, lb1, lb2, disp)) = SOLAR.iter().find(|t| t.0 == id) {
-        return Some([("lb1", "Sunspot breakout look-back lb1 (book grid 25-40 step 5; the printed best for this order)", lb1, 25., 40., 5.), ("lb2", "Repeat-prevention look-back lb2 (book grid 10-15 step 5)", lb2, 10., 15., 5.), ("disp", "Displacement in bars (book grid 0-2)", disp, 0., 2., 1.), ("causal", "1 = causal (default, R4 #373): an event's response update waits until its 10 following closes exist; 0 = the CD code as printed, which reads future prices - NOT TRADABLE", 1., 0., 1., 1.), SES[0], SES[1], SES[2]]
+        return Some([("lb1", "Sunspot breakout look-back lb1 (book grid 25-40 step 5; the printed best for this order)", lb1, 25., 40., 5.), ("lb2", "Repeat-prevention look-back lb2 (book grid 10-15 step 5)", lb2, 10., 15., 5.), ("disp", "Displacement in bars (book grid 0-2)", disp, 0., 2., 1.), ("causal", "1 = causal (default, R4 #373): an event's response update waits until its 10 following closes exist; 0 = the CD code as printed, which reads future prices - NOT TRADABLE", 1., 0., 1., 1.), ("sameday", "0 = default (R4 #374): the count of day D is acted on from the first bar dated D+1 or later (SILSO publishes it on D+1); 1 = the CD's same-day mapping - same-day sunspot count - not available in real time", 0., 0., 1., 1.), SES[0], SES[1], SES[2]]
             .iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect());
     }
     if REVIEWED_I1.contains(&id) {
@@ -1350,10 +1350,10 @@ mod solar_tests {
         let mut sp = vec![10.; 200];
         sp[119] = 50.; sp[139] = 50.; // 1-based counts 120 and 140: upside events (previous 5 counts all 10); the second is 20 > lb2 counts later
         let prc: Vec<f64> = (0..200).map(|i| 100. + i as f64).collect();
-        let sig = solar_signals(&sd, &prc, &sd, &sp, 5, 5, false);
+        let sig = solar_signals(&sd, &prc, &sd, &sp, 5, 5, false, true);
         assert_eq!((sig[120], sig[140]), (0., 1.));
         assert_eq!(sig.iter().filter(|v| **v != 0.).count(), 1);
-        assert_eq!(solar_signals(&sd, &prc, &sd, &sp, 5, 5, true)[140], 1.); // causal: the first update (due at bar 125) is applied before the event at 140
+        assert_eq!(solar_signals(&sd, &prc, &sd, &sp, 5, 5, true, true)[140], 1.); // causal: the first update (due at bar 125) is applied before the event at 140
     }
     /// R4 #373: two same-direction events 3 bars apart (6 calendar days, bars every 2nd day): the CD reads the 5 closes after the first event for the second
     /// (buy); the causal default has not seen them yet (no signal).
@@ -1364,10 +1364,22 @@ mod solar_tests {
         let mut sp = vec![10.; 400];
         sp[239] = 50.; sp[245] = 50.; // 6 counts apart (> lb2 5), bars 121 and 124
         let prc: Vec<f64> = (0..dt.len()).map(|i| 100. + i as f64).collect();
-        let cd = solar_signals(&dt, &prc, &days, &sp, 5, 5, false);
-        let ca = solar_signals(&dt, &prc, &days, &sp, 5, 5, true);
+        let cd = solar_signals(&dt, &prc, &days, &sp, 5, 5, false, true);
+        let ca = solar_signals(&dt, &prc, &days, &sp, 5, 5, true, true);
         assert_eq!((cd[121], cd[124]), (0., 1.));
         assert_eq!((ca[121], ca[124]), (0., 0.));
+    }
+    /// R4 #374: an event on sunspot day D does not affect the decision on D's bar under the default (publication lag): the same-day mapping decides on bar D, the default on D+1.
+    #[test]
+    fn solar_default_event_on_day_d_does_not_affect_bar_d() {
+        let sd: Vec<String> = (0..200).map(|i| format!("{:04}-{:02}-{:02}", 2000 + i / 336, 1 + (i % 336) / 28, 1 + i % 28)).collect();
+        let mut sp = vec![10.; 200];
+        sp[119] = 50.; sp[139] = 50.; // events on days 120 and 140 (1-based)
+        let prc: Vec<f64> = (0..200).map(|i| 100. + i as f64).collect();
+        let (lag, same) = (solar_signals(&sd, &prc, &sd, &sp, 5, 5, false, false), solar_signals(&sd, &prc, &sd, &sp, 5, 5, false, true));
+        assert_eq!((same[140], same[141]), (1., 0.));
+        assert_eq!((lag[140], lag[141]), (0., 1.)); // acted on from the bar dated D+1
+        assert_eq!(same.iter().zip(&lag).filter(|(a, b)| a != b).count(), 2);
     }
 }
 
@@ -1400,9 +1412,9 @@ fn spot_calendar() -> Option<&'static (Vec<String>, Vec<f64>)> {
         (v.len() > 200).then_some((d, v))
     }).as_ref()
 }
-/// SolarSignals (x13mod02.c): breakout events of the sunspot counts mapped to the first price bar on or after the event date, then the adaptive
+/// SolarSignals (x13mod02.c): breakout events of the sunspot counts mapped to the first price bar dated after the event day (default, #374; same_day: on or after it), then the adaptive
 /// response vectors decide buy (-> +1) / sell (-> -1) for each event bar. Index arithmetic is 1-based as in the C code; `sig[k]` is the signal of bar k.
-fn solar_signals(dt: &[String], prc: &[f64], sd: &[String], sp: &[f64], lb1: usize, lb2: usize, causal: bool) -> Vec<f64> {
+fn solar_signals(dt: &[String], prc: &[f64], sd: &[String], sp: &[f64], lb1: usize, lb2: usize, causal: bool, same_day: bool) -> Vec<f64> {
     let (nb, ns) = (dt.len(), sp.len());
     let spots: Vec<f64> = std::iter::once(0.).chain(sp.iter().copied()).collect();
     let (mut b1u, mut b1d, mut breakp) = (vec![0.; ns + 2], vec![0.; ns + 2], vec![0.; nb + 3]);
@@ -1414,7 +1426,9 @@ fn solar_signals(dt: &[String], prc: &[f64], sd: &[String], sp: &[f64], lb1: usi
         let up = b1u[i] > 0. && hi(&b1u, lb2, i - 1) == 0.;
         let dn = !up && b1d[i] > 0. && hi(&b1d, lb2, i - 1) == 0.;
         if up || dn {
-            let k = dt.partition_point(|d| d.as_str() < sd[i - 1].as_str()) + 1; // hunt + 'if(date > dt[k]) k++' = the first bar dated on or after the event
+            // R4 #374 (publication lag): SILSO publishes day D's count on D+1, so the default acts from the first bar dated AFTER D (D+1 or later); same_day = the CD's mapping
+            // (hunt + 'if(date > dt[k]) k++' = the first bar dated on or after D): 'same-day sunspot count - not available in real time'
+            let k = dt.partition_point(|d| if same_day { d.as_str() < sd[i - 1].as_str() } else { d.as_str() <= sd[i - 1].as_str() }) + 1;
             breakp[k] = if up { 1. } else { -1. };
         }
     }
@@ -1457,7 +1471,7 @@ fn solar(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
     let ses = (gv("pt", 4.), gv("sl", 1.), gv("hold", 10.).round().max(1.) as usize);
     let atr50 = sma(&true_range(x), 50);
     let dates: Vec<String> = x.r.iter().map(|r| r.date.clone()).collect();
-    let sig = solar_signals(&dates, &x.c, sd, sp, lb1, lb2, gv("causal", 1.) >= 0.5);
+    let sig = solar_signals(&dates, &x.c, sd, sp, lb1, lb2, gv("causal", 1.) >= 0.5, gv("sameday", 0.) >= 0.5);
     drive(x, from, to, WARM, true, ord, false, ses, &atr50, |cb, _| {
         let g = if cb >= disp { sig[cb - disp + 1] } else { 0. }; // signal = sigvec[cb - disp] (1-based)
         (g as i8, x.c[cb] + 0.5 * g * atr50[cb])
@@ -1472,12 +1486,12 @@ fn solar_def(c: &'static (&'static str, f64, f64, f64)) -> StrategyDef {
     };
     let rules: &'static [&'static str] = Box::leak(vec![
         "F|Sunspot breakout events on the DAILY sunspot numbers (calendar days, weekends included): the count is above the highest of the previous lb1 counts (upside event) or below the lowest (downside event), and no event of the same direction occurred in the previous lb2 counts (repeat prevention) (p.197; x13mod02.c SolarSignals)",
-        "F|The event is mapped to the first price bar dated on or after the event date. Adaptive direction (p.197: 'depending on previous market behavior in response to upside breakouts'): response vectors respup / respdn, updated at every event bar i with resp[j] += 0.1 x ((close[i+j] - close[i]) - resp[j]) for j = 0..min(10, lb2); at an upside event bar buy if (resp[0] - bot) / (top - bot) < 0.4, sell if > 0.6, where top / bot are the extremes of resp[0..lb] (upside: j = 1..m; the downside branch of the CD code starts at j = 2), no signal when top = bot (x13mod02.c)".to_string().leak() as &str,
+        "F|The event of sunspot day D is mapped to the first price bar dated D+1 or later (default, publication lag: SILSO publishes day D's count on D+1, R4 #374; parameter sameday = 1 is the CD's mapping to the first bar dated on or after D, 'same-day sunspot count - not available in real time'). Adaptive direction (p.197: 'depending on previous market behavior in response to upside breakouts'): response vectors respup / respdn, updated at every event bar i with resp[j] += 0.1 x ((close[i+j] - close[i]) - resp[j]) for j = 0..min(10, lb2); at an upside event bar buy if (resp[0] - bot) / (top - bot) < 0.4, sell if > 0.6, where top / bot are the extremes of resp[0..lb] (upside: j = 1..m; the downside branch of the CD code starts at j = 2), no signal when top = bot (x13mod02.c)".to_string().leak() as &str,
         "E|The signal is acted on disp bars later (signal = sigvec[cb - disp]); entry order of this test (see the order line), none while already in that direction, none on a bar whose next bar has high = low",
         "X|Standard exit (pp.76-77): close-only profit target entry +/- 4 x ATR(50), close-only stop entry -/+ 1 x ATR(50), out at the close after 10 bars; no orders in the last 30 bars of the data",
     ].into_iter().map(|r| &*Box::leak(r.to_string().into_boxed_str())).collect::<Vec<&'static str>>().into_boxed_slice());
     StrategyDef { id, name, group: G9, session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[SPOTS], book: BOOK, rules,
-        notes: Box::leak(format!("Lane H3c (19 Nov 2026, R4 #340/#343/#346). Katz & McCormick, The Encyclopedia of Trading Strategies Ch.9 pp.197-200, Test {test}; entry order: {ord}. Defaults = the printed best in-sample values for this order (lb1 {lb1}, lb2 {lb2}, disp {disp}; p.199), grid lb1 25-40 step 5, lb2 10-15 step 5, disp 0-2. Rule from the printed prose and the CD code TRMODS/CH13 LUNAR/X13MOD02.C (the book does not print this code). Data: WDC-SILSO daily total sunspot number V2.0 (Royal Observatory of Belgium, CC BY-NC) read from extra_data/us/SUNSPOTS.csv, a series downloaded under R4 #346 (authors/data-1119/sunspots/MANIFEST.md); the book used the Observatory's earlier version, about 0.6 x V2.0 (a uniform rescale does not change a breakout against the series' own extremes). Counted details (3, R4 #373 / #343): (1) dates are compared as real dates, the CD compares YYMMDD numbers of one century; (2) the data window is the whole series from 1818, the CD file held the 1985-1999 counts, so only the first 100 counts of a data window differ (events before the first price bar are ignored in both); (3) CAUSAL response update (default, parameter causal = 1): the CD code updates an event's response vector at once with the 10 closes AFTER the event (prc[i+j], j = 0..10), so a later same-direction event fewer than 10 bars after it would decide on prices that do not exist yet; here an event's update is applied only when its 10 following closes exist (bar i + m reached). causal = 0 is the CD as printed and is labelled 'reads future prices - NOT TRADABLE'. Engine conventions, not counted: one unit of the instrument instead of the book's 36 futures, the in-sample start IS_DATE replaced by a 120-bar warm-up, float64 where the CD uses 32-bit floats. Measured look-ahead (same-direction event pairs fewer than m bars apart, where the two readings can differ; lb1 35 / lb2 15, lb1 40 / lb2 15, lb1 25 / lb2 10): SPY 1 / 2 / 29, QQQ 1 / 1 / 22, SPX 1 / 2 / 31, AAPL 0 / 1 / 23 (event bars mapped to each instrument's own dates). Independent causal check: replacing every close after an event bar by random values leaves the default's signal unchanged in 0 of 80 sampled events per setting on all four instruments; the CD as printed changes in 1 of 80 (SPY 35/15), 3 of 80 (SPY 25/10), 2 (QQQ 25/10), 1 (SPX 25/10), 1 (AAPL 25/10). Book (pp.199-200): in-sample entry at the open lost $1,631 a trade, limit $1,519, stop $52; with the stop the S&P 500 made $4,991 a trade in-sample (37 trades, ROA 20.4%) and $5,640 out-of-sample (11 trades); a 36-futures portfolio, so nothing here reproduces a printed result: UNVERIFIED.", lb1 = lb1, lb2 = lb2, disp = disp).into_boxed_str()),
+        notes: Box::leak(format!("Lane H3c (19 Nov 2026, R4 #340/#343/#346). Katz & McCormick, The Encyclopedia of Trading Strategies Ch.9 pp.197-200, Test {test}; entry order: {ord}. Defaults = the printed best in-sample values for this order (lb1 {lb1}, lb2 {lb2}, disp {disp}; p.199), publication lag default (see detail 4), grid lb1 25-40 step 5, lb2 10-15 step 5, disp 0-2. Rule from the printed prose and the CD code TRMODS/CH13 LUNAR/X13MOD02.C (the book does not print this code). Data: WDC-SILSO daily total sunspot number V2.0 (Royal Observatory of Belgium, CC BY-NC) read from extra_data/us/SUNSPOTS.csv, a series downloaded under R4 #346 (authors/data-1119/sunspots/MANIFEST.md); the book used the Observatory's earlier version, about 0.6 x V2.0 (a uniform rescale does not change a breakout against the series' own extremes). Counted details (4, R4 #373 / #374 / #343): (1) dates are compared as real dates, the CD compares YYMMDD numbers of one century; (2) the data window is the whole series from 1818, the CD file held the 1985-1999 counts, so only the first 100 counts of a data window differ (events before the first price bar are ignored in both); (3) CAUSAL response update (default, parameter causal = 1): the CD code updates an event's response vector at once with the 10 closes AFTER the event (prc[i+j], j = 0..10), so a later same-direction event fewer than 10 bars after it would decide on prices that do not exist yet; here an event's update is applied only when its 10 following closes exist (bar i + m reached). causal = 0 is the CD as printed and is labelled 'reads future prices - NOT TRADABLE' (look-ahead / causal reading, R4 #373); (4) PUBLICATION LAG (default, parameter sameday = 0): SILSO publishes day D's provisional count on D+1, so the count of day D is acted on from the first bar dated D+1 or later; sameday = 1 is the CD's mapping (X13MOD02.C, first bar dated on or after D), labelled 'same-day sunspot count - not available in real time'. The held SUNSPOTS file is the FINAL, REVISED SILSO V2.0 series (fetched 19 Nov 2026), not the values as first published (provisional counts differed), so even the lagged default uses revised values. The causal measurements below were taken before the lag (same-day mapping) and are indicative. Engine conventions, not counted: one unit of the instrument instead of the book's 36 futures, the in-sample start IS_DATE replaced by a 120-bar warm-up, float64 where the CD uses 32-bit floats. Measured look-ahead (same-direction event pairs fewer than m bars apart, where the two readings can differ; lb1 35 / lb2 15, lb1 40 / lb2 15, lb1 25 / lb2 10): SPY 1 / 2 / 29, QQQ 1 / 1 / 22, SPX 1 / 2 / 31, AAPL 0 / 1 / 23 (event bars mapped to each instrument's own dates). Independent causal check: replacing every close after an event bar by random values leaves the default's signal unchanged in 0 of 80 sampled events per setting on all four instruments; the CD as printed changes in 1 of 80 (SPY 35/15), 3 of 80 (SPY 25/10), 2 (QQQ 25/10), 1 (SPX 25/10), 1 (AAPL 25/10). Book (pp.199-200): in-sample entry at the open lost $1,631 a trade, limit $1,519, stop $52; with the stop the S&P 500 made $4,991 a trade in-sample (37 trades, ROA 20.4%) and $5,640 out-of-sample (11 trades); a 36-futures portfolio, so nothing here reproduces a printed result: UNVERIFIED.", lb1 = lb1, lb2 = lb2, disp = disp).into_boxed_str()),
         claim: None }
 }
 
