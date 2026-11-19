@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "kets";
 /// Admitted ids (authors/katz/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kets_macd_sig_open", "kets_rsi_div_open", "kets_macd_div_open" /* lane D2, R4 #340/#343 */, "kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
+pub const REVIEWED: &[&str] = &["kets_macd_sig_limit", "kets_macd_sig_stop", "kets_rsi_div_limit", "kets_rsi_div_stop", "kets_macd_div_limit", "kets_macd_div_stop", "kets_ma_xo_open", "kets_ma_xo_limit", "kets_ma_xo_stop", "kets_ma_slope_open", "kets_ma_slope_limit", "kets_ma_slope_stop" /* lane H3, R4 #340/#343 */, "kets_macd_sig_open", "kets_rsi_div_open", "kets_macd_div_open" /* lane D2, R4 #340/#343 */, "kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// No orders before this bar: the book's price files began ~6 months (about 120 bars) before its first trade
@@ -35,6 +35,7 @@ enum M {
     HhllStop,               // ch5 T6
     Vb { long_only: bool, adx: bool }, // ch5 T7, T8, T10, T12
     StochObos, RsiObos, StochSig, StochDiv, // ch7
+    MaXo, MaSlope,          // ch6 Tests 1-3 / 13-15 (simple MA; lane H3, R4 #340/#343: lengths not printed, labelled)
     MacdSig, RsiDiv, MacdDiv, // ch7 Tests 10, 16, 19 (lane D2, R4 #340/#343: lengths not printed, borrowed standard lengths labelled)
     Seas(u8), Lunar(u8),    // ch8 / ch9: 1 momentum, 2 crossover, 3 + confirmation, 4 + confirmation & inversion
     Cycle,                  // ch10
@@ -131,10 +132,34 @@ static TESTS: &[T] = &[
     // ---------------------------------------------------------------- Chapter 8
     t!("kets_macd_sig_open", "MACD / 9-bar signal-line cross · next open (Test 10)", G7, M::MacdSig, Open, "Long/Short", "p.148 (PDF 161)",
         [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.)], Some(("", "", "IS $-1,808 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_macd_sig_limit", "MACD / 9-bar signal-line cross · limit entry (Test 11)", G7, M::MacdSig, Limit, "Long/Short", "p.148 (PDF 161)",
+        [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.)], Some(("", "", "IS $-1,210 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_macd_sig_stop", "MACD / 9-bar signal-line cross · stop entry (Test 12)", G7, M::MacdSig, Stop, "Long/Short", "p.148 (PDF 161)",
+        [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.)], Some(("", "", "IS $-1,476 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
     t!("kets_rsi_div_open", "RSI / price divergence · next open (Test 16)", G7, M::RsiDiv, Open, "Long/Short", "p.149 (PDF 162)",
         [("len", "RSI length (borrowed standard 14; the book optimised 5-25 and does not print the winner)", 14., 5., 25., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $-2,278 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_rsi_div_limit", "RSI / price divergence · limit entry (Test 17)", G7, M::RsiDiv, Limit, "Long/Short", "p.149 (PDF 162)",
+        [("len", "RSI length (borrowed standard 14; the book optimised 5-25 and does not print the winner)", 14., 5., 25., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $-1,529 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_rsi_div_stop", "RSI / price divergence · stop entry (Test 18)", G7, M::RsiDiv, Stop, "Long/Short", "p.149 (PDF 162)",
+        [("len", "RSI length (borrowed standard 14; the book optimised 5-25 and does not print the winner)", 14., 5., 25., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $-1,309 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
     t!("kets_macd_div_open", "MACD / price divergence · next open (Test 19)", G7, M::MacdDiv, Open, "Long/Short", "p.150 (PDF 163)",
         [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $1,393 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_macd_div_limit", "MACD / price divergence · limit entry (Test 20)", G7, M::MacdDiv, Limit, "Long/Short", "p.150 (PDF 163)",
+        [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $1,250 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_macd_div_stop", "MACD / price divergence · stop entry (Test 21)", G7, M::MacdDiv, Stop, "Long/Short", "p.150 (PDF 163)",
+        [("fast", "MACD fast EMA (borrowed standard 12, off the book grid 3-15; not printed)", 12., 3., 15., 1.), ("slow", "MACD slow EMA (borrowed standard 26, off the book grid 10-40; not printed)", 26., 10., 40., 1.), ("lb", "Divergence look-back (20, the middle of the book grid 15-25; the winner is not printed)", 20., 15., 25., 5.)], Some(("", "", "IS $2,062 per trade (book's own optimised lengths)", "", "36-futures portfolio (Table 7-3); not reproduced: the winning lengths are not printed"))),
+    t!("kets_ma_xo_open", "Dual SMA crossover · next open (Test 1)", "Ch.6 Moving-average models", M::MaXo, Open, "Long/Short", "pp.116-121 (PDF 129-134)",
+        [("fast", "Fast SMA length (borrowed 5, the top of the book grid 1-5; the winner is not printed)", 5., 1., 5., 1.), ("slow", "Slow SMA length (borrowed 20, on the book grid 5-50 step 5; the winner is not printed)", 20., 5., 50., 1.)], Some(("", "", "IS $-1,765 per trade (book's own optimised lengths)", "", "36-futures portfolio; the book prints ROA% and $/trade only (Table 6-3 is an image); none of the trend-following MA models was profitable on a portfolio basis (p.121)"))),
+    t!("kets_ma_xo_limit", "Dual SMA crossover · limit entry (Test 2)", "Ch.6 Moving-average models", M::MaXo, Limit, "Long/Short", "pp.116-121 (PDF 129-134)",
+        [("fast", "Fast SMA length (borrowed 5, the top of the book grid 1-5; the winner is not printed)", 5., 1., 5., 1.), ("slow", "Slow SMA length (borrowed 20, on the book grid 5-50 step 5; the winner is not printed)", 20., 5., 50., 1.)], Some(("", "", "IS $-926 per trade (book's own optimised lengths)", "", "36-futures portfolio; the book prints ROA% and $/trade only (Table 6-3 is an image); none of the trend-following MA models was profitable on a portfolio basis (p.121)"))),
+    t!("kets_ma_xo_stop", "Dual SMA crossover · stop entry (Test 3)", "Ch.6 Moving-average models", M::MaXo, Stop, "Long/Short", "pp.116-121 (PDF 129-134)",
+        [("fast", "Fast SMA length (borrowed 5, the top of the book grid 1-5; the winner is not printed)", 5., 1., 5., 1.), ("slow", "Slow SMA length (borrowed 20, on the book grid 5-50 step 5; the winner is not printed)", 20., 5., 50., 1.)], Some(("", "", "IS $-1,045 per trade (book's own optimised lengths)", "", "36-futures portfolio; the book prints ROA% and $/trade only (Table 6-3 is an image); none of the trend-following MA models was profitable on a portfolio basis (p.121)"))),
+    t!("kets_ma_slope_open", "SMA slope turn · next open (Test 13)", "Ch.6 Moving-average models", M::MaSlope, Open, "Long/Short", "pp.116-121 (PDF 129-134)",
+        [("len", "SMA length (borrowed 20, inside the book grid 3-40; the winner is not printed)", 20., 3., 40., 1.)], Some(("", "", "not printed in the text", "", "36-futures portfolio; the book prints ROA% and $/trade only (Table 6-3 is an image); none of the trend-following MA models was profitable on a portfolio basis (p.121)"))),
+    t!("kets_ma_slope_limit", "SMA slope turn · limit entry (Test 14)", "Ch.6 Moving-average models", M::MaSlope, Limit, "Long/Short", "pp.116-121 (PDF 129-134)",
+        [("len", "SMA length (borrowed 20, inside the book grid 3-40; the winner is not printed)", 20., 3., 40., 1.)], Some(("", "", "not printed in the text", "", "36-futures portfolio; the book prints ROA% and $/trade only (Table 6-3 is an image); none of the trend-following MA models was profitable on a portfolio basis (p.121)"))),
+    t!("kets_ma_slope_stop", "SMA slope turn · stop entry (Test 15)", "Ch.6 Moving-average models", M::MaSlope, Stop, "Long/Short", "pp.116-121 (PDF 129-134)",
+        [("len", "SMA length (borrowed 20, inside the book grid 3-40; the winner is not printed)", 20., 3., 40., 1.)], Some(("", "", "not printed in the text", "", "36-futures portfolio; the book prints ROA% and $/trade only (Table 6-3 is an image); none of the trend-following MA models was profitable on a portfolio basis (p.121)"))),
     t!("kets_seas_xo_open", "Seasonal crossover · next open (Test 1)", G8, M::Seas(2), Open, "Long/Short", "pp.159-170 (PDF 172-183)",
         [("avglen", "Moving-average length", 20., 5., 20., 5.), ("disp", "Displacement (bars ahead)", 5., 0., 20., 1.)], Some(("", "40-43% (all orders)", "IS $-1,127 / OOS $-300", "", "36-futures portfolio; ROA IS -9.7% / OOS -5.8% (Table 8-3)"))),
     t!("kets_seas_xo_limit", "Seasonal crossover · limit (Test 2)", G8, M::Seas(2), Limit, "Long/Short", "pp.159-170 (PDF 172-183)",
@@ -265,11 +290,15 @@ fn model_rules(m: M) -> &'static [&'static str] {
         M::RsiObos => &["E|Classic RSI (RsiOsc type 1). Buy when RSI crosses above 30; sell when RSI crosses below 70 (p.147)"],
         M::StochSig => &["E|Lane's Slow %K (osctype 2) and a 3-bar simple moving average of it as signal line; buy when Slow %K crosses above the signal line, sell when it crosses below (p.147)"],
         M::MacdSig => &["E|Classic MACD = EMA(close, fast) - EMA(close, slow) crosses above its 9-bar EMA signal line: buy; crosses below: sell short (x11mod01.c model 2, osctype 4; p.148)",
-            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised fast 3-15 and slow 10-40 and does not print the winners: (1) fast EMA 12 and (2) slow EMA 26, borrowed standard MACD lengths that are not the CD's (X11MOD01.C reads the lengths from its parameter list and the CD's X11SCR01.DAT holds only the optimisation grids) and are off the book's grid (fast 3-15 step 2, slow 10-40 step 5), each counted. Printed, not choices: the 9-bar EMA signal line, the next-open entry (Test 10) and the Standard Exit Strategy."],
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised fast 3-15 and slow 10-40 and does not print the winners: (1) fast EMA 12 and (2) slow EMA 26, borrowed standard MACD lengths that are not the CD's (X11MOD01.C reads the lengths from its parameter list and the CD's X11SCR01.DAT holds only the optimisation grids) and are off the book's grid (fast 3-15 step 2, slow 10-40 step 5), each counted. Printed, not choices: the 9-bar EMA signal line, the entry order (open Test 10, limit 11, stop 12) and the Standard Exit Strategy."],
         M::RsiDiv => &["E|Over the look-back lb: lowest close at bar i and lowest classic RSI (RsiOsc type 1) at bar j. Buy if i < today and i > today-6, j > today-lb+1, i-j > 4 and RSI turns up (RSI[t] >= RSI[t-1] < RSI[t-2]); otherwise sell short on the mirror (highest close / highest RSI, RSI turns down) (p.149, x11mod01.c model 3, osctype 3)",
-            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised RSI 5-25 and look-back 15-25 and does not print the winners: (1) RSI length 14, a borrowed standard length (the CD's X11MOD01.C reads the length from its parameter list; X11SCR01.DAT holds only the optimisation grid 5-25, which does not print the winner), (2) look-back 20, the middle of the book's grid 15-25. Printed, not choices: the divergence algorithm, the next-open entry (Test 16) and the Standard Exit Strategy."],
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised RSI 5-25 and look-back 15-25 and does not print the winners: (1) RSI length 14, a borrowed standard length (the CD's X11MOD01.C reads the length from its parameter list; X11SCR01.DAT holds only the optimisation grid 5-25, which does not print the winner), (2) look-back 20, the middle of the book's grid 15-25. Printed, not choices: the divergence algorithm, the entry order (open Test 16, limit 17, stop 18) and the Standard Exit Strategy."],
         M::MacdDiv => &["E|The same divergence rule as the RSI test on the classic MACD line (EMA fast - EMA slow of closes) (p.150, x11mod01.c model 3, osctype 4)",
-            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 3 card-specific details] The book optimised fast 3-15, slow 10-40 and look-back 15-25 and does not print the winners: (1) fast EMA 12 and (2) slow EMA 26, borrowed standard MACD lengths that are not the CD's (X11MOD01.C reads them from its parameter list; X11SCR01.DAT holds only the optimisation grids) and are off the book's grids (fast 3-15 step 2, slow 10-40 step 5), each counted, (3) look-back 20, the middle of the book's grid 15-25. Printed, not choices: the divergence algorithm, the next-open entry (Test 19) and the Standard Exit Strategy."],
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 3 card-specific details] The book optimised fast 3-15, slow 10-40 and look-back 15-25 and does not print the winners: (1) fast EMA 12 and (2) slow EMA 26, borrowed standard MACD lengths that are not the CD's (X11MOD01.C reads them from its parameter list; X11SCR01.DAT holds only the optimisation grids) and are off the book's grids (fast 3-15 step 2, slow 10-40 step 5), each counted, (3) look-back 20, the middle of the book's grid 15-25. Printed, not choices: the divergence algorithm, the entry order (open Test 19, limit 20, stop 21) and the Standard Exit Strategy."],
+        M::MaXo => &["E|Fast SMA(close) crosses above the slow SMA(close) (fast >= slow today, fast < slow yesterday): buy; crosses below: sell short (x10mod01.c model 1; p.116-117, 120). Only fast < slow is examined (the code skips fast >= slow)",
+            "A|[Declared choices, R4 #340/#343; UNVERIFIED, 2 card-specific details] The book optimised the fast length 1-5 and the slow length 5-50 step 5 and prints neither winner (Table 6-3 shows ROA% and $/trade only): (1) fast SMA 5, (2) slow SMA 20, borrowed inside that grid. Printed, not choices: the SMA, the crossover test, the entry order of the test (open Tests 1, limit 2, stop 3) and the Standard Exit Strategy."],
+        M::MaSlope => &["E|SMA(close) turns up (SMA[t] >= SMA[t-1] and SMA[t-1] < SMA[t-2]): buy; turns down (SMA[t] < SMA[t-1] and SMA[t-1] >= SMA[t-2]): sell short (x10mod01.c model 2; p.117, 120)",
+            "A|[Declared choice, R4 #340/#343; UNVERIFIED, 1 card-specific detail] The book optimised the single length 3-40 and does not print the winner: SMA length 20, borrowed inside that grid. Printed, not choices: the slope test, the entry order of the test (open Test 13, limit 14, stop 15) and the Standard Exit Strategy."],
         M::StochDiv => &["E|Over the look-back lb: lowest close at bar i and lowest Fast %K at bar j. Buy if i < today and i > today-6, j > today-lb+1, i-j > 4 and %K turns up (%K[t] >= %K[t-1] < %K[t-2]) (pp.148-149, x11mod01.c model 3)",
             "E|Otherwise sell on the mirror image (highest close / highest %K, %K turns down)"],
         M::Seas(k) | M::Lunar(k) => {
@@ -361,8 +390,8 @@ fn rules_of() -> &'static Vec<(&'static [&'static str], &'static str)> {
     }).collect())
 }
 
-const NT_MA: &str = "the book never prints the optimised moving-average lengths of these tests (only ROA%/$TRD in Tables 6-3 and 6-6), so the default rule cannot be stated without inventing it";
-const NT_OSC: &str = "the book never prints the optimised oscillator lengths / look-back of these tests (only ROA%/$TRD in Table 7-3); lane D2 (R4 #343) runs the next-open Tests 10, 16 and 19 as kets_macd_sig_open, kets_rsi_div_open and kets_macd_div_open with borrowed standard lengths labelled and counted; the limit and stop variants stay held";
+const NT_MA: &str = "the book never prints the optimised moving-average lengths of these tests (only ROA%/$TRD in Tables 6-3 and 6-6), so a default needs borrowed lengths; lane H3 (R4 #340/#343) now runs the simple-MA crossover (Tests 1-3, kets_ma_xo_*) and slope (Tests 13-15, kets_ma_slope_*) with 2 and 1 labelled borrowed lengths. Still held: the EMA / front-weighted triangular / modified-VIDYA variants (the VIDYA code is the authors' own) and the counter-trend and support/resistance models, not yet coded";
+const NT_OSC: &str = "all open / limit / stop variants of Tests 10-21 now run (lane H3, R4 #340/#343)";
 
 macro_rules! off {
     ($id:expr, $name:expr, $g:expr, $dir:expr, $st:expr, $rules:expr, $notes:expr) => {
@@ -392,13 +421,6 @@ fn off_list() -> Vec<StrategyDef> {
         off!("kets_ma_sr", "MA support/resistance bounce, 4 MA types x 3 orders (Ch.6 Tests 37-48)", "Ch.6 Moving-average models", "Long/Short", NotTestable(NT_MA),
             &["E|Buy when the slow MA is rising and the fast MA crosses below it; sell when the slow MA is falling and the fast MA crosses above it (x10mod01.c model 4)", "E|Fast 1-5, slow 5-50 optimised (p.126)", "X|Standard exit"],
             "Text: SMA support/resistance with stop entry made $227/trade IS (ROA 4.2%) and $482 OOS (ROA 14.8%) (p.126); lengths not printed."),
-        off!("kets_macd_sig", "MACD / 9-bar signal-line cross · open/limit/stop (Ch.7 Tests 10-12)", G7, "Long/Short", NotTestable(NT_OSC),
-            &["E|Classic MACD (EMA fast - EMA slow) crosses its 9-bar EMA signal line (x11mod01.c model 2, osctype 4)", "E|Fast 3-15 step 2, slow 10-40 step 5 optimised (p.148)", "X|Standard exit"], "Table 7-3: IS $-1,808/$-1,210/$-1,476 per trade."),
-        off!("kets_rsi_div", "RSI / price divergence · open/limit/stop (Ch.7 Tests 16-18)", G7, "Long/Short", NotTestable(NT_OSC),
-            &["E|Divergence rule as in the Stochastic divergence tests, on the classic RSI (x11mod01.c model 3, osctype 3)", "E|RSI 5-25 and look-back 15-25 optimised (p.149)", "X|Standard exit"], "Table 7-3: IS $-2,278/$-1,529/$-1,309."),
-        off!("kets_macd_div", "MACD / price divergence · open/limit/stop (Ch.7 Tests 19-21)", G7, "Long/Short", NotTestable(NT_OSC),
-            &["E|Divergence rule on the classic MACD (x11mod01.c model 3, osctype 4)", "E|Fast 3-15, slow 10-40, look-back 15-25 optimised (p.150)", "X|Standard exit"],
-            "The chapter's only profitable model: IS $1,393/$1,250/$2,062, OOS $140/$985/$-589 per trade, ROA IS 26.3/12.5/27.2% (Table 7-3); its parameters are not printed."),
         off!("kets_solar", "Sunspot breakout model · open/limit/stop (Ch.9 solar Tests 1-3)", G9, "Long/Short",
             NeedsData("daily sunspot numbers (Royal Observatory of Belgium / SILSO), which the vault does not have; the model's code is only on the CD and its adaptive response vector reads prices up to 10 bars after each event"),
             &["E|Sunspot count above the highest of the previous lb1 counts (or below the lowest) with no such breakout in the previous lb2 counts; direction chosen adaptively from earlier market responses; acted on disp bars later (pp.197-199)", "E|Best: open 35/15/2, limit 40/15/0, stop 35/15/2 (p.199)", "X|Standard exit"],
@@ -457,6 +479,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
             M::RsiObos => ("kets_rsi_obos", "RSI overbought/oversold"),
             M::StochSig => ("kets_stoch_sig", "Stochastic signal line"),
             M::StochDiv => ("kets_stoch_div", "Stochastic divergence"),
+            M::MaXo | M::MaSlope => ("kets_ma", "Moving-average entries (Ch.6)"),
             M::MacdSig => ("kets_macd_sig", "MACD signal-line cross"),
             M::RsiDiv => ("kets_rsi_div", "RSI divergence"),
             M::MacdDiv => ("kets_macd_div", "MACD divergence"),
@@ -1021,6 +1044,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             drive(x, from, to, WARM, false, t.ord, false, ses, &atr50, |cb, _| {
                 let s = if obos { if cross_up(&osc, &lov, cb) { 1 } else if cross_dn(&osc, &hiv, cb) { -1 } else { 0 } }
                     else if cross_up(&osc, &sig, cb) { 1 } else if cross_dn(&osc, &sig, cb) { -1 } else { 0 };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::MaXo => {
+            let (fl, sl) = (u("fast"), u("slow"));
+            if fl >= sl { return Some(vec![]); } // the book's code skips fast >= slow
+            let (fa, sa) = (sma(&x.c, fl), sma(&x.c, sl));
+            drive(x, from, to, WARM.max(sl + 1), false, t.ord, false, ses, &atr50, |cb, _| {
+                let s = if cross_up(&fa, &sa, cb) { 1 } else if cross_dn(&fa, &sa, cb) { -1 } else { 0 };
+                (s, std_stop(cb, s))
+            })
+        }
+        M::MaSlope => {
+            let l = u("len"); let ma = sma(&x.c, l);
+            drive(x, from, to, WARM.max(l + 2), false, t.ord, false, ses, &atr50, |cb, _| {
+                let s = if turns_up(&ma, cb) { 1 } else if turns_dn(&ma, cb) { -1 } else { 0 };
                 (s, std_stop(cb, s))
             })
         }
