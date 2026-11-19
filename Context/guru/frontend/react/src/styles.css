@@ -791,31 +791,42 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .ghero-book h1 { font-size: clamp(28px, 3.2vw, 44px); font-stretch: 110%; line-height: 1.1; letter-spacing: -.02em; margin: 0 0 10px; max-width: 26ch; }
 .ghero-book .lede { font-size: 16px; }
 .ghero-book .guru-portrait .portrait { width: 150px; height: 172px; padding: 5px; }
-.shelf.book-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 34px 24px; }
-@media (max-width: 1100px) { .shelf.book-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 680px) { .shelf.book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 14px; } }
-.shelf.book-grid .bookcard { position: relative; display: flex; flex-direction: column; gap: 0; padding: 0; background: none; border: 0; box-shadow: none; transform: none; }
-.shelf.book-grid .book-cover-link { display: block; align-self: stretch; width: 100%; }
-.shelf.book-grid .cover-stage { height: 250px; display: flex; align-items: center; justify-content: center; border-radius: 14px;
-  background: radial-gradient(120% 90% at 50% 10%, color-mix(in srgb, var(--c) 22%, var(--panel)) 0%, color-mix(in srgb, var(--c) 7%, var(--panel)) 70%);
-  border: 1px solid color-mix(in srgb, var(--c) 14%, var(--steel)); transition: background .3s, border-color .3s; }
-.shelf.book-grid .bookcard:hover .cover-stage { border-color: color-mix(in srgb, var(--c) 35%, var(--steel)); }
-.shelf.book-grid .cover-img, .shelf.book-grid .cover3d { height: 196px; width: auto; aspect-ratio: auto; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
-.shelf.book-grid .cover-img img { height: 196px; width: auto; max-width: 150px; object-fit: contain; display: block; border-radius: 2px 4px 4px 2px;
-  box-shadow: 0 1px 0 rgb(255 255 255 / .4) inset, -3px 0 0 rgb(0 0 0 / .12) inset, 0 18px 26px -14px rgb(0 0 0 / .55), 0 4px 8px -4px rgb(0 0 0 / .3); }
-.shelf.book-grid .cover3d { width: 134px; }
-.shelf.book-grid .bookcard:hover .cover-img, .shelf.book-grid .bookcard:hover .cover3d { transform: translateY(-5px) rotate(-1deg); }
-.shelf.book-grid .c3-face { padding: 16px 12px 12px 18px; background: linear-gradient(160deg, color-mix(in srgb, var(--c) 82%, #fff) 0%, var(--c) 45%, color-mix(in srgb, var(--c) 78%, #000) 100%);
-  box-shadow: 0 18px 26px -14px rgb(0 0 0 / .55); }
-.shelf.book-grid .c3-face::after { content: ""; position: absolute; left: 18px; right: 12px; bottom: 34px; height: 1px; background: #ead9a666; }
-.shelf.book-grid .c3-author { font-size: 8px; letter-spacing: .16em; }
-.shelf.book-grid .c3-title { font-size: 15px; line-height: 1.18; margin-top: 12px; -webkit-line-clamp: 6; color: #f1e2b5; text-shadow: 0 1px 0 rgb(0 0 0 / .25); }
-.shelf.book-grid .c3-year { font-size: 9px; }
-.shelf.book-grid h3 { margin: 14px 2px 3px; font-size: 14px; line-height: 1.32; }
-.shelf.book-grid h3 a { color: var(--ink); }
-.shelf.book-grid .bc-meta { margin: 0 2px; font-size: 11.5px; color: var(--ink3); }
-.shelf.book-grid .bc-blurb { margin: 8px 2px 0; font-size: 12.3px; line-height: 1.55; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-.shelf.book-grid .bc-line { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 2px 0; }
-.shelf.book-grid .bc-line .stat { padding: 3px 8px; border-radius: 20px; font-size: 11px; color: var(--ink2); background: color-mix(in srgb, var(--ink) 6%, var(--panel)); }
-.shelf.book-grid .bc-line .stat.ok { color: color-mix(in srgb, var(--green) 85%, var(--ink)); background: color-mix(in srgb, var(--green) 12%, var(--panel)); }
-.shelf.book-grid .bc-line b { font: 600 11px "IBM Plex Mono", monospace; color: inherit; margin-right: 2px; }
+/* author shelf: 280 px book cards (ebook-store style), 19 Nov 2026 */
+.shelf.book-grid { grid-template-columns: repeat(auto-fill, 280px); justify-content: space-between; gap: 44px 28px; margin-top: 18px; }
+@media (max-width: 640px) { .shelf.book-grid { grid-template-columns: 1fr; justify-items: center; } }
+.shelf.book-grid .bk { width: 280px; display: flex; flex-direction: column; padding: 0; background: none; border: 0; box-shadow: none; transform: none; cursor: default;
+  animation: bk-rise .6s cubic-bezier(.2,.75,.25,1) both; animation-delay: calc(var(--i) * 45ms); }
+@keyframes bk-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.bk-stage { position: relative; height: 330px; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 18px; perspective: 1100px; text-decoration: none;
+  background: radial-gradient(130% 85% at 50% 0%, color-mix(in srgb, var(--c) 30%, var(--panel)) 0%, color-mix(in srgb, var(--c) 9%, var(--panel)) 62%, var(--panel) 100%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 16%, transparent); transition: box-shadow .4s, background .4s; }
+.bk-stage::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 30px; height: 18px; border-radius: 50%; background: rgb(0 0 0 / .28); filter: blur(12px); transition: transform .45s, opacity .45s; }
+.bk-book { position: relative; z-index: 1; display: block; transform-style: preserve-3d; transition: transform .55s cubic-bezier(.2,.75,.25,1); }
+.bk-img, .bk-made { display: block; width: 172px; height: 258px; border-radius: 3px 6px 6px 3px; object-fit: cover;
+  box-shadow: inset 4px 0 0 rgb(255 255 255 / .18), inset -1px 0 0 rgb(0 0 0 / .2), 0 22px 30px -18px rgb(0 0 0 / .65), 0 6px 12px -6px rgb(0 0 0 / .35); }
+.bk-book::before { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: 3px 6px 6px 3px; pointer-events: none;
+  background: linear-gradient(90deg, rgb(0 0 0 / .22) 0, rgb(255 255 255 / .16) 3%, transparent 7%, transparent 80%, rgb(255 255 255 / .1) 100%); }
+.bk-made { display: flex; flex-direction: column; padding: 22px 18px 16px 24px; color: #f3e5bb;
+  background: radial-gradient(140% 80% at 30% 0%, color-mix(in srgb, var(--c) 70%, #fff) 0%, var(--c) 48%, color-mix(in srgb, var(--c) 72%, #000) 100%); }
+.bk-made-author { font: 600 8.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: .18em; text-transform: uppercase; opacity: .8; }
+.bk-made-title { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f3e5bb55; font: 600 19px/1.15 "Newsreader", Georgia, serif; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; text-shadow: 0 1px 0 rgb(0 0 0 / .25); }
+.bk-made-year { margin-top: auto; font: 500 10px "IBM Plex Mono", monospace; opacity: .75; }
+.bk-open { position: absolute; z-index: 3; left: 14px; right: 14px; bottom: 14px; padding: 10px 14px; border-radius: 12px; display: flex; justify-content: space-between;
+  font-weight: 600; font-size: 12.5px; line-height: 1; color: #fff; background: rgb(15 18 22 / .78); backdrop-filter: blur(8px); transform: translateY(140%); opacity: 0; transition: transform .45s cubic-bezier(.2,.75,.25,1), opacity .3s; }
+.bk:hover .bk-book, .bk-stage:focus-visible .bk-book { transform: translateY(-14px) rotateY(-16deg) rotateX(4deg); }
+.bk:hover .bk-stage::after { transform: scaleX(.8); opacity: .55; }
+.bk:hover .bk-stage { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 32%, transparent), 0 24px 40px -28px color-mix(in srgb, var(--c) 80%, #000); }
+.bk:hover .bk-open, .bk-stage:focus-visible .bk-open { transform: none; opacity: 1; }
+.bk-body { padding: 16px 4px 0; display: flex; flex-direction: column; }
+.bk-body h3 { margin: 0; font-size: 16px; line-height: 1.3; letter-spacing: -.005em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.bk-body h3 a { color: var(--ink); text-decoration: none; background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; transition: background-size .35s; }
+.bk:hover .bk-body h3 a { background-size: 100% 1px; }
+.bk-meta { margin-top: 4px; font-size: 12px; color: var(--ink3); }
+.bk-summary { margin: 10px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.bk-stats { display: flex; gap: 16px; margin-top: 14px; font-size: 12px; color: var(--ink3); }
+.bk-stats b { margin-right: 4px; font: 600 14px "IBM Plex Mono", monospace; color: var(--ink); }
+.bk-stats .ok b { color: var(--green); }
+.bk-bar { height: 4px; margin-top: 8px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.bk-bar i { display: block; height: 100%; border-radius: 4px; background: var(--green); transform-origin: left; animation: bk-fill .9s cubic-bezier(.2,.75,.25,1) both; animation-delay: calc(var(--i) * 45ms + .25s); }
+@keyframes bk-fill { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .shelf.book-grid .bk, .bk-bar i { animation: none; } .bk-book, .bk-open, .bk-stage::after { transition: none; } .bk:hover .bk-book { transform: none; } }
