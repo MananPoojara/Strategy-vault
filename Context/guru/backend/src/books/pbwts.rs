@@ -54,9 +54,13 @@ impl St {
     pub fn bars_since_entry(&self, i: usize) -> usize { self.pos.as_ref().map_or(0, |p| i - p.i) }
 }
 
+#[cfg(test)]
+thread_local! { pub static FORCE_PATH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; } // test only (R4 #240): 1 = open-high-low-close, 2 = open-low-high-close
 /// TradeStation bar path: open, nearer extreme, other extreme, close.
 fn path(x: &Ctx, i: usize) -> [f64; 4] {
     let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+    #[cfg(test)]
+    match FORCE_PATH.with(|f| f.get()) { 1 => return [o, h, l, c], 2 => return [o, l, h, c], _ => {} }
     if o - l < h - o { [o, l, h, c] } else { [o, h, l, c] }
 }
 
@@ -397,18 +401,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NeedsData("futures point value: trailing threshold $3,000 (maxPositionProf*BigPointValue) and SetStopLoss(3000)"),
             &["E|if marketposition <> 1 then buy tomorrow at Highest(high,10) on stop (p.316)",
               "X|after open profit * BigPointValue > 3000: ExitLong at EntryPrice + maxPositionProf*(1 - 25/100) stop; SetStopLoss(3000) (p.316)"], "No results printed."),
-        off!("pbwts_cot", "CotTrader (Commitment of Traders)", "Ch 8 · Research", "Long/Short",
-            NeedsData("CFTC Commitment of Traders commercial long/short history aligned to report dates (the CD's COT header files)"),
-            &["E|three bars after a COT report date: if bullPos > bearPos buy tomorrow at Open; if bullPos < bearPos sell short tomorrow at Open (p.174-175)"],
-            "Table 8.3 (p.175): S&P 500, 68 trades, 64.71% winners, avg $4,375.99."),
+        StrategyDef { id: "pbwts_cot", name: "CotTrader (Commitment of Traders)", group: "Ch 8 · Research", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false,
+            needs_vix: false, needs_series: &["COT_138741.CommLong", "COT_138741.CommShort"], book: BOOK,
+            rules: &["E|three bars after a COT report date: if bullPos > bearPos buy tomorrow at Open; if bullPos < bearPos sell short tomorrow at Open (p.174-175); bulls = bears: no action (p.175)",
+                     "X|no other exit: an opposite report reverses the position at the next open (stop and reverse, always in the market; Table 8.3 shows an open position)",
+                     "F|bullPos / bearPos = the commercial long / short of the report (cotBullsArray / cotBearsArray, the CD's COT files)",
+                     "F|DECLARED ADAPTATION: the book acts on the 3rd bar after the Tuesday report date (the Thursday close), before the Friday release; here a report is used only from the bar on or after its ReleaseDate (R4 #372), so the order is placed one trading day later (the next open after the release-date close)"],
+            notes: "Table 8.3 (p.175): S&P 500, 68 trades, 64.71% winners, net $297,567.50, avg $4,375.99, PF 3.92; no test window or costs are printed (the CD's COT arrays run from 1/15/1986 to 12/21/2001). Run on the Norgate &SP with the CFTC commercial long/short (COT_138741) from the first report that has a release date (1992-10-06). UNVERIFIED: the book's 16-year table cannot be compared with the 1992-10..1995-07 window the data and the open policy allow.",
+            claim: claim("68", "64.71%", "$4,375.99", "73 bars winners / 18 bars losers", "S&P 500 futures, window not printed (COT array 1986-2001), $250/pt") },
         off!("pbwts_time_of_day", "Time of day entry study", "Ch 8 · Research", "Long or Short",
             NeedsData("5-minute intraday S&P bars (entry after barDelay*5 minutes, exit on the close)"),
             &["E|buy/sell next bar at open when barCount = barDelay (5-min bars); SetExitOnClose (p.184-185)"], "Table 8.9 (p.185): 292 trades per run."),
-        off!("pbwts_intermarket", "Bond vs S&P intermarket system", "Ch 8 · Research", "Long/Short",
-            NeedsData("daily U.S. Treasury bond futures closes (data2)"),
-            &["E|if Average(Close of data2,8) crosses below Average(Close of data2,24) then buy(\"SPbuyUSdn\") next bar at High stop; crosses above then sellShort next bar at Low stop (p.192)",
-              "X|if MarketPosition = 1 then sell next bar at Lowest(Low,10) stop; if -1 then buyToCover next bar at Highest(High,10) stop (p.193)"],
-            "Table 8.11 (p.193): S&P 5/3/1996-4/19/2002, 29 trades, 37.93%, avg $1,294.40."),
+        live!("pbwts_intermarket", "Bond vs S&P intermarket system", "Ch 8 · Research", "Long/Short",
+            &["E|if Average(Close of data2,8) crosses below Average(Close of data2,24) then buy(\"SPbuyUSdn\") next bar at High stop; crosses above then sellShort(\"SPsellUSdn\") next bar at Low stop (p.192; Data2 = U.S. Treasury bond futures)",
+              "X|if MarketPosition = 1 then sell next bar at Lowest(Low,10) stop; if -1 then buyToCover next bar at Highest(High,10) stop (p.193); an opposite entry reverses"],
+            "Table 8.11 (p.193): S&P 5/3/1996-4/19/2002, 29 trades, 37.93% winners, net $37,537.50, avg $1,294.40, PF 1.33. Runs ONLY on the Norgate S&P 500 contract (&SP) with the Norgate T-bond contract (&ZB) as Data2 (R4 #340); the 8 and 24 day averages are over the bond's own bars. The book's window lies after the Norgate &SP open change of August 1995 (R4 #330).",
+            claim("29", "37.93%", "$1,294.40", "26 bars winners / 6 bars losers", "S&P 500 futures 5/3/1996-4/19/2002, $250/pt")),
         off!("pbwts_double_bottom", "Double bottom finite state machine", "Ch 8 · Research", "Long",
             NotTestable("a ShowMe study that only marks double bottoms; the book gives no order, exit or trade rule"),
             &["F|20-day low pivot, 5-day high pivot, second low pivot within one 10-day ATR, then 3 ATRs up, all within 30 bars (p.189-191)"], "Pattern finder only."),
@@ -468,6 +476,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "pbwts_ma_channel" => vec![p("ma", "movAvgLength1", 9., 3., 30., 1.), p("chan", "channelLength", 20., 5., 60., 5.)],
         "pbwts_percent_r" => vec![p("len", "percentR length", 14., 5., 30., 1.), p("lo", "Buy cross level", 20., 5., 40., 5.), p("hi", "Sell cross level", 80., 60., 95., 5.),
             p("chan", "Entry channel", 3., 1., 10., 1.), p("mult", "Range multiple stop", 1.5, 0.5, 3., 0.25)],
+        "pbwts_cot" => vec![],
+        "pbwts_intermarket" => vec![p("fast", "Average(Close of data2, n) fast", 8., 3., 20., 1.), p("slow", "Average(Close of data2, n) slow", 24., 10., 60., 1.), p("exit_len", "Lowest(Low,n) / Highest(High,n) exit", 10., 5., 30., 1.)],
         "pbwts_super_combo" => vec![p("stop_amt", "protStopAmt: protective stop floor (S&P points)", 3.0, 0., 20., 0.25), p("app_b", "Appendix B 2000i listing (1 = 0.80, barCount >= 6, BarsSinceEntry > 4)", 0., 0., 1., 1.)], // intraday EP block (K44)
         "pbwts_dow_oc" | "pbwts_dow_oo" => vec![p("buy_or_sell", "buyOrSell (1 buy, 2 sell)", 1., 1., 2., 1.), p("which_day", "whichDay (1 Mon .. 5 Fri)", 1., 1., 5., 1.)],
         _ => return None,
@@ -581,6 +591,33 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     if st.mp() == B { v.push(exit(S, Stop, avg, "LongLiq")); }
                     if st.mp() == S { v.push(exit(B, Stop, avg, "ShortLiq")); }
                 }
+                v
+            })
+        }
+        "pbwts_cot" => {
+            // report released on bar i (the first bar on or after its ReleaseDate: the extra series changes there); order for the next open
+            let (Some(cl), Some(cs)) = (x.series("COT_138741.CommLong"), x.series("COT_138741.CommShort")) else { return Some(vec![]) };
+            sim(x, from, to, |i, _| {
+                let new = cl[i].is_finite() && cs[i].is_finite() && (i == 0 || !cl[i - 1].is_finite() || cl[i - 1] != cl[i] || cs[i - 1] != cs[i]);
+                if !new { return vec![]; }
+                if cl[i] > cs[i] { vec![entry(B, Open, f64::NAN, "COT Buy")] } else if cl[i] < cs[i] { vec![entry(S, Open, f64::NAN, "COT Sell")] } else { vec![] }
+            })
+        }
+        "pbwts_intermarket" => {
+            // Data2 = Norgate &ZB joined by date (second::align); Average(Close of data2, n) over the bond's own bars, a S&P date without a bond bar shows the previous bond bar
+            let Some(zb) = crate::futures::rows("&ZB").filter(|_| crate::futures::ctx_market(x).is_some()) else { return Some(vec![]) }; // readiness refuses (data2_issue)
+            let z = crate::second::align("&ZB", x.r, zb);
+            let (fa, sl, xl) = (u("fast"), u("slow"), u("exit_len"));
+            let (m1, m2) = (z.own(|r| sma(&r.iter().map(|q| q.close).collect::<Vec<_>>(), fa)), z.own(|r| sma(&r.iter().map(|q| q.close).collect::<Vec<_>>(), sl)));
+            let (lo, hi) = (lowest(l, xl), highest(h, xl));
+            sim(x, from, to, |i, st| {
+                let mut v = vec![];
+                if i >= 1 && [m1[i], m2[i], m1[i - 1], m2[i - 1]].iter().all(|q| q.is_finite()) {
+                    if m1[i - 1] >= m2[i - 1] && m1[i] < m2[i] { v.push(entry(B, Stop, h[i], "SPbuyUSdn")); }
+                    if m1[i - 1] <= m2[i - 1] && m1[i] > m2[i] { v.push(entry(S, Stop, l[i], "SPsellUSdn")); }
+                }
+                if st.mp() == B { v.push(exit(S, Stop, lo[i], "Long exit")); }
+                if st.mp() == S { v.push(exit(B, Stop, hi[i], "Short exit")); }
                 v
             })
         }
@@ -803,6 +840,52 @@ fn super_combo(x: &Ctx, from: usize, to: usize, amt: f64, app_b: bool) -> Vec<Tr
 mod tests {
     use super::*;
     use crate::Row;
+    /// Lane F3 report (ignored; needs the Norgate files): id = pbwts_cot | pbwts_intermarket on &SP (+ &ZB / the COT file), trades to F3_OUT,
+    /// share of trades that differ between the two intrabar paths (R4 #240), fills at an open. F3_FUT = futures/norgate-20200908, F3_COT = COT_138741.csv.
+    #[test]
+    #[ignore]
+    fn f3_report() {
+        let dir = std::env::var("F3_FUT").unwrap();
+        let id = std::env::var("F3_ID").unwrap();
+        let rd = |sym: &str| -> Vec<Row> {
+            let raw: std::collections::HashSet<String> = std::fs::read_to_string(format!("{dir}/{sym}.csv")).unwrap().lines().skip(1).map(|l| l.split(',').next().unwrap().trim_matches('"').to_string()).collect();
+            std::fs::read_to_string(format!("{dir}/{sym}_CCB.csv")).unwrap().lines().skip(1).filter_map(|l| {
+                let f: Vec<f64> = l.split(',').skip(3).take(4).map(|v| v.trim_matches('"').parse().unwrap()).collect();
+                let d = l.split(',').next().unwrap().trim_matches('"').to_string();
+                raw.contains(&d).then(|| Row { ticker: sym.into(), date: d, open: f[0], high: f[1], low: f[2], close: f[3], volume: None })
+            }).collect()
+        };
+        let tk = crate::futures::ticker(crate::futures::MARKETS.iter().find(|m| m.sym == "&SP").unwrap());
+        let (sp, zb): (Vec<Row>, Vec<Row>) = (rd("&SP").into_iter().map(|r| Row { ticker: tk.clone(), ..r }).collect(), rd("&ZB"));
+        crate::futures::TEST_ROWS.with(|t| t.borrow_mut().insert("&ZB", Box::leak(zb.into_boxed_slice())));
+        let (a, b) = (std::env::var("F3_FROM").unwrap(), std::env::var("F3_TO").unwrap());
+        let mut x = Ctx::new(&sp, &sp, &[]);
+        if let Ok(cf) = std::env::var("F3_COT") {
+            let (mut l, mut sh) = (std::collections::BTreeMap::<String, f64>::new(), std::collections::BTreeMap::<String, f64>::new());
+            for line in std::fs::read_to_string(cf).unwrap().lines().skip(1) { let f: Vec<&str> = line.split(',').collect();
+                if f[1].is_empty() { continue; } l.insert(f[1].into(), f[4].parse().unwrap()); sh.insert(f[1].into(), f[5].parse().unwrap()); }
+            for k in ["COT_138741.CommLong", "COT_138741.CommShort"] { crate::release::mark(k); }
+            x.extra.insert("COT_138741.CommLong".into(), crate::release::column("COT_138741.CommLong", sp.iter().map(|r| r.date.as_str()), &l));
+            x.extra.insert("COT_138741.CommShort".into(), crate::release::column("COT_138741.CommShort", sp.iter().map(|r| r.date.as_str()), &sh));
+        }
+        let i0 = sp.iter().position(|r| r.date >= a).unwrap();
+        let i1 = sp.iter().rposition(|r| r.date <= b).unwrap();
+        let key = |ts: &[Trade]| ts.iter().map(|t| format!("{} {} {} {}", sp[t.legs[0].i].date, t.dir, t.legs[0].px, if t.open { String::new() } else { format!("{} {}", sp[t.exit_i].date, t.exit_px) })).collect::<Vec<_>>();
+        let go = |path: u8| { FORCE_PATH.with(|f| f.set(path)); let r = run(&id, &x, i0, i1, &Params::new()).unwrap(); FORCE_PATH.with(|f| f.set(0)); r };
+        let (d, p1, p2) = (go(0), go(1), go(2));
+        let (kd, k1, k2) = (key(&d), key(&p1), key(&p2));
+        let diff = kd.iter().filter(|k| !k1.contains(k) || !k2.contains(k)).count();
+        let v: Vec<f64> = d.iter().filter(|t| !t.open).map(|t| (t.exit_px - t.legs[0].px) * t.dir * 250.).collect();
+        let at_open = d.iter().filter(|t| (t.legs[0].px == sp[t.legs[0].i].open && t.entry_kind != "open") || (!t.open && t.exit_px == sp[t.exit_i].open && !t.reason.contains("open"))).count();
+        let gross_w: f64 = v.iter().filter(|q| **q > 0.).sum(); let gross_l: f64 = -v.iter().filter(|q| **q < 0.).sum::<f64>();
+        println!("F3 {id} {a}..{b}: trades {} closed {} win {:.2}% net ${:.2} avg ${:.2} PF {:.3} gross-win {gross_w:.2} gross-loss {gross_l:.2}; order-dependent {diff} = {:.1}%; stop fills at the open {at_open}",
+            d.len(), v.len(), 100. * v.iter().filter(|q| **q > 0.).count() as f64 / v.len().max(1) as f64, v.iter().sum::<f64>(), v.iter().sum::<f64>() / v.len().max(1) as f64, gross_w / gross_l, 100. * diff as f64 / d.len().max(1) as f64);
+        if let Ok(o) = std::env::var("F3_OUT") {
+            let mut s = String::from("entry_date,side,entry_px,exit_date,exit_px,open\n");
+            for t in &d { s += &format!("{},{},{},{},{},{}\n", sp[t.legs[0].i].date, t.dir, t.legs[0].px, sp[t.exit_i].date, t.exit_px, t.open); }
+            std::fs::write(o, s).unwrap();
+        }
+    }
     /// Super Combo (lane K44) on hand-built minutes: yesterday's open = close (a small range bar), a buy-easier day; the
     /// 10:15 minute gaps to 100.5 and trades up through LBreakOut (open 100 + 0.30 x 2.9 = 100.87), then rises to the close:
     /// one long at the buy stop, out on the close (SetExitOnClose).
