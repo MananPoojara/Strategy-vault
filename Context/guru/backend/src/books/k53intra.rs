@@ -28,6 +28,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "baboops_stoops_rules" => vec![pd("gap", "Minimum opening gap, ticks (rule 1: 15; the book's July 1997 notice: 30)", 15., 0., 60., 5.),
             pd("early", "Enter this many ticks before the gap closes (rule 1: 2)", 2., -10., 10., 1.), pd("cap", "Stop cap in S&P points ($1,500 at $500 a point)", 3., 0.5, 20., 0.25),
             pd("tick", "Tick in index points (S&P 0.05)", 0.05, 0.01, 1., 0.01)],
+        // H2e/H4: 15-day / 8-day channels and the 7.5-day time exit on 2-hour bars, in BARS (4 bars a session day: 60 / 32 / BarsSinceEntry > 29)
+        "rwmts_2h_cb15_8" => vec![pd("entry", "Entry channel in 2-hour bars (15 days x 4 bars)", 60., 8., 200., 4.), pd("exit", "Exit channel in 2-hour bars (8 days x 4 bars)", 32., 4., 120., 4.),
+            pd("time", "Exit when BarsSinceEntry exceeds (7.5 days: the code's 14 for 15 days, p.84, halved -> 29 bars of a 4-bar day)", 29., 4., 100., 1.)],
         "rwmts_2h_rsi400" | "rwmts_60m_rsi200h" => vec![stop(2.5)],
         "rwmts_30m_rsi100h" => vec![stop(1.5)],
         // decision #248 (3): Tables 5.13-5.14 print an S&P (SP) row, 0.5% stop (p.101); the Nasdaq-100 row's 1% is the option
@@ -52,6 +55,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "mlhpt_ma3" => ma3(x, from, to, g("fast").round() as usize, g("mid").round() as usize, g("slow").round() as usize),
         "baboops_stoops_rules" => { let t = g("tick"); stoops(x, from, to, g("gap") * t, g("early") * t, g("cap"), t) }
         "rwmts_2h_rsi400" => rw(120, Sys::RsiExt),
+        "rwmts_2h_cb15_8" => rwmts(x, from, to, 120, Sys::Chan(g("entry").round() as usize, g("exit").round() as usize, g("time").round() as usize), 0.0),
         "rwmts_60m_rsi200h" => rw(60, Sys::RsiExt),
         "rwmts_30m_rsi100h" => rw(30, Sys::RsiExt),
         "rwmts_15m_5m_rsi" => rw(if g("bars") < 10. { 5 } else { 15 }, Sys::RsiExt),
@@ -64,12 +68,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 /// Minute-walker state: the position (dir, entry px, entry day row, kind), trades closed in the walk, the day row, a flag
 /// (or30: twice the range reached) and the orders placed for this bar.
 #[derive(Clone, Default)]
-struct St { pos: Option<(f64, f64, usize, &'static str)>, done: Vec<(f64, f64, usize, usize, f64, &'static str, &'static str)>, i: usize, k: bool, live: Vec<Ord> }
+struct St { ne: usize, pos: Option<(f64, f64, usize, &'static str)>, done: Vec<(f64, f64, usize, usize, f64, &'static str, &'static str)>, i: usize, k: bool, live: Vec<Ord> }
 impl St {
     fn dir(&self) -> f64 { self.pos.map_or(0.0, |p| p.0) }
     fn enter(&mut self, d: f64, px: f64, kind: &'static str) {
         if self.dir() == d { return; }
         self.exit(px, "reverse");
+        self.ne += 1;
         self.pos = Some((d, px, self.i, kind));
         self.k = false;
     }
@@ -274,7 +279,7 @@ fn stoops_fill(m: &[Bar1], d: f64, lv: f64, cap: f64, tick: f64) -> Option<(f64,
 }
 
 #[derive(Clone, Copy)]
-enum Sys { RsiExt, StochCci(usize, usize), Seven(f64), RsiCross(f64) }
+enum Sys { Chan(usize, usize, usize), RsiExt, StochCci(usize, usize), Seven(f64), RsiCross(f64) }
 
 /// Weissman's Chapter 4/5 CQG systems on one continuous series of session-aligned N-minute bars (day session): signals on
 /// the close of bar s fill at the open of bar s+1 (its first minute's open); an opposite signal reverses; condition exits
@@ -283,6 +288,7 @@ enum Sys { RsiExt, StochCci(usize, usize), Seven(f64), RsiCross(f64) }
 fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Trade> {
     let mut out = vec![];
     let bars = series(x, from, to, n);
+    if let Sys::Chan(ne, nx, tm) = sys { return chan(&bars, ne, nx, tm); }
     let c: Vec<f64> = bars.iter().map(|b| b.c).collect();
     let nb = c.len();
     let (ri, ro, ma) = (rsi(&c, 9), rsi(&c, 14), sma(&c, 200));
@@ -306,6 +312,7 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
             Sys::StochCci(..) => if xb(&ssd, 15.0, s) && cc[s] < -100.0 { 1.0 } else if xa(&ssd, 85.0, s) && cc[s] > 100.0 { -1.0 } else { 0.0 },
             Sys::Seven(_) => if s < 7 { 0.0 } else if (s - 7..s - 1).all(|k| c[k] > c[k + 1]) && c[s - 1] < c[s] { 1.0 }
                 else if (s - 7..s - 1).all(|k| c[k] < c[k + 1]) && c[s - 1] > c[s] { -1.0 } else { 0.0 },
+            Sys::Chan(..) => 0.0,
             Sys::RsiCross(_) => if s > 0 && ro[s - 1] < 25.0 && xa(&ro, 25.0, s) { 1.0 } else if s > 0 && ro[s - 1] > 75.0 && xb(&ro, 75.0, s) { -1.0 } else { 0.0 },
         }
     };
@@ -315,7 +322,7 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
             // BarsSinceEntry at the signal bar s: s - ei (0-based, TradeStation) + cnt (1 = CQG counts the entry bar as 1, #248 (2))
             Sys::StochCci(b, cnt) => if (d > 0.0 && xa(&ssd, 30.0, s)) || (d < 0.0 && xb(&ssd, 70.0, s)) { Some("SSD exit cross") } else if s >= ei && s + cnt - ei > b { Some("time exit") } else { None },
             Sys::Seven(_) => (s >= 6 && (s - 6..s).all(|k| if d > 0.0 { c[k] < c[k + 1] } else { c[k] > c[k + 1] })).then_some("seven-period reversal exit"),
-            Sys::RsiCross(_) => None,
+            Sys::RsiCross(_) | Sys::Chan(..) => None,
         }
     };
     let tgt = match sys { Sys::Seven(t) | Sys::RsiCross(t) => t, _ => f64::NAN };
@@ -334,6 +341,33 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
         let e = ent(s);
         if e != 0.0 && st.dir() != e { st.enter(e, z.o, "open"); ei = t; }
         if st.pos.is_some() { for q in &z.m { st.walk(q, &orders, &fill); } }
+        st.flush(&mut out);
+    }
+    if let Some(z) = bars.last() { st.finish(&mut out, z.i, z.c); }
+    out
+}
+
+/// Weissman ch.3 pp.59-60 / ch.5 pp.91-93 channel breakout with price orders (H2e section 1): Long Entry and Short Exit at the
+/// prior `ne`/`nx`-bar high/low (the current bar excluded), Short Entry and Long Exit at the prior low/high; a level order fills at
+/// the level in the first minute that touches it, at the open when the minute opens through it (n1intra::minute, minute order);
+/// flat is allowed, one position; time exit: BarsSinceEntry (entry bar = 1, #248 (2)) > `tm` at a bar's close -> next open.
+fn chan(bars: &[B], ne: usize, nx: usize, tm: usize) -> Vec<Trade> {
+    let mut out = vec![];
+    let (mut st, mut ei) = (St::default(), 0usize);
+    let ext = |t: usize, n: usize| (bars[t - n..t].iter().map(|b| b.h).fold(f64::MIN, f64::max), bars[t - n..t].iter().map(|b| b.l).fold(f64::MAX, f64::min));
+    for t in ne.max(nx)..bars.len() {
+        let z = &bars[t];
+        st.i = z.i;
+        if st.pos.is_some() && t - ei > tm { st.exit(z.o, "time exit"); } // BarsSinceEntry at the close of bar t-1 = t-ei
+        let ((eh, el), (xh, xl)) = (ext(t, ne), ext(t, nx));
+        let orders = |s: &St| -> Vec<Ord> {
+            match s.pos { Some((d, ..)) if d > 0.0 => vec![ord(false, xl, 3)], Some(_) => vec![ord(true, xh, 4)],
+                None => vec![ord(true, eh, 1), ord(false, el, 2)] }
+        };
+        let fill = |s: &mut St, tag: u8, px: f64| match tag { 1 => s.enter(1.0, px, "stop"), 2 => s.enter(-1.0, px, "stop"), 3 => s.exit(px, "8-day low"), _ => s.exit(px, "8-day high") };
+        let n0 = st.ne;
+        for q in &z.m { st.walk(q, &orders, &fill); }
+        if st.ne != n0 { ei = t; }
         st.flush(&mut out);
     }
     if let Some(z) = bars.last() { st.finish(&mut out, z.i, z.c); }
@@ -396,10 +430,11 @@ mod tests {
             let from = rows.partition_point(|r| r.date.as_str() < x.minutes.unwrap().first());
             let opts: &[(&str, &[(&str, f64)])] = &[("jb30d_or30", &[]), ("stad7_idbo", &[]), ("stad7_fibret", &[]), ("stad7_fibret", &[("r66", 1.)]), ("mlhpt_ma3", &[]),
                 ("baboops_stoops_rules", &[]), ("baboops_stoops_rules", &[("gap", 30.)]), ("jchr1_lizard_long", &[]), ("jchr1_lizard_short", &[]), ("tdperl_rebo", &[]),
-                ("rwmts_2h_rsi400", &[]), ("rwmts_2h_stoch_cci", &[]), ("rwmts_60m_rsi200h", &[]), ("rwmts_60m_seven", &[]), ("rwmts_60m_rsi_cross", &[]),
+                ("rwmts_2h_rsi400", &[]), ("rwmts_2h_cb15_8", &[]), ("rwmts_2h_stoch_cci", &[]), ("rwmts_60m_rsi200h", &[]), ("rwmts_60m_seven", &[]), ("rwmts_60m_rsi_cross", &[]),
                 ("rwmts_30m_rsi100h", &[]), ("rwmts_30m_rsi100h", &[("stop", 2.5)]), ("rwmts_30m_rsi_cross", &[]), ("rwmts_15m_5m_rsi", &[]), ("rwmts_15m_5m_rsi", &[("bars", 5.)]),
                 ("rwmts_15m_5m_rsi", &[("stop", 1.)]), ("rwmts_2h_stoch_cci", &[("count", 0.)])]; // + K61 (#248 options)
             for (id, kv) in opts {
+                if std::env::var("K53_ID").is_ok_and(|o| o != *id) { continue; } // H4: dump one id only
                 if *id == "baboops_stoops_rules" && t != "SPX" { continue; }
                 if id.starts_with("jchr1") && t != "SPY" { continue; }
                 let mut p = Params::new();

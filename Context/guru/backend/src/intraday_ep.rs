@@ -140,7 +140,7 @@ pub const K55: &[&str] = &["jbcdt_ctod", "jbcdt_pop", "jbcdt_mac", "jbudt_pop", 
 // ---- lane K53 block (5 Nov 2026, decision #229; authors/titles-1030/K53.tsv; books/k53intra.rs, books/jchr1.rs)
 /// No fixed amount: all four minute tickers (Bernstein 30MBO 30-minute, STAD7 10/5-minute, Link 5-minute, Weissman's
 /// Nasdaq-100 tables on 2-hour/60/30/15/5-minute bars).
-pub const K53: &[&str] = &["jb30d_or30", "stad7_idbo", "stad7_fibret", "mlhpt_ma3", "rwmts_2h_rsi400", "rwmts_2h_stoch_cci",
+pub const K53: &[&str] = &["jb30d_or30", "stad7_idbo", "stad7_fibret", "mlhpt_ma3", "rwmts_2h_rsi400", "rwmts_2h_stoch_cci", "rwmts_2h_cb15_8",
     "rwmts_60m_rsi200h", "rwmts_60m_seven", "rwmts_60m_rsi_cross", "rwmts_30m_rsi100h", "rwmts_30m_rsi_cross", "rwmts_15m_5m_rsi"];
 // baboops_stoops_rules (STOOPS as traded, S&P points, SPX only) is coded in books/k53intra.rs but held: 23.8% of its SPX trades
 // depend on the order inside one minute (decision #175 limit 5%), and #177b flags it (K53w/check177.out).
