@@ -50,12 +50,10 @@
   font-display: swap;
   src: url(fonts/Inter-var-latin.woff2) format('woff2');
 }
-/* Familjen Grotesk (Tradelist), latin subset, variable weight 400-600, SIL Open Font License; self-hosted because the site CSP blocks fonts.googleapis.com */
-@font-face {
-  font-family: 'Familjen Grotesk';
-  font-style: normal;
-  font-weight: 400 600;
-  font-display: swap;
-  src: url(fonts/FamiljenGrotesk-latin.woff2) format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
+/* Global type, matched to the signals app (19 Nov 2026): Familjen Grotesk (UI, numbers), Plus Jakarta Sans (headings),
+   Courier Prime, RupeeSm (Plus Jakarta's rupee glyph only). All SIL Open Font License, self-hosted (site CSP blocks Google Fonts). */
+@font-face { font-family: 'Familjen Grotesk'; src: url(fonts/FamiljenGrotesk-var.woff2) format('woff2'); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Plus Jakarta Sans'; src: url(fonts/PlusJakartaSans-var.woff2) format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Courier Prime'; src: url(fonts/CourierPrime-Regular.woff2) format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Courier Prime'; src: url(fonts/CourierPrime-Bold.woff2) format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'RupeeSm'; src: url(fonts/PlusJakartaSans-var.woff2) format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; size-adjust: 72%; unicode-range: U+20B9; }
