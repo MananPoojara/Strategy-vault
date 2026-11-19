@@ -58,7 +58,7 @@ export const resetSnapshotDetail = () => { snapshotDetailLoad = undefined; };
 
 /** claude-work-daily.json (authors/research-detail/build_daily_work.py): one row per IST day, newest first. */
 export interface DailyWorkRow {
-  date: string; new: number; backtested_day: number; bt_minutes: number; bt_tokens: number; errors_solved: number; fix_minutes: number; fix_tokens: number;
+  date: string; new: number; backtested_day: number; bt_minutes: number | null; bt_tokens: number | null; errors_solved: number; fix_minutes: number | null; fix_tokens: number | null;
   newly_held: number | null; newly_held_list: { strategy: string; book: string; reason: string }[]; held: number; backtested_total: number; books_added: number;
   deploys: number; worked_by: string; avg_tokens_per_strategy: number | null; proof: string;
 }

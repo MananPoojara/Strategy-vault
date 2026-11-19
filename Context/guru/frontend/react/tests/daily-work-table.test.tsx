@@ -24,3 +24,4 @@ it("renders the 16 headers in order, formatted cells and the held list", async (
   expect(host.textContent).toContain("Needs option prices");
 });
 it("formats", () => { expect(fmtTokens(1234567)).toBe("1.2M"); expect(fmtTokens(340400)).toBe("340k"); expect(fmtTime(65)).toBe("1:05"); expect(fmtDate("2026-11-01")).toBe("01/11/2026"); });
+it("dashes for missing sessions", () => { expect(fmtTime(null)).toBe("—"); expect(fmtTokens(null)).toBe("—"); });

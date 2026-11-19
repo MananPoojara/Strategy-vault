@@ -11,8 +11,8 @@ export const DAILY_HEADERS = ["Date", "New strategies added", "Strategies backte
   "Newly held (with reason)", "Held balance (end of day)", "Backtested total (end of day)", "Books added", "Deploys", "Worked by", "Avg tokens per strategy", "Proof"];
 const NUMERIC = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
 export const fmtDate = (iso: string) => iso.split("-").reverse().join("/");
-export const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
-export const fmtTime = (min: number) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+export const fmtTokens = (n: number | null) => n == null ? "—" : (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+export const fmtTime = (min: number | null) => min == null ? "—" : `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
 
 /** The daily table: one row per IST day, newest first; "Newly held" opens the list of strategies with their reasons. */
 export function DailyWorkTable({ data }: { data: DailyWork }) {
@@ -33,7 +33,7 @@ export function DailyWorkTable({ data }: { data: DailyWork }) {
           ))}</tbody>
         </table>
       </div>
-      <p className="rp-small rp-muted">Time is active minutes in Claude Code sessions (gaps of 10 minutes or less between messages, IST days); tokens are input + output + cache-creation tokens of those sessions, sorted into backtesting and error-fixing lanes by project folder. Other work (lead, frontend, covers) is in the data file only.</p>
+      <p className="rp-small rp-muted">Time is active minutes in Claude Code sessions (gaps of 10 minutes or less between messages, IST days); tokens are input + output + cache-creation tokens of those sessions, sorted into backtesting and error-fixing lanes by project folder; a dash means no session of that kind that day (Codex-led work on 14-16 Nov is not in Claude's logs). Strategy errors solved = verifier tracker rows answered FIXED/Live. Other work (lead, frontend, covers) is in the data file only.</p>
     </div>
   );
 }
