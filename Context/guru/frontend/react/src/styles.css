@@ -791,20 +791,18 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .ghero-book h1 { font-size: clamp(28px, 3.2vw, 44px); font-stretch: 110%; line-height: 1.1; letter-spacing: -.02em; margin: 0 0 10px; max-width: 26ch; }
 .ghero-book .lede { font-size: 16px; }
 .ghero-book .guru-portrait .portrait { width: 150px; height: 172px; padding: 5px; }
-.shelf.book-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px 22px; }
-.shelf.book-grid .bookcard { display: flex; flex-direction: column; gap: 12px; padding: 0; background: none; border: 0; box-shadow: none; transform: none; }
+.shelf.book-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 30px 22px; }
+.shelf.book-grid .bookcard { position: relative; display: flex; flex-direction: column; gap: 0; padding: 0; background: none; border: 0; box-shadow: none; transform: none; }
 .shelf.book-grid .book-cover-link { display: block; align-self: stretch; width: 100%; }
-.shelf.book-grid .cover3d { width: 100%; height: auto; aspect-ratio: 5 / 6; }
-.shelf.book-grid .c3-face { padding: 26px 22px 18px 26px; }
-.shelf.book-grid .c3-title { font-size: clamp(18px, 1.7vw, 24px); line-height: 1.15; }
-.shelf.book-grid .bc-body { display: flex; flex-direction: column; gap: 6px; }
-.shelf.book-grid h3 { margin: 0; font-size: 15px; line-height: 1.3; }
+.shelf.book-grid .cover3d, .shelf.book-grid .cover-img { width: 100%; height: auto; aspect-ratio: 2 / 3; }
+.shelf.book-grid .cover-img { border-radius: 3px; overflow: hidden; box-shadow: 0 12px 24px -14px rgb(0 0 0 / .6); transition: transform .25s; }
+.shelf.book-grid .cover-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shelf.book-grid .bookcard:hover .cover-img { transform: translateY(-3px); }
+.shelf.book-grid .c3-face { padding: 14px 10px 10px 16px; }
+.shelf.book-grid .c3-author { font-size: 8px; }
+.shelf.book-grid .c3-title { font-size: 14px; line-height: 1.15; -webkit-line-clamp: 6; }
+.shelf.book-grid .c3-year { font-size: 9px; }
+.shelf.book-grid .cover-chip { position: absolute; top: 7px; right: 7px; padding: 2px 6px; border-radius: 20px; background: #fff; color: #111; font: 600 10px "IBM Plex Mono", monospace; box-shadow: 0 2px 6px rgb(0 0 0 / .25); pointer-events: none; }
+.shelf.book-grid h3 { margin: 10px 0 2px; font-size: 12.5px; line-height: 1.3; }
 .shelf.book-grid h3 a { color: var(--ink); }
-.shelf.book-grid .bc-meta { font-size: 12px; color: var(--ink3); }
-.shelf.book-grid .bc-blurb { font-size: 12.5px; line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-.shelf.book-grid .book-types { margin: 2px 0 0; }
-.shelf.book-grid .category-pending { display: none; }
-.shelf.book-grid .bc-stats { grid-template-columns: 1fr 1fr; padding: 8px 0 0; border-bottom: 0; margin: 2px 0 0; }
-.shelf.book-grid .bc-stats dd { font-size: 16px; }
-@media (max-width: 1100px) { .shelf.book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .shelf.book-grid { grid-template-columns: 1fr; } }
+.shelf.book-grid .bc-meta { font-size: 11px; color: var(--ink3); }
