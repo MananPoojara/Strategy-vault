@@ -31,3 +31,8 @@ Indian instruments (NIFTY 50, basket:nifty50:RELIANCE): the engine refuses with 
 
 ## Before/after (Manan build b8e5d73a vs this branch), 8 existing ids x SPY, basket:us_dow30:AAPL, NIFTY 50, basket:nifty50:RELIANCE
 ids: arebta_tt, arebta_e_br, arebta_d_br, stad1_sr, nftm_accutrack, thnhl_ema55, dmutil_ud, kdta_nh_nl. 32 of 32 dumps byte-identical (cmp), 17 of them with trade data: 0 changed, 0 lost.
+
+## Review fixes (R4 #372, #340), same day
+- Rate inputs (36 PT10Y, 39 DURSPD) are read one bar late by default (parameter `lag` = 1; H.15 publishes day t on t+1 afternoon); `lag` = 0 is the labelled same-day LOOK-AHEAD option. Re-run reference diff: default 8,064 trades (6 cards x SPY, QQQ, SPX), 0 mismatches (e.g. arebta_d_pt10y SPY 927 trades, was 935 same-day); lag 0 option 6,038 trades (3 rate cards x 3), 0 mismatches. Reference shifts the rate series by `lag` traded bars before anything else.
+- Card text states: DGS10 (constant maturity) and DTB3 (3-month, secondary market, discount basis) stand in for the book's 10-year and 3-month yields (R4 #340); HLR cards: NYSE_ADV_DEC 1965-03-01..2020-02-10, #NYSEHI/#NYSELO 1932-08-03..2020-09-04, card ends 2020-02-10; DJTA ends 2020-09-04.
+- The change touches only the new ids' code path (`other_input`); the 32/32 before/after above was taken before it and is not repeated.

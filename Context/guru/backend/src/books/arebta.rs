@@ -31,10 +31,17 @@ static OTHER_CARDS: [(&str, &str, usize, &str, &[&str]); 6] = [
 ];
 fn other_card(id: &str) -> Option<&'static (&'static str, &'static str, usize, &'static str, &'static [&'static str])> { OTHER_CARDS.iter().find(|c| c.0 == id) }
 /// Input series of an `other` card on the days (indices into the context) where every needed value and the traded close exist.
-fn other_input(id: &str, x: &Ctx) -> Option<(Vec<usize>, Vec<f64>)> {
+fn other_input(id: &str, x: &Ctx, lag: usize) -> Option<(Vec<usize>, Vec<f64>)> {
     let c = other_card(id)?;
     let n = x.c.len();
-    let cols: Vec<&[f64]> = c.4.iter().map(|k| x.series(k)).collect::<Option<_>>()?;
+    let raw: Vec<&[f64]> = c.4.iter().map(|k| x.series(k)).collect::<Option<_>>()?;
+    // R4 #372: a FRED H.15 rate print for day t is published on t+1 in the afternoon, so the rate inputs (36, 39) read the previous trading bar's print
+    // by default (lag 1); lag 0 is the labelled same-day look-ahead option. Other inputs are end-of-day index / breadth series known at the close.
+    let shifted: Vec<Vec<f64>>;
+    let cols: Vec<&[f64]> = if matches!(c.2, 36 | 39) && lag > 0 {
+        shifted = raw.iter().map(|v| (0..n).map(|i| if i >= lag { v[i - lag] } else { f64::NAN }).collect()).collect();
+        shifted.iter().map(|v| v.as_slice()).collect()
+    } else { raw };
     let ok = |i: usize| x.c[i].is_finite() && cols.iter().all(|v| v[i].is_finite());
     let mut days: Vec<usize> = (0..n).filter(|&i| ok(i)).collect();
     let ma = |v: &[f64], w: usize| -> Vec<f64> { (0..v.len()).map(|j| if j + 1 < w { f64::NAN } else { v[j + 1 - w..=j].iter().sum::<f64>() / w as f64 }).collect() };
@@ -114,6 +121,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 const OTHER_NOTE: &str = "Lane H3b (19 Nov 2026, R4 #339/#343/#346). One card for one Table 8.2 input whose series the vault holds and whose rule Table 9.1 (p.445-447) prints; the printed rule ID is the default (Type-Input-Disp-Span for D and E, Input-Span for TT), the other grid values stay options. Declared readings, 3 unstated details and no more: (1) a day on which the input (or any of its parts) has no print is skipped, the sums / averages / channels count days with prints only and the position is unchanged; (2) a crossing is 'previous value on or at one side, today strictly beyond' (the book states no equality convention); (3) the rule trades the instrument's own next open, the S&P 500 only as the divergence reference (SPX close on the same date; the book traded the S&P 500; other US indices, ETFs and stocks are a declared application). Printed, not choices: the input definition, CN, the 4-day LMA of the E rule, the double normalisation 10n of the D rule, the 12 event-type tables, reversal only, next open. No detrending (the book scores detrended returns, p.391-392); one unit per trade; no costs. US only: the series are US series, so Indian instruments get the missing-series message. UNVERIFIED: the book prints return, p-values and confidence limits for the S&P 500 on detrended returns, no trade list. ";
+/// Per-card declared substitutions and data coverage (R4 #340, #372).
+fn other_label(id: &str) -> &'static str {
+    match id {
+        "arebta_d_pt10y" | "arebta_tt_pt10y" => "[R4 #340 declared adaptation] FRED DGS10 (10-year Treasury constant maturity, percent) stands in for the book's 10-year Treasury yield (p.417); the price is 100 / yield. [R4 #372] FRED H.15 publishes day t on t+1 in the afternoon, so the rule reads the PREVIOUS bar's print (parameter lag = 1, default); lag = 0 is the same-day reading, a LOOK-AHEAD option shown only for comparison. ",
+        "arebta_e_durspd" => "[R4 #340 declared adaptation] FRED DGS10 (10-year constant maturity) and DTB3 (3-month Treasury bill, SECONDARY MARKET RATE on a DISCOUNT basis) stand in for the book's 10-year and 3-month yields (p.417); the spread is DGS10 - DTB3 in percentage points. [R4 #372] H.15 publishes day t on t+1 in the afternoon, so both rates are read one bar late (parameter lag = 1, default); lag = 0 is a LOOK-AHEAD option. ",
+        "arebta_d_hlr10" | "arebta_d_hlr30" => "[Coverage] The ratio needs NYSE advancing / declining / unchanged issues (extra_data NYSE_ADV_DEC, 1965-03-01 to 2020-02-10) and the Norgate NYSE 52-week highs / lows (#NYSEHI / #NYSELO, 1932-08-03 to 2020-09-04): the card runs from 1965 and ends 2020-02-10 (auto-end), the book's window ended 2005-07-01. ",
+        "arebta_d_djta" => "[Coverage] Norgate $DJT close (1896-10-26 to 2020-09-04, SPX close on the same date from us_data.csv): the card ends 2020-09-04 (auto-end). ",
+        _ => "",
+    }
+}
 fn other_def(c: &'static (&'static str, &'static str, usize, &'static str, &'static [&'static str])) -> StrategyDef {
     let (id, kind, inp, name, series) = *c;
     let (rules, def_in, claim): (&'static [&'static str], &str, &str) = match id {
@@ -126,7 +143,7 @@ fn other_def(c: &'static (&'static str, &'static str, usize, &'static str, &'sta
     };
     let _ = (kind, inp);
     StrategyDef { id, name, group: "Ch.8 S&P 500 rule data-mining case study", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: series, book: "arebta", rules,
-        notes: Box::leak(format!("{OTHER_NOTE}Default {def_in}. Book: {claim}.").into_boxed_str()),
+        notes: Box::leak(format!("{OTHER_NOTE}{}Default {def_in}. Book: {claim}.", other_label(id)).into_boxed_str()),
         claim: Some(Claim { trades: "-", win: "-", avg: "see the printed Table 9.1 row (detrended S&P 500 returns, not a trade list)", hold: "-", period: "11/1/1980 - 7/1/2005, S&P 500 (Table 9.1 p.445-447; not significant after data-mining correction)" }) }
 }
 const NSE_TWINS: [(&str, &str, &str, &str); 4] = [
@@ -157,9 +174,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "arebta_e_br" | "arebta_e_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "E-rule type 1-12 (Table 8.3)", 12., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 30., 15., 60., 15.)],
         "arebta_d_br" | "arebta_d_br_nse" => vec![p("input", INPUTS, 28., 24., 29., 1.), p("type", "D-rule type 1-12 (Table 8.4)", 10., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", 30., 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close (labelled option)", 0., 0., 1., 1.)],
         "arebta_d_djta" | "arebta_d_hlr10" | "arebta_d_hlr30" | "arebta_d_pt10y" => { let (ty, di, sp) = match id { "arebta_d_djta" => (8., 10., 60.), "arebta_d_hlr10" => (8., 10., 30.), "arebta_d_hlr30" => (8., 10., 15.), _ => (7., 10., 30.) };
-            vec![p("type", "D-rule type 1-12 (Table 8.4)", ty, 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", di, 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", sp, 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close", 0., 0., 1., 1.)] }
-        "arebta_e_durspd" => vec![p("type", "E-rule type 1-12 (Table 8.3)", 11., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 60., 15., 60., 15.)],
-        "arebta_tt_pt10y" => vec![p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 5., 3., 205., 1.)],
+            vec![p("type", "D-rule type 1-12 (Table 8.4)", ty, 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", di, 10., 20., 10.), p("span", "First CN look-back n (book: 15, 30, 60); the second is 10n", sp, 15., 60., 15.), p("ref", "S&P 500 series: 0 = the SPX close (the book's, default); 1 = the traded instrument's own close", 0., 0., 1., 1.), p("lag", "Rate print lag in trading bars: 1 = the previous bar's H.15 print (default, R4 #372); 0 = same-day print = LOOK-AHEAD option (FRED publishes day t on t+1)", 1., 0., 1., 1.)] }
+        "arebta_e_durspd" => vec![p("type", "E-rule type 1-12 (Table 8.3)", 11., 1., 12., 1.), p("disp", "Threshold displacement from 50 (book: 10 or 20)", 10., 10., 20., 10.), p("span", "CN look-back N (book: 15, 30, 60)", 60., 15., 60., 15.), p("lag", "Rate print lag in trading bars: 1 = the previous bar's H.15 print (default, R4 #372); 0 = same-day print = LOOK-AHEAD option", 1., 0., 1., 1.)],
+        "arebta_tt_pt10y" => vec![p("n", "CBO look-back (book grid 3,5,8,12,18,27,41,61,91,137,205)", 5., 3., 205., 1.), p("lag", "Rate print lag in trading bars: 1 = the previous bar's H.15 print (default, R4 #372); 0 = same-day print = LOOK-AHEAD option", 1., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -201,7 +218,7 @@ fn output_br(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Vec<f64> {
     let card = id;
     let id = other_card(id).map_or(id.trim_end_matches("_nse"), |c| c.1); // lane H3b: the other-input cards run their br rule
     let mut out = vec![0.; x.c.len()];
-    let inp = if other(card) { other_input(card, x) } else { breadth_input(x, (g("input") as usize).clamp(24, 29), twin_nse) };
+    let inp = if other(card) { other_input(card, x, if matches!(other_card(card).map(|c| c.2), Some(36 | 39)) { g("lag") as usize } else { 0 }) } else { breadth_input(x, (g("input") as usize).clamp(24, 29), twin_nse) };
     let Some((mut days, mut s)) = inp else { return out };
     // R4 #288 (2): the divergence's S&P 500 = the SPX close on the same date (FOLLOWER_CLOSE, exact join); p.ref = 1: own close
     // the NSE twin: the NIFTY 50 close on the same date (BENCH.C; on NIFTY 50 itself its own close), as the NYSE rule uses the SPX close
@@ -338,16 +355,22 @@ mod tests {
         let r: Vec<Row> = pr.iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("{:04}-01-01", 2000 + i), open: c + 0.1, high: c + 1., low: c - 1., close: c, volume: None }).collect();
         let mut x = Ctx::new(&r, &r, &[]);
         x.extra.insert("DGS10".into(), pr.iter().map(|p| 100. / p).collect());
-        let t = run("arebta_tt_pt10y", &x, 0, 7, &prm(&[("n", 3.)])).unwrap();
+        let t = run("arebta_tt_pt10y", &x, 0, 7, &prm(&[("n", 3.), ("lag", 0.)])).unwrap();
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i, t[1].dir), (1., 4, 7, -1.)); // as tt3_reverses_on_next_open on the price 100 / yield
         x.extra.insert("DTB3".into(), vec![1.; 8]);
-        let (days, s) = other_input("arebta_e_durspd", &x).unwrap();
+        let (days, s) = other_input("arebta_e_durspd", &x, 0).unwrap();
         assert_eq!(days.len(), 8);
         assert!((s[0] - (10. - 1.)).abs() < 1e-12 && (s[3] - (100. / 13. - 1.)).abs() < 1e-12);
+        // R4 #372: the default reads the previous bar's rate print (lag 1): the first day has none, day k reads bar k-1
+        let (d1, s1) = other_input("arebta_e_durspd", &x, 1).unwrap();
+        assert_eq!((d1.len(), d1[0]), (7, 1));
+        assert!((s1[0] - (100. / pr[0] - 1.)).abs() < 1e-12 && (s1[3] - (100. / pr[3] - 1.)).abs() < 1e-12);
+        let t1 = run("arebta_tt_pt10y", &x, 0, 7, &prm(&[("n", 3.)])).unwrap(); // default lag 1: the price series is one bar late, so the long starts one bar later
+        assert_eq!((t1[0].dir, t1[0].legs[0].i), (1., 5));
         for (k, v) in [("NYSE_NEW_HIGHS", 30.), ("NYSE_NEW_LOWS", 10.), ("NYSE_ADV_DEC.Advances", 1000.), ("NYSE_ADV_DEC.Declines", 800.), ("NYSE_ADV_DEC.Unchanged", 200.)] { x.extra.insert(k.into(), vec![v; 8]); }
-        let (_, h) = other_input("arebta_d_hlr10", &x).unwrap();
+        let (_, h) = other_input("arebta_d_hlr10", &x, 0).unwrap();
         assert!(h.iter().all(|v| v.is_nan()), "10-day MA needs 10 days"); // only 8 bars
-        let (_, h) = other_input("arebta_d_hlr10", &x).map(|(d, s)| (d, s)).unwrap();
+        let (_, h) = other_input("arebta_d_hlr10", &x, 0).unwrap();
         assert_eq!(h.len(), 8);
         // the divergence cards need the SPX close: none loaded -> no trade
         assert!(run("arebta_d_djta", &x, 0, 7, &Params::new()).unwrap().is_empty());
