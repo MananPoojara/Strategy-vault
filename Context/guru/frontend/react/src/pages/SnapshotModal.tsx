@@ -37,7 +37,7 @@ export function DailyWorkTable({ data }: { data: DailyWork }) {
     </div>
   );
 }
-function DailyWorkSection() {
+export function DailyWorkSection() {
   const [d, setD] = useState<DailyWork | null | undefined>(undefined);
   useEffect(() => { let on = true; claudeWorkDaily().then(x => on && setD(x)); return () => { on = false; }; }, []);
   return <section className="rp-snap-sec"><h3>Daily work</h3>{d === undefined ? <p className="rp-small rp-muted">Loading...</p> : d ? <DailyWorkTable data={d} /> : <p className="rp-small rp-muted">Daily work is not available (claude-work-daily.json missing).</p>}</section>;
@@ -120,7 +120,6 @@ export function SnapshotModal({ ev, stats, at, healthStarts, onClose }: { ev: Sn
       <div className="rp-modal" role="dialog" aria-modal="true" aria-labelledby="rp-snap-t" ref={box}>
         <header><h2 id="rp-snap-t">Live snapshot · {ev?.at_ist ?? at} IST</h2><button type="button" onClick={onClose} aria-label="Close">Close</button></header>
         <div className="rp-snap-body" data-lenis-prevent>
-          <DailyWorkSection />
           {stats ? (
             <p className="rp-nums">
               <span><b>{num(stats.backtested)}</b> backtested<Delta now={stats.backtested} prev={prev?.backtested} /></span>

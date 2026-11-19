@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
 import { VerificationView } from "./VerificationView";
-import { SnapshotModal } from "./SnapshotModal";
+import { DailyWorkSection, SnapshotModal } from "./SnapshotModal";
 import {
   research, snapshotDetail, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
   type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareFolder, type ShareInventory, type ShareSource, type Site, type Strategy,
@@ -461,6 +461,7 @@ function ClaudeView() {
     <section>
       <h1>Claude's work</h1>
       <p className="rp-muted">What Claude, Codex and the author loop built, deploy by deploy, newest first. The number is how many strategies were backtested on the site after that step.</p>
+      <DailyWorkSection />
       <Problem error={list.error} retry={list.reload} />
       {!list.data ? <p className="rp-loading">Loading…</p> : (
         <>
