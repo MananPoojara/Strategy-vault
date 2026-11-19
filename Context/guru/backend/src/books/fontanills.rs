@@ -74,7 +74,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"When the VIX is high (>30), it's time to buy.\" (p.293); \"Remember, 30+ is generally considered a good entry point!\" (p.294): flat and the VXO closes above 30 -> buy",
               "X|\"When the VIX is low (<20), it's time to go.\" (p.293): long and the VXO closes below 20 -> sell",
               "F|p.src = 1 (labelled option): the market's own volatility index instead of the book's VXO: today's CBOE VIX (S&P 500 options, 1990-) on US instruments, the India VIX on NSE instruments (declared application)"],
-            note!("Long only (the book names no short). The VXO close (4:15 pm ET) comes after the stock market's 4:00 close, so a signal fills at the next session's open [declared]; while flat every close above 30 is a buy signal (a level, not a cross); 30 and 20 exactly give no signal. Runs where the VXO exists (to 2021-09-23, when the CBOE stopped it): US indices, ETFs and US stocks; India has no VXO (the India VIX is another index).")) },
+            note!("Long only (the book names no short). The VXO close (4:15 pm ET) comes after the stock market's 4:00 close, so a signal fills at the next session's open [declared]; while flat every close above 30 is a buy signal (a level, not a cross); 30 and 20 exactly give no signal. Runs where the VXO exists (to 2021-09-23, when the CBOE stopped it): US indices, ETFs and US stocks. [R4 #340 / #365 declared adaptation, UNVERIFIED] On Indian instruments the India VIX CLOSE stands in for the VXO close (the rule never reads the open; the India VIX is another index: NIFTY options, not S&P 100), with the book's 30 / 20 levels unchanged; measured firing rate over the overlap 2009-03-02..2021-09-23: India VIX closes above 30 on 8.4% of days against 7.8% for the VXO, and the buy-at-30 / out-at-20 cycle has 6 entries on the India VIX against 10 on the VXO. Data from 2009-03-02.")) },
         StrategyDef { claim: crate::connors::claim("20", "70%", "n/a", "weeks to months", "Select Sector SPDRs, 3 Jan 2000 - 21 Sep 2007, two bullish periods: 4 trades (3 gains) $5,000 -> $5,135, and 16 trades (11 gains) $5,000 -> $14,080 (Table 13-5, p.233-234)"),
             ..live("fgtofd_sector_tilt", "Select Sector SPDR tilt: hold the top 3-month ETF while SPY's 50-day SMA is above its 200-day", "Ch.13 · Tilting your portfolio with sector ETFs (p.230-234)", "fgtofd", "Long", false,
             &["F|\"Using SPY and the nine major Select Sector SPDR ETFs\" (Table 13-4: XLB XLE XLF XLI XLK XLP XLU XLV XLY) (p.231-232)",
@@ -263,7 +263,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
         }
         "fgsmc_vix" => { // lane K75 (R4 #279 (3))
-            let Some(v) = x.series(if g("src", 0.) >= 0.5 { "VIX.Close" } else { "VXO_OHLC.Close" }) else { return Some(vec![]) };
+            let Some(v) = x.series(if g("src", 0.) >= 0.5 || super::tselhs::india(x) { "VIX.Close" } else { "VXO_OHLC.Close" }) else { return Some(vec![]) };
             let (buy, sell) = (g("buy", 30.), g("sell", 20.));
             for i in from..to {
                 if cur.is_none() && v[i] > buy { cur = Some(trade(1., i + 1, o[i + 1], "open", i)); }

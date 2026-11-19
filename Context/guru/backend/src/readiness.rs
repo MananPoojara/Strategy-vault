@@ -69,6 +69,11 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
+/// Lane CV6 (R4 #340 / #365): on Indian instruments `fgsmc_vix` reads the India VIX close (VIX.Close) where the book's VXO close is not held; it never reads the open.
+fn india_vxo_close(def:&StrategyDef,ctx:&Ctx,mut required:Vec<&'static str>)->Vec<&'static str> {
+    if def.id=="fgsmc_vix" && crate::books::tselhs::india(ctx) {for n in required.iter_mut() {if *n=="VXO_OHLC.Close" {*n="VIX.Close";}}}
+    required
+}
 /// Lane IN2 (R4 #340): the futures daily-volume series of an India index context, for the ids that opt in (connors::FUT_VOL_IDS).
 fn fut_vol_of<'a>(ctx:&'a Ctx,def:&StrategyDef)->Option<&'a [f64]> {
     if !crate::connors::FUT_VOL_IDS.contains(&def.id) || !ctx.r.first().is_some_and(|r|r.ticker.starts_with("NIFTY")) {return None;}
@@ -90,7 +95,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     let minutes=minute_path(def,p);
     if let Some(m)=ctx.minutes.filter(|_|minutes) {ends.push((upto(m.last()),format!("1-minute bars for {ticker}")));}
     if let Some((_,last))=crate::options::coverage(def.id,ctx).filter(|_|crate::instrument_policy::options_p2(def)) {ends.push((upto(&last),format!("option prices for {ticker}")));}
-    for name in required_series(def,p,minutes).into_iter().filter(|n|!event_column(n)) {
+    for name in india_vxo_close(def,ctx,required_series(def,p,minutes)).into_iter().filter(|n|!event_column(n)) {
         if let Some(v)=ctx.series(name) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("{name} data")));}
     }
     if let Some(v)=fut_vol_of(ctx,def) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("futures volume figures for {ticker}")));}
@@ -115,7 +120,7 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
 /// refuses it with its own message). Used by main.rs admit() when auto_start alone cannot find a usable window.
 pub fn series_gaps(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(Vec<usize>,Option<&'static str>) {
     let mut gaps=std::collections::BTreeSet::new();let mut first=None;
-    for name in required_series(def,p,minute_path(def,p)).into_iter().filter(|n|!event_column(n)) {
+    for name in india_vxo_close(def,ctx,required_series(def,p,minute_path(def,p))).into_iter().filter(|n|!event_column(n)) {
         let Some(v)=ctx.series(name) else {continue};
         let before=gaps.len();
         gaps.extend((from..=to).filter(|&i|!v.get(i).is_some_and(|x|x.is_finite())));
@@ -658,7 +663,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if ctx.r[from].date.as_str()<first.as_str() { return issue("needs_data",format!("Option prices for this instrument begin on {first}. The selected period includes earlier days with no option prices; choose a fully covered period.")); }
         if ctx.r[to].date.as_str()>last.as_str() { return issue("needs_data",format!("Option prices for this instrument end on {last}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).")); }
     }
-    let required=required_series(def,p,minute_path);
+    let required=india_vxo_close(def,ctx,required_series(def,p,minute_path));
     if let Some(i)=crate::second::pair_issue(ctx,def.id,&required,p) {return Some(i);} // EP4 (#223 (7), #225): self-comparison, AccuTrack pair
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
