@@ -30,3 +30,26 @@ TOTAL ref trades 4701 mismatches 0
 
 ## Before/after (Manan c63f352f vs this branch, live data dirs)
 9 existing ids x SPY, basket:us_dow30:AAPL, NIFTY 50, basket:nifty50:RELIANCE: 36 of 36 byte-identical (0 changed, 0 lost); with the SUNSPOTS file present (private extra dir) the existing ids on the new binary are identical again (20 of 20). The new solar cards on the live dirs refuse with 'needs_data: Required market data is missing: SUNSPOTS' (US and India); the other dumps that differ are the new ids.
+
+## R4 #373 fix: causal default (same day)
+Default (parameter causal = 1): an event's response update is applied only when its 10 following closes exist (bar i + m reached); causal = 0 is the CD as printed, labelled 'reads future prices - NOT TRADABLE'. Counted as one labelled reading (3 counted details: real dates, whole history, causal update).
+
+Reference re-run (solar_ref.py replays earlier events from zero, a structure different from the engine's pending queue): 3 cards x 4 parameter sets (default, lb1 25 / lb2 10 / disp 1, each with causal 0 and 1) x SPY, QQQ, SPX: 6,573 trades, 0 mismatches.
+
+Independent causal check and look-ahead pair counts (causal_check.py; closes after an event bar replaced by random values, 80 sampled events per setting):
+```
+SPY lb1 35 lb2 15: event bars 358, same-direction pairs < m bars apart 1; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 1 of 80 changed
+SPY lb1 40 lb2 15: event bars 327, same-direction pairs < m bars apart 2; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+SPY lb1 25 lb2 10: event bars 515, same-direction pairs < m bars apart 29; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 3 of 80 changed
+QQQ lb1 35 lb2 15: event bars 292, same-direction pairs < m bars apart 1; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+QQQ lb1 40 lb2 15: event bars 267, same-direction pairs < m bars apart 1; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+QQQ lb1 25 lb2 10: event bars 422, same-direction pairs < m bars apart 22; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 2 of 80 changed
+SPX lb1 35 lb2 15: event bars 474, same-direction pairs < m bars apart 1; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+SPX lb1 40 lb2 15: event bars 438, same-direction pairs < m bars apart 2; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+SPX lb1 25 lb2 10: event bars 683, same-direction pairs < m bars apart 31; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 1 of 80 changed
+AAPL lb1 35 lb2 15: event bars 325, same-direction pairs < m bars apart 0; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+AAPL lb1 40 lb2 15: event bars 302, same-direction pairs < m bars apart 1; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 0 of 80 changed
+AAPL lb1 25 lb2 10: event bars 466, same-direction pairs < m bars apart 23; perturb-after-k check causal default: 0 of 80 signals changed; CD as printed: 1 of 80 changed
+```
+
+Before/after again (Manan c63f352f vs branch, live dirs): existing ids x SPY, basket:us_dow30:AAPL, NIFTY 50, basket:nifty50:RELIANCE byte-identical (0 DIFF outside the new ids); with SUNSPOTS present the existing ids are identical (20 of 20).
