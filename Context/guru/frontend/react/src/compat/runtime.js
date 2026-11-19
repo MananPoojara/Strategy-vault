@@ -958,6 +958,7 @@ const CLOTH = ['#1f3a5f', '#7a2e2e', '#2f5140', '#8a6a2f', '#4a5563', '#5b3b5e']
 let BOOK_COVERAGE={authors:{}};
 let BOOK_FILE_INDEX={files:{}};
 let BOOK_CATEGORIES={books:{},source_titles:{}};
+let BOOK_SUMMARIES={}; // data/book-summaries.json: short book summaries written from published descriptions (19 Nov 2026)
 let BOOK_COVERS={}; // data/covers/covers.json: official cover images, matched by title + author (19 Nov 2026)
 let SOURCE_REVIEWS={sources:{},catalogue:{}};
 let LIBRARY_PROGRESS=null;
@@ -1736,8 +1737,8 @@ function authorBookCard(record){
   const b=record.book||record.source||record,link=libraryBookLink(record),progress=recordProgress(record),title=record.title||'Title not recorded';
   const backtested=record.kind==='catalogue'?progress.backtested||0:0; // India and US together, so book cards add up to the author total
   const year=record.year||'Edition unconfirmed',cloth=b.c||CLOTH[3];
-  return `<article class="bookcard" data-library-book="${esc(record.id)}"><a class="book-cover-link" href="${link}" aria-label="Open ${esc(title)}">${BOOK_COVERS[record.id]?`<div class="cover-img"><img src="data/${esc(BOOK_COVERS[record.id].file)}" alt="Cover of ${esc(title)}" loading="lazy"></div>`:`<div class="cover3d ${b.live?'':'pv'}" style="--c:${esc(cloth)}"><div class="c3-spine"></div><div class="c3-face"><span class="c3-author">${esc(record.authorName)}</span><span class="c3-title">${esc(title)}</span><span class="c3-year">${esc(String(year))}</span></div></div>`}</a>
-    <h3><a href="${link}">${esc(title)}</a></h3><span class="bc-meta">${esc(record.authorName)} · ${esc(String(year))}</span><p class="bc-blurb">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading source; content and mechanical rule review are pending.')}</p>${record.kind==='catalogue'?`<p class="bc-line"><b>${progress.strategies}</b> strategies<span>·</span><b>${backtested}</b> backtested</p>`:''}</article>`;
+  return `<article class="bookcard" data-library-book="${esc(record.id)}"><a class="book-cover-link" href="${link}" aria-label="Open ${esc(title)}"><div class="cover-stage" style="--c:${esc(cloth)}">${BOOK_COVERS[record.id]?`<div class="cover-img"><img src="data/${esc(BOOK_COVERS[record.id].file)}" alt="Cover of ${esc(title)}" loading="lazy"></div>`:`<div class="cover3d ${b.live?'':'pv'}" style="--c:${esc(cloth)}"><div class="c3-spine"></div><div class="c3-face"><span class="c3-author">${esc(record.authorName)}</span><span class="c3-title">${esc(title)}</span><span class="c3-year">${esc(String(year))}</span></div></div>`}</div></a>
+    <h3><a href="${link}">${esc(title)}</a></h3><span class="bc-meta">${esc(record.authorName)} · ${esc(String(year))}</span>${BOOK_SUMMARIES[record.id]?.summary?`<p class="bc-blurb">${esc(BOOK_SUMMARIES[record.id].summary)}</p>`:''}${record.kind==='catalogue'?`<p class="bc-line"><span class="stat"><b>${progress.strategies}</b> strategies</span><span class="stat ${backtested?'ok':''}"><b>${backtested}</b> backtested</span></p>`:''}</article>`;
 }
 async function bookShelf(g) {
   const records=VaultLibraryBrowser.search(authorLibraryRecords(g.id),{category:S.book_category,query:S.library_q,sort:S.library_sort});
@@ -2240,7 +2241,7 @@ const usData=()=>US_DATA||(US_DATA=(async()=>{
   US_FAILED=!TICK_US;applyBaskets(await baskets,'us');DATA_READY.add('us');
 })());
 const libraryData=()=>LIBRARY_DATA||(LIBRARY_DATA=(async()=>{
-  const metadataFiles=['book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json','covers/covers.json'];
+  const metadataFiles=['book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json','covers/covers.json','book-summaries.json'];
   const metadata=await Promise.all(metadataFiles.map(dataFile));
   if(metadata[0])BOOK_COVERAGE=metadata[0];
   try{const data=metadata[1];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved. Selected TPM1 daily branches have separate source review; other sources, execution modes and original performance are not thereby certified.'};}}catch{}
@@ -2254,6 +2255,7 @@ const libraryData=()=>LIBRARY_DATA||(LIBRARY_DATA=(async()=>{
   }
   try{if(metadata[7])applyShareReview(metadata[7]);}catch{}
   if(metadata[8]?.books)BOOK_COVERS=metadata[8].books;
+  if(metadata[9]?.books)BOOK_SUMMARIES=metadata[9].books;
   finalizeReadingIndex();DATA_READY.add('library');
 })());
 async function showRoute(){
