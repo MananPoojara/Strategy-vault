@@ -9,7 +9,6 @@ import { portfolioGridProblems } from "./portfolio-model";
 import { ErrorNotice, HelpTip, isProvisional, Loading, ProvisionalStrip, ServerLabel, tone } from "./ui";
 import { WalkForward } from "./WalkForward";
 import { WalkForwardTab } from "./settings/WalkForwardTab";
-import { OptimizeSurface } from "./OptimizeSurface";
 import { TradesheetButton, TradesheetDownloads } from "./TradesheetDownloads";
 import { optimizationList, optimizationWorkbook, sheetFileName, withoutAtrOutOfOrder } from "./optimize-sheet";
 import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
@@ -271,8 +270,6 @@ function LabOptimizeResultView({ result: raw, spec, ranSpec, catalogue, settings
           </table>
         </div>
       </>)}
-      {dims.length === 2 && result.table && result.table_cols && <OptimizeSurface dims={dims} table={result.table} cols={result.table_cols}
-        metricLabel={(k) => TABLE_LABELS[k] ?? k} show={tableShow} label={(p) => setting(p)?.label ?? p} />}
       {sheets && result.table && <TradesheetDownloads {...sheets} table={result.table} />}
       {result.kind === "lab_optimization" && result.sheet && result.sheet_cols && <div className="lab-row">
         <button type="button" className="dbtn sm" data-lab-action="optimize-sheet" title="AmiBroker-style optimization workbook: Rules and every combination, sorted on CAR/MDD"

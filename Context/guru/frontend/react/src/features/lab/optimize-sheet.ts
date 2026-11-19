@@ -33,7 +33,7 @@ const derivedFor = (dir: "long" | "short" | "both"): [string, string][] => {
 
 /** The page shows the optimized settings first, then only the team's screen columns, in sheet order. */
 const SCREEN_SHOWN = new Set(["CAR", "Max. Sys % Drawdown", "CAR/MDD", "# Trades", "Avg % Profit/Loss", "Avg Bars Held", "% of Winners",
-  "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"]);
+  "Monthly Thickness", "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"]);
 /** The download keeps every column but opens showing only these and the optimized settings (the team's view); the rest are hidden, not removed.
  *  Matched on the AmiBroker and derived names only, never on an optimized setting's label. */
 const EXCEL_SHOWN = new Set([...SCREEN_SHOWN, "W. Avg % Profit", "L. Avg % Loss", "Monthly Thickness", "Final W Avg", "Final L Avg", "Total Profit", "Holding Days"]);

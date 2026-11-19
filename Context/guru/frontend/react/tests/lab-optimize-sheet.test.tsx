@@ -115,7 +115,7 @@ it("the derived templates evaluate like Excel: arithmetic, ABS, blanks and divis
 
 // the team's screen list: the optimized settings first, then only these columns
 const SCREEN = ["EMA Period", "CAR", "Max. Sys % Drawdown", "CAR/MDD", "# Trades", "Avg % Profit/Loss", "Avg Bars Held", "% of Winners",
-  "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"];
+  "Monthly Thickness", "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"];
 
 it("the sheet is on the page too: the team's screen columns, sorted on CAR/MDD, click to sort", async () => {
   const host = await runWith(withSheet);
