@@ -2203,6 +2203,7 @@ fn main() {
     nse_holidays::set_from(data.get("NIFTY 50"));
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
+    let _ = books::kets::EXTRA_DIR.set(extra_dir.clone()); // lane H3c: the sunspot calendar series (kets_solar) reads extra_data/SUNSPOTS.csv
     let mut extra = load_extra(&extra_dir);
     // lane I1: NSE F&O bhavcopy series (index futures open interest, stock-option put/call) from futures/nse-fo-bhavcopy-20261113
     // next to the India price file; India engine only, a missing folder loads nothing, an extra_data file of the same name wins
