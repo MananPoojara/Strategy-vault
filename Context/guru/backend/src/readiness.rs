@@ -221,7 +221,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     for &name in &required {
         if event_column(name) { continue; }
         let values=ctx.series(name).unwrap();
-        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite())).collect();
+        // The ADR AFLs read breadth with Foreign("~Advances", "C"), whose default fix-up repeats the previous value on a
+        // day the breadth symbol has no bar (books::ytadr::ad_ratio does the same). So for them a day counts as missing
+        // only when no earlier value exists to repeat (19-11-2026: the Nifty 50 database has no bars on 16-12-2025 and
+        // 14-10-2026 and ends 16-10-2026).
+        let fixup=def.book==books::ytadr::BOOK;
+        let first_value=values.iter().position(|v| v.is_finite());
+        let gaps:Vec<_>=(from..=to).filter(|&i| !values.get(i).is_some_and(|v| v.is_finite()) && !(fixup && first_value.is_some_and(|f| f < i))).collect();
         if let Some(&first)=gaps.first() {
             let dates=values.iter().enumerate().filter(|(_,v)| v.is_finite()).map(|(i,_)| ctx.r[i].date.as_str()).collect::<Vec<_>>();
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
