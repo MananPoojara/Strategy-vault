@@ -287,6 +287,7 @@ pub const ZW_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("ch_bta2_cbo_ref", 53, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open's price there."),
     ("ch_bta2_cbo_trail5", 95, " They are held through those years (a stop that the open gaps through fills at the open); 6 of their fills are at the open's price there."),
     ("ch_bta2_cbo_volexit", 70, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_20tick", 31, " They are held through those years (a stop that the open gaps through fills at the open); 3 of their fills are at the open's price there."),
     ("ch_bta2_pullback", 56, " They are held through those years (a stop that the open gaps through fills at the open); 57 of their fills are at the open's price there."),
     ("scabeldiv_sma", 22, " They are held through those years (a stop that the open gaps through fills at the open); 0 of their fills are at the open's price there.")];
 /// R4 #336 (lane PH): Norgate &GE (Eurodollar) opens, measured with authors/ph/w/opencheck.py: the open equals the previous close on
@@ -299,6 +300,7 @@ pub const GE_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("ch_bta2_cbo_ref", 125, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
     ("ch_bta2_cbo_trail5", 285, " They are held through those years (a stop that the open gaps through fills at the open); 19 of their fills are at the open's price there."),
     ("ch_bta2_cbo_volexit", 205, " They are held through those years (a stop that the open gaps through fills at the open); 15 of their fills are at the open's price there."),
+    ("ch_bta2_cbo_20tick", 5, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
     ("ch_bta2_long_bomb", 36, " They are held through those years (a stop that the open gaps through fills at the open); 2 of their fills are at the open's price there."),
     ("ch_bta2_pullback", 139, " They are held through those years (a stop that the open gaps through fills at the open); 151 of their fills are at the open's price there."),
     ("scabeldiv_sma", 73, " They are held through those years (a stop that the open gaps through fills at the open); 19 of their fills are at the open's price there."),
@@ -401,7 +403,7 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
 /// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
 /// Lane F1C (R4 #326): six Chande ch.5 systems on crude enter at the 2020-04-20 close (unadjusted -37.63), so on &CL their run
 /// ends 2020-04-17 (ch_bta2_adx30 does not trade there and keeps the whole series).
-const POSITIVE_RAW_ONLY: &[&str] = &["stad12_shifty", "jkbwts_ehrlich17", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref",
+const POSITIVE_RAW_ONLY: &[&str] = &["stad12_shifty", "jkbwts_ehrlich17", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref", "ch_bta2_cbo_20tick",
     "ch_bta2_adx_rising", "ch_bta2_pullback",
     "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */,
     "scnbps_cross" /* lane PG: Balsara crossover on &CL (R4 #326) */,
@@ -479,6 +481,7 @@ const CARDS_F1B: &[(&str, &str, &str)] = &[
     ("ch_bta2_cbo_volexit", "&6B", CHANDE5), ("ch_bta2_cbo_volexit", "&KC", CHANDE5), ("ch_bta2_cbo_volexit", "&CT", CHANDE5), ("ch_bta2_cbo_volexit", "&CL", CHANDE5), ("ch_bta2_cbo_volexit", "&GE", CHANDE5), ("ch_bta2_cbo_volexit", "&GC", CHANDE5), ("ch_bta2_cbo_volexit", "&6J", CHANDE5), ("ch_bta2_cbo_volexit", "&ZB", CHANDE5), ("ch_bta2_cbo_volexit", "&ZW", CHANDE5),
     ("ch_bta2_cbo_inside", "&6B", CHANDE5), ("ch_bta2_cbo_inside", "&KC", CHANDE5), ("ch_bta2_cbo_inside", "&CT", CHANDE5), ("ch_bta2_cbo_inside", "&CL", CHANDE5), ("ch_bta2_cbo_inside", "&GE", CHANDE5), ("ch_bta2_cbo_inside", "&GC", CHANDE5), ("ch_bta2_cbo_inside", "&6J", CHANDE5), ("ch_bta2_cbo_inside", "&ZB", CHANDE5), ("ch_bta2_cbo_inside", "&ZW", CHANDE5),
     ("ch_bta2_cbo_ref", "&6B", CHANDE5), ("ch_bta2_cbo_ref", "&KC", CHANDE5), ("ch_bta2_cbo_ref", "&CT", CHANDE5), ("ch_bta2_cbo_ref", "&CL", CHANDE5), ("ch_bta2_cbo_ref", "&GE", CHANDE5), ("ch_bta2_cbo_ref", "&GC", CHANDE5), ("ch_bta2_cbo_ref", "&6J", CHANDE5), ("ch_bta2_cbo_ref", "&ZB", CHANDE5), ("ch_bta2_cbo_ref", "&ZW", CHANDE5),
+    ("ch_bta2_cbo_20tick", "&6B", CHANDE5), ("ch_bta2_cbo_20tick", "&KC", CHANDE5), ("ch_bta2_cbo_20tick", "&CT", CHANDE5), ("ch_bta2_cbo_20tick", "&CL", CHANDE5), ("ch_bta2_cbo_20tick", "&GE", CHANDE5), ("ch_bta2_cbo_20tick", "&GC", CHANDE5), ("ch_bta2_cbo_20tick", "&6J", CHANDE5), ("ch_bta2_cbo_20tick", "&ZB", CHANDE5), ("ch_bta2_cbo_20tick", "&ZW", CHANDE5),
     ("ch_bta2_adx30", "&6B", CHANDE5), ("ch_bta2_adx30", "&KC", CHANDE5), ("ch_bta2_adx30", "&CT", CHANDE5), ("ch_bta2_adx30", "&CL", CHANDE5), ("ch_bta2_adx30", "&GE", CHANDE5), ("ch_bta2_adx30", "&GC", CHANDE5), ("ch_bta2_adx30", "&6J", CHANDE5), ("ch_bta2_adx30", "&ZB", CHANDE5), ("ch_bta2_adx30", "&ZW", CHANDE5),
     ("ch_bta2_adx_rising", "&6B", CHANDE5), ("ch_bta2_adx_rising", "&KC", CHANDE5), ("ch_bta2_adx_rising", "&CT", CHANDE5), ("ch_bta2_adx_rising", "&CL", CHANDE5), ("ch_bta2_adx_rising", "&GE", CHANDE5), ("ch_bta2_adx_rising", "&GC", CHANDE5), ("ch_bta2_adx_rising", "&6J", CHANDE5), ("ch_bta2_adx_rising", "&ZB", CHANDE5), ("ch_bta2_adx_rising", "&ZW", CHANDE5),
     ("ch_bta2_pullback", "&6B", CHANDE5), ("ch_bta2_pullback", "&KC", CHANDE5), ("ch_bta2_pullback", "&CT", CHANDE5), ("ch_bta2_pullback", "&CL", CHANDE5), ("ch_bta2_pullback", "&GE", CHANDE5), ("ch_bta2_pullback", "&GC", CHANDE5), ("ch_bta2_pullback", "&6J", CHANDE5), ("ch_bta2_pullback", "&ZB", CHANDE5), ("ch_bta2_pullback", "&ZW", CHANDE5),
