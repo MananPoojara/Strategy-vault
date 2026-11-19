@@ -1,11 +1,47 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { SnapEvent, SnapItem, SnapStats } from "../services/research";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { claudeWorkDaily, type DailyWork, type DailyWorkRow, type SnapEvent, type SnapItem, type SnapStats } from "../services/research";
 
 /* Popup for a "Live snapshot" row on the Research timeline: the numbers, then names in collapsible lists. Real data only:
    anything the generator did not record shows "not recorded". */
 
 const num = (n: number | undefined | null) => (n ?? 0).toLocaleString("en-IN");
 const SEARCH_ABOVE = 30;
+
+export const DAILY_HEADERS = ["Date", "New strategies added", "Strategies backtested (day)", "Time taken - backtesting", "Tokens used - backtesting", "Strategy errors solved", "Time taken - error fixing", "Tokens used - error fixing",
+  "Newly held (with reason)", "Held balance (end of day)", "Backtested total (end of day)", "Books added", "Deploys", "Worked by", "Avg tokens per strategy", "Proof"];
+const NUMERIC = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
+export const fmtDate = (iso: string) => iso.split("-").reverse().join("/");
+export const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+export const fmtTime = (min: number) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+
+/** The daily table: one row per IST day, newest first; "Newly held" opens the list of strategies with their reasons. */
+export function DailyWorkTable({ data }: { data: DailyWork }) {
+  const [openDay, setOpenDay] = useState<string | null>(null);
+  const cells = (r: DailyWorkRow): ReactNode[] => [fmtDate(r.date), num(r.new), num(r.backtested_day), fmtTime(r.bt_minutes), fmtTokens(r.bt_tokens), num(r.errors_solved), fmtTime(r.fix_minutes), fmtTokens(r.fix_tokens),
+    r.newly_held == null ? <span className="rp-muted" title="The run file for this day is not kept">n/a</span>
+      : r.newly_held_list.length ? <button type="button" className="rp-linkbtn" aria-expanded={openDay === r.date} onClick={() => setOpenDay(openDay === r.date ? null : r.date)}>{num(r.newly_held)}</button> : num(r.newly_held),
+    num(r.held), num(r.backtested_total), num(r.books_added), num(r.deploys), r.worked_by, r.avg_tokens_per_strategy == null ? "" : fmtTokens(r.avg_tokens_per_strategy), r.proof];
+  return (
+    <div className="rp-daily">
+      <div className="rp-daily-scroll">
+        <table>
+          <thead><tr>{DAILY_HEADERS.map((h, i) => <th key={h} className={NUMERIC.has(i) ? "n" : undefined}>{h}</th>)}</tr></thead>
+          <tbody>{data.rows.map(r => (
+            <Fragment key={r.date}><tr>{cells(r).map((c, i) => <td key={i} className={NUMERIC.has(i) ? "n" : undefined}>{c}</td>)}</tr>
+              {openDay === r.date && <tr className="rp-daily-held"><td colSpan={DAILY_HEADERS.length}>
+                <ul className="rp-snap-list">{r.newly_held_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span> · {x.reason}</li>)}</ul></td></tr>}</Fragment>
+          ))}</tbody>
+        </table>
+      </div>
+      <p className="rp-small rp-muted">Time is active minutes in Claude Code sessions (gaps of 10 minutes or less between messages, IST days); tokens are input + output + cache-creation tokens of those sessions, sorted into backtesting and error-fixing lanes by project folder. Other work (lead, frontend, covers) is in the data file only.</p>
+    </div>
+  );
+}
+function DailyWorkSection() {
+  const [d, setD] = useState<DailyWork | null | undefined>(undefined);
+  useEffect(() => { let on = true; claudeWorkDaily().then(x => on && setD(x)); return () => { on = false; }; }, []);
+  return <section className="rp-snap-sec"><h3>Daily work</h3>{d === undefined ? <p className="rp-small rp-muted">Loading...</p> : d ? <DailyWorkTable data={d} /> : <p className="rp-small rp-muted">Daily work is not available (claude-work-daily.json missing).</p>}</section>;
+}
 export const STEPS = [
   "Read the rule as printed, at its page in the book",
   "Code the strategy card",
@@ -84,6 +120,7 @@ export function SnapshotModal({ ev, stats, at, healthStarts, onClose }: { ev: Sn
       <div className="rp-modal" role="dialog" aria-modal="true" aria-labelledby="rp-snap-t" ref={box}>
         <header><h2 id="rp-snap-t">Live snapshot · {ev?.at_ist ?? at} IST</h2><button type="button" onClick={onClose} aria-label="Close">Close</button></header>
         <div className="rp-snap-body" data-lenis-prevent>
+          <DailyWorkSection />
           {stats ? (
             <p className="rp-nums">
               <span><b>{num(stats.backtested)}</b> backtested<Delta now={stats.backtested} prev={prev?.backtested} /></span>
