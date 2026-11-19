@@ -10,10 +10,12 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "mbsot";
 /// Admitted ids (authors/boucher/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["mbsot_zweig4", "mbsot_mcclellan", "mbsot_mcclellan_nse", "mbsot_renshaw_thrust", "mbsot_renshaw_thrust_nse", "mbsot_appel_impulse", "mbsot_appel_impulse_nse", "mbsot_appel_mcclellan", "mbsot_appel_mcclellan_nse", "mbsot_appel_combo", "mbsot_appel_combo_nse"];
+pub const REVIEWED: &[&str] = &["mbsot_zweig4", "mbsot_mcclellan", "mbsot_mcclellan_nse", "mbsot_renshaw_thrust", "mbsot_renshaw_thrust_nse", "mbsot_appel_impulse", "mbsot_appel_impulse_nse", "mbsot_appel_mcclellan", "mbsot_appel_mcclellan_nse", "mbsot_appel_combo", "mbsot_appel_combo_nse", "mbsot_appel_bottom_fisher", "mbsot_appel_bottom_fisher_nse" /* lane CV6 Q9, R4 #343 / #340 / #347 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+const NYSE_NL: &[&str] = &["NYSE_NEW_LOWS"];
+const NSE_NL: &[&str] = &["NSE_NHNL.NL"];
 const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 const NYSE_ADU: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.Unchanged"];
 const NSE_ADU: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.Unchanged"];
@@ -253,13 +255,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "90-day T-bill yield and S&P dividend yield (the TRIM part exists in extra_data, the yield filter does not)",
            &["E|Arms index 21 and 55-day MA crossovers; \"Only take buy signals when the yield spread is 2 or <; and only take sell/exits when the yield spread is > 2.\" (Timing Models - 21)"],
            "", claim("", "81%", "$192,312 total", "", "S&P futures since 1982")),
-        nd("mbsot_appel_bottom_fisher", "Appel's bottom-fisher combo", "Timing models · Breadth & momentum",
-           "NYSE new lows - not in the vault (extra_data has advances/declines only)",
-           &["E|\"1) Buy any close by NYSE cash below 24 previous closes, where no new low close was made in the prior three days and New Lows are < 50; or 2) Buy any close by NYSE cash below 49 previous closes, where no new low close was made in the prior three days and New Lows are <= 100.\" (Timing Models - 22)",
+        d("mbsot_appel_bottom_fisher", "Appel's bottom-fisher combo · NYSE new lows", "Timing models · Breadth & momentum", "Long", Live, NYSE_NL, &["E|\"1) Buy any close by NYSE cash below 24 previous closes, where no new low close was made in the prior three days and New Lows are < 50; or 2) Buy any close by NYSE cash below 49 previous closes, where no new low close was made in the prior three days and New Lows are <= 100.\" (Timing Models - 22)",
              "X|\"Exit on any NYSE cash close that is 1.5% or > below the highest close since entry.\" (p.22)"],
-           "", claim("", "79%", "$174,000 total", "", "S&P futures since 1982, DD $3,600")),
+          "[R4 #343 unstated details, 3] (1) \"a new low close\" in the three-day clause is read as the same test as the branch's entry (a close below the previous 24, respectively 49, closes). (2) \"the prior three days\" are the three bars before the signal day. (3) The highest close since entry includes the entry close. Fills at the close; one position at a time. New Lows = the day's count of issues at a new 52-week low (the levels 50 and 100 are issue counts, applied unchanged).  Book: NYSE cash since 1982 (S&P futures). Vault: Norgate #NYSELO (1932-2020-09-04) on US instruments. The book prints no per-trade statistics beyond the quoted summary. UNVERIFIED.",
+          claim("", "79%", "$174,000 total", "", "S&P futures since 1982, DD $3,600")),
+        d("mbsot_appel_bottom_fisher_nse", "Appel's bottom-fisher combo · NSE new lows (India)", "Timing models · Breadth & momentum", "Long", Live, NSE_NL, &["E|\"1) Buy any close by NYSE cash below 24 previous closes, where no new low close was made in the prior three days and New Lows are < 50; or 2) Buy any close by NYSE cash below 49 previous closes, where no new low close was made in the prior three days and New Lows are <= 100.\" (Timing Models - 22)",
+             "X|\"Exit on any NYSE cash close that is 1.5% or > below the highest close since entry.\" (p.22)"],
+          "[R4 #343 unstated details, 3] (1) \"a new low close\" in the three-day clause is read as the same test as the branch's entry (a close below the previous 24, respectively 49, closes). (2) \"the prior three days\" are the three bars before the signal day. (3) The highest close since entry includes the entry close. Fills at the close; one position at a time. New Lows = the day's count of issues at a new 52-week low (the levels 50 and 100 are issue counts, applied unchanged).  [R4 #340 / #347 declared adaptation, UNVERIFIED] The twin counts the NSE stocks at a new adjusted 52-week low (extra_data/india NSE_NHNL.NL, 2019-10-16 on, with gaps: a run uses the longest stretch with no missing day) on Indian indices and stocks; the levels 50 and 100 are kept although the NSE universe is smaller than the NYSE. Measured firing rate, NSE vs NYSE: over the overlap (NSE run 2019-10-27..2020-09-04; NYSE 2019-10-16..2020-09-04) the NSE twin (NIFTY 50) makes 1 trade (1.2 a year, in the market 5.6% of days) and the NYSE original (SPX) none; the NYSE original over 1999-2020 makes 51 trades = 2.4 a year, in the market 11.4%; longest gap-free NSE stretch 2025-07-25..2026-11-17: 4 trades = 3.1 a year, in the market 11.7%. The rule fires rarely on both.", None),
         nd("mbsot_appel_total", "Appel Total Composite", "Timing models · Breadth & momentum",
-           "NYSE new highs and new lows and the bottom-fisher entry - not in the vault",
+           "held: the exit combination is unstated (R4 #343 count >= 5: which exit a bottom-fisher entry takes, precedence of simultaneous Impulse and bottom-fisher entries, the denominator of 2.5% of NYSE issues, whether the 1.5% trailing exit also covers Impulse entries, plus the three bottom-fisher details); the NYSE new highs / lows are held (Norgate #NYSEHI / #NYSELO)",
            &["E|\"Enter long on any Appel Impulse Signal or on any Appel bottom-fisher combo entry.\" (Timing Models - 22)",
              "X|McClellan exit if the osc went > +450 during the trade, else the Impulse exit, \"or 3) regardless of 1 and 2 prior, exit any time both NYSE New Highs and NYSE new lows exceed 2.5% of NYSE issues trades on the same day.\" (p.22)"],
            "", claim("", "65%", "", "invested < 45%", "since 1970: 17.2% GPA vs 11.2%, max DD 6.5%")),
@@ -297,6 +301,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "mbsot_mcclellan" => ("mbsot_mcc", "McClellan zero-cross", "NYSE breadth"),
         "mbsot_mcclellan_nse" => ("mbsot_mcc", "McClellan zero-cross", "NSE breadth"),
         "mbsot_appel_impulse" => ("mbsot_appel", "Appel breadth models (Boucher)", "Impulse · NYSE"),
+        "mbsot_appel_bottom_fisher" => ("mbsot_appel", "Appel breadth models (Boucher)", "Bottom fisher · NYSE"),
+        "mbsot_appel_bottom_fisher_nse" => ("mbsot_appel", "Appel breadth models (Boucher)", "Bottom fisher · NSE"),
         "mbsot_appel_impulse_nse" => ("mbsot_appel", "Appel breadth models (Boucher)", "Impulse · NSE"),
         "mbsot_appel_mcclellan" => ("mbsot_appel", "Appel breadth models (Boucher)", "McClellan +1000 · NYSE"),
         "mbsot_appel_mcclellan_nse" => ("mbsot_appel", "Appel breadth models (Boucher)", "McClellan +1000 · NSE"),
@@ -340,6 +346,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("e6", "6-day EMA of A-D at or above", 500.0, 100.0, 1000.0, 25.0), p("drop", "Impulse exit: close down from the highest close, %", 1.5, 0.5, 5.0, 0.25),
             p("mcc_buy", "McClellan (A-D line) buy above", 1000.0, 300.0, 2000.0, 50.0), p("mcc_exit", "McClellan exit below", 450.0, 0.0, 1000.0, 50.0),
             p("mcc_drop", "McClellan exit: close down from the highest close, %", 0.75, 0.25, 3.0, 0.25)],
+        "mbsot_appel_bottom_fisher" | "mbsot_appel_bottom_fisher_nse" => vec![
+            p("n1", "Branch 1: close below the previous N closes", 24.0, 5.0, 60.0, 1.0), p("nl1", "Branch 1: New Lows below", 50.0, 1.0, 500.0, 5.0),
+            p("n2", "Branch 2: close below the previous N closes", 49.0, 10.0, 120.0, 1.0), p("nl2", "Branch 2: New Lows at most", 100.0, 1.0, 500.0, 5.0),
+            p("drop", "Exit: close down from the highest close since entry, %", 1.5, 0.5, 5.0, 0.25)],
         "mbsot_cgc_sd_gti_up" | "mbsot_cgc_sd_gti_dn" | "mbsot_rgp_sd_up" | "mbsot_rgp_sd_dn" | "mbsot_rgp_sd_gti_up" | "mbsot_rgp_sd_gti_dn"
         | "mbsot_outside_sd_gti_up" | "mbsot_outside_sd_gti_dn" | "mbsot_inside_sd_up" | "mbsot_inside_sd_dn" => pat(70.0, 30.0),
         _ => return None,
@@ -741,6 +751,33 @@ fn renshaw(x: &Ctx, nse: bool, from: usize, to: usize, rise: f64, adv: f64, stp:
     finish(out, cur, x, to)
 }
 
+/// Appel's bottom fisher (Boucher, Timing Models p.22): a close below the previous n closes with no such close in the three bars before
+/// and the day's New Lows under a level, for n = 24 / 49; out on a close 1.5% below the highest close since entry (lane CV6 Q9).
+fn bottom_fisher(x: &Ctx, nse: bool, from: usize, to: usize, g_: &dyn Fn(&str) -> f64) -> Vec<Trade> {
+    let Some(nl) = x.series(if nse { NSE_NL[0] } else { NYSE_NL[0] }) else { return vec![] };
+    let c = &x.c;
+    let low_close = |i: usize, n: usize| i >= n && c[i] < c[i - n..i].iter().cloned().fold(f64::INFINITY, f64::min);
+    let (n1, n2) = (g_("n1").round() as usize, g_("n2").round() as usize);
+    let (l1, l2, drop) = (g_("nl1"), g_("nl2"), g_("drop") / 100.0);
+    let fish = |i: usize, n: usize, ok: bool| ok && low_close(i, n) && (1..=3).all(|k| i >= k && !low_close(i - k, n));
+    let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
+    let mut top = 0.0;
+    for i in from..=to {
+        if let Some(_) = cur.as_ref() {
+            top = f64::max(top, c[i]);
+            if c[i] <= top * (1.0 - drop) {
+                let mut t = cur.take().unwrap();
+                (t.exit_i, t.exit_px, t.signal_i, t.reason) = (i, c[i], i, "close 1.5% under the highest close since entry".into());
+                out.push(t);
+            }
+            continue;
+        }
+        let ok = nl[i].is_finite();
+        if i < to && ok && (fish(i, n1, nl[i] < l1) || fish(i, n2, nl[i] <= l2)) { cur = Some(mk(i, c[i])); top = c[i]; }
+    }
+    finish(out, cur, x, to)
+}
+
 /// Daily breadth models on closes. kind: 0 McClellan zero-cross, 1 Appel impulse, 2 Appel McClellan (A-D line), 3 combo.
 fn breadth(x: &Ctx, nse: bool, kind: u8, from: usize, to: usize, g_: &dyn Fn(&str) -> f64) -> Vec<Trade> {
     let s = if nse { NSE_AD } else { NYSE_AD };
@@ -824,6 +861,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "mbsot_appel_impulse" | "mbsot_appel_impulse_nse" => breadth(x, nse, 1, from, to, &g),
         "mbsot_appel_mcclellan" | "mbsot_appel_mcclellan_nse" => breadth(x, nse, 2, from, to, &g),
         "mbsot_appel_combo" | "mbsot_appel_combo_nse" => breadth(x, nse, 3, from, to, &g),
+        "mbsot_appel_bottom_fisher" | "mbsot_appel_bottom_fisher_nse" => bottom_fisher(x, nse, from, to, &g),
         _ if PATTERNS.contains(&id) => run_patterns(id, x, from, to, &g),
         _ => return None,
     })
@@ -872,6 +910,21 @@ mod tests {
         // pivots: the high of bar 3 becomes a pivot high when bar 4's low (11.5) breaks bar 3's low (12.0)
         let (_, phi) = pivots(&h, &l);
         assert!(phi[3].is_nan() && phi[4] == 13.0);
+    }
+    #[test]
+    fn bottom_fisher_buys_a_fresh_low_close_with_few_new_lows_and_exits_1_5_pct_off_the_high() { // lane CV6 Q9
+        let r: Vec<Row> = [10.0, 10.0, 10.0, 10.0, 9.0, 9.5, 9.6, 9.4].iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: c, high: c, low: c, close: c, volume: None }).collect();
+        let prm: Params = [("n1", 3.0), ("n2", 4.0)].into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        for (id, nm) in [("mbsot_appel_bottom_fisher", "NYSE_NEW_LOWS"), ("mbsot_appel_bottom_fisher_nse", "NSE_NHNL.NL")] {
+            let mut x = Ctx::new(&r, &r, &[]);
+            x.extra.insert(nm.into(), vec![10.0; 8]);
+            let t = run(id, &x, 0, 7, &prm).unwrap();
+            assert_eq!(t.iter().map(|z| (z.legs[0].i, z.exit_i, z.open)).collect::<Vec<_>>(), vec![(4, 7, false)], "{id}"); // 9.4 <= 9.6 * 0.985
+            x.extra.insert(nm.into(), vec![60.0; 8]); // New Lows >= 50 (branch 1) and > 100 is not reached: branch 2 allows <= 100
+            assert_eq!(run(id, &x, 0, 7, &prm).unwrap().len(), 1, "{id}: branch 2 (<= 100) still buys");
+            x.extra.insert(nm.into(), vec![150.0; 8]);
+            assert!(run(id, &x, 0, 7, &prm).unwrap().is_empty(), "{id}: both branches blocked");
+        }
     }
     #[test]
     fn half_exit_then_break_even() {
