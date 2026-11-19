@@ -68,7 +68,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 /// Minute-walker state: the position (dir, entry px, entry day row, kind), trades closed in the walk, the day row, a flag
 /// (or30: twice the range reached) and the orders placed for this bar.
 #[derive(Clone, Default)]
-struct St { ne: usize, pos: Option<(f64, f64, usize, &'static str)>, done: Vec<(f64, f64, usize, usize, f64, &'static str, &'static str)>, i: usize, k: bool, live: Vec<Ord> }
+struct St { ne: usize, pos: Option<(f64, f64, usize, &'static str)>, done: Vec<(f64, f64, usize, usize, f64, &'static str, &'static str)>, i: usize, k: bool, live: Vec<Ord>, amb: bool, nt: usize, na: usize }
 impl St {
     fn dir(&self) -> f64 { self.pos.map_or(0.0, |p| p.0) }
     fn enter(&mut self, d: f64, px: f64, kind: &'static str) {
@@ -77,15 +77,20 @@ impl St {
         self.ne += 1;
         self.pos = Some((d, px, self.i, kind));
         self.k = false;
+        self.amb = false;
     }
-    fn exit(&mut self, px: f64, why: &'static str) { if let Some((d, ep, ei, k)) = self.pos.take() { self.done.push((d, ep, ei, self.i, px, why, k)); } }
-    fn walk(&mut self, q: &Bar1, orders: &dyn Fn(&St) -> Vec<Ord>, fill: &dyn Fn(&mut St, u8, f64)) { let adv = self.dir() < 0.0; minute(q, self, orders, fill, adv); }
+    fn exit(&mut self, px: f64, why: &'static str) { if let Some((d, ep, ei, k)) = self.pos.take() { self.nt += 1; self.na += self.amb as usize; self.done.push((d, ep, ei, self.i, px, why, k)); } }
+    fn walk(&mut self, q: &Bar1, orders: &dyn Fn(&St) -> Vec<Ord>, fill: &dyn Fn(&mut St, u8, f64)) { let adv = self.dir() < 0.0;
+        let (nt0, na0) = (self.nt, self.na);
+        // #175 (as k53_ref.py): a trade is ambiguous when a minute it lives in fills differently on the other path (counted, not used)
+        if minute(q, self, orders, fill, adv) { self.na = na0 + (self.nt - nt0); self.amb = self.pos.is_some(); }
+    }
     fn flush(&mut self, out: &mut Vec<Trade>) {
         for (d, ep, ei, xi, xp, why, k) in self.done.drain(..) { out.push(day_trade(d, ei, ep, xi, xp, why, k, false)); }
     }
-    fn finish(mut self, out: &mut Vec<Trade>, i: usize, px: f64) {
+    fn finish(&mut self, out: &mut Vec<Trade>, i: usize, px: f64) {
         self.flush(out);
-        if let Some((d, ep, ei, k)) = self.pos.take() { out.push(day_trade(d, ei, ep, i, px, "open", k, true)); }
+        if let Some((d, ep, ei, k)) = self.pos.take() { self.nt += 1; self.na += self.amb as usize; out.push(day_trade(d, ei, ep, i, px, "open", k, true)); }
     }
 }
 fn ord(up: bool, lv: f64, tag: u8) -> Ord { Ord { up, lv, tag } }
@@ -351,7 +356,9 @@ fn rwmts(x: &Ctx, from: usize, to: usize, n: u16, sys: Sys, stp: f64) -> Vec<Tra
 /// prior `ne`/`nx`-bar high/low (the current bar excluded), Short Entry and Long Exit at the prior low/high; a level order fills at
 /// the level in the first minute that touches it, at the open when the minute opens through it (n1intra::minute, minute order);
 /// flat is allowed, one position; time exit: BarsSinceEntry (entry bar = 1, #248 (2)) > `tm` at a bar's close -> next open.
-fn chan(bars: &[B], ne: usize, nx: usize, tm: usize) -> Vec<Trade> {
+fn chan(bars: &[B], ne: usize, nx: usize, tm: usize) -> Vec<Trade> { chan_amb(bars, ne, nx, tm).0 }
+/// chan plus the #175 count: (trades, trades, trades that touched an ambiguous minute).
+fn chan_amb(bars: &[B], ne: usize, nx: usize, tm: usize) -> (Vec<Trade>, usize, usize) {
     let mut out = vec![];
     let (mut st, mut ei) = (St::default(), 0usize);
     let ext = |t: usize, n: usize| (bars[t - n..t].iter().map(|b| b.h).fold(f64::MIN, f64::max), bars[t - n..t].iter().map(|b| b.l).fold(f64::MAX, f64::min));
@@ -371,7 +378,8 @@ fn chan(bars: &[B], ne: usize, nx: usize, tm: usize) -> Vec<Trade> {
         st.flush(&mut out);
     }
     if let Some(z) = bars.last() { st.finish(&mut out, z.i, z.c); }
-    out
+    let (nt, na) = (st.nt, st.na);
+    (out, nt, na)
 }
 
 #[cfg(test)]
@@ -445,6 +453,20 @@ mod tests {
                     writeln!(f, "{id}{}{tag},{t},{},{},{},{},{},\"{}\",{}", if tag.is_empty() { "" } else { "|" }, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason, z.open).unwrap();
                 }
             }
+        }
+    }
+    /// Decision #175 (lane H7): share of rwmts_2h_cb15_8 trades that touched a minute filling differently on the other path.
+    /// VAULT_US=.. VAULT_IDX=.. VAULT_M1_DIR=.. cargo test --release cb_amb -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn cb_amb() {
+        for (file, t) in [("VAULT_US", "SPY"), ("VAULT_US", "SPX"), ("VAULT_IDX", "NIFTY 50"), ("VAULT_IDX", "NIFTYBANK")] {
+            let rows = crate::load_csv(&std::env::var(file).unwrap()).unwrap().remove(t).unwrap();
+            let mut x = Ctx::new(&rows, &rows, &[]);
+            x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(&std::env::var("VAULT_M1_DIR").unwrap(), t).unwrap())));
+            let from = rows.partition_point(|r| r.date.as_str() < x.minutes.unwrap().first());
+            let (_, nt, na) = chan_amb(&series(&x, from, rows.len() - 1, 120), 60, 32, 29);
+            println!("CBAMB {t} trades {nt} ambiguous {na} ({:.2}%)", 100.0 * na as f64 / nt as f64);
         }
     }
     /// Decision #231 (lane M4 on K53): every minute-path rule admitted on NIFTY 50 / NIFTYBANK, run on the India ticker and on
