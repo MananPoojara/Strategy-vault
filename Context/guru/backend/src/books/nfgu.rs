@@ -114,6 +114,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 /// Lane U2 (Q26, R4 #343/#346): the PAL timing state per bar (1 = bullish/long, 0 = bearish or not yet known), set on each week's last
 /// trading day and carried until the next week's; the weekly yield is the last print of its week.
 fn pal_targets(x: &Ctx, spma: usize, tbma: usize, bdma: usize) -> Option<Vec<i8>> {
+    weekly_rate_targets(x, spma, tbma, bdma, |sp, sa, t, ta, b, ba| !(sp < sa && (t > ta || b > ba)))
+}
+
+/// The weekly S&P / T-bill / T-bond state shared by PAL and Boucher's Spreadsheet 2.25 (lane U3): `long(sp, sp_avg, tbill, tbill_avg, bond, bond_avg)`.
+pub(crate) fn weekly_rate_targets(x: &Ctx, spma: usize, tbma: usize, bdma: usize, long: fn(f64, f64, f64, f64, f64, f64) -> bool) -> Option<Vec<i8>> {
     let (tb, bd) = (x.extra.get("DTB3")?, x.extra.get("DGS10")?);
     let n = x.c.len();
     let wk = |i: usize| (crate::books::ftm::days(&x.r[i].date) + 3).div_euclid(7);
@@ -130,7 +135,7 @@ fn pal_targets(x: &Ctx, spma: usize, tbma: usize, bdma: usize) -> Option<Vec<i8>
         if nxt < ends.len() && ends[nxt] == i {
             let (sa, ta, ba) = (avg(&sp, nxt, spma), avg(&t, nxt, tbma), avg(&b, nxt, bdma));
             if [sp[nxt], sa, t[nxt], ta, b[nxt], ba].iter().all(|v| v.is_finite()) {
-                state = if sp[nxt] < sa && (t[nxt] > ta || b[nxt] > ba) { 0 } else { 1 };
+                state = long(sp[nxt], sa, t[nxt], ta, b[nxt], ba) as i8;
             }
             nxt += 1;
         }
@@ -314,7 +319,10 @@ mod tests {
         let mut x = Ctx::new(&rows, &rows, &[]);
         x.extra.insert("DTB3".into(), rows.iter().map(|r| tb.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
         x.extra.insert("DGS10".into(), rows.iter().map(|r| bd.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
-        let t = run("nfgu_pal_model", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let id = std::env::var("PAL_ID").unwrap_or("nfgu_pal_model".into());
+        let mut pp = Params::new();
+        if let Ok(f) = std::env::var("PAL_FILL") { pp.insert("fill".into(), f.parse().unwrap()); }
+        let t = run(&id, &x, 0, rows.len() - 1, &pp).or_else(|| crate::books::mbhfe::run(&id, &x, 0, rows.len() - 1, &pp)).unwrap();
         let mut o = String::new();
         for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
         std::fs::write(out, o).unwrap();

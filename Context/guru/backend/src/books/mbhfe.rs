@@ -105,11 +105,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
            "monthly Sensitive Materials Index - not in the vault",
            &["E|\"Buy S&P when the 18-month rate of change of the Sensitive Materials Index close is < 18%. Exit when > 18%.\" (Spreadsheet 2.23, p.92)"],
            "", claim("", "", "", "", "S&P 1/31/57-12/31/97: 18.4% a.r. vs -10.4%")),
-        nd("mbhfe_sp_40wk_rates", "S&P > 40-week MA and T-bill or T-bond yield < its 40-week MA (Spreadsheet 2.25)", "Ch 2 · Liquidity: trend + rates",
-           "weekly 3-month T-bill and Treasury bond yields - not in the vault (the S&P leg alone would be a different system)",
-           &["E|\"Buy S&P 500 when S&P 500 > S&P 500 40-week moving average (MA) and either 3-month T-Bill Yield is < 3-month T-Bill Yield 40-week MA or T-Bond Yield < T-Bond Yield 40-week MA.\" (Spreadsheet 2.25, p.102)",
-             "X|\"Exit S&P 500 when the above criteria are not met and hold 3-month T-Bills.\" (p.102)"],
-           "Weekly closes. India would need G-sec and T-bill yield history.", claim("", "", "", "", "S&P 1/2/43-12/31/97: 10.2% compound (Master p.364)")),
+        StrategyDef { needs_series: crate::books::nfgu::PAL_SERIES, ..d("mbhfe_sp_40wk_rates", "S&P > 40-week MA and T-bill or T-bond yield < its 40-week MA (Spreadsheet 2.25)", "Ch 2 · Liquidity: trend + rates", "Long", Live, &[],
+           &["E|\"Buy S&P 500 when S&P 500 > S&P 500 40-week moving average (MA) and either 3-month T-Bill Yield is < 3-month T-Bill Yield 40-week MA or T-Bond Yield < T-Bond Yield 40-week MA.\" (Spreadsheet 2.25, p.102; the text p.102 words it as the bond or T-bill MARKET above its own 40-week average)",
+             "X|\"Exit S&P 500 when the above criteria are not met and hold 3-month T-Bills.\" (p.102)",
+             "A|[Declared adaptation, R4 #340 (data substitution), and declared reading 1, lane U3 19 Nov 2026, R4 #343/#346] 'T-Bond Yield' is not defined; read as the 10-year constant-maturity Treasury yield (FRED DGS10, 1962-) in place of the 30-year bond (DGS30 has no print 2002-02-19..2006-02-08); 3-month bill = FRED DTB3, discount basis",
+             "A|[Declared reading 2] weekly bars as in nfgu_pal_model: a week ends on its last trading day; the S&P close is that day's close and a yield is the last published daily value of the week; no value from another week, no interpolation. Timing: Treasury.gov publishes a day's rate the same evening, the H.15 copy (FRED) the next business day; the engine uses the Friday value for the next bar's open",
+             "A|[Declared reading 3] 'MA' = simple average of the weekly values including the current week; a week without every input (including the 40-week warm-up) gives no signal and keeps the previous state",
+             "A|[Declared reading 4] orders fill at the next bar's open after the week's last close (option fill = 1: at that last close, as the printed table's entry prices look); 'hold 3-month T-Bills' while out is not simulated: out of the market = flat with no interest (the printed table's T-bill legs are shown separately, 0.0% each)"],
+           "Book: S&P 500 1/31/43-12/31/97, weekly closes, 10.2% compound a.r. (Master p.364; Spreadsheet 2.25 p.103 prints the trade list with T-bill legs). The vault's S&P context starts 1983 and DTB3 / DGS10 in 1954 / 1962, so the book window is not covered and no figure is compared: UNVERIFIED. Indices only (R4 #364 (2)); the India engine holds no US rates and refuses it. adapted: 4 labelled readings plus one declared data substitution (R4 #340).",
+           claim("", "", "", "", "S&P 1/2/43-12/31/97: 10.2% compound (Master p.364)")) },
         nd("mbhfe_global_40wk", "Global countries: index and bond or short-rate prices over 40-week MAs", "Ch 2-3 · Global liquidity model",
            "weekly stock indexes, bond yields and short rates for the world's markets - not in the vault",
            &["E|\"We will only invest in markets where either their bond prices are above the 40-week moving average (or bond interest rates are below 40-wk MA) or their short-rate prices are above the 40-week MA (or short rates below 40-wk MA), and their equity index is above its 40-week moving average.\" (p.102)"],
@@ -191,6 +195,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     let f = |v| Some(("mbhfe_breadth", "Hedge Fund Edge breadth thrusts (3-month hold)", v));
     match id {
+        "mbhfe_sp_40wk_rates" => Some(("mbhfe_liquidity", "Hedge Fund Edge liquidity model", "S&P 40-week trend + US rates")),
         "mbhfe_upvol77" => f("Up volume > 77% · NYSE"),
         "mbhfe_upvol77_nse" => f("Up volume > 77% · NSE"),
         "mbhfe_ad11" => f("11-day A/D > 1.9 · NYSE"),
@@ -205,6 +210,12 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let hold = ParamDef { key: "hold", label: "Bars held (\"three months\")", def: 63.0, min: 21.0, max: 126.0, step: 1.0 };
     match id {
+        "mbhfe_sp_40wk_rates" => Some(vec![
+            ParamDef { key: "spma", label: "S&P simple average (weeks)", def: 40.0, min: 5.0, max: 104.0, step: 1.0 },
+            ParamDef { key: "tbma", label: "T-bill yield simple average (weeks)", def: 40.0, min: 5.0, max: 104.0, step: 1.0 },
+            ParamDef { key: "bdma", label: "T-bond yield simple average (weeks)", def: 40.0, min: 5.0, max: 104.0, step: 1.0 },
+            ParamDef { key: "fill", label: "[Option] 1 = fill at the week's last close instead of the next open", def: 0.0, min: 0.0, max: 1.0, step: 1.0 },
+        ]),
         "mbhfe_upvol77" | "mbhfe_upvol77_nse" => Some(vec![
             ParamDef { key: "ma", label: "Moving-average days", def: 5.0, min: 3.0, max: 20.0, step: 1.0 },
             ParamDef { key: "level", label: "Up volume % of total above", def: 77.0, min: 60.0, max: 90.0, step: 0.5 },
@@ -248,6 +259,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return Some(vec![]); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
+    if id == "mbhfe_sp_40wk_rates" { // lane U3 (Q29): same weekly state machine as nfgu_pal_model, other rule
+        let u = |k: &str| g(k).round().max(1.) as usize;
+        let Some(tgt) = crate::books::nfgu::weekly_rate_targets(x, u("spma"), u("tbma"), u("bdma"), |sp, sa, t, ta, b, ba| sp > sa && (t < ta || b < ba)) else { return Some(vec![]) };
+        return Some(crate::books::rbtie::target_trades(x, &tgt, from, to, g("fill") < 0.5, "criteria no longer met"));
+    }
     let (ma, level, hold) = (g("ma").round().max(1.0) as usize, g("level"), g("hold").round().max(1.0) as usize);
     let nse = id.ends_with("_nse");
     let sig: Vec<f64> = if id.starts_with("mbhfe_upvol77") {
