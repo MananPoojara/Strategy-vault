@@ -120,6 +120,8 @@ pub fn xmkt(ticker: &str) -> Option<Vec<&'static str>> {
     Some(v)
 }
 
+/// The data key of Norgate &DX (futures::ticker of its Market row).
+const DX_TICKER: &str = "US Dollar Index (Norgate &DX)";
 enum Kind { Exact, Close, Hv100, Field(Field) }
 /// The series names the already-coded modules read (E4.tsv), with the Data2 symbol each one is built from.
 fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
@@ -129,6 +131,8 @@ fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
     // hfm Ch.6 NDX-SPX (unchanged since K34): exact same-date closes, NaN holes, also on NDX/SPX themselves
     if us { v.push(("LEADER_CLOSE".into(), "NDX", Kind::Exact)); v.push(("FOLLOWER_CLOSE".into(), "SPX", Kind::Exact)); }
     if us && (x.native_market.is_some() || !is_benchmark("SPX", t)) { v.push(("SPX_CLOSE".into(), "SPX", Kind::Close)); } // mkits_rs (Ch.16); India: cross-market, later (#223 (6))
+    // lane K1 (R4 #340 labelled stand-in): Norgate &DX dollar index futures as the second series of Katsanos's gold systems, on the GLD context only
+    if us && x.native_market.is_none() && t == "GLD" { v.push(("DX_CLOSE".into(), DX_TICKER, Kind::Close)); }
     if let Some(p) = parent(x) { v.push(("STR_DATA2".into(), p, Kind::Close)); }
     if let Some(b) = benchmark(x) { v.push(("BENCH_HV100".into(), b, Kind::Hv100)); } // prap1: HV of the S&P 500 symbol's own bars (AFL)
     if let Some(b) = benchmark(x) { // K52 cards (#223): the benchmark's own fields, carried (TradeStation Data2 / MetaStock Security())
@@ -145,7 +149,7 @@ fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
 
 /// Names only EP4 builds: always from the engine's price file, so a same-named extra_data file cannot bypass the
 /// benchmark-against-itself rule or the 5% count (hfm's LEADER/FOLLOWER keep their old extra_data precedence).
-const OWN: [&str; 12] = ["SPX_CLOSE", "STR_DATA2", "BENCH_HV100", "XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5", "BENCH.H", "BENCH.L", "BENCH.C", "SPY.C", "SPY.V"];
+const OWN: [&str; 13] = ["DX_CLOSE", "SPX_CLOSE", "STR_DATA2", "BENCH_HV100", "XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5", "BENCH.H", "BENCH.L", "BENCH.C", "SPY.C", "SPY.V"];
 /// K52: benchmark (SPX / NIFTY 50) high, low and close on the traded instrument's dates; SPY close and volume beside QQQ.
 const BENCH: [(&str, Field); 3] = [("BENCH.H", Field::H), ("BENCH.L", Field::L), ("BENCH.C", Field::C)];
 const PAIR: [(&str, Field); 2] = [("SPY.C", Field::C), ("SPY.V", Field::V)];
@@ -333,6 +337,8 @@ mod tests {
         assert_eq!(names(&iwm), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX", "BENCH.H=SPX", "BENCH.L=SPX", "BENCH.C=SPX", "XMKT.C2=SPX", "XMKT.C3=NDX", "XMKT.C4=DJI", "XMKT.C5=MDY"]);
         assert_eq!(names(&n50), ["XMKT.C2=NIFTYMIDCAP100", "XMKT.C3=NIFTYBANK", "XMKT.C4=NIFTYIT", "XMKT.C5=NIFTYMIDCAPSELECT"]);
         assert_eq!(names(&bank), ["STR_DATA2=NIFTY 50", "BENCH_HV100=NIFTY 50", "BENCH.H=NIFTY 50", "BENCH.L=NIFTY 50", "BENCH.C=NIFTY 50", "XMKT.C2=NIFTY 50", "XMKT.C3=NIFTYIT", "XMKT.C4=NIFTYMIDCAP100", "XMKT.C5=NIFTYMIDCAPSELECT"]);
+        let gld = mk("GLD"); // lane K1: the &DX stand-in partner of Katsanos's gold systems, GLD only
+        assert_eq!(names(&gld), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "DX_CLOSE=US Dollar Index (Norgate &DX)", "BENCH_HV100=SPX", "BENCH.H=SPX", "BENCH.L=SPX", "BENCH.C=SPX"]);
         let aapl = mk("AAPL");
         let mut x = Ctx::new(&aapl, &[], &[]);
         x.native_market = Some(crate::baskets::Market::UnitedStates);
