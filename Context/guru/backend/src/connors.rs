@@ -882,6 +882,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         notes: "Session 8 pp.10–12: SPX below 200-day MA; a stock misses earnings and opens at least 15% lower; sell a first/second OTM next-month call for at least $1; expiry or discretionary early exit at very low option value, with a stop at twice the premium received. Indian stock-option records exist in the source bhavcopies but are not loaded by this card; an index option cannot replace a stock option.", claim: None });
  
     v.extend(crate::books::catalogue());
+    crate::nse_firing::apply(&mut v);
     v
 }
 

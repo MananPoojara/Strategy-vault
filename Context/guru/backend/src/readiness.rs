@@ -146,7 +146,13 @@ pub fn auto_start(ctx:&Ctx,from:usize,to:usize,requested:&str,refuse:impl Fn(usi
     let Some(first)=refuse(from) else {return Ok((from,None))};
     if first.status!="needs_data" || to<=from {return Err(first);}
     // most rules need at least two bars; reviewed single-session rules may run on the last bar alone
-    let Some(mut ok)=[to,to-1].into_iter().find(|&f|f>from && refuse(f).is_none()) else {return Err(first)};
+    let Some(mut ok)=[to,to-1].into_iter().find(|&f|f>from && refuse(f).is_none()) else {
+        // R1 audit (labels only): a "data begins on ..." / "volume missing" refusal at the requested start can hide a refusal that
+        // holds from every start (fixed S&P points, a pair rule, dollar amounts ...). Name the reason that still refuses at the
+        // latest start. The run is refused either way; only the text changes.
+        let begins=first.note.contains(" begin on ") || first.note.contains("volume data is missing");
+        return Err(if begins {refuse(to-1).filter(|i|i.note!=first.note).unwrap_or(first)} else {first});
+    };
     let mut bad=from;
     while ok-bad>1 {let mid=(bad+ok)/2; if refuse(mid).is_some() {bad=mid} else {ok=mid}}
     // ponytail: fixed "usable window" floor (a year, or half a shorter request); make it a parameter if users ask
@@ -280,6 +286,9 @@ mod chaikin_candidate_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="atrio" && !matches!(ctx.r.first().map(|r|r.ticker.as_str()),Some("DJI"|"SPX"|"NDX")) { // R1 audit: say why, instead of "Strategy implementation unavailable"
+        return issue("needs_data",format!("The source workbook defines three self-trading markets, the Dow, the S&P 500 and the Nasdaq 100, with cross-index ratios; the card runs on DJI, SPX and NDX only. {} is outside that scope, and no ETF, stock or Indian index is substituted; no result is published.",ctx.r.first().map_or("this instrument",|r|r.ticker.as_str())));
+    }
     if def.book=="apta" && matches!(def.id,"apta_nhnl"|"apta_nhnl_nse") {
         if let Some(note)=books::apta::nhnl_params_issue(p) {return issue("not_testable",note);}
         if let Some(note)=books::apta::nhnl_input_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
@@ -1142,6 +1151,19 @@ mod auto_start_tests {
     use crate::Row;
     fn bars(ticker:&str,n:usize)->Vec<Row> {
         (0..n).map(|i|Row{ticker:ticker.into(),date:format!("{}-{:02}-{:02}",2012+i/300,(i%300)/25+1,i%25+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1000.)}).collect()
+    }
+    #[test]
+    fn a_begins_on_refusal_does_not_hide_the_reason_that_holds_from_every_start() { // R1 audit: labels only
+        let r=bars("SPY",400);let ctx=Ctx::new(&r,&r,&[]);
+        let begin="Required 1-minute bars begin on 2013-01-01. The selected period includes earlier days with no minute data.";
+        let e=auto_start(&ctx,0,399,"2012-01-01",|f|Some(Issue{status:"needs_data",note:if f<50 {begin.into()} else {"fixed S&P points: runs on SPX only.".into()}})).unwrap_err();
+        assert_eq!(e.note,"fixed S&P points: runs on SPX only.");
+        // a refusal that is only a start problem keeps its own text
+        let e2=auto_start(&ctx,0,399,"2012-01-01",|_|Some(Issue{status:"needs_data",note:begin.into()})).unwrap_err();
+        assert_eq!(e2.note,begin);
+        // an unrelated first refusal is never replaced
+        let e3=auto_start(&ctx,0,399,"2012-01-01",|f|Some(Issue{status:"needs_data",note:if f<50 {"no usable range".into()} else {"other".into()}})).unwrap_err();
+        assert_eq!(e3.note,"no usable range");
     }
     fn def(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap()}
     fn run(ctx:&Ctx,d:&StrategyDef,from:usize,to:usize,p:&Params)->Result<(usize,Option<String>),Issue> {
