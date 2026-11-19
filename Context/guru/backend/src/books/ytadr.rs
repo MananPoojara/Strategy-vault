@@ -2,15 +2,19 @@
 //! AFL trades one index (the `tickerName` list NIFTY | BANKNIFTY | FINNIFTY | MIDCPNIFTY | SENSEX, default NIFTY, set
 //! with SetForeign or as the chart symbol) from the market breadth ratio AR = advancing / declining issues of the day.
 //! Coded from the AFLs as written, with each AFL's default settings (an `Optimize()` uses its default); there is no
-//! book PDF and nothing here is compared with the team's result workbooks.
+//! book PDF. ytadr_nday_exit is compared (17-11-2026) with the team's Best Setting Tradelist.xlsx: 743 of 744 trades equal
+//! on Nifty 50 breadth; the other ids are not compared.
 //!
 //! Data: the AFLs read AmiBroker's composite tickers `Foreign("~Advances","C")` and `Foreign("~Declines","C")`. The
-//! local database copy has no composites, so the counts are rebuilt (`jay-local/Data/breadth/build_breadth.py`) from
-//! the team's NSE 500 C&P database: ADVANCES / DECLINES count the stocks with AUX1 = 1 that day (the dated NSE 500
-//! membership) whose close is above / below their previous close; ADVANCES_ALL / DECLINES_ALL count every stock in
-//! that database (parameter `breadth` 1). This is a declared adaptation: the team's own composite was built by
-//! AmiBroker's "Calculate composites" over a symbol set that is not documented and may differ. Without the series the
-//! strategies give no trades and readiness reports them as missing (needs_series).
+//! team's composites live in its Nifty 50 C&P database (`~ADVANCES`, `~NOCHANGE`, 03-01-2000 to 06-08-2024; the copy
+//! has no `~DECLINES`) and count the Nifty 50 members (AUX1 = 1) whose close is above / below their previous close.
+//! The counts are rebuilt (`jay-local/Data/breadth/build_breadth.py`) over those members as ADVANCES_N50 /
+//! DECLINES_N50 (parameter `breadth` 2, the default): the rebuild equals the team's ~ADVANCES on 6,065 of 6,117 days
+//! and is within 1 on 6,114 (the database was edited after the composite was calculated), and it runs to the end of
+//! the database. `breadth` 0 uses the dated NSE 500 members of the NSE 500 C&P database (ADVANCES / DECLINES) and 1
+//! every stock of that database (ADVANCES_ALL / DECLINES_ALL); both are wider universes than the team's composite, so
+//! the AFLs' thresholds mean something else on them. Without the series the strategies give no trades and readiness
+//! reports them as missing (needs_series).
 //!
 //! AmiBroker behaviour followed:
 //! - Foreign's default fix-up: a traded-index day without a breadth value repeats the previous value (the readiness
@@ -57,17 +61,29 @@ pub const P211_ROC: &str = "ytadr_211_5dp_roc";
 pub const FDP: &str = "ytadr_5dp";
 pub const IDS: [&str; 9] = [BASIC, VERSIONS, FIVE_EXIT, NO_RSI, TWO_ST, NDAY, P211, P211_ROC, FDP];
 
-/// Breadth series by the `breadth` parameter: 0 dated NSE 500 members (AUX1), 1 all symbols of the database.
-pub const SERIES: [[&str; 2]; 2] = [["ADVANCES", "DECLINES"], ["ADVANCES_ALL", "DECLINES_ALL"]];
+/// Breadth series by the `breadth` parameter: 0 dated NSE 500 members (AUX1), 1 all symbols of the NSE 500 C&P
+/// database, 2 (default) Nifty 50 members (AUX1 of the Nifty 50 C&P database, the team's ~Advances universe).
+pub const SERIES: [[&str; 2]; 3] = [["ADVANCES", "DECLINES"], ["ADVANCES_ALL", "DECLINES_ALL"], ["ADVANCES_N50", "DECLINES_N50"]];
+/// Default `breadth` value (Nifty 50).
+pub const DEFAULT_BREADTH: usize = 2;
+
+/// Series index for a `breadth` value (out-of-range values fall back to the default).
+pub fn breadth_index(v: Option<f64>) -> usize {
+    match v.map(|v| v.round()) {
+        Some(x) if x == 0.0 => 0,
+        Some(x) if x == 1.0 => 1,
+        _ => DEFAULT_BREADTH,
+    }
+}
 
 const NULL: f64 = -1e10;
 const BIG: f64 = 9_999_999.0;
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
-    StrategyDef { id, name, group: "YT Strategies · Advance Decline Ratio", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &["ADVANCES", "DECLINES"], book: BOOK, rules, notes, claim: None }
+    StrategyDef { id, name, group: "YT Strategies · Advance Decline Ratio", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &["ADVANCES_N50", "DECLINES_N50"], book: BOOK, rules, notes, claim: None }
 }
 
-const F_AR: &str = "F|AR = advancing / declining NSE 500 issues of the day (50 when none decline)";
+const F_AR: &str = "F|AR = advancing / declining Nifty 50 issues of the day (50 when none decline); breadth 0 NSE 500, 1 all symbols";
 const F_ENTRY_N: &str = "F|Consecutive on: AR at or below the entry threshold (0) on at least N (1) bars in a row; off: at least N of the last 'look back' (1) bars (a look back of 2 is read as 1, as written)";
 const F_AVG: &str = "F|Average ADR filter (off): use the mean AR of the last N bars against its own threshold instead";
 const F_PREV: &str = "F|Previous N candles filter (off): the previous bar ends N bars in a row of the chosen colour";
@@ -75,16 +91,16 @@ const F_ST: &str = "F|ST filter (off): the AFL's Supertrend (5, 1, (H+L)/2, dail
 const X_ST: &str = "X|ST filter on: the ST turning against the entry setting also exits";
 const X_STOPS: &str = "X|PB % / HSL % (0 = off): on the High / Low (live, default) or the Close; live fills at the level, or at Open minus the buffer when the bar opens through it (not below the Low)";
 const X_LAST: &str = "X|The AFL also exits on the last data bar (shown as an open trade)";
-macro_rules! note_common { () => { " Trades the chosen index at its daily close (the AFL's SetForeign ticker list: NIFTY 50 by default, BANKNIFTY). The breadth series is rebuilt from the team's NSE 500 C&P database (AUX1 members; breadth 1 = all symbols), not the team's ~Advances / ~Declines composite. Position size, brokerage 0.04 % and penny / turnover / dead-stock settings are portfolio or stock-template options and are not modelled." }; }
+macro_rules! note_common { () => { " Trades the chosen index at its daily close (the AFL's SetForeign ticker list: NIFTY 50 by default, BANKNIFTY). The breadth series is rebuilt over the Nifty 50 members (AUX1) of the team's Nifty 50 C&P database, the universe of the team's ~Advances composite (equal on 6,065 of 6,117 days, within 1 on 6,114); breadth 0 = NSE 500 members, 1 = all NSE 500 C&P symbols. Position size, brokerage 0.04 % and penny / turnover / dead-stock settings are portfolio or stock-template options and are not modelled." }; }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(BASIC, "ADR Threshold, N Candle Exit", "Long/Short", &[
-            "F|AR = advancing / declining NSE 500 issues of the day (the advancing count when none decline)",
+            "F|AR = advancing / declining Nifty 50 issues of the day (the advancing count when none decline); breadth 0 NSE 500, 1 all symbols",
             "E|Long: AR at or below the lower threshold (0); short (Entry Type) : AR at or above the upper threshold (0); at the close",
             "X|N Candle exit: N (0 = off) bars after entry, at the close; with the 'AD Ratio' exit type there is no exit rule and an N of 0 exits on the next bar (as written)",
             "X|No ST, stop or last-bar exit",
-        ], concat!("Advance Decline LongShort.afl, coded as the AFL is written (its SetForeign is commented out, so it trades the chart index).", " With the defaults (thresholds 0, N 0) a long needs a day with no advancing issue and never exits; a short enters on the first bar and never exits: set the thresholds and N.", " Brokerage 0.04 % and position sizing are portfolio settings and are not modelled. The breadth series is rebuilt from the team's NSE 500 C&P database, not the team's composite.")),
+        ], concat!("Advance Decline LongShort.afl, coded as the AFL is written (its SetForeign is commented out, so it trades the chart index).", " With the defaults (thresholds 0, N 0) a long needs a day with no advancing issue and never exits; a short enters on the first bar and never exits: set the thresholds and N.", " Brokerage 0.04 % and position sizing are portfolio settings and are not modelled. The breadth series is rebuilt over the Nifty 50 members of the team's Nifty 50 C&P database (the ~Advances universe).")),
         def(VERSIONS, "ADR Threshold with ST / RSI / Avg ADR Filters", "Long/Short", &[
             F_AR, "E|Long: AR at or below the threshold; short (Entry Type): AR at or above it; at the close", F_ENTRY_N, F_AVG, F_PREV, F_ST,
             "F|RSI filter (off): RSI(14) below (or above) the threshold (1)",
@@ -136,7 +152,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|The Exit Day-th (5) trading day of the next month, at the close; the ATHC regime ending or the ST turning down also exit",
             "X|Hard SL 1 % on the Low, at the SL (or Open - 0.25 % below it); profit booking 3 % on the High, at the target (or Open - 0.25 % above it, as written)",
             "X|A sell on a lower-circuit bar waits for the next bar that is not",
-        ], concat!("FIVE Day Phenomena with ADR.afl (5DP + ADR), coded as the AFL is written; SetForeign(tickerName) makes it trade the index, so it runs on one index series. The 5DP entry looks ahead to the month's last trading day as the AFL does.", " The ROC / ATR / volatility ranking (PositionScore) only orders symbols in a portfolio and is not modelled; MaxOpenPositions 20, brokerage 0.65 % and sizing are portfolio settings.", " The breadth series is rebuilt from the team's NSE 500 C&P database, not the team's composite.")),
+        ], concat!("FIVE Day Phenomena with ADR.afl (5DP + ADR), coded as the AFL is written; SetForeign(tickerName) makes it trade the index, so it runs on one index series. The 5DP entry looks ahead to the month's last trading day as the AFL does.", " The ROC / ATR / volatility ranking (PositionScore) only orders symbols in a portfolio and is not modelled; MaxOpenPositions 20, brokerage 0.65 % and sizing are portfolio settings.", " The breadth series is rebuilt over the Nifty 50 members of the team's Nifty 50 C&P database (the ~Advances universe).")),
     ]
 }
 
@@ -147,7 +163,7 @@ fn p(key: &'static str, label: &'static str, def: f64, min: f64, max: f64, step:
 }
 
 fn breadth_param() -> ParamDef {
-    p("breadth", "Breadth universe (0 NSE 500 members AUX1, 1 all symbols)", 0.0, 0.0, 1.0, 1.0)
+    p("breadth", "Breadth universe (0 NSE 500 members AUX1, 1 all symbols, 2 Nifty 50 members)", 2.0, 0.0, 2.0, 1.0)
 }
 
 fn st_params(v: &mut Vec<ParamDef>, on: f64, fmax: f64) {
@@ -289,8 +305,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 /// AR = A / D per traded-index bar (Foreign fix-up: a missing day repeats the previous count); `zero_dec` is the
 /// value when D = 0 (None: A, as in the base AFL). None without the series.
-fn ad_ratio(x: &Ctx, all: bool, zero_dec: Option<f64>) -> Option<Vec<f64>> {
-    let [sa, sd] = SERIES[usize::from(all)];
+fn ad_ratio(x: &Ctx, breadth: usize, zero_dec: Option<f64>) -> Option<Vec<f64>> {
+    let [sa, sd] = SERIES[breadth];
     let fix = |v: &[f64]| {
         let mut o = v.to_vec();
         for i in 1..o.len() {
@@ -552,7 +568,7 @@ fn gu(g: &dyn Fn(&str) -> f64, k: &str) -> usize {
 fn basic(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
     let c = &x.c;
     let n = c.len();
-    let ratio = ad_ratio(x, gi(g, "breadth") == 1, None)?;
+    let ratio = ad_ratio(x, breadth_index(Some(gi(g, "breadth") as f64)), None)?;
     let short = gi(g, "entry_type") == 1;
     let (up, lo) = (g("adr_upper"), g("adr_lower"));
     let sig: Vec<bool> = (0..n).map(|i| if short { ratio[i] >= up } else { ratio[i] <= lo }).collect();
@@ -618,7 +634,7 @@ struct Pos {
 fn versions(kind: Kind, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
-    let ratio = ad_ratio(x, gi(g, "breadth") == 1, Some(50.0))?;
+    let ratio = ad_ratio(x, breadth_index(Some(gi(g, "breadth") as f64)), Some(50.0))?;
     let short = matches!(kind, Kind::Versions | Kind::FiveExit) && gi(g, "entry_type") == 1;
     // entry signal: AR (or its N-bar mean) against the threshold
     let navg = gu(g, "avg_n");
@@ -745,7 +761,7 @@ fn versions(kind: Kind, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
 fn patch(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     let n = c.len();
-    let ratio = ad_ratio(x, gi(g, "breadth") == 1, Some(50.0))?;
+    let ratio = ad_ratio(x, breadth_index(Some(gi(g, "breadth") as f64)), Some(50.0))?;
     let thr = g("adr_thr");
     let sig: Vec<bool> = ratio.iter().map(|&v| v <= thr).collect();
     let main = main_entry(&sig, gi(g, "consecutive") == 1, gi(g, "lookback"), g("n_entry"));
@@ -859,7 +875,7 @@ fn patch(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
 fn five_day(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
-    let ratio = ad_ratio(x, gi(g, "breadth") == 1, Some(50.0))?;
+    let ratio = ad_ratio(x, breadth_index(Some(gi(g, "breadth") as f64)), Some(50.0))?;
     let thr = g("adr_thr");
     let n_entry = g("n_entry");
     let w = if gi(g, "adr_mode") == 0 { gu(g, "n_entry") } else { gu(g, "lookback") };
@@ -984,8 +1000,8 @@ mod tests {
         let mut x = Ctx::new(r, r, &[]);
         let a: Vec<f64> = (0..r.len()).map(|i| if low.contains(&i) { 100.0 } else { 300.0 }).collect();
         let d: Vec<f64> = (0..r.len()).map(|i| if low.contains(&i) { 300.0 } else { 100.0 }).collect();
-        x.extra.insert("ADVANCES".into(), a);
-        x.extra.insert("DECLINES".into(), d);
+        x.extra.insert("ADVANCES_N50".into(), a);
+        x.extra.insert("DECLINES_N50".into(), d);
         x
     }
 
@@ -1018,9 +1034,19 @@ mod tests {
         let mut x = Ctx::new(&r, &r, &[]);
         x.extra.insert("ADVANCES".into(), vec![100.0, f64::NAN, 300.0, 0.0]);
         x.extra.insert("DECLINES".into(), vec![200.0, f64::NAN, 0.0, 0.0]);
-        assert_eq!(ad_ratio(&x, false, Some(50.0)).unwrap(), vec![0.5, 0.5, 50.0, 50.0]);
-        assert_eq!(ad_ratio(&x, false, None).unwrap()[2], 300.0);
-        assert!(ad_ratio(&x, true, None).is_none());
+        assert_eq!(ad_ratio(&x, 0, Some(50.0)).unwrap(), vec![0.5, 0.5, 50.0, 50.0]);
+        assert_eq!(ad_ratio(&x, 0, None).unwrap()[2], 300.0);
+        assert!(ad_ratio(&x, 1, None).is_none());
+        assert!(ad_ratio(&x, 2, None).is_none());
+    }
+
+    #[test]
+    fn breadth_defaults_to_nifty50() {
+        assert_eq!(breadth_index(None), 2);
+        assert_eq!(breadth_index(Some(0.0)), 0);
+        assert_eq!(breadth_index(Some(1.0)), 1);
+        assert_eq!(breadth_index(Some(2.0)), 2);
+        assert_eq!(SERIES[breadth_index(None)], ["ADVANCES_N50", "DECLINES_N50"]);
     }
 
     #[test]

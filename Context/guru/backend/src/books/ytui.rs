@@ -42,7 +42,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Sell when the Ulcer line rises through its signal",
             "X|Cover when the Ulcer line falls through its signal",
             EXITS, EXITS_2, EXITS_3, EXITS_4,
-        ], "Futures_UlcerIndex_Final.afl (Ulcer Performance Index/AFLs), coded as the AFL is written, with its ExRem lines. ATR exit average default Open (the ParamList has no default, so its first item). CalculateAvg comes from an include that is not in the folder; it is taken to be the inline version of the sibling AFLs."),
+        ], "Futures_UlcerIndex_Final.afl (Ulcer Performance Index/AFLs), coded as the AFL is written, with its ExRem lines. ATR exit average default Open (the ParamList has no default, so its first item). CalculateAvg comes from the team's include aakash/OptionFunctions.afl (supplied on 17-11-2026, jay-local/Include and Include(X86)); it is the same price list as the inline version of the sibling AFLs, so nothing changed."),
         def(EXIT_ULCER, "ST or Ulcer Entry, Exit Only on Ulcer", &[
             "E|Long as in the Ulcer crossover, or (ST entry on) when the Close crosses above the entry Supertrend",
             "F|Optional RSI level and bull / bear ST filters on the long entry",

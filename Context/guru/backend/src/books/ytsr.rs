@@ -33,10 +33,18 @@
 //!   Close (OLC, lower circuit) waits for the next non-OLC bar; no entry on a bar whose High = Close (UC); penny 0
 //!   and turnover off.
 //!
-//! Not coded: "AFLs/RSI-Stochastic Cross Thrshold (Combined Version).afl": its entry reads `Stochastic_Threshold`
-//! and `RSI_Threshold`, which this version no longer defines (it declares upper / lower thresholds instead), so
-//! AmiBroker stops with an uninitialised-variable error. The description's "Ranking by RSI / %K" has no
-//! PositionScore in the code.
+//! `ytsr_cross_threshold` is "AFLs/RSI-Stochastic Cross Thrshold (Combined Version).afl", a declared adaptation. The
+//! AFL is the Any-TimeFrame AFL above without its up-close exit, with the two thresholds re-declared as upper and
+//! lower pairs, but its entry line still reads `Stochastic_Threshold` and `RSI_Threshold`, which it no longer
+//! defines: AmiBroker stops with an uninitialised-variable error, so it cannot run as written. The team's
+//! "Breakout System/Stoch + RSI.xlsx" workbook (share/Jay/Old Topics, copied to jay-local on 17-11-2026) was run with
+//! one "Stochastic %K Threshold" and one "RSI Threshold" per run, weekly indicators on daily bars, and its trades
+//! enter on the week's last day in the week %K and RSI both cross ABOVE their thresholds (checked on the Nifty list
+//! "16-75 . 8-55": %K(16, 1) above 75 and RSI(8) above 55 at all six sampled entries). Coded so: one threshold each,
+//! Direction 0 = both cross above (the Breakout workbook), Direction 1 = both cross below (the entry line as it is
+//! written, the same trades as `ytsr_below_threshold`). An entry on one upper and one lower threshold, which the
+//! AFL's description suggests, is not written anywhere in the AFL and is not coded. The description's "Ranking by
+//! RSI / %K" has no PositionScore in the code.
 #![allow(dead_code)]
 use crate::books::ytmr::day_number;
 use crate::books::ytsw::{compress, Bars};
@@ -46,7 +54,8 @@ use crate::connors::{rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "yt_sr";
 pub const BELOW: &str = "ytsr_below_threshold";
 pub const IBS: &str = "ytsr_stoch_ibs_rsi";
-pub const IDS: [&str; 2] = [BELOW, IBS];
+pub const CROSS: &str = "ytsr_cross_threshold";
+pub const IDS: [&str; 3] = [BELOW, IBS, CROSS];
 
 const GROUP: &str = "YT Strategies · Stochastic+RSI System";
 
@@ -75,6 +84,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|An exit on an Open = Low = Close bar waits for the next bar that is not",
             "F|No entry on a bar whose High = Close or on the last bar; no exit and re-entry on one bar",
         ], "Stochastic or IBS + RSI.afl (Stochastic+RSI System/Stochastic or IBS + RSI), coded as the AFL is written. Defaults as the AFL: %K period 30 (StochK's default smoothing 3), threshold 90, RSI period 30, threshold 60, IBS threshold 0.90; the exit buffer default 0 lies below its minimum 0.1 and is used as written."),
+        def(CROSS, "RSI-Stochastic Cross Threshold (Breakout)", &[
+            "E|Stochastic %K(30, smoothing 1) crosses above 90 and RSI(30) crosses above 60 on the same bar: buy at the Close",
+            "F|Direction 1: both cross below their thresholds instead (the AFL's entry line as written)",
+            "F|Indicator time frames: chart (daily) by default; weekly or monthly as the AFL brings them back, so the entry falls on the period's last day",
+            "X|With the defaults only the last bar of the data sells (the position is held)",
+            "X|Options (off): HSL % / PB % (at the Close, or Live at the level / Open less the buffer), exit after N bars",
+            "X|RSI-drop option (off): once RSI(30) crosses above 60 after entry it tracks its peak; sell when RSI falls more than 5 below the peak",
+            "X|Supertrend option (off, period 5, factor 2 on (H+L)/2): sell on a fresh Close below the line after a Close above it",
+            "X|An exit on an Open = Low = Close bar waits for the next bar that is not",
+            "F|No entry on a bar whose High = Close or on the last bar; exit then entry on one bar allowed",
+        ], "RSI-Stochastic Cross Thrshold (Combined Version).afl (Stochastic+RSI System/AFLs). Declared adaptation: the AFL cannot run as written (its entry reads Stochastic_Threshold and RSI_Threshold, which it re-declared as upper / lower pairs), so one threshold each is used, crossing above by default, which is how the team's Breakout System workbook (Stoch + RSI.xlsx: Stochastic %K Threshold, RSI Threshold, HSL %, PB %; weekly indicators on daily bars) was run. Everything else is the AFL as written: defaults %K 30 / 90, RSI 30 / 60, all exits off. For the workbook's Nifty list '16-75 . 8-55' set %K 16 / 75, RSI 8 / 55, both time frames weekly, HSL 5, PB 5, Live."),
     ]
 }
 
@@ -88,6 +108,13 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("exit_buffer", "Exit buffer %", 0.0, 0.0, 100.0, 0.01),
         ])
     };
+    if id == CROSS {
+        // the Combined Version's settings: the Any-TimeFrame AFL's without the up-close exit, plus the entry direction
+        let mut v = params(BELOW)?;
+        v.retain(|d| d.key != "num_upclose");
+        v.insert(0, p("direction", "Entry direction (0 cross above: Breakout workbook, 1 cross below: as written)", 0.0, 0.0, 1.0, 1.0));
+        return Some(v);
+    }
     Some(match id {
         BELOW => {
             let mut v = vec![
@@ -494,11 +521,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         back(&rsi_of(&t.b.c, gu("rsi_prd")), &t)
     };
     let evs = match id {
-        BELOW => {
+        BELOW | CROSS => {
             let k = stoch(gi("stoch_tf"), gu("stoch_avg"));
             let r = rsi_on(gi("rsi_tf"));
             let (kt, rt) = (konst(n, g("stoch_thr")), konst(n, g("rsi_thr")));
-            let entry: Vec<bool> = (0..n).map(|i| i > 0 && cross(&kt, &k, i) && cross(&rt, &r, i) && buy_ok(i)).collect();
+            let above = id == CROSS && gi("direction") == 0;
+            let entry: Vec<bool> = (0..n).map(|i| i > 0 && (if above { cross(&k, &kt, i) && cross(&r, &rt, i) } else { cross(&kt, &k, i) && cross(&rt, &r, i) }) && buy_ok(i)).collect();
             let exit_rsi = rsi_on(gi("exit_rsi_tf"));
             let st_on = gi("st") == 1;
             let st = if st_on {
@@ -507,7 +535,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             } else {
                 vec![None; n]
             };
-            let cfg = BelowCfg { num_weeks: gi("num_weeks"), num_upclose: gi("num_upclose"), stops, rsi_exit: gi("rsi_exit") == 1, exit_rsi_thr: g("exit_rsi_thr"), rsi_drop: g("rsi_drop"), st: st_on };
+            let cfg = BelowCfg { num_weeks: gi("num_weeks"), num_upclose: if id == CROSS { 0 } else { gi("num_upclose") }, stops, rsi_exit: gi("rsi_exit") == 1, exit_rsi_thr: g("exit_rsi_thr"), rsi_drop: g("rsi_drop"), st: st_on };
             below_loop(x, &entry, &exit_rsi, &st, &cfg)
         }
         IBS => {
@@ -648,6 +676,31 @@ mod tests {
         assert!(line[0].is_none() && line[1].is_none() && line[2].is_some());
         // ATR line under a steadily rising close never falls
         assert!(line[2..].windows(2).all(|w| w[1].unwrap() >= w[0].unwrap()));
+    }
+
+    #[test]
+    fn cross_threshold_directions() {
+        let r = wave(400);
+        let x = Ctx::new(&r, &r, &[]);
+        let last = r.len() - 1;
+        let key = |t: &[Trade]| t.iter().map(|t| (t.legs[0].i, t.exit_i)).collect::<Vec<_>>();
+        let set = |kv: &[(&str, f64)]| -> Params { kv.iter().map(|(k, v)| (k.to_string(), *v)).collect() };
+        let base = [("stoch_prd", 10.0), ("stoch_thr", 60.0), ("rsi_prd", 8.0), ("rsi_thr", 50.0), ("num_weeks", 5.0)];
+        // direction 1 is the AFL's entry line as written: the Below Threshold trades
+        let mut below = base.to_vec();
+        below.push(("direction", 1.0));
+        assert_eq!(key(&run(CROSS, &x, 0, last, &set(&below)).unwrap()), key(&run(BELOW, &x, 0, last, &set(&base)).unwrap()));
+        // direction 0 (default): %K and RSI both cross above their thresholds on the entry bar.
+        // 12 falling closes (RSI near 0, %K near 0), then a jump of 15: RSI(8) and %K(3) both cross above 50 on bar 12
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..12).map(|i| { let c = 100.0 - i as f64; (c, c + 1.0, c - 1.0, c) }).collect();
+        v.extend([(90.0, 105.0, 89.0, 104.0), (104.0, 106.0, 103.0, 105.0), (105.0, 107.0, 104.0, 106.0)]);
+        let b = bars(&v);
+        let y = Ctx::new(&b, &b, &[]);
+        let up = run(CROSS, &y, 0, b.len() - 1, &set(&[("stoch_prd", 3.0), ("stoch_thr", 50.0), ("rsi_prd", 8.0), ("rsi_thr", 50.0)])).unwrap();
+        assert_eq!(key(&up).first().map(|t| t.0), Some(12));
+        // the same bars give no entry with both crossing below
+        assert!(run(CROSS, &y, 0, b.len() - 1, &set(&[("stoch_prd", 3.0), ("stoch_thr", 50.0), ("rsi_prd", 8.0), ("rsi_thr", 50.0), ("direction", 1.0)])).unwrap().is_empty());
+        assert!(params(CROSS).unwrap().iter().all(|d| d.key != "num_upclose"));
     }
 
     #[test]

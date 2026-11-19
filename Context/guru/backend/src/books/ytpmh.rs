@@ -1,6 +1,12 @@
 //! YT Strategies · Close above PMH: the team's AmiBroker AFLs in "Old Topics/Close above PMH"
-//! (FuturesOrStocks_Long_UpTrending V1-V6), long only, on a daily spot index. Coded from the AFLs as written, with the
-//! AFLs' own default settings; there is no book PDF. V7 is not coded: it uses variables it never defines.
+//! (FuturesOrStocks_Long_UpTrending V1-V7), long only, on a daily spot index. Coded from the AFLs as written, with the
+//! AFLs' own default settings; there is no book PDF.
+//! V7 is a declared adaptation (17-11-2026): it was made by editing V6 and lost six definitions it still uses
+//! (STTimeFrame, currentMonth, currentYear, entryMonth, entryYear, monthlyLastCandle; the team's include files do not
+//! define them), so AmiBroker stops with an error on it. They are taken from V6 (same names). Its month-close exit is
+//! checked only in the entry month as written, which can never fire because V7 enters on the month's last day; by the
+//! user's decision the default checks it at every month end after the entry (`exit_scope` 1) and is on (`exit_if` 1,
+//! the AFL default is off); `exit_scope` 0 gives the AFL as written.
 //!
 //! Two kinds of AFL:
 //! - V1-V3 are written for the chart periodicity ("Weekly/Monthly"; the topic's name, previous month high, is the
@@ -18,7 +24,8 @@
 //! The AFL loop runs over the whole history, before the run's start too: a trade the loop buys before From is dropped
 //! by the backtester (entry outside the range), but the loop stays in it, so no buy is taken until its own exit (the
 //! team's From_2011 NIFTY lists: a 2010 trade held into 2012 blocks the March 2011 entry).
-//! The AFL's Supertrend (`CalculateAvg` from the team's include, assumed as in the team's other AFLs): the average
+//! The AFL's Supertrend (`CalculateAvg` and `GetTimeframe` from the team's include aakash/OptionFunctions.afl, checked against
+//! the supplied file: the same price list and timeframe names as the team's other AFLs): the average
 //! of the last `period` ATR(1) values around the chosen price (default Open), the loop from bar `period`, the lower
 //! band only rising in an up trend and the upper only falling in a down trend, with no reset on a flip.
 #![allow(dead_code)]
@@ -36,7 +43,8 @@ pub const V3_BEAR: &str = "ytpmh_v3_bear_continue";
 pub const V4: &str = "ytpmh_v4";
 pub const V5: &str = "ytpmh_v5";
 pub const V6: &str = "ytpmh_v6";
-pub const IDS: [&str; 10] = [V1, V1_ATR, V1_BEAR, V2, V2_BEAR, V3, V3_BEAR, V4, V5, V6];
+pub const V7: &str = "ytpmh_v7";
+pub const IDS: [&str; 11] = [V1, V1_ATR, V1_BEAR, V2, V2_BEAR, V3, V3_BEAR, V4, V5, V6, V7];
 
 fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: "YT Strategies · Close above PMH", session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
@@ -140,6 +148,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Optional (default off): the same exit also in the entry month",
             RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V6.afl, coded as the AFL is written. Its 'Exit when current close < previous high' toggle is declared but never used, so the month-close exit is always on (not offered as a setting)."),
+        def(V7, "Buy above PMH V7 (month-end entry)", &[
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the Close of the month's last trading day",
+            "F|Supertrend filter (default off): daily, weekly or monthly, period 5, factor 2, on the Open, running",
+            NOBUY, NOBUY_2,
+            "X|Sell at a month's last bar when that month's Close < previous month's High (default on, every month end after the entry; adaptation)",
+            "X|As written (Exit scope 0): checked only in the entry month, which never fires",
+            RISK_X, RISK_X_2, ATR_X,
+        ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V7.afl, declared adaptation: the AFL cannot run as written (it uses STTimeFrame, currentMonth, currentYear, entryMonth, entryYear and monthlyLastCandle without defining them, lost when it was edited from V6), so V6's definitions are used. Its month-close exit is limited to the entry month as written, which never fires because V7 enters on the month's last day; the default checks it at every month end (as the AFL's own description says) and turns it on (the AFL default is off). Exit scope 0 and Exit if 0 give the AFL as written; then only the stops, ATR, ST sell or the end of the data close a trade. Not compared: no team trade sheet or optimisation exists for V7."),
     ]
 }
 
@@ -172,7 +189,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let cmax = if matches!(id, V1 | V1_ATR) { 5.0 } else { 100.0 };
     match id {
         V3 | V3_BEAR => v.push(p("exit_below", "Exit when the close is below the previous high (0 off, 1 on)", 1.0, 0.0, 1.0, 1.0)),
-        V6 => {}
+        V6 | V7 => {}
         _ => v.extend([
             p("n_green", "N green candle exit (0 off)", 0.0, 0.0, cmax, 1.0),
             p("n_up", "N up close exit (0 off)", 0.0, 0.0, cmax, 1.0),
@@ -182,9 +199,13 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         V4 | V5 => v.push(p("exit_if", "Exit if the entry month closes below the previous month's high (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0)),
         V6 => v.push(p("exit_if", "Exit if a month (entry month too) closes below the previous month's high (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0)),
+        V7 => v.extend([
+            p("exit_if", "Exit if a month's close falls below the previous month's high (0 off, 1 on; the AFL default is off)", 1.0, 0.0, 1.0, 1.0),
+            p("exit_scope", "Month-close exit checked (0 entry month only, as written; 1 every month end)", 1.0, 0.0, 1.0, 1.0),
+        ]),
         _ => {}
     }
-    v.push(p("st_on", "ST filter (0 off, 1 on)", if id == V4 { 0.0 } else { 1.0 }, 0.0, 1.0, 1.0));
+    v.push(p("st_on", "ST filter (0 off, 1 on)", if matches!(id, V4 | V7) { 0.0 } else { 1.0 }, 0.0, 1.0, 1.0));
     if !monthly {
         v.push(p("st_tf", "ST time frame (1 daily, 2 weekly, 3 monthly)", 1.0, 1.0, 3.0, 1.0));
     }
@@ -359,6 +380,9 @@ enum Rule<'a> {
     Below(&'a [bool]),
     /// month close below the previous month's high, not in the entry month (V6).
     MonthClose { below: &'a [bool], m: Monthly<'a>, check1: bool, entry_group: usize },
+    /// V7: at a month's last bar, exitCheck1 = exitIf AND month close below the previous month's high; checked in the
+    /// entry month only (as written) or at every month end (`every`); it stays set until the exit.
+    MonthEnd { below: &'a [bool], m: Monthly<'a>, every: bool, check1: bool, entry_group: usize },
 }
 
 impl Rule<'_> {
@@ -372,7 +396,7 @@ impl Rule<'_> {
                 *entry_group = monthly.as_ref().map_or(0, |m| m.group[i]);
             }
             Rule::Below(_) => {}
-            Rule::MonthClose { m, check1, entry_group, .. } => {
+            Rule::MonthClose { m, check1, entry_group, .. } | Rule::MonthEnd { m, check1, entry_group, .. } => {
                 *check1 = false;
                 *entry_group = m.group[i];
             }
@@ -417,6 +441,12 @@ impl Rule<'_> {
                 }
                 (below[i] && m.group[i] != *entry_group) || *check1
             }
+            Rule::MonthEnd { below, m, every, check1, entry_group } => {
+                if m.is_last[i] && (*every || m.group[i] == *entry_group) {
+                    *check1 = m.exit_if && below[i];
+                }
+                *check1
+            }
         }
     }
     fn name(&self) -> &'static str {
@@ -424,7 +454,7 @@ impl Rule<'_> {
             Rule::Count { monthly: Some(_), .. } => "Monthly counter / month close exit",
             Rule::Count { .. } => "Counter exit",
             Rule::Below(_) => "Close below previous high",
-            Rule::MonthClose { .. } => "Month close below previous month high",
+            Rule::MonthClose { .. } | Rule::MonthEnd { .. } => "Month close below previous month high",
         }
     }
 }
@@ -637,7 +667,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (done, open) = in_range(done, open, &|k| bars.last[k] >= from);
             to_trades(done, open, &|k| bars.last[k])
         }
-        V4 | V5 | V6 => {
+        V4 | V5 | V6 | V7 => {
             let d = Ohlc { o: x.o.clone(), h: x.h.clone(), l: x.l.clone(), c: x.c.clone() };
             let (m, mb) = period_bars(x, 'M');
             let grp = &mb.group;
@@ -680,7 +710,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let can_buy: Vec<bool> = (0..n).map(|i| i != n - 1 && i != to).collect();
             let lp = Loop {
                 b: &d,
-                entry: &entry,
+                entry: if id == V7 { &entry1 } else { &entry },
                 st_buy: &st_buy,
                 st_sell: &st_sell,
                 atr: atr.as_deref(),
@@ -693,6 +723,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mth = Monthly { group: grp, is_last: &is_last, exit_if: gi("exit_if") == 1 };
             let mut rule = if id == V6 {
                 Rule::MonthClose { below: &below, m: mth, check1: false, entry_group: 0 }
+            } else if id == V7 {
+                Rule::MonthEnd { below: &below, m: mth, every: gi("exit_scope") == 1, check1: false, entry_group: 0 }
             } else {
                 Rule::Count {
                     mode: if id == V5 { CountMode::Wait } else { CountMode::Reset },
@@ -843,6 +875,23 @@ mod tests {
         assert_eq!(go(V6, &daily(), &[("st_on", 0.0)]), vec![(4, 7, false), (9, 10, true)]);
         // exit_if also in the entry month: Feb's close sells at Feb's last day, Mar's first day buys, Mar's end sells
         assert_eq!(go(V6, &daily(), &[("st_on", 0.0), ("exit_if", 1.0)]), vec![(4, 5, false), (6, 7, false), (9, 10, true)]);
+    }
+
+    #[test]
+    fn v7_buys_at_month_end_and_exits_at_a_month_end_close_below() {
+        // Jan high 100; Feb close 98 (no entry); Feb high 102, Mar close 101 < 102; Mar high 103.5, Apr close 105.2
+        // is 1.6% above: buy on Apr's last day (10), the data's last bar, so no buy there. Use a run to bar 9 instead:
+        // Mar's last day (7) closes 101 < Feb high 102: no entry anywhere before Apr.
+        assert_eq!(go(V7, &daily(), &[]), vec![]);
+        let mut r = daily();
+        // extend: Apr closes 105.2 on bar 10 (buy), May closes below Apr's high (sell), June ends the data
+        r.push(row("2024-05-01", 105.0, 105.5, 100.0, 101.0));
+        r.push(row("2024-05-02", 101.0, 102.0, 99.0, 100.0)); // May close 100 < Apr high 105.5
+        r.push(row("2024-06-03", 100.0, 101.0, 99.0, 100.5));
+        assert_eq!(go(V7, &r, &[]), vec![(10, 12, false)]);
+        // as written: the exit is only checked in the entry month, so the trade stays open
+        assert_eq!(go(V7, &r, &[("exit_scope", 0.0)]), vec![(10, 13, true)]);
+        assert_eq!(go(V7, &r, &[("exit_if", 0.0)]), vec![(10, 13, true)]);
     }
 
     #[test]

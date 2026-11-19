@@ -68,3 +68,6 @@ Context/guru/webapp/verification/
 Context/guru/frontend/react/dist-login/
 
 jay-local/
+
+# Exported Codex / Claude session transcripts may contain private conversation and credentials.
+codex-session-*.md

@@ -210,8 +210,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
-    if def.book==books::ytadr::BOOK && p.get("breadth").is_some_and(|v| v.round()==1.0) {
-        required=books::ytadr::SERIES[1].to_vec();
+    if def.book==books::ytadr::BOOK {
+        required=books::ytadr::SERIES[books::ytadr::breadth_index(p.get("breadth").copied())].to_vec();
     }
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
