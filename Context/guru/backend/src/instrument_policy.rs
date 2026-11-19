@@ -390,6 +390,14 @@ fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opti
         }
     } else if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
         format!("This option rule needs the option's own intraday high or opening price (a 2x stop on the option's high, or a next-morning exit). The US option data hold only the 16:00 snapshot (bid, ask, last), so {ticker} cannot be priced as the book trades it; the rule runs on NIFTY 50 and NIFTY BANK index options. No result is published.")
+    } else if matches!(ticker,"SPY"|"QQQ"|"IWM"|"NIFTY 50"|"NIFTYBANK") {
+        // R1 audit (labels only): the vault DOES hold option prices for this ticker; the card is admitted elsewhere for its own reason
+        let why=match def.id {
+            "fotol_adjusted_cc"=>"its $0.20 / $0.40 time-premium amounts are US-dollar amounts set on the book's own QQQ options",
+            "otvt_cvr1_sell_puts"=>"it is the option leg of CVR I, written for SPY options with the CBOE VIX (the VIX open is read; India VIX opens repeat the previous close)",
+            _=>"its own review admitted it only there",
+        };
+        format!("This rule trades real option contracts. The vault holds option prices for {ticker}, but this rule is admitted only on {}: {why}. No result is published on {ticker}.", options_tickers(def.id).join(", "))
     } else {
         format!("This rule trades real option contracts. The vault holds traded option prices only for NIFTY and BANKNIFTY index options (NSE) and SPY, QQQ and IWM options (US); this rule is admitted on {}. {ticker} has no option prices, and the underlying's own price cannot stand in for an option's, so no result is published.", options_tickers(def.id).join(", "))
     };
