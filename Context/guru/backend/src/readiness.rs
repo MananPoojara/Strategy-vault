@@ -57,7 +57,7 @@ pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,
 /// today-vs-yesterday ratio, a level test, an N-day simple average that blanks for exactly N bars) with no cumulative or EMA state carried
 /// through the gap: a missing INTERIOR day blanks the signal for that look-back (NaN compares false, nothing is filled) so it must not
 /// move the start. Leading gaps still refuse and auto-start says so. Each id is read in its module (see authors/backlog-1118/Q9/FINAL.md).
-const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10","mbhfe_tbill_roc","mbhfe_tbond_roc","mbhfe_yield_curve"];
+const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10","mbhfe_tbill_roc","mbhfe_tbond_roc","mbhfe_yield_curve","arebta_d_djta","arebta_d_hlr10","arebta_d_hlr30","arebta_d_pt10y","arebta_e_durspd","arebta_tt_pt10y"];
 /// Series a rule reads (shared by check and auto_end). The minute path reads no derived series.
 fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static str> {
     let mut required=if minute_path {vec![]} else {def.needs_series.to_vec()};
@@ -65,7 +65,7 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
-    if def.id=="arebta_d_br" && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
+    if (def.id=="arebta_d_br" || matches!(def.id,"arebta_d_djta"|"arebta_d_hlr10"|"arebta_d_hlr30"|"arebta_d_pt10y")) && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
     if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
