@@ -100,7 +100,9 @@ export const optimizeIndividual = (m: SavedMarket, spec: Spec, q: PortfolioRunQu
 /** AmiBroker Analysis Scan / Explore (/lab/scan): raw rule signals, not filled trades. Rows are [symbol, date, trade, close]. */
 export interface ScanBase extends Provisional { label: string; apply: "current" | "all"; from: string | null; to: string | null; notes: string[]; foreign?: ForeignDisclosure[] }
 export interface ScanResult extends ScanBase { kind: "lab_scan"; symbols: number; rows: [string, string, "Buy" | "Sell" | "Short" | "Cover", number | null][]; refused: { ticker: string; reason: string }[]; membership?: { kind: string; note: string } }
-export interface ExploreResult extends ScanBase { kind: "lab_explore"; /** bar timeframe the rows are on (D, W, M …) */ tf?: string; dates: string[]; open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; close: (number | null)[]; volume: (number | null)[] | null; signals: Record<"buy" | "sell" | "short" | "cover", (0 | 1)[]> }
+export interface ExploreResult extends ScanBase { kind: "lab_explore"; /** bar timeframe the rows are on (D, W, M …) */ tf?: string; dates: string[]; open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; close: (number | null)[]; volume: (number | null)[] | null; signals: Record<"buy" | "sell" | "short" | "cover", (0 | 1)[]>;
+  /** The backtest's position after each row (+1 long, −1 short, 0 flat) and the exit levels it tests, only those the spec sets. */
+  position?: number[]; levels?: Record<string, (number | null)[]> }
 export interface ScanQuery { ticker?: string; from?: string; to?: string; apply?: "current" | "all" }
 export const scan = (m: SavedMarket, spec: Spec, q: ScanQuery) =>
   engine<ScanResult>(m, "lab/scan", { spec: JSON.stringify(spec), mode: "scan", apply: q.apply ?? "current", ticker: q.apply === "all" ? undefined : q.ticker, from: q.from, to: q.to });

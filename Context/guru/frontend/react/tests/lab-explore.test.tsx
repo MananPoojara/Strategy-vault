@@ -162,3 +162,25 @@ it("weekly timeframe: Explore sends tf=W, reads daily-rule indicators on weekly 
   expect(table(host, "explore").map((r) => r[7])).toEqual(["1.00", "3.00", "4.00"]); // values on the weekly dates, the mid-week 08-01 skipped
   expect(host.querySelector("[data-lab-explore-tf]")?.textContent).toContain("One row per week");
 });
+
+it("Explore follows the strategy's own settings: its exit levels by name, the backtest's real trades, and a Settings sheet", async () => {
+  const { exploreTable, levelNames, settingsSheet, tradeRows } = await import("../src/features/lab/Explore");
+  const spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "ema", p: { length: 9 } }, op: "crosses_above", rhs: { s: "ema", p: { length: 21 } } }] },
+    exit: { any: [], dual_atr: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } } } as ExplorePanelProps["spec"];
+  expect(levelNames(spec).dual_init).toBe("Dual ATR initial (5 × 2, (High+Low)/2)");
+  const dates = ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"];
+  // a stop exit shows as a real Trade exit, which the rules' raw Exit signal never does
+  const trades = [{ entry: "2024-01-02", exit: "2024-01-04", entry_px: 100, exit_px: 95, open: false, dir: 1, reason: "exit.dual_atr" }] as never;
+  expect(tradeRows(dates, trades)).toEqual([["", 0, 0, "", null, null], ["Long", 1, 0, "", 100, null], ["Long", 0, 0, "", null, null], ["", 0, 1, "Dual ATR stop", null, 95]]);
+  const r = { dates, open: [1, 1, 1, 1], high: [1, 1, 1, 1], low: [1, 1, 1, 1], close: [1, 1, 1, 1], volume: null,
+    signals: { buy: [0, 1, 0, 0], sell: [0, 0, 0, 0], short: [0, 0, 0, 0], cover: [0, 0, 0, 0] },
+    levels: { dual_init: [null, 98, 99, null], target: [null, null, null, null] } } as unknown as ExploreResult;
+  const t = exploreTable(r, [], "NIFTY 50", { spec, trades });
+  expect(t.header).toEqual(["Symbol", "Date", "Open", "High", "Low", "Close", "Volume", "Dual ATR initial (5 × 2, (High+Low)/2)", "Entry", "Exit",
+    "Position", "Trade entry", "Trade exit", "Exit reason", "Entry price", "Exit price"]); // a level never set (target) gets no column
+  expect(t.rows[3].slice(-6)).toEqual(["", 0, 1, "Dual ATR stop", null, 95]);
+  const s = settingsSheet(spec, cat, "NIFTY 50", "D", "2000-01-01");
+  expect(s).toContainEqual(["Sell", "at the Dual ATR initial (5 × 2, (High+Low)/2)"]);
+  expect(s).toContainEqual(["exit.dual_atr.favour.mult", 4]);
+  expect(s).toContainEqual(["From", "01-01-2000"]);
+});

@@ -4,9 +4,13 @@ import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import { useEffect, useMemo, useState } from "react";
 import { operandLabel } from "./spec-model";
 import { shortName } from "./catalogue";
+import { words } from "./PlainRules";
+import { stopsOn } from "./defaults";
+import { DUAL_PRICES } from "./OrdersPanel";
+import { friendlyReason } from "./spec-model";
 import type { ExploreResult, ScanResult } from "./client";
 import { DASH, int, num } from "./format";
-import type { Catalogue, Operand, SavedMarket, SeriesResponse, Spec } from "./types";
+import type { Catalogue, Operand, RuleNode, SavedMarket, SeriesResponse, Spec, Trade } from "./types";
 import { ErrorNotice, Loading, Segmented } from "./ui";
 import type { Chip } from "./Workbench";
 import "./explore.css";
@@ -28,14 +32,14 @@ export const csvOf = (header: string[], rows: Cell[][]) =>
 
 /** The Analysis result list: click a header to sort (again to reverse), 100 rows a page, Copy CSV takes every row in the shown order. */
 /** `file`: the Download Excel name. Numbers stay numbers in the workbook; dates are DD-MM-YYYY as on screen. */
-function ResultTable({ name, header, rows, fmt, file }: { name: string; header: string[]; rows: Cell[][]; fmt: Fmt[]; file: string }) {
+function ResultTable({ name, header, rows, fmt, file, sheets = [] }: { name: string; header: string[]; rows: Cell[][]; fmt: Fmt[]; file: string; sheets?: { name: string; rows: Cell[][] }[] }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); setSort(null); }, [rows]);
   const order = useMemo(() => { const k = rows.map((_, i) => i); return sort ? k.sort((a, b) => cmp(rows[a][sort.col], rows[b][sort.col]) * sort.dir) : k; }, [rows, sort]);
   const pages = Math.max(1, Math.ceil(order.length / PAGE)), at = Math.min(page, pages - 1);
   // every row in the shown order, as the table sorts it
-  const download = () => saveBytes(xlsx([{ name: "Explore", rows: [header, ...order.map((i) => rows[i].map((v, c) => (fmt[c] === date && typeof v === "string" ? dayFirst(v) : v)))] }]), file, XLSX_TYPE);
+  const download = () => saveBytes(xlsx([{ name: "Explore", rows: [header, ...order.map((i) => rows[i].map((v, c) => (fmt[c] === date && typeof v === "string" ? dayFirst(v) : v)))] }, ...sheets]), file, XLSX_TYPE);
   if (!rows.length) return <p className="empty">No rows.</p>;
   return <>
     <div className="lab-row">
@@ -71,6 +75,8 @@ export interface ExplorePanelProps {
   ticker?: string;
   /** Selected timeframe (AmiBroker Periodicity): Explore rows and daily-rule indicator columns are on these bars. */
   tf?: string;
+  /** The backtest's trades for this strategy: the Position / Trade entry / Trade exit columns. */
+  trades?: Trade[];
   onScan(apply: "current" | "all"): Promise<ScanResult>;
   onExplore(): Promise<ExploreResult>;
   loadSeries(q: { id: string; tf: string; p?: Record<string, number>; vs?: string; formula?: string; name?: string }): Promise<SeriesResponse>;
@@ -99,17 +105,72 @@ export function ruleIndicators(spec: Spec, cat: Catalogue): Operand[] {
   return [...seen.values()];
 }
 
-/** Explore columns: Date, O/H/L/C/V, one per indicator the rules read, then Entry and Exit as 0/1. */
-export function exploreTable(r: ExploreResult, columns: { name: string; at: Map<string, number | null> }[], ticker = ""): Table {
+/** The exit levels the engine reports, named with the strategy's own settings: "Dual ATR initial (5 × 2, (High+Low)/2)". */
+export function levelNames(spec: Spec): Record<string, string> {
+  const dual = spec.exit.dual_atr, avg = (p?: string) => DUAL_PRICES.find(([k]) => k === (p ?? "hl2"))?.[1] ?? p ?? "";
+  const band = (b?: { period: number; mult: number; price?: string }) => (b ? ` (${b.period} × ${b.mult}, ${avg(b.price)})` : "");
+  const dist = (k: "stop_loss" | "target" | "trailing") => stopsOn({ [k]: spec.exit[k] }, undefined)[0]?.replace(/^\S+ ?/, "") ?? "";
+  return {
+    dual_init: `Dual ATR initial${band(dual?.initial)}`, dual_fav: `Dual ATR favour${band(dual?.favour)}`,
+    dual_switch: `Dual ATR switch line`, dual_active: "Dual ATR stop in force",
+    stop: `Stop-loss${dist("stop_loss") ? ` (${dist("stop_loss")})` : ""}`, target: `Target${dist("target") ? ` (${dist("target")})` : ""}`,
+    trailing: `Trailing stop${dist("trailing") ? ` (${dist("trailing")})` : ""}`, line_init: "Exit line (initial)", line_fav: "Exit line (favour)",
+  };
+}
+/** Per row, the backtest's trades: the position held after the bar, the real entry and exit bars (stops included), why and at what price. */
+export function tradeRows(dates: string[], trades: Trade[]): Cell[][] {
+  // a trade date falls in the row dated on or after it (weekly / monthly rows are dated their period's last session)
+  const rowOf = (d: string) => { let lo = 0, hi = dates.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dates[m] < d) lo = m + 1; else hi = m; } return lo; };
+  const out: Cell[][] = dates.map(() => ["", 0, 0, "", null, null]);
+  for (const t of trades) {
+    const a = rowOf(t.entry), b = t.open ? dates.length : rowOf(t.exit), side = t.dir < 0 ? "Short" : "Long";
+    for (let i = a; i < Math.min(b, dates.length); i++) out[i][0] = side; // held after these bars; flat after the exit bar
+    if (a < dates.length) { out[a][1] = 1; out[a][4] = t.entry_px; }
+    if (!t.open && b < dates.length) { out[b][2] = 1; out[b][3] = friendlyReason(t.reason); out[b][5] = t.exit_px; }
+  }
+  return out;
+}
+const TRADE_HEAD = ["Position", "Trade entry", "Trade exit", "Exit reason", "Entry price", "Exit price"];
+
+/** Explore columns: Date, O/H/L/C/V, one per indicator the rules read, the exit levels the strategy sets, Entry and Exit (the
+ *  rules' raw signals) as 0/1, then, with the backtest's trades, the position and the real entries and exits. */
+export function exploreTable(r: ExploreResult, columns: { name: string; at: Map<string, number | null> }[], ticker = "", opts: { spec?: Spec; trades?: Trade[] } = {}): Table {
+  const names = opts.spec ? levelNames(opts.spec) : {};
+  const levels = Object.entries(r.levels ?? {}).filter(([, v]) => v.some((x) => x !== null)).map(([k, v]) => ({ name: names[k] ?? k, v }));
+  const trades = opts.trades ? tradeRows(r.dates, opts.trades) : null;
   // Volume always follows OHLC; an index (no volume data) shows blanks
   // Symbol first (which instrument this is), then Date and OHLC, Volume after OHLC
-  const header = ["Symbol", "Date", "Open", "High", "Low", "Close", "Volume", ...columns.map((c) => c.name), ...SIGNALS.map(([, h]) => h)];
-  const fmt = [text, date, price, price, price, price, whole, ...columns.map(() => value), ...SIGNALS.map(() => whole)];
-  const rows = r.dates.map((d, i): Cell[] => [ticker, d, r.open[i], r.high[i], r.low[i], r.close[i], r.volume?.[i] ?? null, ...columns.map((c) => c.at.get(d) ?? null), ...SIGNALS.map(([, , ks]) => (ks.some((k) => r.signals[k]?.[i] === 1) ? 1 : 0))]);
+  const header = ["Symbol", "Date", "Open", "High", "Low", "Close", "Volume", ...columns.map((c) => c.name), ...levels.map((l) => l.name), ...SIGNALS.map(([, h]) => h), ...(trades ? TRADE_HEAD : [])];
+  const fmt = [text, date, price, price, price, price, whole, ...columns.map(() => value), ...levels.map(() => price), ...SIGNALS.map(() => whole), ...(trades ? [text, whole, whole, text, price, price] : [])];
+  const rows = r.dates.map((d, i): Cell[] => [ticker, d, r.open[i], r.high[i], r.low[i], r.close[i], r.volume?.[i] ?? null, ...columns.map((c) => c.at.get(d) ?? null),
+    ...levels.map((l) => l.v[i] ?? null), ...SIGNALS.map(([, , ks]) => (ks.some((k) => r.signals[k]?.[i] === 1) ? 1 : 0)), ...(trades ? trades[i] : [])]);
   return { header, rows, fmt };
 }
 
-export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan, onExplore, loadSeries, ticker, tf = "D" }: ExplorePanelProps) {
+/** The Excel "Settings" sheet: the strategy in words, then every parameter it sets (path = value), so a download shows what made it. */
+export function settingsSheet(spec: Spec, cat: Catalogue, ticker: string, tf: string, from?: string, to?: string): Cell[][] {
+  const on = (n: RuleNode) => (n as { off?: boolean }).off !== true, isFilter = (n: RuleNode) => (n as { filter?: boolean }).filter === true;
+  const side = (s: { entry: Spec["entry"]; exit: Spec["exit"] }, open: string, close: string): Cell[][] => [
+    ...s.entry.all.filter((n) => on(n) && !isFilter(n)).map((n): Cell[] => [open, words(n, cat).text]),
+    ...s.entry.all.filter((n) => on(n) && isFilter(n)).map((n): Cell[] => ["Only when", words(n, cat).text]),
+    ...s.exit.any.filter(on).map((n): Cell[] => [close, words(n, cat).text]),
+    ...stopsOn(s.exit as unknown as Record<string, unknown>, undefined).map((w): Cell[] => [close, `at the ${w}`]),
+    ...Object.entries(levelNames(spec as Spec)).filter(([k]) => k === "dual_init" || k === "dual_fav").filter(() => !!s.exit.dual_atr).map(([, n]): Cell[] => [close, `at the ${n}`]),
+  ];
+  const short = spec.direction === "short";
+  const flat: Cell[][] = [];
+  const walk = (v: unknown, path: string) => {
+    if (v === null || typeof v !== "object") { flat.push([path, typeof v === "number" || typeof v === "string" ? v : String(v)]); return; }
+    Object.entries(v as Record<string, unknown>).forEach(([k, x]) => walk(x, path ? `${path}.${k}` : k));
+  };
+  walk(spec, "");
+  return [["Setting", "Value"], ["Instrument", ticker], ["Timeframe", tf], ["From", from ? dayFirst(from) : "all quotes"], ["To", to ? dayFirst(to) : "latest"],
+    ["Positions", spec.direction === "both" ? "Long and short" : short ? "Short" : "Long"], [null, null], ["Rules", null],
+    ...side(spec, short ? "Sell short" : "Buy", short ? "Cover" : "Sell"), ...(spec.direction === "both" && spec.short_side ? side(spec.short_side, "Sell short", "Cover") : []),
+    [null, null], ["Every parameter", null], ...flat.filter(([p]) => p !== "v")];
+}
+
+export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan, onExplore, loadSeries, ticker, tf = "D", trades }: ExplorePanelProps) {
   // Explore only: the Scan list is not offered on the Results tab (onScan stays in the props for other callers)
   const [view] = useState<"scan" | "explore">("explore");
   const [apply, setApply] = useState<"current" | "all">("current");
@@ -120,7 +181,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
   const [scanned, setScanned] = useState<Loaded<ScanResult> | null>(null);
   const [explored, setExplored] = useState<Loaded<ExploreResult> | null>(null);
   const specKey = JSON.stringify(spec);
-  useEffect(() => { setScanned(null); setExplored(null); setError(null); }, [specKey, tf]); // a list belongs to the rules and bars that made it
+  useEffect(() => { setScanned(null); setExplored(null); setError(null); }, [specKey, tf, trades]); // a list belongs to the rules, bars and backtest that made it
   useEffect(() => { if (!portfolio) setApply("current"); }, [portfolio]);
   const n = Number(recent), badRecent = range === "recent" && !(Number.isInteger(n) && n >= 1);
 
@@ -153,7 +214,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
         const outs = p.value.outputs;
         for (const out of outs) columns.push({ name: outs.length > 1 ? `${label}.${out}` : label, at: new Map(p.value.dates.map((d, i) => [d, p.value.series[out]?.[i] ?? null])) });
       });
-      setExplored({ result, table: exploreTable(result, columns, ticker), failed });
+      setExplored({ result, table: exploreTable(result, columns, ticker, { spec, trades }), failed });
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
   const shownExplore = useMemo(() => explored && (range === "recent" && !badRecent ? { ...explored.table, rows: explored.table.rows.slice(-n) } : explored.table), [explored, range, n, badRecent]);
@@ -186,7 +247,7 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
             {view === "explore" && explored && shownExplore && <>
               {explored.result.tf && explored.result.tf !== "D" && <p className="cap" data-lab-explore-tf>One row per {TF_WORD[explored.result.tf] ?? `${explored.result.tf} bar`}, dated its last trading day (AmiBroker Periodicity {explored.result.tf}).</p>}
               {!!explored.failed.length && <p className="cap" data-lab-explore-failed>Columns not shown: {explored.failed.join("; ")}</p>}
-              <ResultTable name="explore" {...shownExplore} file={`${ticker ? `${ticker} ` : ""}Explore${explored.result.from ? ` ${dayFirst(explored.result.from)} to ${dayFirst(explored.result.to ?? explored.result.from)}` : ""}.xlsx`} />
+              <ResultTable name="explore" {...shownExplore} sheets={[{ name: "Settings", rows: settingsSheet(spec, catalogue, ticker ?? "", tf, explored.result.from ?? undefined, explored.result.to ?? undefined) }]} file={`${ticker ? `${ticker} ` : ""}Explore${explored.result.from ? ` ${dayFirst(explored.result.from)} to ${dayFirst(explored.result.to ?? explored.result.from)}` : ""}.xlsx`} />
             </>}
           </>}
       </div>

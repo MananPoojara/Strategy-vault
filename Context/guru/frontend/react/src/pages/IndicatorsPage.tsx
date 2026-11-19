@@ -437,7 +437,7 @@ function IndicatorsLab() {
                       {result.report && <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} tradeRows={tradeTable(result).csv} />}</>],
                     ["YOY-Monthly", <RunTables result={result} part="monthly" />],
                   ];
-                if (ticker) tabs.push(["Explore", <ExplorePanel ticker={ticker} tf={state.tf} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+                if (ticker) tabs.push(["Explore", <ExplorePanel ticker={ticker} tf={state.tf} spec={runSpec} trades={result.trades} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
           onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, tf: state.tf, from: settings.from || undefined, to: settings.to || undefined }); }} />])
                 return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
