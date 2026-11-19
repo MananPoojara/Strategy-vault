@@ -12,6 +12,8 @@ pub const BOOK: &str = "kpss";
 pub const REVIEWED: &[&str] = &["kpss_first5", "kpss_last5", "kpss_janbar", "kpss_jbs", "kpss_jaynewary", "kpss_ujbs", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_xmas_week", "kpss_td2", "kpss_td1_5", "kpss_tdays", "kpss_mid4", "kpss_worst14", "kpss_nonworst", "kpss_six", "kpss_monthly10", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_dec_b", "kpss_dec_c", "kpss_middecade", "kpss_latedecade", "kpss_20yr", "kpss_intradecade", "kpss_c212", "kpss_c40w", "kpss_c53d", "kpss_ctcm1", "kpss_ctcm2", "kpss_utcm", "kpss_yr_post", "kpss_yr_mid", "kpss_yr_pre", "kpss_yr_elec", "kpss_yr_post_mid", "kpss_yr_pre_elec", "kpss_stoken15", "kpss_fav14", "kpss_fav21", "kpss_midterm", "kpss_pre_mar_jul", "kpss_uecs", "kpss_nov_may", "kpss_ndx_nov_jun", "kpss_jja", "kpss_sept", "kpss_ex_sept", "kpss_oct7", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 /// Rules whose days are defined by US exchange holidays (closures): US instruments only.
+/// R4 #364: the variants that count days around every market closure also run on India (derived NSE closures).
+pub const INDIA_CLOSURE: &[&str] = &["kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3"];
 pub const US_ONLY: &[&str] = &["kpss_xmas_week", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
 
 // ------------------------------------------------------------------ calendar helpers
@@ -148,6 +150,20 @@ impl Cal {
         }
         let first = |day: i64| c.dn.partition_point(|&z| z < day); // first bar on/after day
         let after = |day: i64| c.dn.partition_point(|&z| z <= day); // first bar after day
+        if crate::nse_holidays::is_india(x) {
+            // R4 #364: every derived NSE closure is one holiday class (id 0): the 1-3 trading days before and after it. The US-named
+            // holiday tables (top 24, UHTS), the Santa window and Christmas week have no Indian counterpart and stay US-only.
+            for &hd in crate::nse_holidays::closures() {
+                let (p, q) = (first(hd), after(hd));
+                if p == 0 || p >= n { continue; }
+                for k in 1..=3usize {
+                    // adjacent closures share their bars: one entry per (class, offset), so nothing is counted twice
+                    if p >= k && !c.hol[p - k].contains(&(0, -(k as i64))) { c.hol[p - k].push((0, -(k as i64))); }
+                    if q + k - 1 < n && !c.hol[q + k - 1].contains(&(0, k as i64)) { c.hol[q + k - 1].push((0, k as i64)); }
+                }
+            }
+            return c;
+        }
         for y in c.y[0] - 1..=c.y[n - 1] {
             let h = holidays(y);
             for (hid, &hd) in h.iter().enumerate() {
@@ -968,6 +984,6 @@ mod tests {
 // Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"kpss") && (crate::books::kpss::reviewed(def.id)),
-    label: "Jay Kaeppel tested every rule on the Dow Jones Industrial Average (the Nasdaq rule on the Nasdaq Composite/NASDAQ 100); runs on other indices, ETFs and stocks are a declared application, not the author's test. Rules defined by US market holidays (day before a holiday, Santa Claus rally, the holiday-based models) run on US instruments only. 2:1 positions and shorts are hypothetical exposure; the book's 1% cash interest is not modelled.",
+    label: "Jay Kaeppel tested every rule on the Dow Jones Industrial Average (the Nasdaq rule on the Nasdaq Composite/NASDAQ 100); runs on other indices, ETFs and stocks are a declared application, not the author's test. Rules defined by US market holidays (day before a holiday, Santa Claus rally, the holiday-based models) run on US instruments only. 2:1 positions and shorts are hypothetical exposure; the book's 1% cash interest is not modelled. India (R4 #364, declared adaptation under R4 #340, UNVERIFIED): the closures are the weekdays with no NIFTY 50 bar in the vault's daily file (nse-holidays-derived; a data gap and a holiday cannot be told apart), counted exactly as the US holiday list is; no NSE holiday list is held. Only kpss_hol_d1, kpss_hol_d2 and kpss_hol_3x3 run on India (days around every closure); the US-named holiday tables, the Santa window, Christmas week and the election/decade models stay US-only.",
     basis: "Jay Kaeppel, Seasonal Stock Market Trends (Wiley 2009): calendar, holiday, monthly-day, decennial, time-cycle, election-cycle, season and Known Trends Index rules (Ch.2-9, p.22-284), each a daily position earning close-to-close. Reviewed in authors/kaeppel/admission/SOURCE-CONTRACT.md with independent chronological ledgers; book rules transcribed in audits/kpss/book_rules.md.",
 };

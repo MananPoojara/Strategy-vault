@@ -150,11 +150,21 @@ pub const NYSE_BREADTH_RULES:&[(&str,&str)]=&[("ats","ats_trin_thrust"),("ats","
 pub const NYSE_BREADTH_LABEL:&str="The book traded S&P 500 futures on NYSE breadth (NYSE TRIN / NYSE advances and declines). The signal is read from the real NYSE breadth series with the book's NYSE thresholds; runs on US indices, ETFs and stocks other than the book's market are a declared application (user request 26 Oct 2026), not the author's test. NYSE breadth in the vault ends on 2020-02-10 and is missing on a few days (for example 1999-11-26, 2002-06-20, 2019-08-20); a run uses the longest stretch with no missing day. Indian instruments are not run on this NYSE series (it measures another market and has a different calendar); the NSE-breadth twin card runs them on the real NSE breadth (R4 #340).";
 pub const SPMT_BREADTH_LABEL:&str="The course signals on SPY with the NYSE TRIN / NYSE advancers. On US instruments the signal is read from the real NYSE breadth series (to 2020-02-10, missing on a few days; a run uses the longest stretch with no missing day), a declared application beyond the author's market. On Indian instruments (NIFTY 50, NIFTYBANK, NIFTYMIDCAP100) the vault has no NYSE breadth on the Indian calendar, so R4 #340 reads the real NSE breadth it holds (extra_data/india TRIN / ADV) with the course's NYSE thresholds unchanged. NSE breadth behaves differently (TRIN median 0.70 vs NYSE 0.93; it fires 2-3x more often): a declared adaptation, not the author's test, UNVERIFIED.";
 pub fn nyse_breadth(def:&StrategyDef)->bool {NYSE_BREADTH_RULES.contains(&(def.book,def.id))}
+/// R1 audit (19 Nov 2026): the NSE-breadth twins of the NYSE-breadth cards above. The NYSE original runs on every US index, ETF and
+/// stock; the twin had been limited to the three Nifty indices. Admission only: the twin now also runs on every Indian index and
+/// actual Indian stock (the held NSE breadth is market-wide, attached to every Indian context like the NYSE series on US ones).
+/// Rules, parameters, thresholds and calculations are unchanged; US instruments stay refused (no NYSE series on an NSE rule).
+pub const NSE_BREADTH_TWINS:&[(&str,&str)]=&[("ats","ats_trin_thrust_nse"),("ats","ats_padi_nse"),("hfm","hfm_chadtp_nse"),
+    ("ptjmt","ptjmt_trin_reversals_nse"),("ptjmt","ptjmt_trin_reversals_20_nse"),("ptjmt","ptjmt_trin_thrusts_nse"),("ptjmt","ptjmt_padi_nse"),
+    ("ss","ss_ad_market_buster_nse")];
+pub const NSE_TWIN_LABEL:&str="Also admitted on every Indian index and on actual Indian stocks (user rule 22 Oct 2026; R1 audit 19 Nov 2026): the stock is traded on the market-wide NSE breadth signal, as the NYSE version is on US stocks. Rules, parameters and thresholds are unchanged; US instruments are not run. The ATS/PTJ/Street Smarts/HFM label above still applies: a declared adaptation, UNVERIFIED on the selected instrument.";
+pub fn nse_breadth_twin(def:&StrategyDef)->bool {NSE_BREADTH_TWINS.contains(&(def.book,def.id))}
 // ---------------------------------------------------------------- end NYSE breadth
 pub fn open_instrument_label(def:&StrategyDef)->Option<&'static str> {
     let key=(def.book,def.id);
     if def.book=="spmt" && nyse_breadth(def) {return Some(SPMT_BREADTH_LABEL);} // R4 #340: on India the card reads the held NSE breadth
     if nyse_breadth(def) {return Some(NYSE_BREADTH_LABEL);} // NYSE breadth block
+    if nse_breadth_twin(def) {return Some(NSE_TWIN_LABEL);} // R1 audit: NSE twins on Indian stocks
     if vix_india(def) {return Some(VIX_INDIA_LABEL);} // VIX India block
     if key==("stc9","s12345") {return Some(OPEN_LEVERAGED_LABEL!());}
     if OPEN_ALL_RULES.contains(&key) {return Some(OPEN_ALL_LABEL);} // open-all block
@@ -169,13 +179,17 @@ pub fn open_instrument_label(def:&StrategyDef)->Option<&'static str> {
 // Also not listed: QTS DEMA 16/8 (hbqts_dema16_8) - its canonical unit-exposure report (frontend) is built for SPX / NIFTY 50 only.
 pub const OPEN_ALL_RULES:&[(&str,&str)]=&[("alpha","alpha_etf_avalanches_single"),("alpha","alpha_trend_6m"),("ats","ats_hv_thrust"),("bllstr","bllstr_fma_1_50_0"),("bllstr","bllstr_vma_1_50_0"),("btp","btp_triple_day_pullback_adx25"),("btp","btp_triple_day_pullback_adx30"),("btp","btp_turtle_thrust"),("ccl08","ccl08_tps_long"),("ccl08","ccl08_tps_research"),("ccl08","ccl08_tps_short"),("kftsm","kftsm_hirsch"),("kftsm","kftsm_month_end"),("lwrsr","lwrsr_apr_oct"),("lwrsr","lwrsr_oct_apr"),("mmft","mmft_nasdaq79"),("otvt","otvt_cvr1_long"),("otvt","otvt_cvr1_short"),("ptjmt","ptjmt_cvr1"),("ptjmt","ptjmt_cvr2"),("ptjmt","ptjmt_cvr3"),("ptjmt","ptjmt_cvr5"),("radge","radge_oc_long"),("rsi25","r25_rsi25_15"),("rsi25","r25_rsi25_15_vix"),("rsi25","r25_rsi25_basic_no_filter"),("rsi25","r25_rsi25_official_sma200"),("rsi25","r25_rsi25_vix"),("spmt","spmt_dmi_1"),("spmt","spmt_dmi_2"),("spmt","spmt_dmi_3"),("spmt","spmt_dmi_4"),("spmt","spmt_dmi_5"),("spmt","spmt_eom_cc"),("spmt","spmt_eom_und"),("spmt","spmt_eom_co"),("spmt","spmt_eom_rsi"),("spmt","spmt_pctb_1"),("spmt","spmt_rsi_div2"),("spmt","spmt_rsi_div8"),("spmt","spmt_rsi2_4"),("spmt","spmt_rsi4_25"),("spmt","spmt_rsi_1"),("spmt","spmt_rsi_2"),("spmt","spmt_rsi_3"),("spmt","spmt_short_strong"),("spmt","spmt_short_4up"),("spmt","spmt_short_vix101"),("spmt","spmt_short_vix53"),("spmt","spmt_vix2"),("spmt","spmt_vix200"),("spmt","spmt_vix4"),("spmt","spmt_vix7"),("spmt","spmt_vix8"),("ss","ss_adx_gapper"),("ss","ss_study_channel_2period_sar"),("ss","ss_study_fresh_roc_buy"),("ss","ss_study_fresh_roc_sell"),("ss","ss_study_gap_failure_buy"),("ss","ss_study_gap_failure_sell"),("ss","ss_study_oops_adx_gapper_buy"),("ss","ss_study_oops_adx_gapper_sell"),("ss","ss_study_oops_buy"),("ss","ss_study_oops_sell"),("ss","ss_study_close_lower_10"),("ss","ss_study_close_lower_20"),("ss","ss_study_close_upper_80"),("ss","ss_study_close_upper_90"),("ss","ss_study_wr7_high_close"),("ss","ss_study_wr7_low_close"),("ss","ss_study_rocrsi_buy"),("ss","ss_study_rocrsi_sell"),("ss","ss_whiplash"),("stc9","eom_cc"),("stc9","eom_co"),("stc9","eom_rsi"),("stc9","short_4up"),("stc9","short_strong"),("stc9","vix101_short"),("stc9","vix53_short"),("stc9","pctb_1"),("stc9","rsi_1"),("stc9","rsi_2"),("stc9","rsi2_4"),("stc9","rsi_3"),("stc9","rsi4_25"),("stc9","rsi_div2"),("stc9","rsi_div8"),("stc9","trin2_11"),("stc9","trin3_10"),("stc9","trin3_11"),("stc9","trin4"),("stc9","trin4_12"),("stc9","vix2"),("stc9","vix200"),("stc9","vix4"),("stc9","vix7"),("stc9","vix8"),("ststw","ststw_rsi2_under5"),("ststw","ststw_10d_high_buy"),("ststw","ststw_10d_high_short"),("ststw","ststw_10d_low_buy"),("ststw","ststw_sp_short"),("ststw","ststw_vix_rsi"),("ststw","ststw_vix_stretch"),("vixr","vixr_cvr10"),("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr9"),("ws5","ws5_non_vix_market_timing"),("ws5","ws5_vix_iii_reversal")];
 pub const OPEN_ALL_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026), not the author's test. Rules and parameters are unchanged. Rules that read the VIX use the CBOE VIX on US instruments and India VIX on Indian ones.";
-pub fn open_all(def:&StrategyDef)->bool {OPEN_ALL_RULES.contains(&(def.book,def.id)) || nyse_breadth(def)}
+pub fn open_all(def:&StrategyDef)->bool {OPEN_ALL_RULES.contains(&(def.book,def.id)) || nyse_breadth(def) || nse_breadth_twin(def)}
 /// Book-specific symbol lists still decide what the VIX allows: the selected instrument is checked as its market's
 /// reviewed index (US -> SPX, India -> NIFTY 50). us: None = decide from the ticker (NIFTY... = India).
 fn open_all_symbol_issue(def:&StrategyDef,ticker:&str,us:Option<bool>)->Option<Issue> {
     use crate::books::{vixr,spmt,ptjmt,ss,ws5,ststw,ats,hfm,otvt};
     if vix_india(def) {return None;} // VIX India block: India VIX on Indian instruments, CBOE VIX on US ones
-    let us=us.unwrap_or(!ticker.starts_with("NIFTY"));
+    if nse_breadth_twin(def) { // R1 audit: the NSE twin reads the Indian market series; US instruments stay refused. An unknown ticker (an Indian stock reaches here as None) is not treated as US.
+        let us_known=us.unwrap_or_else(||crate::preloaded_market(ticker)==Some(Market::UnitedStates));
+        if us_known {return Some(Issue{status:"needs_data",note:format!("This version reads NSE breadth (NSE TRIN / NSE advances-declines), an Indian market series; it runs on Indian indices and stocks and is not run on US instruments ({ticker}). The NYSE-breadth version runs on US indices, ETFs and stocks.")});}
+    }
+    let us=if nse_breadth_twin(def) {false} else {us.unwrap_or(!ticker.starts_with("NIFTY"))}; // an NSE twin that passed the US refusal above is an Indian run
     if nyse_breadth(def) && !(def.book=="spmt" && !us) { // NYSE breadth block; R4 #340: spmt reads the held NSE breadth on India
         return (!us).then(||Issue{status:"needs_data",note:format!("This version reads NYSE breadth (NYSE TRIN / NYSE advances-declines), a US market series; it runs on US indices, ETFs and stocks and is not run on Indian instruments ({ticker}). The NSE-breadth version is held: it uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.")});
     }
@@ -780,6 +794,7 @@ fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opt
     if !sc && (!(crate::books::kpss::ADMISSION.reviewed)(def) || !crate::books::kpss::US_ONLY.contains(&def.id)) {return None;}
     let us=stock_us.unwrap_or(!ticker.starts_with("NIFTY"));
     if us {return None;}
+    if sc || crate::books::kpss::INDIA_CLOSURE.contains(&def.id) {return None;} // R4 #364: derived NSE closures (kpss_hol_d1/d2/3x3, sckcal_si2)
     Some(Issue{status:"needs_data",note:format!("This rule's days are set by US stock-market holidays (the trading days before and after a US exchange closure, or the Thanksgiving-to-January Santa Claus window). Indian exchanges keep a different holiday calendar, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // Fosback Seasonality Indicator (lane K5, 31 Oct 2026): its pre-holiday days are US exchange holidays and no official NSE
@@ -787,6 +802,7 @@ fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opt
 fn fosback_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
     if !(crate::books::nfsml::ADMISSION.reviewed)(def) || !crate::books::nfsml::US_ONLY.contains(&def.id) {return None;}
     if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    if (crate::books::nfsml::ADMISSION.reviewed)(def) {return None;} // R4 #364: derived NSE closures
     Some(Issue{status:"needs_data",note:format!("This rule's pre-holiday days are set by US stock-market holiday closings. Indian exchanges keep a different holiday calendar and the vault holds no official NSE holiday list, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // INVESTools workshop example (K7, 1 Nov 2026): the printed $1.00 trail / $1.00 target / $0.50 stop are dollar amounts -> US only.
@@ -835,10 +851,8 @@ fn hirsch_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opti
     Some(Issue{status:"needs_data",note:format!("This window is set by the US Thanksgiving exchange holiday (the market is closed on Thursday), so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // lane R2A (R4 #297): stkch_preholiday is set by the US exchange-holiday calendar.
-fn stkch_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
-    if def.book!="stkch" || !crate::books::stkch::US_ONLY.contains(&def.id) || !crate::books::stkch::reviewed(def.id) {return None;}
-    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
-    Some(Issue{status:"needs_data",note:format!("The Pre-Holiday Effect buys before nine US exchange holidays (StockCharts preHolidayEffect.pdf); Indian markets keep a different holiday calendar, so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+fn stkch_symbol_issue(_def:&StrategyDef,_ticker:&str,_stock_us:Option<bool>)->Option<Issue> {
+    None // R4 #364: stkch_preholiday also runs on India: the closures are the weekdays with no NIFTY 50 bar (nse_holidays), labelled in the card notes
 }
 // ---------------------------------------------------------------- end Hirsch
 // ---------------------------------------------------------------- Schaap 2026-10-24
@@ -1963,9 +1977,9 @@ mod tests {
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             if stkch::US_ONLY.contains(&d.id) { // lane R2A (R4 #297): US holiday calendar
                 for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
+                for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);} // R4 #364: derived NSE closures
                 assert!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),"{}",d.id);
-                assert!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_some(),"{}",d.id);
+                assert!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none(),"{}",d.id);
                 continue;
             }
             for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
@@ -2933,7 +2947,7 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            let us_only=kpss::US_ONLY.contains(&d.id);
+            let us_only=kpss::US_ONLY.contains(&d.id)&&!kpss::INDIA_CLOSURE.contains(&d.id); // R4 #364
             for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             assert_eq!(check(d,"RELIANCE",true).is_some(),us_only,"{}",d.id);
@@ -2950,11 +2964,10 @@ mod tests {
         }
     }
     #[test]
-    fn fosback_seasonality_runs_on_us_instruments_only() {
+    fn fosback_seasonality_runs_on_us_and_indian_instruments() { // R4 #364: India on derived NSE closures
         for d in crate::books::nfsml::catalogue() {
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(&d,t,false).is_none(),"{} {t}",d.id);}
-            for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(&d,t,false).is_some(),"{} {t}",d.id);}
-            assert!(check(&d,"RELIANCE",true).is_some(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(&d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(&d,"RELIANCE",true).is_none(),"{}",d.id);
         }
     }
     // ---- Hamon block (2026-10-24) ----
@@ -3283,11 +3296,11 @@ mod tests {
             assert_eq!(policy(d).requirement,if stock||also||open {"index_etf_or_stock"} else {"declared_index_timing"},"{}",d.id);
             let ep6=|t:&str| crate::intraday_ep6::held_note(d.id,t).is_some(); // K63 #243 (c): minute-window ids have no stock/QQQ result
             assert_eq!(check(d,"AAPL",true).is_none(),(stock||also||(open&&!nyse_breadth(d)))&&!ep6("AAPL"),"{}",d.id); // NYSE breadth: native US stocks go through check_native
-            assert_eq!(check(d,"QQQ",false).is_none(),(stock||open)&&!ep6("QQQ"),"{}",d.id);
+            assert_eq!(check(d,"QQQ",false).is_none(),(stock||(open&&!nse_breadth_twin(d)))&&!ep6("QQQ"),"{}",d.id); // R1 audit: the NSE twin refuses US instruments
             let futures=["SPX","NDX","DJI","SPY","NIFTY 50","NIFTYBANK"];
             match d.id {
                 "ss_ad_market_buster" => for t in futures {assert_eq!(check(d,t,false).is_none(),!t.starts_with("NIFTY"),"{t}");}, // NYSE breadth: every US instrument
-                "ss_ad_market_buster_nse" => for t in futures {assert_eq!(check(d,t,false).is_none(),t.starts_with("NIFTY"),"{t}");}, // R4 #340: NSE breadth on the NIFTY indices only
+                "ss_ad_market_buster_nse" => for t in futures {assert_eq!(check(d,t,false).is_none(),t.starts_with("NIFTY"),"{t}");}, // R4 #340: NSE breadth on the NIFTY indices; R1 audit: also Indian stocks (check_native)
                 _ => for t in futures {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||ep6(t),"{} {t}",d.id);},
             }
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
@@ -3335,10 +3348,11 @@ mod tests {
             assert_eq!(check(d,"SPX",false).is_none(),!nse,"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),d.id.starts_with("ptjmt_cvr")||nse,"{}",d.id); // R4 #340: *_nse read the held NSE breadth; CVR rules: VIX India block
             let open=open_all(d); // open-all 23 Oct 2026
-            for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),open,"{} {t}",d.id);}
-            assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && d.id.starts_with("ptjmt_cvr"),"{}",d.id);
-            assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{}",d.id);
-            assert_eq!(check(d,"RELIANCE",true).is_none(),open && d.id.starts_with("ptjmt_cvr"),"{}",d.id);
+            let us_open=open && !nse_breadth_twin(d); // R1 audit: the NSE twin runs on Indian indices and stocks, never on US ones
+            for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),us_open,"{} {t}",d.id);}
+            assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && (d.id.starts_with("ptjmt_cvr")||nse_breadth_twin(d)),"{}",d.id);
+            assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),us_open,"{}",d.id);
+            assert_eq!(check(d,"RELIANCE",true).is_none(),open && (d.id.starts_with("ptjmt_cvr")||nse_breadth_twin(d)),"{}",d.id);
         }
         for id in ["ptjmt_cvr4","ptjmt_cvr4_friday"] {
             let d=cat.iter().find(|d|d.id==id).unwrap();
@@ -4018,6 +4032,19 @@ mod held_reason_tests {
 mod connors_final_tests {
     use super::*;
     fn d(id:&str,book:&str)->StrategyDef {crate::guru_catalogue("connors").into_iter().find(|x|x.id==id&&x.book==book).unwrap()}
+    #[test]
+    fn nse_breadth_twins_run_on_every_indian_index_and_stock_and_never_on_us_ones() { // R1 audit 19 Nov 2026
+        let (us,india)=(NativeEvidence::us_test_fixture(),NativeEvidence::india_test_fixture());
+        for &(book,id) in NSE_BREADTH_TWINS {
+            let x=d(id,book);
+            assert_eq!(policy(&x).requirement,"index_etf_or_stock","{id}");assert!(nse_breadth(&x)&&nse_breadth_twin(&x),"{id}");
+            let m=metadata_json(&x);assert!(m.contains("UNVERIFIED")&&m.contains("actual Indian stocks"),"{id}");
+            for t in ["NIFTY 50","NIFTYBANK","NIFTYMIDCAP100"] {assert!(check(&x,t,false).is_none(),"{id} {t}");}
+            assert!(check_native(&x,"RELIANCE",&india).is_none(),"{id} RELIANCE");
+            for t in ["SPX","SPY","QQQ"] {assert!(check(&x,t,false).is_some(),"{id} {t}");}
+            assert!(check_native(&x,"AAPL",&us).is_some(),"{id} AAPL");
+        }
+    }
     #[test]
     fn nyse_breadth_rules_run_on_every_us_instrument_and_never_on_indian_ones() {
         let (us,india)=(NativeEvidence::us_test_fixture(),NativeEvidence::india_test_fixture());

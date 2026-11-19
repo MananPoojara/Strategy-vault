@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod nse_holidays; // R4 #364: NSE closures derived from the NIFTY 50 bars
 mod release; // lane M3 (R4 #346): extra_data series keyed by their ReleaseDate
 mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod spread; // lane P1: two-leg spread positions
@@ -2196,6 +2197,7 @@ fn main() {
     let futures_raw = if data.contains_key("SPX") { futures::load(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908"), &mut data) } else { BTreeMap::new() };
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
+    nse_holidays::set_from(data.get("NIFTY 50"));
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let mut extra = load_extra(&extra_dir);

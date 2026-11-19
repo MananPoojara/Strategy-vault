@@ -887,7 +887,9 @@ mod tests {
         let ok=|r:&Vec<crate::Row>,id:&str|{let mut ctx=Ctx::new(r,r,r);for s in definition(id).needs_series {ctx.extra.insert(s.to_string(),vec![1.0;r.len()]);}check(&ctx,&definition(id),0,4,&Params::new()).map(|i|i.status)};
         for &id in books::ptjmt::REVIEWED_DAILY {
             if id.ends_with("_nse") { // R4 #340: no longer held; the readiness check adds no VIX-year or stale-open refusal (symbol scope is in instrument_policy, the NSE series are in the data)
-                for (t,y) in [("SPY","1991"),("SPX","2013"),("SPX","2014"),("SPY","2013")] {assert_eq!(ok(&mk(t,y),id),None,"{id}");}
+                // R1 audit: the twin is an Indian-market rule (open on Indian indices and stocks); US tickers are refused by the symbol layer
+                for (t,y) in [("NIFTY 50","1991"),("NIFTY 50","2013"),("NIFTY 50","2014"),("NIFTYBANK","2013")] {assert_eq!(ok(&mk(t,y),id),None,"{id}");}
+                for (t,y) in [("SPY","2014"),("SPX","2014")] {assert_eq!(ok(&mk(t,y),id),Some("needs_data"),"{id}");}
                 continue;
             }
             let cvr=id.starts_with("ptjmt_cvr");
