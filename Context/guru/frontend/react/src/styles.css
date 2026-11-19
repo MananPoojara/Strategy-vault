@@ -797,10 +797,8 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .shelf.book-grid .bk { width: 280px; display: flex; flex-direction: column; gap: 0; padding: 0; background: none; border: 0; box-shadow: none; transform: none; cursor: default;
   animation: bk-rise .6s cubic-bezier(.2,.75,.25,1) both; animation-delay: calc(var(--i) * 45ms); }
 @keyframes bk-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-.bk-stage { position: relative; height: 330px; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 18px; perspective: 1100px; text-decoration: none;
-  background: radial-gradient(130% 85% at 50% 0%, color-mix(in srgb, var(--c) 30%, var(--panel)) 0%, color-mix(in srgb, var(--c) 9%, var(--panel)) 62%, var(--panel) 100%);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 16%, transparent); transition: box-shadow .4s, background .4s; }
-.bk-stage::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 30px; height: 18px; border-radius: 50%; background: rgb(0 0 0 / .28); filter: blur(12px); transition: transform .45s, opacity .45s; }
+.bk-stage { position: relative; height: 300px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 26px; text-decoration: none; }
+.bk-stage::after { content: ""; position: absolute; left: 26%; right: 26%; bottom: 18px; height: 14px; border-radius: 50%; background: rgb(0 0 0 / .22); filter: blur(10px); transition: opacity .35s; }
 .bk-book { position: relative; z-index: 1; display: block; transform-style: preserve-3d; transition: transform .55s cubic-bezier(.2,.75,.25,1); }
 .bk-img, .bk-made { display: block; width: 172px; height: 258px; border-radius: 3px 6px 6px 3px; object-fit: cover;
   box-shadow: inset 4px 0 0 rgb(255 255 255 / .18), inset -1px 0 0 rgb(0 0 0 / .2), 0 22px 30px -18px rgb(0 0 0 / .65), 0 6px 12px -6px rgb(0 0 0 / .35); }
@@ -811,22 +809,18 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .bk-made-author { font: 600 8.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: .18em; text-transform: uppercase; opacity: .8; }
 .bk-made-title { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f3e5bb55; font: 600 19px/1.15 "Newsreader", Georgia, serif; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; text-shadow: 0 1px 0 rgb(0 0 0 / .25); }
 .bk-made-year { margin-top: auto; font: 500 10px "IBM Plex Mono", monospace; opacity: .75; }
-.bk-open { position: absolute; z-index: 3; left: 14px; right: 14px; bottom: 14px; padding: 10px 14px; border-radius: 12px; display: flex; justify-content: space-between;
-  font-weight: 600; font-size: 12.5px; line-height: 1; color: #fff; background: rgb(15 18 22 / .78); backdrop-filter: blur(8px); transform: translateY(140%); opacity: 0; transition: transform .45s cubic-bezier(.2,.75,.25,1), opacity .3s; }
-.bk:hover .bk-book, .bk-stage:focus-visible .bk-book { transform: translateY(-14px) rotateY(-16deg) rotateX(4deg); }
-.bk:hover .bk-stage::after { transform: scaleX(.8); opacity: .55; }
-.bk:hover .bk-stage { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 32%, transparent), 0 24px 40px -28px color-mix(in srgb, var(--c) 80%, #000); }
-.bk:hover .bk-open, .bk-stage:focus-visible .bk-open { transform: none; opacity: 1; }
+.bk:hover .bk-book, .bk-stage:focus-visible .bk-book { transform: translateY(-6px); }
+.bk:hover .bk-stage::after { opacity: .6; }
 .bk-body { padding: 16px 4px 0; display: flex; flex-direction: column; }
-.bk-body h3 { margin: 0; font-size: 16px; line-height: 1.3; letter-spacing: -.005em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.bk-body h3 { margin: 0; min-height: 2.6em; font-size: 16px; line-height: 1.3; letter-spacing: -.005em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .bk-body h3 a { color: var(--ink); text-decoration: none; background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; transition: background-size .35s; }
 .bk:hover .bk-body h3 a { background-size: 100% 1px; }
-.bk-meta { margin-top: 4px; font-size: 12px; color: var(--ink3); }
-.bk-summary { margin: 10px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.bk-meta { margin-top: 4px; font-size: 12px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-summary { margin: 10px 0 0; min-height: 4.65em; font-size: 13px; line-height: 1.55; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .bk-stats { display: flex; gap: 16px; margin-top: 14px; font-size: 12px; color: var(--ink3); }
 .bk-stats b { margin-right: 4px; font: 600 14px "IBM Plex Mono", monospace; color: var(--ink); }
 .bk-stats .ok b { color: var(--green); }
 .bk-bar { height: 4px; margin-top: 8px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--ink) 9%, transparent); }
 .bk-bar i { display: block; height: 100%; border-radius: 4px; background: var(--green); transform-origin: left; animation: bk-fill .9s cubic-bezier(.2,.75,.25,1) both; animation-delay: calc(var(--i) * 45ms + .25s); }
 @keyframes bk-fill { from { transform: scaleX(0); } }
-@media (prefers-reduced-motion: reduce) { .shelf.book-grid .bk, .bk-bar i { animation: none; } .bk-book, .bk-open, .bk-stage::after { transition: none; } .bk:hover .bk-book { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .shelf.book-grid .bk, .bk-bar i { animation: none; } .bk-book, .bk-stage::after { transition: none; } .bk:hover .bk-book { transform: none; } }
