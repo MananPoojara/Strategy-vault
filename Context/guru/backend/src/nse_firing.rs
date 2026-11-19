@@ -74,6 +74,9 @@ pub fn apply(v: &mut [StrategyDef]) {
     for d in v.iter_mut() { if let Some(n) = map.get(d.id) { d.notes = n; } }
 }
 
+/// CV6's six NSE twins state their own rates in their own notes: no table entry, no appended line.
+pub const OWN_RATE_NOTES: &[&str] = &["arebta_tt_br_nse", "arebta_ti_br_nse", "arebta_e_br_nse", "arebta_d_br_nse", "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,8 +85,12 @@ mod tests {
         let cat = crate::connors::catalogue();
         let twins: Vec<&str> = cat.iter().filter(|d| d.id.ends_with("_nse")).map(|d| d.id).collect();
         assert!(!twins.is_empty());
-        for id in &twins { assert!(NSE_FIRING.iter().any(|(i, _)| i == id), "{id} has no firing-rate line"); }
-        for (id, _) in NSE_FIRING { assert!(twins.contains(id), "{id} is not an _nse card"); }
-        for d in cat.iter().filter(|d| d.id.ends_with("_nse")) { assert_eq!(d.notes.matches("R4 #347 firing rate").count(), 1, "{}", d.id); }
+        for id in &twins { if !OWN_RATE_NOTES.contains(id) { assert!(NSE_FIRING.iter().any(|(i, _)| i == id), "{id} has no firing-rate line"); } }
+        for (id, _) in NSE_FIRING { assert!(twins.contains(id) && !OWN_RATE_NOTES.contains(id), "{id} is not a table twin"); }
+        for d in cat.iter().filter(|d| d.id.ends_with("_nse")) {
+            let n = d.notes.matches("R4 #347 firing rate").count();
+            if OWN_RATE_NOTES.contains(&d.id) { assert_eq!(n, 0, "{} states its rate in its own note", d.id); assert!(d.notes.contains("a year"), "{} own note must state its rate", d.id); }
+            else { assert_eq!(n, 1, "{}", d.id); }
+        }
     }
 }
