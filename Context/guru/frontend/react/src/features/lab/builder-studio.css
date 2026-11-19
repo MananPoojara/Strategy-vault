@@ -129,7 +129,8 @@
 .lab-page[data-lab-page] .lab-design-studio .lab-exit-part > .lab-param-addline { grid-column:1/-1; justify-self:start; }
 .lab-page[data-lab-page] .lab-toolbar .dfield { font-size:14px; text-transform:none; letter-spacing:0; }
 @media(min-width:1100px) {
- .lab-page[data-lab-page] .lab-design-studio .lab-words:has(.lab-words-blockers) { grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); column-gap:24px; align-items:start; }
+ /* the rules take the width they need (up to 65%), the "Also on" note sits right beside them, not across an empty gap */
+ .lab-page[data-lab-page] .lab-design-studio .lab-words:has(.lab-words-blockers) { grid-template-columns:fit-content(65%) minmax(240px,1fr); column-gap:32px; align-items:start; }
  .lab-page[data-lab-page] .lab-design-studio .lab-words > h3 { grid-column:1/-1; }
  .lab-page[data-lab-page] .lab-design-studio .lab-words-blockers { display:block; grid-column:2; grid-row:2; border:0; border-left:1px solid var(--studio-line); padding:0 0 0 22px; margin:0; }
  .lab-page[data-lab-page] .lab-design-studio .lab-words-blockers ul { padding-left:18px; margin-top:5px; }
@@ -203,3 +204,17 @@
 .lab-page[data-lab-page] .lab-try-ranges { margin-top:0; padding:12px 24px; border-radius:12px; }
 .lab-page[data-lab-page] .lab-try-ranges > summary { font-size:14px; }
 .lab-page[data-lab-page] .lab-try-ranges[open] > summary { margin-bottom:8px; }
+
+/* A condition shown part by part (between / outside a range, or a compare opened with More): each part is a compact column
+   that fits its content, so the parts sit side by side on a wide screen and wrap whole on a narrow one. The picker no longer
+   takes the full row (the parameter-grid rule above), captions line up, and More / menu / remove stay on the first line. */
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node { align-items:flex-start; gap:12px 16px; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node > .lab-part { flex:0 1 auto; max-width:100%; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node .lab-part-body,
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node .lab-operand { align-items:center; gap:6px 8px; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node .lab-ind-search { width:auto; display:inline-flex; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node .lab-ind-btn { width:auto; max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node > :is(.lab-onoff,.lab-word) { align-self:flex-start; margin-top:22px; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node > :is(.lab-more-btn,select[data-lab-node-menu],.dbtn[aria-label^="Remove"]) { align-self:flex-end; }
+.lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node > .lab-word { line-height:var(--lab-ctl, 34px); }
+@media(max-width:640px) { .lab-page[data-lab-page] .lab-design-studio .lab-cond.lab-node .lab-ind-btn { max-width:100%; white-space:normal; } }

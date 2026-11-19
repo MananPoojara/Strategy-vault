@@ -78,7 +78,12 @@
 /* Tabs and the market bar share one row and one rule. wrap-reverse: on a laptop the bar wraps ABOVE the tabs, so the chosen tab's underline still sits on the rule. */
 :root .lab-page[data-lab-page] .lab-tabs-row { flex-wrap: nowrap; align-items: stretch; gap: 12px; }
 :root .lab-page[data-lab-page] .lab-tabs-row > .lab-tabs { flex: 0 1 auto; }
-:root .lab-page[data-lab-page] .lab-tabs [role=tab] { min-height: 40px; padding: 8px 14px; }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab] { min-height: 44px; padding: 10px 22px; color: var(--ink2); border: 0; border-radius: 8px; }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab]:hover { color: var(--ink); background: color-mix(in srgb, var(--card) 60%, transparent); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab][aria-selected=true] { color: var(--blue); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 2px 8px rgb(0 0 0 / .06); }
+/* The page's main navigation: a light rounded track, the chosen tab raised as a card. */
+:root .lab-page[data-lab-page] .lab-tabs { align-self: flex-start; gap: 4px; padding: 4px; border: 1px solid var(--rule); border-radius: 12px; background: color-mix(in srgb, var(--ink) 5%, var(--card)); }
+@media (max-width: 600px) { :root .lab-page[data-lab-page] .lab-tabs [role=tab] { min-height: 44px; padding: 10px 14px; } }
 :root .lab-page[data-lab-page] .lab-tabs-row > .box.lab-toolbar { flex: 1 1 auto; min-width: 0; padding: 0 0 4px; border: 0; border-radius: 0; background: none; box-shadow: none; }
 :root .lab-page[data-lab-page] .lab-tabs-row > .box.lab-toolbar > .lab-row { gap: 8px 16px; }
 :root .lab-page[data-lab-page] .lab-tabs-row > .box.lab-toolbar label.dfield select { width: 200px; max-width: 100%; }
@@ -95,3 +100,21 @@
 @media (min-width: 1280px) { :root .lab-page[data-lab-page] #lab-panel-saved:has(> [data-lab-review]) { grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); align-items: start; } }
 /* The app-wide 60px page foot left a blank scroll band under the lab (Chart tab scrolled ~50px of nothing). */
 main.page:has(> .lab-page[data-lab-page]) { padding-bottom: 8px; }
+
+/* ---- Polish pass (17-11-2026): one card per job and a clear order: tabs → market card → steps → the step. ---- */
+/* Market · instrument · timeframe · chart range: one quiet card under the tabs (the shell rule above had stripped it). */
+:root .lab-page[data-lab-page] .lab-tabs-row > .box.lab-toolbar { padding: 10px 16px; border: 1px solid var(--rule); border-radius: 12px; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
+:root .lab-page[data-lab-page] .lab-tabs-row > .box.lab-toolbar > .lab-row { gap: 10px 28px; align-items: center; }
+:root .lab-page[data-lab-page] .lab-tabs-row > .box.lab-toolbar .dfield { font: 600 12px var(--font); letter-spacing: .04em; color: var(--ink2); }
+/* Steps: a progress stepper, not a second tab bar. Numbered circle, the current step filled; a line under each step. */
+:root .lab-page[data-lab-page] .lab-stepbar { gap: 12px; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn { flex: 1 1 0; min-height: 48px; padding: 8px 4px 10px; justify-content: flex-start; gap: 10px; border: 0; border-bottom: 3px solid var(--rule); border-radius: 0; background: none; box-shadow: none; color: var(--ink2); font-size: 15px; font-weight: 600; }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn:hover { background: none; color: var(--ink); border-bottom-color: var(--ink3); }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn[aria-current=step] { color: var(--ink); background: none; border-bottom-color: var(--blue); }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-n { width: 28px; height: 28px; border: 2px solid var(--rule); background: var(--card); color: var(--ink2); font-size: 14px; font-weight: 700; }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn[aria-current=step] .lab-step-n { border-color: var(--blue); background: var(--blue); color: #fff; }
+/* Entry / Exit / Filters jump chips carry their section's colour. */
+:root .lab-page[data-lab-page] .lab-rule-nav button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink3); }
+:root .lab-page[data-lab-page] .lab-rule-nav button:nth-child(1)::before { background: var(--green, #2E9B57); }
+:root .lab-page[data-lab-page] .lab-rule-nav button:nth-child(2)::before { background: var(--red, #C0392B); }
+:root .lab-page[data-lab-page] .lab-rule-nav b { background: color-mix(in srgb, var(--blue) 12%, var(--card)); color: var(--blue); }

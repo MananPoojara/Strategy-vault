@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { GROUPS, TOOLS } from "./registry";
 
 export type Cursor = "cross" | "dot" | "arrow" | "demo" | "eraser";
@@ -75,9 +75,16 @@ export function DrawRail({ hidden, tool, setTool, prefs, setPrefs, drawings, ind
   });
   const open = (id: string, el: Element) => {
     if (menu?.id === id) { setMenu(null); return; }
-    const r = el.closest("[data-lab-slot]")!.getBoundingClientRect();
-    setMenu({ id, x: r.right + 4, y: r.top });
+    const r = el.closest("[data-lab-slot]")!.getBoundingClientRect(), rail = el.closest(".lab-draw-rail")?.getBoundingClientRect() ?? r;
+    setMenu({ id, x: rail.right + 6, y: r.top });
   };
+  // TradingView keeps the whole menu on screen: one taller than the space below the button opens higher up
+  useLayoutEffect(() => {
+    const fly = menu && document.querySelector<HTMLElement>(`.lab-flyout[data-menu="${menu.id}"]`);
+    if (!fly) return;
+    const top = Math.max(8, Math.min(menu.y, window.innerHeight - fly.offsetHeight - 8));
+    if (top !== menu.y) setMenu({ ...menu, y: top });
+  }, [menu]);
   const button = (label: string, icon: ReactNode, onClick: () => void, attrs: Record<string, unknown> = {}) =>
     <button type="button" className="dbtn sm" title={label} aria-label={label} onClick={onClick} {...attrs}><svg viewBox="0 0 24 24" aria-hidden="true">{icon}</svg></button>;
   /** A rail button with a fly-out: `main` runs on a click, a long press or the arrow opens the menu. */
@@ -91,7 +98,7 @@ export function DrawRail({ hidden, tool, setTool, prefs, setPrefs, drawings, ind
       })}
       {main && <button type="button" className="lab-draw-more" aria-label={`More ${label.toLowerCase()} options`} aria-haspopup="menu" aria-expanded={menu?.id === id}
         onClick={(e) => open(id, e.currentTarget)}><svg viewBox="0 0 6 10" aria-hidden="true"><path d="m1 1 4 4-4 4" /></svg></button>}
-      <div className="lab-flyout" role="menu" aria-label={label} hidden={menu?.id !== id} style={menu?.id === id ? { left: menu.x, top: menu.y } : undefined}>
+      <div className="lab-flyout" data-menu={id} role="menu" aria-label={label} hidden={menu?.id !== id} style={menu?.id === id ? { left: menu.x, top: menu.y } : undefined}>
         {items.length ? items.map((it) => {
           const head = it.section && it.section !== section ? <div className="lab-flyout-head" role="presentation">{(section = it.section)}</div> : null;
           return <Fragment key={it.key}>{head}

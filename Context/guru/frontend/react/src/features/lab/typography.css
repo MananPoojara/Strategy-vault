@@ -42,6 +42,10 @@ body:has(.lab-page[data-lab-page]) .topbar .status { font-size: 14px; }
   line-height: 1.4 !important;
   letter-spacing: 0;
 }
+/* The page's main tabs (Chart / Strategy & backtest / Customize / Saved strategies) read larger than other buttons. */
+.lab-page[data-lab-page] .lab-tabs [role=tab] { font-size: 17px !important; }
+.lab-page[data-lab-page] .lab-tabs [role=tab][aria-selected=true] { font-weight: 700 !important; }
+@media (max-width: 600px) { .lab-page[data-lab-page] .lab-tabs [role=tab] { font-size: 14px !important; } }
 .lab-page[data-lab-page] :is(input,select,textarea) {
   font-size: var(--lab-type-body) !important;
   font-weight: 400 !important;

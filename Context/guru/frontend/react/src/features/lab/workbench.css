@@ -212,11 +212,14 @@
 .lab-workbench .lab-draw-rail .lab-draw-more { position: absolute; right: -4px; top: 0; width: 9px; height: 36px; padding: 0; opacity: 0; }
 .lab-workbench .lab-draw-rail .lab-draw-more svg { width: 5px; height: 9px; stroke-width: 1.4; }
 .lab-draw-slot:hover > .lab-draw-more, .lab-workbench .lab-draw-rail .lab-draw-more[aria-expanded=true], .lab-draw-more:focus-visible { opacity: 1; }
-.lab-flyout { position: fixed; z-index: 1001; min-width: 230px; max-height: 80vh; overflow-y: auto; padding: 4px 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); box-shadow: 0 4px 18px rgb(0 0 0 / .18); }
-.lab-flyout-head { margin: 0; padding: 8px 14px 4px; color: var(--ink3); font: 600 10.5px var(--font); letter-spacing: .04em; }
-.lab-workbench .lab-draw-rail .lab-flyout button { display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 14px; border-radius: 0; color: var(--ink); font: 500 13px var(--font); text-align: left; }
+.lab-flyout { position: fixed; z-index: 1001; min-width: 260px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 6px 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); box-shadow: 0 4px 18px rgb(0 0 0 / .18); }
+.lab-flyout-head { margin: 0; padding: 12px 16px 6px; color: var(--ink3); font: 600 11px var(--font); letter-spacing: .06em; }
+.lab-flyout-head:first-child { padding-top: 8px; }
+/* TradingView's menu rows: 40 px, a 28 px icon box, 14 px names, the shortcut at the right */
+.lab-workbench .lab-draw-rail .lab-flyout button { display: flex; align-items: center; gap: 12px; width: 100%; height: 40px; padding: 0 16px; border-radius: 0; color: var(--ink); font: 500 14px var(--font); text-align: left; }
+.lab-workbench .lab-draw-rail .lab-flyout button svg { flex: none; width: 28px; height: 28px; padding: 2px; }
 .lab-workbench .lab-draw-rail .lab-flyout button[aria-checked=true] { color: var(--blue); }
-.lab-flyout kbd { margin-left: auto; color: var(--ink3); font: 500 11px var(--font); }
+.lab-flyout kbd { margin-left: auto; padding-left: 20px; color: var(--ink3); font: 500 12px var(--font); }
 /* TradingView's Icons fly-out: a grid of icon buttons under full-width category headers */
 .lab-draw-layer.locked .lab-draw-hit, .lab-draw-layer.locked .lab-draw-end { pointer-events: none; }
 .lab-draw-layer.erase .lab-draw-hit, .lab-draw-layer.erase .lab-draw-end { cursor: pointer; }
