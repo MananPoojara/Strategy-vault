@@ -2042,6 +2042,7 @@ mod tests {
         // + the multi-unit ids admitted by books::units::ADMISSION (lane K43)
         let mut want:Vec<&str>=stad::REVIEWED.iter().chain(stad2::REVIEWED.iter()).chain(["stad2_obv","stad2_stoch","stad8_stampede","stad9_luxor","stad13_luxor"].iter()).copied().collect();
         want.extend(stad::SPX_PTS.iter().chain(stad2::SPX_PTS)); // lane K58 (#202): ADMISSION_SPX entries, SPX only through the gate list
+        want.extend(stad::ETF_USD.iter()); // lane H3: stad1_spread, dollar-priced no-split US ETFs only through the gate list
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // stad3_idbf: the intraday block (K42)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

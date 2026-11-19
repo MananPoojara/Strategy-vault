@@ -6,9 +6,9 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "nftm";
 
-const HEINE: &str = "weekly Lehman long-term Government bond index, US cash T-Bond yield, 90-day T-Bill yield, Dow Jones Utility Average and CRB futures index; none in the vault";
-const PENTAD: &str = "the Dow Jones Transportation and Utility Averages and the Lehman / Dow Jones 20 bond index, which are not in the vault (Timing Models & Classic Indicators, PENTAD model p.E-13 to E-14); the weekly NYSE advance/decline leg is held (NYSE_ADV_DEC to 2020-02-10)";
-const TBOND: &str = "T-Bond and 10-year note futures, LME nickel, Dow Jones Utilities, Fidelity Select Chemicals (FSCHX) and Financial (FIDSX); none in the vault";
+const HEINE: &str = "two of the five inputs are not held (lane H3, 19 Nov 2026, checked against the data folders): the weekly Lehman long-term Government bond index (Timing Models p.E-8; Norgate &ZB/&ZN futures start later and are a different series, so they do not stand in) and the CRB futures index (no CRB series; Norgate carries no CRB contract). Held: the US 30-year yield (DGS30 from 1977-02-15, the cash T-Bond yield), the 3-month T-bill (DTB3), and the Dow Jones Utility Average ($DJU). A count of 3 or more points (p.E-9) cannot be formed with two of five tests missing";
+const PENTAD: &str = "one of the five inputs is not held (lane H3, 19 Nov 2026, checked against the data folders): the Lehman / Dow Jones 20 bond index, 38-week WMA test (Timing Models p.E-13 to E-14); no bond-index series exists (Norgate &ZB/&ZN futures are a different series from 1977 on). Held: the S&P 500 ($SPX), the weekly NYSE advance/decline line (NYSE_ADV_DEC to 2020-02-10), the Dow Jones Transportation Average ($DJT, but only its high is mapped to an engine series so far) and Utility Average ($DJU, DJ_UTILITY). The model count = 5 (buy) / <= 3 (sell) needs all five, so it cannot run without the bond leg";
+const TBOND: &str = "three of the four inputs are not held (lane H3, 19 Nov 2026, checked against the data folders): LME nickel (no nickel series), Fidelity Select Chemicals FSCHX and Fidelity Select Financial FIDSX (no mutual-fund NAV series). Held: T-Bond and 10-year note futures (Norgate &ZB, &ZN) and the Dow Jones Utility Average ($DJU, but the model needs DJUA/S&P). The system needs model count >= 3 of 4 (Fig. 28), which cannot be formed with three inputs missing";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
