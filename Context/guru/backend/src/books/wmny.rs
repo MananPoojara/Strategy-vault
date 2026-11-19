@@ -9,10 +9,23 @@ use Status::*;
 pub const BOOK: &str = "wmny";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m",
-    "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */, "wmny_pct_nh" /* lane PB batch 2: NYSE new highs/lows from Norgate #NYSEHI/#NYSELO; ref authors/pb/w/pb_ref4.py */];
+    "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */, "wmny_pct_nh" /* lane PB batch 2: NYSE new highs/lows from Norgate #NYSEHI/#NYSELO; ref authors/pb/w/pb_ref4.py */,
+    "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse" /* lane CV6 (R4 #340 / #347 / #365): NSE new highs / lows twins */];
+/// Lane CV6: the NSE counts (extra_data/india NSE_NHNL.csv: stocks at a new 52-week high / low, 2019-10-16 on).
+pub const NHNL_NSE: &[&str] = &["NSE_NHNL.NH", "NSE_NHNL.NL"];
+const NSE_NOTE: &str = "[R4 #340 / #347 declared adaptation, UNVERIFIED] NSE twin of the Nasdaq new-high / new-low rule: the same MetaStock formulas, parameters and ratio levels (0.4, 0.3, 0.6, 1, ...; they are ratios, not counts) on the NSE's own daily counts of stocks at a new adjusted 52-week high / low (extra_data/india NSE_NHNL, 2019-10-16 on; the article's Nasdaq counts are not an NSE series). Runs on Indian indices and stocks; US instruments are refused. The article tested QQQ: no NSE result exists, and the NSE series is 7 years long. Measured firing rate, NSE vs Nasdaq: ";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
+    let mut v = base_catalogue();
+    for (base, id, name, rate) in [("wmny_nhnl_ratio", "wmny_nhnl_ratio_nse", "NSE new-high/new-low ratio MACD system (Peterson, A), NSE counts", "Ratio MACD rule, default inputs, over the overlap 2019-10-16..2020-09-04: NSE twin (NIFTY 50) 67.7 entries and exits a year, long 40.3% of days; Nasdaq original (SPX) 137.8 a year, long 40.9%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 103.1 a year, long 38.8%; Nasdaq original over 2014-01-02..2020-09-04: 115.7 a year, long 40.4%."), ("wmny_nhnl_cci", "wmny_nhnl_cci_nse", "NH/NL ratio + CCI(6) system (Peterson, B), NSE counts", "CCI rule, default inputs, over the overlap 2019-10-16..2020-09-04: NSE twin (NIFTY 50) 24.5 trades a year, long 48.1% of days and short 48.6%; Nasdaq original (SPX) 16.8 a year, long 29.3% and short 68.4%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 25.6 a year; Nasdaq original over 2014-01-02..2020-09-04: 24.4 a year, long 37.7%, short 60.8%.")] {
+        let t = v.iter().find(|d| d.id == base).map(|b| StrategyDef { id, name, group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix, needs_series: NHNL_NSE, book: b.book, rules: b.rules,
+            notes: Box::leak(format!("{NSE_NOTE}{rate}").into_boxed_str()), claim: None });
+        v.extend(t);
+    }
+    v
+}
+fn base_catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, vol: bool, series: &'static [&'static str], rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: vol, needs_vix: false, needs_series: series, book: BOOK, rules, notes, claim };
     let c = crate::connors::claim;
     vec![
@@ -126,7 +139,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "wmny_belt_hold" | "wmny_engulf" | "wmny_candle_short" => ("wmny_candles", "Working Money · candlestick systems", v),
         "wmny_trend_rsi21" | "wmny_trend_rsi_ma" | "wmny_trend_srsi" | "wmny_trend_srsi_ma" => ("wmny_trendilator", "Working Money · Trendilator (Blackman)", v),
-        "wmny_nhnl_ratio" | "wmny_nhnl_cci" | "wmny_pct_nh" | "wmny_bond_band" => ("wmny_breadth", "Working Money · breadth / intermarket (data gap)", v),
+        "wmny_nhnl_ratio" | "wmny_nhnl_cci" | "wmny_nhnl_ratio_nse" | "wmny_nhnl_cci_nse" | "wmny_pct_nh" | "wmny_bond_band" => ("wmny_breadth", "Working Money · breadth / intermarket (data gap)", v),
         "wmny_lazy_year" | "wmny_dji_5_21m" | "wmny_zscore" | "wmny_willr" | "wmny_pullback" => ("wmny_timing", "Working Money · timing systems", v),
         "wmny_not_testable" => ("wmny_other", "Working Money · not testable", v),
         _ => return None,
@@ -134,6 +147,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    let id = id.trim_end_matches("_nse");
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "wmny_belt_hold" | "wmny_lazy_year" | "wmny_engulf" | "wmny_not_testable" => vec![],
@@ -225,6 +239,8 @@ fn month(d: &str) -> i64 { d[0..4].parse::<i64>().unwrap_or(0) * 12 + d[5..7].pa
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
+    let twin_nse = id.ends_with("_nse");
+    let id = id.trim_end_matches("_nse");
     let n = x.r.len();
     if !p.keys().all(|k| schema.iter().any(|d| d.key == k)) || from > to || to >= n { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
@@ -350,7 +366,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             out
         }
         "wmny_nhnl_ratio" | "wmny_nhnl_cci" => {
-            let (Some(nh), Some(nl)) = (x.series("NASDAQ_NEW_HIGHS"), x.series("NASDAQ_NEW_LOWS")) else { return Some(vec![]) };
+            let names: &[&str] = if twin_nse { NHNL_NSE } else { &["NASDAQ_NEW_HIGHS", "NASDAQ_NEW_LOWS"] };
+            let (Some(nh), Some(nl)) = (x.series(names[0]), x.series(names[1])) else { return Some(vec![]) };
             let ratio: Vec<f64> = (0..n).map(|i| nh[i] / (nh[i] + nl[i])).collect();
             let a = id == "wmny_nhnl_ratio";
             let (e1, e2, e3) = if a { (u("opt1"), u("opt2"), u("opt3")) } else { (7, 16, 2) };
