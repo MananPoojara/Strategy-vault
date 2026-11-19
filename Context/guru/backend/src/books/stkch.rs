@@ -259,7 +259,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           concat!("Adapted: 2 unstated details (R4 #297). Unstated in the article: one or two days before; vault reading: two trading days before the holiday, the day all three examples buy (p.days = 1: the last trading day before). ",
             "Unstated: the entry price ('a buy near open' for GE, 'a buy near close' for VOYN); vault reading: the open of the entry day, the first worked example (p.fill = 1: its close). ",
             "Holiday dates: the observed US dates (Saturday -> Friday, Sunday -> Monday; President's Day = Feb 22 before 1971, then the third Monday of February; Election Day = the Tuesday after the first Monday of November), used only when the data has no bar on that weekday (Election Day closings end in 1980). ",
-            "A trade still open when the next one would start is kept (no overlap). US holiday calendar: US instruments only. Stock examples; indices, ETFs and US stocks are a declared application. The table (S&P 500 1928-1975, sell at year end) is the long-term variant and is not comparable."), ),
+            "A trade still open when the next one would start is kept (no overlap). US holiday calendar on US instruments. India (R4 #364, declared adaptation under R4 #340, UNVERIFIED): the closures are the weekdays with no NIFTY 50 bar in the vault daily file (a data gap and a holiday cannot be told apart; no NSE holiday list is held). Stock examples; indices, ETFs and US stocks are a declared application. The table (S&P 500 1928-1975, sell at year end) is the long-term variant and is not comparable."), ),
         d("stkch_murphy_macd", "Murphy's Law 'Trade MACD' (12/26/9): buy a cross up below zero, sell a cross down above zero, weekly signal first", "Trading Strategies · John Murphy's Ten Laws of Technical Trading", "Long",
           Live, &[],
           &["E|\"A buy signal occurs when the faster line crosses above the slower and both lines are below zero.\" (MurphysLaws.pdf p.2-3, law 8)",
@@ -343,11 +343,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "stkch_preholiday" => {
             let (back, at_close) = (g("days").round().clamp(1., 2.) as usize, g("fill") >= 0.5);
             let dn: Vec<i64> = x.r.iter().map(|r| days(&r.date)).collect();
+            let india = crate::nse_holidays::is_india(x); // R4 #364: NSE closures derived from the NIFTY 50 bars replace the nine US holidays
             let mut out = vec![];
             let mut busy_until = 0usize;
             for i in 1..n {
                 // the last trading day before a closed weekday that is one of the nine holidays
-                if i + 1 >= n || !(dn[i] + 1..dn[i + 1]).any(|g| crate::books::mzwws::wday(g) < 5 && holiday9(g)) { continue; }
+                if i + 1 >= n || !(dn[i] + 1..dn[i + 1]).any(|g| crate::books::mzwws::wday(g) < 5 && if india { crate::nse_holidays::closures().binary_search(&g).is_ok() } else { holiday9(g) }) { continue; }
                 if i + 1 < back { continue; }
                 let e = i + 1 - back;
                 if e < from || e > to || e < busy_until { continue; }

@@ -81,12 +81,13 @@ fn indicator_days(x: &Ctx, first: usize, last: usize, pre: usize, newer: bool) -
     }
     // Pre-Holiday: the `pre` bars before each closing (a weekday rule date with no bar, inside the data)
     if n > 0 && pre > 0 {
-        for y in ym[0].0..=ym[n - 1].0 + 1 {
-            for d in holidays(y, newer) {
-                let p = dn.partition_point(|&z| z < d);
-                if wday(d) > 4 || p == 0 || p >= n || dn[p] == d { continue; }
-                for k in p.saturating_sub(pre)..p { w[k] = true; }
-            }
+        // R4 #364: on an Indian context the closures are the weekdays with no NIFTY 50 bar (nse_holidays), not the US list
+        let rule: Vec<i64> = if crate::nse_holidays::is_india(x) { crate::nse_holidays::closures().to_vec() }
+            else { (ym[0].0..=ym[n - 1].0 + 1).flat_map(|y| holidays(y, newer)).collect() };
+        for d in rule {
+            let p = dn.partition_point(|&z| z < d);
+            if wday(d) > 4 || p == 0 || p >= n || dn[p] == d { continue; }
+            for k in p.saturating_sub(pre)..p { w[k] = true; }
         }
     }
     w
@@ -144,10 +145,30 @@ mod tests {
         assert_eq!(ds(&run("nfsml_seasonality", &x, 0, r.len() - 1, &p).unwrap())[5], s("2002-01-16", "2002-01-18"));
         assert_eq!(easter(2024), dnum(2024, 3, 31));
     }
+    #[test]
+    fn india_pre_holiday_days_come_from_derived_closures() { // R4 #364
+        // 2020-03-02 (Mon) .. 2020-03-20 (Fri), weekdays only, with Wednesday 2020-03-11 missing = a derived NSE closure
+        let mut r = vec![];
+        for d in (dnum(2020, 3, 2)..=dnum(2020, 3, 20)).filter(|&d| wday(d) < 5 && d != dnum(2020, 3, 11)) {
+            let z = d + 719468; let era = z.div_euclid(146097); let doe = z - era * 146097;
+            let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153; let dd = doy - (153 * mp + 2) / 5 + 1; let m = if mp < 10 { mp + 3 } else { mp - 9 };
+            let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+            r.push(Row { ticker: "NIFTY 50".into(), date: format!("{y:04}-{m:02}-{dd:02}"), open: 100., high: 101., low: 99., close: 100., volume: None });
+        }
+        crate::nse_holidays::set_for_test(crate::nse_holidays::derive(&r));
+        assert_eq!(crate::nse_holidays::closures(), &[dnum(2020, 3, 11)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let w = indicator_days(&x, 0, 0, 2, false); // pre-holiday component only
+        let on: Vec<&str> = (0..r.len()).filter(|&i| w[i]).map(|i| &r[i].date[5..]).collect();
+        assert_eq!(on, vec!["03-09", "03-10"]);
+        let mut us = r.clone(); for q in us.iter_mut() { q.ticker = "SPY".into(); }
+        assert!(!indicator_days(&Ctx::new(&us, &us, &[]), 0, 0, 2, false).iter().any(|&b| b), "a US ticker keeps the US holiday list");
+    }
 }
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "nfsml" && crate::books::nfsml::reviewed(def.id),
-    label: "Fosback measured the Seasonality Indicator on the S&P 500 (1928-1975); runs on other US indices, ETFs and US stocks are a declared application. The days are set by US exchange holidays, so Indian instruments are not run.",
+    label: "Fosback measured the Seasonality Indicator on the S&P 500 (1928-1975); runs on other US indices, ETFs and US stocks are a declared application. The days are set by US exchange holidays, so Indian instruments are not run. India (R4 #364, declared adaptation under R4 #340, UNVERIFIED): the closures are the weekdays with no NIFTY 50 bar in the vault's daily file (nse-holidays-derived; a data gap and a holiday cannot be told apart), counted exactly as the US holiday list is; no NSE holiday list is held. The Month-End component is unchanged.",
     basis: "Norman G. Fosback, Stock Market Logic (1976), 'The Seasonality Indicator', printed p.155-164, Tables 50-51",
 };

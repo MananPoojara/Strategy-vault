@@ -794,6 +794,7 @@ fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opt
     if !sc && (!(crate::books::kpss::ADMISSION.reviewed)(def) || !crate::books::kpss::US_ONLY.contains(&def.id)) {return None;}
     let us=stock_us.unwrap_or(!ticker.starts_with("NIFTY"));
     if us {return None;}
+    if sc || crate::books::kpss::INDIA_CLOSURE.contains(&def.id) {return None;} // R4 #364: derived NSE closures (kpss_hol_d1/d2/3x3, sckcal_si2)
     Some(Issue{status:"needs_data",note:format!("This rule's days are set by US stock-market holidays (the trading days before and after a US exchange closure, or the Thanksgiving-to-January Santa Claus window). Indian exchanges keep a different holiday calendar, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // Fosback Seasonality Indicator (lane K5, 31 Oct 2026): its pre-holiday days are US exchange holidays and no official NSE
@@ -801,6 +802,7 @@ fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opt
 fn fosback_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
     if !(crate::books::nfsml::ADMISSION.reviewed)(def) || !crate::books::nfsml::US_ONLY.contains(&def.id) {return None;}
     if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    if (crate::books::nfsml::ADMISSION.reviewed)(def) {return None;} // R4 #364: derived NSE closures
     Some(Issue{status:"needs_data",note:format!("This rule's pre-holiday days are set by US stock-market holiday closings. Indian exchanges keep a different holiday calendar and the vault holds no official NSE holiday list, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // INVESTools workshop example (K7, 1 Nov 2026): the printed $1.00 trail / $1.00 target / $0.50 stop are dollar amounts -> US only.
@@ -849,10 +851,8 @@ fn hirsch_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opti
     Some(Issue{status:"needs_data",note:format!("This window is set by the US Thanksgiving exchange holiday (the market is closed on Thursday), so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // lane R2A (R4 #297): stkch_preholiday is set by the US exchange-holiday calendar.
-fn stkch_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
-    if def.book!="stkch" || !crate::books::stkch::US_ONLY.contains(&def.id) || !crate::books::stkch::reviewed(def.id) {return None;}
-    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
-    Some(Issue{status:"needs_data",note:format!("The Pre-Holiday Effect buys before nine US exchange holidays (StockCharts preHolidayEffect.pdf); Indian markets keep a different holiday calendar, so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+fn stkch_symbol_issue(_def:&StrategyDef,_ticker:&str,_stock_us:Option<bool>)->Option<Issue> {
+    None // R4 #364: stkch_preholiday also runs on India: the closures are the weekdays with no NIFTY 50 bar (nse_holidays), labelled in the card notes
 }
 // ---------------------------------------------------------------- end Hirsch
 // ---------------------------------------------------------------- Schaap 2026-10-24
@@ -1976,9 +1976,9 @@ mod tests {
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             if stkch::US_ONLY.contains(&d.id) { // lane R2A (R4 #297): US holiday calendar
                 for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
-                for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
+                for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);} // R4 #364: derived NSE closures
                 assert!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),"{}",d.id);
-                assert!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_some(),"{}",d.id);
+                assert!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none(),"{}",d.id);
                 continue;
             }
             for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c) / #246
@@ -2946,7 +2946,7 @@ mod tests {
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
-            let us_only=kpss::US_ONLY.contains(&d.id);
+            let us_only=kpss::US_ONLY.contains(&d.id)&&!kpss::INDIA_CLOSURE.contains(&d.id); // R4 #364
             for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t)||crate::intraday_ep6::held_note(d.id,t).is_some(),"{} {t}",d.id);} // K62 #243 (c)
             for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
             assert_eq!(check(d,"RELIANCE",true).is_some(),us_only,"{}",d.id);
@@ -2963,11 +2963,10 @@ mod tests {
         }
     }
     #[test]
-    fn fosback_seasonality_runs_on_us_instruments_only() {
+    fn fosback_seasonality_runs_on_us_and_indian_instruments() { // R4 #364: India on derived NSE closures
         for d in crate::books::nfsml::catalogue() {
-            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(&d,t,false).is_none(),"{} {t}",d.id);}
-            for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(&d,t,false).is_some(),"{} {t}",d.id);}
-            assert!(check(&d,"RELIANCE",true).is_some(),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(&d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(&d,"RELIANCE",true).is_none(),"{}",d.id);
         }
     }
     // ---- Hamon block (2026-10-24) ----
