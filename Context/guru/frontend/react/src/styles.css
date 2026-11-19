@@ -794,7 +794,7 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 /* author shelf: 280 px book cards (ebook-store style), 19 Nov 2026 */
 .shelf.book-grid { grid-template-columns: repeat(auto-fill, 280px); justify-content: space-between; gap: 44px 28px; margin-top: 18px; }
 @media (max-width: 640px) { .shelf.book-grid { grid-template-columns: 1fr; justify-items: center; } }
-.shelf.book-grid .bk { width: 280px; display: flex; flex-direction: column; padding: 0; background: none; border: 0; box-shadow: none; transform: none; cursor: default;
+.shelf.book-grid .bk { width: 280px; display: flex; flex-direction: column; gap: 0; padding: 0; background: none; border: 0; box-shadow: none; transform: none; cursor: default;
   animation: bk-rise .6s cubic-bezier(.2,.75,.25,1) both; animation-delay: calc(var(--i) * 45ms); }
 @keyframes bk-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 .bk-stage { position: relative; height: 330px; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 18px; perspective: 1100px; text-decoration: none;
