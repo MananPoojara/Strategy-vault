@@ -146,16 +146,16 @@ fn spx(x: &Ctx) -> Option<Vec<f64>> {
 // ---------------------------------------------------------------- catalogue
 
 const G11: &str = "Ch.11 Gold systems (GLD/gold)";
-const NEED_GOLD_XAU: &str = "needs gold (GLD / gold bullion) daily OHLC as the traded market and the Philadelphia Gold & Silver Index (XAU) close; neither is in the vault";
-const NEED_GOLD_DXY: &str = "needs gold (GLD / gold bullion) daily OHLC as the traded market and the US Dollar Index (DXY) close; neither is in the vault";
-const NEED_GOLD_MULTI: &str = "needs gold (GLD / gold bullion) daily OHLC plus XAU, silver (SLV) and Dollar Index (DXY) closes; none is in the vault";
+const NEED_GOLD_XAU: &str = "needs the Philadelphia Gold & Silver Index (XAU) close, which is not in the vault (GLD and Norgate &GC gold futures are held, but the XAU divergence leg is the book's core input and GDX is a different instrument, not a stand-in); the rule is also not run on GLD because the code appends gold bullion before 18-Nov-2004 (p.302)";
+const NEED_GOLD_DXY: &str = "GLD (us_data) and Norgate &GC gold futures are held, the DXY cash index is not (Norgate &DX dollar-index futures are held, a different series); the real block is a Data2 futures path with &DX as the labelled partner (futures.rs DATA2, as for ch_bta2_goldbond_*) plus a page read of the code to count details (not done here)";
+const NEED_GOLD_MULTI: &str = "needs the XAU index (not held) and silver (SLV not in us_data; Norgate &SI silver futures and &DX are held) plus gold (GLD / &GC held); the XAU leg is the unresolved block";
 const NEED_T2108: &str = "needs T2108 (Worden/Telechart % of NYSE stocks above their 40-day MA) daily; the vault's NYSE breadth (advances/declines/volumes) is not T2108";
-const NEED_ES: &str = "needs 15-minute S&P 500 e-mini (ES) bars and 15-minute Euro Stoxx 50 futures (FESX) bars; the vault has daily data only";
+const NEED_ES: &str = "needs 15-minute S&P 500 e-mini (ES) bars and 15-minute Euro Stoxx 50 futures (FESX) bars; the vault holds only daily Norgate &ES/&FESX and 1-minute SPX/SPY/NIFTY/BANKNIFTY cash series, no 15-minute futures bars";
 const NEED_CAC: &str = "needs CAC 40 futures (FCE) or CAC 40 index daily closes as the intermarket security (book traded DAX futures); not in the vault";
 const NEED_STOXX: &str = "needs Euro Stoxx 50 futures (FESX) / index (STOXX50E) daily closes; not in the vault";
 const NEED_DAXSTK: &str = "needs the 10 DAX component stocks (ALV, BAS, BAY, DAI, DBK, DTE, EOA, SIE, RWE, SAP) and CAC 40 futures closes; not in the vault";
-const NEED_FTSE: &str = "needs CAC 40, Amex Oil Index (XOI) and S&P Bank Index (BIX) daily closes (book traded the FTSE 100); not in the vault";
-const NEED_OIL: &str = "needs an oil-stock universe with volume, light crude futures (CL) and the XOI index closes (S&P 500 alone is in the vault)";
+const NEED_FTSE: &str = "needs the Amex Oil Index (XOI) and S&P Bank Index (BIX) daily closes, which are not in the vault (Norgate &LFT FTSE 100 and &FCE CAC 40 futures are held)";
+const NEED_OIL: &str = "needs an oil-stock universe with volume and the XOI index closes, not in the vault (Norgate &CL crude futures and the S&P 500 are held)";
 const NEED_GSTK: &str = "needs a gold-stock universe with volume, gold (XGLD) and XAU closes; not in the vault";
 const NEED_YEN: &str = "needs USD/JPY (or yen futures) daily OHLC, the Dollar Index (DXY) and 10-year Treasury yield (TNX) closes (S&P 500 alone is in the vault)";
 const NEED_EURO: &str = "needs the CRB Index and 10-year Treasury yield (TNX) daily closes (book traded EUR/USD); not in the vault";
