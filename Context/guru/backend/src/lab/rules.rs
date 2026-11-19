@@ -73,8 +73,8 @@ pub struct SinceEntry { pub kind: SinceKind, pub of: Option<Operand>, pub when: 
 pub struct AtrBand { pub period: usize, pub mult: f64, pub price: String }
 /// The AmiBroker "Dual ATR" exit (exit.dual_atr): from the entry bar an initial stop (price − initial ATR band) and a favour
 /// stop (price − favour ATR band) ratchet in the trade's favour, and a switch band (price + favour ATR band) ratchets
-/// against it. Once a close is above the previous switch band, the favour stop is used for the rest of the trade (the
-/// 05-11-2026 AFLs' Flag = 1; there is no initial-stop condition). Exit on a close below the previous bar's stop (mirrored for shorts). On W/M the bands use
+/// against it. Once a close is above both the previous switch band and the previous initial stop, the favour stop is used
+/// for the rest of the trade (the 16-11-2026 "Dual ATR_Modified" AFLs' Flag = 1). Exit on a close below the previous bar's stop (mirrored for shorts). On W/M the bands use
 /// completed periods only; `period_end_only` tests the exit on a period's last bar.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DualAtr { pub initial: AtrBand, pub favour: AtrBand, pub tf: Tf, pub period_end_only: bool }

@@ -34,18 +34,23 @@ struct Pos {
 /// ratchet the same way: stops up, the switch band down; `favour` once a close cleared the switch band and the initial stop.
 #[derive(Clone, Copy, Debug)]
 struct DualState { init: f64, fav: f64, up: f64, favour: bool, upto: usize }
+impl DualState {
+    /// The levels a position entered on bar e starts from (shared with the Explore report so it shows the level tested).
+    fn start(a: &super::series::DualBands, e: usize, d: f64) -> Self { DualState { init: d * a.init[e], fav: d * a.fav[e], up: d * a.up[e], favour: false, upto: e } }
+}
 /// Advance the open position's exit.dual_atr state through bar i; true when bar i's (period) close is beyond the previous bar's
 /// active stop (initial, or favour after the switch). Never on the entry bar; NaN levels (ATR warm-up) never exit.
 fn dual_step(c: &Compiled, p: &mut Pos, i: usize, d: f64) -> bool {
     let Some(a) = c.dual.as_ref() else { return false };
     let e = p.e;
-    let st = p.dual.get_or_insert(DualState { init: d * a.init[e], fav: d * a.fav[e], up: d * a.up[e], favour: false, upto: e });
+    let st = p.dual.get_or_insert(DualState::start(a, e, d));
     let mut hit = false;
     while st.upto < i {
         let k = st.upto + 1;
         let close = d * a.close[k];
-        // AFL (05-11-2026 short and long): Flag = 1 once the close crosses the previous bar's trigger line, nothing else
-        if !st.favour && close > st.up { st.favour = true; }
+        // AFL "Dual ATR_Modified" (16-11-2026, long and short): Flag = 1 once the close clears both the previous bar's switch
+        // band and its initial stop (a NaN stop never switches)
+        if !st.favour && close > st.up && close > st.init { st.favour = true; }
         hit = (if st.favour { close < st.fav } else { close < st.init }) && (!a.end_only || a.end[k]);
         // f64::max/min skip a NaN operand, so a level starts once its ATR is known
         st.init = st.init.max(d * a.init[k]);
@@ -443,6 +448,54 @@ fn shadow_trades(s: &super::rules::Shadow, ok: &[bool], filter_exit: bool, b: &B
     }
     out
 }
+/// Explore report only: the position and the live exit levels at the end of bar i (after its exits and entries), in price
+/// units for either direction; None when not configured, not known yet (NaN), not armed, or flat.
+/// stop: stop-loss, or the armed breakeven when tighter; target; trailing (once armed); these three are the levels bar i + 1
+/// tests. dual_*: exit.dual_atr after bar i, which bar i + 1's close is tested against (dual_active: the initial stop
+/// before the switch, the favour stop after; a close beyond dual_switch on bar i + 1 switches first). line_*: the exit.dual_line
+/// lines on bar i itself, which bar i's close is tested against. Take-profit levels are not reported.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BarLevels {
+    pub pos: i8, pub stop: Option<f64>, pub target: Option<f64>, pub trailing: Option<f64>,
+    pub dual_init: Option<f64>, pub dual_fav: Option<f64>, pub dual_switch: Option<f64>, pub dual_active: Option<f64>,
+    pub line_init: Option<f64>, pub line_fav: Option<f64>,
+}
+fn snapshot(sides: &[&Compiled], pos: &Option<(usize, Pos)>, i: usize) -> BarLevels {
+    let Some((s, p)) = pos else { return BarLevels::default() };
+    let (c, f) = (sides[*s], |x: f64| (!x.is_nan()).then_some(x));
+    let d = if c.exec.short { -1. } else { 1. };
+    let [sl, trail, be, target] = p.levels(c, i + 1, d);
+    // breakeven moves the stop: the tighter of the two, as price_exit takes it (a tie keeps the stop-loss)
+    let stop = if sl.is_nan() || d * (be - sl) > 0. { be } else { sl };
+    // a position opened on bar i has no dual state yet: dual_step starts it from the entry bar's levels
+    let dual = c.dual.as_ref().map(|a| p.dual.unwrap_or_else(|| DualState::start(a, p.e, d)));
+    let line = c.dline.as_ref().map(|(init, fav)| (init[i], fav[i]));
+    BarLevels { pos: if d > 0. { 1 } else { -1 }, stop: f(stop), target: f(target), trailing: f(trail),
+        dual_init: dual.and_then(|st| f(d * st.init)), dual_fav: dual.and_then(|st| f(d * st.fav)), dual_switch: dual.and_then(|st| f(d * st.up)),
+        dual_active: dual.and_then(|st| f(d * if st.favour { st.fav } else { st.init })),
+        line_init: line.and_then(|l| f(l.0)), line_fav: line.and_then(|l| f(l.1)) }
+}
+/// Position per bar from..=to from finished trades: held from the entry bar, flat from the exit bar (a reversal's new trade wins).
+fn held_by(trades: &[Trade], from: usize, to: usize) -> Vec<i8> {
+    let mut v = vec![0; to + 1 - from];
+    for t in trades {
+        for k in t.legs[0].i.max(from)..(t.exit_i + usize::from(t.open)).min(to + 1) { v[k - from] = if t.dir > 0. { 1 } else { -1 }; }
+    }
+    v
+}
+/// Explore report only: `BarLevels` for each bar from..=to from the same trade loop (the trades are not changed).
+pub fn simulate_levels(c: &Compiled, b: &Bars, from: usize, to: usize) -> Vec<BarLevels> {
+    let mut rec = Vec::with_capacity(to + 1 - from);
+    signal_events_rec(c, b, from, to, None, None, Some(&mut rec));
+    if c.shadow.is_some() || c.clip.iter().any(|clip| clip.blocked[from..=to].contains(&true)) {
+        // the real position is the shadow / date-clipped trades: a bar keeps the loop's levels only where its side agrees
+        // shortcut: a clip's fresh re-entry exits (nested loop) are not recorded, and a matching side may be a different paper
+        // trade; record inside clip_trades if those levels are needed
+        let held = held_by(&simulate(c, b, from, to), from, to);
+        for (r, p) in rec.iter_mut().zip(held) { if r.pos != p { *r = BarLevels { pos: p, ..BarLevels::default() }; } }
+    }
+    rec
+}
 fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) {
     let (trades, events, _) = signal_events_from(c, b, from, to, None, None);
     (trades, events)
@@ -452,6 +505,10 @@ struct EntryAttempt { accepted: [bool; 2], until: usize }
 /// The trade loop; `held`: start with that position open (a clip_trades re-entry) and take no entry of its own, so the result
 /// is that one position's trade, closed by its exits or open at `to`.
 fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Option<(usize, Pos)>, history: Option<&[Trade]>) -> (Vec<Trade>, Vec<String>, EntryAttempt) {
+    signal_events_rec(c, b, from, to, held, history, None)
+}
+/// `rec` (top-level calls only: no `held`, no `history`) collects each bar's end state for `simulate_levels`; it only reads.
+fn signal_events_rec(c: &Compiled, b: &Bars, from: usize, to: usize, held: Option<(usize, Pos)>, history: Option<&[Trade]>, mut rec: Option<&mut Vec<BarLevels>>) -> (Vec<Trade>, Vec<String>, EntryAttempt) {
     let reentry = held.is_some();
     let single_entry = history.is_some();
     let previous = history.map_or(0, <[Trade]>::len);
@@ -516,6 +573,8 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
     let (mut events, mut risk) = (Vec::new(), RiskState::new());
     if !reentry && !single_entry { for s in &sides { s.reset_setups(); } }
     for i in from..=to {
+        // bar i - 1 ended at its last `continue` or at the loop's end; nothing has changed the state since
+        if let (Some(r), true) = (rec.as_mut(), i > from) { r.push(snapshot(&sides, &pos, i - 1)); }
         if reentry && pos.is_none() { break; } // the held position has closed
         if single_entry && i > from && (trades.len() > previous || (pos.is_none() && pending_entry.is_none() && orders.iter().all(Option::is_none))) { break; }
         attempt.until = i;
@@ -756,6 +815,7 @@ fn signal_events_from(c: &Compiled, b: &Bars, from: usize, to: usize, held: Opti
             break;
         }
     }
+    if let (Some(r), true) = (rec, from <= to) { r.push(snapshot(&sides, &pos, to)); } // the loop ends at `last`
     if let Some((s, p)) = pos {
         // AFL DEAD STOCK BACKTEST YES: the symbol's last bar sells at its close (a delisted stock exits), not an open mark
         let dead = x.dead_stock && to + 1 == b.len();
@@ -2058,6 +2118,15 @@ mod dual_since_tests {
         let t = run(1e9, None, 0);
         assert_eq!((t[0].exit_i, t[0].exit_px), (8, 10.5));
     }
+    #[test] fn dual_atr_switch_needs_the_close_above_the_initial_stop_too() {
+        // bar 2 closes 11 above the switch band 10.5 but below the initial stop 11.5: no switch (AFL Dual ATR_Modified),
+        // so the initial stop exits bar 2 instead of handing over to the far favour stop 5
+        let mut c = Compiled::new(vec![entry_on_1()], vec![]);
+        c.exec = Exec { fill: Fill::Close, exit_fill: Fill::Close, ..Exec::default() };
+        c.dual = Some(DualBands { init: vec![11.5; 10], fav: vec![5.; 10], up: vec![10.5; 10], close: CLOSES.to_vec(), end: vec![false; 10], end_only: false });
+        let t = simulate(&c, &flat(&CLOSES), 0, 9);
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].open), (2, 11., false));
+    }
     #[test] fn dual_atr_period_end_only_waits_for_the_period_end_and_skips_unknown_levels() {
         // bar 8 breaks the initial stop but is not a period end; bar 9 is, and still closes below the stop
         assert_eq!(run(1e9, Some(9), 0)[0].exit_i, 9);
@@ -2740,5 +2809,129 @@ mod afl_backtest_parameter_tests {
         let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"penny_price":5},"portfolio":{"universe":{"tickers":["SPY","QQQ"]},"max_open":2}}"#;
         // a portfolio applies the gates per member (rules.rs portfolio_rules)
         assert_eq!(parse_spec(port).unwrap().exec.penny_price, 5.);
+    }
+}
+
+#[cfg(test)]
+mod levels_tests {
+    use super::*;
+    use crate::lab::rules::{Exec, Op};
+    use crate::lab::series::{DualBands, RCond, Val};
+    use crate::lab::testdata::from_ohlc;
+
+    fn rule(set: &[usize]) -> RCond { RCond { lhs: Val::Arr((0..10).map(|i| if set.contains(&i) { 1. } else { 0. }).collect()), op: Op::Gt, rhs: Val::Const(0.5), label: "rule".into() } }
+    fn with(entry: &[usize], exit: &[usize], exec: Exec) -> Compiled { Compiled { exec, ..Compiled::new(vec![rule(entry)], vec![rule(exit)]) } }
+    fn close_fill() -> Exec { Exec { fill: Fill::Close, exit_fill: Fill::Close, ..Exec::default() } }
+    fn bars() -> Bars { from_ohlc(&(0..10).map(|i| { let o = 100. + i as f64; (o, o + 1., o - 1., o + 0.5) }).collect::<Vec<_>>()) }
+    fn col(v: &[BarLevels], f: fn(&BarLevels) -> Option<f64>) -> Vec<Option<f64>> { v.iter().map(|l| f(l).map(|x| (x * 1e9).round() / 1e9)).collect() }
+    fn pos(v: &[BarLevels]) -> Vec<i8> { v.iter().map(|l| l.pos).collect() }
+
+    #[test] fn stop_and_target_long_and_short() {
+        let exec = Exec { stop_loss: Some(Dist::Pct(2.)), target: Some(Dist::Pct(3.)), ..close_fill() };
+        // long at bar 2's close 102.5: stop 100.45, target 105.575; bar 5's high 106 takes the target (flat at its end)
+        let c = with(&[2], &[], exec.clone());
+        let v = simulate_levels(&c, &bars(), 0, 9);
+        assert_eq!(simulate(&c, &bars(), 0, 9)[0].exit_i, 5);
+        assert_eq!(pos(&v), [0, 0, 1, 1, 1, 0, 0, 0, 0, 0]);
+        let (s, t) = (Some(100.45), Some(105.575));
+        assert_eq!(col(&v, |l| l.stop), [None, None, s, s, s, None, None, None, None, None]);
+        assert_eq!(col(&v, |l| l.target), [None, None, t, t, t, None, None, None, None, None]);
+        assert!(v.iter().all(|l| l.trailing.is_none() && l.dual_active.is_none() && l.line_init.is_none()));
+        // short at 102.5: stop 104.55 above, target 99.425 below; bar 4's high 105 reaches the stop
+        let v = simulate_levels(&with(&[2], &[], Exec { short: true, ..exec }), &bars(), 0, 9);
+        assert_eq!(pos(&v), [0, 0, -1, -1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(col(&v, |l| l.stop)[2..4], [Some(104.55); 2]);
+        assert_eq!(col(&v, |l| l.target)[2..4], [Some(99.425); 2]);
+    }
+    #[test] fn trailing_appears_once_armed() {
+        let exec = Exec { trailing: Some(Dist::Pct(2.)), trail_activate: Some(Dist::Pct(3.)), ..close_fill() };
+        let mut b = bars();
+        // entry 102.5 arms at 105.575: bar 5's high 106 arms it, level for bar 6 = 106 × 0.98 = 103.88, bar 6's low 103.8 exits
+        b.high[3] = 103.9; b.low[4] = 101.8; b.high[5] = 106.; b.low[6] = 103.8;
+        let c = with(&[2], &[], exec);
+        let v = simulate_levels(&c, &b, 0, 9);
+        assert_eq!((simulate(&c, &b, 0, 9)[0].exit_i, pos(&v)), (6, vec![0, 0, 1, 1, 1, 1, 0, 0, 0, 0]));
+        assert_eq!(col(&v, |l| l.trailing), [None, None, None, None, None, Some(103.88), None, None, None, None]);
+    }
+    #[test] fn breakeven_moves_the_reported_stop() {
+        let exec = Exec { stop_loss: Some(Dist::Pct(5.)), breakeven: Some((Dist::Pct(2.), Some(Dist::Points(0.5)))), ..close_fill() };
+        let mut b = bars(); // entry 102.5: stop 97.375; bar 4's high 105 ≥ 104.55 moves it to 103; bar 5's low 102.9 exits there
+        b.low[5] = 102.9;
+        let v = simulate_levels(&with(&[2], &[], exec), &b, 0, 9);
+        assert_eq!(pos(&v), [0, 0, 1, 1, 1, 0, 0, 0, 0, 0]);
+        assert_eq!(col(&v, |l| l.stop)[..6], [None, None, Some(97.375), Some(97.375), Some(103.), None]);
+    }
+    const CLOSES: [f64; 10] = [10., 10., 11., 12., 13., 12., 11.4, 11.9, 10.5, 10.];
+    /// The dual_since_tests fixture (entry at bar 1's close), mirrored around 20 for a short.
+    fn dual(short: bool) -> (Compiled, Bars) {
+        let m = |v: Vec<f64>| if short { v.iter().map(|x| 20. - x).collect() } else { v };
+        let close = m(CLOSES.to_vec());
+        let mut c = with(&[1], &[], Exec { short, ..close_fill() });
+        c.exit = vec![];
+        c.dual = Some(DualBands { init: m(vec![9., 9., 9.5, 10., 10.5, 11., 11., 11., 11., 11.]), fav: m(vec![8., 8., 8., 9., 9.5, 10., 10., 10., 11.5, 11.]),
+            up: m(vec![12.; 10]), close: close.clone(), end: vec![false; 10], end_only: false });
+        (c, from_ohlc(&close.iter().map(|&x| (x, x, x, x)).collect::<Vec<_>>()))
+    }
+    #[test] fn dual_atr_levels_are_the_ones_the_next_close_is_tested_against() {
+        let (c, b) = dual(false);
+        let v = simulate_levels(&c, &b, 0, 9);
+        let t = simulate(&c, &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (9, "exit.dual_atr"));
+        assert_eq!(pos(&v), [0, 1, 1, 1, 1, 1, 1, 1, 1, 0]);
+        // hand-computed: the ratchet through each bar; bar 4's close 13 clears the switch band 12, so favour is active from there
+        let n = None;
+        assert_eq!(col(&v, |l| l.dual_init), [n, Some(9.), Some(9.5), Some(10.), Some(10.5), Some(11.), Some(11.), Some(11.), Some(11.), n]);
+        assert_eq!(col(&v, |l| l.dual_fav), [n, Some(8.), Some(8.), Some(9.), Some(9.5), Some(10.), Some(10.), Some(10.), Some(11.5), n]);
+        assert_eq!(col(&v, |l| l.dual_switch), [n, Some(12.), Some(12.), Some(12.), Some(12.), Some(12.), Some(12.), Some(12.), Some(12.), n]);
+        assert_eq!(col(&v, |l| l.dual_active), [n, Some(9.), Some(9.5), Some(10.), Some(9.5), Some(10.), Some(10.), Some(10.), Some(11.5), n]);
+        // the exit is the first bar whose close is below the previous row's reported active stop
+        assert_eq!((2..10).find(|&k| CLOSES[k] < v[k - 1].dual_active.unwrap()), Some(t[0].exit_i));
+        // a short reports real prices: the mirror of the long's levels, and exits on the first close above them
+        let (c, b) = dual(true);
+        let s = simulate_levels(&c, &b, 0, 9);
+        assert_eq!(simulate(&c, &b, 0, 9)[0].exit_i, 9);
+        assert_eq!(pos(&s), [0, -1, -1, -1, -1, -1, -1, -1, -1, 0]);
+        for f in [|l: &BarLevels| l.dual_init, |l: &BarLevels| l.dual_fav, |l: &BarLevels| l.dual_switch, |l: &BarLevels| l.dual_active] {
+            assert_eq!(col(&s, f), col(&v, f).iter().map(|x| x.map(|x| 20. - x)).collect::<Vec<_>>());
+        }
+        assert_eq!((2..10).find(|&k| b.close[k] > s[k - 1].dual_active.unwrap()), Some(9));
+    }
+    #[test] fn a_date_clip_reports_the_real_position_not_the_paper_one() {
+        let mut c = with(&[2], &[], Exec { stop_loss: Some(Dist::Pct(10.)), ..close_fill() });
+        c.clip = vec![crate::lab::series::Clip { blocked: (0..10).map(|i| i == 5).collect(), running: false, why: "blocked".into() }];
+        let v = simulate_levels(&c, &bars(), 0, 9);
+        // the paper trade stays open to bar 9; the real one is covered at bar 5's close and a Fresh clip waits for a new signal
+        assert_eq!((simulate(&c, &bars(), 0, 9)[0].exit_i, pos(&v)), (5, vec![0, 0, 1, 1, 1, 0, 0, 0, 0, 0]));
+        assert_eq!(col(&v, |l| l.stop), [None, None, Some(92.25), Some(92.25), Some(92.25), None, None, None, None, None]);
+    }
+    #[test] fn recording_never_changes_the_trades() {
+        let mut b = bars();
+        b.low[4] = 100.; b.high[5] = 106.; b.low[6] = 103.8;
+        let mut atr = with(&[2], &[], Exec { stop_loss: Some(Dist::Atr { mult: 2., length: 14 }), trailing: Some(Dist::Atr { mult: 1., length: 14 }), ..Exec::default() });
+        atr.atr.insert(14, vec![f64::NAN, f64::NAN, 1., 1., 50., 50., 50., 50., 50., 50.]);
+        let mut lim = bars();
+        lim.low[3] = 101.; // the 1% limit 101.475 fills on bar 3
+        let mut rev = with(&[1, 6], &[], close_fill());
+        rev.other = Some(Box::new(with(&[3], &[], Exec { short: true, ..close_fill() })));
+        let fixtures = [
+            (with(&[2, 4], &[], Exec { stop_loss: Some(Dist::Pct(2.)), target: Some(Dist::Pct(3.)), ..close_fill() }), bars()),
+            (with(&[2], &[7], Exec { trailing: Some(Dist::Pct(2.)), trail_activate: Some(Dist::Pct(3.)), ..close_fill() }), b.clone()),
+            (with(&[2], &[], Exec { stop_loss: Some(Dist::Pct(5.)), breakeven: Some((Dist::Pct(2.), Some(Dist::Points(0.5)))), ..close_fill() }), b.clone()),
+            (with(&[1, 5], &[3, 8], Exec { take_profits: vec![(Dist::Pct(1.), 0.5)], ..Exec::default() }), bars()),
+            (with(&[2], &[6], Exec { limit: Some(Dist::Pct(1.)), stop_loss: Some(Dist::Pct(1.)), exit_fill: Fill::Close, ..Exec::default() }), lim),
+            (with(&[1, 2, 3], &[8], Exec { delay: 2, ..Exec::default() }), bars()),
+            (atr, b),
+            (rev, bars()),
+            dual(false), dual(true),
+        ];
+        for (k, (c, b)) in fixtures.iter().enumerate() {
+            let mut rec = vec![];
+            let (t, e, _) = signal_events_rec(c, b, 0, 9, None, None, Some(&mut rec));
+            assert_eq!((&t, &e), (&simulate(c, b, 0, 9), &simulate_events(c, b, 0, 9).1), "fixture {k}");
+            assert!(!t.is_empty(), "fixture {k}");
+            // the recorded position is the trades' own: held from the entry bar, flat on the exit bar
+            assert_eq!(pos(&rec), held_by(&t, 0, 9), "fixture {k}");
+            assert_eq!(simulate_levels(c, b, 2, 7).len(), 6);
+        }
     }
 }

@@ -10,6 +10,7 @@ use super::json::esc;
 use super::resample::{resample, Tf, TF_HELP};
 use super::rules::{self, LabError, Spec, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
+use super::simulate::{simulate_levels, BarLevels};
 use crate::State;
 use std::collections::BTreeMap;
 
@@ -113,7 +114,18 @@ fn current(st: &State, q: &Query, spec: &Spec, explore: bool) -> Result<String, 
     if explore {
         let col = |v: &[f64]| format!("[{}]", v[from..=to].iter().map(|x| crate::num(*x)).collect::<Vec<_>>().join(","));
         let flags = |s: &[bool]| format!("[{}]", s[from..=to].iter().map(|x| if *x { "1" } else { "0" }).collect::<Vec<_>>().join(","));
-        return Ok(format!("{{{head},\"kind\":\"lab_explore\",\"dates\":[{}],\"open\":{},\"high\":{},\"low\":{},\"close\":{},\"volume\":{},\"signals\":{{\"buy\":{},\"sell\":{},\"short\":{},\"cover\":{}}}}}",
+        // Report only: the backtest loop's position and live exit levels on these bars (simulate.rs simulate_levels; the trades
+        // are unchanged). shortcut: the single-instrument unit-mode loop on the explored bars — a W/M explore simulates those
+        // bars while the run trades daily, and money sizing (lab/ledger.rs) or a portfolio may skip a trade shown here
+        let lv = simulate_levels(&c, b, from, to);
+        let position = lv.iter().map(|l| l.pos.to_string()).collect::<Vec<_>>().join(",");
+        let named: [(&str, fn(&BarLevels) -> Option<f64>); 9] = [("stop", |l| l.stop), ("target", |l| l.target), ("trailing", |l| l.trailing),
+            ("dual_init", |l| l.dual_init), ("dual_fav", |l| l.dual_fav), ("dual_switch", |l| l.dual_switch), ("dual_active", |l| l.dual_active),
+            ("line_init", |l| l.line_init), ("line_fav", |l| l.line_fav)];
+        let levels = named.iter().filter(|(_, f)| lv.iter().any(|l| f(l).is_some()))
+            .map(|(k, f)| format!("\"{k}\":[{}]", lv.iter().map(|l| f(l).map_or("null".into(), crate::num)).collect::<Vec<_>>().join(",")))
+            .collect::<Vec<_>>().join(",");
+        return Ok(format!("{{{head},\"kind\":\"lab_explore\",\"dates\":[{}],\"open\":{},\"high\":{},\"low\":{},\"close\":{},\"volume\":{},\"signals\":{{\"buy\":{},\"sell\":{},\"short\":{},\"cover\":{}}},\"position\":[{position}],\"levels\":{{{levels}}}}}",
             b.date[from..=to].iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","), col(&b.open), col(&b.high), col(&b.low), col(&b.close),
             b.volume.as_deref().map_or("null".into(), col), flags(&sig[0]), flags(&sig[1]), flags(&sig[2]), flags(&sig[3])));
     }
@@ -206,6 +218,28 @@ mod tests {
         let buys = flags(&v, "buy").iter().filter(|b| **b).count();
         assert_eq!(buys, arr(&s, "rows").iter().filter(|r| matches!(r, Json::Arr(x) if x[2].as_str() == Some("Buy"))).count());
         assert!(flags(&v, "short").iter().all(|b| !b));
+    }
+    #[test] fn explore_reports_the_backtest_position_and_its_live_levels() {
+        let st = state(200);
+        let (from, to) = (st.ctxs["SPX"].r[50].date.clone(), st.ctxs["SPX"].r[120].date.clone());
+        let keys = |v: &Json| match v { Json::Obj(kv) => kv.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(), _ => panic!() };
+        let old = ["label", "apply", "instrument", "tf", "from", "to", "notes", "kind", "dates", "open", "high", "low", "close", "volume", "signals"];
+        let v = json::parse(&scan_json(&st, &q(&[("mode", "explore"), ("from", &from), ("to", &to)])).unwrap()).unwrap();
+        // the existing fields keep their order; position and levels are appended; no price exit configured: no level
+        assert_eq!(keys(&v), old.iter().chain(&["position", "levels"]).map(|k| k.to_string()).collect::<Vec<_>>());
+        assert_eq!((arr(&v, "position").len(), keys(v.get("levels").unwrap()).len()), (71, 0));
+        // a 2% stop: known on every held row; a position that starts on a row entered at that row's open (next-open fill)
+        let spec = SPEC.replace(r#"{"value":3}}]}"#, r#"{"value":3}}],"stop_loss":{"pct":2}}"#);
+        let v = json::parse(&scan_json(&st, &q(&[("mode", "explore"), ("from", &from), ("to", &to), ("spec", &spec)])).unwrap()).unwrap();
+        assert_eq!(keys(v.get("levels").unwrap()), ["stop"]);
+        let pos: Vec<f64> = arr(&v, "position").iter().map(|x| x.as_f64().unwrap()).collect();
+        let stop = arr(v.get("levels").unwrap(), "stop");
+        let open = arr(&v, "open");
+        assert!(pos.iter().all(|p| [0., 1.].contains(p)) && pos.contains(&1.) && pos.contains(&0.));
+        for (k, p) in pos.iter().enumerate() {
+            assert_eq!(*p != 0., stop[k].as_f64().is_some(), "row {k}");
+            if *p == 1. && (k == 0 || pos[k - 1] == 0.) { assert!((stop[k].as_f64().unwrap() - open[k].as_f64().unwrap() * 0.98).abs() < 1e-5, "row {k}"); }
+        }
     }
     #[test] fn explore_on_monthly_bars_gives_one_row_per_month_and_evaluates_the_rules_there() {
         let st = state(1200);
