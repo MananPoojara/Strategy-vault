@@ -1930,7 +1930,7 @@ mod tests {
         use crate::books::{cbsiws};
         let all:Vec<StrategyDef>=cbsiws::catalogue().into_iter().collect();
         let mut want:Vec<&str>=cbsiws::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !crate::books::mkits::GOLD_DXY.contains(&d.id)).map(|d|d.id).collect(); // lane K1: mkits::ADMISSION_GOLD_DXY (GLD only, readiness home())
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
