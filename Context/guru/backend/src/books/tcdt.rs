@@ -352,7 +352,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v.push(d("tcdt_200pt_move", "200-point move off the open", "Ch 16 · Inside Days in the S&P", "Long/Short",
         Status::NotTestable("\"enter in the direction of the initial trend on any low momentum move back to the open\" - momentum judgement; only the 90%/88% statistic is printed"), &["F|S&P 1982-88: after a 200-point move above (below) the open the market closed above (below) the open 90% (88%) of the time (printed p.116)"], "", None));
     v.push(d("tcdt_ce_patterns", "Two/three-day patterns with Contraction/Expansion & ORB; daily bias (Gold)", "Ch 26-28", "Long/Short",
-        Status::NotTestable("the book prints these only for T-Bonds, Yen, D-Mark, Gold and Beans with entry levels in tics/cents; no S&P/index level is given, so an index version would need an invented level. The building blocks (NR/NR4/NR7/WS/WS4/WS7 days, 2-day patterns, ORB) are coded in the S&P tests above"),
+        Status::NotTestable("the book prints these only for T-Bonds, Yen, D-Mark, Gold and Beans with entry levels in tics/cents; no S&P/index level is given, so an index version would need an invented level (Norgate &ZB, &6J, &GC and &ZS are held, so a futures card on those markets is a possible path, but D-Mark is not held and each market has its own printed level tables: page read needed). The building blocks (NR/NR4/NR7/WS/WS4/WS7 days, 2-day patterns, ORB) are coded in the S&P tests above"),
         &["F|NR7/NR4/NR/control/WS/WS4/WS7 on Day 2 × yesterday's close direction × today's open direction, ORB off the open (printed pp.191-218)"], "", None));
     v
 }

@@ -214,8 +214,8 @@ pub(crate) fn getp(schema: &[ParamDef], p: &Params, k: &str) -> f64 {
 
 const STOP_GAP: &str = "Book tests use a per-contract dollar initial stop on futures continuous contracts; converting it needs the contract's point value and futures data. Exposed as stop_pts (index points), off by default.";
 const ND_INTERMARKET: &str = "Needs daily futures for two or three different markets (gold, T-bond, soybeans, copper, deutsche mark, corn, crude oil, Eurodollar, yen, live hogs). The vault has equity indices only; running bond rules on an equity index would be an asset-class swap.";
-const ND_TICKS: &str = "The barrier is a number of futures ticks (20 or 10 ticks of each contract). An index has no contract tick; needs futures contract tick size and data.";
-const ND_SIZE: &str = "Position size = $10,000 / (5-day high-low range in contract dollars), max 10 contracts. Needs contract point values; the vault reports one-unit percentage returns.";
+const ND_TICKS: &str = "The barrier is a number of futures ticks (20 or 10 ticks of each contract). Norgate futures (with their tick sizes in futures.rs MARKETS) are now held and sibling ch_bta2_cbo_* cards run on them, so data is not the block: the card is simply not yet built as a futures card (rule printed p.155; exit is Table 5.4 volatility exit or Table 5.5 none, plus a $1,500 stop).";
+const ND_SIZE: &str = "Position size = $10,000 / (5-day high-low range in contract dollars), max 10 contracts. This is a position-sizing study (1-10 contracts); contract values are held (futures.rs MARKETS) but the engine books one unit per trade, so varying contract counts are not modelled.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes| StrategyDef { id, name, group, session: 0, dir, status,
