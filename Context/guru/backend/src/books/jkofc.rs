@@ -144,7 +144,8 @@ mod tests {
     fn jk_dump() {
         let (Ok(out), Ok(csv), Ok(tk)) = (std::env::var("JK_DUMP"), std::env::var("JK_CSV"), std::env::var("JK_TICKER")) else { return };
         let iso = |d: &str| format!("{}-{}-{}", &d[6..10], &d[3..5], &d[0..2]);
-        let rows: Vec<Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+        let rows: Vec<Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let mut q = false; let l: String = l.chars().filter_map(|c| if c == '"' { q = !q; None } else if q && c == ',' { None } else { Some(c) }).collect(); // quoted thousands "22,331.40"
+            let f: Vec<&str> = l.split(',').collect();
             if f[0] != tk { return None; }
             Some(Row { ticker: tk.clone(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
         let x = Ctx::new(&rows, &rows, &[]);
