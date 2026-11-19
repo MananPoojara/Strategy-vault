@@ -6,16 +6,21 @@
 //! AmiBroker behaviour the code follows (see `ytsw.rs` for the shared conventions):
 //! - the AFLs run their own bar loop and set Buy / Sell (Short / Cover) and their prices; the backtester then takes
 //!   an entry only when flat, ignores exits while flat, and on one bar exits first and then enters;
-//! - inside a loop an array element that is Null is the number -1e10, so `C[i] > MA[i]` is true while the average
-//!   is still Null and `C[i] < Ref(LLV(L, n), -1)[i]` is false there; whole-array comparisons are false before an
-//!   array's first value (`ytsw.rs`);
+//! - inside the loop any comparison with a Null element is false, both `>` and `<` (proven on AmiBroker's own
+//!   exploration in the SV-Audit, 19-11-2026: no entry while the 200-day MA is Null), so `C[i] > MA[i]` fails
+//!   until the average exists;
+//! - calculated fills (stop, target, Open ± buffer) are made as AmiBroker makes them: the level in float32
+//!   arithmetic, kept inside the exit bar's Low-High range, read as AmiBroker's decimal price (`ab_fill`; matched
+//!   569 of 569 stop / target fills of the SV-Audit trade lists);
 //! - the template's guards, kept as written: no long entry on a bar whose high equals its close (no short entry when
 //!   the low equals the close), no entry on bar 0, a price above the 0 "penny" level, turnover filter off, "dead
 //!   stock" backtest off; an exit that falls on a bar whose low equals its close (for a short: high equals close) is
 //!   deferred to the close of the first later bar where it does not;
 //! - the SuperTrend filter is the team's ST loop (`ytsw::supertrend`, both bands at the ST factor) on the filter
 //!   timeframe (daily / weekly Monday-Sunday / calendar month), brought back with `TimeFrameExpand(expandLast)`;
-//! - prices are used as the AFL sets them (no clipping to the bar's range).
+//! - Close fills are the bar's Close; calculated fills are clipped to the bar's range as above.
+//! Checked 19-11-2026 against the SV-Audit AmiBroker trade lists (NIFTY 50 and NIFTYBANK, 2000-2026, default
+//! settings): all 16 runs of the 8 variants equal in trades, shares and profit.
 #![allow(dead_code)]
 use crate::books::ytsw::st_filter;
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
@@ -32,7 +37,7 @@ pub const LLHH: &str = "ytd7_lowest_low_highest_high";
 pub const IDS: [&str; 8] = [LONG, LONG_OLD, LONG_CD, SHORT, LONG_MA, LONG_MA_OLD, SHORT_MA, LLHH];
 
 /// AFL Null inside a bar loop.
-pub(crate) const NULL: f64 = -1e10;
+pub(crate) const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 const BIG: f64 = 9_999_999.0;
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
@@ -111,7 +116,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Close > highest High of the previous 7 days, from the 7th bar after entry",
             "X|ST turns down (ST mode)",
             "X|No MA exit",
-        ], "7 Day LL, HH, CD/…(With & Without ST Filter) - Long only.afl, coded as the AFL is written (its Optimize() defaults 7 / 7 / 2). The MA filter applies with the filter off too; target tested before the stop. While the 200-day average is still Null the AFL's loop treats it as -1e10, so the MA test passes during the first 199 bars."),
+        ], "7 Day LL, HH, CD/…(With & Without ST Filter) - Long only.afl, coded as the AFL is written (its Optimize() defaults 7 / 7 / 2). The MA filter applies with the filter off too; target tested before the stop. While the 200-day average is still Null the loop's MA test fails (AmiBroker: any comparison with Null is false), so there is no buy during the first 199 bars."),
         def(LONG_MA_OLD, "Double 7 Long with MA Filter, optional ST (old work)", "Long", &[
             "F|Close > its 200-day average (both modes)",
             "F|ST mode (off by default): daily ST (5, 4, mid point) also up",
@@ -136,7 +141,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Close < lowest Low of the previous 7 days, from the 7th bar after entry",
             "X|ST turns up (ST mode)",
             "X|No MA exit",
-        ], "7 Day Lower Low and Higher High_Old Work/…(With & Without ST Filter) - Short only.afl, coded as the AFL is written. Stop tested before the target for the cover price. While the average is Null the loop's MA test (close below -1e10) fails, so no short before the 200-day average exists."),
+        ], "7 Day Lower Low and Higher High_Old Work/…(With & Without ST Filter) - Short only.afl, coded as the AFL is written. Stop tested before the target for the cover price. While the average is Null the loop's MA test fails (any comparison with Null is false), so no short before the 200-day average exists."),
         def(LLHH, "Lowest Low + Highest High (generic)", "Long", &[
             "F|Today's Close (or Low, by entry type) < previous N days' lowest Low (or lowest Close); N default 1",
             "E|Buy at today's Close",
@@ -228,6 +233,9 @@ pub(crate) fn ma(c: &[f64], n: usize) -> Vec<Option<f64>> {
 pub(crate) fn lv(v: Option<f64>) -> f64 {
     v.unwrap_or(NULL)
 }
+
+#[allow(unused_imports)]
+pub(crate) use crate::books::ab::{ab_fill, f32r, price_ab};
 
 /// AFL `Prec(v, 2)` (truncates to 2 decimals).
 pub(crate) fn prec2(v: f64) -> i64 {
@@ -331,9 +339,13 @@ fn double7(x: &Ctx, v: Var, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<E
     let buf = g("buffer_pct");
     let (pp, sp) = (g("profit_pct"), g("hard_sl_pct"));
     let mode = (g("filter_version").round() as i64).clamp(0, if v.three { 2 } else { 1 });
-    let ll: Vec<f64> = prev_ext(l, llv, false).into_iter().map(lv).collect();
-    let hh: Vec<f64> = prev_ext(h, hhv, true).into_iter().map(lv).collect();
-    let mav: Vec<f64> = ma(c, gu("ma_prd")).into_iter().map(lv).collect();
+    // Null (not yet computed) stays None: inside the AFL loop any comparison with Null is false, both > and <
+    // (AmiBroker exploration, SV-Audit Error - Double 7, Error 2)
+    let ll = prev_ext(l, llv, false);
+    let hh = prev_ext(h, hhv, true);
+    let mav = ma(c, gu("ma_prd"));
+    let gt = |a: f64, b: Option<f64>| b.map_or(false, |b| a > b);
+    let lt = |a: f64, b: Option<f64>| b.map_or(false, |b| a < b);
     let mt: Vec<i8> = if mode == 1 {
         st_filter(x, tf_char(g("st_tf").round() as i64), g("st_src").round() as i64 + 1, gu("st_period"), g("st_factor"))
     } else {
@@ -361,22 +373,23 @@ fn double7(x: &Ctx, v: Var, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<E
             cnt += 1;
         }
         let gate = cnt > if v.short { hhv } else { llv };
-        let side_ma = if v.short { c[i] < mav[i] } else { c[i] > mav[i] };
+        let side_ma = if v.short { lt(c[i], mav[i]) } else { gt(c[i], mav[i]) };
         let filt = match mode {
             1 => mt[i] == if v.short { -1 } else { 1 },
             2 => side_ma,
             _ => true,
         } && (v.three || side_ma);
-        let brk = if v.short { c[i] > hh[i] } else { c[i] < ll[i] };
+        let brk = if v.short { gt(c[i], hh[i]) } else { lt(c[i], ll[i]) };
         let guard = c[i] > 0.0 && if v.short { l[i] != c[i] } else { h[i] != c[i] };
         let stuck = if v.short { h[i] == c[i] } else { l[i] == c[i] };
         if !pos && gate && brk && filt && guard {
             buy[i] = Some(c[i]);
+            // the levels are float32 arrays in AmiBroker: f32(Close) x f32(1 +- pct%), multiplied in float32
             if pp > 0.0 {
-                pt = c[i] * if v.short { 1.0 - pp * 0.01 } else { 1.0 + pp * 0.01 };
+                pt = f32r(f32r(c[i]) * f32r(if v.short { 1.0 - pp * 0.01 } else { 1.0 + pp * 0.01 }));
             }
             if sp > 0.0 {
-                hsl = c[i] * if v.short { 1.0 + sp * 0.01 } else { 1.0 - sp * 0.01 };
+                hsl = f32r(f32r(c[i]) * f32r(if v.short { 1.0 + sp * 0.01 } else { 1.0 - sp * 0.01 }));
             }
             pos = true;
             cnt1 = 1;
@@ -400,22 +413,26 @@ fn double7(x: &Ctx, v: Var, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<E
                 cnt1 += 1;
             }
             let waited = if mode == 1 && v.st_eq { cnt1 == lim } else { cnt1 > lim };
+            let (o32, h32, l32) = (f32r(o[i]), f32r(h[i]), f32r(l[i]));
             let (stop_hit, tgt_hit, swing) = if v.short {
-                (h[i] >= hsl, l[i] <= pt, (waited && c[i] < ll[i]) || (v.hh_always && c[i] < ll[i]))
+                (h32 >= hsl, l32 <= pt, (waited && lt(c[i], ll[i])) || (v.hh_always && lt(c[i], ll[i])))
             } else {
-                (l[i] <= hsl, h[i] >= pt, (waited && c[i] > hh[i]) || (v.hh_always && c[i] > hh[i]))
+                (l32 <= hsl, h32 >= pt, (waited && gt(c[i], hh[i])) || (v.hh_always && gt(c[i], hh[i])))
             };
             let streak = run_n > 0.0 && cnt2 as f64 == run_n;
             let st_out = mode == 1 && mt[i] == if v.short { 1 } else { -1 };
-            let ma_out = mode == 2 && if v.short { c[i] > mav[i] } else { c[i] < mav[i] };
+            let ma_out = mode == 2 && if v.short { gt(c[i], mav[i]) } else { lt(c[i], mav[i]) };
             if stop_hit || tgt_hit || swing || streak || st_out || ma_out {
                 if !stuck {
-                    let b = o[i] * buf / 100.0;
-                    let (stop_px, tgt_px) = if v.short {
-                        (if o[i] > hsl { o[i] + b } else { hsl }, if o[i] < pt { o[i] + b } else { pt })
+                    // float32 arithmetic as in AmiBroker; the fill is kept inside the bar's range (ab_fill)
+                    let b = f32r(o32 * f32r(buf) / 100.0);
+                    let (gap_up, gap_dn) = (f32r(o32 + b), f32r(o32 - b));
+                    let (stop_lvl, tgt_lvl) = if v.short {
+                        (if o32 > hsl { gap_up } else { hsl }, if o32 < pt { gap_up } else { pt })
                     } else {
-                        (if o[i] < hsl { o[i] - b } else { hsl }, if o[i] > pt { o[i] - b } else { pt })
+                        (if o32 < hsl { gap_dn } else { hsl }, if o32 > pt { gap_dn } else { pt })
                     };
+                    let (stop_px, tgt_px) = (ab_fill(stop_lvl, l[i], h[i]), ab_fill(tgt_lvl, l[i], h[i]));
                     let e = if v.pt_first {
                         if tgt_hit { (tgt_px, "Profit target") } else if stop_hit { (stop_px, "Hard SL") } else { (c[i], "Exit rule") }
                     } else if stop_hit {
@@ -659,6 +676,34 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn amibroker_price_conversion() {
+        // Projects/Verification.md section 3 examples
+        assert_eq!(price_ab(f32r(14.65)), 14.65);
+        assert_eq!(price_ab(f32r(759.68994)), 759.6899);
+        assert_eq!(price_ab(92.65625), 92.6563);
+        assert_eq!(price_ab(f32r(75_502.45)), 75_502.5);
+        // a Double 7 target (SV-Audit, NIFTY 50 2014-05-16): f32(6652.55) x f32(1.1); AmiBroker's profit uses
+        // 7317.805 (its trade list prints the float32 as 7317.806); plain 64-bit gives 7317.805000000001
+        let pt = f32r(f32r(6652.55) * f32r(1.1));
+        assert_eq!(ab_fill(pt, 7130.65, 7563.5), 7317.805);
+        // a short cover that gaps above the bar (NIFTYBANK 2006-09-29, Open = High = 5519.55): filled at the High
+        let up = f32r(f32r(5519.55) + f32r(f32r(5519.55) * f32r(0.25) / 100.0));
+        assert_eq!(ab_fill(up, 5255.95, 5519.55), 5519.55);
+    }
+
+    #[test]
+    fn null_ma_comparison_is_false_in_the_loop() {
+        // a close below the 7-day low inside the MA warm-up: the old -1e10 rule bought, AmiBroker does not
+        let mut v: Vec<_> = (0..8).map(|_| b(100.0)).collect();
+        v.extend([b(97.0), b(98.0), b(96.0), b(95.0)]);
+        let r = bars(&v);
+        assert!(go(LONG_MA, &r, &[]).is_empty());
+        assert!(go(LONG_MA_OLD, &r, &[]).is_empty());
+        // without the MA filter the same bar buys
+        assert_eq!(go(LONG, &r, &[]).len(), 1);
+    }
+
+    #[test]
     fn short_mirror() {
         let mut v: Vec<_> = (0..8).map(|_| b(100.0)).collect();
         v.extend([b(103.0), b(102.0), b(104.0), b(105.0)]);
@@ -669,13 +714,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn llhh_defaults_and_unforwarded_profit_level() {
+    fn llhh_defaults_and_unforwarded_profit_level_never_fires() {
         // close below the previous low buys; close above the previous high sells
         let r = bars(&[b(100.0), b(98.5), b(99.0), b(100.5), b(100.0)]);
         assert_eq!(go(LLHH, &r, &[]), vec![(1, 98.5, 3, 100.5, false)]);
-        // PB % > 0 compares with a Null level on the next bar: exits at bar 2's open
+        // PB % > 0: the profit level is stored only on the entry bar, so later bars compare with Null, which is
+        // false in an AFL loop; no profit exit on bar 2, the trade sells on the close-above-high rule as with defaults
         let t = go(LLHH, &r, &[("pb_pct", 3.0)]);
-        assert_eq!((t[0].0, t[0].2, t[0].3), (1, 2, 99.0));
+        assert_eq!((t[0].0, t[0].2, t[0].3), (1, 3, 100.5));
     }
 
     #[test]

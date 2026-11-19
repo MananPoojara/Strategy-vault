@@ -42,7 +42,8 @@
 #![allow(dead_code)]
 use crate::books::ytsw::{close_swing, compress, expand_last};
 use crate::books::ytwh::{bound, collect, loop_val, Ev};
-use crate::connors::{rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::books::ab::rsi_nan as rsi;
+use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_tr";
 pub const CROSS: &str = "yttr_mwd_cross";

@@ -104,36 +104,16 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 // ---------------------------------------------------------------- indicators
 
-/// AFL RSI(n): Wilder smoothing seeded with the simple average of the first n changes; Null before bar n
-/// (and everywhere when n <= 1, as the AFL only computes it for periods above 1).
+/// AFL RSI(n) as AmiBroker computes it (`ab::rsi`: Wilder smoothing from 0 on bar 0, output from bar n).
 pub(crate) fn rsi(c: &[f64], n: usize) -> Vec<Option<f64>> {
-    let len = c.len();
-    let mut out = vec![None; len];
-    if n <= 1 || len <= n {
-        return out;
-    }
-    let (mut au, mut ad) = (0.0, 0.0);
-    for i in 1..len {
-        let d = c[i] - c[i - 1];
-        let (u, dn) = (d.max(0.0), (-d).max(0.0));
-        if i <= n {
-            au += u / n as f64;
-            ad += dn / n as f64;
-        } else {
-            au = (au * (n as f64 - 1.0) + u) / n as f64;
-            ad = (ad * (n as f64 - 1.0) + dn) / n as f64;
-        }
-        if i >= n {
-            out[i] = Some(if au + ad == 0.0 { 50.0 } else { 100.0 * au / (au + ad) });
-        }
-    }
-    out
+    crate::books::ab::rsi(c, n)
 }
 
 /// AFL Cross(a, b) on arrays that may hold Null: no cross before both have a value; later Nulls are -1e10.
 pub(crate) fn cross(a: &[Option<f64>], b: &[Option<f64>]) -> Vec<bool> {
     let first = (0..a.len()).position(|i| a[i].is_some() && b[i].is_some()).unwrap_or(a.len());
-    (0..a.len()).map(|i| i > first && lv(a[i]) > lv(b[i]) && lv(a[i - 1]) <= lv(b[i - 1])).collect()
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
+    (0..a.len()).map(|i| i > first && v(a[i]) > v(b[i]) && v(a[i - 1]) <= v(b[i - 1])).collect()
 }
 
 /// The AFL's ST "IsUp" loop on (o, h, l, c) bars: the ST line (lower band in an up trend, upper band in a down trend).

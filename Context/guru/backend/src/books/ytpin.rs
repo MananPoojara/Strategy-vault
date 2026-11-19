@@ -30,7 +30,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "X|Cover when the High > the previous bar's stop",
         "X|Fill at the stop, or at Open + 0.25% when the Open is above it",
         "X|No target, no time exit",
-    ], "pinbar short strategy.afl, coded as the AFL is written. Inside the loop ATR(5) is Null (-1e10) for its first bars, so the range test passes there (AmiBroker loop behaviour). Cover fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off). The AFL names no universe; the team's workbook is an optimisation only.")]
+    ], "pinbar short strategy.afl, coded as the AFL is written. Inside the loop ATR(5) is Null for its first bars and a comparison with Null is false (AmiBroker loop behaviour, SV-Audit), so the range test fails there. Cover fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off). The AFL names no universe; the team's workbook is an optimisation only.")]
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -75,7 +75,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut sl = vec![BIG; n];
     let mut cnt = vec![0i64; n];
     for i in 1..n {
-        let atr_x = if atr[i].is_nan() { -1e10 } else { atr[i] * mult };
+        let atr_x = if atr[i].is_nan() { f64::NAN } else { atr[i] * mult };
         let filter = l[i] != c[i] && c[i] > 0.0;
         if !pos && pin(i) && c[i - 1] > lo[i] * (1.0 + rise / 100.0) && tr[i] >= atr_x && filter {
             sl[i] = BIG;

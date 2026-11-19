@@ -59,7 +59,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Cover when the Close reaches the % trailing SL (lowest Close since entry + 5%, as of the previous bar)",
             "X|Cover when the Close reaches the ATR trailing SL (lowest Close + 5 × ATR(5) taken on the bar of that low, only falling; previous bar's value)",
             "X|No cover on a bar closing at its High, except a frozen stock",
-        ], "Short Entry based on ROC stocks Ranking and Trend Intensity and Exit with Differnt SL's (Without Filter)..afl (ROC), coded as the AFL is written with its Optimize defaults (MA 7 / 65, trend intensity 0.95, up move 0.96, % trailing SL 5). Runs on one stock at a time; the team ran it over a stock watch list; the AFL's ROC(30) cross-sectional rank only sets PositionScore, so ranking and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. The ATR multiplier's default 5 lies above its own Param maximum 2; the default is used as written. The frozen-stock test (deadstock1) reads the next 30 bars (look-ahead as written; never true in the data's last 30 bars). While MA(C, 65) does not exist yet, the loop reads the Null trend intensity as -1e10, so the first 64 bars need only the up-move condition. ATR is AmiBroker's Wilder ATR(5); while it is Null the ATR stop is far below the close and covers on the next bar not closing at its high. Penny price 0 and turnover (V x C, default off) as in the AFL; dead-stock default NO."),
+        ], "Short Entry based on ROC stocks Ranking and Trend Intensity and Exit with Differnt SL's (Without Filter)..afl (ROC), coded as the AFL is written with its Optimize defaults (MA 7 / 65, trend intensity 0.95, up move 0.96, % trailing SL 5). Runs on one stock at a time; the team ran it over a stock watch list; the AFL's ROC(30) cross-sectional rank only sets PositionScore, so ranking and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. The ATR multiplier's default 5 lies above its own Param maximum 2; the default is used as written. The frozen-stock test (deadstock1) reads the next 30 bars (look-ahead as written; never true in the data's last 30 bars). While MA(C, 65) does not exist yet the trend intensity is Null and compares false in the loop (AmiBroker, SV-Audit), so there is no entry on the first 64 bars. ATR is AmiBroker's Wilder ATR(5); while it is Null the ATR stop is far below the close and covers on the next bar not closing at its high. Penny price 0 and turnover (V x C, default off) as in the AFL; dead-stock default NO."),
     ]
 }
 
@@ -143,8 +143,8 @@ fn roc_short(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Px {
     let gu = |k: &str| g(k).round().max(1.0) as usize;
     let maf = sma(c, gu("ma_fast"));
     let mas = sma(c, gu("ma_slow"));
-    // MA_7 / MA_65 is Null while either is Null; the loop reads that as -1e10
-    let ti: Vec<f64> = (0..n).map(|i| match (maf[i], mas[i]) { (Some(a), Some(b)) => a / b, _ => -1e10 }).collect();
+    // MA_7 / MA_65 is Null while either is Null; a comparison with it is false in the loop (AmiBroker)
+    let ti: Vec<f64> = (0..n).map(|i| match (maf[i], mas[i]) { (Some(a), Some(b)) => a / b, _ => f64::NAN }).collect();
     let atr = atr_wilder(x, gu("atr_period"));
     // deadstock1: the same O, H, L, C on each of the next 30 bars
     let frozen: Vec<bool> = (0..n).map(|i| i + 30 < n && (1..=30).all(|k| o[i] == o[i + k] && h[i] == h[i + k] && l[i] == l[i + k] && c[i] == c[i + k])).collect();
@@ -266,18 +266,25 @@ mod tests {
 
     #[test]
     fn roc_short_enters_on_a_drop_and_covers_at_hard_sl() {
-        let mut v: Vec<(f64, f64, f64, f64)> = (0..80).map(|k| flat(100.0 - k as f64 * 0.3)).collect();
-        // a 5% drop on bar 80 (trend intensity < 0.95 by then? use the early-bars Null rule instead: bar 10)
-        v[10] = (v[9].3, v[9].3 + 0.2, v[9].3 * 0.94, v[9].3 * 0.945);
-        let e = v[10].3;
-        v[11] = (e, e * 1.03, e - 0.2, e + 0.1);
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..90).map(|k| flat(100.0 - k as f64 * 0.3)).collect();
+        // trend intensity MA(C, 7) / MA(C, 65) is Null (compares false) before bar 64; by bar 80 the steady fall
+        // has it near 0.9 (<= 0.95), so a 5.5% drop on bar 80 (up move <= 0.96) shorts
+        v[80] = (v[79].3, v[79].3 + 0.2, v[79].3 * 0.94, v[79].3 * 0.945);
+        let e = v[80].3;
+        v[81] = (e, e * 1.03, e - 0.2, e + 0.1);
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);
         let t = run(ROC_SHORT, &x, 0, r.len() - 1, &Params::new()).unwrap();
         assert_eq!(t[0].dir, -1.0);
-        assert_eq!(t[0].legs[0].i, 10);
-        assert_eq!(t[0].exit_i, 11);
-        assert!((t[0].exit_px - e * 1.02).abs() < 1e-9);
+        assert_eq!(t[0].legs[0].i, 80);
+        // bar 81's High reaches the 2% hard SL
+        assert_eq!(t[0].exit_i, 81);
+        assert!(crate::books::ab::near_ab(t[0].exit_px, e * 1.02));
+        // the same drop on bar 10, while MA(C, 65) is still Null, is no entry
+        let mut w: Vec<(f64, f64, f64, f64)> = (0..40).map(|k| flat(100.0 - k as f64 * 0.3)).collect();
+        w[10] = (w[9].3, w[9].3 + 0.2, w[9].3 * 0.94, w[9].3 * 0.945);
+        let r = bars(&w);
+        assert!(run(ROC_SHORT, &Ctx::new(&r, &r, &[]), 0, r.len() - 1, &Params::new()).unwrap().is_empty());
     }
 
     #[test]

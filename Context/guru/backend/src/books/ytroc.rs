@@ -19,7 +19,7 @@
 //! - Null values before an array's first value take no part in comparisons (the condition is false).
 #![allow(dead_code)]
 use crate::books::ytsw::{compress, exrem, trade, true_range};
-use crate::connors::{rsi, wilder, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_roc";
 pub const X_DROP: &str = "ytroc_x_drop";
@@ -230,7 +230,7 @@ pub(crate) fn team_st(avg: &[f64], h: &[f64], l: &[f64], c: &[f64], period: usiz
     let mut dn: Vec<Option<f64>> = (0..n).map(|i| atr[i].map(|a| avg[i] - a * factor)).collect();
     let mut is_up = vec![true; n];
     // AFL loop values: Null is -1e10
-    const NULL: f64 = -1e10;
+    const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
     for i in p..n {
         is_up[i] = if c[i] > up[i - 1].unwrap_or(NULL) { true } else if c[i] < dn[i - 1].unwrap_or(NULL) { false } else { is_up[i - 1] };
         if is_up[i] {
@@ -239,7 +239,7 @@ pub(crate) fn team_st(avg: &[f64], h: &[f64], l: &[f64], c: &[f64], period: usiz
             }
         } else if let Some(u) = up[i] {
             let m = u.min(up[i - 1].unwrap_or(NULL));
-            up[i] = if m == NULL { None } else { Some(m) };
+            up[i] = if m.is_nan() { None } else { Some(m) };
         }
     }
     (0..n).map(|i| if is_up[i] { dn[i] } else { up[i] }).collect()
@@ -269,13 +269,12 @@ pub(crate) fn cross(a: &[Option<f64>], b: &[Option<f64>]) -> Vec<bool> {
 
 /// AmiBroker RSI (Wilder), Null where it does not exist.
 pub(crate) fn rsi_opt(c: &[f64], n: usize) -> Vec<Option<f64>> {
-    rsi(c, n.max(1)).into_iter().map(|v| if v.is_nan() { None } else { Some(v) }).collect()
+    crate::books::ab::rsi(c, n.max(1))
 }
 
-/// AmiBroker ATR(n): Wilder average of ATR(1), which is Null on the first bar.
+/// AmiBroker ATR(n): bar 0's true range is High - Low (SV-Audit, proven for ATR(5) / ATR(14)); Wilder after.
 pub(crate) fn atr_wilder(x: &Ctx, n: usize) -> Vec<Option<f64>> {
-    let tr: Vec<f64> = true_range(&x.h, &x.l, &x.c).into_iter().map(|v| v.unwrap_or(f64::NAN)).collect();
-    wilder(&tr, n.max(1)).into_iter().map(|v| if v.is_nan() { None } else { Some(v) }).collect()
+    crate::books::ab::atr(&x.h, &x.l, &x.c, n.max(1))
 }
 
 pub(crate) const LAST_BAR: &str = "last bar";

@@ -49,7 +49,8 @@
 use crate::books::ytmr::day_number;
 use crate::books::ytsw::{compress, Bars};
 use crate::books::ytwh::{bound, collect, hhv, llv, loop_val, Ev};
-use crate::connors::{rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::books::ab::rsi_nan as rsi;
+use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_sr";
 pub const BELOW: &str = "ytsr_below_threshold";

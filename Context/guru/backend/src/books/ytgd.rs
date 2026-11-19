@@ -548,7 +548,7 @@ mod tests {
         v.push((97.0, 99.0, 95.0, 98.0));
         let t = go(run, BUY, &bars(&v), &[("hard_sl", 2.0)]);
         let epx = 97.0 * 1.0025;
-        assert!((t[0].3 - epx * 0.98).abs() < 1e-9); // low 95 reaches the stop, taken before the close
+        assert!(crate::books::ab::near_ab(t[0].3, epx * 0.98)); // low 95 reaches the stop, taken before the close
         // a buy price above the high is kept at the high
         let mut v = flat(5);
         v.push((97.0, 97.1, 96.0, 96.5));
@@ -581,7 +581,7 @@ mod tests {
         let t = go(run, SHOCK, &r, &[("st_flt", 0.0)]);
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].0, t[0].2), (6, 6));
-        assert!((t[0].1 - 100.5 * 0.9975).abs() < 1e-9);
+        assert!(crate::books::ab::near_ab(t[0].1, 100.5 * 0.9975));
         assert!((t[0].3 - 99.5).abs() < 1e-9);
         // trailing SL 1%: level 99.8 x 1.01 = 100.798; the high 101 reaches it -> covered at that level
         let t = go(run, SHOCK, &r, &[("st_flt", 0.0), ("trail_pct", 1.0)]);

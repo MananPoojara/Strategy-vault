@@ -164,7 +164,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Close < trailing SL (5% below the highest High since entry, up to the previous bar): sell at the Close",
             "X|Close < swing line (ATHC − 17%): sell at the Close",
             "X|An exit on an Open = Low = Close bar (profit / hard SL) or a Close = Low / High = Low bar (others) waits for the next bar that is not one",
-        ], concat!("Fresh ATHC en-ex.afl, coded as the AFL is written, with the rules of its include file parmar/Defaults.afl (see the module notes; the include folder was supplied on 17-11-2026). The AFL sets the Defaults filter to ATHC; with another filter choice its fresh-ATHC array stays empty and it never buys. ", "Runs on one stock at a time; the team's universe for this AFL is not recorded (Defaults.afl: 20 open positions, 5% of equity, 0.65 brokerage); portfolio limits and the optional ROC ranking are not modelled. Quirk kept: with Profit % 0 the Null profit level compares as -1e10 and the position is sold on the bar after entry. Not compared with the team's results.")),
+        ], concat!("Fresh ATHC en-ex.afl, coded as the AFL is written, with the rules of its include file parmar/Defaults.afl (see the module notes; the include folder was supplied on 17-11-2026). The AFL sets the Defaults filter to ATHC; with another filter choice its fresh-ATHC array stays empty and it never buys. ", "Runs on one stock at a time; the team's universe for this AFL is not recorded (Defaults.afl: 20 open positions, 5% of equity, 0.65 brokerage); portfolio limits and the optional ROC ranking are not modelled. With Profit % 0 the profit level is Null; inside the loop a comparison with Null is false (AmiBroker, SV-Audit), so the profit exit does not fire. Not compared with the team's results.")),
         def(BB_FATHC, "Bollinger Band Entry, Exit below Lower Band or by Defaults Filter (parmar Defaults)", &[
             "F|Upper band = 20-day MA of the Close + 3 standard deviations; lower band = 20-day MA − 1 SD",
             "F|Defaults filter (default OFF): ATHC (fresh ATHC run / 17% swing), SuperTrend or Bull/Bear swing",
@@ -565,7 +565,7 @@ fn bb_loop(x: &Ctx, id: &str, g: &dyn Fn(&str) -> f64) -> Sig4 {
 // ---------------------------------------------------------------- parmar/Defaults.afl (D_ functions)
 
 /// AFL Null as a loop value.
-const NUL: f64 = -1e10;
+const NUL: f64 = f64::NAN; // AFL Null in a loop: comparisons false (SV-Audit)
 fn nul_opt(v: f64) -> Option<f64> {
     if v <= -1e9 || !v.is_finite() { None } else { Some(v) }
 }
@@ -757,7 +757,7 @@ fn d_init_trades(x: &Ctx, le: &[bool], lx: &[Option<&'static str>], g: &dyn Fn(&
             }
             continue;
         }
-        if tsl != NUL {
+        if !tsl.is_nan() {
             let prev = if tsl_close { c[i - 1] } else { h[i - 1] };
             if prev > top {
                 top = prev;
@@ -1058,10 +1058,10 @@ mod tests {
         let t = go(FATHC, &r, &[]);
         assert_eq!((t[0].0, t[0].1, t[0].2), (5, 101.0, 7));
         assert!((t[0].3 - (110.0 - 110.0 * 0.0025)).abs() < 1e-9);
-        // profit % 0: the Null level compares as -1e10, so the bar after entry sells at its Open - 0.25%
+        // profit % 0: the profit level stays Null and a comparison with Null is false (AFL loop), so profit booking
+        // never fires; the trade is still open on the last bar
         let t = go(FATHC, &r, &[("pb_pct", 0.0)]);
-        assert_eq!((t[0].0, t[0].2), (5, 6));
-        assert!((t[0].3 - (103.0 - 103.0 * 0.0025)).abs() < 1e-9);
+        assert_eq!((t[0].0, t[0].2, t[0].4), (5, 8, true));
         // a first run bar closing at its high is a bad candle: no entry for that run
         let mut w = v.clone();
         w[5] = (100.0, 101.0, 99.0, 101.0);

@@ -174,7 +174,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let guard = |i: usize| i != 0 && !upc[i] && c[i] > 0.0;
     let ib: Vec<bool> = (0..n).map(|i| i > 0 && h[i] < h[i - 1] && l[i] > l[i - 1]).collect();
     let trig: Vec<bool> = (0..n).map(|i| i > 0 && ib[i - 1] && h[i] > h[i - 1]).collect();
-    let stop_px = |i: usize| if o[i] > h[i - 1] { o[i] * 1.0025 } else { h[i - 1] };
+    let stop_px = |i: usize| if o[i] > h[i - 1] { crate::books::ab::ab_fill(crate::books::ab::addmul(o[i], 0.0025), l[i], h[i]) } else { h[i - 1] };
     let calc = calc_point(&daily_bars(x), gi("st_src") + 1);
     let stop = g("hard_stop_pct");
     let mut buy: Vec<Option<f64>> = vec![None; n];
@@ -226,7 +226,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if id == PREV_LOW {
                 for i in 1..n {
                     if l[i] < l[i - 1] {
-                        sell[i] = Some((if o[i] < l[i - 1] { o[i] * 0.9975 } else { l[i - 1] }, "Previous low"));
+                        sell[i] = Some((if o[i] < l[i - 1] { crate::books::ab::addmul(o[i], -0.0025) } else { l[i - 1] }, "Previous low"));
                     }
                 }
             } else {
@@ -239,7 +239,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     let was_up = i > 0 && bt[i - 1] == 1;
                     let hit = if was_up { bt[i] == -1 } else { buysl.map_or(false, |s| l[i] < s) };
                     if hit && !loc[i] {
-                        let px = if was_up { (c[i], "ST turned down") } else { let s = buysl.unwrap(); (if o[i] < s { o[i] * 0.9975 } else { s }, "Inside-bar low") };
+                        let px = if was_up { (c[i], "ST turned down") } else { let s = buysl.unwrap(); (if o[i] < s { crate::books::ab::addmul(o[i], -0.0025) } else { s }, "Inside-bar low") };
                         sell[i] = Some(px);
                     }
                 }
@@ -257,14 +257,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             for i in 1..n {
                 if b1[i] {
                     let lvl = if id == WEEKLY { hi1[i - 1] } else { h[i - 1] };
-                    buy[i] = Some(if o[i] > lvl { o[i] * 1.0025 } else { lvl });
+                    buy[i] = Some(if o[i] > lvl { crate::books::ab::ab_fill(crate::books::ab::addmul(o[i], 0.0025), l[i], h[i]) } else { lvl });
                 }
             }
             for i in 0..n {
                 if s1[i] {
                     let was = |t: i8| i > 0 && bt[i - 1] == t;
                     sell[i] = Some(if id == WEEKLY {
-                        if l[i] < lo1[i] && was(-1) { (if o[i] < lo1[i] { o[i] * 0.9975 } else { lo1[i] }, "Weekly low") } else { (c[i], "ST turned down") }
+                        if l[i] < lo1[i] && was(-1) { (if o[i] < lo1[i] { crate::books::ab::addmul(o[i], -0.0025) } else { lo1[i] }, "Weekly low") } else { (c[i], "ST turned down") }
                     } else if was(1) && bt[i] == -1 {
                         (c[i], "ST turned down")
                     } else {
@@ -282,13 +282,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 /// before the entry on each bar; an entry from flat may exit on its own bar, but not when that bar's exit signal just
 /// closed the previous trade; the optional ApplyStop is not active on the entry bar.
 fn ib_fills(x: &Ctx, entry: &[Option<f64>], exit: &[Exit], from: usize, to: usize, stop_pct: f64) -> Vec<Trade> {
-    let bound = |i: usize, px: f64| px.clamp(x.l[i], x.h[i]);
+    let bound = |i: usize, px: f64| crate::books::ab::ab_fill(px, x.l[i], x.h[i]);
     let mut out = Vec::new();
     let mut pos: Option<(usize, f64)> = None;
     for i in from..=to.min(x.c.len().saturating_sub(1)) {
         let mut exited = false;
         if let Some((e, epx)) = pos {
-            let lvl = epx * (1.0 - stop_pct / 100.0);
+            let lvl = crate::books::ab::mul32(epx, 1.0 - stop_pct / 100.0);
             if stop_pct > 0.0 && i > e && x.l[i] <= lvl {
                 out.push(mk(1.0, e, epx, "limit", i, bound(i, if x.o[i] < lvl { x.o[i] } else { lvl }), "Hard stop (ApplyStop)", false));
                 pos = None;
@@ -344,8 +344,12 @@ mod tests {
         // gap above the inside high: open + 0.25%
         let v2 = [W, I, (106.0, 108.0, 105.5, 107.0)];
         assert!((go(INTRADAY, &v2, &[])[0].1 - 106.0 * 1.0025).abs() < 1e-9);
-        // the filter AFL with a daily SMA filter (the average is Null early, so the loop's filter is on)
-        assert_eq!(go(INTRADAY_FLT, &v, &[("mkt_filter", 1.0), ("flt_tf", 2.0)]).len(), 1);
+        // the filter AFL with a daily SMA filter: while the 200-bar average is Null, a comparison with it is false
+        // in the loop, so the filter stays off and nothing is bought
+        assert!(go(INTRADAY_FLT, &v, &[("mkt_filter", 1.0), ("flt_tf", 2.0)]).is_empty());
+        // a 1-bar SMA exists from bar 0: bar 1 closes above bar 0's average, so bar 2's filter is on and it buys
+        let v3 = [(100.0, 110.0, 90.0, 100.0), I, (102.0, 108.0, 101.0, 107.0), (107.0, 108.0, 106.0, 107.5)];
+        assert_eq!(go(INTRADAY_FLT, &v3, &[("mkt_filter", 1.0), ("flt_tf", 2.0), ("flt_sma_period", 1.0)]), vec![(2, 105.0, 2, 107.0, false)]);
         // SMA on a monthly timeframe is held
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);

@@ -427,11 +427,11 @@ mod tests {
         let t = go(LONG_NO_ADX_BUFFER, &r, &[]);
         assert_eq!(t.len(), 1);
         let epx = (lim - 2.0) * 1.0025;
-        assert!((t[0].legs[0].px - epx).abs() < 1e-9);
-        assert!((t[0].exit_px - (lim + 1.0) * (1.0 - 0.004)).abs() < 1e-9);
+        assert!(crate::books::ab::near_ab(t[0].legs[0].px, epx));
+        assert!(crate::books::ab::near_ab(t[0].exit_px, (lim + 1.0) * (1.0 - 0.004)));
         // hard stop 1%: the low (limit - 3) is below entry x 0.99
         let t = go(LONG_NO_ADX_BUFFER, &r, &[("hard_sl", 1.0)]);
-        assert!((t[0].exit_px - epx * 0.99).abs() < 1e-9);
+        assert!(crate::books::ab::near_ab(t[0].exit_px, epx * 0.99));
         // closing at the low: sell at close + 1% (kept within the high)
         let (r, lim) = scene(false, |m| (m, m + 3.0, m - 1.0, m - 1.0));
         let t = go(LONG_BUFFER, &r, &[("adx_lvl", 0.0)]);

@@ -1,5 +1,6 @@
 //! One module per book. Each exposes catalogue / params / run / family_of; this file just chains them.
 use crate::connors::{ParamDef, Params, StrategyDef, Ctx, Trade};
+pub mod ab;
 pub mod joe_ross_math;
 pub mod elcim_account;
 pub mod hbiab_reviewed;
@@ -19,6 +20,34 @@ fn close_at_end(mut trades: Vec<Trade>) -> Vec<Trade> {
     trades
 }
 
+/// YT strategies: every fill price as AmiBroker's backtester takes it (SV-Audit, 19-11-2026): the price as a float32,
+/// kept inside its bar's Low-High range ("price bound checking") and read as AmiBroker's decimal price
+/// (`ab::ab_fill`). Bar prices (Open / High / Low / Close) come out unchanged; a calculated price (a stop, target,
+/// limit or Open ± buffer level computed in 64-bit) is converted the way AmiBroker converts it. A strategy that
+/// writes its level as the AFL does (`ab::mul32`, `ab::addmul`) gets the exact float32 value; this step is the
+/// safety net for every other YT strategy, present and future.
+fn ab_prices(x: &Ctx, mut trades: Vec<Trade>) -> Vec<Trade> {
+    let n = x.c.len();
+    let fix = |i: usize, px: f64| if i < n && px.is_finite() && px > 0.0 { ab::ab_fill(px, x.l[i], x.h[i]) } else { px };
+    for t in trades.iter_mut() {
+        for leg in t.legs.iter_mut() {
+            leg.px = fix(leg.i, leg.px);
+        }
+        if t.exits.is_empty() {
+            t.exit_px = fix(t.exit_i, t.exit_px);
+        } else {
+            for e in t.exits.iter_mut() {
+                e.1 = fix(e.0, e.1);
+            }
+            let w: f64 = t.exits.iter().map(|e| e.2).sum();
+            if w > 0.0 {
+                t.exit_px = t.exits.iter().map(|e| e.1 * e.2).sum::<f64>() / w;
+            }
+        }
+    }
+    trades
+}
+
 macro_rules! books {
     ($($m:ident),*) => {
         $(pub mod $m;)*
@@ -34,7 +63,7 @@ macro_rules! books {
             None$(.or_else(|| $m::params(id)))*.or_else(|| ytnth::params(id)).or_else(|| ytrsi_ieod::params(id)).or_else(|| ytorb_draft::params(id))
         }
         pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-            None$(.or_else(|| $m::run(id, x, from, to, p).map(|t| if stringify!($m).starts_with("yt") { close_at_end(t) } else { t })))*.or_else(|| ytnth::run(id, x, from, to, p).map(close_at_end)).or_else(|| ytrsi_ieod::run(id, x, from, to, p).map(close_at_end)).or_else(|| ytorb_draft::run(id, x, from, to, p).map(close_at_end))
+            None$(.or_else(|| $m::run(id, x, from, to, p).map(|t| if stringify!($m).starts_with("yt") { ab_prices(x, close_at_end(t)) } else { t })))*.or_else(|| ytnth::run(id, x, from, to, p).map(close_at_end)).or_else(|| ytrsi_ieod::run(id, x, from, to, p).map(close_at_end)).or_else(|| ytorb_draft::run(id, x, from, to, p).map(close_at_end))
         }
         pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
             None$(.or_else(|| $m::family_of(id)))*.or_else(|| ytnth::family_of(id)).or_else(|| ytrsi_ieod::family_of(id)).or_else(|| ytorb_draft::family_of(id))

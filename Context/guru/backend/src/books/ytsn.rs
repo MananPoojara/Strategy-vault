@@ -21,7 +21,7 @@ pub const SNIPER: &str = "ytsn_sniper";
 pub const SNIPER_OLD: &str = "ytsn_sniper_old";
 pub const IDS: [&str; 2] = [SNIPER, SNIPER_OLD];
 
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let current = StrategyDef {
@@ -169,7 +169,7 @@ pub(crate) fn sniper_st(o: &[f64], h: &[f64], l: &[f64], c: &[f64], period: usiz
             up[i] = up[i].min(up[i - 1]);
         }
     }
-    let line: Vec<Option<f64>> = (0..n).map(|i| { let v = if is_up[i] { dn[i] } else { up[i] }; if v == NULL { None } else { Some(v) } }).collect();
+    let line: Vec<Option<f64>> = (0..n).map(|i| { let v = if is_up[i] { dn[i] } else { up[i] }; if v.is_nan() { None } else { Some(v) } }).collect();
     let bear = (0..n).map(|i| line[i].map(|v| c[i] < v)).collect();
     (line, bear)
 }
@@ -201,7 +201,7 @@ fn st_on(x: &Ctx, tf: i64, period: usize, factor: f64, avg: i64) -> (Vec<Option<
 /// AFL Cross(a, b) with both possibly Null: no cross before both have values, Null as -1e10 after that.
 fn cross_opt(a: &[Option<f64>], b: &[Option<f64>]) -> Vec<bool> {
     let first = (0..a.len()).find(|&i| a[i].is_some() && b[i].is_some()).unwrap_or(a.len());
-    let v = |z: Option<f64>| z.unwrap_or(NULL);
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
     (0..a.len()).map(|i| i > first && v(a[i]) > v(b[i]) && v(a[i - 1]) <= v(b[i - 1])).collect()
 }
 
@@ -253,7 +253,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let entry = long_entry(x, &g);
     let (l1, _, c1) = st_on(x, gi("st1_tf"), gu("st1_period"), g("st1_factor"), gi("st1_avg"));
     let (l2, _, c2) = st_on(x, gi("st2_tf"), gu("st2_period"), g("st2_factor"), gi("st2_avg"));
-    let v = |z: Option<f64>| z.unwrap_or(NULL);
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
     let (hsl_pct, pb_pct, live, buf) = (g("hsl_pct"), g("pb_pct"), gi("exit_live") == 1, g("exit_buffer"));
     let (exit_bars, swing, st_on_exit) = (gi("exit_bars"), g("pct_swing"), gi("st_exit") == 1);
     // the older version's two exit rules (SNIPER.afl itself: AND rule, highest close)

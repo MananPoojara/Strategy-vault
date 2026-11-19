@@ -156,9 +156,9 @@ fn hh_loop(x: &Ctx, g: &dyn Fn(&str) -> f64) -> LoopSig {
             ll_after = l[i];
             sllow[i] = l[i];
             if pt_pct > 0.0 {
-                pt = (1.0 - pt_pct * 0.01) * c[i];
+                pt = crate::books::ab::mul32(1.0 - pt_pct * 0.01, c[i]);
             }
-            hard[i] = if hard_pct > 0.0 { c[i] + c[i] * hard_pct / 100.0 } else { BIG };
+            hard[i] = if hard_pct > 0.0 { crate::books::ab::addmul(c[i], hard_pct / 100.0) } else { BIG };
             daycount[i] = daycount[i - 1] + 1.0;
             highsl[i] = BIG;
             position = true;
@@ -188,7 +188,7 @@ fn hh_loop(x: &Ctx, g: &dyn Fn(&str) -> f64) -> LoopSig {
             }
             if low_n > 0.0 {
                 ll_after = l[i].min(ll_after);
-                let low_trail = (1.0 + low_n * 0.01) * ll_after;
+                let low_trail = crate::books::ab::mul32(1.0 + low_n * 0.01, ll_after);
                 if c[i] > low_trail {
                     covered = Some((c[i], "Close above lowest Low + n%"));
                 }

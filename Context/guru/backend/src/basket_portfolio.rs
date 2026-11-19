@@ -829,7 +829,7 @@ fn run_with_aux_root(st: &State, q: &BTreeMap<String, String>,aux_root:Option<&s
         .collect();
     let bh: Vec<_> = bh.iter().map(|c| c / bh[0]).collect();
     let benchmark_run = crate::Run {
-        source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None,
+        source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None,sizing:Default::default(),
         trades: vec![],
         from: 0,
         to: calendar.len() - 1,

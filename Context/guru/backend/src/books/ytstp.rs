@@ -52,7 +52,7 @@ pub const SLIDE_ALT: &str = "ytstp_st_long_nloss_sliding_alt";
 pub const IDS: [&str; 11] = [GAIN1, GAIN1F, GAIN2, VS1, LOSS2, LOSS3, POST_N, POST_DD, NLOSS, SLIDE, SLIDE_ALT];
 
 const GROUP: &str = "YT Strategies · Supertrend";
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 
 fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: GROUP, session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }

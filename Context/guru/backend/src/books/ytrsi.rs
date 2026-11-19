@@ -49,7 +49,8 @@
 #![allow(dead_code)]
 use crate::books::ytsw::{close_swing, compress, expand_last, sma, supertrend, trade};
 use crate::books::ytwh::{bound, hhv, llv, prec2};
-use crate::connors::{atr, rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::books::ab::rsi_nan as rsi;
+use crate::connors::{atr, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_rsi";
 pub const CROSS: &str = "ytrsi_cross_30_40";
@@ -178,7 +179,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Profit target 5% / hard SL 2% (or ATR(5) x 5 / x 3): at the level, or Open - 0.25% buffer on a gap through it",
             "E|Short: mirrored with RSI crossing above 95",
             "F|Exit versions: MA, Days (bars in trade > 1), Lower Close / Lower Low (long), Higher Close / Higher High (short)",
-        ], "CONNERS RSI OPTIM/Connor RSI EntryExit for FO.afl, coded as the AFL is written. A side / exit-version pair the AFL has no block for (e.g. Long with Higher Close) takes no trade. A target or stop of 0 leaves the AFL's Null level, which the loop reads as -1e10: a long then exits on the next bar (High >= -1e10), as written. The team ran it on F&O symbols; here one symbol's daily bars."),
+        ], "CONNERS RSI OPTIM/Connor RSI EntryExit for FO.afl, coded as the AFL is written. A side / exit-version pair the AFL has no block for (e.g. Long with Higher Close) takes no trade. A target or stop of 0 leaves the AFL's Null level; inside the loop a comparison with Null is false (AmiBroker, SV-Audit), so that exit does not fire. The team ran it on F&O symbols; here one symbol's daily bars."),
         def(SLT, "RSI with ST(54) & MA(200) Filter and %SL & ATR SL", "Long", &[
             "E|RSI(14) crosses below 30 (version 0; Delayed: crosses above 30), High != Close and Low != Close: buy at the Close",
             "X|RSI crosses above 60 (Delayed: below 60): at the Close",
@@ -461,7 +462,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 const BIG: f64 = 9_999_999.0;
 /// AFL Null as a loop value.
-const NUL: f64 = -1e10;
+const NUL: f64 = f64::NAN; // AFL Null in a loop: comparisons false (SV-Audit)
 
 /// Per-bar Buy / Sell / Short / Cover written by an AFL loop, with their prices (Sell / Cover with a reason).
 struct Sig {
@@ -602,10 +603,10 @@ pub(crate) fn swing_filter(c: &[f64], bear: f64, bull: f64) -> Vec<i8> {
             up[i] = up[i - 1];
         }
         if tr[i] < 0 && tr[i - 1] > 0 {
-            up[i] = hcl[i].min(c[i] + c[i] * bull / 100.0);
+            up[i] = hcl[i].min(crate::books::ab::addmul(c[i], bull / 100.0));
         }
         if tr[i] > 0 && tr[i - 1] < 0 {
-            dn[i] = c[i] - c[i] * bear / 100.0;
+            dn[i] = crate::books::ab::addmul(c[i], -bear / 100.0);
         }
     }
     tr
@@ -1022,7 +1023,7 @@ fn run_lowest(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: LowFlt) -> Sig {
             count1 = 0;
             rsi_entry = BIG;
             if hsl_pct > 0.0 {
-                hsl = (1.0 - hsl_pct * 0.01) * c[i];
+                hsl = crate::books::ab::mul32(1.0 - hsl_pct * 0.01, c[i]);
             }
         } else if pos && !skip {
             let fresh = mt[i] == -1 && mt[i - 1] == 1;
@@ -1035,7 +1036,7 @@ fn run_lowest(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: LowFlt) -> Sig {
             if fresh || flt_out || hit {
                 // the swing AFL also sells a filter exit on a Low = Close bar; the ATHC AFL tests MY_FILTER == -1 there, never true
                 if !lc || (kind == LowFlt::Swing && myf[i] == -1) {
-                    let px = if hit { if o[i] < hsl { o[i] - o[i] * buf / 100.0 } else { hsl } } else { c[i] };
+                    let px = if hit { if o[i] < hsl { crate::books::ab::addmul(o[i], -buf / 100.0) } else { hsl } } else { c[i] };
                     s.sell[i] = Some((px, if hit { "Hard SL" } else if fresh { "ST fresh sell" } else { "Filter exit" }));
                     pos = false;
                 } else if !root {
@@ -1264,7 +1265,7 @@ fn run_ak_next(x: &Ctx, g: &dyn Fn(&str) -> f64, bull: bool) -> Sig {
                 count += 1;
             }
             if pos == 0 && h[i] > myhigh && count > 0 && count <= ep && myhigh != 0.0 && abc && eg {
-                s.buy[i] = Some(if o[i] > myhigh { o[i] + o[i] * bs / 100.0 } else { myhigh });
+                s.buy[i] = Some(if o[i] > myhigh { crate::books::ab::addmul(o[i], bs / 100.0) } else { myhigh });
                 best = a;
                 if trail > 0.0 {
                     rt = best - trail;
@@ -1304,7 +1305,7 @@ fn run_ak_next(x: &Ctx, g: &dyn Fn(&str) -> f64, bull: bool) -> Sig {
             }
             let sma = flt == 2;
             if pos == 0 && l[i] < mylow && mylow != 0.0 && (!sma || (count > 0 && count <= ep)) && abc && eg {
-                s.short[i] = Some(if o[i] < mylow { o[i] - o[i] * bs / 100.0 } else { mylow });
+                s.short[i] = Some(if o[i] < mylow { crate::books::ab::addmul(o[i], -bs / 100.0) } else { mylow });
                 mylow = 0.0;
                 abc = false;
                 best = a;
@@ -1385,17 +1386,17 @@ fn run_connors(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
             }
             if !atr_mode {
                 if pt_pct > 0.0 {
-                    pt = (1.0 + d * pt_pct * 0.01) * c[i];
+                    pt = crate::books::ab::mul32(1.0 + d * pt_pct * 0.01, c[i]);
                 }
                 if hsl_pct > 0.0 {
-                    sl = (1.0 - d * hsl_pct * 0.01) * c[i];
+                    sl = crate::books::ab::mul32(1.0 - d * hsl_pct * 0.01, c[i]);
                 }
             } else {
                 if apt > 0.0 {
-                    pt = c[i] + d * at[i] * apt;
+                    pt = crate::books::ab::f32r(crate::books::ab::f32r(c[i]) + crate::books::ab::f32r(d * at[i]) * apt);
                 }
                 if asl > 0.0 {
-                    sl = c[i] - d * at[i] * asl;
+                    sl = crate::books::ab::f32r(crate::books::ab::f32r(c[i]) - crate::books::ab::f32r(d * at[i]) * asl);
                 }
             }
             pos = if long { 1 } else { -1 };
@@ -1412,7 +1413,7 @@ fn run_connors(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
                 _ => (l[i] <= lower_low[i], Some(lower_low[i])),
             };
             if ma_out || ver_out || pt_hit || sl_hit {
-                let gap = |lvl: f64, above: bool| if (above && o[i] > lvl) || (!above && o[i] < lvl) { o[i] - d * o[i] * buf } else { lvl };
+                let gap = |lvl: f64, above: bool| if (above && o[i] > lvl) || (!above && o[i] < lvl) { crate::books::ab::addmul(o[i], -d * buf) } else { lvl };
                 let (px, why) = if pt_hit {
                     (gap(pt, long), "Profit target")
                 } else if sl_hit {
@@ -1510,14 +1511,14 @@ fn run_slt(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: Ent) -> Sig {
             s.buy[i] = Some(c[i]);
             if !atr_mode {
                 if pt_pct > 0.0 {
-                    pt = (1.0 + pt_pct * 0.01) * c[i];
+                    pt = crate::books::ab::mul32(1.0 + pt_pct * 0.01, c[i]);
                 }
                 if hsl_pct > 0.0 {
-                    fix = (1.0 - hsl_pct * 0.01) * c[i];
+                    fix = crate::books::ab::mul32(1.0 - hsl_pct * 0.01, c[i]);
                 }
                 if tsl_pct > 0.0 {
                     hc = c[i];
-                    tsl = (1.0 - tsl_pct * 0.01) * hc;
+                    tsl = crate::books::ab::mul32(1.0 - tsl_pct * 0.01, hc);
                 }
             } else {
                 if apt > 0.0 {
@@ -1545,7 +1546,7 @@ fn run_slt(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: Ent) -> Sig {
             let trail_hit = if atr_mode { c[i] <= atr_tsl[i - 1] } else { c[i] <= tsl };
             if h[i] >= pt || c[i] <= fix || trail_hit || sig_out || f_out {
                 if !lc {
-                    let px = if h[i] >= pt { if o[i] > pt { o[i] - o[i] * buf } else { pt } } else { c[i] };
+                    let px = if h[i] >= pt { if o[i] > pt { crate::books::ab::addmul(o[i], -buf) } else { pt } } else { c[i] };
                     let why = if h[i] >= pt { "Profit target" } else if c[i] <= fix { "Hard SL" } else if trail_hit { "Trailing SL" } else if sig_out { "Exit signal" } else { "Filter exit" };
                     s.sell[i] = Some((px, why));
                     pt = BIG;
@@ -1561,7 +1562,7 @@ fn run_slt(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: Ent) -> Sig {
                 }
             }
             if !atr_mode && tsl_pct > 0.0 {
-                tsl = (1.0 - tsl_pct * 0.01) * hc;
+                tsl = crate::books::ab::mul32(1.0 - tsl_pct * 0.01, hc);
             }
             if atr_mode && atsl > 0.0 {
                 atr_tsl[i] = if atrv > 0.0 { hc - atrv * atsl } else { atr_tsl[i - 1] };
@@ -1570,7 +1571,7 @@ fn run_slt(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: Ent) -> Sig {
                 }
             }
         } else if pos && skip && !(prec2(o[i]) == prec2(c[i]) && prec2(o[i]) == prec2(l[i])) {
-            let b = o[i] - o[i] * buf;
+            let b = crate::books::ab::addmul(o[i], -buf);
             let px = if o[i] == l[i] { o[i] } else if l[i] < b { b } else if l[i] > b { l[i] } else { c[i] };
             s.sell[i] = Some((px, "Blocked exit, next bar"));
             pos = false;
@@ -1611,7 +1612,7 @@ fn run_obos(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
         if !pos && r[i] > bv && r[i - 1] < bv && h[i] != c[i] && f_in {
             s.buy[i] = Some(c[i]);
             if ver == 1 && hsl_pct > 0.0 {
-                fix = (1.0 - hsl_pct * 0.01) * c[i];
+                fix = crate::books::ab::mul32(1.0 - hsl_pct * 0.01, c[i]);
             }
             if ver == 2 && atr_m > 0.0 {
                 fix = c[i] - at[i] * atr_m;
@@ -1636,7 +1637,7 @@ fn run_obos(x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
                 skip = true;
             }
         } else if pos && skip && !(prec2(o[i]) == prec2(c[i]) && prec2(o[i]) == prec2(l[i])) {
-            s.sell[i] = Some((o[i] - o[i] * buf, "Blocked exit, next bar"));
+            s.sell[i] = Some((crate::books::ab::addmul(o[i], -buf), "Blocked exit, next bar"));
             pos = false;
             skip = false;
             fix = 0.0;
@@ -1716,13 +1717,13 @@ fn run_thresh(x: &Ctx, g: &dyn Fn(&str) -> f64, upd: bool) -> Sig {
         if !pos && entry {
             s.buy[i] = Some(c[i]);
             if pb_pct > 0.0 {
-                pb = (1.0 + pb_pct * 0.01) * c[i];
+                pb = crate::books::ab::mul32(1.0 + pb_pct * 0.01, c[i]);
             }
             if hsl_pct > 0.0 {
-                hsl = (1.0 - hsl_pct * 0.01) * c[i];
+                hsl = crate::books::ab::mul32(1.0 - hsl_pct * 0.01, c[i]);
             }
             if tsl_pct > 0.0 {
-                tsl = (1.0 - tsl_pct * 0.01) * c[i];
+                tsl = crate::books::ab::mul32(1.0 - tsl_pct * 0.01, c[i]);
             }
             if pts > 0.0 {
                 rsi_stop = r[i] - pts;
@@ -1736,10 +1737,10 @@ fn run_thresh(x: &Ctx, g: &dyn Fn(&str) -> f64, upd: bool) -> Sig {
             if sl_hit || pb_hit || tsl_hit || rsi_hit || st_exit[i] || flt_out(i) {
                 let mut px = c[i];
                 if !exit_close && pb_hit {
-                    px = if o[i] > pb { l[i].max(o[i] * (1.0 - buf * 0.01)) } else { pb };
+                    px = if o[i] > pb { l[i].max(crate::books::ab::mul32(o[i], 1.0 - buf * 0.01)) } else { pb };
                 }
                 if !exit_close && sl_hit {
-                    px = if o[i] < hsl { l[i].max(o[i] * (1.0 - buf * 0.01)) } else { hsl };
+                    px = if o[i] < hsl { l[i].max(crate::books::ab::mul32(o[i], 1.0 - buf * 0.01)) } else { hsl };
                 }
                 let why = if sl_hit { "Hard SL" } else if pb_hit { "Profit booking" } else if tsl_hit { "Trail SL" } else if rsi_hit { "TSL on RSI" } else if st_exit[i] { "ST fresh sell" } else { "ST filter exit" };
                 s.sell[i] = Some((px, why));
@@ -1754,8 +1755,8 @@ fn run_thresh(x: &Ctx, g: &dyn Fn(&str) -> f64, upd: bool) -> Sig {
             if pts > 0.0 {
                 rsi_stop = rsi_stop.max(r[i] - pts);
             }
-            if tsl_pct > 0.0 && tsl != NUL {
-                tsl = tsl.max((1.0 - tsl_pct * 0.01) * c[i]);
+            if tsl_pct > 0.0 && !tsl.is_nan() {
+                tsl = tsl.max(crate::books::ab::mul32(1.0 - tsl_pct * 0.01, c[i]));
             }
         }
     }
@@ -1968,7 +1969,7 @@ mod tests {
         for tr in run(AK_BULL_N, &x, 0, 399, &ps(&[("flt_tf", 2.0)])).unwrap() {
             let e = tr.legs[0].i;
             assert!(rs[e - 1] > 60.0 && rs[e - 2] < 60.0, "next-day entry after the signal bar");
-            assert!(tr.legs[0].px >= x.h[e - 1] - 1e-9);
+            assert!(tr.legs[0].px >= x.h[e - 1] - 1e-3);
         }
     }
 
@@ -2002,7 +2003,7 @@ mod tests {
                     assert!(rs[e] < 30.0 && rs[e - 1] > 30.0);
                 }
                 if !tr.open && tr.reason == "Profit target" {
-                    assert!(tr.exit_px >= tr.legs[0].px * 1.1 - 1e-9 || x.o[tr.exit_i] > tr.legs[0].px * 1.1);
+                    assert!(tr.exit_px >= tr.legs[0].px * 1.1 - 1e-3 || x.o[tr.exit_i] > tr.legs[0].px * 1.1);
                 }
             }
         }

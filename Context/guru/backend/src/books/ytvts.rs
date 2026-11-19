@@ -71,7 +71,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Sell at the Close when the previous Close > 10-day average, or Close < 200-day average",
             "X|Only on a bar whose Low ≠ Close",
             F_GUARD, F_GUARD_2, F_GUARD_3,
-        ], "Two Ma's with gap value EntryExit_Without filter.afl, coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Gap versions: 1 Simple % (MA x gap %), 2 Simple ATR (MA - ATR(5) of the previous bar), 3 ATR % (MA - multiplier x ATR). While the 200-day average is still Null the AFL's loop treats it as -1e10, so the 'above the 200-day average' test passes on a stock's first 199 bars (as written)."),
+        ], "Two Ma's with gap value EntryExit_Without filter.afl, coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Gap versions: 1 Simple % (MA x gap %), 2 Simple ATR (MA - ATR(5) of the previous bar), 3 ATR % (MA - multiplier x ATR). While the 200-day average is still Null the loop's 'above the 200-day average' test is false (AmiBroker: a comparison with Null is false), so there is no entry on a stock's first 199 bars."),
         def(TWO_MA_FLT, "Two MAs with Gap (with filter option)", &[
             "F|Close > 200-day average",
             "F|High < 10-day average",
@@ -92,7 +92,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Template guard: no entry on an upper-circuit bar (Open = Close = High at 2 decimals)",
             "F|Template guard: previous Close > penny price (0)",
             "F|Template guards: turnover filter off, dead-stock backtest off",
-        ], "WASHOUT Swing trading Strategy.afl, coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The entry is intraday at the stop level (a buy stop), not at the close. While the 200-day average is Null the AFL's loop treats the band as -1e10, so the band test passes on a stock's first 199 bars (as written)."),
+        ], "WASHOUT Swing trading Strategy.afl, coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The entry is intraday at the stop level (a buy stop), not at the close. While the 200-day average is Null the band is Null and the band test is false in the loop (AmiBroker), so there is no entry on a stock's first 199 bars."),
     ]
 }
 
@@ -538,7 +538,7 @@ mod tests {
         // the open above the level buys at the open + 0.25%
         v[31] = (117.5, 119.0, 117.2, 118.5);
         let t = go(WASHOUT, &bars(&v), &[("annual_wr", 20.0), ("wr_period", 10.0), ("ma_period", 20.0)]);
-        assert_eq!((t[0].0, t[0].1), (31, r6(117.5 * 1.0025)));
+        assert!(t[0].0 == 31 && crate::books::ab::near_ab(t[0].1, 117.5 * 1.0025));
     }
 
     #[test]

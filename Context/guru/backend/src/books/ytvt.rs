@@ -31,7 +31,7 @@ const EXITS: [&str; 12] = [
     "F|No entry on an exit bar",
 ];
 
-const COMMON: &str = "The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null (-1e10) for the first 199 bars, so 'close above the MA' holds and 'close below the MA' never does there (AmiBroker loop behaviour). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off).";
+const COMMON: &str = "The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null for the first 199 bars and a comparison with Null is false, so neither 'close above the MA' nor 'close below the MA' holds there (AmiBroker loop behaviour, SV-Audit). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let _ = COMMON; // repeated in the notes below (they must be &'static str literals)
@@ -41,13 +41,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Williams %R(10) crosses below -80 (below today, above yesterday)",
             "E|Buy at the Close",
             EXITS[0], EXITS[1], EXITS[2], EXITS[3], EXITS[4], EXITS[5], EXITS[6], EXITS[7], EXITS[8], EXITS[9], EXITS[10], EXITS[11],
-        ], "Index \u{201c}Channeling\u{201d} system Strategy with William %R cool off.afl (Without filter folder), coded as the AFL is written. The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null (-1e10) for the first 199 bars, so 'close above the MA' holds and 'close below the MA' never does there (AmiBroker loop behaviour). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off)."),
+        ], "Index \u{201c}Channeling\u{201d} system Strategy with William %R cool off.afl (Without filter folder), coded as the AFL is written. The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null for the first 199 bars and a comparison with Null is false, so neither 'close above the MA' nor 'close below the MA' holds there (AmiBroker loop behaviour, SV-Audit). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off)."),
         def(OVERSOLD, "Index Channeling (Williams %R Oversold)", "Long", &[
             "F|Close > its 200-day MA",
             "F|Williams %R(10) < -80",
             "E|Buy at the Close",
             EXITS[0], EXITS[1], EXITS[2], EXITS[3], EXITS[4], EXITS[5], EXITS[6], EXITS[7], EXITS[8], EXITS[9], EXITS[10], EXITS[11],
-        ], "Index \u{201c}Channeling\u{201d} system Strategy without William %R cool off.afl (Without filter folder), coded as the AFL is written; its exit days, profit and SL % are Optimize() with the same defaults. The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null (-1e10) for the first 199 bars, so 'close above the MA' holds and 'close below the MA' never does there (AmiBroker loop behaviour). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off)."),
+        ], "Index \u{201c}Channeling\u{201d} system Strategy without William %R cool off.afl (Without filter folder), coded as the AFL is written; its exit days, profit and SL % are Optimize() with the same defaults. The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null for the first 199 bars and a comparison with Null is false, so neither 'close above the MA' nor 'close below the MA' holds there (AmiBroker loop behaviour, SV-Audit). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off)."),
     ]
 }
 
@@ -92,7 +92,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let cool = id == COOL_OFF;
     let locirc = |i: usize| prec2(o[i]) == prec2(c[i]) && prec2(o[i]) == prec2(l[i]);
     let lc = |i: usize| l[i] == c[i];
-    let at_open = |i: usize| o[i] - o[i] * buf;
+    let at_open = |i: usize| crate::books::ab::addmul(o[i], -buf);
 
     let mut evs: Vec<Ev> = Vec::new();
     let mut pos = false;
@@ -102,14 +102,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let buy_filter = h[i] != c[i] && c[i] > 0.0;
         if !pos && c[i] > ma[i] && wr[i] < ent && (!cool || wr[i - 1] > ent) && buy_filter {
             if pt_pct > 0.0 {
-                pt = (1.0 + pt_pct * 0.01) * c[i];
+                pt = crate::books::ab::mul32(1.0 + pt_pct * 0.01, c[i]);
             }
             if hsl_pct > 0.0 {
-                fix_sl = (1.0 - hsl_pct * 0.01) * c[i];
+                fix_sl = crate::books::ab::mul32(1.0 - hsl_pct * 0.01, c[i]);
             }
             if tsl_pct > 0.0 {
                 hh_af = h[i];
-                trail_sl = (1.0 - tsl_pct * 0.01) * hh_af;
+                trail_sl = crate::books::ab::mul32(1.0 - tsl_pct * 0.01, hh_af);
             }
             pos = true;
             evs.push(Ev { dir: 1.0, e: i, epx: c[i], exit: None });
@@ -164,7 +164,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 pt = BIG;
             }
             if tsl_pct > 0.0 {
-                trail_sl = (1.0 - tsl_pct * 0.01) * hh_af;
+                trail_sl = crate::books::ab::mul32(1.0 - tsl_pct * 0.01, hh_af);
             }
         } else if skip && !locirc(i) {
             if let Some(v) = evs.last_mut() {
@@ -197,10 +197,18 @@ mod tests {
     use crate::books::ytwh::testbars::*;
 
     /// Rising bars (close near the high) for a while, then a pullback to the bottom of the 10-bar range.
-    fn setup() -> Vec<(f64, f64, f64, f64)> {
+    fn recent() -> Vec<(f64, f64, f64, f64)> {
         let mut v: Vec<(f64, f64, f64, f64)> = (0..12).map(|k| { let c = 100.0 + k as f64; (c - 0.5, c + 0.5, c - 1.0, c) }).collect();
         // bar 12: close 103 near the 10-bar low (low 102.5 vs high 111.5) -> %R about -94
         v.push((104.0, 104.5, 102.5, 103.0));
+        v
+    }
+    /// Bars of history before `recent()`, so the default MA(200) exists (it is Null, and compares false, before).
+    const P: usize = 200;
+    /// `P` quiet bars around 60 (%R -50, no entry), then `recent()`: MA(200) on bar P + 12 is about 63, below 103.
+    fn setup() -> Vec<(f64, f64, f64, f64)> {
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..P).map(|_| (60.0, 60.5, 59.5, 60.0)).collect();
+        v.extend(recent());
         v
     }
 
@@ -209,38 +217,43 @@ mod tests {
         // MA(1) is the close itself: "close above the MA" is never true
         let t = go(run, OVERSOLD, &bars(&setup()), &[("ma_period", 1.0)]);
         assert!(t.is_empty());
-        // MA(5) at bar 12 = 108.2 > 103: no entry either
+        // MA(5) at bar P + 12 = 108.2 > 103: no entry either
         assert!(go(run, OVERSOLD, &bars(&setup()), &[("ma_period", 5.0)]).is_empty());
     }
 
     #[test]
-    fn entry_while_ma_is_null_and_exits() {
-        // MA period 200 with only ~20 bars: the loop compares against Null (-1e10), so the close is "above" it
+    fn no_entry_while_ma_is_null_then_entry_and_exits() {
+        // MA period 200 with only ~16 bars: the MA is Null and a comparison with Null is false in the AFL loop, so
+        // "close above the MA" never holds: no entry
+        let mut w = recent();
+        w.extend([(103.5, 104.5, 103.0, 104.0), (104.5, 111.6, 104.0, 111.0), (111.0, 112.0, 110.5, 111.5)]);
+        assert!(go(run, OVERSOLD, &bars(&w), &[("hsl_pct", 0.0), ("tsl_pct", 0.0)]).is_empty());
+        // with 200 bars of history the MA exists and is below the close
         let mut v = setup();
-        v.push((103.5, 104.5, 103.0, 104.0)); // bar 13: %R yesterday about -94: no exit; no stop hit
-        v.push((104.5, 111.6, 104.0, 111.0)); // bar 14: high 111.6 < target 113.3; %R(bar 13) low -> no exit
-        v.push((111.0, 112.0, 110.5, 111.5)); // bar 15: %R(bar 14) above -30 -> sell at the open less 0.25%
+        v.push((103.5, 104.5, 103.0, 104.0)); // bar P + 13: %R yesterday about -94: no exit; no stop hit
+        v.push((104.5, 111.6, 104.0, 111.0)); // bar P + 14: high 111.6 < target 113.3; %R(bar P + 13) low -> no exit
+        v.push((111.0, 112.0, 110.5, 111.5)); // bar P + 15: %R(bar P + 14) above -30 -> sell at the open less 0.25%
         let r = bars(&v);
         let t = go(run, OVERSOLD, &r, &[("hsl_pct", 0.0), ("tsl_pct", 0.0)]);
-        assert_eq!((t[0].0, t[0].1), (12, 103.0));
-        assert_eq!(t[0].2, 15);
-        assert!((t[0].3 - 111.0 * 0.9975).abs() < 1e-9);
-        // the cool-off version needs %R to cross below -80: bar 11's %R is near 0, so bar 12 also crosses
+        assert_eq!((t[0].0, t[0].1), (P + 12, 103.0));
+        assert_eq!(t[0].2, P + 15);
+        assert!(crate::books::ab::near_ab(t[0].3, 111.0 * 0.9975));
+        // the cool-off version needs %R to cross below -80: bar P + 11's %R is near 0, so bar P + 12 also crosses
         let t2 = go(run, COOL_OFF, &r, &[("hsl_pct", 0.0), ("tsl_pct", 0.0)]);
-        assert_eq!(t2[0].0, 12);
+        assert_eq!(t2[0].0, P + 12);
         // defaults: the 2% hard SL (100.94) and the 5% trailing SL are never reached; same trade
         let t3 = go(run, OVERSOLD, &r, &[]);
-        assert_eq!(t3[0].0, 12);
-        assert_eq!(t3[0].2, 15);
+        assert_eq!(t3[0].0, P + 12);
+        assert_eq!(t3[0].2, P + 15);
     }
 
     #[test]
     fn hard_stop_gap_fills_at_open_less_buffer() {
         let mut v = setup();
-        v.push((100.0, 100.5, 99.0, 99.5)); // bar 13 opens 100 < 103 x 0.98 = 100.94 -> open less 0.25%
+        v.push((100.0, 100.5, 99.0, 99.5)); // bar P + 13 opens 100 < 103 x 0.98 = 100.94 -> open less 0.25%
         let t = go(run, OVERSOLD, &bars(&v), &[]);
-        assert_eq!((t[0].0, t[0].2), (12, 13));
-        assert!((t[0].3 - 100.0 * 0.9975).abs() < 1e-9);
+        assert_eq!((t[0].0, t[0].2), (P + 12, P + 13));
+        assert!(crate::books::ab::near_ab(t[0].3, 100.0 * 0.9975));
     }
 
     #[test]
@@ -251,7 +264,7 @@ mod tests {
             v.push((103.0, 103.6, 102.9, 103.2 + 0.01 * k as f64));
         }
         let t = go(run, OVERSOLD, &bars(&v), &[("tsl_pct", 0.0)]);
-        assert_eq!((t[0].0, t[0].2), (12, 20));
+        assert_eq!((t[0].0, t[0].2), (P + 12, P + 20));
     }
 
     #[test]

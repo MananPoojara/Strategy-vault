@@ -701,7 +701,7 @@ mod tests {
         let s = dp5(&x, &|k: &str| params(DP5).unwrap().iter().find(|d| d.key == k).unwrap().def, x.c.len() - 1);
         if s.buy[18] {
             assert!(s.sell[19]);
-            assert!((s.sell_px[19] - bc * 1.03).abs() < 1e-9);
+            assert!(crate::books::ab::near_ab(s.sell_px[19], bc * 1.03));
         }
         // the buy days are always 4 bars before a month end
         let eom: Vec<bool> = (0..60).map(|i| i + 1 < 60 && r[i].date[5..7] != r[i + 1].date[5..7]).collect();

@@ -210,7 +210,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 // ---------------------------------------------------------------- lines
 
 /// AmiBroker's Null (EMPTY) as a loop element reads it.
-pub(crate) const NULL: f64 = -1e10;
+pub(crate) const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 const BIG: f64 = 9_999_999.0;
 
 /// (HHV(H, n) + LLV(L, n)) / 2. Like AmiBroker's HHV / LLV (and the Ulcer HHV in ytui.rs), the first n - 1 bars of the
@@ -286,7 +286,7 @@ pub(crate) fn backtest(x: &Ctx, s: &Sigs, from: usize, to: usize) -> Vec<Trade> 
     for i in from..=to {
         if let Some(e) = pos {
             if s.exit[i] {
-                let px = s.exit_px[i].max(x.l[i]).min(x.h[i]);
+                let px = crate::books::ab::ab_fill(s.exit_px[i], x.l[i], x.h[i]);
                 out.push(trade(s.dir, e, x.c[e], i, px, s.why[i], false));
                 pos = None;
             }
@@ -383,7 +383,7 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
     // no setup, entry or exit while a line the loop reads is still Null (warm-up bars). The setups and exits read only
     // the turning / base lines and the cloud; the delayed line is read only by the entry, so a setup can form before
     // it exists (Close vs a Null delayed line is never true)
-    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL) && (!v.cur() || cloud[i] != NULL);
+    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| !v.is_nan()) && (!v.cur() || !cloud[i].is_nan());
     // the loop starts at `from` (see run), so its state, including the first trade's target PT = 0, starts there
     for i in from.max(1)..n {
         dsl = if chk { dsl + 1 } else { 0 };
@@ -420,10 +420,10 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
             chk = false;
             if v == CurRe {
                 if k.profit > 0.0 {
-                    pt = (1.0 + k.profit * 0.01) * c[i];
+                    pt = crate::books::ab::mul32(1.0 + k.profit * 0.01, c[i]);
                 }
                 if k.hsl_pct > 0.0 {
-                    hsl = (1.0 - k.hsl_pct * 0.01) * c[i];
+                    hsl = crate::books::ab::mul32(1.0 - k.hsl_pct * 0.01, c[i]);
                 }
                 // the current-cloud v3 chains its entries with `else if`: no exit check on this bar
                 done = true;
@@ -434,7 +434,7 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
         }
         let normal = !pos
             && bf(i)
-            && (v == Ver3 || delayed[i] != NULL)
+            && (v == Ver3 || !delayed[i].is_nan())
             && match v {
                 Ver1 | HslPt => (s1 || s3) && tl[i] > bl[i] && c[i] > delayed[i],
                 Ver2 => s1 && c[i] > maxs[i] && tl[i] > bl[i] && c[i] > delayed[i],
@@ -455,10 +455,10 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
             pos = true;
             if v.long_stops() {
                 if k.profit > 0.0 {
-                    pt = (1.0 + k.profit * 0.01) * c[i];
+                    pt = crate::books::ab::mul32(1.0 + k.profit * 0.01, c[i]);
                 }
                 if k.hsl_pct > 0.0 {
-                    hsl = (1.0 - k.hsl_pct * 0.01) * c[i];
+                    hsl = crate::books::ab::mul32(1.0 - k.hsl_pct * 0.01, c[i]);
                 }
             }
             reset(&mut s1, &mut s2, &mut s3);
@@ -467,7 +467,7 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
                 chk = false;
             }
         } else if pos && !skip {
-            let gap = |lvl: f64, gapped: bool| if gapped { o[i] - o[i] * k.buf / 100.0 } else { lvl };
+            let gap = |lvl: f64, gapped: bool| if gapped { crate::books::ab::addmul(o[i], -k.buf / 100.0) } else { lvl };
             let hit: Option<(f64, &'static str)> = match v {
                 Ver1 | Ver2 => tldn(i).then_some((c[i], "Turning line crossed below base line")),
                 Ver3 => (c[i] < bl[i]).then_some((c[i], "Close below base line")),
@@ -539,7 +539,7 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
     // no setup, entry or exit while a line the loop reads is still Null (warm-up bars). The setups and exits read only
     // the turning / base lines and the cloud; the delayed line is read only by the entry, so a setup can form before
     // it exists (Close vs a Null delayed line is never true)
-    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL);
+    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| !v.is_nan());
     // the loop starts at `from` (see run), so its state, including the first trade's target PT = 0, starts there
     for i in from.max(1)..n {
         dsl = if chk { dsl + 1 } else { 0 };
@@ -578,7 +578,7 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
         }
         let normal = !pos
             && sf(i)
-            && (v == Ver3 || delayed[i] != NULL)
+            && (v == Ver3 || !delayed[i].is_nan())
             && match v {
                 Ver1 | HslPt => (s1 || s3) && tl[i] < bl[i] && c[i] < delayed[i],
                 Ver2 => s1 && c[i] < mins[i] && tl[i] < bl[i] && c[i] < delayed[i],
@@ -599,10 +599,10 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
             pos = true;
             if v.short_stops() {
                 if k.hsl_pct > 0.0 {
-                    hsl = c[i] * (1.0 + k.hsl_pct / 100.0);
+                    hsl = crate::books::ab::mul32(c[i], 1.0 + k.hsl_pct / 100.0);
                 }
                 if k.profit > 0.0 {
-                    pt = c[i] * (1.0 - k.profit / 100.0);
+                    pt = crate::books::ab::mul32(c[i], 1.0 - k.profit / 100.0);
                 }
             }
             reset(&mut s1, &mut s2, &mut s3);
@@ -611,7 +611,7 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
                 chk = false;
             }
         } else if pos && !skip {
-            let up_gap = |lvl: f64, gapped: bool| if gapped { o[i] + o[i] * k.buf / 100.0 } else { lvl };
+            let up_gap = |lvl: f64, gapped: bool| if gapped { crate::books::ab::addmul(o[i], k.buf / 100.0) } else { lvl };
             const TK: &str = "Turning line crossed above base line";
             let hit: Option<(f64, &'static str)> = match v {
                 Ver1 | Ver2 | HslPt => tlup(i).then_some((c[i], TK)),
@@ -767,9 +767,11 @@ mod tests {
         // span A = (TL + BL) / 2 = 9, 10.25, 12, 11.75; span B = 3-bar mid so far = 9, 10, 11, 11.5
         assert_eq!(ln.maxs, vec![9.0, 10.25, 12.0, 11.75]);
         assert_eq!(ln.mins, vec![9.0, 10.0, 11.0, 11.5]);
-        // Ref(.., -1) is still Null on bar 0
-        assert_eq!(ln.delayed, vec![NULL, 9.0, 11.0, 13.0]);
-        assert_eq!(ln.cloud, vec![NULL, 9.0, 10.25, 12.0]);
+        // Ref(.., -1) is still Null on bar 0 (Null is NaN, and NaN != NaN, so compare Null-aware)
+        let same = |a: &[f64], b: &[f64]| a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x.is_nan() && y.is_nan()) || x == y);
+        assert!(same(&ln.delayed, &[NULL, 9.0, 11.0, 13.0]), "{:?}", ln.delayed);
+        assert!(same(&ln.cloud, &[NULL, 9.0, 10.25, 12.0]), "{:?}", ln.cloud);
+        assert!(NULL.is_nan());
     }
 
     #[test]

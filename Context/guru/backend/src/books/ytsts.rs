@@ -65,7 +65,7 @@ pub const RAJIV: &str = "ytsts_rajiv_shukla_v1";
 pub const IDS: [&str; 6] = [SQN, ATHC, ATHC_DAILY, BELOW, SMA, RAJIV];
 
 const GROUP: &str = "YT Strategies · Supertrend (Stocks)";
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, needs_volume: bool, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: GROUP, session: 0, dir, status: Status::Live, needs_volume, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
@@ -263,7 +263,8 @@ fn cross(a: &[Option<f64>], b: &[Option<f64>]) -> Vec<bool> {
     let fa = a.iter().position(|v| v.is_some()).unwrap_or(a.len());
     let fb = b.iter().position(|v| v.is_some()).unwrap_or(b.len());
     let first = fa.max(fb);
-    (0..a.len()).map(|i| i > first && nv(a[i]) > nv(b[i]) && nv(a[i - 1]) <= nv(b[i - 1])).collect()
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
+    (0..a.len()).map(|i| i > first && v(a[i]) > v(b[i]) && v(a[i - 1]) <= v(b[i - 1])).collect()
 }
 
 /// AFL MA(v, n): Null until `n` consecutive values exist.
@@ -794,8 +795,8 @@ mod tests {
         let t = &t[0];
         assert_eq!((t.legs[0].i, t.legs[0].px), (e, x.c[e]));
         assert_eq!(t.exit_i, e + 3);
-        assert_eq!(t.exits, vec![(e + 1, x.c[e + 1], 0.5), (e + 3, x.c[e + 3], 0.5)]);
-        assert!((t.exit_px - (x.c[e + 1] + x.c[e + 3]) / 2.0).abs() < 1e-9);
+        assert!(t.exits.len() == 2 && t.exits.iter().zip([e + 1, e + 3]).all(|(p, k)| p.0 == k && p.2 == 0.5 && crate::books::ab::near_ab(p.1, x.c[k])));
+        assert!(crate::books::ab::near_ab(t.exit_px, (x.c[e + 1] + x.c[e + 3]) / 2.0));
         assert!(!t.open);
         // the Open below the level: the scale-out fills at the previous Close + 3%
         let mut v2 = v.clone();
@@ -803,7 +804,7 @@ mod tests {
         let r2 = bars(&v2);
         let x2 = Ctx::new(&r2, &r2, &[]);
         let t2 = &run(RAJIV, &x2, 0, r2.len() - 1, &Params::new()).unwrap()[0];
-        assert!((t2.exits[0].1 - epx * 1.03).abs() < 1e-9);
+        assert!(crate::books::ab::near_ab(t2.exits[0].1, epx * 1.03));
         // no 3% day: one exit at the Close, no pieces
         let mut v3 = v.clone();
         v3[e + 1] = bar(epx + 1.0);
@@ -833,7 +834,7 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let t = &run(RAJIV, &x, 0, r.len() - 1, &Params::new()).unwrap()[0];
         assert!(t.open);
-        assert_eq!(t.exits, vec![(e + 1, x.c[e + 1], 0.5), (e + 2, x.c[e + 2], 0.5)]);
+        assert!(t.exits.len() == 2 && t.exits.iter().zip([e + 1, e + 2]).all(|(p, k)| p.0 == k && p.2 == 0.5 && crate::books::ab::near_ab(p.1, x.c[k])));
         // a window ending on the entry bar: open, no pieces
         let t = &run(RAJIV, &x, 0, e, &Params::new()).unwrap()[0];
         assert!(t.open && t.exits.is_empty() && t.exit_i == e);

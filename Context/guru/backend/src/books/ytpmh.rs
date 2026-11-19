@@ -278,7 +278,7 @@ fn st_line(b: &Ohlc, period: usize, factor: f64, avg: i64) -> Vec<Option<f64>> {
     let mut is_up = vec![true; n];
     for i in period.max(1)..n {
         // a Null band compares as -1e10
-        is_up[i] = if b.c[i] > up[i - 1].unwrap_or(-1e10) { true } else if b.c[i] < dn[i - 1].unwrap_or(-1e10) { false } else { is_up[i - 1] };
+        is_up[i] = if b.c[i] > up[i - 1].unwrap_or(f64::NAN) { true } else if b.c[i] < dn[i - 1].unwrap_or(f64::NAN) { false } else { is_up[i - 1] };
         if is_up[i] {
             dn[i] = opt_max(dn[i], dn[i - 1]);
         } else {

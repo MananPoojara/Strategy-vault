@@ -168,7 +168,7 @@ fn aj_loop(x: &Ctx, g: &dyn Fn(&str) -> f64) -> LoopSig {
     let look: &[f64] = if point == 0 { c } else { l };
     let atr_type = gi("trail_type") == 1;
     let (tsl_pct, mult) = (g("trail_pct"), g("atr_mult"));
-    let trail_of = |min: f64, a: f64| if atr_type { min + a * mult } else { min * (1.0 + tsl_pct / 100.0) };
+    let trail_of = |min: f64, a: f64| if atr_type { min + a * mult } else { crate::books::ab::mul32(min, 1.0 + tsl_pct / 100.0) };
     let trail_live = gi("trail_exit") == 1;
     let trail_watch: &[f64] = if trail_live { h } else { c };
     let hard_on = gi("hard_sl") == 1;
@@ -178,7 +178,7 @@ fn aj_loop(x: &Ctx, g: &dyn Fn(&str) -> f64) -> LoopSig {
     let eb = g("entry_buffer");
     let hard_hit = |hsl: f64, watch: f64| hard_on && hsl <= watch;
     let same_day_ll = |trail: f64, i: usize| point == 2 && trail <= c[i];
-    let gap = |i: usize, lvl: f64| if o[i] > lvl { o[i] + o[i] * buf } else { lvl };
+    let gap = |i: usize, lvl: f64| if o[i] > lvl { crate::books::ab::addmul(o[i], buf) } else { lvl };
     // getCoverPrice
     let cover_px = |i: usize, trail: f64, hsl: f64, entry_bar: bool| -> (f64, &'static str) {
         if hard_on && hard_live && h[i] >= hsl && !entry_bar {
@@ -195,7 +195,7 @@ fn aj_loop(x: &Ctx, g: &dyn Fn(&str) -> f64) -> LoopSig {
     let (mut min_price, mut trail, mut hsl) = (0.0f64, 0.0f64, 0.0f64);
     for i in gu("rsi_period")..n {
         if !position && market[i] && rsi_breach(i) && below_band(i) && wick_ok(i) && price_ok(i) && vol_ok(i) {
-            let short_px = if o[i] < l[i] - eb { o[i] - o[i] * buf } else { l[i] - eb };
+            let short_px = if o[i] < l[i] - eb { crate::books::ab::addmul(o[i], -buf) } else { l[i] - eb };
             s.entry[i] = Some(short_px);
             min_price = look[i];
             trail = trail_of(min_price, atr[i]);

@@ -84,7 +84,7 @@ pub const IDS: [&str; 28] = [
 ];
 
 const GROUP: &str = "YT Strategies · Supertrend";
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 const BIG: f64 = 9_999_999.0;
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
@@ -116,7 +116,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy when the ST is up and ATR % < 2 × its average; Short when the ST is down and ATR % < 2 × its average",
             "X|Sell when the ST turns down or ATR % > 2 × its average; Cover when the ST turns up or ATR % > 2 × its average",
             SIDE_F,
-        ], "ST ALL FOR INDIAN MKT with ATR exit condition.afl (ST entry_Exit when ATR gets doubled), coded as the AFL is written. The MA averages use the bars available so far at the start of the data. 'ATR PLOT WITH AVG ATR PCT.afl' in the same folder only plots these lines."),
+        ], "ST ALL FOR INDIAN MKT with ATR exit condition.afl (ST entry_Exit when ATR gets doubled), coded as the AFL is written. The MA averages are AmiBroker's MA: Null until the full window exists, and a Null compares false in the loop (SV-Audit), so no trade before then. 'ATR PLOT WITH AVG ATR PCT.afl' in the same folder only plots these lines."),
         def(S51, "ST 5,1 Short Only with Daily ST 5,4 Filter", "Short", &[
             ST_F,
             "F|ST1 (trade): period 5, factor 1; ST2 (filter): period 5, factor 4; both on the mid point (calculation point option)",
@@ -277,7 +277,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Trigger: on a new-high Close while no trigger is set, Trigger = that Close × (1 + 5%); cleared when the swing trend is down; else carried",
             "E|Buy at the Close when the ATHC entry holds and the Close is above the Trigger",
             ATHC_X,
-        ], "Entry on ATHC + 5% and Exit below %Swing Or by ProfitTarget.afl (ATH+% entry_Exit with %swing OR profit target), coded as the AFL is written; otherwise the ATHC AFL line for line. The trigger is set on the new-high bar itself, so the buy comes on a later Close above it. A Null trigger reads -1e10 in the loop (only on a new high while the swing is down)."),
+        ], "Entry on ATHC + 5% and Exit below %Swing Or by ProfitTarget.afl (ATH+% entry_Exit with %swing OR profit target), coded as the AFL is written; otherwise the ATHC AFL line for line. The trigger is set on the new-high bar itself, so the buy comes on a later Close above it. A Null trigger compares false in the loop (AmiBroker; only on a new high while the swing is down)."),
         def(ATHC_LOSS, "ATHC Entry after 2 Consecutive Losing Swing Trades", "Long", &[
             ATHC_F, SWING_F,
             "F|Virtual trades: buy at the Close when the ATHC flag is on (not an upper circuit), sell at the Close when the swing trend is down",
@@ -291,15 +291,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy one unit at the Close when ST1 is up; not on an upper-circuit bar",
             "E|Scale in one more unit (at most 5) at the Close when the Close is above the last unit's Close + 1 × ATR(14)",
             "X|Sell all at the Close when ST1 and ST2 are both down, unless a lower-circuit bar (a bar that scales in does not sell)",
-        ], "Entry when Closing is above 5,2_Scale-in with 14 days ATR_Exit below 5,2 & 5,4.afl (folder of that name), coded as the AFL is written (its loop; Sell ExRem'd). Written for daily bars, positional long only. Adaptation: SetPositionSize(20, spsPercentOfEquity) buys 20% of the current equity per unit; here each unit is 20% of the trade's allocation (one trade, one leg per unit; units not bought are idle cash). ATR(14) is AmiBroker's Wilder ATR; while it is Null the loop reads the level as -1e10, so the first bars of the data scale in on every bar. The 'Nifty SuperTrend Entry & ATR SL Exit' copies in its subfolder are ytst_st_sell_buy_atr."),
+        ], "Entry when Closing is above 5,2_Scale-in with 14 days ATR_Exit below 5,2 & 5,4.afl (folder of that name), coded as the AFL is written (its loop; Sell ExRem'd). Written for daily bars, positional long only. Adaptation: SetPositionSize(20, spsPercentOfEquity) buys 20% of the current equity per unit; here each unit is 20% of the trade's allocation (one trade, one leg per unit; units not bought are idle cash). ATR(14) is AmiBroker's Wilder ATR; while it is Null the level compares false in the loop (AmiBroker, SV-Audit), so there is no scale-in before ATR(14) exists. The 'Nifty SuperTrend Entry & ATR SL Exit' copies in its subfolder are ytst_st_sell_buy_atr."),
         def(HL, "ST 5,1 Buy above the Flip High, Sell below the Flip Low", "Long", &[
             ST_F,
             "F|One ST: period 5, factor 1, on the calculation point (default mid point)",
             "F|Buy level: on the bar the ST turns up, its High + 0.25%, carried while the ST is up (Null while down); sell level: on the bar it turns down, its Low − 0.25%, carried while down (Null while up)",
-            "F|Running trade: 1 when the High is above the buy level; 0 when it was 1 and the Low is below the sell level; else carried; a Null level is -1e10 in the loop",
+            "F|Running trade: 1 when the High is above the buy level; 0 when it was 1 and the Low is below the sell level; else carried; a Null level compares false in the loop (AmiBroker)",
             "E|Buy when flat and the High is above the previous bar's buy level or the running trade is 1: at the Open + 0.25% if the Open is above the level, else at the level",
             "X|Sell when the Low is below the previous bar's sell level or the running trade is 0, unless a lower-circuit bar: at the Open − 0.25% if the Open is below the level, else at the level",
-        ], "ST Buy Sell at High Low - Updated.afl (ST Buy Sell at High Low; the copy in 'ST Buy when HIGH above HIGH+0.25% & Sell when LOW below LOW-0.25%' is the same file), coded as the AFL is written (its loop; no ExRem). Written for daily bars, positional long only. Inside the loop a Null level is -1e10, so while the ST is down (and on the first bars) 'High > buy level' holds: the running trade is 1 and the AFL buys at the Open + 0.25% on every flat bar there, selling on a break of the down-flip Low. A buy and a sale on the same bar: the backtester enters and ignores that bar's sale (AllowSameBarExit is not set). Fills are kept within the bar's range."),
+        ], "ST Buy Sell at High Low - Updated.afl (ST Buy Sell at High Low; the copy in 'ST Buy when HIGH above HIGH+0.25% & Sell when LOW below LOW-0.25%' is the same file), coded as the AFL is written (its loop; no ExRem). Written for daily bars, positional long only. Inside the loop a comparison with a Null level is false (AmiBroker, SV-Audit), so there is no buy before the first up-flip sets the buy level; the AFL buys at the Open + 0.25% when the High passes it and sells on a break of the down-flip Low. A buy and a sale on the same bar: the backtester enters and ignores that bar's sale (AllowSameBarExit is not set). Fills are kept within the bar's range."),
         def(BEAR_FLT, "ST 5,1 with Bearish ST 5,4 Filter: Short Only or Long Only, ATR Target and Stop", "Long/Short", &[
             ST_F, FLT_ATR_F,
             "F|Re-entry state: armed while ST(5/1) is up (long only: down); after an exit with ST(5/1) up (long only: down) it waits for ST(5/1) to turn from down to up (long only: up to down)",
@@ -307,7 +307,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Cover when the Low reaches entry − 3 × ATR(5) (at the level, or the Open + 0.25% if it opened below), the High reaches entry + 1 × ATR(5) (at the level, or the Open + 0.25% if it opened above), or the filter turns up (at the Close)",
             "E|Long only: Buy at the Close when the previous bar's ST(5/1) was down, the filter is down and the state is armed",
             "X|Sell when the High reaches entry + 3 × ATR(5) (at the level, or the Open − 0.25% if it opened above), the Low reaches entry − 1 × ATR(5) (at the level, or the Open − 0.25% if it opened below), or the filter turns up (at the Close)",
-        ], "Nifty SuperTrend Short Only and Long Only & ATR SL Exit For Index & Fo with ST Bear Filter.afl (Nifty SuperTrend Entry & ATR SL Exit For Index & Fo Database with ST(54) Filter / For bear market (Long only & short only) (Ver3 If NIFTY in ST sell, then buy on next day)), coded as the AFL is written (its loop from bar = ST period; no ExRem). Written for spot Nifty (index & F&O database) on daily bars; both STs default to the daily timeframe in this AFL. ATR(5) is AmiBroker's Wilder ATR; a Null ATR makes the levels Null (-1e10 in the loop)."),
+        ], "Nifty SuperTrend Short Only and Long Only & ATR SL Exit For Index & Fo with ST Bear Filter.afl (Nifty SuperTrend Entry & ATR SL Exit For Index & Fo Database with ST(54) Filter / For bear market (Long only & short only) (Ver3 If NIFTY in ST sell, then buy on next day)), coded as the AFL is written (its loop from bar = ST period; no ExRem). Written for spot Nifty (index & F&O database) on daily bars; both STs default to the daily timeframe in this AFL. ATR(5) is AmiBroker's Wilder ATR; a Null ATR makes the levels Null, which compare false in the loop (AmiBroker)."),
         def(BULL_FLT, "ST 5,1 Short Only with Bullish ST 5,4 Filter, ATR Target and Stop", "Short", &[
             ST_F, FLT_ATR_F,
             "F|Re-entry state: armed while ST(5/1) is up; after a cover with ST(5/1) up it waits for ST(5/1) to turn from down to up",
@@ -601,8 +601,8 @@ pub(crate) fn calc_on(h: &[f64], l: &[f64], c: &[f64], kind: i64, ma3_typo: bool
         2 => c.to_vec(),
         3 => (0..n).map(|i| (h[i] + l[i] + c[i]) / 3.0).collect(),
         4 => (0..n).map(|i| (mid[i] + (h[i] + l[i] + c[i]) / 3.0 + c[i]) / 3.0).collect(),
-        5 if !ma3_typo => ma_partial(&cc, 3).into_iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
-        6 => ma_partial(&cc, 5).into_iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
+        5 if !ma3_typo => crate::books::ab::ma(&cc, 3).into_iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
+        6 => crate::books::ab::ma(&cc, 5).into_iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
         _ => mid,
     }
 }
@@ -679,7 +679,10 @@ fn lo_circuit(x: &Ctx, i: usize) -> bool {
 
 /// ATR % = MA(ATR(1), n) / C × 100 (partial MA at the start).
 fn atr_pct(x: &Ctx, n: usize) -> Vec<Option<f64>> {
-    let avg = ma_partial(&true_range(&x.h, &x.l, &x.c), n);
+    // AFL MA(ATR(1), n): ATR(1) is Null on bar 0 (no previous close); MA is Null until n values exist (SV-Audit:
+    // AmiBroker's first ATR-doubled trade comes on the bar this gives)
+    let tr: Vec<Option<f64>> = true_range(&x.h, &x.l, &x.c);
+    let avg = crate::books::ab::ma(&tr, n);
     (0..x.c.len()).map(|i| avg[i].map(|a| a / x.c[i] * 100.0)).collect()
 }
 
@@ -690,7 +693,7 @@ fn shift1(v: &[Option<f64>]) -> Vec<Option<f64>> {
 /// AFL Cross(a, b) / Cross(b, a) with b possibly Null: no cross before b's first value, Null = -1e10 after it.
 fn cross(a: &[f64], b: &[Option<f64>], above: bool) -> Vec<bool> {
     let first = b.iter().position(|v| v.is_some()).unwrap_or(b.len());
-    let v = |z: Option<f64>| z.unwrap_or(NULL);
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
     (0..a.len())
         .map(|i| i > first && if above { a[i] > v(b[i]) && a[i - 1] <= v(b[i - 1]) } else { v(b[i]) > a[i] && v(b[i - 1]) <= a[i - 1] })
         .collect()
@@ -714,10 +717,21 @@ impl Sig {
 /// AmiBroker regular backtest at the close of ExRem'd signals (side 1 long only, 2 short only, 3 long and short,
 /// reversing), with optional ApplyStop profit % and N-bar stops (0 off) checked from the bar after entry.
 fn backtest(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usize, to: usize) -> Vec<Trade> {
+    backtest_px(x, s, side, pb_pct, nbar, from, to, false)
+}
+
+/// `backtest`; with `cover_vw` the AFL's `CoverPrice = ValueWhen(Cover, C)`: a short closed by the N-bar stop fills at
+/// the Close of the last (ExRem'd) Cover signal bar, kept inside the bar's range (SV-Audit Supertrend Error 2: AmiBroker
+/// covered at 1249.10, that bar's High, where the plain Close was 1246.75).
+fn backtest_px(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usize, to: usize, cover_vw: bool) -> Vec<Trade> {
     let buy = exrem(&s.buy, &s.sell);
     let sell = exrem(&s.sell, &buy);
     let short = exrem(&s.short, &s.cover);
     let cover = exrem(&s.cover, &short);
+    let mut last_cover: Vec<Option<f64>> = vec![None; x.c.len()];
+    for i in 0..x.c.len() {
+        last_cover[i] = if cover[i] { Some(x.c[i]) } else if i > 0 { last_cover[i - 1] } else { None };
+    }
     let (longs, shorts) = (side != 2, side != 1);
     let mut out = Vec::new();
     let mut pos: Option<(f64, usize)> = None;
@@ -734,7 +748,8 @@ fn backtest(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usize, 
                 }
             }
             if ex.is_none() && nbar > 0 && i >= e + nbar {
-                ex = Some((x.c[i], "N-bar stop"));
+                let px = if cover_vw && d < 0.0 { last_cover[i].unwrap_or(x.c[i]) } else { x.c[i] };
+                ex = Some((px, "N-bar stop"));
             }
             if ex.is_none() {
                 let sig = if d > 0.0 { sell[i] || (side == 3 && short[i]) } else { cover[i] || (side == 3 && buy[i]) };
@@ -776,7 +791,7 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
             let tr = st_daily(x, &mid, gu("st_period"), g("st_factor"));
             let (lo, hi): (Vec<bool>, Vec<bool>) = if id == ALL_ATR {
                 let ap = atr_pct(x, gu("atr_period"));
-                let avg = ma_partial(&ap, gu("atr_years") * 225);
+                let avg = crate::books::ab::ma(&ap, gu("atr_years") * 225);
                 (0..n).map(|i| match (ap[i], avg[i]) { (Some(a), Some(m)) => (a < 2.0 * m, a > 2.0 * m), _ => (false, false) }).unzip()
             } else {
                 (vec![true; n], vec![false; n])
@@ -860,7 +875,7 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Sig {
             match id {
                 BULL_ATR => {
                     let ap = atr_pct(x, 14);
-                    let avg = ma_partial(&ap, 3 * 225);
+                    let avg = crate::books::ab::ma(&ap, 3 * 225);
                     let mut buyday: Option<f64> = None;
                     for i in 0..n {
                         let ref_avg = if i > 3 * 225 + 12 { avg[i] } else { Some(100.0) };
@@ -1064,7 +1079,7 @@ fn st_sell_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, pb: bool) -> Vec<Ev> {
                     skip = true;
                 }
             } else if (!lo_circuit(x, i) && skip) || frozen[i] {
-                sold = Some((o[i] - o[i] * buf / 100.0, "Blocked exit, open less buffer"));
+                sold = Some((crate::books::ab::addmul(o[i], -buf / 100.0), "Blocked exit, open less buffer"));
             }
             if let Some((px, why)) = sold {
                 if let Some(v) = evs.last_mut() {
@@ -1158,9 +1173,9 @@ fn prob_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, cfg: ProbCfg, from: usize, to: us
         if cont && !pos && entry_sig(i) && i + 1 != n && filter_ok(i) {
             pos = true;
             bp = c[i];
-            hsl = if hsl_pct > 0.0 { Some(bp * (1.0 - hsl_pct * 0.01)) } else { None };
-            pbl = if pb_pct > 0.0 { Some(bp * (1.0 + pb_pct * 0.01)) } else { None };
-            tsl[i] = if tsl_pct > 0.0 { Some(bp * (1.0 - tsl_pct * 0.01)) } else { None };
+            hsl = if hsl_pct > 0.0 { Some(crate::books::ab::mul32(bp, 1.0 - hsl_pct * 0.01)) } else { None };
+            pbl = if pb_pct > 0.0 { Some(crate::books::ab::mul32(bp, 1.0 + pb_pct * 0.01)) } else { None };
+            tsl[i] = if tsl_pct > 0.0 { Some(crate::books::ab::mul32(bp, 1.0 - tsl_pct * 0.01)) } else { None };
             evs.push(Ev { dir: 1.0, e: i, epx: bp, exit: None });
         } else if pos {
             let (lo, hi) = if live { (l[i], h[i]) } else { (c[i], c[i]) };
@@ -1172,11 +1187,11 @@ fn prob_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, cfg: ProbCfg, from: usize, to: us
                 let why = if hsl_hit { "HSL" } else if pb_hit { "PB" } else if tsl_hit { "TSL" } else if exit_sig(i) { "ST exit" } else if filter_exit(i) { "Filter exit" } else { "Last bar" };
                 if live && hsl_hit {
                     let v = hsl.unwrap_or(px);
-                    px = if o[i] < v { l[i].max(o[i] * (1.0 - buf * 0.01)) } else { v };
+                    px = if o[i] < v { l[i].max(crate::books::ab::mul32(o[i], 1.0 - buf * 0.01)) } else { v };
                 }
                 if live && pb_hit {
                     let v = pbl.unwrap_or(px);
-                    px = if o[i] > v { l[i].max(o[i] * (1.0 - buf * 0.01)) } else { v };
+                    px = if o[i] > v { l[i].max(crate::books::ab::mul32(o[i], 1.0 - buf * 0.01)) } else { v };
                 }
                 if let Some(v) = evs.last_mut() {
                     v.exit = Some((i, bound(x, i, px), i, why));
@@ -1188,13 +1203,13 @@ fn prob_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, cfg: ProbCfg, from: usize, to: us
                         total = 0.0;
                     }
                 } else {
-                    cont = !(px >= bp * (1.0 + y_pct * 0.01));
+                    cont = !(px >= crate::books::ab::mul32(bp, 1.0 + y_pct * 0.01));
                 }
                 pos = false;
             }
             if let Some(v) = tsl[i - 1] {
                 if v != 0.0 {
-                    tsl[i] = Some((h[i] * (1.0 - tsl_pct * 0.01)).max(v));
+                    tsl[i] = Some((crate::books::ab::mul32(h[i], 1.0 - tsl_pct * 0.01)).max(v));
                 }
             }
         }
@@ -1271,7 +1286,7 @@ fn athc_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: Athc) -> Vec<Ev> {
         if kind == Athc::Pct {
             if new_high && !t {
                 t = true;
-                trig = Some(c[i] + c[i] * athc_pct / 100.0);
+                trig = Some(crate::books::ab::addmul(c[i], athc_pct / 100.0));
             } else if tr[i] == -1 {
                 t = false;
                 trig = None;
@@ -1290,7 +1305,7 @@ fn athc_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, kind: Athc) -> Vec<Ev> {
             pos = true;
             evs.push(Ev { dir: 1.0, e: i, epx: c[i], exit: None });
         } else if pos {
-            let pt = (1.0 + pt_pct * 0.01) * pab;
+            let pt = crate::books::ab::mul32(1.0 + pt_pct * 0.01, pab);
             if (tr[i] == -1 || !flag[i] || h[i] >= pt) && !lo_circuit(x, i) {
                 let (px, why) = if h[i] >= pt { (pt, "Profit target") } else if tr[i] == -1 { (c[i], "% swing down") } else { (c[i], "ATHC flag off") };
                 if let Some(v) = evs.last_mut() {
@@ -1361,7 +1376,7 @@ fn scale_in(x: &Ctx, g: &dyn Fn(&str) -> f64, from: usize, to: usize) -> Vec<Tra
 
 // ---------------------------------------------------------------- ST buy above the flip high, sell below the flip low
 
-/// "ST Buy Sell at High Low - Updated.afl": the loop's entry and exit prices (a Null level is -1e10 in the loop).
+/// "ST Buy Sell at High Low - Updated.afl": the loop's entry and exit prices (a Null level compares false in the loop (AmiBroker)).
 fn high_low(x: &Ctx, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<Exit>) {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
@@ -1375,7 +1390,7 @@ fn high_low(x: &Ctx, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<Exit>) {
     let mut exit: Vec<Exit> = vec![None; n];
     for i in 1..n {
         if tr[i] != tr[i - 1] && tr[i] > 0 {
-            up_p[i] = Some(h[i] + h[i] * buf / 100.0);
+            up_p[i] = Some(crate::books::ab::addmul(h[i], buf / 100.0));
             abc1 = true;
         } else if abc1 {
             up_p[i] = up_p[i - 1];
@@ -1385,7 +1400,7 @@ fn high_low(x: &Ctx, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<Exit>) {
             }
         }
         if tr[i] != tr[i - 1] && tr[i] < 0 {
-            lo_p[i] = Some(l[i] - l[i] * buf / 100.0);
+            lo_p[i] = Some(crate::books::ab::addmul(l[i], -buf / 100.0));
             abc2 = true;
         } else if abc2 {
             lo_p[i] = lo_p[i - 1];
@@ -1397,12 +1412,12 @@ fn high_low(x: &Ctx, g: &dyn Fn(&str) -> f64) -> (Vec<Option<f64>>, Vec<Exit>) {
         rt[i] = if h[i] > loop_val(up_p[i]) { true } else if rt[i - 1] && l[i] < loop_val(lo_p[i]) { false } else { rt[i - 1] };
         let (bl, sl) = (loop_val(up_p[i - 1]), loop_val(lo_p[i - 1]));
         if !pos && (h[i] > bl || rt[i]) && !up_circuit(x, i) && c[i] > 0.0 {
-            let px = if o[i] > bl { o[i] + o[i] * buf / 100.0 } else { up_p[i - 1].unwrap_or(c[i]) };
+            let px = if o[i] > bl { crate::books::ab::addmul(o[i], buf / 100.0) } else { up_p[i - 1].unwrap_or(c[i]) };
             entry[i] = Some(bound(x, i, px));
             pos = true;
         }
         if pos && (l[i] < sl || !rt[i]) && !lo_circuit(x, i) {
-            let px = if o[i] < sl { o[i] - o[i] * buf / 100.0 } else { lo_p[i - 1].unwrap_or(c[i]) };
+            let px = if o[i] < sl { crate::books::ab::addmul(o[i], -buf / 100.0) } else { lo_p[i - 1].unwrap_or(c[i]) };
             exit[i] = Some((bound(x, i, px), if l[i] < sl { "Low below the sell level" } else { "Running trade off" }));
             pos = false;
             rt[i] = false;
@@ -1450,19 +1465,19 @@ fn flt_atr_loop(x: &Ctx, g: &dyn Fn(&str) -> f64, bull: bool) -> Vec<Ev> {
             let flt_exit = mt[i] == -want;
             let out: Option<(f64, &'static str)> = if long {
                 if h[i] >= pt {
-                    Some((if o[i] > pt { o[i] - o[i] * buf / 100.0 } else { pt }, "ATR profit target"))
+                    Some((if o[i] > pt { crate::books::ab::addmul(o[i], -buf / 100.0) } else { pt }, "ATR profit target"))
                 } else if l[i] <= sl {
-                    Some((if o[i] < sl { o[i] - o[i] * buf / 100.0 } else { sl }, "ATR hard SL"))
+                    Some((if o[i] < sl { crate::books::ab::addmul(o[i], -buf / 100.0) } else { sl }, "ATR hard SL"))
                 } else if flt_exit {
                     Some((c[i], "ST(5/4) filter"))
                 } else {
                     None
                 }
             } else if l[i] <= pt {
-                Some((if o[i] < pt { o[i] + o[i] * buf / 100.0 } else { pt }, "ATR profit target"))
+                Some((if o[i] < pt { crate::books::ab::addmul(o[i], buf / 100.0) } else { pt }, "ATR profit target"))
             } else if h[i] >= sl {
                 // the bull AFL covers a gap above the stop at the Open minus the buffer, the bear AFL plus
-                Some((if o[i] > sl { if bull { o[i] - o[i] * buf / 100.0 } else { o[i] + o[i] * buf / 100.0 } } else { sl }, "ATR hard SL"))
+                Some((if o[i] > sl { if bull { crate::books::ab::addmul(o[i], -buf / 100.0) } else { crate::books::ab::addmul(o[i], buf / 100.0) } } else { sl }, "ATR hard SL"))
             } else if flt_exit {
                 Some((c[i], "ST(5/4) filter"))
             } else {
@@ -1558,7 +1573,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             let pb_pct = if id == BEAR { g("pb_pct") } else { 0.0 };
             let nbar = if id == BEAR || id == BEAR_TIME { g("hold_bars").round().max(0.0) as usize } else { 0 };
-            backtest(x, &s, side, pb_pct, nbar, from, to)
+            backtest_px(x, &s, side, pb_pct, nbar, from, to, id == BEAR || id == BEAR_TIME)
         }
     })
 }
@@ -1618,15 +1633,21 @@ mod tests {
     fn atr_doubled_blocks_entry_and_exits() {
         let ap = ma_partial(&[None, Some(2.0), Some(4.0)], 2);
         assert_eq!(ap, vec![None, Some(2.0), Some(3.0)]);
+        // AmiBroker's MA is Null until the full n values exist (counted from the array's first value)
+        assert_eq!(crate::books::ab::ma(&[None, Some(2.0), Some(4.0)], 2), vec![None, None, Some(3.0)]);
         // a huge range bar lifts ATR % above twice its average: the long sells there
-        let mut v: Vec<(f64, f64, f64, f64)> = (0..30).map(|k| bar(100.0 + 0.2 * k as f64)).collect();
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..240).map(|k| bar(100.0 + 0.02 * k as f64)).collect();
         v.push((106.0, 140.0, 80.0, 106.5));
         v.push(bar(107.0));
         let r = bars(&v);
-        let t = go(run, ALL_ATR, &r, &[("side", 1.0)]);
-        // bar 0 has no ATR(1) (Null), so the first buy is bar 1
-        assert_eq!(t[0].0, 1);
-        assert_eq!(t[0].2, 30);
+        // defaults (ATR(14) % averaged over 3 x 225 bars): the average is still Null on every bar (=> false), so
+        // the filter blocks every entry
+        assert!(go(run, ALL_ATR, &r, &[("side", 1.0)]).is_empty());
+        // ATR(1) % over 1 x 225 bars: ATR(1) is Null on bar 0, so ATR % exists from bar 1 and its 225-bar average
+        // from bar 225; the first buy is bar 225, sold on the huge bar (240)
+        let t = go(run, ALL_ATR, &r, &[("side", 1.0), ("atr_period", 1.0), ("atr_years", 1.0)]);
+        assert_eq!(t[0].0, 225);
+        assert_eq!(t[0].2, 240);
     }
 
     #[test]
@@ -1792,8 +1813,9 @@ mod tests {
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);
         let t = run(SCALE52, &x, 0, r.len() - 1, &Params::new()).unwrap();
-        // the ST starts up (bands Null): buy on bar 1; ATR(14) is still Null (-1e10 in the loop): adds on bars 2-5
-        assert_eq!(t[0].legs.iter().map(|l| l.i).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+        // the ST starts up (bands Null): buy on bar 1; ATR(14) is still Null, so the add level is Null and
+        // "Close above it" is false in the AFL loop: no adds in the warm-up, the trade keeps its one unit
+        assert_eq!(t[0].legs.iter().map(|l| l.i).collect::<Vec<_>>(), vec![1]);
         assert!(t[0].legs.iter().all(|l| near(l.w, 0.2)));
         assert!(!t[0].open && t[0].exit_i < 20);
         // in the rally each add needs a Close above the previous unit's Close + ATR(14)
@@ -1807,23 +1829,31 @@ mod tests {
     }
 
     #[test]
-    fn high_low_breakout_buys_on_null_level_and_sells_below_flip_low() {
+    fn high_low_breakout_buys_above_flip_high_and_sells_below_flip_low() {
+        // a rise from bar 0 (the ST starts up, no flip: the buy level stays Null), a fall that flips it down, a
+        // rally that flips it up, then a fall that flips it down again
         let mut v: Vec<(f64, f64, f64, f64)> = (0..12).map(|k| bar(100.0 + k as f64)).collect();
         v.extend((0..8).map(|k| bar(106.0 - 3.0 * k as f64)));
+        v.extend((0..10).map(|k| bar(88.0 + 2.0 * k as f64)));
+        v.extend((0..8).map(|k| bar(102.0 - 3.0 * k as f64)));
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);
         let tr = st_daily(&x, &calc_on(&x.h, &x.l, &x.c, 1, false), 5, 1.0);
-        let d = (1..tr.len()).find(|&i| tr[i] == -1).unwrap();
+        let d0 = (1..tr.len()).find(|&i| tr[i] == -1).unwrap();
+        let u = (d0..tr.len()).find(|&i| tr[i] == 1 && tr[i - 1] == -1).unwrap();
+        let d = (u..tr.len()).find(|&i| tr[i] == -1).unwrap();
         let t = go(run, HL, &r, &[]);
-        // bar 1: no buy level yet (Null = -1e10): buy at the Open + 0.25%
-        assert_eq!(t[0].0, 1);
-        assert!(near(t[0].1, x.o[1] * 1.0025));
+        // before the first flip up the buy level is Null and "High above it" is false in the AFL loop: no buy in
+        // the first rise, nor in the down trend after it (the old -1e10 Null bought on bar 1)
+        assert_eq!(t.len(), 1, "{t:?}");
+        // the flip-up bar sets the level at its High + 0.25%; the next bar opens above it: bought at Open + 0.25%
+        assert_eq!(t[0].0, u + 1);
+        assert!(x.o[u + 1] > x.h[u] * 1.0025);
+        assert!(crate::books::ab::near_ab(t[0].1, x.o[u + 1] * 1.0025));
         // the bar after the flip down opens below the flip bar's Low − 0.25%: sold at that Open − 0.25%
         assert_eq!(t[0].2, d + 1);
         assert!(x.o[d + 1] < x.l[d] * 0.9975);
-        assert!(near(t[0].3, x.o[d + 1] * 0.9975));
-        // flat in the down trend: bought again at the next Open; that bar's sale is ignored (no same-bar exit)
-        assert_eq!((t[1].0, t[1].2), (d + 2, d + 3));
+        assert!(crate::books::ab::near_ab(t[0].3, x.o[d + 1] * 0.9975));
     }
 
     /// A long fall, a 5-point bounce that turns ST 5,1 up (ST 5,4 stays down), then the fall resumes.
@@ -1846,7 +1876,7 @@ mod tests {
         assert_eq!((s.dir, s.legs[0].px), (-1.0, 105.0));
         assert_eq!(s.reason, "ATR profit target");
         let atr = atr_wilder(&x, 5)[31].unwrap();
-        assert!(near(s.exit_px, 105.0 - 3.0 * atr) || s.exit_px < 105.0 - 3.0 * atr);
+        assert!(crate::books::ab::near_ab(s.exit_px, 105.0 - 3.0 * atr) || s.exit_px < 105.0 - 3.0 * atr, "{} vs {}", s.exit_px, 105.0 - 3.0 * atr);
         for t in &t {
             assert!(t.dir < 0.0 && imt[t.legs[0].i - 1] == 1 && mt[t.legs[0].i] == -1);
         }
@@ -1869,10 +1899,11 @@ mod tests {
         assert_eq!(t.len(), 1, "after a stop with ST 5,1 up it waits for a new down-up turn");
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i), (-1.0, 5, 6));
         assert_eq!(t[0].reason, "ATR hard SL");
-        // the stop is entry + 1 × ATR(5) = 110 + 3; bar 6 (Open 112.3, High 113) reaches it: covered at the level
+        // the stop is entry + 1 × ATR(5) (AmiBroker's ATR counts bar 0's High - Low, so a little under 110 + 3);
+        // bar 6 (Open 112.3, High 113) reaches it: covered at the level
         let sl = 110.0 + atr_wilder(&x, 5)[5].unwrap();
-        assert!(near(sl, 113.0) && x.o[6] < sl);
-        assert!(near(t[0].exit_px, sl));
+        assert!(sl > 112.3 && sl < 113.0 && x.o[6] < sl);
+        assert!(crate::books::ab::near_ab(t[0].exit_px, sl));
     }
 
     #[test]

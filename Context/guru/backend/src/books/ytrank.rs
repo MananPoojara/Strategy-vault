@@ -31,7 +31,7 @@ pub const FINAL: &str = "ytrank_final";
 pub const BASIC: &str = "ytrank_basic";
 pub const IDS: [&str; 3] = [THRESHOLD, FINAL, BASIC];
 
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 
 fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef {
@@ -174,7 +174,7 @@ pub(crate) fn st_line(avg: &[f64], h: &[f64], l: &[f64], c: &[f64], atr_p: usize
             }
         } else if let Some(u) = up[i] {
             let m = u.min(up[i - 1].unwrap_or(NULL));
-            up[i] = if m == NULL { None } else { Some(m) };
+            up[i] = if m.is_nan() { None } else { Some(m) };
         }
     }
     (0..n).map(|i| if is_up[i] { dn[i] } else { up[i] }).collect()

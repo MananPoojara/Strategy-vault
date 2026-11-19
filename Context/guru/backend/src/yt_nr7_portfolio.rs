@@ -133,6 +133,6 @@ pub(crate) fn run(series: &[Series], members: &BTreeSet<String>, from: &str, to:
         let r=run(&[observed],&members,&rows[0].date,&rows[rows.len()-1].date,config(Size::FixedValue(1000.),1)).unwrap();
         let entries:Vec<_>=r.fills.iter().filter(|f|f.entry).collect();
         assert_eq!(entries.len(),expected.len());
-        for (fill,trade) in entries.iter().zip(expected) {assert_eq!(fill.date,rows[trade.legs[0].i].date); assert_eq!(fill.price,trade.legs[0].px);}
+        for (fill,trade) in entries.iter().zip(expected) {assert_eq!(fill.date,rows[trade.legs[0].i].date); assert!((fill.price-trade.legs[0].px).abs()<=1e-3,"the ledger fills at the Close; the strategy's AmiBroker price conversion only rounds the synthetic many-decimal Close");}
     }
 }

@@ -526,7 +526,7 @@ mod tests {
         let mut b2 = flat(20);
         b2[7] = (97.5, 98.0, 96.0, 97.0); // opens below the level -> open less 0.25%
         let t = go(LONG, &bars(&b2), &vix, &[("hard_pct", 2.0)]);
-        assert!((t[0].exit_px - 97.5 * 0.9975).abs() < 1e-9);
+        assert!(crate::books::ab::near_ab(t[0].exit_px, 97.5 * 0.9975));
     }
 
     #[test]
@@ -598,7 +598,7 @@ mod tests {
                     let t = run(id, &x, from, to, &ps(&kv)).unwrap();
                     for t in &t {
                         assert!(t.legs[0].i >= from && t.legs[0].i <= to && t.exit_i >= t.legs[0].i && t.exit_i <= to, "{id}");
-                        assert!(t.exit_px.is_finite() && t.exit_px >= x.l[t.exit_i] - 1e-9 && t.exit_px <= x.h[t.exit_i] + 1e-9, "{id}");
+                        assert!(t.exit_px.is_finite() && t.exit_px >= x.l[t.exit_i] - 1e-3 && t.exit_px <= x.h[t.exit_i] + 1e-3, "{id}");
                     }
                 }
             }

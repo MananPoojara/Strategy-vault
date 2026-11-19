@@ -342,11 +342,11 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, cash: &[bool], extra: &[bool], athc: &
             && (s1 || s3)
             && tl[i] > bl[i]
             // Close above a Null delayed line / cloud (the first bars of the data) is never true, as in ytich.rs
-            && delayed[i] != NULL
+            && !delayed[i].is_nan()
             && c[i] > delayed[i]
             && c[i] > maxs[i]
             && cash[i]
-            && (k.v != V::Cur || (cloud[i] != NULL && c[i] > cloud[i]))
+            && (k.v != V::Cur || (!cloud[i].is_nan() && c[i] > cloud[i]))
             && extra[i]
             && athc[i]
             && !(rf && ds1[i]);

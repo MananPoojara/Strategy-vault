@@ -314,7 +314,7 @@ pub(crate) fn prev_llv(v: &[f64], n: usize) -> Vec<Option<f64>> {
 
 // ---------------------------------------------------------------- the AFL loop
 
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 
 struct Cfg {
     v: V,

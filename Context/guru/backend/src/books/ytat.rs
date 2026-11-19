@@ -111,7 +111,7 @@ fn st_line(src: &[f64], h: &[f64], l: &[f64], c: &[f64], period: usize, f: f64) 
         is_up[i] = match (up[i - 1], dn[i - 1]) {
             (Some(u), _) if c[i] > u => true,
             (_, Some(d)) if c[i] < d => false,
-            (None, _) => true, // C > Null (-1e10) in the loop
+            (None, _) => false, // C > Null is false in the loop (AmiBroker; SV-Audit)
             _ => is_up[i - 1],
         };
         if is_up[i] {

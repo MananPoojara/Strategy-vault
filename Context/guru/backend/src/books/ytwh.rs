@@ -94,11 +94,15 @@ pub(crate) fn prec2(v: f64) -> f64 {
 }
 /// AmiBroker price bound checking: a trade price outside the bar's range is moved to the low or the high.
 pub(crate) fn bound(x: &Ctx, i: usize, px: f64) -> f64 {
-    px.max(x.l[i]).min(x.h[i])
+    // AmiBroker: the fill is a float32 kept inside the bar's Low-High range and read as AmiBroker's decimal price
+    // (SV-Audit "calculated exit prices", proven on the Double 7 trade lists; `ab::ab_fill`)
+    crate::books::ab::ab_fill(px, x.l[i], x.h[i])
 }
-/// The AFL loop Null in a comparison: -1e10.
+/// The AFL loop Null: NaN, so that every comparison with it is false (both `>` and `<`), as AmiBroker treats a
+/// comparison with Null inside a loop (SV-Audit, proven by AmiBroker exploration: Double 7, Van Tharp, Supertrend,
+/// % Swing "Error: comparisons with Null"). Earlier SV read it as -1e10, which made `C > MA` true in the warm-up.
 pub(crate) fn loop_val(v: Option<f64>) -> f64 {
-    v.unwrap_or(-1e10)
+    v.unwrap_or(f64::NAN)
 }
 
 /// One position from a loop AFL run over the whole history: entry bar and price, and the exit (bar, price, bar on
@@ -136,15 +140,15 @@ fn backtest_stops(x: &Ctx, buy: &[bool], sell: &[bool], loss: f64, profit: f64, 
         if let Some((e, epx)) = pos {
             let mut out: Option<(f64, &'static str)> = None;
             if i > e && loss > 0.0 {
-                let lv = epx * (1.0 - loss / 100.0);
+                let lv = crate::books::ab::mul32(epx, 1.0 - loss / 100.0);
                 if x.l[i] <= lv {
-                    out = Some((if x.o[i] < lv { x.o[i] } else { lv }, "Hard stop"));
+                    out = Some((if x.o[i] < lv { x.o[i] } else { crate::books::ab::ab_fill(lv, x.l[i], x.h[i]) }, "Hard stop"));
                 }
             }
             if out.is_none() && i > e && profit > 0.0 {
-                let lv = epx * (1.0 + profit / 100.0);
+                let lv = crate::books::ab::mul32(epx, 1.0 + profit / 100.0);
                 if x.h[i] >= lv {
-                    out = Some((if x.o[i] > lv { x.o[i] } else { lv }, "Profit booking"));
+                    out = Some((if x.o[i] > lv { x.o[i] } else { crate::books::ab::ab_fill(lv, x.l[i], x.h[i]) }, "Profit booking"));
                 }
             }
             if out.is_none() && sell[i] {
@@ -205,13 +209,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             for i in 1..n {
                 trendj[i] = if fs[i - 1] && fb[i] { 1 } else if trendj[i - 1] == 1 { 1 } else { 0 };
                 if !pos && c[i] > hwc[i - 1] && c[i] > 0.0 && i != n - 1 && trendj[i] == 1 {
-                    pb[i] = if profit > 0.0 { c[i] * (1.0 + profit / 100.0) } else { 99_999_999.0 };
+                    pb[i] = if profit > 0.0 { crate::books::ab::addmul(c[i], profit / 100.0) } else { 99_999_999.0 };
                     pos = true;
                     trendj[i] = 0;
                     evs.push(Ev { dir: 1.0, e: i, epx: c[i], exit: None });
                 } else if pos && (fs[i] || h[i] > pb[i - 1] || i == n - 1) {
                     let (px, r) = if o[i] > pb[i - 1] {
-                        (o[i] - o[i] * 0.0025, "Profit booking (gap)")
+                        (crate::books::ab::addmul(o[i], -0.0025), "Profit booking (gap)")
                     } else if h[i] > pb[i - 1] {
                         (pb[i - 1], "Profit booking")
                     } else if fs[i] {
@@ -298,7 +302,9 @@ pub(crate) mod testbars {
                 let t = run(id, &x, from, to, &Params::new()).unwrap();
                 for t in &t {
                     assert!(t.legs[0].i >= from && t.legs[0].i <= to && t.exit_i >= t.legs[0].i && t.exit_i <= to, "{id}");
-                    assert!(t.exit_px.is_finite() && t.exit_px >= x.l[t.exit_i] - 1e-9 && t.exit_px <= x.h[t.exit_i] + 1e-9, "{id}");
+                    // YT fills are AmiBroker decimal prices of the float32 level clipped to Low-High (`ab::ab_fill`),
+                    // so a fill at a non-round synthetic High/Low may read a few 1e-5 outside it (103.45996 -> 103.46).
+                    assert!(t.exit_px.is_finite() && t.exit_px >= x.l[t.exit_i] - 1e-3 && t.exit_px <= x.h[t.exit_i] + 1e-3, "{id}");
                 }
             }
         }
@@ -330,7 +336,7 @@ mod tests {
         let mut v2 = v.clone();
         v2[13] = (107.0, 111.0, 106.0, 107.0);
         let t = go(run, SWING_EXIT, &bars(&v2), &[("pb_on", 1.0), ("pb_pct", 5.0)]);
-        assert_eq!((t[0].2, t[0].3), (13, 105.0 * 1.05));
+        assert!(t[0].2 == 13 && crate::books::ab::near_ab(t[0].3, 105.0 * 1.05));
         // a 3% hard stop gapped through fills at the open
         let mut v3 = v.clone();
         v3[12] = (100.0, 100.5, 99.0, 100.0);

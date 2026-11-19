@@ -63,7 +63,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Shorts also cover on any Ulcer long cross",
             "X|The bull / bear filter turning against the trade exits",
             EXITS, EXITS_2, EXITS_3, EXITS_4,
-        ], "ST or Ulcer WEE_Exit Own or Fresh of Opp_UlcerIndex_ST_Final.afl, coded as the AFL is written, including its second exit pass after the entries on every bar. The AFL default 'Period for Highest Src' is 0, below its Param minimum 6; it is kept, and HHV over 0 bars is taken as empty, so the Ulcer line and every Ulcer signal are Null and the defaults trade only through the ST entry (off by default): no trades at the defaults. The team's workbooks optimised it over 6-42. On a cover the AFL resets 'currentStatus' (a typo), so the short side's wait state carries into later shorts. No ExRem."),
+        ], "ST or Ulcer WEE_Exit Own or Fresh of Opp_UlcerIndex_ST_Final.afl, coded as the AFL is written, including its second exit pass after the entries on every bar. The AFL default 'Period for Highest Src' is 0, below its Param minimum 6; it is kept, and HHV over 0 bars is AmiBroker's cumulative high (the highest source value since the first bar), which reproduces AmiBroker's trades at the defaults (SV-Audit: 76 NIFTY / 84 BANKNIFTY trades, exact). The team's workbooks optimised it over 6-42. On a cover the AFL resets 'currentStatus' (a typo), so the short side's wait state carries into later shorts. No ExRem."),
     ]
 }
 
@@ -84,7 +84,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("sig_len", "Signal smoothing length", 52.0, 1.0, 200.0, 1.0),
         ]),
         EXIT_OWN => v.extend([
-            p("hh_period", "Period for highest src (AFL default 0, below its Param minimum 6: no Ulcer signals)", 0.0, 0.0, 42.0, 4.0),
+            p("hh_period", "Period for highest src (AFL default 0 = highest since the first bar, below its Param minimum 6)", 0.0, 0.0, 42.0, 4.0),
             p("smooth", "Smoothing length", 14.0, 6.0, 42.0, 4.0),
             p("sig_type", "Signal smoothing type (0 SMA, 1 EMA)", 0.0, 0.0, 1.0, 1.0),
             p("sig_len", "Signal smoothing length", 52.0, 1.0, 500.0, 1.0),
@@ -165,11 +165,12 @@ fn ulcer_cross(x: &Ctx, src: i64, hh_p: usize, smooth: usize, ema: bool, len: us
         3 => x.l.clone(),
         _ => x.c.clone(),
     };
-    // HHV over 0 bars (the own-or-fresh AFL default) is taken as empty. Like AmiBroker's HHV, the first bars of the
+    // HHV over 0 bars (the own-or-fresh AFL default) is the cumulative high, as in AmiBroker (tested on SV-Audit). Like AmiBroker's HHV, the first bars of the
     // data use the bars available so far until the full period exists (this sets the bar where the signal line
     // starts, which the AFL treats as a cross).
     let hh: Vec<Option<f64>> = (0..n)
-        .map(|i| if hh_p == 0 { None } else { Some(s[(i + 1).saturating_sub(hh_p)..=i].iter().copied().fold(f64::MIN, f64::max)) })
+        // AmiBroker HHV(x, 0): the highest value since the first bar (cumulative) - SV-Audit Ulcer Error 2
+        .map(|i| Some(s[if hh_p == 0 { 0 } else { (i + 1).saturating_sub(hh_p) }..=i].iter().copied().fold(f64::MIN, f64::max)))
         .collect();
     let dd2: Vec<Option<f64>> = (0..n).map(|i| hh[i].filter(|&h| h != 0.0).map(|h| (100.0 * (s[i] - h) / h).powi(2))).collect();
     let sm = smooth.max(1);
@@ -748,9 +749,12 @@ mod tests {
         // it gives the initial state (flat rally: ulcer 0 <= signal 0)
         assert_eq!(first_l, 3);
         assert!(first_s >= 15 && first_s <= 17, "{first_s}");
-        // HHV over 0 bars: nothing
+        // HHV over 0 bars is AmiBroker's cumulative high since the first bar: on this rally-then-drop data it equals
+        // the 3-bar high in the rally and holds the peak in the drop, so the crosses come where they did above
         let (lx0, sx0) = ulcer_cross(&x, 0, 0, 2, false, 3, false);
-        assert!(lx0.iter().chain(&sx0).all(|&b| !b));
+        assert_eq!(lx0.iter().position(|&b| b), Some(3));
+        let first_s0 = sx0.iter().position(|&b| b).unwrap();
+        assert!(first_s0 >= 15 && first_s0 <= 17, "{first_s0}");
     }
 
     #[test]
@@ -773,9 +777,13 @@ mod tests {
     }
 
     #[test]
-    fn own_defaults_give_no_trades_and_do_not_panic() {
+    fn own_defaults_trade_and_do_not_panic() {
+        // the AFL default "Period for Highest Src" 0 is HHV(x, 0) = the cumulative high (AmiBroker), so the
+        // defaults produce Ulcer signals and trades
         let r = wave(300);
-        assert!(go(EXIT_OWN, &r, &[]).is_empty());
+        let t = go(EXIT_OWN, &r, &[]);
+        assert!(!t.is_empty());
+        assert!(t.iter().all(|t| t.exit_i >= t.legs[0].i && t.exit_i < r.len()));
         let t = go(EXIT_OWN, &r, &[("hh_period", 6.0)]);
         assert!(t.iter().all(|t| t.dir > 0.0));
     }

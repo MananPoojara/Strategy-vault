@@ -12,3 +12,4 @@
 - Do not write to the original research or market-data shares. Keep build/test concurrency bounded; no whole-corpus backtest at startup.
 - Verify frontend changes with type checking, the React tests and appropriate real-browser checks. Do not change Rust strategy calculations as part of presentation work.
 - Keep verified source rules, declared adaptations, simulated results and book-reported figures clearly separate.
+- YT Strategies (AmiBroker AFLs): use `books/ab.rs` for AmiBroker-exact numbers: `ab::rsi` / `ab::atr` for RSI and ATR, and write calculated stop / target / buffer levels with the AFL's own formula shape (`ab::mul32` for `(1 + p%) * C`, `ab::addmul` for `C + C * p / 100`). Every YT fill is converted globally by `books::ab_prices` (float32, clipped to the bar, AmiBroker's decimal price).

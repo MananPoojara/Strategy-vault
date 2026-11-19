@@ -51,7 +51,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|A cover blocked by an upper-circuit bar (Open = High = Close, 2 decimals; for (c): High = Close) is taken at the next bar's Open + the buffer",
             "F|Option 'With ST Filter' (off by default): short only while the monthly Supertrend(5, 1, mid point) is down; (c) also covers when it turns up",
         ],
-        notes: "Index \u{201c}Channeling\u{201d} system Strategy without William %R cool off(With and without filter,Short Only).afl (both copies; they differ only in Param ranges), coded as the AFL is written. Defaults outside their declared ranges are used as written: Williams %R period 10 (range 22-26 in one copy), entry -20 (9-12), exit -70 (Optimize 60-68), MA 200 (50-70), profit 10% (0-8). After the 8th bar the stop, target and %R exits stop being checked (the count stops at 9) and only Close > MA covers, as in the AFL. Inside the AFL loop the MA is Null (-1e10) for the first 199 bars of the history, so no short is taken there. The 'With ST Filter' branch starts the trailing low at the entry bar's High (the default branch uses the Low), as written. Fills are kept within the bar's range. Dead-stock, penny and turnover options are stock-template settings left at their defaults (off).",
+        notes: "Index \u{201c}Channeling\u{201d} system Strategy without William %R cool off(With and without filter,Short Only).afl (both copies; they differ only in Param ranges), coded as the AFL is written. Defaults outside their declared ranges are used as written: Williams %R period 10 (range 22-26 in one copy), entry -20 (9-12), exit -70 (Optimize 60-68), MA 200 (50-70), profit 10% (0-8). After the 8th bar the stop, target and %R exits stop being checked (the count stops at 9) and only Close > MA covers, as in the AFL. Inside the AFL loop the MA is Null for the first 199 bars of the history and a comparison with Null is false (AmiBroker), so no short is taken there. The 'With ST Filter' branch starts the trailing low at the entry bar's High (the default branch uses the Low), as written. Fills are kept within the bar's range. Dead-stock, penny and turnover options are stock-template settings left at their defaults (off).",
         claim: None,
     }]
 }
@@ -103,7 +103,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mtrend: Vec<i8> = if with_st { st_filter(x, tf_of(gi("st_tf"), true), gi("st_point"), gu("st_period"), g("st_factor")) } else { vec![0; n] };
     let upcirc = |i: usize| prec2(o[i]) == prec2(c[i]) && prec2(o[i]) == prec2(h[i]);
     let uc = |i: usize| h[i] == c[i];
-    let at_open = |i: usize| o[i] + o[i] * buf;
+    let at_open = |i: usize| crate::books::ab::addmul(o[i], buf);
 
     let mut evs: Vec<Ev> = Vec::new();
     let mut pos = false;
@@ -114,14 +114,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let short_filter = l[i] != c[i] && c[i] > 0.0;
         if !pos && c[i] < ma[i] && wr[i] > ent && (!with_st || mtrend[i] == -1) && short_filter {
             if pt_pct > 0.0 {
-                pt = (1.0 - pt_pct * 0.01) * c[i];
+                pt = crate::books::ab::mul32(1.0 - pt_pct * 0.01, c[i]);
             }
             if hsl_pct > 0.0 {
-                fix_sl = (1.0 + hsl_pct * 0.01) * c[i];
+                fix_sl = crate::books::ab::mul32(1.0 + hsl_pct * 0.01, c[i]);
             }
             if tsl_pct > 0.0 {
                 ll_af = if with_st { h[i] } else { l[i] };
-                trail_sl = (1.0 + tsl_pct * 0.01) * ll_af;
+                trail_sl = crate::books::ab::mul32(1.0 + tsl_pct * 0.01, ll_af);
             }
             pos = true;
             evs.push(Ev { dir: -1.0, e: i, epx: c[i], exit: None });
@@ -177,7 +177,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 trail_sl = BIG;
             }
             if tsl_pct > 0.0 {
-                trail_sl = (1.0 + tsl_pct * 0.01) * ll_af;
+                trail_sl = crate::books::ab::mul32(1.0 + tsl_pct * 0.01, ll_af);
             }
         } else if skip && !upcirc(i) {
             if let Some(v) = evs.last_mut() {
@@ -239,7 +239,7 @@ mod tests {
         let t = go(run, SHORT, &bars(&w), &[MA30, ("tsl_pct", 0.0)]);
         assert_eq!((t[0].0, t[0].1), (30, 178.5));
         assert_eq!(t[0].2, 33);
-        assert!((t[0].3 - 170.5 * 1.0025).abs() < 1e-9);
+        assert!(crate::books::ab::near_ab(t[0].3, 170.5 * 1.0025));
         // the ST filter: on these few bars the monthly ST is still up (it starts up), so no short
         assert!(go(run, SHORT, &bars(&w), &[MA30, ("filter", 1.0)]).is_empty());
     }

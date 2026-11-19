@@ -352,10 +352,10 @@ fn intraday(x: &Ctx, from: usize, to: usize, long: bool, pct: f64, setup: impl F
         if !setup(i) {
             continue;
         }
-        let level = if long { x.o[i] * (1.0 + pct / 100.0) } else { x.o[i] * (1.0 - pct / 100.0) };
+        let level = if long { crate::books::ab::addmul(x.o[i], pct / 100.0) } else { crate::books::ab::addmul(x.o[i], -pct / 100.0) };
         let filled = if long { x.h[i] >= level } else { x.l[i] <= level };
         if filled {
-            out.push(trade(if long { 1.0 } else { -1.0 }, i, level, "limit", i, x.c[i], "Same-day close"));
+            out.push(trade(if long { 1.0 } else { -1.0 }, i, crate::books::ab::ab_fill(level, x.l[i], x.h[i]), "limit", i, x.c[i], "Same-day close"));
         }
     }
     out
@@ -552,11 +552,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut out = Vec::new();
             for i in from.max(3)..=to {
                 // AFL: C[i-1] > Ref(HHV(C, N), -1)[i-1], three green candles, gap up; Short at Open + % when H reaches it
-                let level = x.o[i] * (1.0 + pct / 100.0);
+                let level = crate::books::ab::addmul(x.o[i], pct / 100.0);
                 if dow(x, i) == day && x.c[i - 1] > highest_close(x, i - 2, len) && green(x, i - 1) && green(x, i - 2) && green(x, i - 3)
                     && gap_up(x, i) && x.h[i] >= level
                 {
-                    out.push(trade(-1.0, i, level, "limit", i, x.c[i], "Same-day close"));
+                    out.push(trade(-1.0, i, crate::books::ab::ab_fill(level, x.l[i], x.h[i]), "limit", i, x.c[i], "Same-day close"));
                 }
             }
             out
@@ -570,7 +570,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 // AFL: BuyPrice / ShortPrice = Open + Open x % (plus for a short too), with no test of the bar; AmiBroker keeps it inside the bar
                 (from.max(1)..=to)
                     .filter(|&i| dow(x, i) == day)
-                    .map(|i| trade(dir, i, (x.o[i] * (1.0 + pct / 100.0)).clamp(x.l[i], x.h[i]), "limit", i, x.c[i], "Same-day close"))
+                    .map(|i| trade(dir, i, crate::books::ab::ab_fill(crate::books::ab::addmul(x.o[i], pct / 100.0), x.l[i], x.h[i]), "limit", i, x.c[i], "Same-day close"))
                     .collect()
             }
         }
@@ -587,7 +587,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut out = Vec::new();
             for i in from.max(4)..=to {
                 if gap_down(x, i) && (1..=4).all(|k| red(x, i - k)) {
-                    let px = (x.o[i] * (1.0 - pct / 100.0)).clamp(x.l[i], x.h[i]);
+                    let px = crate::books::ab::ab_fill(crate::books::ab::addmul(x.o[i], -pct / 100.0), x.l[i], x.h[i]);
                     out.push(trade(-1.0, i, px, "limit", i, x.c[i], "Same-day close"));
                 }
             }
@@ -608,7 +608,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let cols = colours.iter().enumerate().all(|(j, &r)| if r { red(x, i - 1 - j) } else { green(x, i - 1 - j) });
                 if rng && gap_down(x, i) && cols {
                     // AFL: ShortPrice = O - O x %; no test that the low reaches it, and AmiBroker keeps a fill inside the bar
-                    let px = (x.o[i] * (1.0 - pct / 100.0)).clamp(x.l[i], x.h[i]);
+                    let px = crate::books::ab::ab_fill(crate::books::ab::addmul(x.o[i], -pct / 100.0), x.l[i], x.h[i]);
                     out.push(trade(-1.0, i, px, "limit", i, x.c[i], "Same-day close"));
                 }
             }
@@ -800,7 +800,7 @@ mod tests {
         let t = go(GAP, &r, &[("weekday", 2.0), ("gap", 3.0), ("open_pct", 1.0)]);
         assert!((t[0].1 - 101.505).abs() < 1e-9 && t[0].3 == 101.5 && t[0].4 == 1.0);
         let t = go(GAP, &r, &[("weekday", 2.0), ("gap", 3.0), ("side", 2.0), ("open_pct", 0.25)]);
-        assert!((t[0].1 - 100.5 * 0.9975).abs() < 1e-9 && t[0].4 == -1.0);
+        assert!(crate::books::ab::near_ab(t[0].1, 100.5 * 0.9975) && t[0].4 == -1.0);
         assert!(go(GAP, &r, &[("weekday", 1.0), ("gap", 3.0)]).is_empty());
     }
 }

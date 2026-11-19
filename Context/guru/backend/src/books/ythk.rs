@@ -105,7 +105,7 @@ pub(crate) fn ha_supertrend(x: &Ctx, period: usize, mult: f64) -> (Vec<f64>, Vec
     let (mut fu, mut fl, mut st) = (vec![0.0; n], vec![0.0; n], vec![0.0; n]);
     for i in p..n {
         let (Some(h), Some(l)) = (hh[i], hl[i]) else { continue };
-        let a = atr[i].unwrap_or(-1e10);
+        let a = atr[i].unwrap_or(f64::NAN); // Null: every comparison false (AmiBroker)
         let bu = (h + l) / 2.0 + mult * a;
         let bl = (h + l) / 2.0 - mult * a;
         fu[i] = if bu < fu[i - 1] || hc[i - 1] > fu[i - 1] { bu } else { fu[i - 1] };

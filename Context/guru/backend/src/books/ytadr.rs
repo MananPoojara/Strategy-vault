@@ -76,7 +76,7 @@ pub fn breadth_index(v: Option<f64>) -> usize {
     }
 }
 
-const NULL: f64 = -1e10;
+const NULL: f64 = f64::NAN; // AFL Null in a loop: every comparison with it is false (SV-Audit)
 const BIG: f64 = 9_999_999.0;
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
@@ -363,7 +363,7 @@ fn st_bull(x: &Ctx, tf: i64, period: usize, factor: f64, kind: i64) -> Vec<bool>
     let n = x.c.len();
     if tf != 1 && tf != 2 {
         let line = adr_st_line(&x.o, &x.h, &x.l, &x.c, period, factor, kind);
-        return (0..n).map(|i| line[i] != NULL && x.c[i] > line[i]).collect();
+        return (0..n).map(|i| !line[i].is_nan() && x.c[i] > line[i]).collect();
     }
     let b = compress(x, if tf == 1 { 'W' } else { 'M' });
     let mut o = vec![0.0; b.c.len()];
@@ -380,7 +380,7 @@ fn st_bull(x: &Ctx, tf: i64, period: usize, factor: f64, kind: i64) -> Vec<bool>
                 return false;
             }
             let g = b.group[d + 1];
-            g >= 1 && line[g - 1] != NULL && b.c[g - 1] > line[g - 1]
+            g >= 1 && !line[g - 1].is_nan() && b.c[g - 1] > line[g - 1]
         })
         .collect()
 }

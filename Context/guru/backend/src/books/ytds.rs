@@ -185,7 +185,7 @@ fn date_loop(x: &Ctx, long: bool, g: &dyn Fn(&str) -> f64) -> LoopSig {
     let gi = |k: &str| g(k).round() as i64;
     let atr = atr_wilder(x, gu("atr_period"));
     // MyATR = Ref(ATR(ATR_Prd), -1), as the loop reads it
-    let my_atr: Vec<f64> = (0..n).map(|i| if i == 0 { -1e10 } else { loop_val(atr[i - 1]) }).collect();
+    let my_atr: Vec<f64> = (0..n).map(|i| if i == 0 { f64::NAN } else { loop_val(atr[i - 1]) }).collect();
     let (pt_m, sl_m, buf) = (g("pt_mult"), g("sl_mult"), g("buffer_pct") / 100.0);
     let filter = gi("filter");
     let mtrend = if filter == 1 {
@@ -237,10 +237,10 @@ fn date_loop(x: &Ctx, long: bool, g: &dyn Fn(&str) -> f64) -> LoopSig {
         if !position && my_atr[i] > 0.0 && parity_ok(i) && !at_extreme(i) && c[i] > penny && turn[i] && filter_ok(i) {
             s.entry[i] = Some(c[i]);
             if pt_m > 0.0 {
-                pt = c[i] + d * my_atr[i] * pt_m;
+                pt = crate::books::ab::add_mul32(c[i], my_atr[i], d * pt_m);
             }
             if sl_m > 0.0 {
-                sl = c[i] - d * my_atr[i] * sl_m;
+                sl = crate::books::ab::add_mul32(c[i], my_atr[i], -d * sl_m);
             }
             position = true;
         } else if position && !skip {
@@ -252,14 +252,14 @@ fn date_loop(x: &Ctx, long: bool, g: &dyn Fn(&str) -> f64) -> LoopSig {
                 if circuit(i) {
                     skip = true;
                 } else {
-                    out = Some((if gap { o[i] - d * o[i] * buf } else { pt }, if gap { "ATR target (gap)" } else { "ATR target" }));
+                    out = Some((if gap { crate::books::ab::addmul(o[i], -d * buf) } else { pt }, if gap { "ATR target (gap)" } else { "ATR target" }));
                 }
             } else if hit_sl {
                 let gap = if long { o[i] < sl } else { o[i] > sl };
                 if circuit(i) {
                     skip = true;
                 } else {
-                    out = Some((if gap { o[i] - d * o[i] * buf } else { sl }, if gap { "ATR stop (gap)" } else { "ATR stop" }));
+                    out = Some((if gap { crate::books::ab::addmul(o[i], -d * buf) } else { sl }, if gap { "ATR stop (gap)" } else { "ATR stop" }));
                 }
             } else if filter_off(i) {
                 if !exit_wait(i) {
@@ -275,7 +275,7 @@ fn date_loop(x: &Ctx, long: bool, g: &dyn Fn(&str) -> f64) -> LoopSig {
                 sl = sl0;
             }
         } else if skip && !circuit(i) {
-            s.exit[i] = Some((o[i] - d * o[i] * buf, "Circuit bar skipped: next bar's Open"));
+            s.exit[i] = Some((crate::books::ab::addmul(o[i], -d * buf), "Circuit bar skipped: next bar's Open"));
             position = false;
             skip = false;
             pt = pt0;
@@ -319,13 +319,15 @@ mod tests {
     #[test]
     fn buys_on_odd_sum_and_exits_at_atr_target() {
         // bars from Mon 2024-01-01 (sum 2026, even), 01-02 odd, ... 01-09 (bar 6) even, 01-10 (bar 7) odd;
-        // TR = 2 on every bar, ATR(5) exists from bar 5, so MyATR (previous bar) from bar 6
+        // TR = 2 on every bar (bar 0's TR is High - Low)
         let mut v: Vec<(f64, f64, f64, f64)> = (0..12).map(|_| flat(100.0)).collect();
         v[8] = (100.0, 104.0, 99.0, 103.5);
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);
         let t = run(BUY_ODD, &x, 0, r.len() - 1, &Params::new()).unwrap();
-        // bar 7: buy at 99.8, target 99.8 + 2 x 2 = 103.8, reached on bar 8
+        // AmiBroker's ATR(5) is reported from bar 5, so MyATR = Ref(ATR(5), -1) exists from bar 6 (even); the
+        // first odd bar with MyATR is bar 7 (2024-01-10, sum 2035): buy at 99.8, target 99.8 + 2 x 2 = 103.8,
+        // reached on bar 8
         assert_eq!(t[0].legs[0].i, 7);
         assert!((t[0].legs[0].px - 99.8).abs() < 1e-9);
         assert_eq!(t[0].exit_i, 8);
@@ -356,8 +358,8 @@ mod tests {
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);
         let t = run(BUY_ODD, &x, 0, r.len() - 1, &Params::new()).unwrap();
-        assert_eq!((t[0].legs[0].i, t[0].exit_i), (7, 9));
-        assert!((t[0].exit_px - 98.0 * (1.0 - 0.0025)).abs() < 1e-9);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (7, 9)); // bar 7 is the first odd bar with MyATR (ATR(5) from bar 5)
+        assert!(crate::books::ab::near_ab(t[0].exit_px, 98.0 * (1.0 - 0.0025)));
     }
 
     #[test]

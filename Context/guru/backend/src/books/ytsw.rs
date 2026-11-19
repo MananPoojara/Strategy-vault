@@ -414,12 +414,12 @@ pub(crate) fn tf_of(code: i64, monthly_first: bool) -> char {
 /// AFL Cross(a, b) on bars where `b` may be Null: before b's first value there is no cross; after it a Null b is -1e10.
 pub(crate) fn cross_up(a: &[f64], b: &[Option<f64>]) -> Vec<bool> {
     let first = b.iter().position(|v| v.is_some()).unwrap_or(b.len());
-    let v = |z: Option<f64>| z.unwrap_or(-1e10);
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
     (0..a.len()).map(|i| i > first && a[i] > v(b[i]) && a[i - 1] <= v(b[i - 1])).collect()
 }
 pub(crate) fn cross_down(a: &[f64], b: &[Option<f64>]) -> Vec<bool> {
     let first = b.iter().position(|v| v.is_some()).unwrap_or(b.len());
-    let v = |z: Option<f64>| z.unwrap_or(-1e10);
+    let v = |z: Option<f64>| z.unwrap_or(crate::books::ab::CROSS_NULL);
     (0..a.len()).map(|i| i > first && v(b[i]) > a[i] && v(b[i - 1]) <= a[i - 1]).collect()
 }
 
@@ -609,6 +609,8 @@ fn dip_trades(x: &Ctx, ev: &[Option<Dip>], from: usize, to: usize) -> Vec<Trade>
     let finish = |mut legs: Vec<Leg>, pieces: Vec<(usize, f64, usize)>, open: bool| -> Trade {
         let lots = legs.len() as f64;
         // a trade that re-buys after scale-outs can buy more than 5 lots in all; its lots then share the allocation
+        // (for the normalized trade return only; the YT money account books every lot at 1/5 of the equity at its own
+        // bar, books::ab::Sizing::lot_w, as AmiBroker does: SV-Audit % Swing Error 2)
         if lots > 5.0 {
             for l in legs.iter_mut() {
                 l.w = 1.0 / lots;
@@ -702,9 +704,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     (m.iter().map(|&v| v == 1).collect(), m.iter().map(|&v| v == -1).collect())
                 }
                 2 => {
-                    // diff AFL: FLTBuy = C > MA on the filter timeframe; FLTShort = not that
+                    // diff AFL: FLTBuy = C > MA on the filter timeframe; FLTShort = weeklyfltexpand == 0, i.e. the close is
+                    // not above the MA: only once the MA has a value (a comparison with Null is false in AmiBroker), and
+                    // a close equal to the MA counts (SV-Audit % Swing Error 1)
                     let (up, _) = sma_filter(x, tf_of(gi("flt_tf"), true), gu("sma"), false);
-                    let dn = up.iter().map(|v| !v).collect();
+                    let bb = compress(x, tf_of(gi("flt_tf"), true));
+                    let ma = sma(&bb.c, gu("sma"));
+                    let dn_c: Vec<bool> = (0..bb.c.len()).map(|g| ma[g].map_or(false, |m| bb.c[g] <= m)).collect();
+                    let dn = expand_last(&dn_c, &bb);
                     (up, dn)
                 }
                 _ => (vec![true; n], vec![true; n]),

@@ -88,7 +88,7 @@ fn fst_signals(x: &Ctx, tr: &[i8], k: &Cfg) -> Sigs {
             s.entry[i] = true;
             if k.trail > 0.0 {
                 hh = h[i];
-                tsl = (1.0 - k.trail * 0.01) * hh;
+                tsl = crate::books::ab::mul32(1.0 - k.trail * 0.01, hh);
             }
             my_high = 0.0;
             pos = true;
@@ -98,7 +98,7 @@ fn fst_signals(x: &Ctx, tr: &[i8], k: &Cfg) -> Sigs {
             }
             if l[i] <= tsl && !lo_circuit(i) {
                 s.exit[i] = true;
-                s.exit_px[i] = if o[i] < tsl { o[i] - o[i] * k.buf / 100.0 } else { tsl };
+                s.exit_px[i] = if o[i] < tsl { crate::books::ab::addmul(o[i], -k.buf / 100.0) } else { tsl };
                 s.why[i] = "Trailing SL";
                 pos = false;
                 hh = BIG;
@@ -106,7 +106,7 @@ fn fst_signals(x: &Ctx, tr: &[i8], k: &Cfg) -> Sigs {
                 abc = 2;
             }
             if k.trail > 0.0 {
-                tsl = (1.0 - k.trail * 0.01) * hh;
+                tsl = crate::books::ab::mul32(1.0 - k.trail * 0.01, hh);
             }
         }
     }
