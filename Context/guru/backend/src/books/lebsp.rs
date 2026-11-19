@@ -45,8 +45,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Manual 'Remarkable S&P Trading System v1.3' (remark13.doc) + TradeStation code; code wins (e.g. the short trigger uses the setup bar's low minus 0.25 x range; the 5-bar window counts from the first penetration). ATR = Round(AvgTrueRange(10),2), ADX rounded to 2 decimals as in the code. The MaxTradeClose/MinTradeClose variables are reset only while flat, as written. RoundDownSP's body is not printed: read as down to 0.1. Reproduces 111/114 printed trades on the manual's SP.LNG (3 differ by 0.1 point in one order price). Dollar amounts are converted to the manual's own index points (dollars / point value) and used unchanged on whichever index is selected (instrument swap only, no rescaling), so on NIFTY 50 or a 2020s SPX these fixed-point stops are far tighter in percent than in the 1990s.",
             Some(Claim { trades: "114 (70 long, 44 short)", win: "84%", avg: "$1,818.97 (net of $150)", hold: "9 bars winners / 11 bars losers", period: "10/17/88-12/31/98, S&P futures, $250/pt" })),
         make("lebsp_piranha", "Piranha S&P Trading System v1.0", "Piranha S&P v1.0 manual (1999)", "Long/Short",
-            Status::NeedsData("T-bond futures closes (Data2: 30-year Treasury bond futures, continuous back-adjusted, day session) for the 120-day bond trend filter; the vault has no bond futures. Code reads series TBOND_FUT_CLOSE."),
-            &["TBOND_FUT_CLOSE"],
+            Status::Live, &[],
             &["F|Long: bond futures close above their 120-day MA; ADX(14) > 15; RSI(5) < 65",
               "E|Long: \"buy tomorrow on a stop order at today's close plus 0.25 Average True Ranges\" (ATR 30 days)",
               "X|Long: \"If the highest close of the trade is 6 points ($1500) or more above our entry we will exit on a stop placed at the highest high of the trade minus 6 points\" (code: MaxTradeClose > EntryPrice + 6 -> MaxTradeHigh[1] - 6 stop)",
@@ -55,7 +54,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Short: \"sell short tomorrow on a stop order at the highest high of the last two days minus 1.8 Average True Ranges\"",
               "X|Short: lowest close 10 points below entry -> buy stop at the lowest low of the trade (through yesterday) + 8; close above entry -> buy stop at close + 12",
               "X|\"We will exit on a stop when our loss reaches $10,000\" (= 40 points). An opposite entry reverses."],
-            "Manual 'Piranha S&P Trading System v1.0' (piranha.doc). Needs the T-bond futures series (none in the vault). With the manual's own SP.LNG + UA.LNG the code reproduces all 156 printed trades (06/15/88-10/29/99). The bond 120-day average is taken over the bond's own bars.",
+            "Manual 'Piranha S&P Trading System v1.0' (piranha.doc). Runs ONLY on the Norgate S&P 500 continuous contract (&SP) with the Norgate T-bond contract (&ZB) as Data2 (R4 #293, #340, F2 lane); the stops are in the traded contract's own points as printed, so no index (SPX) runs. With the manual's own SP.LNG + UA.LNG the code reproduces all 156 printed trades (06/15/88-10/29/99). The bond 120-day average is taken over the bond's own bars.",
             Some(Claim { trades: "156 (127 long, 29 short)", win: "76%", avg: "$1,955.37 (net of $150)", hold: "12 bars winners / 9 bars losers", period: "6/15/88-10/29/99, S&P futures, $250/pt" })),
         make("lebsp_piranha2", "Modified Piranha S&P (2002)", "Piranha 'New' version (LeBeau, Elden, Arnheim, 15 Jan 2002)", "Long", Status::Live, &[],
             &["F|\"On an uptrend (C > C[12])\"; \"Where ADX confirms trend\" (code: Adx(14) > 15); \"RSI must be within 35 and 65\" (code: RSI(C,4) < 65 and > 35)",
@@ -200,6 +199,8 @@ fn o(k: K, ty: Ty, px: f64, name: &'static str) -> Ord { Ord { k, ty, px, name }
 #[derive(Clone, Copy, Default)]
 struct Pos { mp: i8, ep: f64 }
 
+#[cfg(test)]
+thread_local! { static FORCE_PATH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; } // test only: 1 = open-high-low-close, 2 = open-low-high-close
 /// First (distance along the bar path, fill price) at which `px` is reached at or after `t0`.
 /// Path: open -> nearer of high/low -> the other -> close. `rising`: fills when price trades up to px.
 fn touch(o: f64, h: f64, l: f64, c: f64, px: f64, rising: bool, t0: f64) -> Option<(f64, f64)> {
@@ -207,6 +208,8 @@ fn touch(o: f64, h: f64, l: f64, c: f64, px: f64, rising: bool, t0: f64) -> Opti
         return Some((0., o));
     }
     let pts = if h - o <= o - l { [o, h, l, c] } else { [o, l, h, c] };
+    #[cfg(test)]
+    let pts = match FORCE_PATH.with(|f| f.get()) { 1 => [o, h, l, c], 2 => [o, l, h, c], _ => pts };
     let mut t = 0.;
     for w in pts.windows(2) {
         let (a, b) = (w[0], w[1]);
@@ -411,8 +414,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "lebsp_piranha" => {
-            let bond = x.series("TBOND_FUT_CLOSE")?;
-            let bma = bond_ma(bond, u("bond_n"));
+            // Data2 = the T-bond. On the Norgate &SP context it is the Norgate &ZB contract (futures::DATA2) joined by date (second::align, EP4 #223):
+            // the 120-day average is "of Data2", i.e. over the bond's own bars, and a S&P date without a bond bar shows the previous bond bar.
+            // A test may pass the manual's own series as TBOND_FUT_CLOSE (bars on the S&P's dates only).
+            let n_b = u("bond_n");
+            let (bma, bcl): (Vec<f64>, Vec<f64>) = match x.series("TBOND_FUT_CLOSE") {
+                Some(b) => (bond_ma(b, n_b), (0..b.len()).map(|k| last_valid(b, k)).collect()),
+                None => {
+                    let Some(zb) = crate::futures::rows("&ZB").filter(|_| crate::futures::ctx_market(x).is_some()) else { return Some(vec![]) }; // readiness refuses (data2_issue)
+                    let z = crate::second::align("&ZB", x.r, zb);
+                    (z.own(|r| sma(&r.iter().map(|q| q.close).collect::<Vec<_>>(), n_b)), z.carried(crate::second::Field::C))
+                }
+            };
             let r = crate::connors::rsi(c, u("rsi_n"));
             let a = atr_sma(x, u("atr_n"));
             let adx = dmi3(x, 14).2;
@@ -423,7 +436,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let prev = e;
                 e = e.step(pos.mp, h[k], l[k], c[k]);
                 let mut v = vec![];
-                let bc = last_valid(bond, k);
+                let bc = bcl[k];
                 let c5 = gt(adx[k], amin);
                 if pos.mp != 1 && lt(r[k], rl) && lt(bma[k], bc) && c5 { v.push(o(K::Buy, Ty::Stop, c[k] + kl * a[k], "L Entry")); }
                 if pos.mp == 1 {
@@ -564,6 +577,42 @@ mod tests {
         let (n, net, w) = usd(&ts, 250.);
         assert_eq!((n, w), (156, 119)); // Table 1: 156 trades, 119 winners, $305,037.50
         assert!((net - 305037.5).abs() < 1e-6, "{net}");
+    }
+
+    /// Lane F2 report (ignored; needs the Norgate files): Piranha on &SP + &ZB over a window, trades to F2_OUT, and the share of trades whose
+    /// fills differ between the two possible intrabar paths (R4 #240). F2_FUT = the futures/norgate-20200908 directory.
+    #[test]
+    #[ignore]
+    fn piranha_norgate_report() {
+        let dir = std::env::var("F2_FUT").unwrap();
+        let rd = |sym: &str| -> Vec<Row> {
+            let raw: std::collections::HashSet<String> = std::fs::read_to_string(format!("{dir}/{sym}.csv")).unwrap().lines().skip(1).map(|l| l.split(',').next().unwrap().trim_matches('"').to_string()).collect();
+            std::fs::read_to_string(format!("{dir}/{sym}_CCB.csv")).unwrap().lines().skip(1).filter_map(|l| {
+                let f: Vec<f64> = l.split(',').skip(3).take(4).map(|v| v.trim_matches('"').parse().unwrap()).collect();
+                let d = l.split(',').next().unwrap().trim_matches('"').to_string();
+                raw.contains(&d).then(|| Row { ticker: sym.into(), date: d, open: f[0], high: f[1], low: f[2], close: f[3], volume: None })
+            }).collect()
+        };
+        let tk = crate::futures::ticker(crate::futures::MARKETS.iter().find(|m| m.sym == "&SP").unwrap());
+        let (sp, zb): (Vec<Row>, Vec<Row>) = (rd("&SP").into_iter().map(|r| Row { ticker: tk.clone(), ..r }).collect(), rd("&ZB"));
+        crate::futures::TEST_ROWS.with(|t| t.borrow_mut().insert("&ZB", Box::leak(zb.into_boxed_slice())));
+        let (a, b) = (std::env::var("F2_FROM").unwrap_or("1988-06-15".into()), std::env::var("F2_TO").unwrap_or("1999-10-29".into()));
+        let x = Ctx::new(&sp, &sp, &[]);
+        let i0 = sp.iter().position(|r| r.date >= a).unwrap();
+        let i1 = sp.iter().rposition(|r| r.date <= b).unwrap();
+        let key = |ts: &[Trade]| ts.iter().map(|t| format!("{} {} {} {}", sp[t.legs[0].i].date, t.dir, t.legs[0].px, if t.open { String::new() } else { format!("{} {}", sp[t.exit_i].date, t.exit_px) })).collect::<Vec<_>>();
+        let go = |path: u8| { FORCE_PATH.with(|f| f.set(path)); let r = run("lebsp_piranha", &x, i0, i1, &Params::new()).unwrap(); FORCE_PATH.with(|f| f.set(0)); r };
+        let (d, p1, p2) = (go(0), go(1), go(2));
+        let (kd, k1, k2) = (key(&d), key(&p1), key(&p2));
+        let diff = kd.iter().filter(|k| !k1.contains(k) || !k2.contains(k)).count();
+        let (n, net, w) = usd(&d, 250.);
+        println!("F2 {a}..{b}: trades {} closed {n} win {w} net ${net:.2} order-dependent {diff} = {:.1}% (OHLC-only differs {}, OLHC-only differs {})", d.len(), 100. * diff as f64 / d.len() as f64,
+            kd.iter().filter(|k| !k1.contains(k)).count(), kd.iter().filter(|k| !k2.contains(k)).count());
+        if let Ok(o) = std::env::var("F2_OUT") {
+            let mut s = String::from("entry_date,side,entry_px,exit_date,exit_px,reason\n");
+            for t in &d { s += &format!("{},{},{},{},{},{}\n", sp[t.legs[0].i].date, t.dir, t.legs[0].px, sp[t.exit_i].date, t.exit_px, t.reason); }
+            std::fs::write(o, s).unwrap();
+        }
     }
 
     #[test]
