@@ -5,12 +5,10 @@
 use crate::connors::{dmi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mmpoulos";
-pub const REVIEWED: &[&str] = &["mmp4_div", "mmp2_retrace"];
+pub const REVIEWED: &[&str] = &["mmp4_div"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "[Unstated details, 4 (R4 #343)] (1) The 8% gap stand-aside (slide 9: a gap that leaves a gap above 8% of the setup-day close; the downtrend mirror, slide 6) prints no window; read as any gap in the 40 bars that make the 40-day extreme. (2) Day-10 step (slide 19, 'not hit within ten days after entry'): applied at the close of the 10th day after the entry day, effective the next bar. (3) That step is a single change of the stop to the HH4 (LL4) plus (minus) the buffer; the slide does not say whether it is re-trailed daily afterwards, so it is not (a later half-target trail HH2 / LL2 still applies and only tightens: M1 slide 19, M2 slide 18, 'we never lower stops'). (4) Inside one daily bar the stop is tested before the profit target (stop first; a fill at or beyond the stop on the entry bar is no trade). Labelled, not counted: a gap is a low above the previous high (a high below the previous low); the search criteria of slides 31-36, which spell the Point 1/2/3 picture as N-days-ago tests and include the 50-day average above its value 5 days ago, are the rule. Book-literal: limit entry at the setup-day 20-day SMA for one day only; initial stop at the HH4 (LL4) of the setup day (Point 3) plus (minus) 0.5% of that level (price >= 50) or 25 cents; half covered at the 50-day SMA of the prior close (moves daily); the rest trails the HH2 / LL2 plus / minus the buffer. ADX(14,14) is Wilder's; slow stochastic 8-3-3 is the usual built-in (fast %K over 8 bars, slow %K = 3-bar SMA) (R4 #339). US stocks use the printed price 10-200 and 50-day volume >= 500,000 screens and the wide-range screen max high(65) - min low(65) > 10 dollars or that / close > .30 (M1 line 1570, M2 slides 26 and 34, M3 slide 29: printed .30). India (Nifty 50) is a declared adaptation (R4 #340): the course says to change the price range and the volume level for local markets and gives no values, so the dollar price band and the absolute 10 are dropped, the 500,000-share volume and the .30 ratio are kept as printed, and the 50-dollar buffer switch, the 25-cent buffer and the 10 / 200 band act on the basket's rupee prices; read India results as indicative only. UNVERIFIED: the course prints chart examples, not results.";
-
-const NOTE2: &str = "[Unstated details, 4 (R4 #343)] (1) Stand-aside: 'until the bearish divergence profit target is hit or stopped out ten days after entry' (slide 7) is read as: from a Method 4 divergence setup day (the card's own Method 4 rule, same stock, own position rule) until that hypothetical trade's first half-position target or exit, or the next day if its order never fills. (2) The close-in-range alternative to %K is the printed arithmetic of the setup slides (long: close < max high(20) - 0.6 x (max high(20) - min low(10)); short: close > min low(20) + 0.6 x (max high(10) - min low(20))); the search slide 27 calls the long one 'the upper 40%', which contradicts that arithmetic. (3) The initial stop is the LL4 (HH4) of the four days ending on the setup day, minus (plus) the buffer, known before the entry ('known precisely prior to entering'); the slide 19 example counts the entry day as one of the four. (4) Inside one daily bar the stop is tested before the 10% target (stop first). Labelled, not counted (printed): the 50-day SMA above yesterday's and 5 days ago's value (slide 34, 'I add that because I don't want a chart where it just turned up'); the gap switch uses 'half a percent of the gap day high' (or 25 cents under $50), is tested on the gap day's own range, and once made the LL2 / HH2 trail stays on (slide 18: 'we trailed those LL2 stops as the market went higher'); stops are never lowered. Book-literal: retrace then confirm: lowest low of 5 days below the 20-day SMA of that day (short: highest high above it); close back through the 7-day SMA and beyond yesterday's high (low), or the last non-inside day's when yesterday is an inside day; %K(8,3,3) <= 40 (>= 60) or the range arithmetic; ADX(14,14) > 20; buy (sell short) next day at the setup-day close on a limit, one day only; half at 10%, the rest on the LL4 / HH4 trail with the LL2 / HH2 switch after a gap to a new 20-day extreme. Screens, ADX and stochastic as Method 4 (US 10-200 dollars, 500,000 shares, wide range .30 as printed). India (Nifty 50) is a declared adaptation (R4 #340): the course says to change the price range and the volume level for local markets and gives no values, so the dollar band and the absolute 10 are dropped, 500,000 shares and .30 are kept, and the 50-dollar buffer switch, the 25-cent buffer and the 50-dollar gap threshold act on rupee prices; indicative only. UNVERIFIED: chart examples only.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "mmp4_div", name: "Poulos Method 4: sell short a bearish divergence (buy a bullish one) at the 20-day SMA limit, stop beyond Point 3, half at the 50-day SMA, rest on a 2-bar trail", group: "Market Mastery Protege Program (Poulos)", session: 0, dir: "Long/Short", status: Status::Live,
@@ -18,17 +16,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Bearish setup day: SMA50 today > SMA50 yesterday and 5 days ago; no gap up above 8% of the close in the last 40 days (slide 9); max high(4) = max high(40); high < max of the 3 prior highs, or (high > prior high and low < prior low and close below the middle of the range); slow %K(8,3,3) between 65 and 92; %K yesterday minus %K today >= 3; %K yesterday < %K N days ago - 4 for some N in 8..26; close > SMA20; %K < 65 N days ago for some N in 3..13; ADX(14,14) > 20 (slides 31-33). Bullish: the mirror (SMA50 falling, no gap down above 8%) with %K between 8 and 35, hooking up >= 3, %K yesterday > %K N days ago + 4, %K > 35 N days ago (slides 34-36).",
             "E|Next day only: sell short (buy) at the setup-day 20-day SMA on a limit; if not filled that day, stand aside (slide 11, slide 10 of the bullish part).",
             "X|Stop at the setup-day HH4 (LL4) = Point 3 plus (minus) 0.5% of it (price >= 50) or 25 cents; half covered at the 50-day SMA on a limit; the rest at HH2 (LL2) plus (minus) the buffer on a stop; if the target is not hit within 10 days the stop is changed (once) to the HH4 (LL4) plus (minus) the buffer (slides 13, 17-19, 12)."],
-        notes: NOTE, claim: None },
-    StrategyDef { id: "mmp2_retrace", name: "Poulos Method 2: buy (sell short) the close back through the 7-day SMA after a retrace, limit at that close, 10% on half, LL4 trail", group: "Market Mastery Protege Program (Poulos)", session: 0, dir: "Long/Short", status: Status::Live,
-        needs_volume: true, needs_vix: false, needs_series: &[], book: BOOK, rules: &[
-            "F|Uptrend setup day: SMA50 above its value yesterday and 5 days ago; the lowest low of the last 5 days below the SMA20 of that day; yesterday's close below and today's close above the 7-day SMA and above yesterday's high (the last non-inside day's high if yesterday is an inside day); %K(8,3,3) <= 40 or the close in the lower part of the 20-day range by the printed arithmetic; ADX(14,14) > 20; stand aside during a pending bearish divergence (M2 slides 6-7). Downtrend: the mirror (slides 3-4 of the downtrend part).",
-            "E|Next day only: buy (sell short) at the setup-day close on a limit (slide 9; downtrend slide 7).",
-            "X|Initial stop at the LL4 (HH4) minus (plus) 0.5% (price >= 50) or 25 cents; half sold (covered) at 1.10 (0.90) x the entry on a limit; the rest on the LL4 (HH4) trail with the LL2 (HH2) switch after a gap beyond 0.5% / 25 cents to a new 20-day extreme, never loosened (slides 11, 15-17; downtrend 9, 13)."],
-        notes: NOTE2, claim: None }]
+        notes: NOTE, claim: None }]
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then(|| if id == "mmp4_div" { ("mmp4_div", "Poulos Method 4 divergence", "20-day limit, 50-day target") } else { ("mmp2_retrace", "Poulos Method 2 retrace", "7-day SMA close, 10% half") })
+    reviewed(id).then(|| ("mmp4_div", "Poulos Method 4 divergence", "20-day limit, 50-day target"))
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -163,93 +155,12 @@ fn scale_trade(d: f64, j: usize, e: f64, sig: usize, last: usize, closed: bool, 
 
 /// Methods 1-3 position management after the fill on bar j: initial stop, half at 10%, LL4 / HH4 trail (2-bar after a gap
 /// to a new 20-day extreme), stop first inside a bar, stops only tightened. Returns (exits, last bar, closed, reason).
-fn manage_trend(x: &Ctx, d: f64, j: usize, e: f64, stop0: f64, to: usize) -> (Vec<(usize, f64, f64)>, usize, bool, &'static str) {
-    let (o, h, l) = (&x.o, &x.h, &x.l);
-    let (mut stop, mut half, mut two) = (stop0, false, false);
-    let mut exits = Vec::new();
-    let tgt = e * (1.0 + d * 0.10);
-    let mut last = j;
-    for b in j..=to {
-        last = b;
-        let hit = if d > 0.0 { l[b] <= stop } else { h[b] >= stop };
-        if hit {
-            let px = if d > 0.0 { o[b].min(stop) } else { o[b].max(stop) };
-            exits.push((b, px, if half { 0.5 } else { 1.0 }));
-            return (exits, b, true, if half { "Trailing stop (rest)" } else if two || stop != stop0 { "Trailing stop" } else { "Initial stop" });
-        }
-        if !half && (if d > 0.0 { h[b] >= tgt } else { l[b] <= tgt }) {
-            exits.push((b, if d > 0.0 { o[b].max(tgt) } else { o[b].min(tgt) }, 0.5));
-            half = true;
-        }
-        if b >= 1 {
-            let gap = if d > 0.0 { l[b] - h[b - 1] } else { l[b - 1] - h[b] };
-            let thr = if h[b] >= 50.0 { 0.005 * h[b] } else { 0.25 }; // 'half a percent of the gap day high'
-            let new_ext = if d > 0.0 { h[b] >= hi(h, b, 20) } else { l[b] <= lo(l, b, 20) };
-            if gap > thr && new_ext { two = true; }
-        }
-        let nn = if two { 2 } else { 4 };
-        let lv = if d > 0.0 { lo(l, b, nn) } else { hi(h, b, nn) };
-        let tr = if d > 0.0 { lv - buf(lv) } else { lv + buf(lv) };
-        stop = if d > 0.0 { stop.max(tr) } else { stop.min(tr) };
-    }
-    (exits, last, false, "open")
-}
-
-
-fn blocked(blocks: &[(f64, usize, usize)], d: f64, t: usize) -> bool { blocks.iter().any(|b| b.0 == -d && b.1 <= t && t <= b.2) }
-
-/// Method 2 setup on day t (retrace to support / resistance, then a confirming close): Some(direction).
-fn m2_setup(x: &Ctx, n: &Ind, t: usize) -> Option<f64> {
-    let (h, l, c, k) = (&x.h, &x.l, &x.c, &n.k);
-    if t < 66 || !n.adx[t].is_finite() || !n.s50[t].is_finite() || !n.s50[t - 1].is_finite() || !n.s7[t].is_finite() || !n.s7[t - 1].is_finite() || !k[t].is_finite() || !screens(x, n, t) || n.adx[t] <= 20.0 { return None; }
-    let inside = |i: usize| h[i] < h[i - 1] && l[i] > l[i - 1];
-    let mut q = t - 1;
-    while inside(q) { q -= 1; }
-    if n.s50[t] > n.s50[t - 1] && n.s50[t] > n.s50[t - 5] {
-        let im = (t - 4..=t).min_by(|a, b| l[*a].partial_cmp(&l[*b]).unwrap().then(b.cmp(a))).unwrap();
-        let (h20, l10) = (hi(h, t, 20), lo(l, t, 10));
-        if l[im] < n.s20[im] && c[t - 1] < n.s7[t - 1] && c[t] > n.s7[t] && c[t] > h[q] && (k[t] <= 40.0 || c[t] < h20 - 0.6 * (h20 - l10)) { return Some(1.0); }
-    }
-    if n.s50[t] < n.s50[t - 1] && n.s50[t] < n.s50[t - 5] {
-        let im = (t - 4..=t).max_by(|a, b| h[*a].partial_cmp(&h[*b]).unwrap().then(a.cmp(b))).unwrap();
-        let (l20, h10) = (lo(l, t, 20), hi(h, t, 10));
-        if h[im] > n.s20[im] && c[t - 1] > n.s7[t - 1] && c[t] < n.s7[t] && c[t] < l[q] && (k[t] >= 60.0 || c[t] > l20 + 0.6 * (h10 - l20)) { return Some(-1.0); }
-    }
-    None
-}
-
-fn run_m2(x: &Ctx, n: &Ind, from: usize, to: usize, days: usize) -> Vec<Trade> {
-    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
-    let (_, blocks) = m4_walk(x, n, 0, x.r.len() - 1, days);
-    let mut out = Vec::new();
-    let mut t = from.max(66);
-    while t < to {
-        let Some(d) = m2_setup(x, n, t) else { t += 1; continue };
-        if blocked(&blocks, d, t) { t += 1; continue; }
-        let j = t + 1;
-        let lim = c[t];
-        let fill = if d > 0.0 { (l[j] <= lim).then(|| o[j].min(lim)) } else { (h[j] >= lim).then(|| o[j].max(lim)) };
-        let Some(e) = fill else { t += 1; continue };
-        let istop = if d > 0.0 { let v = lo(l, t, 4); v - buf(v) } else { let v = hi(h, t, 4); v + buf(v) };
-        if d * (e - istop) <= 0.0 { t += 1; continue; }
-        let (exits, last, closed, why) = manage_trend(x, d, j, e, istop, to);
-        out.push(scale_trade(d, j, e, t, last, closed, why, exits, c[last], to, c[to], "limit"));
-        if !closed { break; }
-        t = last;
-    }
-    out
-}
-
-
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let (screen, days) = (g("screen", 1.) > 0.5, g("days", 10.).round() as usize);
     let n = ind(x, screen);
-    Some(match id {
-        "mmp4_div" => m4_walk(x, &n, from, to, days).0,
-        _ => run_m2(x, &n, from, to, days),
-    })
+    Some(m4_walk(x, &n, from, to, days).0)
 }
 
 #[cfg(test)]
