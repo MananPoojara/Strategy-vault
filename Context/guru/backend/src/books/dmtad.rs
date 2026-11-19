@@ -21,7 +21,7 @@ const SERIES: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYS
 pub fn catalogue() -> Vec<StrategyDef> {
     let mut v = base_catalogue();
     let t = v.first().map(|b| StrategyDef { id: "dmtad_turbo_nse", name: "Turbo A/D, NH, NL market system on NSE breadth", group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix,
-        needs_series: SERIES_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{NSE_NOTE}{}", "Turbo A/D rule, default inputs. Overlap with the NYSE series (NSE run 2019-10-27..2020-02-10, NYSE advances / declines end 2020-02-10; NYSE 2019-10-16..2020-02-10): NSE twin (NIFTY 50) 1 trade (3.4 a year, long 40% of days); NYSE original (SPX) no trade. Longest gap-free NSE stretch 2025-07-25..2026-10-06: 4 trades = 3.4 a year, long 46.3%; NYSE original over its own run 2002-06-21..2019-08-19: 70 trades = 4.1 a year, long 87.9%.").into_boxed_str()), claim: None });
+        needs_series: SERIES_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{NSE_NOTE}{} Original card (labelled details apply unchanged): {}", "Turbo A/D rule, default inputs. Overlap with the NYSE series (NSE run 2019-10-27..2020-02-10, NYSE advances / declines end 2020-02-10; NYSE 2019-10-16..2020-02-10): NSE twin (NIFTY 50) 1 trade (3.4 a year, long 40% of days); NYSE original (SPX) no trade. Longest gap-free NSE stretch 2025-07-25..2026-10-06: 4 trades = 3.4 a year, long 46.3%; NYSE original over its own run 2002-06-21..2019-08-19: 70 trades = 4.1 a year, long 87.9%.", b.notes).into_boxed_str()), claim: None });
     v.extend(t);
     v
 }

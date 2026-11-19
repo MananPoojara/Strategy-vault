@@ -16,7 +16,7 @@ const NOTE: &str = "[Adapted: 2 unstated details, R4 #297; verified on the book 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mut v = base_catalogue();
     let t = v.first().map(|b| StrategyDef { id: "dmtfly_flying_nse", name: "Meyers flying Titanic on NSE breadth: buy breadth thrusts after a 9% drop, sell new-low divergence after a 52-week high", group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix,
-        needs_series: SERIES_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{NSE_NOTE}{}", "Flying Titanic rule, default inputs. Overlap (NSE run 2019-10-27..2020-02-10; NYSE 2019-10-16..2020-02-10): NSE twin (NIFTY 50) no trade; NYSE original (SPX) 1 trade (3.2 a year, long 78.8%). Longest gap-free NSE stretch 2025-07-25..2026-10-06: 2 trades = 1.7 a year, long 42.9%; NYSE original over its own run 2014-01-02..2019-08-19: 19 trades = 3.4 a year, long 66.3%.").into_boxed_str()), claim: None });
+        needs_series: SERIES_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{NSE_NOTE}{} Original card (labelled details apply unchanged): {}", "Flying Titanic rule, default inputs. Overlap (NSE run 2019-10-27..2020-02-10; NYSE 2019-10-16..2020-02-10): NSE twin (NIFTY 50) no trade; NYSE original (SPX) 1 trade (3.2 a year, long 78.8%). Longest gap-free NSE stretch 2025-07-25..2026-10-06: 2 trades = 1.7 a year, long 42.9%; NYSE original over its own run 2014-01-02..2019-08-19: 19 trades = 3.4 a year, long 66.3%.", b.notes).into_boxed_str()), claim: None });
     v.extend(t);
     v
 }
