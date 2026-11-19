@@ -485,11 +485,14 @@ fn defs() -> Vec<Def> {
         "X|Long: ExitLong next bar at BotBand stop; short: ExitShort next bar at TopBand stop"],
       "Vol 1 ch.2 p.35-42. Volatility = TradeStation Volatility function (Wilder-smoothed true range). Bands start on BarNumber 1 = first bar after MaxBarsBack (18). Book report is a figure (54% losing trades).",
       ("stad_tf", "Trend Follower", "Vol 1")),
-    d("stad1_spread", "Spread (stock vs index % change)", "Vol 1 · Support/Resistance", "Long/Short",
-      NeedsData("Needs a second aligned data stream (Data2 = the related index, e.g. DJIA, for each traded stock) and the share count behind the $100 'LowProf' stale-trade threshold; the engine runs one symbol per strategy."),
-      &["F|Spread = (PctChange(Data1,10) / PctChange(Data2,10)) * 100 (p.46 code)", "E|Spread < 92: buy this bar on close; Spread > 108: sell this bar on close",
-        "X|If PositionProfit > 0: trail Lowest(Low,6) / Highest(High,6) stop", "X|BarsSinceEntry > 6 and PositionProfit < $100: exit this bar on close"],
-      "Vol 1 ch.3 p.44-50.", ("stad_spread", "Spread", "Vol 1")),
+    Def { series: &["BENCH.C"], ..d("stad1_spread", "Spread (traded market vs the S&P 500, 10-day % change)", "Vol 1 · Support/Resistance", "Long/Short", Live,
+      &["F|PctChange1 = (Close - Close[Length]) / Close[Length] * 100 for Data1 and the same for Data2 (Length 10; the variable keeps its value when Close[Length] = 0); Spread = PctChange1 / PctChange2 * 100 when PctChange2 <> 0 (Vol 1 p.46-47 code)",
+        "E|\"If Spread < OSLevel (92) then Buy this bar at Close\"; \"If Spread > OBLevel (108) then Sell this bar at Close\" (p.46-47); no multiple entries in the same direction (p.48), so a sell while long reverses",
+        "X|If PositionProfit > 0: long ExitLong next bar at Lowest(Low,TrailBar 6) - ExtraMeasure (0) stop; short ExitShort next bar at Highest(High,6) + ExtraMeasure stop (the prose says 'lowest low' for both, the code's mirror wins; p.46-47)",
+        "X|If BarsSinceEntry > 6 and PositionProfit < LowProf ($100): exit this bar at Close (stale position, p.47)",
+        "A|[Declared readings] (1) Data2: the book's example is the Dow (p.44); here BENCH.C = the S&P 500 close on the traded dates, the benchmark itself refused. (2) PositionProfit in dollars needs a share count the book does not print: 100 shares (STAD's 100-share unit), so LowProf = $1.00 a share; only dollar-priced US ETFs without splits run (DIA, IWM, MDY, QQQ; gate allowed list). (3) The money-management stop's 'appropriate dollar amount' (p.48) is not given and is not modelled. Fills at the close / next bar and PositionProfit read before the bar's own fills are engine conventions, not counted."],
+      "Vol 1 ch.3 p.44-50 (EasyLanguage 'Spread System'; Figure 3-2 is a report image with no numbers in the text). Lane H3 (19 Nov 2026): re-decided from needs-data after the EP4 benchmark series (stad4_spread_up/_dn, decision #229) made Data2 available; independent reference authors/held-1119/H3/h3_ref.py.",
+      ("stad_spread", "Spread", "Vol 1")) },
     d("stad1_sr", "Support and Resistance Levels", "Vol 1 · Support/Resistance", "Long/Short", Live,
       &["F|Swing high/low strength 5 (>= 5 bars before, > 5 bars after); keep the last 3; SwingHAvg / SwingLAvg = their averages; HighestHi / LowestLo of the stored swings (p.52-53 code; arrays start at 0)",
         "F|Condition1: SwingHAvg - SwingLAvg > Average(TrueRange,10)*2; Condition2: (SwingHAvg-LowestLo)/(HighestHi-LowestLo) > .66 and (SwingLAvg-LowestLo)/(..) < .33; Condition3: SwingLAvg < Close < SwingHAvg",
@@ -771,6 +774,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
             p("slope_mode", "Slope test: 0 = |change| > pts (Vol 2 errata), 1 = arctangent > deg (original)", 0., 0., 1., 1.),
             p("pts", "Minimum line change per bar (points)", 2., 0., 10., 0.5), p("deg", "Minimum slope (degrees, option 1)", 10., 0., 45., 5.), p("trail", "Trailing stop bars", 6., 3., 15., 1.)],
         "stad1_tf" => vec![p("xma", "XAverage length", 4., 2., 10., 1.), p("vol", "Volatility length", 8., 4., 20., 1.), p("mult", "Band factor", 2., 1., 4., 0.5)],
+        "stad1_spread" => vec![p("len", "Percent-change bars (Length)", 10., 2., 30., 1.), p("ob", "Overbought level (OBLevel)", 108., 100., 200., 1.), p("os", "Oversold level (OSLevel)", 92., 0., 100., 1.), p("trail", "Trailing stop bars (TrailBar)", 6., 2., 20., 1.), p("extra", "ExtraMeasure (price units)", 0., 0., 5., 0.05), p("lowprof", "LowProf ($ of position profit)", 100., 0., 1000., 10.), p("shares", "Shares behind PositionProfit (reading)", 100., 1., 1000., 1.)],
         "stad1_sr" => vec![p("strength", "Swing strength", 5., 2., 10., 1.), p("nswing", "Swings averaged", 3., 2., 6., 1.), p("trail", "Trailing stop bars", 5., 3., 15., 1.)],
         "stad1_chbo" => vec![p("len", "Channel bars", 10., 5., 30., 1.), p("brk", "Breakouts required", 2., 1., 4., 1.), p("trail", "Trailing stop bars", 6., 3., 15., 1.)],
         "stad1_volex" => vec![p("lmult", "Long range factor", 1.2, 0.5, 2.5, 0.1), p("smult", "Short range factor", 1.8, 0.5, 3., 0.1),
@@ -917,6 +921,29 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if xa[i] < bot && bear { now.push(o(A::Sell, P::Mkt, "TF Sell")); top = bot; bot -= vol[i] * mf; }
                 if st.pos == 1 { nx.push(o(A::Xl, P::Stop(bot), "BotBand LX")); }
                 if st.pos == -1 { nx.push(o(A::Xs, P::Stop(top), "TopBand SX")); }
+            })
+        }
+        "stad1_spread" => {
+            let Some(m) = x.series("BENCH.C") else { return Some(vec![]) };
+            let s0 = crate::second::run_start(&[m], from);
+            let (len, tb) = (u("len"), u("trail"));
+            let (ob, os, extra, lowprof) = (g("ob"), g("os"), g("extra"), g("lowprof") / g("shares").max(1.0));
+            let pct = |v: &[f64]| { let mut out = vec![f64::NAN; n]; let mut cur = 0.0; // a variable keeps its value when Close[Len] = 0
+                for i in s0 + len..n { if v[i - len] != 0.0 { cur = (v[i] - v[i - len]) / v[i - len] * 100.0; } out[i] = cur; } out };
+            let (p1, p2) = (pct(c), pct(m));
+            let mut sp = vec![f64::NAN; n]; let mut cur = f64::NAN; // Spread keeps its value when PctChange2 = 0
+            for i in s0 + len..n { if p2[i] != 0.0 { cur = p1[i] / p2[i] * 100.0; } sp[i] = cur; }
+            run_ts(x, from, to, s0 + len.max(tb), |i, st, now, nx| {
+                if sp[i] < os { now.push(o(A::Buy, P::Mkt, "Spread Buy")); }
+                if sp[i] > ob { now.push(o(A::Sell, P::Mkt, "Spread Sell")); }
+                let pp = st.profit_pts(c[i]);
+                if pp > 0.0 {
+                    nx.push(o(A::Xl, P::Stop(lowest(l, tb, i) - extra), "LongTrail Stop"));
+                    nx.push(o(A::Xs, P::Stop(highest(h, tb, i) + extra), "ShortTrail Stop"));
+                }
+                if st.pos != 0 && i as i64 - st.entry_i as i64 > 6 && pp < lowprof {
+                    now.push(o(if st.pos == 1 { A::Xl } else { A::Xs }, P::Mkt, "Stale position"));
+                }
             })
         }
         "stad1_sr" => {
@@ -1600,6 +1627,19 @@ mod tests {
         assert!(run("stad4_spread_up", &Ctx::new(&r, &r, &[]), 0, 29, &Params::new()).unwrap().is_empty());
     }
     #[test]
+    fn spread_buys_below_92_and_exits_a_stale_position_on_the_close() {
+        // lane H3: the stock gains 0.1 a bar (+0.1% of 100), the S&P 1% a bar: Spread ~ 1 < 92, buy at the close of the first bar
+        // evaluated (MaxBarsBack = Length 10). Profit stays under LowProf $100 / 100 shares = 1.0 a share, so on BarsSinceEntry 7 (bar 17) it exits on the close.
+        let r: Vec<Row> = (0..30).map(|i| { let c = 100.0 + 0.1 * i as f64;
+            Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1), open: c, high: c + 1.0, low: c - 1.0, close: c, volume: None } }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("BENCH.C".into(), (0..30).map(|i| 1000.0 * 1.01f64.powi(i)).collect());
+        let ts = run("stad1_spread", &x, 0, 29, &Params::new()).unwrap();
+        assert_eq!((ts[0].dir, ts[0].legs[0].i, ts[0].legs[0].px), (1.0, 10, r[10].close));
+        assert_eq!((ts[0].exit_i, ts[0].exit_px), (17, r[17].close));
+        assert!(run("stad1_spread", &Ctx::new(&r, &r, &[]), 0, 29, &Params::new()).unwrap().is_empty());
+    }
+    #[test]
     fn spread_beta_down_sells_a_stop_at_the_low_after_the_index_change_falls() {
         // S&P accelerates to bar 14 then falls: PcntChange2 < PcntChange2[1] first on bar 15; the stock's 10-bar change keeps rising
         let mut r: Vec<Row> = (0..30).map(|i| { let c = 100.0 * (0.0001 * (i * i) as f64).exp();
@@ -1825,6 +1865,14 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
 
 // Lane K58 (5 Nov 2026, decision #202 extending #196(2)): VolEx's stale exit "PositionProfit < 500" on one S&P contract at the 1997
 // contract's $500 per index point = 1.0 point (param stale_pts), SPX only (gate `allowed`). Not in REVIEWED (that block admits everywhere).
+/// Lane H3: stad1_spread's LowProf is $100 of profit on an unprinted share count (read as 100 shares = $1.00 a share), so it runs only on the
+/// dollar-priced US ETFs without splits (gate `allowed`); not in REVIEWED (that block admits everywhere, India included).
+pub const ETF_USD: &[&str] = &["stad1_spread"];
+pub const ADMISSION_ETF: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && ETF_USD.contains(&def.id),
+    label: "Omega Research's Spread system trades a stock against an index and exits a stale position on $100 of profit (Vol 1 p.46-47); the book prints no share count, read here as 100 shares ($1.00 a share), so it runs only on US ETFs priced in dollars that never split (DIA, IWM, MDY, QQQ), against the S&P 500: a labelled application, not the book's stock.",
+    basis: "Omega Research STAD Vol 1 ch.3 (printed p.44-50, EasyLanguage p.46-47); Data2 = BENCH.C as stad4_spread_up (decision #229); lane H3 independent reference authors/held-1119/H3/h3_ref.py.",
+};
 pub const SPX_PTS: &[&str] = &["stad1_volex"];
 pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && SPX_PTS.contains(&def.id),
