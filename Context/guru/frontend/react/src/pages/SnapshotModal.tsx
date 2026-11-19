@@ -37,10 +37,50 @@ export function DailyWorkTable({ data }: { data: DailyWork }) {
     </div>
   );
 }
+const dur = (min: number | null | undefined) => min == null ? "—" : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`;
+const longDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+/** One card per IST day: what was added, what it cost, where the totals ended; lists open on demand. */
+export function DailyWorkCards({ data }: { data: DailyWork }) {
+  return (
+    <div className="cw-days">
+      {data.rows.map(r => {
+        const quiet = !r.new && !r.backtested_day && !r.deploys && r.bt_minutes == null && r.fix_minutes == null;
+        return (
+          <article key={r.date} className={`cw-day${quiet ? " quiet" : ""}`}>
+            <header className="cw-head"><h4>{longDate(r.date)}</h4><span className="cw-who">{r.worked_by === "-" ? "No work recorded" : r.worked_by}</span>{r.deploys > 0 && <span className="cw-tag">{r.deploys} deploy{r.deploys === 1 ? "" : "s"}</span>}</header>
+            {quiet ? <p className="cw-quiet">No releases and no recorded sessions this day.</p> : <>
+              <div className="cw-kpis">
+                <div><b>{num(r.new)}</b><span>new strategies</span></div>
+                <div className="ok"><b>{num(r.backtested_day)}</b><span>backtested</span></div>
+                <div><b>{r.newly_held == null ? "n/a" : num(r.newly_held)}</b><span>newly held</span></div>
+                <div><b>{num(r.errors_solved)}</b><span>tracker errors solved</span></div>
+                <div><b>{num(r.books_added)}</b><span>books added</span></div>
+              </div>
+              <div className="cw-work">
+                <div><h5>Backtesting new strategies</h5><p><b>{dur(r.bt_minutes)}</b> active · <b>{fmtTokens(r.bt_tokens)}</b> tokens</p>{r.avg_tokens_per_strategy != null && <p className="cw-sub">≈ {fmtTokens(r.avg_tokens_per_strategy)} tokens per strategy backtested</p>}</div>
+                <div><h5>Fixing errors</h5><p><b>{dur(r.fix_minutes)}</b> active · <b>{fmtTokens(r.fix_tokens)}</b> tokens</p></div>
+                {(r.other_minutes ?? 0) > 0 && <div><h5>Lead, reviews and UI</h5><p><b>{dur(r.other_minutes)}</b> active · <b>{fmtTokens(r.other_tokens ?? null)}</b> tokens</p></div>}
+              </div>
+              <p className="cw-eod">End of day: <b>{num(r.backtested_total)}</b> backtested · <b>{num(r.held)}</b> held</p>
+              <div className="cw-more">
+                {r.added_list && r.added_list.length > 0 && <details><summary>Strategies backtested this day ({r.added_list.length})</summary><ul>{r.added_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span></li>)}</ul></details>}
+                {r.newly_held_list.length > 0 && <details><summary>Newly held ({r.newly_held_list.length})</summary><ul>{r.newly_held_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span> · {x.reason}</li>)}</ul></details>}
+                <details><summary>Proof</summary><p className="rp-small">{r.proof}</p></details>
+              </div>
+            </>}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
 export function DailyWorkSection() {
   const [d, setD] = useState<DailyWork | null | undefined>(undefined);
+  const [table, setTable] = useState(false);
   useEffect(() => { let on = true; claudeWorkDaily().then(x => on && setD(x)); return () => { on = false; }; }, []);
-  return <section className="rp-snap-sec"><h3>Daily work</h3>{d === undefined ? <p className="rp-small rp-muted">Loading...</p> : d ? <DailyWorkTable data={d} /> : <p className="rp-small rp-muted">Daily work is not available (claude-work-daily.json missing).</p>}</section>;
+  return <section className="rp-snap-sec"><div className="cw-bar"><h3>Daily work</h3>{d && <button type="button" className="rp-linkbtn" onClick={() => setTable(!table)}>{table ? "Show as cards" : "Show as table"}</button>}</div>
+    {d === undefined ? <p className="rp-small rp-muted">Loading...</p> : d ? (table ? <DailyWorkTable data={d} /> : <><DailyWorkCards data={d} /><p className="rp-small rp-muted">Time is active minutes in Claude Code sessions (gaps of 10 minutes or less); tokens are input + output + cache-creation tokens. Sessions are sorted by lane: new-strategy lanes count as backtesting, audit and fix lanes as fixing errors. A dash means no such session that day; Codex-led work (14-16 Nov) is not in Claude's logs.</p></>) : <p className="rp-small rp-muted">Daily work is not available (claude-work-daily.json missing).</p>}</section>;
 }
 export const STEPS = [
   "Read the rule as printed, at its page in the book",
