@@ -798,7 +798,7 @@ fn itatw_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Optio
 // BTTK 2.0 shipped records (K30, 3 Nov 2026): OptionExp() = the US monthly equity option expiry (lead decision 181) -> US only.
 fn phbttk_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
     if !(crate::books::phbttk::ADMISSION_K30.reviewed)(def) || !crate::books::phbttk::US_ONLY.contains(&def.id) {return None;}
-    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) || crate::nse_expiry::available() {return None;} // CV6: Indian runs read the derived NSE expiry
     Some(Issue{status:"needs_data",note:format!("This system test exits on the day after the monthly option expiration (MetaStock OptionExp(), read as the US equity option expiry: the third Friday of the month). Indian options expire on a different calendar, which is not substituted, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // ---------------------------------------------------------------- Landry 2026-10-24
@@ -1000,7 +1000,7 @@ fn lanec2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool,us:Option<
     if sheimo && def.id=="tscb2_smash" {return (!us).then(||Issue{status:"needs_data",note:format!("Daily Smash YX uses a $3000 money stop (dollars per contract / BigPointValue), a US dollar amount, so this rule runs on US stocks, ETFs and indices only. {ticker} is not a US instrument; no result is published.")});}
     if sheimo {return (!us).then(||Issue{status:"needs_data",note:format!("Sheimo's window starts the day after the US Thanksgiving holiday (fourth Thursday of November), a US exchange closure; Indian markets keep a different holiday calendar, so this rule runs on US stocks, ETFs and indices only. {ticker} is not a US instrument; no result is published.")});}
     if cohen {return (!us).then(||Issue{status:"needs_data",note:format!("Cohen's point & figure box sizes are dollar amounts (1/2 point under $20, 1 point to $100, 2 points above), so this rule runs on US stocks, ETFs and indices only. {ticker} is not a US instrument; no result is published.")});}
-    (!us).then(||Issue{status:"needs_data",note:format!("Goodwin's rule counts five trading days back from the US monthly options expiration (third Friday). Indian options expire on a different calendar, so this rule runs on US stocks, indices and ETFs only. {ticker} is not a US instrument; no result is published.")})
+    (!us && !crate::nse_expiry::available()).then(||Issue{status:"needs_data",note:format!("Goodwin's rule counts five trading days back from the US monthly options expiration (third Friday). Indian options expire on a different calendar, so this rule runs on US stocks, indices and ETFs only. {ticker} is not a US instrument; no result is published.")})
 }
 // ---------------------------------------------------------------- end Lane C2 singles
 // ---------------------------------------------------------------- titles K1 2026-10-30 (NIKSAN PS systems, Success System)
