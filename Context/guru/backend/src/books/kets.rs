@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "kets";
 /// Admitted ids (authors/katz/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kets_macd_sig_limit", "kets_macd_sig_stop", "kets_rsi_div_limit", "kets_rsi_div_stop", "kets_macd_div_limit", "kets_macd_div_stop", "kets_ma_xo_open", "kets_ma_xo_limit", "kets_ma_xo_stop", "kets_ma_slope_open", "kets_ma_slope_limit", "kets_ma_slope_stop" /* lane H3, R4 #340/#343 */, "kets_macd_sig_open", "kets_rsi_div_open", "kets_macd_div_open" /* lane D2, R4 #340/#343 */, "kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
+pub const REVIEWED: &[&str] = &["kets_solar_open", "kets_solar_limit", "kets_solar_stop" /* lane H3c */, "kets_macd_sig_limit", "kets_macd_sig_stop", "kets_rsi_div_limit", "kets_rsi_div_stop", "kets_macd_div_limit", "kets_macd_div_stop", "kets_ma_xo_open", "kets_ma_xo_limit", "kets_ma_xo_stop", "kets_ma_slope_open", "kets_ma_slope_limit", "kets_ma_slope_stop" /* lane H3, R4 #340/#343 */, "kets_macd_sig_open", "kets_rsi_div_open", "kets_macd_div_open" /* lane D2, R4 #340/#343 */, "kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop", "kets_neural", "kets_neural_exit" /* lane K47, decision 217 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// No orders before this bar: the book's price files began ~6 months (about 120 bars) before its first trade
@@ -421,10 +421,6 @@ fn off_list() -> Vec<StrategyDef> {
         off!("kets_ma_sr", "MA support/resistance bounce, 4 MA types x 3 orders (Ch.6 Tests 37-48)", "Ch.6 Moving-average models", "Long/Short", NotTestable(NT_MA),
             &["E|Buy when the slow MA is rising and the fast MA crosses below it; sell when the slow MA is falling and the fast MA crosses above it (x10mod01.c model 4)", "E|Fast 1-5, slow 5-50 optimised (p.126)", "X|Standard exit"],
             "Text: SMA support/resistance with stop entry made $227/trade IS (ROA 4.2%) and $482 OOS (ROA 14.8%) (p.126); lengths not printed."),
-        off!("kets_solar", "Sunspot breakout model · open/limit/stop (Ch.9 solar Tests 1-3)", G9, "Long/Short",
-            NeedsData("daily sunspot numbers 1985-1999 (the book: Royal Observatory of Belgium, p.197), not in the vault. The rule is otherwise complete: p.197-199 print it and the best parameters per order (open lb1 35 / lb2 15 / disp 2, limit 40 / 15 / 0, stop 35 / 15 / 2) and the CD holds the code (TRMODS/CH13 LUNAR/X13MOD02.C); the only blocker is the data. R4 #346 allows the official publisher (SILSO, Royal Observatory of Belgium, daily total sunspot number) as a downloaded, verified series: needs the mirror + SOURCES row, a second-source check on 20+ dates, an engine loader, and a decision on the V1.0 vs V2.0 recalibration of the counts (the breakout test compares counts with their own earlier highs and lows, so a uniform rescale does not change it)"),
-            &["E|Sunspot count above the highest of the previous lb1 counts (or below the lowest) with no such breakout in the previous lb2 counts; direction chosen adaptively from earlier market responses; acted on disp bars later (pp.197-199)", "E|Best: open 35/15/2, limit 40/15/0, stop 35/15/2 (p.199)", "X|Standard exit"],
-            "Book: with the stop order the S&P 500 made $4,991/trade IS (37 trades, 40% wins, ROA 20.4%) and $5,640 OOS (11 trades, 45%, ROA 39.5%) (pp.199-200)."),
         // lane I1 (13 Nov 2026): Indian application on NSE index futures open interest (see `ga` below)
         StrategyDef { status: Live, needs_series: &[GA_OI], ..off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · entry at the open (Ch.12 Test 1)", "Ch.12 Genetic algorithms", "Long", Live,
             &["F|Chromosome for long entries at the open (p.276): genes (4,850,65,653), (1,256,530,709), (5,940,47,610), decoded with the printed Rules() templates and macros (p.263-264; CD x16mod01.c): LinearScale(x,a,b) = x(b-a)/1000 + a, BiasedPosScale(x,a) = 0.000001 x^2 a, look-backs truncated to whole bars",
@@ -456,6 +452,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v.extend(off_list());
     // lane H3c (R4 #340/#343): Ch.12 Tests 2, 3, 5, 6 = the SAME evolved solution as Tests 1 / 4 with the limit and the stop entry (p.270: "The same solution
     // was also tested and evaluated with entry on stop and on limit"; CD X16SCR02.DAT / X16SCR03.DAT run y16b01 / y16b04 with p15 = 1, 2, 3)
+    for c in SOLAR.iter() { v.push(solar_def(c)); }
     for (base, id, name, test, ord) in GA_ORDERS {
         let Some(b) = v.iter().find(|d| d.id == base) else { continue };
         let d = StrategyDef { id, name, group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix,
@@ -477,6 +474,10 @@ const GA_ORDERS: [(&str, &str, &str, &str, &str); 4] = [
 ];
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
+    if let Some(&(_, lb1, lb2, disp)) = SOLAR.iter().find(|t| t.0 == id) {
+        return Some([("lb1", "Sunspot breakout look-back lb1 (book grid 25-40 step 5; the printed best for this order)", lb1, 25., 40., 5.), ("lb2", "Repeat-prevention look-back lb2 (book grid 10-15 step 5)", lb2, 10., 15., 5.), ("disp", "Displacement in bars (book grid 0-2)", disp, 0., 2., 1.), SES[0], SES[1], SES[2]]
+            .iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect());
+    }
     if REVIEWED_I1.contains(&id) {
         return Some([("prose", "Values: 0 = decoded from the printed chromosome (default), 1 = the prose p.276-278", 0., 0., 1., 1.), SES[0], SES[1], SES[2]]
             .iter().map(|&(key, label, def, min, max, step)| ParamDef { key, label, def, min, max, step }).collect());
@@ -536,7 +537,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kets_vb_limit_ccy" => f("kets_vb", "Volatility breakout", "Currencies only · data missing"),
         "kets_ma_trend_xo" | "kets_ma_slope" | "kets_ma_ct_xo" | "kets_ma_sr" => f("kets_ma", "Moving-average entries (Ch.6)", "Not testable"),
         "kets_macd_sig" | "kets_rsi_div" | "kets_macd_div" => f("kets_osc_nt", "Oscillator entries, unprinted parameters", "Not testable"),
-        "kets_solar" => f("kets_solar", "Sunspot breakout", "Data missing"),
+        "kets_solar_open" | "kets_solar_limit" | "kets_solar_stop" => f("kets_solar", "Sunspot breakout (Ch.9 solar)", "Entry order of the test"),
         "kets_ga_long" | "kets_ga_short" => f("kets_ga", "Genetically evolved entries", "Open-interest rules (NSE futures OI)"),
         "kets_ga_long_limit" | "kets_ga_short_limit" => f("kets_ga", "Genetically evolved entries", "Entry on a limit (NSE futures OI)"),
         "kets_ga_long_stop" | "kets_ga_short_stop" => f("kets_ga", "Genetically evolved entries", "Entry on a stop (NSE futures OI)"),
@@ -1017,6 +1018,7 @@ fn turns_up(a: &[f64], c: usize) -> bool { a[c] >= a[c - 1] && a[c - 1] < a[c - 
 fn turns_dn(a: &[f64], c: usize) -> bool { a[c] < a[c - 1] && a[c - 1] >= a[c - 2] }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if SOLAR.iter().any(|t| t.0 == id) { return Some(solar(id, x, from, to, p)); }
     if REVIEWED_I1.contains(&id) { return Some(ga(id.contains("_short"), if id.ends_with("_limit") { Od::Limit } else if id.ends_with("_stop") { Od::Stop } else { Od::Open }, x, from, to, p)); }
     let t = TESTS.iter().find(|t| t.id == id)?;
     let n = x.c.len();
@@ -1337,12 +1339,126 @@ fn ga(short: bool, ord: Od, x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<
     let ses = (gv("pt", 4.), gv("sl", 1.), gv("hold", 10.).round().max(1.) as usize);
     drive(x, from, to, WARM, false, ord, false, ses, &atr50, |cb, _| { let g = if r.iter().all(|v| v[cb]) { s } else { 0 }; (g, x.c[cb] + 0.5 * g as f64 * atr50[cb]) }) // stop = close +/- 0.5 x ATR(50) (x16mod01.c)
 }
+#[cfg(test)]
+mod solar_tests {
+    use super::*;
+    /// Lane H3c: two upside sunspot breakouts 20 days apart (lb1 5, lb2 5); prices rise after the first, so the response vector (momentum) turns the second into a buy
+    /// (resp[0] stays 0, resp[1..] > 0: (0 - bot) / (top - bot) = 0 < 0.4); the first event has no history (top = bot) and gives no signal.
+    #[test]
+    fn solar_second_upside_break_after_a_rise_is_a_buy() {
+        let sd: Vec<String> = (0..200).map(|i| format!("{:04}-{:02}-{:02}", 2000 + i / 336, 1 + (i % 336) / 28, 1 + i % 28)).collect();
+        let mut sp = vec![10.; 200];
+        sp[119] = 50.; sp[139] = 50.; // 1-based counts 120 and 140: upside events (previous 5 counts all 10); the second is 20 > lb2 counts later
+        let prc: Vec<f64> = (0..200).map(|i| 100. + i as f64).collect();
+        let sig = solar_signals(&sd, &prc, &sd, &sp, 5, 5);
+        assert_eq!((sig[120], sig[140]), (0., 1.));
+        assert_eq!(sig.iter().filter(|v| **v != 0.).count(), 1);
+    }
+}
+
 // Instrument admission (lane I1): the GA entries as an Indian application (NSE index futures OI; gate allowed NIFTY 50, NIFTYBANK).
 pub const ADMISSION_I1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "kets" && REVIEWED_I1.contains(&def.id),
     label: "Indian application of a US-market rule: Katz and McCormick evolved these entries on a 36-market US futures portfolio with each market's total open interest; here the open interest is the index's NSE futures (NSE F&O bhavcopy, all expiries summed) and the trades are on the NIFTY 50 / NIFTYBANK index, one unit. Not the authors' test.",
     basis: "The Encyclopedia of Trading Strategies Ch.12: Rules() templates and macros p.262-264 (page images read again by OCR, lane I1; = CD TRMODS/CHAP16/X16MOD01.C), chromosomes p.276-278, entry at the open + standard exit (x16mod01 Model). Independent Python reference authors/i1/w/i1_ref.py (with the Katz TRDSIM reference authors/katz/admission/kets_ref.py).",
 };
+
+
+// ---------------------------------------------------------------- lane H3c: Ch.9 solar (sunspot breakout) Tests 1-3 (CD TRMODS/CH13 LUNAR/X13MOD02.C)
+/// Extra-data folder of the engine (set by main); the sunspot calendar series is read from `<dir>/SUNSPOTS.csv` (Date,Value, WDC-SILSO daily total
+/// sunspot number V2.0, weekends included: the CD code counts calendar days).
+pub static EXTRA_DIR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+const SPOTS: &str = "SUNSPOTS";
+/// (id, lb1, lb2, disp): the printed best in-sample values per entry order (p.199).
+pub const SOLAR: [(&str, f64, f64, f64); 3] = [("kets_solar_open", 35., 15., 2.), ("kets_solar_limit", 40., 15., 0.), ("kets_solar_stop", 35., 15., 2.)];
+pub const REVIEWED_SOLAR: &[&str] = &["kets_solar_open", "kets_solar_limit", "kets_solar_stop"];
+fn spot_calendar() -> Option<&'static (Vec<String>, Vec<f64>)> {
+    static S: std::sync::OnceLock<Option<(Vec<String>, Vec<f64>)>> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        let text = std::fs::read_to_string(std::path::Path::new(EXTRA_DIR.get()?).join("SUNSPOTS.csv")).ok()?;
+        let (mut d, mut v) = (vec![], vec![]);
+        for l in text.lines().skip(1) {
+            let mut f = l.split(',');
+            let (Some(a), Some(b)) = (f.next(), f.next()) else { continue };
+            if let Ok(x) = b.trim().parse::<f64>() { d.push(a.trim().to_string()); v.push(x); }
+        }
+        (v.len() > 200).then_some((d, v))
+    }).as_ref()
+}
+/// SolarSignals (x13mod02.c): breakout events of the sunspot counts mapped to the first price bar on or after the event date, then the adaptive
+/// response vectors decide buy (-> +1) / sell (-> -1) for each event bar. Index arithmetic is 1-based as in the C code; `sig[k]` is the signal of bar k.
+fn solar_signals(dt: &[String], prc: &[f64], sd: &[String], sp: &[f64], lb1: usize, lb2: usize) -> Vec<f64> {
+    let (nb, ns) = (dt.len(), sp.len());
+    let spots: Vec<f64> = std::iter::once(0.).chain(sp.iter().copied()).collect();
+    let (mut b1u, mut b1d, mut breakp) = (vec![0.; ns + 2], vec![0.; ns + 2], vec![0.; nb + 3]);
+    let hi = |v: &[f64], n: usize, e: usize| v[e + 1 - n..=e].iter().copied().fold(f64::MIN, f64::max);
+    let lo = |v: &[f64], n: usize, e: usize| v[e + 1 - n..=e].iter().copied().fold(f64::MAX, f64::min);
+    for i in 100..=ns {
+        b1u[i] = (spots[i] > hi(&spots, lb1, i - 1)) as u8 as f64;
+        b1d[i] = (spots[i] < lo(&spots, lb1, i - 1)) as u8 as f64;
+        let up = b1u[i] > 0. && hi(&b1u, lb2, i - 1) == 0.;
+        let dn = !up && b1d[i] > 0. && hi(&b1d, lb2, i - 1) == 0.;
+        if up || dn {
+            let k = dt.partition_point(|d| d.as_str() < sd[i - 1].as_str()) + 1; // hunt + 'if(date > dt[k]) k++' = the first bar dated on or after the event
+            breakp[k] = if up { 1. } else { -1. };
+        }
+    }
+    let mut sig = vec![0.; nb + 2];
+    let m = lb2.min(10);
+    let (mut respup, mut respdn) = ([0f64; 12], [0f64; 12]);
+    let p1 = |i: usize| prc[i - 1];
+    let mut i = 100;
+    while i + 12 <= nb {
+        for (dir, resp, j0) in [(1., &mut respup, 1usize), (-1., &mut respdn, 2usize)] {
+            if breakp[i] * dir > 0. {
+                let (mut top, mut bot) = (resp[0], resp[0]);
+                for j in j0..=m { if resp[j] > top { top = resp[j]; } if resp[j] < bot { bot = resp[j]; } } // the down branch of the CD code starts at j = 2
+                if top > bot {
+                    let tmp = (resp[0] - bot) / (top - bot);
+                    if tmp < 0.4 { sig[i] = 1.; } else if tmp > 0.6 { sig[i] = -1.; }
+                }
+                for j in 0..=m { resp[j] += 0.1 * ((p1(i + j) - p1(i)) - resp[j]); }
+                break;
+            }
+        }
+        i += 1;
+    }
+    sig
+}
+fn solar(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
+    let n = x.c.len();
+    let Some((sd, sp)) = spot_calendar() else { return vec![] };
+    if x.series(SPOTS).is_none() || n < 3 || from > to || to >= n { return vec![]; }
+    let Some(&(_, d1, d2, d3)) = SOLAR.iter().find(|t| t.0 == id) else { return vec![] };
+    let gv = |k: &str, d: f64| p.get(k).copied().filter(|v| v.is_finite()).unwrap_or(d);
+    let (lb1, lb2, disp) = (gv("lb1", d1).round().max(2.) as usize, gv("lb2", d2).round().max(1.) as usize, gv("disp", d3).round().max(0.) as usize);
+    let ord = if id.ends_with("_limit") { Od::Limit } else if id.ends_with("_stop") { Od::Stop } else { Od::Open };
+    let ses = (gv("pt", 4.), gv("sl", 1.), gv("hold", 10.).round().max(1.) as usize);
+    let atr50 = sma(&true_range(x), 50);
+    let dates: Vec<String> = x.r.iter().map(|r| r.date.clone()).collect();
+    let sig = solar_signals(&dates, &x.c, sd, sp, lb1, lb2);
+    drive(x, from, to, WARM, true, ord, false, ses, &atr50, |cb, _| {
+        let g = if cb >= disp { sig[cb - disp + 1] } else { 0. }; // signal = sigvec[cb - disp] (1-based)
+        (g as i8, x.c[cb] + 0.5 * g * atr50[cb])
+    })
+}
+fn solar_def(c: &'static (&'static str, f64, f64, f64)) -> StrategyDef {
+    let (id, lb1, lb2, disp) = *c;
+    let (name, test, ord): (&'static str, &str, &str) = match id {
+        "kets_solar_open" => ("Sunspot breakout · next open (Ch.9 solar Test 1)", "1", "next open"),
+        "kets_solar_limit" => ("Sunspot breakout · limit (Ch.9 solar Test 2)", "2", "limit at the signal bar's midpoint (high + low) / 2"),
+        _ => ("Sunspot breakout · stop (Ch.9 solar Test 3)", "3", "stop at the signal close +/- 0.5 x ATR(50)"),
+    };
+    let rules: &'static [&'static str] = Box::leak(vec![
+        "F|Sunspot breakout events on the DAILY sunspot numbers (calendar days, weekends included): the count is above the highest of the previous lb1 counts (upside event) or below the lowest (downside event), and no event of the same direction occurred in the previous lb2 counts (repeat prevention) (p.197; x13mod02.c SolarSignals)",
+        "F|The event is mapped to the first price bar dated on or after the event date. Adaptive direction (p.197: 'depending on previous market behavior in response to upside breakouts'): response vectors respup / respdn, updated at every event bar i with resp[j] += 0.1 x ((close[i+j] - close[i]) - resp[j]) for j = 0..min(10, lb2); at an upside event bar buy if (resp[0] - bot) / (top - bot) < 0.4, sell if > 0.6, where top / bot are the extremes of resp[0..lb] (upside: j = 1..m; the downside branch of the CD code starts at j = 2), no signal when top = bot (x13mod02.c)".to_string().leak() as &str,
+        "E|The signal is acted on disp bars later (signal = sigvec[cb - disp]); entry order of this test (see the order line), none while already in that direction, none on a bar whose next bar has high = low",
+        "X|Standard exit (pp.76-77): close-only profit target entry +/- 4 x ATR(50), close-only stop entry -/+ 1 x ATR(50), out at the close after 10 bars; no orders in the last 30 bars of the data",
+    ].into_iter().map(|r| &*Box::leak(r.to_string().into_boxed_str())).collect::<Vec<&'static str>>().into_boxed_slice());
+    StrategyDef { id, name, group: G9, session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[SPOTS], book: BOOK, rules,
+        notes: Box::leak(format!("Lane H3c (19 Nov 2026, R4 #340/#343/#346). Katz & McCormick, The Encyclopedia of Trading Strategies Ch.9 pp.197-200, Test {test}; entry order: {ord}. Defaults = the printed best in-sample values for this order (lb1 {lb1}, lb2 {lb2}, disp {disp}; p.199), grid lb1 25-40 step 5, lb2 10-15 step 5, disp 0-2. Rule from the printed prose and the CD code TRMODS/CH13 LUNAR/X13MOD02.C (the book does not print this code). Data: WDC-SILSO daily total sunspot number V2.0 (Royal Observatory of Belgium, CC BY-NC) read from extra_data/us/SUNSPOTS.csv, a series downloaded under R4 #346 (authors/data-1119/sunspots/MANIFEST.md); the book used the Observatory's earlier version, about 0.6 x V2.0 (a uniform rescale does not change a breakout against the series' own extremes). Declared details (4): (1) dates are compared as real dates, the CD compares YYMMDD numbers of one century; (2) the data window is the whole series from 1818, the CD file held the 1985-1999 counts, so only the first 100 counts of a data window differ (events before the first price bar are ignored in both); (3) one unit of the instrument instead of the book's 36 futures, the in-sample start IS_DATE replaced by a 120-bar warm-up (vault convention); (4) float64 arithmetic where the CD uses 32-bit floats. Look-ahead note: the CD code updates the response with the 10 closes AFTER an event, so a same-direction event less than 10 bars later would read the future; with lb2 15 events are at least 16 calendar days apart, which is 10 or more trading days except around holidays. Book (pp.199-200): in-sample entry at the open lost $1,631 a trade, limit $1,519, stop $52; with the stop the S&P 500 made $4,991 a trade in-sample (37 trades, ROA 20.4%) and $5,640 out-of-sample (11 trades); a 36-futures portfolio, so nothing here reproduces a printed result: UNVERIFIED.", lb1 = lb1, lb2 = lb2, disp = disp).into_boxed_str()),
+        claim: None }
+}
 
 // Instrument admission: Katz 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/katz/admission/SOURCE-CONTRACT.md); kept in one block to merge.
