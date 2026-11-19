@@ -5,13 +5,20 @@
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::rbtie::target_trades;
 
-pub const REVIEWED: &[&str] = &["thnhl_ema55"];
+pub const REVIEWED: &[&str] = &["thnhl_ema55", "thnhl_ema55_nse" /* lane CV6 Q9 (R4 #340 / #347 / #365) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 pub const SERIES: &[&str] = &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 
 const NOTE: &str = "[Adapted: 2 unstated details, R4 #297; unverified] Indicator = 55-day exponential moving average (alpha 2/56, seeded with the first daily value) of 100 x NYSE new 52-week highs / (new highs + new lows), Norgate #NYSEHI/#NYSELO (1932-2020-09-04), read on the traded instrument's dates; a day with no breadth value or with no new highs and no new lows leaves the average unchanged. Buy (long only, when flat) at the close of the first day the average is above 21 after it has been below 21 (Figure 4: 'buy signals by dropping to an oversold level below 21 and then rising back above that level'). Sell when the average has fallen at least 40.5 points from its peak ('rising to a peak and then dropping by at least 40 and a half points'). Unstated in the article: (1) where the peak is measured from; vault reading: the highest average since the buy; (2) the fill; vault reading: the signal day's close (option: next open). Hayes reports 20 profitable of 22 signals since November 1962 without naming the traded index or listing the trades, so there is no comparable table. NYSE breadth: runs only on the US indices and ETFs SPX, SPY, DJI, DIA, NDX, QQQ (as R4 #306); results end 2020-09-04, where the Norgate breadth copy ends.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
+    let mut v = base_catalogue();
+    let t = v.first().map(|b| StrategyDef { id: "thnhl_ema55_nse", name: "Hayes NH/(NH+NL) 55-day EMA on NSE counts: buy the rise back above 21, sell after a 40.5-point drop from the peak", group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix,
+        needs_series: super::wmny::NHNL_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{}{}", super::wmny::NSE_NOTE_PUB, "Hayes 55-day EMA rule, default inputs (21 / 40.5): over the overlap (NSE run 2019-10-27..2020-09-04; NYSE 2019-10-16..2020-09-04) NSE twin (NIFTY 50) 1 trade (long 95.4% of those days); NYSE original (SPX) no trade; over its whole 1999-2020-09-04 run the NYSE original makes 3 trades (0.14 a year), long 27.6%. Longest gap-free NSE stretch 2025-07-25..2026-11-17: no trade. The 40.5-point drop is a level on a 0-100 ratio, not a count; the rule fires rarely on either market.").into_boxed_str()), claim: None });
+    v.extend(t);
+    v
+}
+fn base_catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "thnhl_ema55", name: "Hayes NH/(NH+NL) 55-day EMA: buy the rise back above 21, sell after a 40.5-point drop from the peak", group: "S&C: New Highs And New Lows (Hayes, V.14:3)",
         session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: SERIES, book: "thnhl", rules: &[
             "F|\"The indicator determines the ratio of new highs to the total of new highs and new lows and then smoothes the result with a 55-day exponential moving average (EMA).\" (p.100)",
@@ -21,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then_some(("thnhl_ema55", "Hayes new highs / new lows", "21 / 40.5 points"))
+    reviewed(id).then_some(if id.ends_with("_nse") { ("thnhl_ema55_nse", "Hayes new highs / new lows, NSE counts", "21 / 40.5 points") } else { ("thnhl_ema55", "Hayes new highs / new lows", "21 / 40.5 points") })
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -45,7 +52,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !reviewed(id) || from > to || to >= x.c.len() { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
-    let (Some(nh), Some(nl)) = (x.series(SERIES[0]), x.series(SERIES[1])) else { return Some(vec![]) };
+    let names: &[&str] = if id.ends_with("_nse") { super::wmny::NHNL_NSE } else { SERIES };
+    let (Some(nh), Some(nl)) = (x.series(names[0]), x.series(names[1])) else { return Some(vec![]) };
     let e = indicator(&nh[..=to], &nl[..=to], g("n").round().max(1.) as usize);
     let (lo, drop) = (g("lo"), g("drop"));
     let mut tgt = vec![0i8; to + 1];
