@@ -5,18 +5,27 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Lane PB (13 Nov 2026): admitted once the NYSE new highs/lows arrived (Norgate #NYSEHI/#NYSELO); independent check authors/pb/w/pb_ref.py.
-pub const REVIEWED: &[&str] = &["dmtad_turbo"];
+pub const REVIEWED: &[&str] = &["dmtad_turbo", "dmtad_turbo_nse" /* lane CV6 Q9 (R4 #340 / #347 / #365) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && reviewed(def.id),
-    label: "Dennis Meyers tested the Turbo A/D, NH, NL system on the S&P 500's closes; it reads NYSE breadth and runs on the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (R4 #306).",
+    label: "Dennis Meyers tested the Turbo A/D, NH, NL system on the S&P 500's closes; it reads NYSE breadth and runs on the US indices and ETFs SPX, SPY, DJI, DIA, NDX and QQQ only (R4 #306); its _nse twin reads the NSE breadth on Indian indices and stocks (R4 #340 / #347, UNVERIFIED).",
     basis: "Dennis Meyers, The Turbo A/D, NH, NL Market System, Stocks & Commodities V15:7 p.337-346 (THETURB.PDF); NYSE new highs/lows from Norgate (SOURCES norgate-us-indices-20200908-pb); independent check authors/pb/w/pb_ref.py",
 };
 
 const BOOK: &str = "dmtad";
+const SERIES_NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume", "NSE_NHNL.NH", "NSE_NHNL.NL"];
+const NSE_NOTE: &str = "[R4 #340 / #347 / #365 declared adaptation, UNVERIFIED, lane CV6 Q9] NSE twin: the same rule, parameters and thresholds (ratios and normalised strengths, not counts) on the NSE advances / declines and up / down volume (extra_data/india NSE_ADV_DEC, 1999-01-01 on) and the NSE counts of stocks at a new adjusted 52-week high / low (NSE_NHNL, 2019-10-16 on, with gaps: a run uses the longest stretch with no missing day, as for every NSE_NHNL card). Indian indices and stocks only; US instruments are refused (no NSE series). The author tested the S&P 500 / DJIA on NYSE breadth: no NSE result exists. Measured firing rates, NSE vs NYSE: ";
 const SERIES: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume", "NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 
 pub fn catalogue() -> Vec<StrategyDef> {
+    let mut v = base_catalogue();
+    let t = v.first().map(|b| StrategyDef { id: "dmtad_turbo_nse", name: "Turbo A/D, NH, NL market system on NSE breadth", group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix,
+        needs_series: SERIES_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{NSE_NOTE}{} Original card (labelled details apply unchanged): {}", "Turbo A/D rule, default inputs. Overlap with the NYSE series (NSE run 2019-10-27..2020-02-10, NYSE advances / declines end 2020-02-10; NYSE 2019-10-16..2020-02-10): NSE twin (NIFTY 50) 1 trade (3.4 a year, long 40% of days); NYSE original (SPX) no trade. Longest gap-free NSE stretch 2025-07-25..2026-10-06: 4 trades = 3.4 a year, long 46.3%; NYSE original over its own run 2002-06-21..2019-08-19: 70 trades = 4.1 a year, long 87.9%.", b.notes).into_boxed_str()), claim: None });
+    v.extend(t);
+    v
+}
+fn base_catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
         id: "dmtad_turbo", name: "Turbo A/D, NH, NL market system", group: "S&C V15:7 · Turbo A/D", session: 0, dir: "Long/Short",
         status: Status::Live, needs_volume: false, needs_vix: false, needs_series: SERIES, book: BOOK,
@@ -34,11 +43,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    (id == "dmtad_turbo").then_some(("dmtad_turbo", "Meyers Turbo A/D, NH, NL", "Final optimum values"))
+    reviewed(id).then_some(if id.ends_with("_nse") { ("dmtad_turbo_nse", "Meyers Turbo A/D, NH, NL, NSE breadth", "Final optimum values") } else { ("dmtad_turbo", "Meyers Turbo A/D, NH, NL", "Final optimum values") })
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    if id != "dmtad_turbo" { return None; }
+    if id.trim_end_matches("_nse") != "dmtad_turbo" { return None; }
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(vec![
         p("buyr", "buyr: adr threshold", 1.2, 1.0, 3.0, 0.1), p("xbuy", "xbuy days", 2.0, 1.0, 4.0, 1.0), p("nbuy", "out of nbuy days", 4.0, 2.0, 5.0, 1.0),
@@ -69,7 +78,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if from > to || to >= x.c.len() { return Some(vec![]); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
-    let s: Vec<&[f64]> = match SERIES.iter().map(|n| x.series(n)).collect::<Option<Vec<_>>>() { Some(v) => v, None => return Some(vec![]) };
+    let names = if id.ends_with("_nse") { SERIES_NSE } else { SERIES };
+    let s: Vec<&[f64]> = match names.iter().map(|n| x.series(n)).collect::<Option<Vec<_>>>() { Some(v) => v, None => return Some(vec![]) };
     let (ai, di, av, dv) = (s[0], s[1], s[2], s[3]);
     let (nlx, nhx) = (ema_half(&s[5][..=to]), ema_half(&s[4][..=to]));
     let c = &x.c;

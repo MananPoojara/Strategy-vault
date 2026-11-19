@@ -2140,6 +2140,7 @@ mod tests {
         use crate::books::{dmadr, dmtad, dmtbb, dmtfly, dmvrs, thnhl}; // lane PB: dmtad_turbo admitted with the NYSE new highs/lows; the NYSE-breadth cards stay US-only (+ lane PF)
         for d in dmtad::catalogue().into_iter().chain(dmtfly::catalogue()).chain(thnhl::catalogue()).chain(dmadr::catalogue()).chain(dmvrs::catalogue()).chain(dmtbb::catalogue()) {
             assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(&d) && held_reason(d.id).is_none(),"{}",d.id);
+            if d.id.ends_with("_nse") {assert!(crate::gate::get(d.id).is_some_and(|g|g.allowed.is_none()),"{}",d.id);continue;} // lane CV6 Q9: the NSE twin runs on Indian indices and stocks (NSE_NHNL), US instruments are refused by the missing series
             assert!(crate::gate::get(d.id).is_some_and(|g|g.allowed==Some(&["SPX","SPY","DJI","DIA","NDX","QQQ"][..])),"{}",d.id);
         }
     }
