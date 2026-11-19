@@ -1546,7 +1546,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // "stad6_asi": admitted by lane K62 (decision #243: its same-day order resolved on 1-minute bars, EP6; 0% ambiguous)
         // ---- end STAD leftovers held
         // ---- Chande block (26 Oct 2026, lane B): held Live rules
-        "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
+        "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_cbo_20tick"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
         // "ch_bta2_bottom_fish_generic": admitted SPX only by lane K58 (decision #202, books::chbta2::ADMISSION_SPX)
         "ch_bta2_vol2x"=>"Held: fixed dollar stop on futures. Chande tests the 2x-range volatility system on Swiss franc futures (1989-95) with a $3,000 initial stop per contract (p.236-239); a dollar stop per contract has no equivalent on an index, ETF or stock.",
         "ch_bta2_long_bomb"=>"Held: futures sizing and dollar stop. The Long Bomb buys a number of contracts set by $10,000 of risk per contract point value, with a $1,500 stop per contract, on 10 futures markets (p.173-177); neither the sizing nor the dollar stop has an equivalent on an index, ETF or stock.",
@@ -2110,7 +2110,7 @@ mod tests {
     fn chande_held_rules_have_plain_card_reasons_and_are_not_admitted() {
         use crate::books::{chbta2, chntt, chpbs};
         let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
-        for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
+        for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_cbo_20tick","ch_bta2_pullback",
                    /* K58 #202: bottom_fish(_generic), ma1011_anti, tat, xopp x2 admitted SPX only */ "ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_ma1011_trend",
                    /* ch_ntt_to_buy: admitted on the US gate list by lane R2E (chntt::ADMISSION, R4 #297/#306) */ "ch_ntt_vidya_cmo" /* ch_pbs_cbpb_trail3: admitted SPX only (lane K74, #277) */] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
