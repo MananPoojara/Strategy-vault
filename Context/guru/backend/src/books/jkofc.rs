@@ -5,7 +5,7 @@
 //! Notes: library/jkofc/README.md.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/lanea/singles/decisions.json).
-pub const REVIEWED_LANEA: &[&str] = &["jkofc_sma4_reverse"];
+pub const REVIEWED_LANEA: &[&str] = &["jkofc_sma4_reverse", "jkofc_ma_crossover"];
 pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -20,10 +20,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Since your signal is dependent on the market's closing price, your orders to buy and sell must be executed on the opening of the following trading day\" (p.5)",
             "X|Opposite close reverses at the next open (Table 1.1: day 7 close below the average, \"On the open of day 8, two February gold contracts are sold\")"],
           "Book presents it as a \"crude trading system\" built from the moving average (p.5); worked example only (February gold, Table 1.1), no statistics. A close equal to the average changes nothing (the book gives no rule for it). Futures in the book; run on the index (instrument swap). Always in the market once the first signal fires."),
-        d("jkofc_ma_crossover", "4/12-day moving-average crossover", "Long/Short",
-          Status::NotTestable("\"a buy signal flashes whenever the shorter moving average crosses above ... A sale is heralded when [it] falls below\" (p.6): the book does not say whether a sale only exits or also goes short, and fig.1.1 (4 and 12 days) is an illustration"),
-          &["E|\"a buy signal flashes whenever the shorter moving average crosses above the trendline of the longer moving average. A sale is heralded when the trendline of the shorter indicator falls below that of the longer-term average\" (p.6)"],
-          "Not coded: the meaning of \"sale\" is not stated."),
+        d("jkofc_ma_crossover", "4/12-day moving-average crossover", "Long/Short", Status::Live,
+          &["F|Short average 4 days, long average 12 days (Fig.1.1, p.6); simple averages of daily closes [A: the page names no type; the 4-day SMA of p.5 is the only average the chapter defines]",
+            "E|\"a buy signal flashes whenever the shorter moving average crosses above the trendline of the longer moving average\" (p.6): buy at the next open after the first close with the 4-day average above the 12-day average",
+            "X|\"A sale is heralded when the trendline of the shorter indicator falls below that of the longer-term average\" (p.6): sell at the next open after the first close with the 4-day average below the 12-day average",
+            "A|Reading 1 (R4 #343): the book does not say whether the sale only closes the long or also goes short; default = stop-and-reverse, the same page's 4-day system (p.5) is long and short; p.rev = 0 gives long only, sale = exit",
+            "A|Reading 2: a cross needs the averages to change sides; equal averages change nothing; the first position opens at the first cross after both averages exist (no position from the starting state)",
+            "A|Reading 3: orders fill at the next open, the book's own order timing on p.5 for the sibling system; the 4/12 lengths are Fig.1.1's illustration, used as the printed default"],
+          "Book gives a figure and no statistics (UNVERIFIED). Futures in the book; run on indices, ETFs and stocks (declared application)."),
         d("jkofc_discretionary", "Oscillators, chart patterns and futures-options examples", "Long/Short",
           Status::NotTestable("rules not fully defined: teaching material - indicator descriptions (ROC, PPO, stochastics, RSI), chart reading and strategy examples on futures, with no entry or exit rules (Futures & Commodity Course, Ch.1-4 of Home Study Course 2 and the Quick Start Guide)"),
           &["F|Ch.1-4 of Home Study Course 2 and Home Study Course 1 / Quick Start Guide"], "Teaching material."),
@@ -33,21 +37,60 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "jkofc_sma4_reverse" => ("jkofc_ma", "Moving-average systems", "4-day SMA close reversal"),
-        "jkofc_ma_crossover" => ("jkofc_ma", "Moving-average systems", "4/12 crossover (not testable)"),
+        "jkofc_ma_crossover" => ("jkofc_ma", "Moving-average systems", "4/12-day crossover"),
         "jkofc_discretionary" => ("jkofc_disc", "Teaching material", "Not testable"),
         _ => return None,
     })
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == "jkofc_sma4_reverse").then(|| vec![ParamDef { key: "n", label: "SMA length (days)", def: 4., min: 2., max: 20., step: 1. }])
+    let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    match id {
+        "jkofc_sma4_reverse" => Some(vec![p("n", "SMA length (days)", 4., 2., 20., 1.)]),
+        "jkofc_ma_crossover" => Some(vec![p("short", "Short average (days; Fig.1.1: 4)", 4., 2., 30., 1.), p("long", "Long average (days; Fig.1.1: 12)", 12., 3., 60., 1.),
+            p("rev", "Sale also goes short (1 = stop-and-reverse, 0 = long only) [unstated in the book, R4 #343 reading]", 1., 0., 1., 1.)]),
+        _ => None,
+    }
+}
+
+fn sma(c: &[f64], n: usize) -> Vec<f64> {
+    // window mean summed afresh each bar (a running sum drifts, and "average = average" must stay exact)
+    (0..c.len()).map(|i| if i + 1 < n { f64::NAN } else { c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect()
+}
+
+fn crossover(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
+    let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+    let (ns, nl, rev) = (g("short", 4.).max(1.) as usize, g("long", 12.).max(2.) as usize, g("rev", 1.) >= 0.5);
+    let (ms, ml) = (sma(&x.c, ns), sma(&x.c, nl));
+    let mut out = vec![];
+    let mut cur: Option<Trade> = None;
+    let mut prev = 0.; // side of the last bar on which the averages differed
+    for t in 0..to {
+        let (a, b) = (ms[t], ml[t]);
+        if !a.is_finite() || !b.is_finite() || (a - b).abs() <= 1e-9 * b.abs() { continue; } // equal: nothing changes
+        let s = if a > b { 1. } else { -1. };
+        let crossed = prev != 0. && s != prev;
+        prev = s;
+        if !crossed || t < from { continue; }
+        let f = t + 1;
+        if let Some(mut old) = cur.take() {
+            old.exit_i = f; old.exit_px = x.o[f]; old.signal_i = t; old.reason = "average cross · next open".into();
+            out.push(old);
+        }
+        if s > 0. || rev {
+            cur = Some(Trade { dir: s, legs: vec![Leg { i: f, px: x.o[f], w: 1. }], exit_i: f, exit_px: x.o[f], reason: String::new(),
+                entry_kind: "open", signal_i: t, open: false, exits: vec![] });
+        }
+    }
+    if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+    out
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "jkofc_ma_crossover" { return Some(crossover(x, from, to, p)); }
     if id != "jkofc_sma4_reverse" { return None; }
     let n = p.get("n").copied().unwrap_or(4.).max(1.) as usize;
-    // window mean summed afresh each bar (a running sum drifts, and "close = average" must stay exact)
-    let ma: Vec<f64> = (0..x.c.len()).map(|i| if i + 1 < n { f64::NAN } else { x.c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect();
+    let ma = sma(&x.c, n);
     let mut out = vec![];
     let mut cur: Option<Trade> = None;
     for t in from..to {
@@ -81,6 +124,36 @@ mod tests {
         assert_eq!(t[0].dir, 1.); assert_eq!(t[0].legs[0].i, 4); // day 4 close above -> buy day 5 open
         assert_eq!(t[0].exit_i, 7); // day 7 close below -> reverse day 8 open
         assert_eq!(t[1].dir, -1.); assert_eq!(t[1].legs[0].i, 7);
+    }
+    #[test]
+    fn crossover_buys_on_cross_and_reverses() {
+        // closes fall, rise (4 crosses above 12 at the rise), fall again (4 crosses below)
+        let c: Vec<f64> = (0..14).map(|i| 100. - i as f64).chain((0..10).map(|i| 87. + 3. * i as f64)).chain((0..12).map(|i| 114. - 4. * i as f64)).collect();
+        let r: Vec<Row> = c.iter().enumerate().map(|(i, &v)| Row { ticker: "X".into(), date: format!("2000-02-{:02}", i + 1),
+            open: v, high: v, low: v, close: v, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("jkofc_ma_crossover", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.len() >= 2 && t[0].dir == 1. && t[1].dir == -1. && t[0].exit_i == t[1].legs[0].i);
+        let mut lo = Params::new(); lo.insert("rev".into(), 0.);
+        let l = run("jkofc_ma_crossover", &x, 0, r.len() - 1, &lo).unwrap();
+        assert!(l.iter().all(|z| z.dir == 1.) && l.len() == 1);
+    }
+    /// Reference feed: `JK_DUMP=out JK_CSV=us_data.csv JK_TICKER=SPX [JK_ID=..] cargo test --release jk_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn jk_dump() {
+        let (Ok(out), Ok(csv), Ok(tk)) = (std::env::var("JK_DUMP"), std::env::var("JK_CSV"), std::env::var("JK_TICKER")) else { return };
+        let iso = |d: &str| format!("{}-{}-{}", &d[6..10], &d[3..5], &d[0..2]);
+        let rows: Vec<Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != tk { return None; }
+            Some(Row { ticker: tk.clone(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let x = Ctx::new(&rows, &rows, &[]);
+        let mut pp = Params::new();
+        if let Ok(v) = std::env::var("JK_REV") { pp.insert("rev".into(), v.parse().unwrap()); }
+        let t = run("jkofc_ma_crossover", &x, 0, rows.len() - 1, &pp).unwrap();
+        let mut o = String::new();
+        for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\t{}\n", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, o).unwrap();
     }
 }
 
