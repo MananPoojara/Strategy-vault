@@ -12,10 +12,11 @@ use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, 
 
 pub const BOOK: &str = "kdta";
 /// Admitted ids (authors/kirkpatrick/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */];
+pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */, "kdta_nh_nl", "kdta_nh_nl_nse" /* lane CV6 Q9, R4 #340 / #343 / #347 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+const NYSE_NHNL: &[&str] = &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 const NYSE_TR: &[&str] = &["NYSE_TRIN"];
 const NSE_TR: &[&str] = &["NSE_TRIN"];
@@ -72,6 +73,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         let ad = if nse { NSE_AD } else { NYSE_AD };
         let tr = if nse { NSE_TR } else { NYSE_TR };
         macro_rules! id { ($a:expr, $b:expr) => { if nse { $b } else { $a } } }
+        v.push(d(id!("kdta_nh_nl", "kdta_nh_nl_nse"), if nse { "New highs versus new lows, daily · NSE" } else { "New highs versus new lows, daily · NYSE" },
+            "Ch 8 · New highs and lows (p.147)", "Long/Short", Live, false, if nse { super::wmny::NHNL_NSE } else { NYSE_NHNL },
+            &["E|\"buy when the number of new highs exceeds the number of new lows on a daily basis\" (p.147): long on the close of a day with new highs > new lows",
+              "X|\"and to sell when the opposite occurs\" (p.147): on the close of a day with new highs < new lows the long is closed and, as the A/D-line rule on p.133, reversed to short; a day with equal counts changes nothing"],
+            if nse { "[R4 #343 unstated details, 2] (1) 'sell' is read as close the long and go short (the p.133 portfolio is long or short one share); parameter shorts = 0 gives long / cash. (2) A day with new highs = new lows, or a missing count, gives no signal and the position stands. Book market: NYSE new 52-week highs / lows (Norgate #NYSEHI / #NYSELO, 1932-2020-09-04) on DJI / SPX; this _nse twin [R4 #340 / #347, UNVERIFIED] uses the NSE counts of stocks at a new adjusted 52-week high / low (extra_data/india NSE_NHNL, 2019-10-16 on, with gaps: a run uses the longest stretch with no missing day) on Indian indices and stocks, the rule unchanged (it compares the two counts). Fill: close. Measured firing rate, NSE vs NYSE: over the overlap (NSE run 2019-10-27..2020-09-04; NYSE 2019-10-16..2020-09-04) the NSE twin (NIFTY 50) makes 22 trades = 25.7 a year, long 50.0% of days; the NYSE original (SPX) 17 trades = 19.0 a year, long 80.9%; over its whole 1999-2020 run the NYSE original makes 27.0 a year, long 71.2%; longest gap-free NSE stretch 2025-07-25..2026-11-17: 33.3 a year, long 58.5%." } else { "[R4 #343 unstated details, 2] (1) 'sell' is read as close the long and go short (the p.133 portfolio is long or short one share); parameter shorts = 0 gives long / cash. (2) A day with new highs = new lows, or a missing count, gives no signal and the position stands. Book market: NYSE new 52-week highs / lows on the DJIA / S&P 500; the vault reads Norgate #NYSEHI / #NYSELO (1932-2020-09-04) on US instruments. Fill: close. The book prints no result for this rule. UNVERIFIED." }));
         v.push(d(id!("kdta_adline", "kdta_adline_nse"), if nse { "One-day change in the advance-decline line · NSE" } else { "One-day change in the advance-decline line · NYSE" },
             "Ch 8 · Measuring market strength (p.133)", "Long/Short", Live, false, ad,
             &["E|\"using simply the one-day change in direction of the cumulative advance-decline line as a signal to buy or sell\" (p.133): long when the A/D line rises (advances > declines)",
@@ -172,9 +178,6 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nt("kdta_mama_fama", "MAMA / FAMA crossover", "Ch 14 · Moving averages (p.283)", "Long/Short",
            "the MESA adaptive moving average formulas are not given in the book (\"the calculation of these moving averages is complicated\")",
            &["E|\"A buy or sell signal is generated when the MAMA crosses the FAMA\" (p.283)"]),
-        nd("kdta_nh_nl", "New highs versus new lows", "Ch 8 · New highs and lows (p.147)", "Long/Short",
-           "daily NYSE / NSE new 52-week highs and new lows counts (not in extra_data)",
-           &["E|\"buy when the number of new highs exceeds the number of new lows on a daily basis and to sell when the opposite occurs\" (p.147)"]),
         nd("kdta_thrust_weekly", "Five-week breadth thrust above 1.65", "Ch 8 · Breadth thrust (p.141-142)", "Long",
            "weekly NYSE advances/declines/total-issues counts (the vault has daily counts only) and the exit is only an outcome window (\"rose an average of 17.6% over the next 52 weeks\")",
            &["E|\"when the breadth ratio thrust above 1.65 ... calculated as the five-week total of the weekly advances to total issues ratio less the weekly declines to total issues ratio\" (p.141-142)"]),
@@ -206,7 +209,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kdta_may_oct" => ("kdta_calendar", "K&D seasonal", "May-October"),
         "kdta_pullback6" => ("kdta_short_term", "K&D short-term patterns", "6% pullback"),
         "kdta_two_bar" => ("kdta_short_term", "K&D short-term patterns", "Two-bar breakout"),
-        "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" | "kdta_plurality" => ("kdta_breadth", "K&D breadth systems", mkt),
+        "kdta_nh_nl" | "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" | "kdta_plurality" => ("kdta_breadth", "K&D breadth systems", mkt),
         "kdta_arms265" | "kdta_arms_ext" | "kdta_arms10ma" => ("kdta_arms", "K&D Arms Index systems", mkt),
         _ if id.starts_with("kdta_") => ("kdta_other", "K&D cited rules (not testable)", ""),
         _ => return None,
@@ -226,6 +229,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kdta_may_oct" => vec![p("shorts", "Short from May 15 (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_two_bar" => vec![p("tick", "Offset 'one tick' in ticks of the instrument", 1.0, 0.0, 10.0, 1.0)],
         "kdta_pullback6" => vec![p("pct", "Buy limit below yesterday's close (%)", 6.0, 1.0, 15.0, 0.5)],
+        "kdta_nh_nl" => vec![p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_adline" => vec![p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_ad1018" => vec![p("level", "One-day advances/declines level", 1.018, 0.5, 2.0, 0.001), p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_adr191" => vec![p("days", "Sum length (days)", 10.0, 5.0, 20.0, 1.0), p("level", "10-day advances / 10-day declines level", 1.91, 1.2, 3.0, 0.01), p("hold", "Bars held (a year = 252)", 252.0, 20.0, 504.0, 1.0)],
@@ -479,6 +483,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             out
         }
+        "kdta_nh_nl" => {
+            let s = if nse { super::wmny::NHNL_NSE } else { NYSE_NHNL };
+            let (Some(nh), Some(nl)) = (x.series(s[0]), x.series(s[1])) else { return Some(vec![]) };
+            let shorts = g("shorts") >= 0.5;
+            let off = if shorts { -1 } else { 0 };
+            drive(x, from, to, |i, d, _| {
+                if !(nh[i].is_finite() && nl[i].is_finite()) { return None; }
+                if nh[i] > nl[i] && d != 1 { Some((1, "new highs exceed new lows".into())) }
+                else if nh[i] < nl[i] && ((shorts && d != -1) || (!shorts && d == 1)) { Some((off, "new lows exceed new highs".into())) } else { None }
+            })
+        }
         "kdta_adline" | "kdta_ad1018" => {
             let Some((a, dcl)) = ad() else { return Some(vec![]) };
             let shorts = g("shorts") >= 0.5;
@@ -599,6 +614,21 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 94.0, 2, 96.0));
         assert_eq!(dnum("1970-01-01"), 0);
         assert_eq!(civil(dnum("2001-12-31")), (2001, 12, 31));
+    }
+    #[test]
+    fn nh_nl_longs_on_more_new_highs_reverses_on_more_new_lows_and_holds_on_ties() {
+        // lane CV6 Q9: NH > NL buys at that close, NH < NL reverses to short, NH = NL or a missing count changes nothing
+        let r = ctx_rows(&[(100.0, 101.0, 99.0, 100.0); 8], dnum("2020-01-06"));
+        let nh = [5.0, 5.0, 3.0, 3.0, f64::NAN, 1.0, 9.0, 9.0];
+        let nl = [1.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0];
+        for (id, nm) in [("kdta_nh_nl", ["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"]), ("kdta_nh_nl_nse", ["NSE_NHNL.NH", "NSE_NHNL.NL"])] {
+            let mut x = Ctx::new(&r, &[], &[]);
+            x.extra.insert(nm[0].into(), nh.to_vec());
+            x.extra.insert(nm[1].into(), nl.to_vec());
+            let t = run(id, &x, 0, 7, &Params::new()).unwrap();
+            // long at bar 0 (5 > 1) held through the tie (bars 2, 3) and the missing count (4); short at bar 5 (1 < 4); long again at bar 6 (9 > 4)
+            assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, z.exit_i)).collect::<Vec<_>>(), vec![(1.0, 0, 5), (-1.0, 5, 6), (1.0, 6, 7)], "{id}");
+        }
     }
     #[test]
     fn adr191_ten_day_ratio_crossing_hand_checked() {
