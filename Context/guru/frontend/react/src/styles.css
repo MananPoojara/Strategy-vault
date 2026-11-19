@@ -793,8 +793,10 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .ghero-book .guru-portrait .portrait { width: 150px; height: 172px; padding: 5px; }
 .shelf.book-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px 22px; }
 .shelf.book-grid .bookcard { display: flex; flex-direction: column; gap: 12px; padding: 0; background: none; border: 0; box-shadow: none; transform: none; }
-.shelf.book-grid .book-cover-link { display: block; }
-.shelf.book-grid .cover3d { width: 100%; height: auto; aspect-ratio: 168 / 236; }
+.shelf.book-grid .book-cover-link { display: block; align-self: stretch; width: 100%; }
+.shelf.book-grid .cover3d { width: 100%; height: auto; aspect-ratio: 5 / 6; }
+.shelf.book-grid .c3-face { padding: 26px 22px 18px 26px; }
+.shelf.book-grid .c3-title { font-size: clamp(18px, 1.7vw, 24px); line-height: 1.15; }
 .shelf.book-grid .bc-body { display: flex; flex-direction: column; gap: 6px; }
 .shelf.book-grid h3 { margin: 0; font-size: 15px; line-height: 1.3; }
 .shelf.book-grid h3 a { color: var(--ink); }
