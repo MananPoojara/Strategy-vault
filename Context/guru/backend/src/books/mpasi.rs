@@ -10,7 +10,7 @@ pub const BOOK: &str = "mpasi";
 
 /// Lead decision 197 (K37, 4 Nov 2026): mpasi_sp_ma12 is held (MPASI_HELD).
 pub const REVIEWED: &[&str] = &[];
-const MPASI_HELD: &str = "the printed rule needs both legs: \"Favorable periods for equity ownership under this approach require the yield on three-month commercial paper to be below its 12-month average and for the S&P Composite to be above its 12-month moving average. All other conditions are regarded as unfavorable\" (p.101); the S&P leg alone is not a printed rule, and the vault holds no commercial-paper yield series (lead decision 197)";
+const MPASI_HELD: &str = "the printed rule needs both legs: \"Favorable periods for equity ownership under this approach require the yield on three-month commercial paper to be below its 12-month average and for the S&P Composite to be above its 12-month moving average. All other conditions are regarded as unfavorable\" (p.101); the S&P leg alone is not a printed rule, and its two-leg form is the live card mpasi_cp_sp_ma12 (Lane D2, #340: Norgate &SP with the Eurodollar &GE contract for the commercial-paper leg; lead decision 197 predates it)";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! d {
@@ -32,7 +32,7 @@ fn catalogue_raw() -> Vec<StrategyDef> {
             notes: "Month-end bar = last trading day of the month (the last bar of the data never counts as a month end). A close equal to the average counts as bullish (p.105). Long or cash; the book prints no results for this leg alone. Fill at the month-end close [Not from the book: no fill is stated]. Applied to US and Indian indices, ETFs and stocks as a declared application (the book: S&P Composite).",
             claim: None },
         d!("mpasi_six_stages_ma12", "Six-stage allocation from 12-month MA crossovers of bonds, stocks, commodities", "Ch.9-10, 12 (p.181-189, 205-206, 254-262)",
-           NotTestable("needs monthly US long Treasury bond prices and the CRB Composite (not in the vault); 2 of the 8 above/below combinations are no stage; allocations are 'gradual', 'a range rather than a specific number' (p.182) and can depart from the targets ('The Outer Ranges', p.261-262)"),
+           NotTestable("needs the CRB Composite (not in the vault; the bond leg could use Norgate &ZB from 1977); 2 of the 8 above/below combinations are no stage; allocations are 'gradual', 'a range rather than a specific number' (p.182) and can depart from the targets ('The Outer Ranges', p.261-262)"),
            &["F|\"technicians use moving average crossovers rather than reversals\"; \"12 months is one of the most consistently reliable\" (p.185-186)",
              "F|Stage I bonds bullish, stocks and commodities bearish; II bonds and stocks bullish; III all bullish; IV bonds bearish; V commodities bullish only; VI all bearish (Fig 10.1, p.206)",
              "E|Stage weights stocks/bonds/cash: I 30/50/20 ('recommended 30 percent equity exposure', p.256), II 65/30/5, III 75/20/5, IV 75/15/10, V 30/15/55 (cash \"raised to 55 percent\", p.260), VI 20/30/50 (Figs 12.2-12.6, p.257-261)"]),

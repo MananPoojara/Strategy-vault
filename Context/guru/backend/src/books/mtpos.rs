@@ -22,7 +22,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ],
             notes: "[Declared readings, not from the book] The reversal day must come right after the third (or later) trend day; the narrow-range day and high volume are 'and/or' confirmations without numbers and are not used. Entry and exit at the close of the set-up day. No stop and no time exit (the book gives none; a long without a sell set-up stays open). p.tt = 1 uses the figure note's higher-high / higher-low trend test (p.65; also Winning with Stocks p.80) instead of the text's close-and-low test. Long only by default, as the book recommends puts over shorting; p.short = 1 adds the mirror short. The book shows US stocks (YHOO, JNJ, TGT); index and ETF runs and Indian stocks are a declared application.",
             claim: None },
-        held("mtpos_options", "Option versions of the swing trade, spreads, straddles, synthetics, uncovered puts", "Ch.4-8", NeedsData("needs option prices (none in the vault)"), &["E|Buy puts at the top of the swing"]),
+        held("mtpos_options", "Option versions of the swing trade, spreads, straddles, synthetics, uncovered puts", "Ch.4-8", NeedsData("no testable entry or exit: 'buy puts at the top of the swing' is read by eye; NIFTY/BANKNIFTY option chains are held but the book's US stock options and strikes are not"), &["E|Buy puts at the top of the swing"]),
         held("mtpos_charts", "Chapter 9 chart reading", "Ch.9", NotTestable("chart interpretation by eye"), &["E|Judgement"]),
     ]
 }

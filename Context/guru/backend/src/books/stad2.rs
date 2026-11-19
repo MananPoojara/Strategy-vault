@@ -831,7 +831,7 @@ fn defs_b() -> Vec<Def> {
         "X|Parabolic Trailing SX (table: Acceleration .02, FirstBarMultp 3; code not listed separately)"],
       "Vol 8 ch.4 p.45-59. Book: British Pound 1/84-3/99 (optimised): $73,220 on 150 trades, 41%; IBM long-only: 44 trades, 68%.", ("stad8_jib", "Jack-in-the-Box", "Vol 8")),
     d("stad8_abpd", "ActivityBar Price Distribution", "Vol 8 · Strategies", "Long/Short",
-      NeedsData("Uses ActivityBar data (1-minute activity inside 60-minute bars: AB_ModePrice, AB_GetZoneLow); needs intraday tick/minute distributions."),
+      NeedsData("Uses ActivityBar data (AB_ModePrice, AB_GetZoneLow: the price distribution of activity inside each 60-minute bar, from ticks); the book traded Microsoft and Dell, and the vault holds 1-minute bars only for SPX/SPY/NIFTY/BANKNIFTY cash series, no per-stock minutes or ticks."),
       &["E|Open of next bar > ModePrice and Average(Close,3) rising: Buy next bar at market (Vol 8 p.63 code)", "X|Mode/average reversals exit next open or this close"],
       "Vol 8 ch.5 p.61-68. Book: 60-minute Microsoft and Dell.", ("stad8_abpd", "ActivityBar Price Distribution", "Vol 8")),
     d("stad8_ryanshope", "Ryan's Hope (Ryan Jones)", "Vol 8 · Strategies", "Long/Short", Live,

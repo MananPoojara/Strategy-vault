@@ -15,8 +15,8 @@ pub const REVIEWED: &[&str] = &["rgc_cdow_mon_long", "rgc_tdom17_long", "rgc_tdo
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FUT: &str = "needs the book's futures/intermarket series (T-Bond, Eurodollar, T-Bill, Dollar index, CRB, XAU, XOI, UTY, gold, crude, D-Mark, Yen, silver, Kodak etc.) - none is in the vault (only NIFTY indices, SPX/NDX/DJI, VIX/India VIX, NSE breadth)";
-const FUND: &str = "needs monthly/weekly US fundamental series (CPI, T-Bill and long-bond yields, M2, consumer sentiment, unemployment duration/claims, prime and discount rates) - not in the vault";
-const COT: &str = "needs CFTC Commitment of Traders weekly positions and T-Bond/coffee futures - not in the vault";
+const FUND: &str = "the Table 3.8 DJIA rule needs the Fed discount-rate series (not held), M2/consumer sentiment/unemployment series are not held either; prime rate (DPRIME), DTB3, DGS10/DGS30 (from 1977) and CPI with release dates ARE held, so only the discount-rate leg (and the 1944-1976 long-bond history) blocks it";
+const COT: &str = "needs CFTC COT weekly positions for T-Bonds and coffee: only COT_138741 (S&P 500) is held, and the LookBack N is not printed (p.90); Norgate &ZB and &KC futures are held";
 const DOLLAR_STOP: &str = "dollar stop on a futures contract: needs the futures contract and its point value; the vault has no futures data (cash index points are not substituted)";
 const MEM: &str = "needs the proprietary MEM/TradeCycles functions (RSMemCycle1.2, RSMemPred, RSCycleTrend) whose code and internal settings the book does not give";
 

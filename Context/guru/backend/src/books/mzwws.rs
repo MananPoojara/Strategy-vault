@@ -74,7 +74,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"buying no-load funds just prior to the last trading day of the month, and selling them after the fourth trading day of the next month\" (p.170)"],
             "Fosback 1928-4/1975 S&P: $10,000 -> $569,135, .71%/period; Zweig 4/1975-6/1985 S&P: $13,322, .24%/period (p.169-170).", None),
         // ---- data the vault does not have
-        d("mzwws_prime_rate", "Prime Rate Indicator", "Ch 4 · Monetary indicators", "Long", NeedsData("US bank prime rate change history (dates and levels, 1954-)"), &[], &[
+        d("mzwws_prime_rate", "Prime Rate Indicator", "Ch 4 · Monetary indicators", "Long", NeedsData("data is NOT the block: the prime rate is held (FRED DPRIME daily, 1955-08-04 to 2026-11-09; the book starts 1954). The rule (p.45) is fully printed and Tables 1-2 print every signal 1954-1993 for a #368 check, so this is an engine-work candidate (open: how the peak/low reference is kept, 'second of two cuts' wording, FRED publication lag #372); not yet built"), &[], &[
             "E|\"Any initial cut in the prime rate if the prime's peak was less than 8%\"; \"If the prime's peak is 8% or higher, a buy signal comes on either the second of two cuts or on a full 1% cut in the rate\" (p.45)",
             "X|\"Any initial hike in the prime rate if the prime's low is 8% or greater\"; \"If the prime's low is less than 8%, a sell signal comes on the second of two hikes or on a full 1% jump\" (p.45)"],
             "Tables 1-2 print every signal 1954-1993 (21 buys, 19 sells; S&P 500 buys +17.1%/yr). Codable once a dated prime-rate series exists.", None),

@@ -12,17 +12,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
     };
     vec![
         d("jsdow_dow_classic", "Traditional Dow Theory buy/sell signals (B-1..B-4, S-1..)", "Part I · Ch 2 Signals described",
-          NeedsData("Dow Jones Transportation Average daily closes (confirmation by Industrials AND Transports); the 'market lows'/'tops' that start each pattern are also judged, not defined"), &[
+          NeedsData("the Dow Jones Transportation Average ($DJT) IS held (Norgate, daily); the data is not the block. Held on the rule: no engine path confirms one market with a second average yet, and the 'market lows'/'tops' that start each pattern are also judged, not defined"), &[
             "F|\"After a pullback, there is a bounce that must exceed 3 percent on either one of the averages to be meaningful\"; \"That is really the only hard-and-fast number in the Dow Theory\" (p.17)",
             "E|Classic buy (B-1): \"1. Market lows. 2. Bounce. 3. Pullback (hold above the lows). 4. Break up (above the bounce high)\" by both Industrials and Transports (p.18-19); variations B-2..B-4 (p.19-21); sells are the inverse (p.21-)",
         ], "Appendix A lists the signals since 1897. Patterns need a second average; with the DJIA alone the rule is a different rule."),
         d("jsdow_dt21", "Dow Theory for the 21st Century (two of DJIA, Transports, S&P 500)", "Part III · Ch 9 The heart of the theory",
-          NeedsData("Dow Jones Transportation Average (one of the three confirming averages); a DJIA+S&P-only version would drop signals the book takes"), &[
+          NeedsData("$DJT, $DJI and $SPX are all held (Norgate); the data is not the block, the two-of-three confirmation across averages has no engine path yet; a DJIA+S&P-only version would drop signals the book takes"), &[
             "E|\"Using the Dow Jones Industrials, Transports, and the S&P 500 Index with any two of the three indices confirming one another\"; \"Whenever either the Industrials or Transports confirm the S&P 500, then a signal is given ... the first to give a signal is the winner!\" (p.99)",
             "A|Scale-in: 25% at capitulation, 25% at a second capitulation, 25% on the 3% pullback, 25% at the bull-market definition, complete 100% on the buy signal (p.100-101)",
         ], "44 signals since 1957, 'average improvement 2.2 percent' per signal (p.101)."),
         d("jsdow_capitulation", "Capitulation Indicator", "Part III · Ch 8 Capitulation",
-          NotTestable("no exit of its own (exits are Dow Theory / Schannep Timing Indicator sells); also needs the NYSE Composite and the moving-average type is given two ways ('ten-week, time-weighted' vs 'exponentially smoothed 50-day')"), &[
+          NotTestable("no exit of its own (exits are Dow Theory / Schannep Timing Indicator sells); the NYSE Composite ($NYA) is held, so data is not the block; the moving-average type is given two ways ('ten-week, time-weighted' vs 'exponentially smoothed 50-day')"), &[
             "E|\"Market bottoms are identified when the divergence between the three major stock market indices is 10% below their respective ten-week, exponentially time-weighted moving averages ... The date used is the first day the level was attained\" (p.90)",
         ], "Table 8.3: 11 capitulation buys 1962-2002, S&P 500 +11.0%/+18.5%/+24.7%/+25.4% after 3/6/9/12 months (p.93)."),
         d("jsdow_sti", "Schannep Timing Indicator", "Part IV · Ch 10",

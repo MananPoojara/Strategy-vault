@@ -26,8 +26,8 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FILL: &str = "Fill at the close of the signal bar [Not from the book: the book never states fills; it used the MetaStock System Tester, whose default is the signal close, and its tables read 'Close MONTHLY' / weekly closes]. A close equal to the average gives no signal [declared]. No commission or cash interest in the vault default (book: none, except where a table says 1% / 4%).";
 const CP: &str = "3-month commercial paper yield (monthly) is not in the vault; the S&P side is available (SPX from 1983). The 12/12 rule (p.164: the inverted yield above its 12-month average and the S&P above its 12-month average) is the same two-leg rule as the live card mpasi_cp_sp_ma12 (Pring, All-Season Investor p.101), run on the Norgate S&P 500 and Eurodollar (100 minus the forward 3-month rate) contracts as a declared adaptation (R4 #340), so it is not coded twice; the 2/33 variant (p.168: buy when both series cross above their 2-month averages, sell when either crosses below its 33-month average; the book itself notes that a sell cannot be generated while both are already below their 33-month averages) leaves the signal-state handling open and stays held.";
-const CRB: &str = "CRB Composite and spot gold (monthly / weekly) are not in the vault";
-const BONDS: &str = "long-term US government bond prices and the CRB Spot Raw Industrials index are not in the vault";
+const CRB: &str = "the CRB Composite is not in the vault (spot gold is only held as Norgate &GC futures / GLD)";
+const BONDS: &str = "the CRB Spot Raw Industrials index is not in the vault (the bond leg could use Norgate &ZB from 1977)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
