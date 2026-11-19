@@ -8,7 +8,7 @@ use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 
 const BOOK: &str = "capttm";
 /// Admitted ids (authors/carnold/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["capttm_ma14_50", "capttm_ma_price_both"];
+pub const REVIEWED: &[&str] = &["capttm_ma14_50", "capttm_ma_price_both", "capttm_price_ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -31,9 +31,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Exits as quoted above.",
         ], concat!("'This system' = the 14/50-day pair of the preceding paragraph (p.82). Price = the daily close (\"you may wish to use closing prices only\", p.81). ",
             "Crossing above both: close > both averages today and not yesterday; exit long: close below either average (close < the higher one). Short mirror. All fills at the signal close [book silent]. A long exit and a short entry can happen on the same close. India: NIFTY indices.")),
-        nt("capttm_price_ma", "Price crossing a single moving average", "Ch 13 · Moving averages",
-            "no single length: 'a 200-day moving average ... (Shorter-term signals would be generated using a 10- or 20-day moving average.)' (p.81)", &[
-            "E|\"Buy when prices cross above the moving average. Sell when prices cross below the moving average.\" (p.81)"]),
+        d("capttm_price_ma", "Price crossing a single moving average", "Ch 13 · Moving averages", "Long", Live, &[
+            "E|\"Buy when prices cross above the moving average.\" (p.81)",
+            "X|\"Sell when prices cross below the moving average.\" (p.81)",
+        ], concat!("Three labelled readings (R4 #339/#343), UNVERIFIED, no results printed. (1) Length: 200 days, the book's example ('when a stock price is above its 200-day moving average, it is considered a bullish sign'; 'Shorter-term signals would be generated using a 10- or 20-day moving average', p.81); the 10 and 20 are the printed variants (ma param). The book also says the best length is found by the reader per market; no optimising here. ",
+            "(2) Simple average of closes ('Typically, you may wish to use closing prices only', p.81; the simple average is the one the chapter builds first). (3) 'Sell' closes the long (as for capttm_ma14_50, p.82 says 'Sell short' when it means a short); p.short=1 [non-default] also sells short on the cross below and covers on the cross above. ",
+            "Cross = close above the average today and not yesterday. Signals and fills on the close (vault convention). India: NIFTY indices.")),
         nt("capttm_dow_ma200", "Dow vs its 200-day moving average", "Ch 13 · Moving averages",
             "no exit: a break below the average 'does not necessarily signal an end to the bull market' (p.83); the confirmation (average turning up) has no trade rule", &[
             "E|\"If ... the Dow should move up and cross the Moving Average, it indicates that a new bull market has begun.\" (p.83)"]),
@@ -93,6 +96,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "capttm_ma14_50" => ("capttm_ma", "Timing the Market moving-average systems", "14/50 crossover"),
         "capttm_ma_price_both" => ("capttm_ma", "Timing the Market moving-average systems", "price vs both averages"),
+        "capttm_price_ma" => ("capttm_ma", "Timing the Market moving-average systems", "price vs one average"),
         s if s.starts_with("capttm_") => ("capttm_other", "Timing the Market indicators", ""),
         _ => return None,
     })
@@ -106,6 +110,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "capttm_ma14_50" => vec![fast, slow, p("short", "Also sell short on the cross below (stop-and-reverse; not the default reading)", 0., 0., 1., 1.)],
         "capttm_ma_price_both" => vec![fast, slow],
+        "capttm_price_ma" => vec![p("ma", "Moving average (days)", 200., 2., 300., 1.), p("short", "Also sell short on the cross below (stop-and-reverse; not the default reading)", 0., 0., 1., 1.)],
         _ => vec![],
     })
 }
@@ -118,10 +123,23 @@ fn close(out: &mut Vec<Trade>, cur: &mut Option<Trade>, i: usize, px: f64, why: 
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if id != "capttm_ma14_50" && id != "capttm_ma_price_both" { return None; }
+    if !matches!(id, "capttm_ma14_50" | "capttm_ma_price_both" | "capttm_price_ma") { return None; }
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
+    if id == "capttm_price_ma" {
+        let m = sma(&x.c, g("ma").round().max(1.) as usize);
+        let (short, mut out, mut cur) = (g("short") >= 0.5, vec![], None::<Trade>);
+        for i in from.max(1)..=to {
+            if !m[i].is_finite() || !m[i - 1].is_finite() { continue; }
+            let (up, dn) = (x.c[i] > m[i] && x.c[i - 1] <= m[i - 1], x.c[i] < m[i] && x.c[i - 1] >= m[i - 1]);
+            if dn && cur.as_ref().map_or(false, |t| t.dir > 0.) { close(&mut out, &mut cur, i, x.c[i], "close crossed below the moving average"); }
+            if up && cur.as_ref().map_or(false, |t| t.dir < 0.) { close(&mut out, &mut cur, i, x.c[i], "close crossed above the moving average"); }
+            if cur.is_none() && i < to { if up { cur = Some(trade(1., i, x.c[i])); } else if dn && short { cur = Some(trade(-1., i, x.c[i])); } }
+        }
+        if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+        return Some(out);
+    }
     let (f, s) = (sma(&x.c, g("fast").round().max(1.) as usize), sma(&x.c, g("slow").round().max(1.) as usize));
     let ok = |i: usize| f[i].is_finite() && s[i].is_finite();
     let mut out = vec![];
