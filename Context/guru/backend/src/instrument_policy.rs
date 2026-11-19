@@ -394,7 +394,7 @@ fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opti
         // R1 audit (labels only): the vault DOES hold option prices for this ticker; the card is admitted elsewhere for its own reason
         let why=match def.id {
             "fotol_adjusted_cc"=>"its $0.20 / $0.40 time-premium amounts are US-dollar amounts set on the book's own QQQ options",
-            "otvt_cvr1_sell_puts"=>"it is the option leg of CVR I, written for SPY options with the CBOE VIX (the VIX open is read; India VIX opens repeat the previous close)",
+            "otvt_cvr1_sell_puts"=>"it is the option leg of CVR I, written for SPY options with the CBOE VIX (the VIX open is read; the India VIX file has no opening prices)",
             _=>"its own review admitted it only there",
         };
         format!("This rule trades real option contracts. The vault holds option prices for {ticker}, but this rule is admitted only on {}: {why}. No result is published on {ticker}.", options_tickers(def.id).join(", "))
