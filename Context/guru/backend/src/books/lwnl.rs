@@ -388,10 +388,10 @@ fn catalogue_base() -> Vec<StrategyDef> {
               "E|Projected low/high contrarian on Bonds (Vol. 29 No. 9 p.3: 352 trades 73% $71,472.50) = lwnl_bond_projected (lane F1D); DOWM buys (May 1996 p.2)"],
             ""),
         sd!("lwnl_commodity_systems", "Commodity and currency systems and seasonals (rest of the bundle)", "Not testable", "Long/Short",
-            NotTestable("Split (lane O1, 20 Nov 2026, R4 #367 (2)): coded as their own cards: lwnl_gold_13x13 (May 1993 p.1-2) and lwnl_gold_tdom1_4d (Mar 1995 p.3-4), both on the Norgate gold contract. HELD: Larry's Cup of Coffee (Mar 1992 p.3, coffee): 61% of its trades change when the in-bar path of its two live stop orders is flipped (#240 > 5%, no coffee minutes are held) and the engine reads 548 trades to Mar 1992 against the printed 2,117 (4 unstated details: stop arming, both orders live, one fill per side per bar, point value); pork bellies (Nov 1996 p.2, Aug 1996, Dec 1996) are not a held market; the remaining seasonal lists and the Nov 1996 yen / gold delayed-bailout trades are not coded yet (see authors/held-1119/O1/FINAL.md for the page-level inventory and next steps)."),
+            NotTestable("Split (lane O1, 20 Nov 2026, R4 #367 (2)): coded as their own cards: lwnl_gold_13x13 (May 1993 p.1-2) and lwnl_gold_tdom1_4d (Mar 1995 p.3-4), both on the Norgate gold contract. HELD: Larry's Cup of Coffee (Mar 1992 p.3, coffee): 61% of its trades change when the in-bar path of its two live stop orders is flipped (#240 > 5%, no coffee minutes are held) and the engine reads 548 trades to Mar 1992 against the printed 2,117 (4 unstated details: stop arming, both orders live, one fill per side per bar, point value); pork bellies (Nov 1996 p.2, Aug 1996, Dec 1996) are not a held market; lane O2 (20 Nov 2026) coded gold Nov TD16 (lwnl_gold_nov_td16), yen Nov TD10 (lwnl_yen_nov_td10), live cattle Jul TD18 (lwnl_cattle_jul_td18), corn Jul TD2 short (lwnl_corn_jul_td2_short), coffee Aug TD12 open and limit entries (lwnl_coffee_aug_td12_open / _limit) and yen Apr TD4 (lwnl_yen_apr_td4), all UNVERIFIED; HELD: coffee Aug TD12 with the buy stop at the open + 20% of the previous day's range (Aug 1995 p.3 clip three: #240 25% of trades change under the flipped in-bar path); the monthly seasonal lists (Sep 1993 - Dec 1997) are not coded yet (see authors/held-1119/O2/FINAL.md)."),
             &["E|Larry's Cup of Coffee: open + 50% / - 40% of the 4-day average range, $1,750 stop or 6th close (Mar 1992 p.3; 2,117 trades $535,456): held, #240 61%",
               "E|13x13 gold channel (May 1993 p.1-2) = lwnl_gold_13x13; gold TDOM1 > close 4 days ago, 12-day exit (Mar 1995 p.3-4) = lwnl_gold_tdom1_4d (both live)",
-              "E|Not coded yet: gold Nov TD16 / yen Nov TD10 delayed-bailout (Nov 1996 p.3-4), cattle Jul TD18, corn Jul TD2, coffee Aug TD12 (Jul-Aug 1995), yen Apr TD4 (Mar 1997) and the other monthly lists (Sep 1993 - Dec 1997)",
+              "E|Coded by lane O2 (UNVERIFIED): lwnl_gold_nov_td16, lwnl_yen_nov_td10 (Nov 1996 p.3-4), lwnl_cattle_jul_td18, lwnl_corn_jul_td2_short (Jul 1995 p.3), lwnl_coffee_aug_td12_open / _limit (Aug 1995 p.3), lwnl_yen_apr_td4 (Mar 1997 p.3); coffee Aug TD12 buy stop held (#240 25%); not coded yet: the other monthly lists (Sep 1993 - Dec 1997)",
               "E|Pork bellies trades (Nov 1996 p.2, Dec 1996): the market is not held"],
             ""),
         // ---- Not testable
@@ -601,7 +601,69 @@ pub(crate) const CSYS: &[CSys] = &[
        "X|Unstated in the letter (3 of 4): the stop is armed on the entry day",
        "E|Unstated in the letter (4 of 4): trading day 1 of the month by the vault's count (a partial first month is not counted, decision 186)"],
      "Printout p.4: net $41,850, 84 trades, 45 winners (53%), average $498.21, since 1975.",
-     ["84", "53% (45)", "$498.21 ($41,850)", "1975 to Mar 1995"]),
+     ["84", "53% (45)", "$498.21 ($41,850)", "1975 to Mar 1995"]),    ("lwnl_gold_nov_td16", "Gold: buy the 16th trading day of November, 6-day delayed bailout", "Long", "&GC",
+     &["E|\"Gold has been a buy on the 16th trading day of November with a 6 day delayed bailout\" (Vol. 33 No. 11 = November 1996, p.4; the printout shows no stop): buy the open of November's trading day 16",
+       "X|Printed exit: a 6-day delayed bailout, no stop. Unstated in the letter (1 of 3): the bailout is the first profitable opening at least 6 bars after the entry bar, profit measured against the entry price",
+       "X|Unstated in the letter (2 of 3): a trade that is never profitable at an opening stays open (there is no time exit or stop)",
+       "E|Unstated in the letter (3 of 3): trading day 16 by the vault's count of the month's sessions",
+       "E|Adaptation, not counted: the Norgate back-adjusted contract (the CSI contract file is not held); US$ per point is used only to report US$"],
+     "Printout p.4 (COMEX GOLD, 05/28/75 - 10/29/96, commission $50): 19 trades, 100% winners, net $16,560, average $871.58.",
+     ["19", "100% (19)", "$871.58 ($16,560)", "05/1975 to 10/1996"]),
+    ("lwnl_yen_nov_td10", "Yen: buy the 10th trading day of November, 6-day delayed bailout or $1,600 stop", "Long", "&6J",
+     &["E|\"the Yen has shown a pronounced tendency to rally starting the 10th trading day of the month ... Our exit rule is a 6 day Delayed Bailout or $1,600 stop\" (Vol. 33 No. 11 = November 1996, p.3): buy the open of November's trading day 10",
+       "X|$1,600 stop = 0.0128 of the Norgate quote at US$125,000 per 1.00 (the letter's own dollars at the contract's own point value)",
+       "X|Unstated in the letter (1 of 3): the bailout is the first profitable opening at least 6 bars after the entry bar, profit measured against the entry price",
+       "X|Unstated in the letter (2 of 3): the stop is armed on the entry day",
+       "E|Unstated in the letter (3 of 3): trading day 10 by the vault's count of the month's sessions",
+       "E|Adaptation, not counted: the Norgate back-adjusted contract (the CSI contract file is not held)"],
+     "Printout p.3 (JAPANESE YEN, 12/23/76 - 10/29/96, commission $50, point value $12.50): 17 trades, 88% winners (15), net $8,862.50, average $521.32.",
+     ["17", "88% (15)", "$521.32 ($8,862.50)", "12/1976 to 10/1996"]),
+    ("lwnl_cattle_jul_td18", "Live cattle: July trading day 18, buy stop at the open + 20% of the previous day's range", "Long", "&LE",
+     &["E|\"go long Live Cattle at the opening on the 18th trading day of July, plus 20% of the range of the 17th trading day ... IF AND ONLY IF price rallies to that level you go long. Exit 10 market days later, or be stopped out with a $900 loss\" (Vol. 29 No. 7 = July 1995, p.3): buy stop at the open + 0.2 x the previous day's range on July's trading day 18",
+       "X|$900 stop = 2.25 cents of the Norgate quote at US$400 per 1.00",
+       "X|Unstated in the letter (1 of 4): \"10 market days later\" is read as 10 bars after the entry bar",
+       "X|Unstated in the letter (2 of 4): the exit is on the close of that bar",
+       "X|Unstated in the letter (3 of 4): the stop is armed on the entry day",
+       "E|Unstated in the letter (4 of 4): trading day 18 by the vault's count of the month's sessions"],
+     "Printout p.3 (Test 5; window and costs not printed; 'the last 18 years'): 15 trades, 86% winners (13), net $6,861, average $457.40.",
+     ["15", "86% (13)", "$457.40 ($6,861)", "about 18 years, not printed"]),
+    ("lwnl_corn_jul_td2_short", "Corn: sell short on July trading day 2 at the open - 10% of the previous day's range", "Short", "&ZC",
+     &["E|\"selling the September Corn contract on the second trading day of July by taking the opening that day and subtracting 10% of previous day's range. If, in the same day, prices decline to that price we would sell short. Our exit rule is simple: absorb a $1000 loss, or get out on the open 24 trading days later\" (Vol. 29 No. 7 = July 1995, p.3): sell stop at the open - 0.1 x the previous day's range on July's trading day 2",
+       "X|$1,000 stop = 20 cents of the Norgate quote at US$50 per 1.00",
+       "X|Unstated in the letter (1 of 3): \"24 trading days later\" is read as the open of the 24th bar after the entry bar",
+       "X|Unstated in the letter (2 of 3): the stop is armed on the entry day",
+       "E|Unstated in the letter (3 of 3): trading day 2 by the vault's count of the month's sessions",
+       "E|Adaptation, not counted: the Norgate back-adjusted corn contract stands in for 'the September contract'"],
+     "Printout p.3 (SHORT TRADES, Test 24; window and costs not printed): 18 trades, 83% winners (15), net $16,190, average $899.44.",
+     ["18", "83% (15)", "$899.44 ($16,190)", "not printed"]),
+    ("lwnl_coffee_aug_td12_open", "Coffee: buy the open of August's trading day 12", "Long", "&KC",
+     &["E|\"a very strong August seasonal rally for coffee starting on the 12th trading (not calendar) day of the month\" (Vol. 29 No. 8 = August 1995, p.3). Clip one: buy the open of that day. \"The results shown are from 1974 to 1994. The exit rule used is to take a $750 loss or exit on the close six trading days later\"",
+       "X|$750 stop = 2.0 cents of the Norgate quote at US$375 per 1.00",
+       "X|Unstated in the letter (1 of 3): \"six trading days later\" is read as the close of the 6th bar after the entry bar",
+       "X|Unstated in the letter (2 of 3): the stop is armed on the entry day",
+       "E|Unstated in the letter (3 of 3): trading day 12 by the vault's count of the month's sessions",
+       "E|Adaptation, not counted: the Norgate back-adjusted contract (the CSI file is not held)"],
+     "Printout p.3 (1974 to 1994, costs not printed): 20 trades, 60% winners, net $29,411.25, average $1,470.56.",
+     ["20", "60% (12)", "$1,470.56 ($29,411.25)", "1974-1994"]),
+    ("lwnl_coffee_aug_td12_limit", "Coffee: buy at the open - 20% of the previous day's range on August's trading day 12", "Long", "&KC",
+     &["E|\"a very strong August seasonal rally for coffee starting on the 12th trading (not calendar) day of the month\" (Vol. 29 No. 8 = August 1995, p.3). Clip two: buying at 20% of the previous day's range subtracted from the opening of the 12th trading day (a limit buy). \"The results shown are from 1974 to 1994. The exit rule used is to take a $750 loss or exit on the close six trading days later\"",
+       "X|$750 stop = 2.0 cents of the Norgate quote at US$375 per 1.00",
+       "X|Unstated in the letter (1 of 3): \"six trading days later\" is read as the close of the 6th bar after the entry bar",
+       "X|Unstated in the letter (2 of 3): the stop is armed on the entry day",
+       "E|Unstated in the letter (3 of 3): trading day 12 by the vault's count of the month's sessions",
+       "E|Engine convention, not counted: a limit buy fills when the day trades down to it, and at the open when the open is already at or below it"],
+     "Printout p.3 (1974 to 1994, costs not printed): 15 trades, 73% winners, net $30,615.00, average $2,041.00.",
+     ["15", "73% (11)", "$2,041.00 ($30,615.00)", "1974-1994"]),
+    ("lwnl_yen_apr_td4", "Yen: buy the 4th trading day of April, $2,200 stop, 12-day exit", "Long", "&6J",
+     &["E|\"In 12 of the last 20 years (60%) the Yen has been a buy on the 4th trading day of APRIL. These results used a $2,200 stop and 12 day exit\" (Vol. 34 No. 3 = March 1997, p.3): buy the open of April's trading day 4",
+       "X|$2,200 stop = 0.0176 of the Norgate quote at US$125,000 per 1.00",
+       "X|Unstated in the letter (1 of 4): \"12 day exit\" is read as 12 bars after the entry bar",
+       "X|Unstated in the letter (2 of 4): the exit is on the close of that bar",
+       "X|Unstated in the letter (3 of 4): the stop is armed on the entry day",
+       "E|Unstated in the letter (4 of 4): trading day 4 by the vault's count of the month's sessions",
+       "E|Engine convention, not counted: a trading-day entry fills at that day's open"],
+     "Printout p.3 (JAPANESE YEN, 11/24/76 - 02/21/97, commission $50, point value $12.50): 20 trades, 60% winners (12), net $20,487.50, average $1,024.37.",
+     ["20", "60% (12)", "$1,024.37 ($20,487.50)", "11/1976 to 02/1997"]),
 ];
 
 // ------------------------------------------------------------------ simulator
@@ -920,6 +982,41 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                         let hh = (i - 13..i).map(|j| h[j]).fold(f64::MIN, f64::max);
                         let ll = (i - 13..i).map(|j| l[j]).fold(f64::MAX, f64::min);
                         (Some(Ent::Stop(hh)), Some(Ent::Stop(ll)))
+                    })
+                }
+                "lwnl_gold_nov_td16" | "lwnl_yen_nov_td10" => {
+                    c2.bailout = true; c2.bail_after = 6; c2.hold = None;
+                    let yen = s == "lwnl_yen_nov_td10";
+                    if yen { c2.stop = 1600.0 / pt; }
+                    let td = crate::books::lwlts::tdm(x); let n = if yen { 10 } else { 16 };
+                    simulate(x, from, to, &c2, |i| if &x.r[i].date[5..7] == "11" && td[i] == n { (Some(Ent::Open), None) } else { (None, None) })
+                }
+                "lwnl_yen_apr_td4" => {
+                    c2.stop = 2200.0 / pt; c2.hold = Some(12);
+                    let td = crate::books::lwlts::tdm(x);
+                    simulate(x, from, to, &c2, |i| if &x.r[i].date[5..7] == "04" && td[i] == 4 { (Some(Ent::Open), None) } else { (None, None) })
+                }
+                "lwnl_cattle_jul_td18" => {
+                    c2.stop = 900.0 / pt; c2.hold = Some(10);
+                    let td = crate::books::lwlts::tdm(x);
+                    simulate(x, from, to, &c2, |i| if i >= 1 && &x.r[i].date[5..7] == "07" && td[i] == 18 { (Some(Ent::Stop(o[i] + 0.2 * (h[i - 1] - l[i - 1]))), None) } else { (None, None) })
+                }
+                "lwnl_corn_jul_td2_short" => {
+                    // exit on the OPEN of the 24th bar after entry = one bar after the close of the 23rd; the stop is checked first at that open
+                    // (a gap through the stop also exits at the open), so moving a time exit by one bar to its open is exact
+                    c2.stop = 1000.0 / pt; c2.hold = Some(23);
+                    let td = crate::books::lwlts::tdm(x);
+                    let mut t = simulate(x, from, to, &c2, |i| if i >= 1 && &x.r[i].date[5..7] == "07" && td[i] == 2 { (None, Some(Ent::Stop(o[i] - 0.1 * (h[i - 1] - l[i - 1])))) } else { (None, None) });
+                    for tr in t.iter_mut().filter(|t| !t.open && t.reason.starts_with("time exit") && t.exit_i < to) { tr.exit_i += 1; tr.exit_px = o[tr.exit_i]; tr.reason = "time exit on the open".into(); }
+                    t
+                }
+                "lwnl_coffee_aug_td12_open" | "lwnl_coffee_aug_td12_limit" => {
+                    c2.stop = 750.0 / pt; c2.hold = Some(6);
+                    let td = crate::books::lwlts::tdm(x);
+                    simulate(x, from, to, &c2, |i| {
+                        if !(i >= 1 && &x.r[i].date[5..7] == "08" && td[i] == 12) { return (None, None); }
+                        let r = 0.2 * (h[i - 1] - l[i - 1]);
+                        (Some(if s == "lwnl_coffee_aug_td12_open" { Ent::Open } else { Ent::Limit(o[i] - r) }), None)
                     })
                 }
                 _ => { // lwnl_gold_tdom1_4d
