@@ -140,7 +140,6 @@ function RuleGuideBody({model,onClose,id}: {model:RuleVisualModel;onClose:()=>vo
           <RulePriceChart model={chartModel} evidence={evidence} trade={trade} onDate={d=>setHoverDate(d)} focusDate={null} containerRef={root} callouts={callouts}/></>
         :<div className="rule-guide-empty" role="status"><strong>{basketPrice.loading?'Loading the traded stock':'Price chart unavailable'}</strong><p>{evidence.note}</p></div>}
       </div>
-      <p className="rg-note">{model.sourceReview}</p>
     </>}
   </div>;
 }

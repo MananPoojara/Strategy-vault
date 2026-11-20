@@ -26,12 +26,12 @@ async function mount(model=makeModel()){
 const dialog=()=>document.querySelector<HTMLElement>('[role="dialog"]')!;
 const select=()=>dialog().querySelector<HTMLSelectElement>('select')!;
 
-it('opens a named dialog showing one recorded trade and the source-review notice',async()=>{
+it('opens a named dialog showing one recorded trade and no review text',async()=>{
   const m=makeModel(),trigger=await mount(m);expect(trigger.getAttribute('aria-expanded')).toBe('true');
   expect(dialog().getAttribute('aria-modal')).toBe('true');
   expect(document.getElementById(dialog().getAttribute('aria-labelledby')!)?.textContent).toBe('Smoothed trendline');
   expect(dialog().textContent).toContain('Entry Date03/01/2020');
-  expect(dialog().textContent).toContain(m.sourceReview);
+  expect(dialog().textContent).not.toContain(m.sourceReview);
   expect(document.activeElement?.getAttribute('aria-label')).toBe('Close visual rules');
 });
 
