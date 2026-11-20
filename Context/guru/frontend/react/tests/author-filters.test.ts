@@ -40,7 +40,7 @@ it('the counts of one facet add up to the filtered total of the others', () => {
 
 it('chips name each narrowing filter, ignore defaults, and Clear all removes all of them', () => {
   const state = {author_status: 'backtested', author_type: 'collection', book_category: 'money-management', library_scope: 'pending', library_q: 'gap', library_sort: 'name', library_market: 'us'};
-  expect(activeFilters(state, 'authors').map(c => c.label)).toEqual(['Status: Backtested', 'Type: Collection', 'Topic: Money management', 'Library: Relevance review pending', '“gap”']);
+  expect(activeFilters(state, 'authors').map(c => c.label)).toEqual(['Status: Backtested', 'Type: Research house', 'Topic: Money management', 'Library: Relevance review pending', '“gap”']);
   expect(activeFilters({library_scope: 'trading'}, 'authors')).toEqual([]);
   expect(activeFilters({...state, ...CLEAR_ALL}, 'authors')).toEqual([]);
   // Sort, market and view are choices, not filters: Clear all leaves them alone.
