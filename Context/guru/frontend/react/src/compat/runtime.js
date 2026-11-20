@@ -140,9 +140,16 @@ window.VaultUI=(()=>{
  function tradePageNote(d){const p=d.trades_page;return p?`<p class="rnote" data-trade-page-note>This run has ${p.total.toLocaleString('en-US')} trades, more than the ${p.cap.toLocaleString('en-US')} one response carries, so the trade list loads ${TRADE_PAGE.toLocaleString('en-US')} at a time. Statistics, equity, drawdown and calendar returns use every trade; this table and its Excel/CSV downloads cover only the loaded page, and the price chart draws no trade markers.</p>`:'';}
  function tradeHTML(d){const p=d.trades_page,n=(d.trades||[]).length;return `<section class="box" data-tradesheet><div class="box-h">Tradelist <span class="legend"><small>${p?`${p.total} trades · ${n?`showing ${p.offset+1}–${p.offset+n}`:'loading the newest page'}`:`${n} trades`} · newest first</small>${tradePager(d)}<button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div>${tradePageNote(d)}<div class="tlog" data-tradesheet-table></div></section>`;}
  // The rows are built when the Tradelist tab opens, or for a PDF or print. Exports read the run data, never this table.
- function tradeTableHTML(d,tk){const rows=tradeRowsFor(d,tk),us=typeof isUS==='function'&&isUS();
-  const cell=(row,i,t)=>escText(tradelistCell(i,i===11?t.accounting?.slippage:row[i],us));
-  return `<table class="tbl tl" id="tradesheet"><thead><tr>${TRADE_COLS.map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>{const t=d.trades[tradeIndex];return `<tr>${TRADE_COLS.map((_,i)=>`<td class="${tradelistClass(i,row[i])}">${cell(row,i,t)}${i===16?tradeExitCheckMarkup(t):''}</td>`).join('')}</tr>`;}).reverse().join('')}</tbody></table>`;}
+ function tradeTableHTML(d,tk){const rows=tradeRowsFor(d,tk),us=typeof isUS==='function'&&isUS(),fin=v=>typeof v==='number'&&Number.isFinite(v);
+  // Columns as the desk's tradesheet (user 20 Nov 2026): a cost column only while that cost is on, money columns only when
+  // the run carries money amounts; a hidden cost is 0, so Gross - shown costs = Net still closes. Exports keep every column.
+  const money=rows.some(r=>fin(r[7])||fin(r[12])),slipOn=d.trades.some(t=>(fin(t.accounting?.slippage_ret)&&t.accounting.slippage_ret!==0)||(fin(t.accounting?.slippage)&&t.accounting.slippage!==0));
+  const taxes=money&&rows.some(r=>fin(r[10])&&r[10]!==0);
+  const show=TRADE_COLS.map((_,i)=>i===7||i===12?money:i===10?taxes:i===11?slipOn:true);
+  const slipCell=t=>money?tradelistCell(11,t.accounting?.slippage,us):fin(t.accounting?.slippage_ret)?numMinus((-Math.abs(t.accounting.slippage_ret)*100).toFixed(2)+'%'):'—';
+  const cell=(row,i,t)=>escText(i===11?slipCell(t):tradelistCell(i,row[i],us));
+  const cols=TRADE_COLS.map((k,i)=>[k,i]).filter(([,i])=>show[i]);
+  return `<table class="tbl tl" id="tradesheet"><thead><tr>${cols.map(([k,i])=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>{const t=d.trades[tradeIndex];return `<tr>${cols.map(([,i])=>`<td class="${tradelistClass(i,row[i])}">${cell(row,i,t)}${i===16?tradeExitCheckMarkup(t):''}</td>`).join('')}</tr>`;}).reverse().join('')}</tbody></table>`;}
  function equityNavigator(ch,d){
   // Range brush: one window over a mini equity line; drag the window to move, drag either edge to resize, double-click for all.
   const box=document.getElementById('equity-navigator');if(!box)return;const win=box.querySelector('.rb-win'),out=box.querySelector('output'),line=box.querySelector('polyline'),n=d.dates.length;
