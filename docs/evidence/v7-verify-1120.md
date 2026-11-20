@@ -1,0 +1,101 @@
+# V7 FINAL (20 Nov 2026, second pass) - verification of the int-1119l..int-1120c releases
+
+**Result: 0 of the listed ids pass R4 #368/#370/#371 in full. None promoted; every gate row stays unverified/withheld. No calculation or live behaviour changed.**
+Commit on claude/v7-1120: gate.rs reason text only (20 rows get a "V7 re-check" sentence with the exact comparison). Strings only; no cargo build or test was run on it.
+
+## Method (what was actually done this pass)
+1. Printed figures read from the SOURCE, not from gate/FINAL quotes: pdftotext -layout of the share PDFs into authors/lanes-1120/V7w/src (pbwts, mkits, bta, rwmts, kets, capttm) and Piranha.txt; image pages via authors/ocr2 (Zweig pp.65-71 of the scan, Table 1 read from the OCR) and page images by eye (Crabel PDF pp.196-197; Williams Vol.32 No.5 p.3 JPEG).
+2. Live binary `snapshot-refresh/bin/guru-int-1120c` as a private engine via authors/heavy (HEAVY_HIGH 1800M / HEAVY_MAX 2G), US data on port 19881 and India data on 19882 (earlier pass), each started with `&`, PID recorded in authors/lanes-1120/V7w/{us,in}.pid, killed by that PID only (port closed afterwards). Runs: /api/guru/connors/run, cost/slippage/rollover 0, params as `p.<key>`. Nothing written to data dirs.
+3. Judged per R4 #368/#370/#371 (trades within max(4,10%), win within max(8,100/n), money/percent figures within 10%, every printed row must match).
+4. Limit I could not remove: the live binary clamps &SP to 1982-04-21..1995-07-31 (R4 #330) and has no series for several book instruments, so book-window rows for piranha / pbwts use the engine's own trade dumps run past the clamp (authors/held-1119/F2/trades-book.csv, F3/trades-pbwts_*.csv); I recomputed every printed row from those dumps myself.
+
+## Table: id | printed (page) | ours | verdict
+| id | printed (page) | ours | verdict |
+|---|---|---|---|
+| lebsp_piranha | Piranha manual Table 1, 6/15/88-10/29/99, $250/pt, $150/trade: 156 tr (127 L/29 S), 76% (119 W), net 305,037.50, GP 435,850, GL 130,812.50, avg trade 1,955.37, avg W 3,662.61, avg L 3,535.47, max W 15,475, max L 12,425, consec W/L 16/2, PF 3.33; short 29 tr, 83%, 90,700, avg 3,127.59 | book window (engine, past clamp): 167 tr (137 L/30 S), 74.9%, net 288,692 (-5.4%), GP 432,635, GL 143,943 (+10.0%), avg 1,728.69 (**-11.6%**), avg W 3,461, avg L 3,427, max W 14,382, max L 9,225 (**-26%**), consec 20/4, PF 3.01; short 30, 76.7%, 65,175 (**-28%**), avg 2,172.50 (**-31%**). Live published window 109 tr reproduced | FAIL. UNVERIFIED |
+| pbwts_intermarket | Pruitt & Hill Table 8.11 p.193, S&P 5/3/96-4/19/02: 29 tr, 11 W (37.93%), net 37,537.50, GP 150,000, GL 112,462.50, avg 1,294.40, avg W 13,636, avg L 6,248, max W 27,750, max L 20,575, consec W/L 4/7, PF 1.33 | engine past clamp, $250/pt: 28 closed + 1 open, 11 W (39.29%), net 20,525 (**-45%**), GP 149,425, GL 128,900 (**+14.6%**), avg 733.04 (**-43%**), avg W 13,584, avg L 7,582 (**+21%**), max W 28,200, max L 21,950, consec 3/5, PF 1.16. Live published 1982-95: 72 tr, 23.6% | FAIL. UNVERIFIED |
+| pbwts_cot | Table 8.3 p.175: 68 tr, 64.71% (44 W), net 297,567.50, GP 399,442.50, GL 101,875, avg 4,375.99, PF 3.92, open P/L 93,525; no window | live &SP 1992-10-06..1995-07-31: 1 open trade. Engine to 12/21/2001: 49 closed + 1 open, 71.4%, net 314,670 (+5.7%), GL 86,938, avg 6,422 (**+47%**), PF 4.62 | FAIL (trades 49 vs 68, avg). UNVERIFIED |
+| mkits_gold_dis_dxy | Katsanos Table 11.2 p.177 (Disparity DXY), 12/1/95-8/21/07: 31 tr, 74%, +$323,637, 24.1% in market | live GLD in that window: 7 tr, 86% (GLD starts 2004-11-18; &DX stand-in) | FAIL trades. UNVERIFIED |
+| mkits_gold_lrs_dxy | Table 11.1 p.176 (LRS DXY): 21 tr, 90%, +$282,257, 20.7% | 2 tr, 100% in window | FAIL trades. UNVERIFIED |
+| mkits_gold_rs_dxy | Table 11.3 p.178 (RS DXY): 9 tr, 78%, +$141,363, 20.6% | 2 tr, 50% in window (first entry 2006-12-05) | FAIL trades. UNVERIFIED |
+| mkits_gold_z_dxy | Table 11.2 p.177 (Z-score DXY): 24 tr, 71%, +$409,960, 38.4% | 0 tr in window (first signal 2007-11-15) | FAIL trades. UNVERIFIED |
+| ch_bta2_cbo_20tick | Chande BTA Tables 5.4/5.5 pp.157-158, 9 markets, window 1/1/75-7/10/95 (chapter text), $1,500 stop, $100/trade. e.g. 5.4 BP 222 tr/41%/$24,588; Coffee 213/39/$175,631; Gold 142/32/$31,610; T-bond 77/38/$29,925 | live runs per market (my $ = pts x contract $/pt - $100): 5.4 BP 156/40%/$25,612; Coffee 147/38%/$59,964; Gold 130/36%/$42,310; T-bond 63/33%/$18,979; 5.5 BP 107/24%/$61,512; Yen 86/34%/$58,688 ... trades ok 1/9 (5.4), 2/9 (5.5); win ok 7/9, 8/9; net ok 1/9 (BP), 0/9 | FAIL (no market passes all three). UNVERIFIED |
+| tcdt_tb_orb2 | Crabel Tables E,G-L pp.202-204, Bonds 1978-1987, 56 rows (read on page images; E row1 330 tr/63%/avg W 469/avg L 350/gross 55,321; G1 151/64/459/328/26,814; H1 85/73/468/278/22,680; I1 35/80/619/376/15,468 re-read by me and equal to the C1 transcription) | live &ZB_CCB 1979-87, 56 rows: E1 344/52%/437/274/32,978; G1 170/55/473/261/23,915; H1 72/64/454/267/13,938; I1 42/67/432/161/9,842. Trades ok 44/56, win ok 31/56, gross ok 3/56, **all five columns ok 0/56**; avg loss is 20-35% below print in most rows | FAIL. UNVERIFIED (no gate row exists; the card text carries it) |
+| rwmts_2h_cb15_8 | Weissman Table 5.4 p.93: T-bond day session 12/30/98-1/30/04: 89 tr, 7.3 days, 52.81%, $12,450, MDD -12,237; IEURUSD 3/28/00-1/30/04: 95 tr, 6.9 days, 51.58%, $20,025, MDD -7,840; $100 / $75 per trade | live SPY 653 tr/51.2%, SPX 472/55.2%, NIFTY 50 435/50.0%, NIFTYBANK 367/50.5% (equal to gate). Neither book instrument is held | not compared (missing instrument). UNVERIFIED |
+| kets_vb_limit_ccy | Katz Test 11 p.101-102: IS (8/1/85-12/31/94) 268 tr, 48%, $3,977, 36.2%/yr; OOS (1/1/95-2/1/99) 102 tr, 43%, $2,106, 17.7%/yr; 6 currencies | live &6B/&6S/&6J in those windows: IS 49+35+53 = 137 tr, OOS 9+13+15 = 37 tr (DM, CD, ED not held) | FAIL / not comparable. UNVERIFIED |
+| kets_solar_open/limit/stop | Katz p.199-200: portfolio $/trade IS open -1,631, limit -1,519, stop -52, OOS stop -1,329; S&P 500 stop IS 37 tr, 40%, $4,991 (20.4%/yr), OOS 11 tr, 45%, $5,640 (39.5%/yr) | no S&P futures admitted; SPX in this engine starts 2014, so IS/OOS windows give 0 trades; SPY (ETF) stop OOS 1995-1999: 14 tr, 43% (10 tr, 30% with causal 0 / sameday 1) | not compared (missing instrument). UNVERIFIED |
+| kets_ga_{long,short}_{limit,stop} | Katz Ch.12 p.273-274 text: Tests 1-3 IS >$14,000/trade, >=60% wins, ROA >=42%; OOS open/limit >$10,000, stop ROA 11%, $4,246; 43 IS / 17 OOS trades; 36-futures portfolio (Table 12-3 image rows not text-readable) | NIFTY 50 18/72.2%, 10/50.0%, 10/30.0%, 6/66.7%; NIFTYBANK 17/52.9%, 10/50.0%, 36/30.6%, 29/31.0% (live, equal to gate) | not compared (missing instrument). UNVERIFIED |
+| capttm_price_ma | Arnold p.81: rule only (200-day, 10/20-day option), no table | SPY 111 tr/24.3%; NIFTY 50 115 tr/17.5% | nothing printed. UNVERIFIED |
+| mstt_bns, mstt_bns_by_brook | Peter's Window systems p.3: formulas only; per gate no result printed (source not re-opened this pass) | mstt_bns SPY 322 tr, NIFTY 50 265; by_brook NIFTY 50 95 | nothing printed. UNVERIFIED |
+| mzwws_prime_rate | Zweig Tables 1-2 (OCR pp.69, 71 of the scan): 43 dates (22 buys/21 sells), ZUPI $10,000 -> $610,554 (18.7%/yr), 90.9% buys / 61.9% sells right; S&P buys $318,068, 15.5%/yr vs 7.9%, 18 of 22 up (81%) | all 43 printed dates equal the Z1 comparison list: 26 exact, 7 within 1-6 days, 10 not reproduced (FRED prime). Live SPX here starts 2014 -> 1 trade; no series for 1954-96 | FAIL (dates). UNVERIFIED |
+| lwnl_sp_hornbrook_im | Williams Commodity Timing Vol.32 No.5 p.3: IS 297 tr, 62%, $74,900, avg $252; OOS 72 tr, 62%, avg $315; windows not printed | live &SP 1982-95: 361 tr, 60.4%, avg $269. First 297 by date: 60.9%, $264, net $78,540 (+4.9%); remaining 64: 57.8%, $289 (64 vs 72 trades, 8 > 7.2) | split is mine, windows unprinted. UNVERIFIED |
+| other 97 lwnl_* | newsletter dollar results for S&P futures / bonds / commodity contracts, mostly without a window | only lwnl_sp_hornbrook_im accepts the &SP contract (live endpoint returns 400 for the others); no futures series for the printed windows | not compared (missing instrument/window); NOT re-read page by page (see below) |
+
+## Possible code concern (not changed, for the lead)
+tcdt_tb_orb2: engine and the independent pandas reference agree (0 mismatches on 6,305 trades), so the code does what the card states, but ours is systematically lower than the page: average loss 20-35% under print in most rows (E1 274 vs 350) and average win ~10% under, gross far smaller (E1 32,978 vs 55,321), while counts match within tolerance on 44/56 rows. The page header says "1978-1987"; the card runs 1979-01-02..1987-12-31 on the Norgate back-adjusted &ZB_CCB. A magnitude-wide shift like this is worth a look at the entry/exit price definition (open +/- 8 tics fill, close exit) against p.203, but I found no page evidence that the rule differs. No before/after is possible because nothing was changed.
+Data note: the engine data dir in authors/data-1117 has SPX from 2014-01-02 only, whereas Z1 reported SPX from 1983; check that the deployed data is the intended one.
+
+## Not done
+- The other 97 lwnl_* cards were not each re-read from the Williams JPEG pages (the zip holds ~110 issue pages; each card needs its own page read, and the engine cannot run them on the book instrument anyway). Only Vol.32 No.5 p.3 (Hornbrook) was read.
+- mstt_bns p.3 and capttm p.81 reconfirmed only for capttm; Table 12-3 of Katz and the Crabel rows beyond the four re-read ones rely on the C1 transcription.
+- No cargo build/test of the gate.rs text edit.
+
+---
+
+# ROUND 2 (20 Nov 2026): the 97 other lwnl_* cards. Commit dedc5636 on claude/v7-1120 (gate text only, 97 rows). **0 of 97 verified; every row stays unverified (or withheld).**
+
+Method (corrected): printed figures are as recorded by lanes O1-O5 from the scans and were NOT re-read in V7 except the pages listed here; reuse of the O1 OCR text in authors/held-1119/O1/text where it was legible, otherwise the page image: Vol.29 No.7 p.3, No.8 p.3, Vol.28 No.5.1 p.2, Vol.34 No.4 p.2, Vol.32 No.5 p.3 read as images; Vol.34 No.12 p.4, Vol.32 No.5 p.2, Vol.33 No.8 p.2/4, Vol.34 No.9 p.3, Vol.28 No.9 p.3-4, Vol.33 No.11 p.3-4, Vol.29 No.9 p.3 confirmed in OCR text); ours from guru-int-1120c (private engine, authors/heavy, PID in V7w/us.pid, killed by PID, port closed). Per-card lines: V7w/single.out, tail.out (assumed-window runs), tab.out (131 table rows), sp.out (S&P cards). Printed windows are given only where the page prints one; otherwise the full history is run and, where the letter states N years, a second run on the last N trades to the issue year (labelled "assumed").
+
+## A. Single-system futures cards (live on own contract) - 21
+| id | printed (page) | ours (live) | verdict |
+|---|---|---|---|
+| bond_dec_td14_buy | V34 N12 p.4: 14 of 19 (73%), $3,250 | &ZB full 42 tr, 81%, $7,820; assumed last 19 (1978-96): 19 tr, 89%, $6,226 | FAIL (net) |
+| bond_dec_td22_buy | 9 of 10 (90%), $4,593 | full 15 tr, 80%, $2,550; assumed: 5 tr, 100%, $3,813 | FAIL |
+| bond_dowm_buy | V32 N5 p.2: 190 tr, 60%, $48,031.25, avg $252.80 (1988-May 96) | 144 tr, 57%, $37,028, avg $257 | FAIL (trades 144 vs 190, net -23%) |
+| bond_jul_td12_sell | V34 N7 p.3: 94% accuracy, count/window not legible | full 43 tr, 74% | FAIL (win rate) |
+| bond_labor_buy | V33 N8 p.2: 13 yrs, 83%, avg $700 | assumed 13 tr, 85%, avg $329 | FAIL (average) |
+| bond_memorial_buy | V29 N5 p.4: 10 of 12, avg $511, $6,140 | assumed 12 tr, 100%, $4,627, avg $386 | FAIL |
+| bond_newyear_sell / bond_xmas_buy | V34 N12 p.4: "a big winner", no figures | 42 tr, 55% / 62% | nothing printed |
+| bond_sep_td19_buy | V33 N8 p.4: 9 of 16 yrs, $13,356 | assumed last 16 to 1995: 16 tr, 56%, $13,812 (+3.4%) | headline within tolerance on an assumed window; unstated details remain, so UNVERIFIED (full history 41 tr fails) |
+| bond_sep_td20_buy | V34 N9 p.3: 16 of 16, $6,737 | assumed 16 tr, 75%, -$379 | FAIL |
+| bond_sep_td4_sell | 17 of 18, $6,056 | assumed 18 tr, 78%, $494 | FAIL |
+| bond_sep_td9_sell | V33 N8 p.4: 12 of 16, $11,293 | assumed 16 tr, 62%, $8,332 | FAIL |
+| cattle_jul_td18 | V29 N7 p.3 Test 5: 15 tr, 86%, $6,861, avg $457.40, GP 8,051, GL 1,190, avg win 619.31 | &LE full 30 tr, 63%, $9,512; last 15 to 1994: 13 tr, 100%, $9,558 | FAIL |
+| corn_jul_td2_short | V29 N7 p.3 Test 24: 18 tr, 83%, $16,190, avg $899.44, GP 19,418.75, GL 3,228.75 | &ZC full 36 tr, 56%, $13,086; last 18: 13 tr, 69%, $11,045 | FAIL |
+| coffee_aug_td12_open | V29 N8 p.3 clip 1 (1974-94): 20 tr, 60%, $29,411.25, avg 1,470.56 | &KC 1974-94: 16 tr, 69%, $18,188, avg $1,137 | FAIL (net -38%) |
+| coffee_aug_td12_limit | clip 2: 15 tr, 73%, $30,615, avg $2,041 | 9 tr, 56%, $4,440, avg $493 | FAIL |
+| gold_13x13 | V28 N5.1 p.2 printout: 175 tr, 40%, $112,910, GP 202,030, GL 89,120, avg 645.20, avg win 2,886.14, PF 2.27, consec 3/7 | &GC to 1993-06, $50: 157 tr (18 apart, limit 17.5), 38.9%, $110,600 (-2.0%), avg $704 (+9.1%), avg win 3,225 (+11.7%), PF 2.28, consec 3/6 | FAIL by a hair (trades, avg win). Closest match in the set |
+| gold_nov_td16 | V33 N11 p.4: 19 tr, 100%, $16,560, avg $871.58 (5/28/75-10/29/96, $50) | 17 tr, 94%, $18,790, avg $1,105 | FAIL (net +13%, avg +27%) |
+| gold_tdom1_4d | V29 N3 p.4: 84 tr, 53%, $41,850, avg $498.21 | 90 tr, 52%, $47,270, avg $525 | FAIL (net +13%) |
+| wheat_sep_td1_5_buy | printout p.3 (V25 N8/V33 N8 p.3 text): 25 tr, 80%, $14,675, avg $587 | &ZW full 41 tr, 54%, $8,138; last 25: 18 tr, 83%, $10,852 | FAIL |
+| yen_apr_td4 | V34 N3 p.3: 20 tr, 60%, $20,487.50, avg $1,024.37 (11/24/76-2/21/97, $50) | &6J 17 tr, 65%, $18,175 (-11.3%), avg $1,069 | FAIL (net just outside 10%) |
+| yen_nov_td10 | V33 N11 p.3: 17 tr, 88%, $8,862.50, avg $521.32 | 17 tr, 76%, $4,950, avg $291 | FAIL (win, net) |
+
+## B. Futures cards the engine refuses (withheld by the accuracy check #240/#297) - 6
+bond_dec_td7_sell, bond_dec_td8_sell (V34 N12 p.4: 15 of 16, $7,050; 15 of 18, $7,493), bond_projected (V29 N9 p.3: 352 tr, 257 W, ~$71,500; OCR confirms 71,472.50 / 257), cti_bonds (Jun 1992 p.3: 98 tr, 41%, $17,756.25), bond_sp_9ma_1down / 2down (V28 N9 p.3-4: 308 tr 59% $116,900 avg $379.55; 145 tr 58% $43,875 avg $302.59; OCR confirms all). The live endpoint returns not_testable, so no run on the own contract is possible; the gate's recorded reference does not match counts (projected 501 vs 352, cti 175 vs 98, 9ma 396 vs 308 and 187 vs 145; dec td8 win 95% vs 83%). Stay withheld.
+
+## C. Table cards (R4 #375, every printed row run on its own contract, full history because no window is printed) - 9 cards, 131 rows
+| card | printed (page) | rows within tolerance on every printed field | verdict |
+|---|---|---|---|
+| jan97_list (8 rows) | V34 N1 p.3-6 | 1/8 (row 6 Swiss franc: 7 tr, 86%, $4,375 vs ours 7 tr, 86%, $4,110) | UNVERIFIED |
+| jan97_bonds (2) | V34 N1 p.8 | 0/2 | UNVERIFIED |
+| apr96_list (9) | V31 N3 p.4 (text: win % and $/trade only) | 0/9 (win ok 5/9, average ok 0/9) | UNVERIFIED |
+| apr97_7day (25) | V34 N4 p.2 (3 rows re-read on the page image and equal to the card) | 0/25 (trades ok 0/25, win ok 3, average ok 1) | UNVERIFIED |
+| jul97_7day (17) | V34 N7 p.2-3 | 0/17 | UNVERIFIED |
+| may97 (52) | V34 N5 p.3-4 | 0/52 (win ok 17, average ok 2) | UNVERIFIED |
+| sep97_7day (14) | V34 N9 p.2-3 | 0/14 | UNVERIFIED |
+| bonds_oct (2) | V33 N9 p.3-4 | 0/2 | UNVERIFIED |
+| ho_mar_buy (2) | V34 N3 p.3 | 0/2 | UNVERIFIED |
+Systematic: our full-history trade counts are roughly 1.5-2x the printed counts (the printed windows are shorter and unprinted), which alone fails #368 on trades for nearly every row.
+
+## D. S&P-letter and other index cards - 61
+These cards are admitted on the cash S&P 500 only ("a declared application of the futures rule"): on &SP the engine returns needs_data (instrument refused), on SPX the engine serves them from 2014-01-02 although the data file holds SPX from 1983, and a number are refused outright (not_testable: Held by decisions #243/#177b/#246, or "Backtest unavailable" for od_*). The printed windows are 1982-1997, so there is **no overlap** with any run and no printed row can be compared. Live SPX runs (2014-2026) for the record are in V7w/sp.out (e.g. tg_open8 12 tr 75%, july4_buy 13 tr 100%, aug97_td12_buy_bail 10 tr 10%, proj_limit 1,129 tr 49%). Refused outright: aug97_td2_sell_7d, aug97_td7_sell_bail, jan_rally, jul97_td17_buy, jul97_td4_buy, july4_sell, keyrev_sell, nov97_td17_buy_7d, nov97_td18_buy_7d, od_buy, od_buy3, od_fade_buy, od_fade_sell, od_sell, ndx_vb_oops (SPX needs data). All: **not compared (window / instrument not available), UNVERIFIED / withheld unchanged.**
+
+## For the lead
+- The S&P-letter cards (about 35 with printed S&P windows ending 1993-1997, e.g. keyrev 1982-93, tg_open8 to 03/94, xmas_bail to 03/94, tdw_oc 1988-93, jan_rally/nov_td17/oct 1982-96, proj_contra 1982-94, pullback to 06/92, tg_close 1982-91) could be compared if SPX were served from its 1983 start for them, or if &SP (clamped 1982-04-21..1995-07-31) were admitted; both are admission/policy decisions I did not change.
+- Not done: the per-row printed figures of the 131 table rows were not each re-read from the images (3 apr97 rows and the single-system printouts were); the S&P cards' printed figures are the ones recorded in the book field (OCR-confirmed for none of them this pass).
+
+## Round 2 correction and continued re-reading (20 Nov 2026, after lead review)
+- The gate rows and the Method paragraph above wrongly said all printed figures were read from the JPEGs. Corrected (commit d2700168): they are the figures recorded by O1-O5, re-read in V7 only for: Vol.29 No.7 p.3, Vol.29 No.8 p.3, Vol.28 No.5.1 p.2, Vol.34 No.4 p.2 (rows 1-3), Vol.34 No.9 p.2 (rows 1-3: cocoa 7 5,555 10/15 66% 370; cotton 6 10,025 7/8 87% 1,253; juice 13 7,305 14/17 82% 429, all equal to the card), Vol.32 No.5 p.3; OCR-text confirmations as listed.
+- New fact from Vol.34 No.9 p.2: the printed sep97 table covers "the last 15 plus years" (stop $1,200, entry open + 7%), so the printed window is about 1982-1997, not the full history. Our full-history runs (1980s-2020) therefore overcount trades; a re-run of the 7-day tables over the last ~15 years would test that and could change the trade-count and net failures. Not run (no engine slot yet; stopped at the context budget). Same re-run applies to apr97/jul97/may97 if their pages say "last 15 years".
+- Still not re-read from the images: the other ~125 table rows and all S&P-letter printed figures.
