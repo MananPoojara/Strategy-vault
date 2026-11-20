@@ -21,7 +21,7 @@ pub const BOOK: &str = "yt_ui";
 pub const FINAL: &str = "ytui_ulcer_index_final";
 pub const EXIT_ULCER: &str = "ytui_st_or_ulcer_exit_only_ulcer";
 pub const EXIT_OWN: &str = "ytui_st_or_ulcer_exit_own_or_fresh_opp";
-pub const IDS: [&str; 3] = [FINAL, EXIT_ULCER, EXIT_OWN];
+pub const IDS: [&str; 4] = [FINAL, EXIT_ULCER, EXIT_OWN, V2];
 
 fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: "YT Strategies · Ulcer Performance Index", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
@@ -64,6 +64,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|The bull / bear filter turning against the trade exits",
             EXITS, EXITS_2, EXITS_3, EXITS_4,
         ], "ST or Ulcer WEE_Exit Own or Fresh of Opp_UlcerIndex_ST_Final.afl, coded as the AFL is written, including its second exit pass after the entries on every bar. The AFL default 'Period for Highest Src' is 0, below its Param minimum 6; it is kept, and HHV over 0 bars is AmiBroker's cumulative high (the highest source value since the first bar), which reproduces AmiBroker's trades at the defaults (SV-Audit: 76 NIFTY / 84 BANKNIFTY trades, exact). The team's workbooks optimised it over 6-42. On a cover the AFL resets 'currentStatus' (a typo), so the short side's wait state carries into later shorts. No ExRem."),
+        v2_def(),
     ]
 }
 
@@ -71,7 +72,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let mut v = vec![p("src", "Highest source value (0 Close, 1 Open, 2 High, 3 Low)", 0.0, 0.0, 3.0, 1.0)];
     match id {
-        FINAL => v.extend([
+        FINAL | V2 => v.extend([
             p("hh_period", "Period for highest src", 14.0, 1.0, 100.0, 1.0),
             p("smooth", "Smoothing length", 14.0, 1.0, 100.0, 1.0),
             p("sig_type", "Signal smoothing type (0 SMA, 1 EMA)", 0.0, 0.0, 1.0, 1.0),
@@ -158,6 +159,12 @@ fn window_opt(v: &[Option<f64>], i: usize, n: usize) -> Option<Vec<f64>> {
 
 /// (long cross, short cross) of the Ulcer line against its signal.
 fn ulcer_cross(x: &Ctx, src: i64, hh_p: usize, smooth: usize, ema: bool, len: usize, running: bool) -> (Vec<bool>, Vec<bool>) {
+    ulcer_cross_win(x, src, hh_p, smooth, ema, len, running, None)
+}
+
+/// `ulcer_cross` with the drawdown, Ulcer and signal lines Null outside `win` (from, to) when given (V2's dateCheck).
+#[allow(clippy::too_many_arguments)]
+fn ulcer_cross_win(x: &Ctx, src: i64, hh_p: usize, smooth: usize, ema: bool, len: usize, running: bool, win: Option<(usize, usize)>) -> (Vec<bool>, Vec<bool>) {
     let n = x.c.len();
     let s: Vec<f64> = match src {
         1 => x.o.clone(),
@@ -172,9 +179,10 @@ fn ulcer_cross(x: &Ctx, src: i64, hh_p: usize, smooth: usize, ema: bool, len: us
         // AmiBroker HHV(x, 0): the highest value since the first bar (cumulative) - SV-Audit Ulcer Error 2
         .map(|i| Some(s[if hh_p == 0 { 0 } else { (i + 1).saturating_sub(hh_p) }..=i].iter().copied().fold(f64::MIN, f64::max)))
         .collect();
-    let dd2: Vec<Option<f64>> = (0..n).map(|i| hh[i].filter(|&h| h != 0.0).map(|h| (100.0 * (s[i] - h) / h).powi(2))).collect();
+    let inside = |i: usize| win.is_none_or(|(a, b)| a <= i && i <= b);
+    let dd2: Vec<Option<f64>> = (0..n).map(|i| hh[i].filter(|&h| h != 0.0 && inside(i)).map(|h| (100.0 * (s[i] - h) / h).powi(2))).collect();
     let sm = smooth.max(1);
-    let ulcer: Vec<Option<f64>> = (0..n).map(|i| window_opt(&dd2, i, sm).map(|w| (w.iter().sum::<f64>() / sm as f64).sqrt())).collect();
+    let ulcer: Vec<Option<f64>> = (0..n).map(|i| window_opt(&dd2, i, sm).filter(|_| inside(i)).map(|w| (w.iter().sum::<f64>() / sm as f64).sqrt())).collect();
     let len = len.max(1);
     let signal: Vec<Option<f64>> = if ema {
         // EMA seeded with the simple average of the first `len` Ulcer values
@@ -193,6 +201,7 @@ fn ulcer_cross(x: &Ctx, src: i64, hh_p: usize, smooth: usize, ema: bool, len: us
     } else {
         (0..n).map(|i| window_opt(&ulcer, i, len).map(|w| w.iter().sum::<f64>() / len as f64)).collect()
     };
+    let signal: Vec<Option<f64>> = (0..n).map(|i| signal[i].filter(|_| inside(i))).collect();
     let nz = |v: Option<f64>| v.unwrap_or(0.0);
     let le = |a: Option<f64>, b: Option<f64>| matches!((a, b), (Some(a), Some(b)) if a <= b);
     if running {
@@ -464,10 +473,14 @@ fn rsi_ok(x: &Ctx, g: &dyn Fn(&str) -> f64, null_below_2: bool, nonzero: bool) -
 // ---------------------------------------------------------------- Futures_UlcerIndex_Final and "exit only Ulcer"
 
 fn basic(x: &Ctx, g: &dyn Fn(&str) -> f64, from: usize, to: usize, st_variant: bool) -> Px {
+    basic_on(x, g, from, to, st_variant, crosses(x, g))
+}
+
+/// `basic` on given (long cross, short cross) arrays.
+fn basic_on(x: &Ctx, g: &dyn Fn(&str) -> f64, from: usize, to: usize, st_variant: bool, (lx, sx): (Vec<bool>, Vec<bool>)) -> Px {
     let n = x.c.len();
     let gi = |k: &str| g(k).round() as i64;
     let gu = |k: &str| g(k).round().max(1.0) as usize;
-    let (lx, sx) = crosses(x, g);
     let tt = gi("trade_type");
     let (t_long, t_short) = (tt == 0 || tt == 2, tt == 1 || tt == 2);
     let nth = g("nth");
@@ -685,6 +698,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         FINAL => basic(x, &g, from, to, false),
         EXIT_ULCER => basic(x, &g, from, to, true),
         EXIT_OWN => own(x, &g, from, to),
+        V2 => v2(x, &g, from, to),
         _ => return None,
     };
     Some(backtest(x, &s, from, to))
@@ -696,8 +710,38 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         FINAL => "ytui_final",
         EXIT_ULCER => "ytui_exit_only_ulcer",
         EXIT_OWN => "ytui_exit_own_or_fresh",
+        V2 => "ytui_v2",
         _ => return None,
     }, name, "Ulcer Performance Index"))
+}
+
+// ---- Futures Ulcer Index V2 (added 20-11-2026)
+//
+// Futures_UlcerIndex_V2.afl is Futures_UlcerIndex_Final.afl line for line (parameters, defaults, loop, ExRem, sizing
+// incl. UsePrevBarEquityForPosSizing True and SetPositionSize 100% of equity) except lines 151-154: the HHV,
+// drawdown, Ulcer and signal lines are wrapped in IIf(dateCheck, ..., Null). HHV(src, period) is still taken on the
+// whole history before the mask; the drawdown is Null before the Analysis range, so MA(DD^2) and the signal start
+// inside the range (AmiBroker skips leading Nulls) and the signal's first bar there counts as a cross.
+
+pub const V2: &str = "ytui_ulcer_index_v2";
+
+fn v2_def() -> StrategyDef {
+    def(V2, "Ulcer Index Crossover V2 (in-range warm-up)", &[
+        "F|Ulcer Index of the close (HHV 14, smoothing 14) against its 52-bar SMA signal, both computed only inside the test range",
+        "F|So the drawdown average and the signal warm up from the first test bar (14 + 52 - 2 bars before the first signal)",
+        "E|Long at the Close on the Nth candle (default 0: the same bar) after the Ulcer line falls through its signal, or on the signal's first bar when the Ulcer is at or below it",
+        "E|Short at the Close on the Nth candle after the Ulcer line rises through its signal",
+        "F|Trade type: long (default), short or any",
+        "X|Sell when the Ulcer line rises through its signal",
+        "X|Cover when the Ulcer line falls through its signal",
+        EXITS, EXITS_2, EXITS_3, EXITS_4,
+    ], "Futures_UlcerIndex_V2.afl (Ulcer Performance Index/AFLs), coded as the AFL is written, with its ExRem lines. It is Futures_UlcerIndex_Final.afl except that the HHV, drawdown, Ulcer and signal lines are IIf(dateCheck, ..., Null): HHV still uses the bars before the range, but MA(DD^2, smoothing) and the signal start inside the range, as AmiBroker does with leading Nulls, so the first possible signal is smoothing + signal length - 2 bars after the test start and that first signal bar is a cross (the Nz(Ref(signal, -1)) == 0 test). With the test starting on the data's first bar it trades as the Final AFL. The short ATR level is computed but, as written, not an exit; trade type is a ParamList default Long; the ATR average ParamList has no default (first item, Open). Despite the file name it is written for one daily series like the Final AFL and is admitted on the spot indices as the other Ulcer ids. Not compared: no team trade sheet or optimisation names this AFL.")
+}
+
+fn v2(x: &Ctx, g: &dyn Fn(&str) -> f64, from: usize, to: usize) -> Px {
+    let gi = |k: &str| g(k).round() as i64;
+    let lsx = ulcer_cross_win(x, gi("src"), gi("hh_period").max(0) as usize, gi("smooth").max(1) as usize, gi("sig_type") == 1, gi("sig_len").max(1) as usize, gi("cross_mode") == 1, Some((from, to)));
+    basic_on(x, g, from, to, false, lsx)
 }
 
 #[cfg(test)]
@@ -802,6 +846,28 @@ mod tests {
         let tr = t.iter().find(|t| t.legs[0].i == e).unwrap();
         assert_eq!(tr.exit_i, e + 1);
         assert!((tr.exit_px - c * 0.99).abs() < 1e-9);
+    }
+
+    #[test]
+    fn v2_equals_final_from_the_first_bar_and_warms_up_inside_the_range() {
+        let r = wave(400);
+        let x = Ctx::new(&r, &r, &[]);
+        let key = |t: &[Trade]| t.iter().map(|t| (t.legs[0].i, t.exit_i, t.dir)).collect::<Vec<_>>();
+        // whole history in range: the dateCheck mask changes nothing
+        let a = go(FINAL, &r, &[]);
+        let b = go(V2, &r, &[]);
+        assert!(!a.is_empty());
+        assert_eq!(key(&a), key(&b));
+        let small: Params = SMALL.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        assert_eq!(key(&run(FINAL, &x, 0, r.len() - 1, &small).unwrap()), key(&run(V2, &x, 0, r.len() - 1, &small).unwrap()));
+        // range from bar 100: the lines are Null before it; the first signal bar is 100 + 14 + 52 - 2 = 164
+        let (lx, sx) = ulcer_cross_win(&x, 0, 14, 14, false, 52, false, Some((100, r.len() - 1)));
+        let first = lx.iter().zip(&sx).position(|(&l, &s)| l || s).unwrap();
+        assert_eq!(first, 164);
+        let t = run(V2, &x, 100, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.iter().all(|t| t.legs[0].i >= 164));
+        // with no window it is the Final AFL's line
+        assert_eq!(ulcer_cross_win(&x, 0, 14, 14, false, 52, false, None), ulcer_cross(&x, 0, 14, 14, false, 52, false));
     }
 
     #[test]

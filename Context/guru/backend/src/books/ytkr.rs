@@ -38,15 +38,18 @@ pub const OPEN_CLOSE_LS: &str = "ytkr_buyshort_open_or_close";
 pub const MON_FRI: &str = "ytkr_buying_mondays_fridays";
 pub const CANDLE: &str = "ytkr_candle_colour";
 pub const UUDDD: &str = "ytkr_uuddd";
-pub const IDS: [&str; 26] = [INSIDE, OUTSIDE, TURTLE, TURTLE_GAPUP, MAMM, GAP, BLOOD, THURSDAY, THURSDAY_MOD, MANIC, TUMBLES, TUMBLES_MOD,
-    TWO_TUMBLE, STEPS, DUDD[0], DUDD[1], DUDD[2], DUDD[3], DUDD[4], DUDD[5], DUDD[6], OPEN_CLOSE, OPEN_CLOSE_LS, MON_FRI, CANDLE, UUDDD];
+// kora reddy all day.afl ("Weekday Short Long", added 20-11-2026); its code is in the section at the end of the module.
+pub const WEEKDAY: &str = "ytkr_weekday_short_long";
+pub const IDS: [&str; 29] = [INSIDE, OUTSIDE, TURTLE, TURTLE_GAPUP, MAMM, GAP, BLOOD, THURSDAY, THURSDAY_MOD, MANIC, TUMBLES, TUMBLES_MOD,
+    TWO_TUMBLE, STEPS, DUDD[0], DUDD[1], DUDD[2], DUDD[3], DUDD[4], DUDD[5], DUDD[6], OPEN_CLOSE, OPEN_CLOSE_LS, MON_FRI, CANDLE, UUDDD,
+    WEEKNUM, WEEKNUM_MF, WEEKDAY];
 
 fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group: "YT Strategies · Kora Reddy", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![
+    let mut v = vec![
         def(INSIDE, "Inside Day", "Short", &[
             "F|Yesterday's High < High 2 days ago and Yesterday's Low > Low 2 days ago (inside day)",
             "F|Yesterday's range < the range of each of the 3 days before (NR4)",
@@ -246,7 +249,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|No check that the Low reaches it; the fill is held within the day's range",
             "X|Cover at today's Close",
         ], "UUDDD (Kora Reddy AFL), coded as the AFL is written; the team's checklist gives no verdict. The AFL tests four red candles, not the up/up/down/down closes its name and info sheet describe. Trade lists match a run from the start of the data; 0.04% commission a side."),
-    ]
+    ];
+    v.extend(weeknum_catalogue());
+    v.push(weekday_def());
+    v
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -293,8 +299,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         MON_FRI => vec![day(1.0), pct(0.25)],
         CANDLE => vec![p("colour", "Candle colour (1 green, 2 red)", 1.0, 1.0, 2.0, 1.0), p("side", "Side (1 long, 2 short)", 1.0, 1.0, 2.0, 1.0)],
         UUDDD => vec![pct(0.25)],
+        WEEKDAY => weekday_params(),
         id if id == DUDD[0] => vec![],
         id if DUDD.contains(&id) => vec![pct(0.25)],
+        WEEKNUM | WEEKNUM_MF => weeknum_params(id),
         _ => return None,
     })
 }
@@ -593,6 +601,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             out
         }
+        WEEKDAY => weekday_short_long(x, from, to, &g),
         id if id == DUDD[0] => close_next(x, from, to, -1.0, 6, |i| {
             // AFL: WS7 today (R1 = today's range > each of the 6 before), red today, green 1 and 2 bars back, red 3 back
             (1..=6).all(|k| range(x, i) > range(x, i - k)) && red(x, i) && green(x, i - 1) && green(x, i - 2) && red(x, i - 3)
@@ -614,6 +623,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             out
         }
+        WEEKNUM | WEEKNUM_MF => weeknum_run(id, x, from, to, &g),
         _ => return None,
     })
 }
@@ -646,8 +656,467 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         MON_FRI => ("ytkr_mon_fri", "Buying Mondays & Fridays", "Kora Reddy"),
         CANDLE => ("ytkr_candle", "Entry Based on Candle Color", "Kora Reddy"),
         UUDDD => ("ytkr_uuddd", "UUDDD", "Kora Reddy"),
+        WEEKNUM => ("ytkr_weeknum", "Weeknum Given Month", "Kora Reddy"),
+        WEEKNUM_MF => ("ytkr_weeknum_mf", "Weeknum Given Month (Mon-Fri copy)", "Kora Reddy"),
+        WEEKDAY => ("ytkr_weekday", "Weekday Short Long", "Kora Reddy"),
         _ => return None,
     })
+}
+
+// ---- kora reddy all day (added 20-11-2026)
+// kora reddy all day.afl, "Weekday Short Long" (coded by Yashesh Sorathia, 08-09-2022): enter on one weekday and exit
+// on another, long and/or short, daily bars. Coded from the AFL's main loop as written (short block, then long block,
+// each bar from bar 1 of the data), with the AFL's own Param defaults.
+
+fn weekday_def() -> StrategyDef {
+    def(WEEKDAY, "Weekday Short Long", "Long/Short", &[
+        "F|Long (on by default): today = Long Entry weekday (default Tuesday) and today's High ≠ Close (no upper-circuit bar)",
+        "F|Short (off by default): today = Short Entry weekday (default Tuesday) and today's Low ≠ Close (no lower-circuit bar)",
+        "F|Filter (default off): SMA, Close ≥ MA(Close, 10), for longs and shorts alike; or ST, Close above (long) / below (short) the SuperTrend (ATR 5, factor 1, (H+L)/2) of the monthly, weekly or daily bars",
+        "E|Enter at today's Close (default) or today's Open, one position per side",
+        "X|Exit on the Exit weekday (default Tuesday, so the entry day itself), at the Close (default) or Open",
+        "X|Or after MaxBars − 1 bars: MaxBars = 6 if Entry = Exit weekday, Exit − Entry + 1 if Exit is later, else 5 − Entry + Exit + 1",
+        "X|Or Hard SL % / Profit booking % (default 0, off) at the level, or at Open ∓ Selling buffer % (default 0.25) when the Open is already past it",
+        "X|Or the ST filter turns against the position",
+        "X|No exit on a long bar with Low = Open = Close, or a short bar with Open = High = Close: the exit waits for the next bar without one, at its Close / Open",
+    ], "Weekday Short Long, kora reddy all day.afl (Kora Reddy folder), coded as the AFL is written; it is not in the team's checklist and no team workbook names it (the Rules & summary sheet describes \"buy at Close on Monday and sell on Tuesday at Close, for all days (L&S)\"). Quirks kept: the exit test runs on the entry bar after the entry, so with the default Entry = Exit weekday (Tuesday) every trade is entered and exited on the same Tuesday at the close (a zero-return trade before costs); the 6-bar MaxBars for equal weekdays is never reached; with an Open exit and a Close entry the same-bar exit is priced at the Open. The profit / stop levels are (1 ± %) x entry price and can be hit on the entry bar. On a gap past the level the exit is Open − buffer for a long and Open + buffer for a short for both the stop and the profit target, as written (a gap through a long's profit target still sells below the open). The SMA filter tests Close ≥ MA for shorts too (the AFL uses SMABuysig for both); SMA period 0 gives no entries. The ST is expanded to days with expandFirst, so each day sees the ST of its whole week or month (look-ahead in the AFL as written). Not modelled, at their AFL defaults: dead-stock backtest NO (no forced exit on the last bar), turnover filter off, penny price 0. The AFL resets its ShortEntry variable to 0 after it has been used (AFL names ignore case), harmless.")
+}
+
+fn weekday_params() -> Vec<ParamDef> {
+    let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    vec![
+        p("long_on", "Long condition (0 no, 1 yes)", 1.0, 0.0, 1.0, 1.0),
+        p("long_entry_day", "Long entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
+        p("long_entry_at", "Long entry at (0 close, 1 open)", 0.0, 0.0, 1.0, 1.0),
+        p("long_exit_day", "Long exit weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
+        p("long_exit_at", "Long exit at (0 close, 1 open)", 0.0, 0.0, 1.0, 1.0),
+        p("short_on", "Short condition (0 no, 1 yes)", 0.0, 0.0, 1.0, 1.0),
+        p("short_entry_day", "Short entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
+        p("short_entry_at", "Short entry at (0 close, 1 open)", 0.0, 0.0, 1.0, 1.0),
+        p("short_exit_day", "Short exit weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
+        p("short_exit_at", "Short exit at (0 close, 1 open)", 0.0, 0.0, 1.0, 1.0),
+        p("pb_pct", "Profit booking % (0 off)", 0.0, 0.0, 50.0, 1.0),
+        p("hsl_pct", "Hard SL % (0 off)", 0.0, 0.0, 50.0, 1.0),
+        p("buffer_pct", "Selling buffer % (exit on a gap past the profit / stop level)", 0.25, 0.0, 10.0, 0.05),
+        p("filter", "Filter (0 off, 1 SMA, 2 ST)", 0.0, 0.0, 2.0, 1.0),
+        p("sma_period", "SMA period", 10.0, 0.0, 50.0, 5.0),
+        p("st_tf", "ST filter timeframe (1 monthly, 2 weekly, 3 daily)", 1.0, 1.0, 3.0, 1.0),
+        p("st_period", "ST filter period (ATR)", 5.0, 5.0, 25.0, 5.0),
+        p("st_factor", "ST filter factor", 1.0, 1.0, 5.0, 1.0),
+    ]
+}
+
+/// AFL MaxBars / MaxBars1 from the entry and exit weekdays.
+fn weekday_max_bars(entry: i64, exit: i64) -> i64 {
+    if entry == exit {
+        6
+    } else if entry < exit {
+        exit - entry + 1
+    } else {
+        5 - entry + exit + 1
+    }
+}
+
+/// The AFL's ST filter line: TimeFrameSet(tf), ATR(period), AvgVal = (H+L)/2, LineUp / LineDn = AvgVal ± ATR x factor,
+/// the loop from bar `period` (C > LineUp[i-1] up, C < LineDn[i-1] down, else unchanged; LineDn ratchets up while up,
+/// LineUp down while down), STPlot = up ? LineDn : LineUp, then TimeFrameExpand(.., expandFirst): every day of a
+/// period gets that period's value. NaN = Null (no ratchet against a Null previous line; comparisons with it false).
+fn weekday_st(x: &Ctx, tf: i64, period: usize, factor: f64) -> Vec<f64> {
+    use crate::books::ab;
+    let b = crate::books::ytsw::compress(x, match tf { 1 => 'M', 2 => 'W', _ => 'D' });
+    let m = b.c.len();
+    let atr = ab::atr(&b.h, &b.l, &b.c, period);
+    let avg: Vec<f64> = (0..m).map(|g| ab::f32r((b.h[g] + b.l[g]) / 2.0)).collect();
+    let mut up: Vec<f64> = (0..m).map(|g| atr[g].map_or(f64::NAN, |a| ab::add_mul32(avg[g], a, factor))).collect();
+    let mut dn: Vec<f64> = (0..m).map(|g| atr[g].map_or(f64::NAN, |a| ab::add_mul32(avg[g], a, -factor))).collect();
+    let mut is_up = vec![true; m];
+    for i in period.max(1)..m {
+        is_up[i] = if b.c[i] > up[i - 1] { true } else if b.c[i] < dn[i - 1] { false } else { is_up[i - 1] };
+        if is_up[i] {
+            if !dn[i].is_nan() && !dn[i - 1].is_nan() {
+                dn[i] = dn[i].max(dn[i - 1]);
+            }
+        } else if !up[i].is_nan() && !up[i - 1].is_nan() {
+            up[i] = up[i].min(up[i - 1]);
+        }
+    }
+    let st: Vec<f64> = (0..m).map(|g| if is_up[g] { dn[g] } else { up[g] }).collect();
+    (0..x.c.len()).map(|i| st[b.group[i]]).collect()
+}
+
+struct WeekdaySide {
+    long: bool,
+    exit_day: i64,
+    entry_open: bool,
+    exit_open: bool,
+    max_bars: i64,
+}
+
+/// One side of the AFL loop (`Position`, `SkipSell`, `Bars_Since`, `PB`, `HSL` for the long; their `...1` twins for the
+/// short). `entry_ok` is the cash filter (weekday, circuit, filter); `filter_exit` is ST_SELL / ST_Cover.
+fn weekday_side(x: &Ctx, to: usize, s: &WeekdaySide, pb_pct: f64, hsl_pct: f64, buf: f64, entry_ok: &[bool], filter_exit: &[bool]) -> Vec<Trade> {
+    use crate::books::ab::{addmul, mul32};
+    let dir = if s.long { 1.0 } else { -1.0 };
+    let kind = if s.entry_open { "open" } else { "close" };
+    let mut out = Vec::new();
+    let mut pos: Option<(usize, f64)> = None;
+    let (mut skip, mut bars) = (false, 0i64);
+    let (mut pb, mut hsl) = (f64::NAN, f64::NAN);
+    for i in 1..=to {
+        let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
+        // long: OLC = L == C AND L == O; short: OHC = O == H AND H == C
+        let circuit = if s.long { l == c && l == o } else { o == h && h == c };
+        let exit_px = if s.exit_open { o } else { c };
+        bars += 1;
+        if pos.is_none() && entry_ok[i] {
+            bars = 0;
+            let px = if s.entry_open { o } else { c };
+            // PB = (1 + Profit_Pct * 0.01) * BuyPrice; short PB1 = (1 - Profit_Pct * 0.01) * ShortPrice (HSL the other way)
+            if pb_pct > 0.0 {
+                pb = mul32(1.0 + dir * pb_pct * 0.01, px);
+            }
+            if hsl_pct > 0.0 {
+                hsl = mul32(1.0 - dir * hsl_pct * 0.01, px);
+            }
+            pos = Some((i, px));
+        }
+        if let Some((e, epx)) = pos {
+            if !skip {
+                // long: (HARDSL_Pct != 0 AND L <= HSL) OR (Profit_Pct != 0 AND H >= PB); short: H >= HSL1 OR L <= PB1
+                let (hit_hsl, hit_pb) = if s.long { (hsl_pct != 0.0 && l <= hsl, pb_pct != 0.0 && h >= pb) } else { (h >= hsl, l <= pb) };
+                let sig = dow(x, i) == s.exit_day;
+                if hit_hsl || hit_pb || sig || filter_exit[i] || bars >= s.max_bars - 1 {
+                    if !circuit {
+                        let (mut px, mut why) = (exit_px, if sig { "Exit weekday" } else if filter_exit[i] { "ST filter" } else { "Max bars" });
+                        if s.long {
+                            if l <= hsl {
+                                (px, why) = (if o < hsl { addmul(o, -buf / 100.0) } else { hsl }, "Hard SL");
+                            } else if h >= pb {
+                                // as written: a gap above the profit target sells at Open - buffer
+                                (px, why) = (if o > pb { addmul(o, -buf / 100.0) } else { pb }, "Profit booking");
+                            }
+                        } else if h >= hsl {
+                            (px, why) = (if o > hsl { addmul(o, buf / 100.0) } else { hsl }, "Hard SL");
+                        } else if l <= pb {
+                            (px, why) = (if o < pb { addmul(o, buf / 100.0) } else { pb }, "Profit booking");
+                        }
+                        out.push(trade(dir, e, epx, kind, i, px, why));
+                        pos = None;
+                        (pb, hsl) = (f64::NAN, f64::NAN);
+                    } else {
+                        skip = true;
+                    }
+                }
+            }
+        }
+        if let Some((e, epx)) = pos {
+            if skip && !circuit {
+                out.push(trade(dir, e, epx, kind, i, exit_px, "Exit after circuit bar"));
+                pos = None;
+                skip = false;
+                (pb, hsl) = (f64::NAN, f64::NAN);
+            }
+        }
+    }
+    if let Some((e, epx)) = pos {
+        let mut t = trade(dir, e, epx, kind, to, x.c[to], "End of period");
+        if e == to {
+            t.open = true;
+            t.reason = "open".into();
+        }
+        out.push(t);
+    }
+    out
+}
+
+fn weekday_short_long(x: &Ctx, from: usize, to: usize, g: &impl Fn(&str) -> f64) -> Vec<Trade> {
+    let n = x.c.len();
+    if n == 0 || to >= n {
+        return Vec::new();
+    }
+    let gi = |k: &str| g(k).round() as i64;
+    let ftype = gi("filter");
+    let sma_ok: Vec<bool> = if ftype == 1 && gi("sma_period") >= 1 {
+        let m = crate::books::ab::ma(&x.c.iter().map(|&v| Some(v)).collect::<Vec<_>>(), gi("sma_period") as usize);
+        (0..n).map(|i| m[i].map_or(false, |m| x.c[i] >= m)).collect()
+    } else {
+        vec![false; n]
+    };
+    let (st_buy, st_short): (Vec<bool>, Vec<bool>) = if ftype == 2 {
+        let line = weekday_st(x, gi("st_tf"), gi("st_period").max(1) as usize, g("st_factor"));
+        ((0..n).map(|i| x.c[i] > line[i]).collect(), (0..n).map(|i| x.c[i] < line[i]).collect())
+    } else {
+        (vec![false; n], vec![false; n])
+    };
+    let none = vec![false; n];
+    let flt = |i: usize, st: &[bool]| match ftype { 2 => st[i], 1 => sma_ok[i], _ => true };
+    let (pb_pct, hsl_pct, buf) = (g("pb_pct"), g("hsl_pct"), g("buffer_pct"));
+    let mut out = Vec::new();
+    // the AFL's short block runs before its long block on each bar; the two sides do not interact
+    if gi("short_on") == 1 {
+        let day = gi("short_entry_day");
+        let ok: Vec<bool> = (0..n).map(|i| dow(x, i) == day && x.l[i] != x.c[i] && flt(i, &st_short) && x.c[i] > 0.0).collect();
+        let s = WeekdaySide { long: false, exit_day: gi("short_exit_day"), entry_open: gi("short_entry_at") == 1, exit_open: gi("short_exit_at") == 1,
+            max_bars: weekday_max_bars(day, gi("short_exit_day")) };
+        out.extend(weekday_side(x, to, &s, pb_pct, hsl_pct, buf, &ok, if ftype == 2 { &st_buy } else { &none }));
+    }
+    if gi("long_on") == 1 {
+        let day = gi("long_entry_day");
+        let ok: Vec<bool> = (0..n).map(|i| dow(x, i) == day && x.h[i] != x.c[i] && flt(i, &st_buy) && x.c[i] > 0.0).collect();
+        let s = WeekdaySide { long: true, exit_day: gi("long_exit_day"), entry_open: gi("long_entry_at") == 1, exit_open: gi("long_exit_at") == 1,
+            max_bars: weekday_max_bars(day, gi("long_exit_day")) };
+        out.extend(weekday_side(x, to, &s, pb_pct, hsl_pct, buf, &ok, if ftype == 2 { &st_short } else { &none }));
+    }
+    out.sort_by_key(|t| (t.legs[0].i, t.exit_i));
+    from_start(out, from)
+}
+
+// ---- kora reddy weeknum given month (added 20-11-2026)
+// jay-local/Kora Reddy/kora_reddy_Weeknum_Given_Month.afl (603 lines) and its near-copy in "Mon-Fri Normal Weekly &
+// Monthly" (621 lines), whose entry-day test has one more holiday clause and which adds an SMA filter.
+pub const WEEKNUM: &str = "ytkr_weeknum_given_month";
+pub const WEEKNUM_MF: &str = "ytkr_weeknum_given_month_mf";
+/// The two weeknum ids have not been compared with any team result (no trade sheet or optimisation exists).
+pub const UNCHECKED: [&str; 2] = [WEEKNUM, WEEKNUM_MF];
+
+const WEEKNUM_RULES: &[&str] = &[
+    "F|Today = Entry weekday (default Tuesday)",
+    "F|Holiday setting 0: also the bar before a missed Entry weekday (the AFL reads the next bar's weekday)",
+    "F|Optional: week number of the month (default off, week 1) and month of the year (default 0, every month)",
+    "F|Long: no buy on a bar closing at its High; short: no short on a bar closing at its Low",
+    "F|Optional ST filter (default off): Close above (or below) the monthly / weekly / daily Supertrend",
+    "E|Side 1 (default): Buy at the Close (or Open); side 2: Short at the Close (or Open)",
+    "X|Exit at the Close (or Open) on the Exit weekday (default Tuesday), or the bar before when it is missed",
+    "X|Time exit after MaxBars − 1 bars (MaxBars 6 when Entry and Exit weekday are the same)",
+    "X|Optional profit booking % and hard SL % (default 0, off): at the level, or the open ∓ buffer % on a gap",
+    "X|An exit on a circuit bar (long O = L = C, short O = H = C) waits for the next bar that is not one",
+];
+const WEEKNUM_MF_RULES: &[&str] = &[
+    "F|Today = Entry weekday (default Tuesday)",
+    "F|Holiday setting 0: also the bar before a missed Entry weekday, including a week whose first days are missed",
+    "F|Optional: week number of the month (default off, week 1) and month of the year (default 0, every month)",
+    "F|Long: no buy on a bar closing at its High; short: no short on a bar closing at its Low",
+    "F|Optional ST filter (default off) and SMA filter (default off, Close above the 15-day SMA)",
+    "E|Side 1 (default): Buy at the Close (or Open); side 2: Short at the Close (or Open)",
+    "X|Exit at the Close (or Open) on the Exit weekday (default Tuesday), or the bar before when it is missed",
+    "X|Time exit after MaxBars − 1 bars (MaxBars 6 when Entry and Exit weekday are the same)",
+    "X|Optional profit booking % and hard SL % (default 0, off): at the level, or the open ∓ buffer % on a gap",
+    "X|An exit on a circuit bar (long O = L = C, short O = H = C) waits for the next bar that is not one",
+];
+const WEEKNUM_NOTES: &str = "kora_reddy_Weeknum_Given_Month.afl (Kora Reddy folder; coded by the team 08-09-2022), coded as the AFL is written with its own defaults: long only, buy Tuesday's close, sell the next Tuesday's close. The week number of the month is the AFL's loop: week 1 starts at the first new week (weekday lower than the bar before) on or after the month's first bar; the days of a new month before it keep the previous month's count. As written: the holiday tests read the NEXT bar's weekday (Ref(DayOfWeek(), 1), a look-ahead; nothing on the last bar); the exit-day test Ref(DayOfWeek(), 1) == LongEntryDay_ compares a weekday with a true/false value, so it holds only when the entry-day flag is set and the next bar is a Monday; the short side uses the long side's 'if Entry day Holiday' toggle (its own is never read); a long gapping through its profit level sells at open MINUS the buffer and a short gapping through its profit level covers at open PLUS the buffer; the ST filter's weekly / monthly line is expanded with expandFirst and no Ref shift, so a day sees its own period's final line (a look-ahead); the filter list's SMA case is unreachable (the list is OFF|ST). Declared adaptations: one side per run (side setting), because the AFL's long and short toggles together would hold both on one symbol, which AmiBroker's backtester does not; the turnover filter (needs OpenInt) and the dead-stock toggle (default NO: no buy on bar 0, no forced exit) are not offered. Entry and exit weekday, entry / exit price and the holiday toggle are shared by the two sides (the AFL's separate short settings have the same defaults). No team result exists for this AFL (the Backtest.xlsx beside the copy is empty), so it is not checked against the team.";
+const WEEKNUM_MF_NOTES: &str = "kora_reddy_Weeknum_Given_Month.afl in 'Mon-Fri Normal Weekly & Monthly' (621 lines), a near-copy of the Kora Reddy folder's AFL coded as Weeknum Given Month, with the same quirks and adaptations (see there). Its trading rules differ in two places: the entry-day test has a fourth holiday clause (the next bar is in the next week and both today and the next bar are after the Entry weekday), on the long and the short side; and an SMA filter (default off, period 15, trade above the SMA; Close against MA(C, n), no trade before the average exists) applies to buys and shorts. With the defaults (holiday setting 1, SMA off) it gives the same trades as the root AFL. No team result exists (its Backtest.xlsx is empty).";
+
+fn weeknum_catalogue() -> Vec<StrategyDef> {
+    vec![
+        def(WEEKNUM, "Weeknum Given Month", "Long/Short", WEEKNUM_RULES, WEEKNUM_NOTES),
+        def(WEEKNUM_MF, "Weeknum Given Month (Mon-Fri copy)", "Long/Short", WEEKNUM_MF_RULES, WEEKNUM_MF_NOTES),
+    ]
+}
+
+fn weeknum_params(id: &str) -> Vec<ParamDef> {
+    let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    let mut v = vec![
+        p("side", "Side (1 long, the AFL default; 2 short)", 1.0, 1.0, 2.0, 1.0),
+        p("entry_day", "Entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
+        p("entry_at", "Entry at (0 close, 1 open)", 0.0, 0.0, 1.0, 1.0),
+        p("exit_day", "Exit weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
+        p("exit_at", "Exit at (0 close, 1 open)", 0.0, 0.0, 1.0, 1.0),
+        p("entry_skip", "If the Entry weekday is a holiday (0 enter on the bar before, 1 skip the entry)", 1.0, 0.0, 1.0, 1.0),
+        p("pb_pct", "Profit booking % (0 off)", 0.0, 0.0, 50.0, 1.0),
+        p("hsl_pct", "Hard SL % (0 off)", 0.0, 0.0, 50.0, 1.0),
+        p("buffer_pct", "Selling buffer % (gap through a level)", 0.25, 0.0, 10.0, 0.05),
+        p("week_on", "Week number of month filter (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
+        p("week_num", "Week number", 1.0, 0.0, 7.0, 1.0),
+        p("month", "Month to trade in (0 for all)", 0.0, 0.0, 12.0, 1.0),
+        p("filter", "Filter (0 off, 1 ST)", 0.0, 0.0, 1.0, 1.0),
+        p("st_tf", "ST filter timeframe (0 monthly, 1 weekly, 2 daily)", 0.0, 0.0, 2.0, 1.0),
+        p("st_period", "ST filter period", 5.0, 5.0, 25.0, 5.0),
+        p("st_factor", "ST filter factor", 1.0, 1.0, 5.0, 1.0),
+        p("st_type", "ST filter type (0 bearish: Close below ST, 1 bullish: Close above ST)", 1.0, 0.0, 1.0, 1.0),
+        p("penny", "Penny stock price (enter only above it)", 0.0, 0.0, 100.0, 1.0),
+    ];
+    if id == WEEKNUM_MF {
+        v.extend([
+            p("sma_on", "SMA filter (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
+            p("sma_period", "SMA period", 15.0, 1.0, 100.0, 1.0),
+            p("sma_type", "Trade when (0 Close above SMA, 1 Close below SMA)", 0.0, 0.0, 1.0, 1.0),
+        ]);
+    }
+    v
+}
+
+/// The AFL's ST filter line on daily bars: ATR(period) and (H + L) / 2 on the timeframe's bars, the AFL's isUp loop
+/// from bar `period`, then TimeFrameExpand(expandFirst) with no Ref shift (each day reads its own period's line).
+/// NaN where the line is Null.
+fn weeknum_st(x: &Ctx, tf: i64, period: usize, factor: f64) -> Vec<f64> {
+    let b = crate::books::ytsw::compress(x, match tf { 1 => 'W', 2 => 'D', _ => 'M' });
+    let m = b.c.len();
+    let atr = crate::books::ab::atr(&b.h, &b.l, &b.c, period);
+    let mid = |g: usize| (b.h[g] + b.l[g]) / 2.0;
+    let mut up: Vec<f64> = (0..m).map(|g| atr[g].map_or(f64::NAN, |a| mid(g) + a * factor)).collect();
+    let mut dn: Vec<f64> = (0..m).map(|g| atr[g].map_or(f64::NAN, |a| mid(g) - a * factor)).collect();
+    let mut is_up = vec![true; m];
+    for g in period.max(1)..m {
+        // a comparison with Null is false; Max / Min with a Null element keep the other value
+        is_up[g] = if b.c[g] > up[g - 1] { true } else if b.c[g] < dn[g - 1] { false } else { is_up[g - 1] };
+        if is_up[g] {
+            dn[g] = dn[g].max(dn[g - 1]);
+        } else {
+            up[g] = up[g].min(up[g - 1]);
+        }
+    }
+    (0..x.c.len()).map(|i| { let g = b.group[i]; if is_up[g] { dn[g] } else { up[g] } }).collect()
+}
+
+/// The AFL's calenderWeekNumberOfMonth loop.
+fn weeknum_of_month(x: &Ctx) -> Vec<i64> {
+    let n = x.c.len();
+    let month = |i: usize| x.r[i].date.get(5..7).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+    let mut wk = vec![1i64; n];
+    let mut month_change = false;
+    for i in 0..n {
+        if i == 0 || month(i) != month(i - 1) {
+            month_change = true; // firstCandleOfMonth (Ref(Month(), -1) is Null on bar 0)
+        }
+        if i == 0 {
+            continue;
+        }
+        let new_week = dow(x, i) < dow(x, i - 1);
+        let first_monday = month_change && new_week;
+        if first_monday {
+            month_change = false;
+        }
+        wk[i] = if new_week && first_monday { 1 } else if new_week { wk[i - 1] + 1 } else { wk[i - 1] };
+    }
+    wk
+}
+
+fn weeknum_run(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
+    use crate::books::ab::{addmul, mul32};
+    let n = x.c.len();
+    if n == 0 || from > to || to >= n {
+        return Vec::new();
+    }
+    let gi = |k: &str| g(k).round() as i64;
+    let mf = id == WEEKNUM_MF;
+    let long = gi("side") != 2;
+    let (entry_day, exit_day, skip) = (gi("entry_day"), gi("exit_day"), gi("entry_skip") == 1);
+    let (entry_open, exit_open) = (gi("entry_at") == 1, gi("exit_at") == 1);
+    let (pb_pct, hsl_pct, buf) = (g("pb_pct"), g("hsl_pct"), g("buffer_pct"));
+    let max_bars = if entry_day == exit_day { 6 } else if entry_day < exit_day { exit_day - entry_day + 1 } else { 5 - entry_day + exit_day + 1 };
+    let d: Vec<i64> = (0..n).map(|i| dow(x, i)).collect();
+    // _DayOfWeek1 = Ref(DayOfWeek(), 1): Null on the last bar of the data, where every test with it is false
+    let d1 = |i: usize| if i + 1 < n { Some(d[i + 1]) } else { None };
+    let entry_flag: Vec<bool> = (0..n)
+        .map(|i| {
+            let c1 = d[i] < entry_day;
+            d[i] == entry_day
+                || d1(i).is_some_and(|t| (c1 && t > entry_day) || (c1 && t < d[i]) || (mf && t > entry_day && d[i] > entry_day && t < d[i]))
+        })
+        .collect();
+    let exit_flag: Vec<bool> = (0..n)
+        .map(|i| {
+            let c2 = d[i] < exit_day;
+            // the AFL's last clause compares the next weekday with the entry-day flag (0 / 1)
+            d[i] == exit_day || d1(i).is_some_and(|t| (c2 && t > exit_day) || (c2 && t < d[i]) || t == entry_flag[i] as i64)
+        })
+        .collect();
+    let wk = weeknum_of_month(x);
+    let (week_on, week_num, month) = (gi("week_on") == 1, gi("week_num"), gi("month"));
+    let st: Vec<f64> = if gi("filter") == 1 { weeknum_st(x, gi("st_tf"), g("st_period").round().max(1.0) as usize, g("st_factor")) } else { Vec::new() };
+    let bullish = gi("st_type") == 1;
+    let sma: Vec<Option<f64>> = if mf && gi("sma_on") == 1 {
+        let cc: Vec<Option<f64>> = x.c.iter().map(|&v| Some(v)).collect();
+        crate::books::ab::ma(&cc, g("sma_period").round().max(1.0) as usize)
+    } else {
+        Vec::new()
+    };
+    let below_sma = gi("sma_type") == 1;
+    let penny = g("penny");
+    let cash = |i: usize| {
+        let sig = if skip { d[i] == entry_day } else { entry_flag[i] };
+        let mon = x.r[i].date.get(5..7).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+        sig && (!week_on || wk[i] == week_num)
+            && (month <= 0 || month == mon)
+            && if long { x.h[i] != x.c[i] } else { x.l[i] != x.c[i] }
+            && (st.is_empty() || if bullish { x.c[i] > st[i] } else { x.c[i] < st[i] })
+            && (sma.is_empty() || sma[i].is_some_and(|m| if below_sma { x.c[i] < m } else { x.c[i] > m }))
+            && x.c[i] > penny
+            && i != 0
+    };
+    // OLC (long) / OHC (short): an exit on such a bar is skipped and taken on the next bar that is not one
+    let circuit = |i: usize| if long { x.l[i] == x.c[i] && x.l[i] == x.o[i] } else { x.o[i] == x.h[i] && x.h[i] == x.c[i] };
+    let at = |open: bool, i: usize| if open { x.o[i] } else { x.c[i] };
+    let dir = if long { 1.0 } else { -1.0 };
+    let kind = if entry_open { "open" } else { "close" };
+    let mut out = Vec::new();
+    let mut pos: Option<(usize, f64)> = None;
+    let (mut skip_exit, mut bars_since) = (false, 0i64);
+    let (mut pb, mut hsl) = (f64::NAN, f64::NAN);
+    for i in 1..=to {
+        bars_since += 1;
+        match pos {
+            None if cash(i) => {
+                bars_since = 0;
+                let px = at(entry_open, i);
+                if pb_pct > 0.0 {
+                    pb = if long { mul32(1.0 + pb_pct * 0.01, px) } else { mul32(1.0 - pb_pct * 0.01, px) };
+                }
+                if hsl_pct > 0.0 {
+                    hsl = if long { mul32(1.0 - hsl_pct * 0.01, px) } else { mul32(1.0 + hsl_pct * 0.01, px) };
+                }
+                pos = Some((i, px));
+            }
+            Some((e, epx)) if !skip_exit => {
+                // long: the AFL guards the levels with their % settings; short: unset levels are Null (false)
+                let (hit_sl, hit_pb) = if long {
+                    (hsl_pct != 0.0 && x.l[i] <= hsl, pb_pct != 0.0 && x.h[i] >= pb)
+                } else {
+                    (x.h[i] >= hsl, x.l[i] <= pb)
+                };
+                if hit_sl || hit_pb || exit_flag[i] || bars_since >= max_bars - 1 {
+                    if !circuit(i) {
+                        let o = x.o[i];
+                        let (px, why) = if long && x.l[i] <= hsl {
+                            (if o < hsl { addmul(o, -buf / 100.0) } else { hsl }, "Hard SL")
+                        } else if long && x.h[i] >= pb {
+                            (if o > pb { addmul(o, -buf / 100.0) } else { pb }, "Profit booking")
+                        } else if !long && x.h[i] >= hsl {
+                            (if o > hsl { addmul(o, buf / 100.0) } else { hsl }, "Hard SL")
+                        } else if !long && x.l[i] <= pb {
+                            (if o < pb { addmul(o, buf / 100.0) } else { pb }, "Profit booking")
+                        } else if exit_flag[i] {
+                            (at(exit_open, i), "Exit weekday")
+                        } else {
+                            (at(exit_open, i), "Max bars")
+                        };
+                        out.push(trade(dir, e, epx, kind, i, px, why));
+                        pos = None;
+                        pb = f64::NAN;
+                        hsl = f64::NAN;
+                    } else {
+                        skip_exit = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        if skip_exit && !circuit(i) {
+            if let Some((e, epx)) = pos {
+                out.push(trade(dir, e, epx, kind, i, at(exit_open, i), "After circuit bar"));
+            }
+            pos = None;
+            skip_exit = false;
+            pb = f64::NAN;
+            hsl = f64::NAN;
+        }
+    }
+    if let Some((e, epx)) = pos {
+        let mut t = trade(dir, e, epx, kind, to, x.c[to], "open");
+        t.open = true;
+        out.push(t);
+    }
+    from_start(out, from)
 }
 
 #[cfg(test)]
@@ -802,5 +1271,198 @@ mod tests {
         let t = go(GAP, &r, &[("weekday", 2.0), ("gap", 3.0), ("side", 2.0), ("open_pct", 0.25)]);
         assert!(crate::books::ab::near_ab(t[0].1, 100.5 * 0.9975) && t[0].4 == -1.0);
         assert!(go(GAP, &r, &[("weekday", 1.0), ("gap", 3.0)]).is_empty());
+    }
+
+    // ---- kora reddy weeknum given month (added 20-11-2026)
+    /// Rows on the given dates, each bar (open, high, low, close).
+    fn dated(days: &[&str], ohlc: &[(f64, f64, f64, f64)]) -> Vec<Row> {
+        days.iter().zip(ohlc).map(|(d, &(open, high, low, close))| Row { ticker: "T".into(), date: d.to_string(), open, high, low, close, volume: None }).collect()
+    }
+    const P: (f64, f64, f64, f64) = (100.0, 101.0, 99.0, 100.0); // plain bar: closes below its high, above its low
+
+    #[test]
+    fn weeknum_registered_everywhere() {
+        let cat = catalogue();
+        assert_eq!(cat.len(), IDS.len());
+        for id in [WEEKNUM, WEEKNUM_MF] {
+            assert!(cat.iter().any(|d| d.id == id) && family_of(id).is_some() && params(id).is_some());
+        }
+        assert!(params(WEEKNUM_MF).unwrap().iter().any(|p| p.key == "sma_on") && !params(WEEKNUM).unwrap().iter().any(|p| p.key == "sma_on"));
+    }
+
+    #[test]
+    fn weeknum_defaults_buy_tuesday_close_sell_next_tuesday() {
+        // bars 0..10 from Monday 2024-01-01: Tuesdays are bars 1, 6; the exit bar takes no new entry
+        let mut b = vec![P; 11];
+        b[1].3 = 100.5;
+        b[6].3 = 100.8;
+        let r = bars(&b);
+        assert_eq!(go(WEEKNUM, &r, &[]), vec![(1, 100.5, 6, 100.8, 1.0)]);
+        assert_eq!(go(WEEKNUM_MF, &r, &[]), go(WEEKNUM, &r, &[]));
+        // a Tuesday closing at its high is not bought (UC); the next Tuesday is
+        b[1] = (100.0, 101.0, 99.0, 101.0);
+        let t = go(WEEKNUM, &bars(&b), &[]);
+        assert_eq!((t[0].0, t[0].4), (6, 1.0));
+        // exit weekday Thursday: MaxBars = 4 - 2 + 1 = 3, so the time exit (2 bars) fires on Thursday too
+        assert_eq!(go(WEEKNUM, &r, &[("exit_day", 4.0)])[0].2, 3);
+        // entry and exit at the open
+        let t = go(WEEKNUM, &r, &[("entry_at", 1.0), ("exit_at", 1.0)]);
+        assert_eq!((t[0].1, t[0].3), (100.0, 100.0));
+    }
+
+    #[test]
+    fn weeknum_holiday_entry_reads_the_next_bar() {
+        // Tuesday 2024-01-02 is missing: with skip (default) no entry that week; with skip 0 Monday is the entry day
+        let r = dated(&["2024-01-01", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"], &[P; 6]);
+        assert!(go(WEEKNUM, &r, &[]).iter().all(|t| t.0 == 5));
+        // the AFL never buys bar 0 (dead-stock setting NO), so Monday as bar 0 gives no entry
+        assert!(go(WEEKNUM, &r, &[("entry_skip", 0.0)]).iter().all(|t| t.0 == 5));
+        // start the data on the Friday before
+        let r = dated(&["2023-12-29", "2024-01-01", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"], &[P; 7]);
+        let t = go(WEEKNUM, &r, &[("entry_skip", 0.0)]);
+        assert_eq!((t[0].0, t[0].2), (1, 6));
+        // Mon-Fri copy: Friday before a week whose Monday and Tuesday are missing is an entry day too
+        let r = dated(&["2024-01-01", "2024-01-04", "2024-01-05", "2024-01-10", "2024-01-11", "2024-01-16"], &[P; 6]);
+        assert!(go(WEEKNUM, &r, &[("entry_skip", 0.0)]).iter().all(|t| t.0 == 5)); // only the last bar's Tuesday
+        let t = go(WEEKNUM_MF, &r, &[("entry_skip", 0.0)]);
+        assert_eq!((t[0].0, t[0].2), (2, 5));
+    }
+
+    #[test]
+    fn weeknum_week_of_month_loop() {
+        // weekdays from Monday 2024-01-01 to Tuesday 2024-02-06 (27 bars)
+        let r = bars(&[P; 27]);
+        let x = Ctx::new(&r, &r, &[]);
+        let wk = weeknum_of_month(&x);
+        // bar 0 starts the month but the AFL's first-Monday test needs i != 0, so Monday 8 Jan resets to 1 again
+        assert_eq!((wk[0], wk[5], wk[10], wk[15], wk[20], wk[23], wk[24], wk[25]), (1, 1, 2, 3, 4, 4, 4, 1));
+        assert_eq!(r[25].date, "2024-02-05");
+        // week 1 only: Tuesday entries on 2 Jan (bar 1), 9 Jan sells and cannot rebuy, then 6 Feb (bar 26)
+        let t = go(WEEKNUM, &r, &[("week_on", 1.0)]);
+        assert_eq!(t.iter().map(|t| t.0).collect::<Vec<_>>(), vec![1, 26]);
+        // February only
+        assert_eq!(go(WEEKNUM, &r, &[("month", 2.0)]).iter().map(|t| t.0).collect::<Vec<_>>(), vec![26]);
+    }
+
+    #[test]
+    fn weeknum_short_levels_and_circuit_exit() {
+        // short Tuesday (bar 1) at 100; Wednesday's low reaches the 1% profit level 99 from an open above it
+        let mut b = vec![P; 6];
+        b[2] = (99.5, 100.0, 98.5, 99.0 + 0.2);
+        let t = go(WEEKNUM, &bars(&b), &[("side", 2.0), ("pb_pct", 1.0)]);
+        assert_eq!((t[0].0, t[0].2, t[0].4), (1, 2, -1.0));
+        assert!((t[0].3 - 99.0).abs() < 1e-4);
+        // a gap below it covers at open PLUS the 0.25% buffer, as the AFL writes it
+        b[2] = (98.0, 98.6, 97.5, 98.2);
+        let t = go(WEEKNUM, &bars(&b), &[("side", 2.0), ("pb_pct", 1.0)]);
+        assert!(crate::books::ab::near_ab(t[0].3, 98.0 * 1.0025));
+        // long: the exit Tuesday (bar 6) is a lower-circuit bar O = L = C, so the sell waits for bar 7
+        let mut b = vec![P; 9];
+        b[6] = (99.0, 100.0, 99.0, 99.0);
+        b[7].3 = 100.3;
+        let t = go(WEEKNUM, &bars(&b), &[]);
+        assert_eq!((t[0].0, t[0].2, t[0].3), (1, 7, 100.3));
+    }
+
+    #[test]
+    fn weeknum_filters_st_and_sma() {
+        // steadily rising closes: daily ST (period 5) is below the close, SMA 3 below the close
+        let b: Vec<_> = (0..30).map(|k| { let c = 100.0 + k as f64; (c - 0.5, c + 1.0, c - 1.0, c) }).collect();
+        let r = bars(&b);
+        let on = go(WEEKNUM, &r, &[("filter", 1.0), ("st_tf", 2.0)]);
+        assert!(!on.is_empty() && on.iter().all(|t| t.0 >= 5));
+        assert!(go(WEEKNUM, &r, &[("filter", 1.0), ("st_tf", 2.0), ("st_type", 0.0)]).is_empty());
+        // fewer than 6 months of data: the monthly ATR(5) line is still Null, so nothing passes
+        assert!(go(WEEKNUM, &r, &[("filter", 1.0)]).is_empty());
+        // SMA 3 does not exist on bar 1, so the copy's first buy is the next Tuesday
+        assert_eq!(go(WEEKNUM, &r, &[])[0].0, 1);
+        assert_eq!(go(WEEKNUM_MF, &r, &[("sma_on", 1.0), ("sma_period", 3.0)])[0].0, 6);
+        assert!(go(WEEKNUM_MF, &r, &[("sma_on", 1.0), ("sma_period", 3.0), ("sma_type", 1.0)]).is_empty());
+    }
+
+    // ---- kora reddy all day (added 20-11-2026)
+    fn wk(id_rows: &[Row], kv: &[(&str, f64)]) -> Vec<(usize, f64, usize, f64, f64, String)> {
+        let x = Ctx::new(id_rows, id_rows, &[]);
+        run(WEEKDAY, &x, 0, id_rows.len() - 1, &ps(kv)).unwrap().into_iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px, t.dir, t.reason)).collect()
+    }
+    const F: (f64, f64, f64, f64) = (100.0, 102.0, 98.0, 101.0); // ordinary bar
+
+    #[test]
+    fn weekday_defaults_enter_and_exit_the_same_tuesday() {
+        assert_eq!((weekday_max_bars(2, 2), weekday_max_bars(1, 2), weekday_max_bars(4, 2), weekday_max_bars(5, 1)), (6, 2, 4, 2));
+        assert!(catalogue().iter().any(|d| d.id == WEEKDAY) && family_of(WEEKDAY).is_some());
+        // bar 1 Tuesday: bought and sold at its close (the exit test follows the entry on the same bar); bar 6 Tuesday has
+        // High = Close (upper circuit): no entry
+        let r = bars(&[F, F, F, F, F, F, (100.0, 103.0, 99.0, 103.0)]);
+        assert_eq!(wk(&r, &[]), vec![(1, 101.0, 1, 101.0, 1.0, "Exit weekday".to_string())]);
+        // entry at the open, exit at the close: the Tuesday open-to-close
+        assert_eq!(wk(&r, &[("long_entry_at", 1.0)])[0].1, 100.0);
+    }
+
+    #[test]
+    fn weekday_exit_day_max_bars_and_circuit_skip() {
+        // Monday entry, Wednesday exit; the AFL loop starts at bar 1, so the Monday of bar 0 is not bought
+        let r = bars(&[F, F, F, F, F, F, F, (100.0, 104.0, 99.0, 103.0), F]);
+        assert_eq!(wk(&r, &[("long_entry_day", 1.0), ("long_exit_day", 3.0)]), vec![(5, 101.0, 7, 103.0, 1.0, "Exit weekday".to_string())]);
+        // the AFL loop starts at bar 1: no entry on bar 0. With Wednesday missing, MaxBars 3 exits on Thursday (2 bars on)
+        let mut r = bars(&[F, F, F, (100.0, 104.0, 99.0, 102.0), F, F, F, F, F, F]);
+        r.remove(2);
+        let x = Ctx::new(&r, &r, &[]);
+        assert_eq!(dow(&x, 0), 1);
+        let t = wk(&r, &[("long_entry_day", 1.0), ("long_exit_day", 3.0)]);
+        assert_eq!((t[0].0, t[0].2, t[0].3, t[0].5.as_str()), (4, 6, 101.0, "Exit weekday"));
+        let t = wk(&r, &[("long_entry_day", 2.0), ("long_exit_day", 3.0)]);
+        assert_eq!((t[0].0, t[0].2, t[0].3, t[0].5.as_str()), (1, 2, 102.0, "Max bars"));
+        // the Wednesday exit bar has Low = Open = Close: skipped, sold at Thursday's close
+        let r = bars(&[F, F, (100.0, 101.0, 100.0, 100.0), (100.0, 103.0, 99.0, 102.5), F]);
+        assert_eq!(wk(&r, &[("long_exit_day", 3.0)]), vec![(1, 101.0, 3, 102.5, 1.0, "Exit after circuit bar".to_string())]);
+    }
+
+    #[test]
+    fn weekday_hard_sl_profit_booking_and_buffer() {
+        use crate::books::ab::{addmul, mul32};
+        let entry = (99.0, 101.0, 98.5, 100.0); // Tuesday close 100
+        // hard SL 2%: Wednesday opens 97 below 98 -> Open - 0.25%
+        let r = bars(&[F, entry, (97.0, 99.0, 96.0, 98.5), F, F]);
+        let t = wk(&r, &[("long_exit_day", 4.0), ("hsl_pct", 2.0)]);
+        assert_eq!((t[0].2, t[0].5.as_str()), (2, "Hard SL"));
+        assert!((t[0].3 - addmul(97.0, -0.0025)).abs() < 1e-9);
+        // no gap: the level itself
+        let r = bars(&[F, entry, (99.0, 99.5, 97.5, 98.5), F, F]);
+        assert_eq!(wk(&r, &[("long_exit_day", 4.0), ("hsl_pct", 2.0)])[0].3, mul32(0.98, 100.0));
+        // profit 3% gapped through (open 104 > 103): sells at Open - 0.25% as written
+        let r = bars(&[F, entry, (104.0, 105.0, 103.5, 104.5), F, F]);
+        let t = wk(&r, &[("long_exit_day", 4.0), ("pb_pct", 3.0)]);
+        assert!((t[0].3 - addmul(104.0, -0.0025)).abs() < 1e-9 && t[0].5 == "Profit booking");
+        // short: stop 2% above 100, gap to 103 covers at Open + 0.25%
+        let r = bars(&[F, entry, (103.0, 104.0, 102.0, 103.5), F, F]);
+        let t = wk(&r, &[("long_on", 0.0), ("short_on", 1.0), ("short_exit_day", 4.0), ("hsl_pct", 2.0)]);
+        assert_eq!((t[0].0, t[0].1, t[0].2, t[0].4), (1, 100.0, 2, -1.0));
+        assert!((t[0].3 - addmul(103.0, 0.0025)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn weekday_short_side_and_filters() {
+        // short Tuesday close, cover Wednesday close; a Tuesday with Low = Close (lower circuit) is not shorted
+        let r = bars(&[F, F, (100.0, 101.0, 98.0, 99.0), F, F, F, (100.0, 101.0, 97.0, 97.0), F]);
+        let t = wk(&r, &[("long_on", 0.0), ("short_on", 1.0), ("short_exit_day", 3.0)]);
+        assert_eq!(t, vec![(1, 101.0, 2, 99.0, -1.0, "Exit weekday".to_string())]);
+        // long and short both on: a long and a short on Tuesday bar 1, and a long on bar 6 (its Low = Close only blocks shorts)
+        assert_eq!(wk(&r, &[("short_on", 1.0)]).iter().map(|t| (t.0, t.4)).collect::<Vec<_>>(), vec![(1, -1.0), (1, 1.0), (6, 1.0)]);
+        // SMA(5) filter: no average yet on bar 1; bar 6 closes above it; shorts also need Close >= MA (as written)
+        let r = bars(&[F, F, F, F, F, F, (101.0, 104.0, 100.0, 103.0), F]);
+        let t = wk(&r, &[("filter", 1.0), ("sma_period", 5.0)]);
+        assert_eq!(t.iter().map(|t| t.0).collect::<Vec<_>>(), vec![6]);
+        let t = wk(&r, &[("filter", 1.0), ("sma_period", 5.0), ("long_on", 0.0), ("short_on", 1.0)]);
+        assert_eq!(t.iter().map(|t| t.0).collect::<Vec<_>>(), vec![6]);
+        assert!(wk(&r, &[("filter", 1.0), ("sma_period", 0.0)]).is_empty());
+        // daily ST(5, 1): rising closes put the close above the line, so the long trades; a Null line (start) does not
+        let up: Vec<(f64, f64, f64, f64)> = (0..12).map(|k| { let b = 100.0 + 2.0 * k as f64; (b, b + 1.5, b - 0.5, b + 1.0) }).collect();
+        let r = bars(&up);
+        let x = Ctx::new(&r, &r, &[]);
+        let line = weekday_st(&x, 3, 5, 1.0);
+        assert!(line[..5].iter().all(|v| v.is_nan()) && (5..12).all(|i| x.c[i] > line[i]));
+        let t = wk(&r, &[("filter", 2.0), ("st_tf", 3.0)]);
+        assert_eq!(t.iter().map(|t| t.0).collect::<Vec<_>>(), vec![6, 11]);
     }
 }

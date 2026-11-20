@@ -101,7 +101,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             TRAIL_RULES[0], TRAIL_RULES[1], TRAIL_RULES[2], TRAIL_RULES[3], TRAIL_RULES[4], TRAIL_RULES[5],
             "F|Long entry also needs RSI below 50 (RSI on Entry candle should be less than)",
             "F|Side: 0 the Long Only AFL, 1 the Short Only AFL",
-        ], "RSI with Trailing SL based Entry and Exit without filter, Long Only.afl (RSI_Trail based entry and Exit/RSI Without filter, identical copy in RSI Afls) and ... Short Only.afl, coded as the AFLs are written: the trackers are separate if-blocks, so the entry can fire on the bar that sets the entry level, and the exit tracker runs on the entry bar. The long fills the first RSI-period bars with 100, the short with 1."),
+        ], "RSI with Trailing SL based Entry and Exit without filter, Long Only.afl (RSI_Trail based entry and Exit/RSI Without filter, identical copy in RSI Afls) and ... Short Only.afl, coded as the AFLs are written: the trackers are separate if-blocks, so the entry can fire on the bar that sets the entry level, and the exit tracker runs on the entry bar. The long fills the first RSI-period bars with 100, the short with 1. Side 1 is the Short Only AFL of the same folder (RSI_Trail based entry and Exit/RSI Without filter/RSI with Trailing SL based Entry and Exit without filter, Short Only.afl, Suraj Mehra 22-12-2021), checked line by line on 20-11-2026: same loop from bar RSI period, short at the Close below (highest RSI - Entry RSI value), cover at the Close above (lowest RSI + Exit RSI value), the Long AFL's quirks mirrored (op 3 also needs RSI rising, op 7 does not), no RSI-on-entry-candle filter, dead-stock NO, defaults 14 / 20 / 20 as in the long AFL; only its Param ranges are narrower (Entry / Exit RSI value 10-30, RSI period 2-22 step 2)."),
         def(TRAIL_V1, "RSI Trailing Entry and Exit with Monthly ST Filter (Ver 1)", "Long/Short", &[
             TRAIL_RULES[0], TRAIL_RULES[1], TRAIL_RULES[2], TRAIL_RULES[3], TRAIL_RULES[4], TRAIL_RULES[5],
             "F|Market filter: Supertrend(5, 1) of the monthly mid point ((H+L)/2), expanded to the daily bars",
@@ -1894,6 +1894,108 @@ mod tests {
         trail_chain(&TrailIn { r: &rs, c: &x.c, start: 1, ev: 20.0, xv: 20.0, thresh: f64::INFINITY, gate: &all, force: &none, virt: false }, false, &mut s);
         let t = backtest(&x, &s, 0, 11);
         assert_eq!((t[0].legs[0].i, t[0].exit_i), (4, 8));
+    }
+
+    /// The Short Only AFL's loop (RSI with Trailing SL based Entry and Exit without filter, Short Only.afl, lines
+    /// 132-272) transliterated statement by statement, dead-stock NO (deadstockbuysig = BarIndex() != 0, sell 0).
+    /// Returns the bars of Short[i] and Cover[i] (both at the Close).
+    fn afl_short_only(c: &[f64], rsi_prd: usize, entry_rsi_val: f64, exit_rsi_val: f64) -> (Vec<usize>, Vec<usize>) {
+        let my_rsi: Vec<f64> = { let r = rsi(c, rsi_prd); (0..c.len()).map(|i| if i < rsi_prd { 1.0 } else { r[i] }).collect() };
+        let (mut count, mut count1, mut lowest_rsi, mut rsi_entry) = (0, 0, 0.0, 0.0);
+        let (mut highest_rsi, mut rsi_exit) = (9999999.0, 9999999.0);
+        let mut position = 0;
+        let (mut short, mut cover) = (Vec::new(), Vec::new());
+        for i in rsi_prd..c.len() {
+            let deadstockbuysig = i != 0;
+            let deadstocksellsig = false;
+            if position == 0 && my_rsi[i] > my_rsi[i - 1] && count <= 1 {
+                highest_rsi = my_rsi[i];
+                count = 1;
+            } else if position == 0 && my_rsi[i] > 0.0 && my_rsi[i] < my_rsi[i - 1] && count == 1 {
+                count = 2;
+                rsi_entry = highest_rsi - entry_rsi_val;
+            } else if position == 0 && highest_rsi > 0.0 && my_rsi[i] > highest_rsi && my_rsi[i] > my_rsi[i - 1] && count == 2 {
+                highest_rsi = my_rsi[i];
+                rsi_entry = highest_rsi - entry_rsi_val;
+            }
+            if position == 0 && my_rsi[i] < rsi_entry && count == 2 && deadstockbuysig {
+                short.push(i);
+                lowest_rsi = my_rsi[i];
+                position = -1;
+                count1 = 1;
+                count = 0;
+                rsi_entry = 0.0;
+                highest_rsi = 9999999.0;
+            }
+            if position < 0 && my_rsi[i] < my_rsi[i - 1] && count1 <= 1 {
+                lowest_rsi = my_rsi[i];
+                count1 = 1;
+            } else if position < 0 && my_rsi[i] > 0.0 && my_rsi[i] > my_rsi[i - 1] && count1 == 1 {
+                count1 = 2;
+                rsi_exit = lowest_rsi + exit_rsi_val;
+            } else if position < 0 && lowest_rsi > 0.0 && my_rsi[i] < lowest_rsi && count1 == 2 {
+                lowest_rsi = my_rsi[i];
+                rsi_exit = lowest_rsi + exit_rsi_val;
+            }
+            if (position < 0 && my_rsi[i] > rsi_exit && count1 == 2) || (position < 0 && deadstocksellsig) {
+                cover.push(i);
+                highest_rsi = my_rsi[i];
+                count = 1;
+                position = 0;
+                lowest_rsi = 0.0;
+                count1 = 0;
+                rsi_exit = 9999999.0;
+            }
+        }
+        (short, cover)
+    }
+
+    #[test]
+    fn trail_side_1_is_the_short_only_afl() {
+        // a deterministic random walk with swings large enough for 10-30 point RSI trails
+        let mut seed: u64 = 12345;
+        let mut px = 1000.0;
+        let ohlc: Vec<(f64, f64, f64, f64)> = (0..600)
+            .map(|_| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let u = (seed >> 11) as f64 / (1u64 << 53) as f64;
+                px *= 1.0 + (u - 0.5) * 0.06;
+                (px, px * 1.01, px * 0.99, px)
+            })
+            .collect();
+        let r = bars(&ohlc);
+        let x = Ctx::new(&r, &r, &[]);
+        let n = x.c.len();
+        // the AFL defaults (14 / 20 / 20) and other settings inside the AFL's Param ranges
+        let mut total = 0;
+        for (rn, ev, xv) in [(14usize, 20.0, 20.0), (2, 10.0, 30.0), (22, 30.0, 10.0), (6, 15.0, 25.0)] {
+            let (want_s, want_c) = afl_short_only(&x.c, rn, ev, xv);
+            assert!(rn != 14 || want_s.len() >= 3, "defaults: test series too quiet");
+            total += want_s.len();
+            let mut kv = vec![("side", 1.0)];
+            if rn != 14 {
+                kv.extend([("rsi_n", rn as f64), ("entry_val", ev), ("exit_val", xv)]);
+            }
+            let g = |k: &str| ps(&kv).get(k).copied().unwrap_or_else(|| params(TRAIL).unwrap().iter().find(|d| d.key == k).unwrap().def);
+            let s = run_trail(TRAIL, &x, &g);
+            let got_s: Vec<usize> = (0..n).filter(|&i| s.short[i].is_some()).collect();
+            let got_c: Vec<usize> = (0..n).filter(|&i| s.cover[i].is_some()).collect();
+            assert_eq!((&got_s, &got_c), (&want_s, &want_c), "{rn} {ev} {xv}");
+            assert!(s.buy.iter().chain(s.short.iter()).flatten().count() == want_s.len() && s.sell.iter().all(|v| v.is_none()));
+            assert!((0..n).all(|i| s.short[i].map_or(true, |p| p == x.c[i]) && s.cover[i].map_or(true, |(p, _)| p == x.c[i])));
+            // through run(): one short trade per AFL Short, entered and covered on the AFL's bars
+            let t = run(TRAIL, &x, 0, n - 1, &ps(&kv)).unwrap();
+            assert_eq!(t.len(), want_s.len(), "{rn} {ev} {xv}");
+            for (k, tr) in t.iter().enumerate() {
+                assert_eq!((tr.dir, tr.legs[0].i), (-1.0, want_s[k]));
+                if k < want_c.len() {
+                    assert_eq!((tr.exit_i, tr.open), (want_c[k], false));
+                } else {
+                    assert_eq!((tr.exit_i, tr.open), (n - 1, true));
+                }
+            }
+        }
+        assert!(total >= 8, "test series too quiet: {total} shorts");
     }
 
     #[test]

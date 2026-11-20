@@ -30,7 +30,7 @@ pub const ST_SWING_SHORT: &str = "ytsw_st_entry_swing_exit_short";
 pub const DIP: &str = "ytsw_buy_on_dip";
 pub const DIP_FLT: &str = "ytsw_buy_on_dip_filter";
 pub const REGIM: &str = "ytsw_regim";
-pub const IDS: [&str; 12] = [SINGLE, BULL, BEAR, BULL_BUY, DIFF, DIFF_LS, SWING_ST, ST_SWING_LONG, ST_SWING_SHORT, DIP, DIP_FLT, REGIM];
+pub const IDS: [&str; 14] = [SINGLE, BULL, BEAR, BULL_BUY, DIFF, DIFF_LS, SWING_ST, ST_SWING_LONG, ST_SWING_SHORT, DIP, DIP_FLT, REGIM, SILVER_LONG, SILVER_SHORT];
 /// The ones the team also ran on index futures (their FO workbooks); the rest were run on the spot indices only.
 pub const FUTURES_TOO: [&str; 4] = [SINGLE, BULL, BEAR, BULL_BUY];
 
@@ -143,6 +143,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Cover when the swing turns up or the filter turns up",
         ], "REGIM - ENTRY EXIT WITH S% BL-LONG ONLY BR-LONG SHORT (To be checked folder), coded as the AFL is written; there is no team workbook for it. Like the AFL, no buy on a bar whose open, high and close are equal (upper circuit) and no sell when open, low and close are equal."),
     ]
+    .into_iter()
+    .chain(silver_defs())
+    .collect()
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -223,6 +226,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("sma", "Filter SMA period", 200.0, 1.0, 300.0, 1.0),
             side(3.0),
         ],
+        SILVER_LONG | SILVER_SHORT => silver_params(),
         _ => return None,
     })
 }
@@ -826,6 +830,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let cover = (0..n).map(|i| (bt[i] == 1 || i == 0 || fb[i]) && !upc[i]).collect();
             backtest(x, sig(buy, sell, short, cover), side, from, to)
         }
+        SILVER_LONG | SILVER_SHORT => silver_run(id, x, g("pct"), from, to),
         _ => return None,
     })
 }
@@ -845,8 +850,219 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         DIP => "ytsw_dip",
         DIP_FLT => "ytsw_dip_flt",
         REGIM => "ytsw_regim",
+        SILVER_LONG => "ytsw_silver_long",
+        SILVER_SHORT => "ytsw_silver_short",
         _ => return None,
     }, name, "% Swing"))
+}
+
+// ---- 3.5% swing silver, live entry with buffer (added 20-11-2026)
+//
+// "3.5% SWING SILVER WITH LIVE MKT ENTRY WITH BUFFER LONG Only- Copy.afl" and its "SHORT ONLY - Copy" mirror, in
+// % Swing/%swing Buy and % Swing Exit. The swing loop is the 5% swing afl's (`swing`), at 3.5%, on the Close; the
+// AFLs add a trade level 1% beyond the plotted swing line and trade it live (inside the bar):
+// - tradelvl = trendup1 - trendup1*1/100 in an up trend, trenddown1 + trenddown1*1/100 in a down trend; the AFLs'
+//   "TRADE ENTRY BUFFER %" Param (default 1) is declared but no formula uses it, so the 1% is fixed, as written;
+// - a fill at the previous bar's trade level when the High / Low passes it, or at Open +/- 0.25% when the bar opens
+//   beyond it (`O + O*.25/100`), otherwise at the Close;
+// - the loop's changeOfTrend back-fill: on a flip the new line's array also gets the old line's value on the bar
+//   before (TrendUp1[i-1] = TrendDown1[i-1] and the reverse), which `C > Ref(trenddown1, -1)` and the Cross tests read;
+// - an array comparison with Ref(line, -1) is false before the line's first value; after it a Null line (trenddown1
+//   on up-trend bars) counts as -1e10 (this module's rule), so the re-entry tests hold whenever the trend did not flip;
+// - the long AFL sets backtestRegularRawMulti and AllowSameBarExit; the short AFL leaves AmiBroker's defaults
+//   (regular, AllowSameBarExit on). Exits are processed first; a flat book that gets a Buy and a Sell on one bar makes
+//   a same-bar trade, and a position opened after an exit on that bar is held (one exit per bar). The signals never
+//   ask for a second position while one is open, so RawMulti's stacking does not arise.
+
+pub const SILVER_LONG: &str = "ytsw_silver_long";
+pub const SILVER_SHORT: &str = "ytsw_silver_short";
+pub const SILVER_IDS: [&str; 2] = [SILVER_LONG, SILVER_SHORT];
+/// The trade level's distance from the swing line, % (fixed `*1/100` in the AFLs).
+const SILVER_BUFFER: f64 = 1.0;
+/// The gap fill's distance from the Open, % (fixed `O*.25/100` in the AFLs).
+const SILVER_GAP: f64 = 0.25;
+
+fn silver_defs() -> Vec<StrategyDef> {
+    vec![
+        def(SILVER_LONG, "3.5% Swing Silver, Live Entry with Buffer (Long)", "Long", &[
+            "F|% swing trend on the Close (default 3.5%): up when the Close rises more than the swing % above the trailing band, down when it falls more than that below",
+            "F|Trade level: 1% below the up-trend line in an up trend, 1% above the down-trend line in a down trend (previous bar's)",
+            "E|Live entry: in a down trend, buy when the High passes the trade level, at that level (at Open + 0.25% if the bar opens above it)",
+            "E|Buy when the Close crosses above the down-trend line: at the trade level if the High passed it, otherwise at the Close",
+            "E|Re-entry: in an up trend, when the Low breaks the trade level but the trend does not turn down, buy again at the Close",
+            "X|Live stop: in an up trend, sell when the Low breaks the trade level, at that level (at Open - 0.25% if the bar opens below it)",
+            "X|Sell at the Close when the trend turns down",
+            "X|A live entry whose Close stays below the down-trend line is sold at that Close (same-bar trade)",
+        ], concat!("3.5% SWING SILVER WITH LIVE MKT ENTRY WITH BUFFER LONG Only- Copy.afl (% Swing, %swing Buy and % Swing Exit), coded as the AFL is written.",
+            " Written for SILVER (a commodity, MCX); no silver data is loaded in the engine yet, so it runs on the index it is given, as the other % Swing index rules do, and those results are not silver results.",
+            " Swing % default 3.5 (the AFL's Param). The AFL's TRADE ENTRY BUFFER % Param (default 1) is not used by its formulas: the trade level is a fixed 1% from the swing line and a gap fill a fixed 0.25% from the Open, as written.",
+            " Its re-entry test compares the Close with the down-trend line, which is Null on up-trend bars (a Null counts as -1e10 there), so it holds whenever the trend did not flip.",
+            " backtestRegularRawMulti and AllowSameBarExit as in the AFL. Sizing (1 unit per signal), 0.65% brokerage and 20 positions are the AFL's settings; the engine's YT account applies.")),
+        def(SILVER_SHORT, "3.5% Swing Silver, Live Entry with Buffer (Short)", "Short", &[
+            "F|% swing trend on the Close (default 3.5%), as in the long version",
+            "F|Trade level: 1% below the up-trend line in an up trend, 1% above the down-trend line in a down trend (previous bar's)",
+            "E|Short when the Close crosses below the up-trend line: at the trade level if the Low passed it (at Open - 0.25% if the bar opens below it), otherwise at the Close",
+            "E|Live entry: in an up trend, short when the Low breaks the trade level, at that level (Open - 0.25% on a gap down)",
+            "E|Re-entry: in a down trend, when the High passes the trade level but the Close stays below the down-trend line, short again at the Close",
+            "X|Live stop: in a down trend, cover when the High passes the trade level, at that level (at Open + 0.25% if the bar opens above it)",
+            "X|Cover at the Close when the trend turns up",
+            "X|A live short whose Close does not turn the trend down is covered at that Close (same-bar trade)",
+        ], concat!("3.5% SWING SILVER WITH LIVE MKT ENTRY WITH BUFFER SHORT ONLY - Copy.afl (% Swing, %swing Buy and % Swing Exit), coded as the AFL is written.",
+            " Written for SILVER (a commodity, MCX); no silver data is loaded in the engine yet, so it runs on the index it is given, as the other % Swing index rules do, and those results are not silver results.",
+            " Swing % default 3.5 (the AFL's Param). The AFL's TRADE ENTRY BUFFER % Param (default 1) is not used by its formulas: the trade level is a fixed 1% from the swing line and a gap fill a fixed 0.25% from the Open, as written.",
+            " Its live-short test compares the Close with the down-trend line, which is Null on up-trend bars (a Null counts as -1e10 there), so it holds whenever the trend did not flip.",
+            " AmiBroker's default backtest (regular, AllowSameBarExit on), as the AFL leaves them. Sizing (1 unit per signal), 0.65% brokerage and 20 positions are the AFL's settings; the engine's YT account applies.")),
+    ]
+}
+
+fn silver_params() -> Vec<ParamDef> {
+    vec![ParamDef { key: "pct", label: "Swing %", def: 3.5, min: 1.0, max: 10.0, step: 0.5 }]
+}
+
+/// The AFL's % swing loop in its own formula shape (pct = C*F/100, Up = C + pct, Dn = C - pct, float32 as AmiBroker
+/// holds them), the same flip / ratchet / reset as `swing`, returning the trend and both plotted lines (TrendUp1 =
+/// Dn on up-trend bars, TrendDown1 = Up on down-trend bars) with the changeOfTrend back-fill on the bar before a flip.
+pub(crate) fn swing_lines(c: &[f64], pct: f64) -> (Vec<i8>, Vec<Option<f64>>, Vec<Option<f64>>) {
+    use crate::books::ab::{addmul, f32r};
+    let n = c.len();
+    let k = pct / 100.0;
+    let base_up: Vec<f64> = c.iter().map(|&v| addmul(v, k)).collect();
+    let base_dn: Vec<f64> = c.iter().map(|&v| addmul(v, -k)).collect();
+    let (mut up, mut dn) = (base_up.clone(), base_dn.clone());
+    let mut tr = vec![1i8; n];
+    let (mut tu, mut td) = (vec![None; n], vec![None; n]);
+    for i in 1..n {
+        let ci = f32r(c[i]);
+        tr[i] = if ci > up[i - 1] { 1 } else if ci < dn[i - 1] { -1 } else { tr[i - 1] };
+        if tr[i] > 0 && dn[i] < dn[i - 1] {
+            dn[i] = dn[i - 1];
+        }
+        if tr[i] < 0 && up[i] > up[i - 1] {
+            up[i] = up[i - 1];
+        }
+        if tr[i] < 0 && tr[i - 1] > 0 {
+            up[i] = base_up[i];
+        }
+        if tr[i] > 0 && tr[i - 1] < 0 {
+            dn[i] = base_dn[i];
+        }
+        if tr[i] == 1 {
+            tu[i] = Some(dn[i]);
+            if tr[i - 1] == -1 {
+                tu[i - 1] = td[i - 1];
+            }
+        } else {
+            td[i] = Some(up[i]);
+            if tr[i - 1] == 1 {
+                td[i - 1] = tu[i - 1];
+            }
+        }
+    }
+    (tr, tu, td)
+}
+
+/// `Ref(v, -1)` as an array comparison reads it: None (no comparison) up to v's first value, then the previous bar's
+/// value with a Null as -1e10.
+fn ref_cmp(v: &[Option<f64>]) -> Vec<Option<f64>> {
+    let first = v.iter().position(|z| z.is_some()).unwrap_or(v.len());
+    (0..v.len()).map(|i| if i == 0 || i - 1 < first { None } else { Some(v[i - 1].unwrap_or(crate::books::ab::CROSS_NULL)) }).collect()
+}
+
+type SilverFill = Option<(f64, &'static str)>;
+
+/// The AFLs' Buy / Sell (long) or Short / Cover (short) with their prices: (entry price and kind, exit price and reason).
+fn silver_signals(x: &Ctx, pct: f64, long: bool) -> (Vec<SilverFill>, Vec<SilverFill>) {
+    use crate::books::ab::{addmul, f32r};
+    let n = x.c.len();
+    let (tr, tu, td) = swing_lines(&x.c, pct);
+    let b = SILVER_BUFFER / 100.0;
+    let lvl: Vec<Option<f64>> = (0..n).map(|i| if tr[i] == 1 { tu[i].map(|v| addmul(v, -b)) } else { td[i].map(|v| addmul(v, b)) }).collect();
+    let (lv, tdp) = (ref_cmp(&lvl), ref_cmp(&td));
+    let shift = |v: &[Option<f64>]| -> Vec<Option<f64>> { (0..n).map(|i| if i == 0 { None } else { v[i - 1] }).collect() };
+    let c32: Vec<f64> = x.c.iter().map(|&v| f32r(v)).collect();
+    let cross = if long { cross_up(&c32, &shift(&td)) } else { cross_down(&c32, &shift(&tu)) };
+    let gap = SILVER_GAP / 100.0;
+    let mut entry = vec![None; n];
+    let mut exit = vec![None; n];
+    for i in 1..n {
+        let (o, h, l, c) = (f32r(x.o[i]), f32r(x.h[i]), f32r(x.l[i]), c32[i]);
+        let pt = tr[i - 1];
+        let gt = |a: f64, z: Option<f64>| z.map_or(false, |z| a > z);
+        let lt = |a: f64, z: Option<f64>| z.map_or(false, |z| a < z);
+        let level = lv[i].unwrap_or(f64::NAN);
+        let h_above = gt(h, lv[i]);
+        let l_below = lt(l, lv[i]);
+        // (H > lvl AND C < trenddown1 AND prev down): a live long that closed back below the line / a short's re-entry
+        let up_fail = h_above && lt(c, tdp[i]) && pt == -1;
+        // (L < lvl AND C > trenddown1 AND prev up): a long's re-entry / a live short that did not turn the trend down
+        let dn_fail = l_below && gt(c, tdp[i]) && pt == 1;
+        let above = |o: f64| if o > level { (addmul(o, gap), "stop") } else { (level, "stop") };
+        let below = |o: f64| if o < level { (addmul(o, -gap), "stop") } else { (level, "stop") };
+        if long {
+            if up_fail || dn_fail || cross[i] {
+                entry[i] = Some(if dn_fail { (c, "close") } else if h_above { above(o) } else { (c, "close") });
+            }
+            if tr[i] == -1 || (l_below && pt == 1) || up_fail {
+                exit[i] = Some(if l_below && pt == 1 {
+                    (below(o).0, "Sell at the trade level (live stop)")
+                } else if up_fail {
+                    (c, "Close back below the down-trend line")
+                } else {
+                    (c, "Swing turned down")
+                });
+            }
+        } else {
+            if cross[i] || up_fail || dn_fail {
+                entry[i] = Some(if up_fail { (c, "close") } else if l_below { below(o) } else { (c, "close") });
+            }
+            if tr[i] == 1 || (h_above && pt == -1) || dn_fail {
+                exit[i] = Some(if h_above && pt == -1 {
+                    (above(o).0, "Cover at the trade level (live stop)")
+                } else if dn_fail {
+                    (c, "Close did not turn the trend down")
+                } else {
+                    (c, "Swing turned up")
+                });
+            }
+        }
+    }
+    (entry, exit)
+}
+
+/// One position at a time over from..=to: the open position exits first; a flat book then enters, and a Buy and a
+/// Sell on one bar make a same-bar trade unless a position already exited on that bar (AllowSameBarExit, once).
+fn silver_backtest(x: &Ctx, dir: f64, entry: &[SilverFill], exit: &[SilverFill], from: usize, to: usize) -> Vec<Trade> {
+    let mk = |e: usize, px: f64, kind: &'static str, i: usize, xp: f64, why: &str, open: bool| Trade {
+        dir, legs: vec![Leg { i: e, px, w: 1.0 }], exit_i: i, exit_px: xp, reason: why.into(), entry_kind: kind, signal_i: i, open, exits: Vec::new(),
+    };
+    let mut out = Vec::new();
+    let mut pos: Option<(usize, f64, &'static str)> = None;
+    for i in from..=to {
+        let mut exited = false;
+        if let (Some((e, px, kind)), Some((xp, why))) = (pos, exit[i]) {
+            out.push(mk(e, px, kind, i, xp, why, false));
+            pos = None;
+            exited = true;
+        }
+        if pos.is_none() {
+            if let Some((px, kind)) = entry[i] {
+                match exit[i] {
+                    Some((xp, why)) if !exited => out.push(mk(i, px, kind, i, xp, why, false)),
+                    _ => pos = Some((i, px, kind)),
+                }
+            }
+        }
+    }
+    if let Some((e, px, kind)) = pos {
+        out.push(mk(e, px, kind, to, x.c[to], "open", true));
+    }
+    out
+}
+
+fn silver_run(id: &str, x: &Ctx, pct: f64, from: usize, to: usize) -> Vec<Trade> {
+    let long = id == SILVER_LONG;
+    let (entry, exit) = silver_signals(x, pct, long);
+    silver_backtest(x, if long { 1.0 } else { -1.0 }, &entry, &exit, from, to)
 }
 
 #[cfg(test)]
@@ -930,5 +1146,78 @@ mod tests {
             let t = run(id, &x, 0, r.len() - 1, &Params::new()).unwrap();
             assert!(t.iter().all(|t| t.exit_i >= t.legs[0].i), "{id}");
         }
+    }
+
+    // ---- 3.5% swing silver, live entry with buffer (added 20-11-2026)
+
+    fn ohlc(b: &[(f64, f64, f64, f64)]) -> Vec<Row> {
+        b.iter().enumerate().map(|(k, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2024-01-{:02}", 1 + k), open: o, high: h, low: l, close: c, volume: None }).collect()
+    }
+    /// 5% swing: up to bar 2, down from bar 3 (Up line 94.5, trade level 95.445), up from bar 5 (Dn line 91.2,
+    /// level 90.288), down again on bar 7.
+    fn silver_bars() -> Vec<Row> {
+        ohlc(&[
+            (100.0, 101.0, 99.0, 100.0),
+            (100.0, 101.0, 99.0, 100.0),
+            (100.0, 101.0, 99.0, 100.0),
+            (99.0, 99.0, 89.0, 90.0),
+            (92.0, 96.0, 91.0, 93.0),
+            (95.0, 96.5, 94.0, 96.0),
+            (94.0, 95.5, 90.0, 95.0),
+            (91.0, 91.0, 87.0, 88.0),
+            (87.0, 88.0, 86.0, 87.0),
+        ])
+    }
+    fn legs(t: &[Trade]) -> Vec<(usize, f64, usize, f64, bool)> {
+        t.iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px, t.open)).collect()
+    }
+    fn same(a: &[(usize, f64, usize, f64, bool)], b: &[(usize, f64, usize, f64, bool)]) -> bool {
+        a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.0 == y.0 && x.2 == y.2 && x.4 == y.4 && crate::books::ab::near_ab(x.1, y.1) && crate::books::ab::near_ab(x.3, y.3))
+    }
+
+    #[test]
+    fn silver_swing_lines_match_the_swing_loop_and_back_fill() {
+        let closes: Vec<f64> = (0..330).map(|k| 100.0 + 15.0 * ((k as f64) / 9.0).sin() + k as f64 * 0.05).collect();
+        assert_eq!(swing_lines(&closes, 3.5).0, close_swing(&closes, 3.5));
+        let c: Vec<f64> = silver_bars().iter().map(|r| r.close).collect();
+        let (tr, tu, td) = swing_lines(&c, 5.0);
+        assert_eq!(tr, vec![1, 1, 1, -1, -1, 1, 1, -1, -1]);
+        // flip down on bar 3: TrendDown1[2] = TrendUp1[2]; flip up on bar 5: TrendUp1[4] = TrendDown1[4]
+        assert_eq!((td[2], tu[2]), (Some(95.0), Some(95.0)));
+        assert_eq!((tu[4], td[4]), (Some(94.5), Some(94.5)));
+        assert!(td[5].is_none() && tu[0].is_none() && td[0].is_none());
+    }
+
+    #[test]
+    fn silver_long_live_entry_stop_and_re_entry() {
+        let t = go(SILVER_LONG, &silver_bars(), &[("pct", 5.0)]);
+        // bar 4: High above 95.445 in the down trend, Close back below 94.5 -> bought at the level, sold at the Close;
+        // bar 5: Close crosses the line with the High above the level -> bought at the level; bar 6: Low below 90.288
+        // -> sold at the level and, the trend holding, bought again at the Close; bar 7: stopped at the level
+        assert!(same(&legs(&t), &[(4, 95.445, 4, 93.0, false), (5, 95.445, 6, 90.288, false), (6, 95.0, 7, 90.288, false)]), "{:?}", legs(&t));
+        assert_eq!(t.iter().map(|t| t.entry_kind).collect::<Vec<_>>(), vec!["stop", "stop", "close"]);
+        assert!(t.iter().all(|t| t.dir == 1.0));
+    }
+
+    #[test]
+    fn silver_short_live_entry_stop_and_re_entry() {
+        let t = go(SILVER_SHORT, &silver_bars(), &[("pct", 5.0)]);
+        // bar 3: Close crosses below 95 with the Low below 94.05 -> short at the level; bar 4: High above 95.445 ->
+        // covered there, Close below the line -> short again at the Close; bar 5: covered at the level; bar 6: live
+        // short at 90.288 covered at the Close (trend held up); bar 7: short at the level, open at the end
+        assert!(same(&legs(&t), &[(3, 94.05, 4, 95.445, false), (4, 93.0, 5, 95.445, false), (6, 90.288, 6, 95.0, false), (7, 90.288, 8, 87.0, true)]), "{:?}", legs(&t));
+        assert!(t.iter().all(|t| t.dir == -1.0));
+    }
+
+    #[test]
+    fn silver_gap_fills_at_open_plus_buffer() {
+        // bar 4 opens above the 95.445 level: the live buy fills at Open + 0.25%
+        let mut r = silver_bars();
+        r[4].open = 96.0;
+        r[4].high = 96.5;
+        let t = go(SILVER_LONG, &r, &[("pct", 5.0)]);
+        assert!(crate::books::ab::near_ab(t[0].legs[0].px, crate::books::ab::addmul(96.0, 0.0025)));
+        assert_eq!(params(SILVER_LONG).unwrap()[0].def, 3.5);
+        assert!(family_of(SILVER_SHORT).is_some() && catalogue().iter().filter(|d| SILVER_IDS.contains(&d.id)).count() == 2);
     }
 }
