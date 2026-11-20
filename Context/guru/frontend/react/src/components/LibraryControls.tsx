@@ -104,8 +104,7 @@ export function LibraryControls({ model, state }: { model: HomeModel; state: Rec
       <div className="fbar-in">
         <Dropdown name="Browse" current={books ? "books" : "authors"} items={[["authors", "Authors"], ["books", "Books & reading"]]}
           onPick={(value) => patch({ library_view: value, library_sort: "default" })} />
-        {!books && <Dropdown name="Market" items={marketItems} current={model.market === "all" ? "all" : currentInstrument}
-          shown={model.market === "all" ? `All · ${instrumentName}` : instrumentName} onPick={pickMarket} />}
+        {/* Market filter removed from the library bar (user 20 Nov 2026): counts follow the default instrument. */}
         {!books && state.basket && <Dropdown name="Stock" items={model.symbols.map((item): Item => [item.ticker, item.name])} current={state.tk}
           onPick={(value) => patch({ tk: value, from: "", to: "" })} />}
         {books
@@ -115,7 +114,7 @@ export function LibraryControls({ model, state }: { model: HomeModel; state: Rec
             onPick={(value) => patch({ author_status: value })} />}
         <Dropdown name="Topic" all="All topics" items={entries(TOPIC_LABELS)} current={model.category} counts={counts.book_category}
           onPick={(value) => patch({ book_category: value })} />
-        {!books && <Dropdown name="Type" all="People and collections" items={entries(TYPE_LABELS)} current={state.author_type || ""} counts={counts.author_type}
+        {!books && <Dropdown name="Type" all="Authors and research houses" items={entries(TYPE_LABELS)} current={state.author_type || ""} counts={counts.author_type}
           onPick={(value) => patch({ author_type: value })} />}
         <Dropdown name="Sort" items={books ? BOOK_SORTS : AUTHOR_SORTS} current={state.library_sort || "default"}
           onPick={(value) => patch({ library_sort: value })} />

@@ -49,13 +49,12 @@ const choose = async (host: HTMLElement, name: string, text: string) => {
 };
 const RESET = {library_limit: '24', library_page: '1', source_page: '1'};
 
-it('renders the strategies-page pill bar: Browse, Market, Status, Topic, Type, Sort, Library and a search box', async () => {
+it('renders the home pill bar: Browse, Status, Topic, Type, Sort, Library and a search box (no Market pill)', async () => {
   const {host} = await mount('in');
   expect(host.querySelector('section.fbar .fbar-in')).not.toBeNull();
-  expect([...host.querySelectorAll('.dd-l')].map(l => l.textContent)).toEqual(['Browse', 'Market', 'Status', 'Topic', 'Type', 'Sort', 'Library']);
+  expect([...host.querySelectorAll('.dd-l')].map(l => l.textContent)).toEqual(['Browse', 'Status', 'Topic', 'Type', 'Sort', 'Library']);
   expect(host.querySelector('.dsearch input#library-filter-q')).not.toBeNull();
   expect(pill(host, 'Browse')!.querySelector('b')!.textContent).toBe('Authors');
-  expect(pill(host, 'Market')!.querySelector('b')!.textContent).toBe('Nifty 50');
   expect(pill(host, 'Sort')!.querySelector('b')!.textContent).toBe('Backtests first');
   expect(options(host, 'Sort').map(b => b.textContent)).toEqual(['Backtests first', 'Most strategies', 'Most books', 'A–Z']);
   // An unset filter pill shows only its name, as on the strategies page.
@@ -77,7 +76,7 @@ it('a filter pick patches its key and starts the list at page 1', async () => {
   expect(patch).toHaveBeenLastCalledWith({author_status: 'backtested', ...RESET});
   await choose(host, 'Topic', 'Psychology');
   expect(patch).toHaveBeenLastCalledWith({book_category: 'psychology', ...RESET});
-  await choose(host, 'Type', 'Collection');
+  await choose(host, 'Type', 'Research house');
   expect(patch).toHaveBeenLastCalledWith({author_type: 'collection', ...RESET});
   await choose(host, 'Sort', 'Most strategies');
   expect(patch).toHaveBeenLastCalledWith({library_sort: 'strategies', ...RESET});
@@ -87,7 +86,7 @@ it('a filter pick patches its key and starts the list at page 1', async () => {
 it('combined filters show one chip each, remove one at a time, and Clear all resets them together', async () => {
   const {host, patch} = await mount('in', {model: {category: 'psychology'}, state: {author_status: 'rules', author_type: 'person', book_category: 'psychology', library_scope: 'all', library_q: 'rsi'}});
   const chips = [...host.querySelectorAll('.chips .chip')];
-  expect(chips.map(c => c.firstChild!.textContent)).toEqual(['Status: Rules found, not yet backtested', 'Type: Person', 'Topic: Psychology', 'Library: Full source inventory', '“rsi”']);
+  expect(chips.map(c => c.firstChild!.textContent)).toEqual(['Status: Rules found, not yet backtested', 'Type: Author', 'Topic: Psychology', 'Library: Full source inventory', '“rsi”']);
   expect(pill(host, 'Status')!.classList.contains('set')).toBe(true);
   expect(pill(host, 'Status')!.querySelector('b')!.textContent).toBe('Rules found, not yet backtested');
   await act(async () => (chips[1].querySelector('button') as HTMLButtonElement).click());
@@ -98,42 +97,6 @@ it('combined filters show one chip each, remove one at a time, and Clear all res
 it('shows no chip row when nothing narrows the list', async () => {
   const {host} = await mount('in');
   expect(host.querySelector('.chips')).toBeNull();
-});
-it('Market lists All, India and US instruments and sets the instrument the card stats use', async () => {
-  const {host, patch} = await mount('in', {model: {marketChoices: {in: [{ticker: 'NIFTY 50', name: 'Nifty 50'}, {ticker: 'NIFTYBANK', name: 'Bank Nifty'}], us: [{ticker: 'SPX', name: 'S&P 500'}]}}});
-  expect([...pill(host, 'Market')!.querySelectorAll('.menu li')].map(li => li.textContent)).toEqual(['All markets', 'India', 'Nifty 50', 'Bank Nifty', 'US', 'S&P 500']);
-  await choose(host, 'Market', 'S&P 500');
-  expect(patch).toHaveBeenLastCalledWith({library_market: 'us', region: 'us', basket: '', tk: 'SPX', from: '', to: '', ...RESET});
-  await choose(host, 'Market', 'Bank Nifty');
-  expect(patch).toHaveBeenLastCalledWith({library_market: 'in', region: 'in', basket: '', tk: 'NIFTYBANK', from: '', to: '', ...RESET});
-  await choose(host, 'Market', 'All markets');
-  expect(patch).toHaveBeenLastCalledWith({library_market: 'all', ...RESET});
-});
-it('All markets keeps naming the instrument whose results the cards show', async () => {
-  const {host} = await mount('all');
-  expect(pill(host, 'Market')!.querySelector('b')!.textContent).toBe('All · Nifty 50');
-});
-it('US ETFs and stock baskets appear only for the loaded region, and a basket opens a Stock pill', async () => {
-  const ticker = 'basket:us_sp500:AAPL';
-  const {host, patch} = await mount('us', {
-    model: {
-      marketChoices: {in: [{ticker: 'NIFTY 50', name: 'Nifty 50'}], us: [{ticker: 'SPX', name: 'S&P 500'}]},
-      etfs: [{ticker: 'SPY', name: 'SPY ETF'}],
-      baskets: [{id: 'us_sp500', name: 'S&P 500 current stocks', symbols: [ticker]}, {id: 'ndx', name: 'NASDAQ 100', symbols: ['basket:ndx:MSFT']}, {id: 'empty', name: 'Empty', symbols: []}],
-      symbols: [{ticker, name: 'AAPL'}],
-    },
-    state: {region: 'us', basket: 'us_sp500', tk: ticker},
-  });
-  expect([...pill(host, 'Market')!.querySelectorAll('.menu li')].map(li => li.textContent))
-    .toEqual(['All markets', 'India', 'Nifty 50', 'US', 'S&P 500', 'SPY ETF', 'US stock baskets', 'S&P 500 current stocks', 'NASDAQ 100 · stocks']);
-  expect(pill(host, 'Market')!.querySelector('b')!.textContent).toBe('S&P 500 current stocks');
-  expect(pill(host, 'Stock')!.querySelector('b')!.textContent).toBe('AAPL');
-  await choose(host, 'Market', 'SPY ETF');
-  expect(patch).toHaveBeenLastCalledWith({library_market: 'us', region: 'us', basket: '', tk: 'SPY', from: '', to: '', ...RESET});
-  await choose(host, 'Market', 'S&P 500 current stocks');
-  expect(patch).toHaveBeenLastCalledWith({library_market: 'us', region: 'us', basket: 'us_sp500', tk: ticker, from: '', to: '', ...RESET});
-  const {host: india} = await mount('in', {model: {etfs: [{ticker: 'SPY', name: 'SPY ETF'}], marketChoices: {in: [{ticker: 'NIFTY 50', name: 'Nifty 50'}], us: [{ticker: 'SPX', name: 'S&P 500'}]}}});
-  expect(pill(india, 'Market')!.textContent).not.toContain('SPY ETF');
 });
 it('the Books view swaps author filters for book status and book sorts', async () => {
   const {host, patch} = await mount('in', {model: {view: 'books', filterCounts: {book_progress: {backtested: 300, in_progress: 700}}}});
