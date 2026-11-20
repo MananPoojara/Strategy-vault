@@ -885,3 +885,4 @@ html[data-mode="normal"] #claude-c, html[data-mode="normal"] #gpt-c {display:non
 .mode-toggle .join-item {padding:4px 12px;font-size:12px;font-weight:650;}
 .mode-toggle .join-item.active {background:var(--blue);border-color:var(--blue);color:var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 18%,transparent);}
 .rules-box .box-h {justify-content:flex-start;gap:10px;cursor:default;}
+.mode-toggle .join-item.active:hover, .mode-toggle .join-item.active:focus {background:var(--blue);border-color:var(--blue);color:var(--panel);}

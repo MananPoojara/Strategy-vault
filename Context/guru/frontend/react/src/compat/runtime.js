@@ -2128,8 +2128,11 @@ async function loadTradePage(offset){
 const MODE_KEY='vault.mode';
 const pageMode=()=>{try{return localStorage.getItem(MODE_KEY)==='deep'?'deep':'normal';}catch{return 'normal';}};
 document.documentElement.dataset.mode=pageMode();
+// Normal mode has no optimisation page: a #/o/ link or saved URL opens the strategy page instead.
+const normalRoute=()=>{if(pageMode()==='normal'&&location.hash.startsWith('#/o/'))location.replace(location.hash.replace('#/o/','#/s/'));};
+normalRoute();window.addEventListener('hashchange',normalRoute);
 const modeToggle=()=>{const m=pageMode();return `<div class="join sm mode-toggle" role="group" aria-label="Page mode">${[['normal','Normal'],['deep','Deep research']].map(([k,t])=>`<button type="button" class="join-item ${m===k?'active':''}" data-mode-set="${k}" aria-pressed="${m===k}">${t}</button>`).join('')}</div>`;};
-document.addEventListener('click',e=>{const b=e.target.closest?.('[data-mode-set]');if(!b)return;const m=b.dataset.modeSet==='deep'?'deep':'normal';try{localStorage.setItem(MODE_KEY,m);}catch{}document.documentElement.dataset.mode=m;document.querySelectorAll('[data-mode-set]').forEach(x=>{const on=x.dataset.modeSet===m;x.classList.toggle('active',on);x.setAttribute('aria-pressed',String(on));});});
+document.addEventListener('click',e=>{const b=e.target.closest?.('[data-mode-set]');if(!b)return;const m=b.dataset.modeSet==='deep'?'deep':'normal';try{localStorage.setItem(MODE_KEY,m);}catch{}document.documentElement.dataset.mode=m;document.querySelectorAll('[data-mode-set]').forEach(x=>{const on=x.dataset.modeSet===m;x.classList.toggle('active',on);x.setAttribute('aria-pressed',String(on));});normalRoute();});
 document.addEventListener('click',event=>{const b=event.target.closest('[data-trade-page]');if(b&&!b.disabled)void loadTradePage(+b.dataset.tradePage);});
 // PDF capture and print show every report panel, so they count as showing.
 const panelShowing=el=>!el.closest('[data-report-panel]')?.hidden||document.body.matches('.pdf-capture,.report-print');
