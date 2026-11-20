@@ -97,6 +97,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v.extend(BSEA.iter().map(|b| StrategyDef { id: b.0, name: b.1, group: "Bonds · seasonal", session: 0, dir: if b.5 > 0.0 { "Long" } else { "Short" },
         status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules: b.10,
         notes: b.11, claim: claim(b.12[0], b.12[1], b.12[2], "", b.12[3]) }));
+    // lane O1 (R4 #367 (2)): commodity systems, Norgate continuous contract of the letter's market only
+    v.extend(CSYS.iter().map(|b| StrategyDef { id: b.0, name: b.1, group: "Commodities", session: 0, dir: b.2, status: Status::Live,
+        needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules: b.4, notes: b.5, claim: claim(b.6[0], b.6[1], b.6[2], "", b.6[3]) }));
     v
 }
 
@@ -384,11 +387,12 @@ fn catalogue_base() -> Vec<StrategyDef> {
               "E|Bond holiday, TDOM and day-of-month trades: Thanksgiving, Christmas, Memorial, July 4th, Labor Day, Jan TD18, Dec TD19, Oct 29th, Nov 3-8, May TD9, July TD12, Sep, Oct, Nov, Dec tables (1993-1997 letters). Coded (lane F1D): lwnl_bond_memorial_buy, lwnl_bond_labor_buy, lwnl_bond_sep_td9_sell, lwnl_bond_sep_td19_buy, lwnl_bond_jul_td12_sell, lwnl_bond_dec_td14_buy, lwnl_bond_dec_td22_buy, lwnl_bond_sep_td4_sell, lwnl_bond_sep_td20_buy; held: lwnl_bond_dec_td7_sell / _td8_sell (3 unstated details). Not coded yet: the Oct 1997 table (no stop or exit printed; the table is garbled) (the Christmas / New Year trades are lwnl_bond_xmas_buy / lwnl_bond_newyear_sell)",
               "E|Projected low/high contrarian on Bonds (Vol. 29 No. 9 p.3: 352 trades 73% $71,472.50) = lwnl_bond_projected (lane F1D); DOWM buys (May 1996 p.2)"],
             ""),
-        sd!("lwnl_commodity_systems", "Commodity and currency systems and seasonals", "Needs data", "Long/Short", NeedsData(FUT),
-            &["E|Larry's Cup of Coffee: open + 50% / - 40% of the 4-day average range, $1,750 stop or 6th close (Mar 1992 p.3; 2,117 trades $535,456)",
-              "E|13x13 gold channel (May 1993 p.1-2); gold TDOM1 > close 4 days ago, 12-day exit (Mar 1995 p.3-4); gold Nov TD16, Sep TD1/2 (Oct 1995, Aug 1996)",
-              "E|Monthly seasonal lists for cattle, bellies, cotton, coffee, cocoa, beans, wheat, corn, sugar, OJ, silver, copper, lumber, heating oil, currencies (Sep 1993 - Dec 1997)",
-              "E|Delayed-bailout trades in bellies, yen, gold (Nov 1996 p.2-3)"],
+        sd!("lwnl_commodity_systems", "Commodity and currency systems and seasonals (rest of the bundle)", "Not testable", "Long/Short",
+            NotTestable("Split (lane O1, 20 Nov 2026, R4 #367 (2)): coded as their own cards: lwnl_gold_13x13 (May 1993 p.1-2) and lwnl_gold_tdom1_4d (Mar 1995 p.3-4), both on the Norgate gold contract. HELD: Larry's Cup of Coffee (Mar 1992 p.3, coffee): 61% of its trades change when the in-bar path of its two live stop orders is flipped (#240 > 5%, no coffee minutes are held) and the engine reads 548 trades to Mar 1992 against the printed 2,117 (4 unstated details: stop arming, both orders live, one fill per side per bar, point value); pork bellies (Nov 1996 p.2, Aug 1996, Dec 1996) are not a held market; the remaining seasonal lists and the Nov 1996 yen / gold delayed-bailout trades are not coded yet (see authors/held-1119/O1/FINAL.md for the page-level inventory and next steps)."),
+            &["E|Larry's Cup of Coffee: open + 50% / - 40% of the 4-day average range, $1,750 stop or 6th close (Mar 1992 p.3; 2,117 trades $535,456): held, #240 61%",
+              "E|13x13 gold channel (May 1993 p.1-2) = lwnl_gold_13x13; gold TDOM1 > close 4 days ago, 12-day exit (Mar 1995 p.3-4) = lwnl_gold_tdom1_4d (both live)",
+              "E|Not coded yet: gold Nov TD16 / yen Nov TD10 delayed-bailout (Nov 1996 p.3-4), cattle Jul TD18, corn Jul TD2, coffee Aug TD12 (Jul-Aug 1995), yen Apr TD4 (Mar 1997) and the other monthly lists (Sep 1993 - Dec 1997)",
+              "E|Pork bellies trades (Nov 1996 p.2, Dec 1996): the market is not held"],
             ""),
         // ---- Not testable
         sd!("lwnl_no_exit", "Rules printed without an exit", "Not testable", "Long/Short",
@@ -435,6 +439,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         return f("lwicw_holidays", "Holiday trades", match id { "lwnl_bond_memorial_buy" => "T-Bonds, Memorial Day", "lwnl_bond_labor_buy" => "T-Bonds, Labor Day",
             "lwnl_bond_xmas_buy" => "T-Bonds, Christmas", _ => "T-Bonds, New Year's" });
     }
+    if let Some(b) = CSYS.iter().find(|b| b.0 == id) { return f("lwnl_commodity", "Commodity systems", b.1); }
     if let Some(b) = BSEA.iter().find(|b| b.0 == id) { return f("lwnl_seasonal", "Trading-day-of-month seasonals", b.1); }
     if HOL.iter().any(|s| s.0 == id) { return f("lwnl_holiday", "Holiday trades", "S&P"); }
     match id {
@@ -474,6 +479,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         return Some(vec![p("entry_pct", "Buy stop: open + x the down day's range", 0.2, 0.0, 1.0, 0.05), stop(2500.0),
             p("hold", "Exit on the close N days after entry", 2.0, 0.0, 10.0, 1.0), pt(500.0), day0()]);
     }
+    if CSYS.iter().any(|b| b.0 == id) { return Some(vec![]); }
     if let Some(b) = BSEA.iter().find(|b| b.0 == id) {
         return Some(vec![stop(b.7), day0(), pt(1000.0)]);
     }
@@ -573,6 +579,28 @@ pub(crate) const BSEA: &[BSea] = &[
     ("lwnl_bond_sep_td20_buy", "T-Bonds: buy September trading day 20", 9, 20, None, 1.0, false, 1200.0, Some(1), 0,
      &["E|\"The best buy came on the 20th trading day of the month with net profits of $6,737 with 16 wins out of 16 trades\" (Vol. 34 No. 9, p.3)", BOPEN, "X|\"A $1,200 stop was used\" (p.3)", BX1],
      "Letter: 16 of 16, $6,737.", ["16", "100% (16 of 16)", "$421 ($6,737)", "1979-1996"]),
+];
+
+
+// ------------------------------------------------------------------ lane O1: commodity systems of the 1992-1995 letters
+/// (id, name, dir, Norgate market, rules, notes, claim (trades, win, avg, period)). Run on the Norgate continuous contract of the market the letter traded
+/// only (R4 #367 (2)); dollar stops are the letter's, converted at the market's own US$ per point (futures::usd_per_point).
+pub(crate) type CSys = (&'static str, &'static str, &'static str, &'static str, &'static [&'static str], &'static str, [&'static str; 4]);
+pub(crate) const CSYS: &[CSys] = &[
+    ("lwnl_gold_13x13", "Gold 13-day channel breakout (13x13)", "Long/Short", "&GC",
+     &["E|\"a gold model that bought at the highest high of the last 13 days and sold at the lowest low of the last 13. It is indeed a simple channel breakout. There are no other rules, no stops\" (Vol. 27 No. 5 = May 1993, p.1-2): buy stop at the 13-day highest high, sell stop at the 13-day lowest low, the 13 days before the order day",
+       "X|Printed stop-and-reverse (no stops, no other rules): hold until the opposite signal (R4 #344), counted zero",
+       "E|Unstated in the letter: the 13 days exclude the order day (the channel is known at the open)",
+       "E|Unstated in the letter: the order is a stop order filled at the channel level (gaps fill at the open); the US$ per point (Norgate US$100 per dollar) is used only to report US$"],
+     "Printout p.2 (GOLD COMEX, to 06/93 by the scan, start not legible): net $112,910, 175 trades, 40% winners (70), average $645.20.",
+     ["175", "40% (70)", "$645.20 ($112,910)", "start not printed"]),
+    ("lwnl_gold_tdom1_4d", "Gold: first trading day of the month, close above the close 4 days ago", "Long", "&GC",
+     &["E|\"if it is the first trade date of the month and the close is greater than the close 4 days ago, what happens if I buy on the open tomorrow and exit 12 days later with a $2,000 stop?\" (Vol. 29 No. 3 = March 1995, p.3-4; the author says it is a study, not a strategy)",
+       "X|\"exit 12 days later\": the close 12 bars after the entry bar (reading); $2,000 / US$100 per dollar = 20 points",
+       "X|Unstated in the letter: the stop is armed on the entry day",
+       "E|Unstated in the letter: trading day 1 of the month by the vault's count (a partial first month is not counted, decision 186)"],
+     "Printout p.4: net $41,850, 84 trades, 45 winners (53%), average $498.21, since 1975.",
+     ["84", "53% (45)", "$498.21 ($41,850)", "1975 to Mar 1995"]),
 ];
 
 // ------------------------------------------------------------------ simulator
@@ -874,6 +902,31 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let ok = up9[s] == 1.0 && c[s] < c[s - 1] && (!two || c[s - 1] < c[s - 2]);
                 (ok.then(|| crate::books::lwlts::Ent::Stop(o[i] + ep * (h[s] - l[s]))), None)
             })
+        }
+        s if CSYS.iter().any(|b| b.0 == s) => {
+            // lane O1 (R4 #367 (2)): only on the Norgate contract of the letter's market; dollar stops at that market's own US$ per point
+            let m = CSYS.iter().find(|b| b.0 == s)?;
+            if crate::futures::ctx_market(x).map(|k| k.sym) != Some(m.3) { return Some(vec![]); }
+            let k = crate::futures::ctx_market(x)?;
+            let pt = crate::futures::usd_per_point(k, &x.r[n - 1].date)?;
+            use crate::books::lwlts::{Cfg as LC, Ent, simulate};
+            let mut c2 = LC { stop: f64::NAN, stop_s: f64::NAN, stop_rng: f64::NAN, day0: true, target: f64::NAN, hold: None, bailout: false, bail_after: 0, reverse: false, order: false };
+            match s {
+                "lwnl_gold_13x13" => {
+                    c2.reverse = true;
+                    simulate(x, from, to, &c2, |i| {
+                        if i < 13 { return (None, None); }
+                        let hh = (i - 13..i).map(|j| h[j]).fold(f64::MIN, f64::max);
+                        let ll = (i - 13..i).map(|j| l[j]).fold(f64::MAX, f64::min);
+                        (Some(Ent::Stop(hh)), Some(Ent::Stop(ll)))
+                    })
+                }
+                _ => { // lwnl_gold_tdom1_4d
+                    c2.stop = 2000.0 / pt; c2.hold = Some(12);
+                    let td = crate::books::lwlts::tdm(x);
+                    simulate(x, from, to, &c2, |i| if i >= 5 && td[i - 1] == 1 && c[i - 1] > c[i - 5] { (Some(Ent::Open), None) } else { (None, None) })
+                }
+            }
         }
         s if BSEA.iter().any(|b| b.0 == s) => {
             // lane F1D (R4 #293): the T-bond seasonal trades, only on the Norgate T-bond contract
