@@ -189,3 +189,12 @@ No code changed; nothing deployed.
   * mstt_last_shadow_s_new_chaik_osc_willa_stoch / mstt_lastshadow_s_new_chaosc_willa_sto_bb: formulas as printed ('willa()<-30 and stoch(14,14)<20 and co()<-30000' / 'co()>40000 and stoch(14,14)>80 and willa()>-20'); the engine defines willa() as the cumulative Williams A/D (Cum(...), msws.rs:187) and co() as the long-hand Chaikin oscillator on cumulative A/D x volume (msws.rs:183), matching the MetaStock definitions. No coding slip found. Cause: these are level tests on cumulative series (start-dependent; the thresholds -30/-20 are bounded-looking but willa is unbounded, and co's +-30000 depends on share volume), so on SPY/AAPL (long histories, large volumes) the three conditions never coincide. Proposed (not applied): none to the code; state in the card note that the thresholds depend on the data start and volume units.
   * mstt_sandii_w_dmi_rsi: buy = CCI(13) > -100 within 4 bars AND (EMA5-EMA35) > its 4-EMA AND +DI(13) > -DI(13) AND RSI(14) < 40; sell = CCI < -100 within 4 bars AND the same difference below its 4-EMA AND RSI(14) > 65 (the printed sell has no DMI term; coded as printed). Trades on AAPL, none on SPY/NIFTY, sibling DMI cards (macd) trade: the parser and indicators work; the RSI < 40 with +DI above -DI and a rising MACD-difference is a rare conjunction. No coding cause found (an independent recomputation was not possible in this environment: no numpy).
 No code change; nothing deployed.
+
+## Round 10 (V9): India and futures hunt were already in V9-precheck.tsv (round 9). Claimed lebfut, lwcmc, jk36k, jkbwts: none comparable.
+| id | printed | ours | verdict |
+|---|---|---|---|
+| lebfut_bigdipper | T-bond 1987-98: 43 tr, 88%, $1,712.50 | &ZB refused (index/ETF/stock only); SPY 1993-98: 32 tr, 90.62% | not compared |
+| lwcmc_turtle_20_10 | S&P since 1982: 226 tr, 33%, -$142,670 (end not printed) | SPY 1993-2002-07: 107 tr, 35.51%, -81.83 pts | not compared (partial window/instrument) |
+| jk36k_jk1_buy_monday | S&P fut. 7/1990-7/1997: 351 tr, 53% | &SP/SPY refused, SPX opens 2014+ | not compared |
+| jkbwts_buymon1400 | S&P fut. 1987-97: 549 tr, 52% | same | not compared |
+Source pages not re-read for these four. Stopping: context budget.
