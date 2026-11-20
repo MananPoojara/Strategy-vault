@@ -1071,7 +1071,7 @@ function gateNotice(v, tk) {
   const g = v.gate;
   const clamp = g?.open_from && OPEN_FROM[tk] ? `<p data-open-price-coverage><b>${esc(LABEL[tk] || tk)}: opening prices before ${OPEN_FROM[tk]} are excluded by policy.</b> The actual calculated dates are shown with the results. An earlier requested start does not add earlier price observations.</p>` : g?.open_from && tk === 'NIFTY 50' ? `<p data-open-price-coverage data-nifty-open><b>NIFTY 50: NSE's published opens before 2011 sit very close to the previous close.</b> The median gap between the open and the previous close is 0.02-0.08% a year in 1998-2010, against 0.17-0.49% from 2011 (the vault's NSE file); the cause is not confirmed. The whole history is kept, so results of this open-based rule before 2011 rest on those opens.</p>` : '';
   if (!g) return '';
-  return clamp ? `<div class="rnote gate un">${clamp}</div>` : ''; // the unverified-gate notice was removed (user request 22 Oct 2026)
+  return ''; // open-price coverage notes no longer shown under the title (user 20 Nov 2026); the dates actually used still show with the results
 }
 function calculatedPeriodHTML(d) {
   return Array.isArray(d?.dates)&&d.dates.length ? `<span data-calculated-period><b>Calculated period: ${esc(d.dates[0])} to ${esc(d.dates.at(-1))}.</b> </span>` : '';
