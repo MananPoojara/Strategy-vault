@@ -113,3 +113,45 @@ Round 3 batch 3 (commit cf4c9f42): printed figures confirmed in the O1 OCR text 
 Attempted and not located: Vol.29 No.11 p.3 (a Dec 1995 "Christmas comes early" sheet; it is not the xmas_bail source). Still without any re-read or OCR confirmation of their printed figures: keyrev_buy/sell, krut_buy/sell, gap_fail_300/525, memorial_bail/6, xmas_bail/9, pullback, truth1_closehigh, tg_open8, tg_close, od_sell, od_fade_sell, aug97_td2_sell_7d, jul97_td17_buy, jul97_td4_buy, jul97_td16_buy_30d, dec97 p.4 variants, cti_bonds (OCR-only earlier), sep97 rows 13-14 (about 22 cards). Their cited issues (1991-1994 letters) are either not in the share (April 1991: lead decision 197) or the OCR index does not carry the cited figures, so locating the page needs a manual page-by-page search of Vol.25-28 first pages.
 Totals after round 3: 97 cards, printed figures re-read from a page image in V7 for 47 (tables 131 rows incl. 3 caveats, single printouts, Aug/Nov/Dec 1997, Oct S&P, Thanksgiving, yen/gold), confirmed in OCR text for 28 more, still open for ~22. No verdict changed; none verified.
 tg_close re-read (Vol.27 No.11 p.3 JPEG): figures equal; citation corrected from Nov 1992 to Vol.27 No.11 (Nov 1993); window is 'since 1982', not 1982-1991. tg_* Oct 1995 citations corrected to Vol.29 No.10 (Nov 1994) in lwnl.rs/gate.rs (commit eb93c842).
+
+## Round 4 (V9, 20 Nov 2026): the 21 remaining lwnl cards (+ sep97 rows 13-14), gate text only
+Pages were found by name, not search: the issue date is printed on page 1 of each scan folder (folder names are unreliable: e.g. folder "Volume 29 - Issue 6" prints JUNE 1993 VOLUME 28 ISSUE 6). Pages read as JPEG images where marked "img"; otherwise the O1 OCR text (clear). Live side: every S&P card is admitted on cash SPX (data from 2014) or refused (&SP needs_data / not_testable held), so no printed 1982-1997 window overlaps any run: all "not compared (no data overlap)", UNVERIFIED. Commit follows; gate.rs text only (23 rows get a "V9 round 4" sentence).
+
+| id | printed (page) | ours / card | verdict |
+|---|---|---|---|
+| keyrev_buy | Vol.28 No.10 (Oct 1993) p.3 img: S&P buys +13,325 46/59 77% (look-back 15) | card 59 tr 77% $226 ($13,325) equal; live SPX 2014+ 94 tr | printed equal; not compared. NOTE: the sells table prints the identical S&P row |
+| keyrev_sell | same page, sells table: S&P +13,325 46/59 77% | equal; live refused (held) | printed equal; not compared |
+| krut_buy | Vol.25 No.7 (Jul 1991) p.2-3 img: BUYS $35,325 32/53 60%, AVG $498 (prose: $666), DD 6,400; exit 6th close, $3,000 stop | card 53 tr 60% $666 equal ($35,325/53=666); table avg $498 is a misprint (same as the NIFE row) | printed equal; not compared |
+| krut_sell | SELLS $49,825 42/68 61% AVG $732, DD 6,200; 3rd close, $2,000 stop | equal | printed equal; not compared |
+| gap_fail_300 | Vol.25 No.1 (Jan 1991) p.3 img (card says p.2): 22/26 84% $35,000 AVTRD $1,346; 10/11 90% $35,850 AVTRD $3,259; exit "not fully disclosable" | equal; coded exit = close; live SPX 886 tr | printed equal; not compared |
+| gap_fail_525 | same page: 18/18 100% $72,050, largest win $16,325 | equal ($4,003 avg) | printed equal; not compared |
+| memorial_bail | Vol.29 No.5 (May 1995) p.4 OCR: 9 of 12, $8,953, avg $746 | equal | printed equal; not compared |
+| memorial_bail6 | same: 12 of 12, $30,753 | equal | printed equal; not compared |
+| xmas_bail | Vol.28 No.11 (Nov 1994) p.4 img (card says p.3): S&P 03/94 12 tr 100% $11,803 avg $983.58 | equal | printed equal; not compared |
+| xmas_bail9 | same page: 12 of 12, $40,753 | equal | printed equal; not compared |
+| tg_open8 | Vol.28 No.10 (Oct 1994) p.3 rule + p.4 img printout (card says p.3): 12 tr 91% (11 w) $25,325 avg $2,110.42 | equal; live SPX 12 tr 75% (2014+) | printed equal; not compared |
+| pullback | Vol.28 No.5 (May 1993) p.2 rules, p.3 OCR printout (card says p.2): 70 tr 51% net $30,675 (GP 78,925 / GL 48,250) avg $438.21 | equal | printed equal; not compared |
+| truth1_closehigh | Vol.27 No.6 (Jun 1992) p.2-3 OCR: S&P 500 6,675, 5 trades, exit 5, stop 500 | equal | printed equal; not compared |
+| cti_bonds | OCR of folder "Volume 29 - Issue 6" p.3 (heading JUNE 1993, Vol.28 No.6): TREASURY BONDS 06/92 98 tr (41 won) 41% $17,756.25 avg $181.19 | equal; engine refuses (not_testable) | printed equal; **citation wrong: "Jun 1992 p.3" should be Vol.28 No.6 (Jun 1993) p.3** |
+| od_sell | Apr 1991 (Vol.25 No.4) is not in the scan set | n/a | cannot be re-read; withheld |
+| od_fade_sell | same | n/a (no results printed) | cannot be re-read; withheld |
+| jul97_td4_buy | Vol.34 No.7 p.3 OCR: S&P day 4 20445 9/14 64% avg 1460 | equal | printed equal; not compared (held) |
+| jul97_td17_buy | p.3 OCR: day 17 43025 8/13 61% avg 3309 | equal | printed equal; not compared (held) |
+| jul97_td16_buy_30d | p.2 OCR: 30-day buys day 16 34525 7/13 53% avg 2655 | equal | printed equal; not compared |
+| aug97_td2_sell_7d | Vol.34 No.8 p.4 img (card says p.3): S&P500 day 2 13845 7/14 50% avg 988 | equal | printed equal; not compared (held) |
+| dec97_td2/td14/td9 | Vol.34 No.12 p.3 OCR and p.4 img: td2 8525 12/15 80% 568 and $11,175 14/15 93%; td14 11300 11/14 78% 807 and $14,250 13/14 92%; td9 6225 9/14 64% 444 (both) | equal to both tables | printed equal; the two tables disagree with each other; not compared |
+| sep97_7day rows 13-14 | Vol.34 No.9 p.3 img: Beans sell day 15 17056 19/26 73% avg 656; BritPound sell day 3 23268 13/20 65% avg 1163 | card rows equal; engine row13 19 tr (vs 26) 79% $15,812; row14 16 tr (vs 20) 69% $18,152 (-22%) | printed equal; live rows fail (row 13 trades, row 14 net) |
+
+Result: all 21 cards' recorded printed figures are confirmed against the page (13 on page images, 8 on clear OCR); none disagrees. No card can be promoted: the printed windows (1982-1995) have no overlap with the data the cards can run on. Citation corrections found (text in gate rows only, lwnl.rs untouched): cti_bonds Jun 1992 -> Jun 1993 (Vol.28 No.6); page numbers off by one for gap_fail (p.3), xmas (p.4), tg_open8 printout (p.4), pullback printout (p.3), aug97_td2 (p.4). No code error found (no rule differs from its page). Not re-read: od_* (issue absent), the OCR-only rows above on the image.
+Totals: 97 cards: printed figures re-read from the page for all but od_sell/od_fade_sell/od_buy/od_buy3/od_fade_buy (April 1991 issue absent from the scans). No verdict changed; none verified.
+
+## Round 5 (V9, 20 Nov 2026): help lane M2, books from the bottom of V8-list.tsv (claims written to V8-claims.tsv: wmmts, ststw, sglr, stwds). Engine guru-int-1120e via authors/heavy on port 19891 (PID recorded, killed by PID). Commit on claude/v7-1120.
+First: lwnl citation fixes done (page numbers, cti_bonds Jun 1993) in lwnl.rs/gate.rs text only; `authors/heavy cargo check` ok (0 errors).
+
+| id | printed (source page) | ours (live) | verdict |
+|---|---|---|---|
+| wmmts_market_turn | MarketTurnStrategy.pdf p.15-23, 3 examples: GOOG short 1/11/06 -> 1/23/06 +$64.07 (entry avg of open $471.27 and close $471.63 = 471.45, exit open $407.38); SBUX long 12/27/05 open $30.64 -> 2/9/06 +$4.46; DIA long 10/13/05 $102.03 -> 11/11/05 $106.56 +$4.53 | DIA +4.53 exact (DIA is now held; gate text said not held); SBUX +2.23 x2 split = +4.46 exact; GOOGL 1/11/06 471.27 -> default: NO exit on 1/23 (calc 0.35034 on 1/20), runs to 4/28 +53.33; with p.round=1 exits 1/23/06 407.38 = +63.89 (-0.3% vs 64.07, the gap is the averaged entry) | UNVERIFIED on the default; all three pass #368 only with the labelled option p.round=1. **Possible default question for the lead**: the book's '.35' is the 2-decimal value the spreadsheet shows; before (round 0): GOOG example fails; after (round 1): passes. Not changed. |
+| ststw_vix_rsi | Ch.12 p.97: 92 trades, 79.35% correct, 879.46 SPX points, hold under five days | SPX 1995-2007: 97 closed, 82.47%, 817.41 pts (+5 trades, +3.1 pts, -7.1%); avg hold 3.9 bars | **PASS #368 -> VERIFIED** (gate promoted, lead may revert). Window is the chapter's 1995-2007 (not printed beside this section); the section's example is an undated chart |
+| sglr_nasdaq_ma200_band | p.294 / Table 17-1: Nasdaq Composite 1990-2001 34 switches, 72.4% in, 17.52%/yr (incl. dividends, T-bills); 1972-2001 77 switches, 16.67%/yr; dated exit 9/11/2000, re-entry 12/5/2001 | Composite refused by the engine for this card; NDX 1990-04..2001: 24 trades = 48 switches, 73.3% in, CAGR 16.28% price-only; dates 2000-09-11 and 2001-12-05 equal; the 11/2/1998 entry does not | FAIL (switches); UNVERIFIED |
+| stwds_obv30_75 | Table VI S&P futures 1984-96: 43 trades, 22/43, 3.00%/trade (as in the book field; paper page not re-read) | &SP refused; SPX volume starts 1991-05-28: 17 closed, 35.29% | not compared (data window); UNVERIFIED |
+Not reached (context budget): wcdtf_ath_atr (24,000-stock universe), upg18_traders_dream (@SP 2001-02), tbabc_stampede_long (SUNW) and the rest of the list; they are unclaimed except the four above.
