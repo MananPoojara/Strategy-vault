@@ -163,3 +163,12 @@ Not reached (context budget): wcdtf_ath_atr (24,000-stock universe), upg18_trade
 | upg18_traders_dream | 90 trades, 45.56%, +$486.67 (as recorded; slide not located) | live card needs 1-min bars (2014+); old daily reading 89 tr, 50.56% | not compared (window); UNVERIFIED |
 | wcdtf_ath_atr | 18,000+ trades, 49.3%, ~15.2% (as recorded; paper not in the share) | 24,000-stock universe absent | not compared; UNVERIFIED |
 Remaining books in V8-list.tsv above these are unclaimed by V9; stopping here for context.
+
+## Round 7 (V9): claimed rinadz, lydetf, mkfve, mrina. All four not compared (data/instrument); printed figures as recorded, source pages not re-read.
+| id | printed | ours | verdict |
+|---|---|---|---|
+| mrina_xstoch14 | T-bond 1986-96: 37 tr, 84%, $203.38 | &ZB refused for this card (needs_data) | not compared |
+| rinadz_rsi9_fixed | S&P 1970-96: 133 tr, 73.68% | SPX refused (opens); SPY 1993-96: 16 tr, 81.25% | not compared |
+| lydetf_ema200 | S&P 1970-2008: 7.86%/yr, DD -18.8% | SPX 1983-2008: 90 tr, CAGR 8.20% price-only | not compared (window, dividends) |
+| mkfve_div | XMSR 4 tr 100% | XMSR absent | not compared |
+Stopping here (context budget); remaining books in V8-list.tsv unclaimed by V9.
