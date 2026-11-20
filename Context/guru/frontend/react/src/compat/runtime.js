@@ -1986,7 +1986,7 @@ function bkBars(el, items, { h = 220 }) {
   svg.querySelectorAll('.bk-col').forEach(g => { g.addEventListener('mouseenter', () => { const x = items[+g.dataset.i], r = svg.getBoundingClientRect(), bx = g.querySelector('.bk-hit'); svg.classList.add('hov'); g.classList.add('on');
       t.innerHTML = `<span>${x.label}</span><b class="${cls(x.a)}">Strategy ${pct(x.a, 2, true)}</b><b>Buy &amp; hold ${pct(x.b, 2, true)}</b>`; t.style.opacity = 1; t.style.left = Math.min(r.width - 160, (+bx.getAttribute('x') + slot) / W * r.width + 6) + 'px'; t.style.top = '8px'; });
     g.addEventListener('mouseleave', () => { svg.classList.remove('hov'); g.classList.remove('on'); t.style.opacity = 0; }); });
-  anim(svg.querySelectorAll('.bk-bar'), { transform: ['scaleY(0)', 'scaleY(1)'] }, { delay: MO?.stagger ? MO.stagger(.012) : 0, type: 'spring', stiffness: 260, damping: 22 });
+  // No grow-in animation: the scaleY spring left the bars squashed to dashes (user 20 Nov 2026); bars draw at full height.
 }
 let PXCH = null, HEAT_DESC = false, HEAT_PALETTE='classic';
 function heatTable(d) {
