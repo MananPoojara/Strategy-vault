@@ -588,7 +588,7 @@ pub(crate) const BSEA: &[BSea] = &[
 pub(crate) type CSys = (&'static str, &'static str, &'static str, &'static str, &'static [&'static str], &'static str, [&'static str; 4]);
 pub(crate) const CSYS: &[CSys] = &[
     ("lwnl_gold_13x13", "Gold 13-day channel breakout (13x13)", "Long/Short", "&GC",
-     &["E|\"a gold model that bought at the highest high of the last 13 days and sold at the lowest low of the last 13. It is indeed a simple channel breakout. There are no other rules, no stops\" (Vol. 27 No. 5 = May 1993, p.1-2): buy stop at the 13-day highest high, sell stop at the 13-day lowest low, the 13 days before the order day",
+     &["E|\"a gold model that bought at the highest high of the last 13 days and sold at the lowest low of the last 13. It is indeed a simple channel breakout. There are no other rules, no stops\" (Vol. 28 No. 5 = May 1993, p.1-2): buy stop at the 13-day highest high, sell stop at the 13-day lowest low, the 13 days before the order day",
        "X|Printed stop-and-reverse (no stops, no other rules): hold until the opposite signal (R4 #344), counted zero",
        "E|Unstated in the letter: the 13 days exclude the order day (the channel is known at the open)",
        "E|Unstated in the letter: the order is a stop order filled at the channel level (gaps fill at the open); the US$ per point (Norgate US$100 per dollar) is used only to report US$"],
@@ -596,9 +596,10 @@ pub(crate) const CSYS: &[CSys] = &[
      ["175", "40% (70)", "$645.20 ($112,910)", "start not printed"]),
     ("lwnl_gold_tdom1_4d", "Gold: first trading day of the month, close above the close 4 days ago", "Long", "&GC",
      &["E|\"if it is the first trade date of the month and the close is greater than the close 4 days ago, what happens if I buy on the open tomorrow and exit 12 days later with a $2,000 stop?\" (Vol. 29 No. 3 = March 1995, p.3-4; the author says it is a study, not a strategy)",
-       "X|\"exit 12 days later\": the close 12 bars after the entry bar (reading); $2,000 / US$100 per dollar = 20 points",
-       "X|Unstated in the letter: the stop is armed on the entry day",
-       "E|Unstated in the letter: trading day 1 of the month by the vault's count (a partial first month is not counted, decision 186)"],
+       "X|Unstated in the letter (1 of 4): \"exit 12 days later\" is read as 12 bars after the entry bar; $2,000 / US$100 per dollar = 20 points",
+       "X|Unstated in the letter (2 of 4): the exit is on the close of that bar",
+       "X|Unstated in the letter (3 of 4): the stop is armed on the entry day",
+       "E|Unstated in the letter (4 of 4): trading day 1 of the month by the vault's count (a partial first month is not counted, decision 186)"],
      "Printout p.4: net $41,850, 84 trades, 45 winners (53%), average $498.21, since 1975.",
      ["84", "53% (45)", "$498.21 ($41,850)", "1975 to Mar 1995"]),
 ];
