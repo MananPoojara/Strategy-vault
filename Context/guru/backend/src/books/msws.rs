@@ -449,6 +449,29 @@ impl<'a> Eng<'a> {
                 (0..n).map(|i| { let d = hh[i] - ll[i]; if fin(d) && d > 0.0 { -100.0 * (hh[i] - x.c[i]) / d } else { NAN } }).collect()
             }
             "trix" => { argc(1)?; let p = self.per(&a[0])?; let e3 = ema(&ema(&ema(&x.c, p), p), p); let b = back(&e3, 1); zip(&e3, &b, |x, y| 100.0 * (x - y) / y) }
+            // lane M2 (R4 #339(2)): MetaStock Pro 8.0 manual, formula-language syntax mfi(PERIODS), emv(PERIODS, METHOD), dpo(PERIODS); calculations as the manual's "Interpretation of Indicators" chapter
+            // (MFI p.483: money flow = volume x average price, positive/negative by the change of that price, MFI = 100 - 100/(1 + positive sum / negative sum); EMV p.465: midpoint move / box ratio, box ratio =
+            // volume (in 10,000s) / (high - low), smoothed by METHOD; DPO p.460: the x-period moving average shifted back x/2 + 1 periods and subtracted from the close, the last x/2 + 1 bars have no value).
+            // Declared readings: the average price of MFI is (H+L+C)/3; the DPO bar i = C[i] - SMA_x[i + x/2 + 1] (a future-shifted value; the source only uses it through Ref(.,-10)).
+            "mfi" => {
+                argc(1)?; let p = self.per(&a[0])?; let n = x.c.len();
+                let tp: Vec<f64> = (0..n).map(|i| (x.h[i] + x.l[i] + x.c[i]) / 3.0).collect();
+                let (mut pos, mut neg) = (vec![NAN; n], vec![NAN; n]);
+                for i in 1..n { let f = tp[i] * self.vol[i]; pos[i] = if tp[i] > tp[i - 1] { f } else { 0.0 }; neg[i] = if tp[i] < tp[i - 1] { f } else { 0.0 }; }
+                let (sp, sn) = (window(&pos, p, |w| w.iter().sum()), window(&neg, p, |w| w.iter().sum()));
+                zip(&sp, &sn, |a, b| if b > 0.0 { 100.0 - 100.0 / (1.0 + a / b) } else if a > 0.0 { 100.0 } else { NAN })
+            }
+            "emv" => {
+                argc(2)?; let p = self.per(&a[0])?; let n = x.c.len();
+                let m = match &a[1] { E::Id(m) => m.to_lowercase(), _ => return Err("EMV() method".into()) };
+                let raw: Vec<f64> = (0..n).map(|i| if i == 0 || x.h[i] <= x.l[i] || !(self.vol[i] > 0.0) { NAN } else {
+                    let mid = (x.h[i] + x.l[i]) / 2.0 - (x.h[i - 1] + x.l[i - 1]) / 2.0; mid / ((self.vol[i] / 10000.0) / (x.h[i] - x.l[i])) }).collect();
+                match m.as_str() { "s" | "simple" => sma(&raw, p), "e" | "exponential" => ema(&raw, p), "w" | "weighted" => wma(&raw, p), _ => return Err(format!("EMV() method '{m}' is not supported")) }
+            }
+            "dpo" => {
+                argc(1)?; let p = self.per(&a[0])?; let n = x.c.len(); let k = p / 2 + 1; let m = sma(&x.c, p);
+                (0..n).map(|i| if i + k < n { x.c[i] - m[i + k] } else { NAN }).collect()
+            }
             "macd" => {
                 argc(0)?;
                 let (f, s) = (ema_alpha(&x.c, 0.15, 1), ema_alpha(&x.c, 0.075, 1));
@@ -550,7 +573,7 @@ pub fn scan(src: &str, fml: &dyn Fn(&str) -> Option<String>) -> (bool, Vec<Strin
         match e {
             E::Id(k) if matches!(k.as_str(), "v" | "vol" | "volume") => *vol = true,
             E::Call(f, a) => {
-                if matches!(f.as_str(), "obv" | "co" | "pvt") { *vol = true; }
+                if matches!(f.as_str(), "obv" | "co" | "pvt" | "mfi" | "emv") { *vol = true; }
                 if f == "fml" { if let Some(E::S(n)) = a.first() { if !refs.contains(n) { refs.push(n.clone()); if d < 20 { if let Some(s) = fml(n) { if let Ok(p) = parse(&s) { for (_, e) in &p.defs { walk(e, vol, refs, fml, d + 1); } walk(&p.value, vol, refs, fml, d + 1); } } } } } }
                 for x in a { walk(x, vol, refs, fml, d); }
             }
