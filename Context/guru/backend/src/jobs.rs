@@ -12,9 +12,11 @@ use std::time::{Duration, Instant};
 
 /// Cache budget. Engine base is about 200-290 MB under a 1 GiB container cap. Measured: retained bodies cost about 2.7x their
 /// size in resident memory (allocator fragmentation), and 150 MB plus four concurrent US /tickers was OOM-killed at 1 GiB.
-const MAX_CACHE_BYTES: usize = 64 << 20;
+/// Q39 (W2): a catalogue sweep of one index returns 7-40 MB run bodies that recompute in ~0.1 s; the 8-14 MB summaries (13-60 s) are the
+/// bodies worth keeping. So 32 MB total and 16 MB per entry: two summaries stay, a 20-40 MB run body is never cached.
+const MAX_CACHE_BYTES: usize = 32 << 20;
 /// One optimizer or basket body above this is kept out, so it cannot empty the cache on its own.
-const MAX_ENTRY_BYTES: usize = 32 << 20;
+const MAX_ENTRY_BYTES: usize = 16 << 20;
 /// Results cheaper than this are recomputed: a 16 ms run (2.5-4 MB) must not evict a 13 s summary.
 const MIN_COST: Duration = Duration::from_millis(100);
 /// Waiting jobs per lane. Above this the client is told to come back (429 + Retry-After).
@@ -118,7 +120,10 @@ impl Table {
             let started = Instant::now();
             // A panic closes the connection without a response, exactly as when it killed a per-connection thread.
             let out = catch_unwind(AssertUnwindSafe(|| compute(&job.stop))).ok().map(|mut out| {
-                out.body.shrink_to_fit(); // format! may over-allocate up to 2x; the budget counts real bytes
+                // Only a body that will be kept is trimmed, and only when its slack is worth a realloc (a 20-40 MB body is no
+                // longer copied just to drop a few KB). The budget counts capacity, i.e. the memory really held.
+                let kept = out.cacheable && out.status.starts_with("200") && out.body.len() <= MAX_ENTRY_BYTES && started.elapsed() >= MIN_COST;
+                if kept && out.body.capacity() - out.body.len() > out.body.len() / 8 { out.body.shrink_to_fit(); }
                 Arc::new(out)
             });
             {
@@ -137,7 +142,7 @@ impl Table {
 impl Inner {
     fn store(&mut self, key: String, out: Arc<Outcome>) {
         self.tick += 1;
-        let cost = out.body.len() + key.len();
+        let cost = out.body.capacity() + key.len();
         let entry = Cached { out, last_used: self.tick, cost };
         if let Some(old) = self.cache.insert(key, entry) { self.bytes -= old.cost; }
         self.bytes += cost;
