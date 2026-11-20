@@ -833,3 +833,43 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 body { font-family: var(--font); font-variant-numeric: tabular-nums; }
 h1, h2, h3, h4, .section-h, .box-h, .ghero h1, .ahero h1, .lhero h1, .brand, .lstrip dd { font-family: var(--font-heading); font-stretch: normal; }
 .c3-title, .bk-made-title { font-family: "Newsreader", Georgia, serif; } /* stylized book covers keep their serif title */
+
+/* ---- Strategy report in the desk's Signals layout (user 20 Nov 2026) ---- */
+/* Normal mode = backtest only; Deep research shows the book-period presets, optimisation, parameters, export and conclusions. */
+html[data-mode="normal"] .ptog, html[data-mode="normal"] #open-optimization, html[data-mode="normal"] .control-settings,
+html[data-mode="normal"] [data-react-slot="strategy-params"], html[data-mode="normal"] [data-export-all-box],
+html[data-mode="normal"] #claude-c, html[data-mode="normal"] #gpt-c {display:none !important;}
+.st-tools {display:flex;align-items:flex-start;justify-content:flex-end;gap:12px;flex-wrap:wrap;}
+.mode-toggle {margin-top:7px;}
+.metrics.perf-cards {grid-template-columns:repeat(8,minmax(0,1fr));gap:12px;margin-top:18px;border-top:0;}
+.metrics.perf-cards .metric, .metrics.perf-cards .metric + .metric {padding:14px 16px;border:1px solid var(--steel);border-radius:10px;background:var(--card);}
+.metrics.perf-cards .metric::before {display:none;}
+.metrics.perf-cards .metric span {font-size:12.5px;color:var(--ink2);}
+.metrics.perf-cards .metric b {font-size:24px;margin-top:8px;}
+@media(max-width:1100px){.metrics.perf-cards{grid-template-columns:repeat(4,minmax(0,1fr));}}
+@media(max-width:650px){.metrics.perf-cards{grid-template-columns:repeat(2,minmax(0,1fr));}}
+.rules-box .box-h small, .detailed-stats .box-h small, [data-benchmark-comparison] .box-h small, [data-worst-drawdowns] .box-h small, [data-extended-risk] .box-h small {margin-right:auto;}
+.rules-box .rules-i {order:3;}
+.rules-box .rule-guide-trigger {flex-direction:row-reverse;border:0;background:none;padding:2px 0;min-height:0;font-weight:700;color:var(--ink);}
+.rules-box .rule-guide-trigger:hover {background:none;color:var(--blue);}
+.rgrid.crit {grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 40px;border:0;background:transparent;}
+.rgrid.crit .rcol {border:0;padding:6px 0 10px;}
+.rgrid.crit h4 {color:var(--blue);font-size:15px;cursor:default;}
+.rgrid.crit .rcol li {border-top:0;padding:5px 0;}
+@media(max-width:760px){.rgrid.crit{grid-template-columns:1fr;}}
+.so-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;}
+@media(max-width:900px){.so-grid{grid-template-columns:1fr;}}
+.risk-matrix {display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+.risk-cell {padding:12px 14px;border:1px solid var(--steel);border-radius:10px;background:var(--card);}
+.risk-cell span {display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:650;color:var(--ink2);}
+.risk-cell b {display:block;margin-top:8px;font-size:22px;font-weight:800;}
+.risk-help {position:relative;display:inline-grid;place-items:center;width:15px;height:15px;padding:0;margin-left:4px;border:1px solid var(--steel);border-radius:50%;background:none;color:var(--ink3);font:600 10px/1 var(--font);cursor:help;vertical-align:middle;}
+.risk-help:hover::after, .risk-help:focus-visible::after {content:attr(data-tip);position:absolute;z-index:30;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);width:max-content;max-width:280px;padding:8px 10px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 12px/1.45 var(--font);text-align:left;white-space:normal;box-shadow:0 6px 18px rgba(0,0,0,.18);}
+.dd-period .tbl {width:auto;}
+.dd-period .tbl th, .dd-period .tbl td {padding-right:28px;white-space:nowrap;}
+.cmp-table .cmp-active {background:var(--blue-soft);}
+.cmp-table th em {margin-left:6px;padding:1px 6px;border-radius:9px;background:var(--blue);color:var(--panel);font:600 10px var(--font);font-style:normal;}
+#heatbox {max-width:980px;}
+.heat-scroll .heat2 {min-width:760px;}
+[data-export-all-status]:empty {display:none;}
+[data-export-all-box] {justify-content:flex-end;}

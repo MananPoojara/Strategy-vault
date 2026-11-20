@@ -8,7 +8,7 @@ const esc = (value: unknown) => String(value ?? '').replaceAll('&', '&amp;').rep
 async function render(disclosure: string | null, extra: Record<string, unknown> = {}) {
  const data = {status:'ready', stats:{trades:1}, dates:['2020-01-01','2020-01-02'], equity:[1,1.1], portfolio:{timing_disclosure:disclosure}, notices:[], coverage:[], ...extra};
  const deps = {
-  R:{optim:false}, instrumentControls:()=>({basket:true}), BASKETS:[{id:'nifty50',name:'NIFTY 50',symbols:['A'],source_counts:{expected:500}}], VaultUI:{costState:()=>({}),toolbar:()=>'',benchmarkHTML:()=>'',detailHTML:()=>'',tradeHTML:()=>''},
+  R:{optim:false}, instrumentControls:()=>({basket:true}), BASKETS:[{id:'nifty50',name:'NIFTY 50',symbols:['A'],source_counts:{expected:500}}], modeToggle:()=>'', VaultUI:{costState:()=>({}),toolbar:()=>'',benchmarkHTML:()=>'',detailHTML:()=>'',riskHTML:()=>'',worstHTML:()=>'',tradeHTML:()=>''},
   decodeP:()=>({}), enginePath:()=>'/basket-run', busy:1, fetch:vi.fn(async()=>({ok:true,json:async()=>data})), optSchema:async()=>({}),
   cls:()=>'',pct:()=>'',fx:()=>'',makeRuleVisualModel:()=>null,TICK_ALL_US:[],TICK_ALL_IN:[],ohlc:async()=>[],benchmarkOhlc:async()=>[],esc,
   ENGINE:{run:(_group:string,task:(signal:AbortSignal)=>Promise<unknown>)=>task(new AbortController().signal)},settingsModel:()=>null,familyDisplayName:()=> 'Fixture rule', gateNotice:()=>'',periodPanel:()=>'',optimBanner:()=>'',calculatedPeriodHTML:()=>'',rulesPanel:()=>'',LABEL:{},heatTable:()=>'',
