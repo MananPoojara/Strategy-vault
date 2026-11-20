@@ -155,3 +155,11 @@ First: lwnl citation fixes done (page numbers, cti_bonds Jun 1993) in lwnl.rs/ga
 | sglr_nasdaq_ma200_band | p.294 / Table 17-1: Nasdaq Composite 1990-2001 34 switches, 72.4% in, 17.52%/yr (incl. dividends, T-bills); 1972-2001 77 switches, 16.67%/yr; dated exit 9/11/2000, re-entry 12/5/2001 | Composite refused by the engine for this card; NDX 1990-04..2001: 24 trades = 48 switches, 73.3% in, CAGR 16.28% price-only; dates 2000-09-11 and 2001-12-05 equal; the 11/2/1998 entry does not | FAIL (switches); UNVERIFIED |
 | stwds_obv30_75 | Table VI S&P futures 1984-96: 43 trades, 22/43, 3.00%/trade (as in the book field; paper page not re-read) | &SP refused; SPX volume starts 1991-05-28: 17 closed, 35.29% | not compared (data window); UNVERIFIED |
 Not reached (context budget): wcdtf_ath_atr (24,000-stock universe), upg18_traders_dream (@SP 2001-02), tbabc_stampede_long (SUNW) and the rest of the list; they are unclaimed except the four above.
+
+## Round 6 (V9): lwnl tg_close exit text made to match the entry (Vol. 27 No. 11 = Nov 1993). Claimed wcdtf, upg18, tbabc.
+| id | printed | ours | verdict |
+|---|---|---|---|
+| tbabc_stampede_long | ABCs of Trading slide p.90 (image): 21 trades, 71.43%, net $24,180.40, avg $1,151.45, SUNW 1,500 bars to 08/31/00 | SUNW not in the vault | printed equal to card; not compared (instrument absent) |
+| upg18_traders_dream | 90 trades, 45.56%, +$486.67 (as recorded; slide not located) | live card needs 1-min bars (2014+); old daily reading 89 tr, 50.56% | not compared (window); UNVERIFIED |
+| wcdtf_ath_atr | 18,000+ trades, 49.3%, ~15.2% (as recorded; paper not in the share) | 24,000-stock universe absent | not compared; UNVERIFIED |
+Remaining books in V8-list.tsv above these are unclaimed by V9; stopping here for context.

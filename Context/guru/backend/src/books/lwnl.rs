@@ -200,7 +200,7 @@ fn catalogue_base() -> Vec<StrategyDef> {
             SP, claim("13", "92%", "$1,233.85 ($16,040)", "", "S&P (letter Dec 1995)")),
         // ---- Holidays
         sd!("lwnl_tg_close", "Thanksgiving: buy the close before, exit the close after", "Holidays", "Long", Live,
-            &["E|\"bought on the close prior to the holiday\" (Vol. 27 No. 11 = Nov 1993 by its volume number, p.3)", "X|\"exited the close the day after\" (Nov 1992 p.3); no stop"],
+            &["E|\"bought on the close prior to the holiday\" (Vol. 27 No. 11 = Nov 1993 by its volume number, p.3)", "X|\"exited the close the day after\" (Vol. 27 No. 11 = Nov 1993, p.3); no stop"],
             "Book: subscriber's hand count since 1982.", claim("10", "60%", "+0.80 S&P points total", "1 day", "S&P 1982-1991")),
         sd!("lwnl_tg_open8", "Thanksgiving: buy the open 2 days before, exit 8 days later", "Holidays", "Long", Live,
             &["E|\"buy on the open of the trading session two days before the holiday\" (Oct 1994 p.3)", "X|\"and exit 8 days later\" (Oct 1994 p.3): the close of the 8th trading day after entry; no stop is stated"],
