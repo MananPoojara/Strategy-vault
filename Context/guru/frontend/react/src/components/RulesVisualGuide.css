@@ -112,7 +112,7 @@
 .rg-min .rule-guide-price {border:0;height:320px;}
 .rg-links {position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
 .rg-link {stroke-width:1.2;} .rg-link.entry {stroke:var(--green);} .rg-link.exit {stroke:var(--red);}
-.rg-callout {position:absolute;transform:translateX(-50%);max-width:250px;padding:6px 10px;border:1px solid var(--ink3);border-radius:6px;background:var(--panel);font-size:11.5px;font-style:italic;font-weight:600;line-height:1.35;text-align:center;box-shadow:0 2px 8px #0001;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;z-index:2;}
+.rg-callout {position:absolute;transform:translateX(-50%);max-width:250px;padding:6px 10px;border:1px solid var(--ink3);border-radius:6px;background:var(--panel);font-size:11.5px;font-style:italic;font-weight:600;line-height:1.35;text-align:center;box-shadow:0 2px 8px #0001;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;z-index:2;line-height:1.4;max-height:calc(3 * 1.4em + 12px);}
 .rg-callout b {font-style:normal;}
 .rg-callout.entry b {color:var(--green);} .rg-callout.exit b {color:var(--red);}
 .rg-note {margin:6px 22px 16px;font-size:11px;color:var(--ink3);}

@@ -59,7 +59,7 @@ function RulePriceChart({model,evidence,trade,onDate,focusDate,containerRef,call
     const hover=(event:{time?:unknown})=>{const date=timeString(event.time);if(date)callbacks.current(date,false);};
     const click=(event:{time?:unknown})=>{const date=timeString(event.time);if(date)callbacks.current(date,true);};
     try{
-      instance=library.createChart(element,{...theme,width:element.clientWidth||600,height:320});chart.current=instance;
+      instance=library.createChart(element,{...theme,width:element.clientWidth||600,height:320,handleScroll:false,handleScale:false});/* a fixed picture, not a movable chart (user 20 Nov 2026) */chart.current=instance;
       const series=instance.addCandlestickSeries({upColor:color('--green','#2e7d4f'),downColor:color('--red','#c43c3c'),borderVisible:false,wickUpColor:color('--green','#2e7d4f'),wickDownColor:color('--red','#c43c3c'),priceLineVisible:false});candles.current=series;
       series.setData(visibleIndices.map(i=>({time:px.d[i],open:px.o[i],high:px.h[i],low:px.l[i],close:px.c[i]})));
       instance.subscribeCrosshairMove(hover);instance.subscribeClick(click);
@@ -123,7 +123,8 @@ function RuleGuideBody({model,onClose,id}: {model:RuleVisualModel;onClose:()=>vo
   },[model,trade?.ticker]);
   const chartModel=useMemo(()=>!model.basket?model:{...model,symbol:trade?.symbol||model.symbol,focusTicker:trade?.ticker,basket:false,prices:basketPrice.ticker===trade?.ticker?basketPrice.prices:null,blocked:basketPrice.ticker===trade?.ticker?basketPrice.note:'Loading the traded stock.'},[model,trade?.ticker,trade?.symbol,basketPrice]);
   const evidence=useMemo(()=>buildRuleEvidence(chartModel),[chartModel]),px=chartablePrices(chartModel);
-  const callouts=useMemo(()=>({entry:model.rules.filter(r=>r.stage==='Conditions'||r.stage==='Entry').map(r=>r.text).join(' · '),exit:model.rules.filter(r=>r.stage==='Exit').map(r=>r.text).join(' · ')}),[model]);
+  const clip=(t:string)=>t.length>120?t.slice(0,117).replace(/\s+\S*$/,'')+'…':t;
+  const callouts=useMemo(()=>({entry:clip(model.rules.filter(r=>r.stage==='Entry').map(r=>r.text).join(' · ')||model.rules.filter(r=>r.stage==='Conditions').map(r=>r.text).join(' · ')),exit:clip(model.rules.filter(r=>r.stage==='Exit').map(r=>r.text).join(' · '))}),[model]);
   const isReady=model.status==='ready';
   const entryAvg=trade?avgPrice(trade.legs):null,exitAvg=!trade||trade.open?null:trade.exits.length?avgPrice(trade.exits):trade.exitPrice;
   const move=entryAvg&&exitAvg?trade!.direction*(exitAvg/entryAvg-1):null;
