@@ -603,18 +603,20 @@ pub(crate) const CSYS: &[CSys] = &[
      "Printout p.4: net $41,850, 84 trades, 45 winners (53%), average $498.21, since 1975.",
      ["84", "53% (45)", "$498.21 ($41,850)", "1975 to Mar 1995"]),    ("lwnl_gold_nov_td16", "Gold: buy the 16th trading day of November, 6-day delayed bailout", "Long", "&GC",
      &["E|\"Gold has been a buy on the 16th trading day of November with a 6 day delayed bailout\" (Vol. 33 No. 11 = November 1996, p.4; the printout shows no stop): buy the open of November's trading day 16",
-       "X|Printed exit: a 6-day delayed bailout, no stop. Unstated in the letter (1 of 3): the bailout is the first profitable opening at least 6 bars after the entry bar, profit measured against the entry price",
-       "X|Unstated in the letter (2 of 3): a trade that is never profitable at an opening stays open (there is no time exit or stop)",
-       "E|Unstated in the letter (3 of 3): trading day 16 by the vault's count of the month's sessions",
+       "X|Printed exit: a 6-day delayed bailout, no stop. Unstated in the letter (1 of 4): the bailout is the first profitable opening from the opening of bar entry+6+1 (the letter's own wording of Delayed Bailout, Nov 1996 p.1: 'waiting N days ... then exiting on any profitable opening after that point'), profit measured against the entry price",
+       "X|Unstated in the letter (2 of 4): a trade that is never profitable at an opening stays open (there is no time exit or stop)",
+       "E|Unstated in the letter (3 of 4): trading day 16 by the vault's count of the month's sessions",
+       "E|Unstated in the letter (4 of 4): the entry is at the open (the letter says only 'buy on the 16th trading day')",
        "E|Adaptation, not counted: the Norgate back-adjusted contract (the CSI contract file is not held); US$ per point is used only to report US$"],
      "Printout p.4 (COMEX GOLD, 05/28/75 - 10/29/96, commission $50): 19 trades, 100% winners, net $16,560, average $871.58.",
      ["19", "100% (19)", "$871.58 ($16,560)", "05/1975 to 10/1996"]),
     ("lwnl_yen_nov_td10", "Yen: buy the 10th trading day of November, 6-day delayed bailout or $1,600 stop", "Long", "&6J",
      &["E|\"the Yen has shown a pronounced tendency to rally starting the 10th trading day of the month ... Our exit rule is a 6 day Delayed Bailout or $1,600 stop\" (Vol. 33 No. 11 = November 1996, p.3): buy the open of November's trading day 10",
        "X|$1,600 stop = 0.0128 of the Norgate quote at US$125,000 per 1.00 (the letter's own dollars at the contract's own point value)",
-       "X|Unstated in the letter (1 of 3): the bailout is the first profitable opening at least 6 bars after the entry bar, profit measured against the entry price",
-       "X|Unstated in the letter (2 of 3): the stop is armed on the entry day",
-       "E|Unstated in the letter (3 of 3): trading day 10 by the vault's count of the month's sessions",
+       "X|Unstated in the letter (1 of 4): the bailout is the first profitable opening from the opening of bar entry+6+1 (the letter's own wording of Delayed Bailout, Nov 1996 p.1), profit measured against the entry price",
+       "X|Unstated in the letter (2 of 4): the stop is armed on the entry day",
+       "E|Unstated in the letter (3 of 4): trading day 10 by the vault's count of the month's sessions",
+       "E|Unstated in the letter (4 of 4): the entry is at the open (the letter says only 'starting the 10th trading day')",
        "E|Adaptation, not counted: the Norgate back-adjusted contract (the CSI contract file is not held)"],
      "Printout p.3 (JAPANESE YEN, 12/23/76 - 10/29/96, commission $50, point value $12.50): 17 trades, 88% winners (15), net $8,862.50, average $521.32.",
      ["17", "88% (15)", "$521.32 ($8,862.50)", "12/1976 to 10/1996"]),
@@ -985,7 +987,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     })
                 }
                 "lwnl_gold_nov_td16" | "lwnl_yen_nov_td10" => {
-                    c2.bailout = true; c2.bail_after = 6; c2.hold = None;
+                    c2.bailout = true; c2.bail_after = 7; c2.hold = None; // "Delayed Bailout" of N=6 days: from the opening of bar entry+N+1 (module header, Nov 1996 p.1)
                     let yen = s == "lwnl_yen_nov_td10";
                     if yen { c2.stop = 1600.0 / pt; }
                     let td = crate::books::lwlts::tdm(x); let n = if yen { 10 } else { 16 };
