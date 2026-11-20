@@ -77,7 +77,7 @@ services:
       - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
-    mem_limit: 1g
+    mem_limit: 2g
     restart: unless-stopped
   engine-us:
     image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
@@ -89,7 +89,7 @@ services:
       - '${VAULT_US_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/us-market-data}:/us-basket-data:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
-    mem_limit: 1g
+    mem_limit: 2g
     restart: unless-stopped
   gateway:
     build:

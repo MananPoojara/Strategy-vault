@@ -37,9 +37,10 @@ export function recordedTradeEvents(trade:VisualTrade):RecordedRuleEvent[]{
   return [...entry,...exits];
 }
 
-function RulePriceChart({model,evidence,trade,onDate,focusDate,containerRef}: {
-  model:RuleVisualModel;evidence:RuleEvidence;trade?:VisualTrade;onDate:(date:string,pinned:boolean)=>void;focusDate:string|null;containerRef:React.RefObject<HTMLDivElement|null>;
+function RulePriceChart({model,evidence,trade,onDate,focusDate,containerRef,callouts}: {
+  model:RuleVisualModel;evidence:RuleEvidence;trade?:VisualTrade;onDate:(date:string,pinned:boolean)=>void;focusDate:string|null;containerRef:React.RefObject<HTMLDivElement|null>;callouts?:{entry:string;exit:string};
 }){
+  const [boxes,setBoxes]=useState<{kind:'entry'|'exit';x:number;y:number;text:string}[]>([]);
   const host=useRef<HTMLDivElement>(null), chart=useRef<RuleChart|null>(null),candles=useRef<CandleSeries|null>(null),callbacks=useRef(onDate);
   const [error,setError]=useState('');callbacks.current=onDate;
   const px=chartablePrices(model);
@@ -78,53 +79,68 @@ function RulePriceChart({model,evidence,trade,onDate,focusDate,containerRef}: {
       return {time:event.date,position:buy?'belowBar':'aboveBar',color:buy?green:red,shape:buy?'arrowUp':'arrowDown',text:event.kind==='add'?'Add':event.kind==='exit'?'Exit':'Entry'};
     }).sort((a,b)=>a.time.localeCompare(b.time)));
     if(trade){const first=visibleDates.indexOf(trade.entry),last=visibleDates.indexOf(trade.exit);if(first>=0)chart.current.timeScale().setVisibleLogicalRange({from:Math.max(0,first-18),to:Math.min(visibleDates.length-1,Math.max(first+24,last+12))});}
-  },[trade,px,model,evidence,visibleDates]);
+    // Rule callouts joined to the recorded entry and exit fills (positions follow pan/zoom; skipped when the chart cannot map them).
+    const scale=chart.current.timeScale() as unknown as {timeToCoordinate?:(t:string)=>number|null;subscribeVisibleLogicalRangeChange?:(cb:()=>void)=>void;unsubscribeVisibleLogicalRangeChange?:(cb:()=>void)=>void};
+    const series=candles.current as unknown as {priceToCoordinate?:(p:number)=>number|null};
+    const place=()=>{
+      if(!trade||!callouts||typeof scale.timeToCoordinate!=='function'||typeof series.priceToCoordinate!=='function'){setBoxes([]);return;}
+      const exitPrice=trade.exits.at(-1)?.price??trade.exitPrice;
+      const pts=[{kind:'entry' as const,date:trade.entry,price:trade.legs[0]?.price??null,text:callouts.entry},...(trade.open?[]:[{kind:'exit' as const,date:trade.exit,price:exitPrice,text:callouts.exit}])];
+      setBoxes(pts.flatMap(p=>{const x=scale.timeToCoordinate!(p.date),y=p.price==null?null:series.priceToCoordinate!(p.price);return x==null||y==null||!p.text?[]:[{kind:p.kind,x,y,text:p.text}];}));
+    };
+    const frame=requestAnimationFrame(place);scale.subscribeVisibleLogicalRangeChange?.(place);
+    return()=>{cancelAnimationFrame(frame);scale.unsubscribeVisibleLogicalRangeChange?.(place);};
+  },[trade,px,model,evidence,visibleDates,callouts]);
   useEffect(()=>{
     if(!focusDate||!px||!chart.current)return;const i=visibleDates.indexOf(focusDate);if(i<0)return;
     chart.current.timeScale().setVisibleLogicalRange({from:Math.max(0,i-25),to:Math.min(visibleDates.length-1,i+25)});
   },[focusDate,px,visibleDates]);
-  return <><div className="rule-guide-price" ref={host} aria-label="Actual daily price candles and selected trade fill arrows" data-rule-price-chart />{error&&<p className="rule-guide-warning" role="status">{error}</p>}</>;
+  const W=host.current?.clientWidth||600;
+  return <div className="rg-chart-wrap"><div className="rule-guide-price" ref={host} aria-label="Actual daily price candles and selected trade fill arrows" data-rule-price-chart />
+    {boxes.length>0&&<svg className="rg-links" aria-hidden="true">{boxes.map(b=>{const bx=Math.min(Math.max(b.x,130),W-130),by=b.kind==='entry'?44:270;return <line key={b.kind} x1={bx} y1={by} x2={b.x} y2={b.y} className={'rg-link '+b.kind}/>;})}</svg>}
+    {boxes.map(b=><div key={b.kind} className={'rg-callout '+b.kind} style={{left:Math.min(Math.max(b.x,130),W-130),top:b.kind==='entry'?8:270}}><b>{b.kind==='entry'?'Entry':'Exit'}</b> {b.text}</div>)}
+    {error&&<p className="rule-guide-warning" role="status">{error}</p>}</div>;
 }
 
+const dmy=(d?:string|null)=>d?d.split('-').reverse().join('/'):'—';
+const avgPrice=(xs:{price:number;weight:number}[])=>{const w=xs.reduce((a,x)=>a+(x.weight||0),0);return w?xs.reduce((a,x)=>a+x.price*(x.weight||0),0)/w:xs[0]?.price??null;};
+
+// One picture of one recorded trade, like the desk's signal view (user 20 Nov 2026): the trade's facts, the candles
+// around it, the entry and exit fills with the rule that fired, and the plotted indicator lines. Nothing is sampled
+// or invented: a held selection shows its rules and no chart.
 function RuleGuideBody({model,onClose,id}: {model:RuleVisualModel;onClose:()=>void;id:string}){
   const root=useRef<HTMLDivElement>(null);
-  const [tradeIndex,setTradeIndex]=useState(0),[selectedDate,setSelectedDate]=useState(model.trades[0]?.entry||model.dates[0]||''),[pinned,setPinned]=useState(false),[focusDate,setFocusDate]=useState<string|null>(null);
+  const latest=(()=>{for(let i=model.trades.length-1;i>=0;i--)if(!model.trades[i].open)return i;return Math.max(0,model.trades.length-1);})();
+  const [tradeIndex,setTradeIndex]=useState(latest),[hoverDate,setHoverDate]=useState<string|null>(null);
   const [basketPrice,setBasketPrice]=useState<{ticker:string;prices:RuleVisualModel['prices'];note:string;loading:boolean}>({ticker:'',prices:null,note:'',loading:false});
-  const selectedTrade=model.trades[tradeIndex];
+  const trade=model.trades[tradeIndex];
   useEffect(()=>{
-    if(!model.basket||model.status!=='ready'||!selectedTrade)return;
-    const controller=new AbortController(),ticker=selectedTrade.ticker,timer=setTimeout(()=>{controller.abort();setBasketPrice({ticker,prices:null,note:'The one-stock price request reached its time limit. Recorded fills remain readable.',loading:false});},30000);
+    if(!model.basket||model.status!=='ready'||!trade)return;
+    const controller=new AbortController(),ticker=trade.ticker,timer=setTimeout(()=>{controller.abort();setBasketPrice({ticker,prices:null,note:'The one-stock price request reached its time limit.',loading:false});},30000);
     setBasketPrice({ticker,prices:null,note:'Loading one actual constituent price history…',loading:true});
-    loadBasketRulePrices(model,selectedTrade,controller.signal).then(prices=>{if(!controller.signal.aborted)setBasketPrice({ticker,prices,note:'',loading:false});}).catch(error=>{if(!controller.signal.aborted)setBasketPrice({ticker,prices:null,note:error instanceof Error?error.message:'The constituent price history is unavailable.',loading:false});}).finally(()=>clearTimeout(timer));
+    loadBasketRulePrices(model,trade,controller.signal).then(prices=>{if(!controller.signal.aborted)setBasketPrice({ticker,prices,note:'',loading:false});}).catch(error=>{if(!controller.signal.aborted)setBasketPrice({ticker,prices:null,note:error instanceof Error?error.message:'The constituent price history is unavailable.',loading:false});}).finally(()=>clearTimeout(timer));
     return()=>{clearTimeout(timer);controller.abort();};
-  },[model,selectedTrade?.ticker]);
-  const chartModel=useMemo(()=>!model.basket?model:{...model,symbol:selectedTrade?.symbol||model.symbol,focusTicker:selectedTrade?.ticker,basket:false,prices:basketPrice.ticker===selectedTrade?.ticker?basketPrice.prices:null,blocked:basketPrice.ticker===selectedTrade?.ticker?basketPrice.note:'Choose a recorded position to inspect its own stock prices.'},[model,selectedTrade?.ticker,selectedTrade?.symbol,basketPrice]);
+  },[model,trade?.ticker]);
+  const chartModel=useMemo(()=>!model.basket?model:{...model,symbol:trade?.symbol||model.symbol,focusTicker:trade?.ticker,basket:false,prices:basketPrice.ticker===trade?.ticker?basketPrice.prices:null,blocked:basketPrice.ticker===trade?.ticker?basketPrice.note:'Loading the traded stock.'},[model,trade?.ticker,trade?.symbol,basketPrice]);
   const evidence=useMemo(()=>buildRuleEvidence(chartModel),[chartModel]),px=chartablePrices(chartModel);
-  const trade=model.trades[tradeIndex],sourceIndex=model.dates.includes(selectedDate)?px?.d.indexOf(selectedDate)??-1:-1,checks=evidence.at(sourceIndex);
-  // Keep very large basket trade lists accessible without creating thousands of
-  // option DOM nodes on each candle hover. Numeric jump reaches every position.
-  const choiceStart=Math.max(0,tradeIndex-20),tradeChoices=model.trades.slice(choiceStart,tradeIndex+21);
+  const callouts=useMemo(()=>({entry:model.rules.filter(r=>r.stage==='Conditions'||r.stage==='Entry').map(r=>r.text).join(' · '),exit:model.rules.filter(r=>r.stage==='Exit').map(r=>r.text).join(' · ')}),[model]);
   const isReady=model.status==='ready';
-  const selectDate=(date:string,pin:boolean)=>{if(pin||!pinned){setSelectedDate(date);if(pin)setPinned(true);}};
-  const jump=(date:string)=>{setSelectedDate(date);setPinned(true);setFocusDate(date);};
-  const chooseTrade=(next:number)=>{const t=model.trades[next];setTradeIndex(next);if(t){setSelectedDate(t.entry);setPinned(true);setFocusDate(null);}};
-  return <div className="rule-guide-body" ref={root}>
-    <header className="rule-guide-header"><div><span className="rule-guide-eyebrow">RULES, EXPLAINED</span><h2 id={`${id}-title`}>{model.name}</h2><p id={`${id}-description`}>Follow a recorded trade, then inspect the rule inputs on each candle.</p></div><button className="rule-guide-close" aria-label="Close visual rules" onClick={onClose}>×</button></header>
-    <div className="rule-guide-context"><span>{model.basket&&selectedTrade?`${model.symbol} · ${selectedTrade.symbol}`:model.symbol||'Selected instrument'}</span><span>{isReady?'Actual local data':'Results withheld'}</span><span data-rule-evidence-scope={evidence.scope}>{evidence.scope==='exact'?'Method-specific calculations':evidence.scope==='indicators'?'Partial indicator inputs':'Rule trace unavailable'}</span></div>
-    <p className="rule-guide-review-notice">{model.sourceReview}</p>
-    {!isReady?<section className="rule-guide-empty"><strong>No backtest chart for this selection</strong><p>{model.blocked||'Required rules or market data are unresolved.'}</p><p>The book rules below remain readable. A sample chart would imply a trade that has not been calculated, so none is shown.</p></section>:<>
-      <div className="rule-guide-navigation"><div className="rule-guide-trade-select"><label htmlFor={`${id}-trade`}>{model.basket?'Recorded basket position':'Follow a trade'}</label><select id={`${id}-trade`} value={tradeIndex} disabled={!model.trades.length} onChange={e=>chooseTrade(Number(e.target.value))}>{model.trades.length?tradeChoices.map((t,i)=><option value={choiceStart+i} key={t.key}>{choiceStart+i+1}. {model.basket?t.symbol+' · ':''}{t.direction>0?'Long':'Short'} · {t.entry} → {t.open?'Open':t.exit}</option>):<option>No trades in the selected period</option>}</select></div><div className="rule-guide-paging"><button disabled={tradeIndex===0||!trade} onClick={()=>chooseTrade(tradeIndex-1)} aria-label="Previous recorded trade">←</button><span>{model.trades.length?`${tradeIndex+1} / ${model.trades.length}`:'0 trades'}</span><button disabled={tradeIndex>=model.trades.length-1} onClick={()=>chooseTrade(tradeIndex+1)} aria-label="Next recorded trade">→</button></div>{model.trades.length>41&&<form className="rule-guide-jump" key={tradeIndex} onSubmit={event=>{event.preventDefault();const n=Number(new FormData(event.currentTarget).get('trade'));if(Number.isInteger(n)&&n>=1&&n<=model.trades.length)chooseTrade(n-1);}}><label>Trade number <input type="number" name="trade" min="1" max={model.trades.length} step="1" defaultValue={tradeIndex+1} required/></label><button type="submit">Go</button></form>}</div>
-      <div className="rule-guide-workbench"><div className="rule-guide-chart-column">
-        {px?<><div className="rule-guide-chart-heading"><strong>Read the price, then the condition</strong><span>↑ Buy / cover &nbsp; ↓ Sell / short</span></div><div className="rule-guide-chart-frame"><RulePriceChart model={chartModel} evidence={evidence} trade={trade} onDate={selectDate} focusDate={focusDate} containerRef={root}/>{sourceIndex>=0&&<div className="rule-guide-chart-tooltip" role="tooltip"><strong>{selectedDate}</strong><span>Close {format(px.c[sourceIndex])}</span>{trade&&recordedTradeEvents(trade).filter(e=>e.date===selectedDate).map((e,i)=><b key={i}>{e.label} · {format(e.price)}</b>)}{checks.filter(c=>c.passed===true).map((c,i)=><small key={i}>✓ {c.label}</small>)}</div>}</div><p className="rule-guide-chart-help">Drag or scroll to explore · hover a candle to inspect · click to pin its values. Arrows mark recorded fills, not proof that all book rules are verified.</p><StrategyIndicatorControls result={{status:evidence.series.length?'ready':'unsupported',series:evidence.series,note:''}}/>
-          <label className="rule-guide-date">Inspect candle <input type="date" min={model.dates[0]} max={model.dates.at(-1)} value={selectedDate} onChange={e=>jump(e.target.value)}/><button type="button" onClick={()=>setPinned(false)} disabled={!pinned}>Resume hover</button></label>
-        </>:<div className="rule-guide-empty" role="status"><strong>{basketPrice.loading?'Loading selected stock':model.basket?'Selected stock price chart unavailable':'Actual candle data unavailable'}</strong><p>{evidence.note}</p><p>Recorded fills below remain available. A benchmark or another stock is never substituted for the traded instrument.</p></div>}
-        {trade?<div className="rule-guide-events" aria-label="Recorded trade fills"><div className="rule-guide-event-title"><strong>{trade.direction>0?'Long':'Short'} position{model.basket?' · '+trade.symbol:''}</strong><small>{trade.entryKind==='open'?'Entry recorded at an open. Entry signal time is not supplied in this trade payload.':trade.entryKind==='close'?'Entry recorded at the close.':'Entry execution: '+(trade.entryKind||'not specified')}</small></div>{recordedTradeEvents(trade).map((event,i)=><button key={`${event.date}-${i}`} className={`rule-guide-event ${event.kind}`} disabled={!px||!px.d.includes(event.date)} onClick={()=>jump(event.date)}><span className="rule-guide-event-number">{event.kind==='entry'?'↗':event.kind==='add'?'+':event.kind==='mark'?'○':'↘'}</span><span><strong>{event.label}</strong><small>{event.date} · {format(event.price)}</small>{event.note&&<small>{event.note}</small>}</span></button>)}{!trade.open&&trade.signal&&<p className="rule-guide-fill-note">Exit signal: <button className="rule-guide-text-button" disabled={!px||!px.d.includes(trade.signal)} onClick={()=>jump(trade.signal)}>{trade.signal}</button> · Recorded exit reason: {trade.reason||'not supplied'}. Signal and fill can occur on different candles.</p>}{trade.open&&<p className="rule-guide-fill-note">This position is still open at the last supplied mark. No exit arrow or completed exit condition is inferred.</p>}</div>:<p className="rule-guide-warning">No positions were recorded for this window. You can still inspect available price and indicator values; no example trade is invented.</p>}
-      </div><aside className="rule-guide-inspector" aria-label="Selected candle rule inputs"><div className="rule-guide-inspector-heading"><span>{pinned?'PINNED CANDLE':'CANDLE INSPECTOR'}</span><strong>{selectedDate||'Select a candle'}</strong></div>{px&&sourceIndex>=0?<dl className="rule-guide-ohlc">{(['o','h','l','c'] as const).map((key,i)=><div key={key}><dt>{['Open','High','Low','Close'][i]}</dt><dd>{format(px[key][sourceIndex])}</dd></div>)}</dl>:px?<p>No actual source candle on this date. Missing sessions are not interpolated.</p>:null}
-        <h3>{evidence.title}</h3>{checks.map((check,i)=><div className="rule-guide-condition" key={i} data-condition-result={check.passed===null?'context':check.passed?'met':'not-met'}><div><strong>{check.label}</strong><span className="rule-guide-check-state">{check.value===null?'Warmup / unavailable':check.passed===null?'Value only':check.passed?'Met':'Not met'}</span></div><b>{format(check.value)}</b>{check.comparison&&<code>{check.comparison}</code>}<p>{check.explanation}</p></div>)}{!checks.length&&<p className="rule-guide-warning">No condition values are certified for this selected candle. Read the source rules below; an arrow alone does not certify their interpretation.</p>}
-      </aside></div>
-      <p className="rule-guide-evidence-note"><strong>What this view establishes.</strong> {evidence.note} Condition results describe individual predicates; position state, fill timing, sizing and the complete Rules still govern each recorded trade.</p>
+  const entryAvg=trade?avgPrice(trade.legs):null,exitAvg=!trade||trade.open?null:trade.exits.length?avgPrice(trade.exits):trade.exitPrice;
+  const move=entryAvg&&exitAvg?trade!.direction*(exitAvg/entryAvg-1):null;
+  const shown=hoverDate&&px?.d.includes(hoverDate)&&model.dates.includes(hoverDate)?hoverDate:trade?.entry||'',k=px?px.d.indexOf(shown):-1;
+  const go=(n:number)=>{setTradeIndex(n);setHoverDate(null);};
+  return <div className="rule-guide-body rg-min" ref={root}>
+    <header className="rule-guide-header"><div><h2 id={`${id}-title`}>{model.name}</h2><p id={`${id}-description`}>{model.basket&&trade?`${model.symbol} · ${trade.symbol}`:model.symbol}{trade?` · ${trade.direction>0?'Long':'Short'} trade ${tradeIndex+1} of ${model.trades.length}`:''}</p></div>
+      <div className="rg-head-tools">{isReady&&model.trades.length>1&&<span className="rg-step"><button type="button" aria-label="Previous trade" disabled={tradeIndex<=0} onClick={()=>go(tradeIndex-1)}>‹</button><button type="button" aria-label="Next trade" disabled={tradeIndex>=model.trades.length-1} onClick={()=>go(tradeIndex+1)}>›</button></span>}<button className="rule-guide-close" aria-label="Close visual rules" onClick={onClose}>×</button></div></header>
+    {!isReady||!trade?<section className="rule-guide-empty"><strong>{isReady?'No trades in this selection':'No backtest chart for this selection'}</strong><p>{isReady?'The rules below never fired on the selected instrument and dates.':model.blocked||'Required rules or market data are unresolved.'}</p><ol className="rg-rules">{model.rules.map((rule,i)=><li key={i}><b>{rule.stage}</b> {rule.text}</li>)}</ol></section>:<>
+      <dl className="rg-facts"><div><dt>Entry Date</dt><dd>{dmy(trade.entry)}</dd></div><div><dt>Entry Price</dt><dd>{format(entryAvg)}</dd></div><div><dt>{trade.open?'Marked':'Exit Date'}</dt><dd>{dmy(trade.exit)}</dd></div><div><dt>Exit Price</dt><dd>{trade.open?'Open':format(exitAvg)}</dd></div><div><dt>Price move</dt><dd className={move==null?'':move>=0?'pos':'neg'}>{move==null?'—':`${move>=0?'+':''}${(move*100).toFixed(1)}%`}</dd></div></dl>
+      <div className="rg-frame">
+        {px?<><div className="rg-ohlc"><b>{chartModel.symbol}</b><span>Daily · {dmy(shown)}</span>{k>=0&&(['o','h','l','c'] as const).map((key,i)=><span key={key}>{'OHLC'[i]} {format(px[key][k])}</span>)}</div>
+          <RulePriceChart model={chartModel} evidence={evidence} trade={trade} onDate={d=>setHoverDate(d)} focusDate={null} containerRef={root} callouts={callouts}/></>
+        :<div className="rule-guide-empty" role="status"><strong>{basketPrice.loading?'Loading the traded stock':'Price chart unavailable'}</strong><p>{evidence.note}</p></div>}
+      </div>
+      <p className="rg-note">{model.sourceReview}</p>
     </>}
-    <section className="rule-guide-source"><div><span className="rule-guide-eyebrow">THE FULL RULE PATH</span><h3>Keep the complete trading plan in view</h3><p>Source rules and declared implementation choices. These are separate from a book’s reported performance.</p></div><ol>{model.rules.map((rule,i)=><li key={i}><span className="rule-guide-stage">{rule.stage}</span><p>{rule.text}</p></li>)}</ol>{!model.rules.length&&<p>No source rules are registered for this method.</p>}{(model.notes||model.sourceQualifications.length>0)&&<details><summary>Source interpretation, adaptations &amp; implementation notes</summary>{model.sourceQualifications.map((note,i)=><p key={i}>{note}</p>)}{model.notes&&<p>{model.notes}</p>}</details>}</section>
   </div>;
 }
 
