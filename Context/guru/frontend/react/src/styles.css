@@ -869,8 +869,9 @@ html[data-mode="normal"] #claude-c, html[data-mode="normal"] #gpt-c {display:non
 .dd-period .tbl th, .dd-period .tbl td {padding-right:28px;white-space:nowrap;}
 .cmp-table .cmp-active {background:var(--blue-soft);}
 .cmp-table th em {margin-left:6px;padding:1px 6px;border-radius:9px;background:var(--blue);color:var(--panel);font:600 10px var(--font);font-style:normal;}
-/* Monthly returns: full width again; only the Total column is narrow (user 20 Nov 2026). */
-.heat2 td.t, .heat2 tr > th:last-child, .heat2 tfoot td:last-child {width:1%;white-space:nowrap;padding-left:10px;padding-right:10px;}
+/* Monthly returns: full width, every month column and Total equal width (user 20 Nov 2026). */
+.heat2 {table-layout:fixed;}
+.heat2 th.y, .heat2 tr > :first-child {width:52px;}
 [data-export-all-status]:empty {display:none;}
 [data-export-all-box] {justify-content:flex-end;}
 .shelf-filters {display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:4px 0 18px;}
