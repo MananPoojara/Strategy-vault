@@ -11,7 +11,9 @@
 //! Cleaning, the same as `jay-local/Data/intraday/build_ieod_daily.py` (which builds the daily `ieodfo` basket from
 //! these files, so the daily carrier and the minutes agree): records dated before 1990 are skipped; a bar with any
 //! price <= 0 or not a number, or a second bar with the same date and minute, is dropped; a bar whose open or close
-//! lies outside its high-low range has the high / low widened to cover them. Both counts are kept in `Minutes`.
+//! lies outside its high-low range is counted (`widened`) but its stored high / low are kept, as AmiBroker keeps them
+//! (20-11-2026, SV-Audit 30 Min Breakout; the daily build script still widens its daily bars). Both counts are kept in
+//! `Minutes`.
 //!
 //! Tickers: only `basket:ieodfo:<SYMBOL>` resolves (the engine's daily carrier of the same symbol). Loaded files are
 //! kept in a small bounded cache (`CACHE_SYMBOLS` symbols, least recently used dropped); prices are stored as the
@@ -542,8 +544,12 @@ pub fn parse(b: &[u8], symbol: &str) -> Result<Minutes, String> {
         m.day.push(di);
         m.hhmm.push((hour * 100 + minute) as u16);
         m.o.push(o);
-        m.h.push(hi);
-        m.l.push(lo);
+        // AmiBroker keeps the stored high / low even when the open or close lies outside them (its H / L arrays and
+        // every level built on them use the raw values): counted in `widened`, not changed (SV-Audit 30 Min Breakout,
+        // BANKNIFTY 23-08-2012 09:15: open 10521 below low 10542.5)
+        let _ = (hi, lo);
+        m.h.push(h);
+        m.l.push(l);
         m.c.push(c);
         m.v.push(if v.is_finite() { v.max(0.0) } else { 0.0 });
         m.oi.push((oi.is_finite() && oi>=0.).then_some(oi));
@@ -601,7 +607,8 @@ pub(crate) mod tests {
         assert_eq!((m.dropped, m.widened), (2, 1));
         assert_eq!(m.dates, vec!["2022-03-01", "2022-03-02"]);
         assert_eq!(m.hhmm, vec![915, 916, 915]);
-        assert_eq!((m.h[1], m.c[1]), (101.0, 101.0));
+        // the close lies above the high: counted, but the stored high is kept, as AmiBroker does
+        assert_eq!((m.h[1], m.c[1]), (100.0, 101.0));
         assert_eq!(m.v[2], 0.0);
         assert_eq!(m.oi, vec![Some(0.0),Some(0.0),Some(0.0)]);
         let candles=compress(&m,5);
