@@ -615,7 +615,20 @@ fn full_precision_trade_return(v:f64)->String{
     if v.is_finite(){v.to_string()}else{"null".into()}
 }
 fn esc(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    // 20 Nov 2026: escape control characters too (a card note with a newline made the strategies endpoint invalid JSON)
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => o.push_str("\\\\"),
+            '"' => o.push_str("\\\""),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            '\t' => o.push_str("\\t"),
+            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o
 }
 fn stats_json(s: &BTreeMap<&str, f64>) -> String {
     let body: Vec<String> = s.iter().map(|(k, v)| format!("\"{k}\":{}", num(*v))).collect();
@@ -2290,6 +2303,11 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn esc_escapes_quotes_backslashes_and_control_characters() { // 20 Nov 2026: newline in a card note broke the strategies JSON
+        assert_eq!(super::esc("a\"b\\c\nd\te\r\u{1}"), "a\\\"b\\\\c\\nd\\te\\r\\u0001");
+    }
     use super::*;
     #[test]
     fn hv_exit_diagnostic_uses_actual_open_date_without_future_close_indicators() {
