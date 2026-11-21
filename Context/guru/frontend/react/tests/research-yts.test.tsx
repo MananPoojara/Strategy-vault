@@ -54,8 +54,9 @@ const setValue = async (el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaE
   el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
 });
 
-it('is registered as the "Research YTS" navigation page', () => {
-  expect(customPages.find(p => p.path === '/research-yts')).toMatchObject({ label: 'Research YTS', showInNavigation: true });
+it('keeps its #/research-yts address as a tab of Research, not a separate navigation item (20-11-2026)', () => {
+  expect(customPages.find(p => p.path === '/research-yts')).toMatchObject({ label: 'Research YTS', showInNavigation: false });
+  expect(customPages.find(p => p.path === '/research')).toMatchObject({ label: 'Research', showInNavigation: true });
 });
 
 it('lists collections that have strategies, with open counts, and the issues for a strategy', async () => {
