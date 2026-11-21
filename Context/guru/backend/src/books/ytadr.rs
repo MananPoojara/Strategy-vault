@@ -40,7 +40,7 @@
 //! Not coded: position sizing, MaxOpenPositions, commission and the ranking (PositionScore) of the 5DP AFL, which only
 //! choose between symbols in a portfolio backtest; plotting and exploration columns. The Short branch of the
 //! "Without RSI", "Two SuperTrend" and "Exit by N days" AFLs reads an undefined variable `Close0` and stops with an
-//! AmiBroker error, so those ids are long only.
+//! AmiBroker error; SV reads it as `Close` (declared adaptation, 20-11-2026), so those ids also run short.
 #![allow(dead_code)]
 use crate::books::yteng::rsi as rsi_afl;
 use crate::books::ytnr7::{athc, template_params, volsig17, Guard};
@@ -113,21 +113,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|N Candles (N 0 = off), AD Ratio threshold, or '5DP Entry': the bar N - 1 bars before a month's last trading day (N 0: the first trading day of the next month); at the close",
             X_ST, X_STOPS, X_LAST,
         ], concat!("Advance Decline LongShort_with5DayExit.afl, coded as the AFL is written; the 5DP exit looks ahead to the month's last trading day as the AFL does.", note_common!())),
-        def(NO_RSI, "ADR Threshold, Candle-Count Exits", "Long", &[
-            F_AR, "E|Long: AR at or below the threshold, at the close", F_ENTRY_N, F_AVG, F_PREV, F_ST,
+        def(NO_RSI, "ADR Threshold, Candle-Count Exits", "Long/Short", &[
+            F_AR, "E|Long: AR at or below the threshold; short (Entry Type, Close0 read as Close): AR at or above it; at the close", F_ENTRY_N, F_AVG, F_PREV, F_ST,
             "X|From the bar after entry: N Candles (N, 0 = off), AD Ratio at or above the exit threshold, or the Nth green candle (Open < Close) / up close (Close > previous Close) after entry; at the close",
             X_ST, X_STOPS, X_LAST,
-        ], concat!("Advance Decline LongShort_Versions_Without RSI.afl, coded as the AFL is written (entry tested before exit; no exit on the entry bar).", " Long only: the AFL's Short branch reads an undefined Close0 and stops with an AmiBroker error.", note_common!())),
-        def(TWO_ST, "ADR Threshold with Two ST Filters", "Long", &[
-            F_AR, "E|Long: AR at or below the threshold, at the close", F_ENTRY_N, F_AVG, F_PREV, F_ST,
+        ], concat!("Advance Decline LongShort_Versions_Without RSI.afl, coded as the AFL is written (entry tested before exit; no exit on the entry bar).", " Short (Entry Type Short, declared adaptation 20-11-2026): the AFL's Short branch sets ShortPrice = Close0, a variable it never defines, so AmiBroker stops with an error; SV reads it as Close (the only price every other entry and exit line uses). Everything else on the short side is the AFL's own code: AR at or above the threshold, its side-specific stop tests (High > HSL, Low < PB) and cover prices, AD Ratio exit at or below the exit threshold. The team's ADR workbooks have no short trades, so the short side is not compared.", note_common!())),
+        def(TWO_ST, "ADR Threshold with Two ST Filters", "Long/Short", &[
+            F_AR, "E|Long: AR at or below the threshold; short (Entry Type, Close0 read as Close): AR at or above it; at the close", F_ENTRY_N, F_AVG, F_PREV, F_ST,
             "F|ST 2 filter (off): a second ST of the same kind, with its own settings",
             "X|N Candles, AD Ratio, green-candle or up-close count, as in the 'Without RSI' AFL; either ST turning against its setting; at the close",
             X_STOPS, X_LAST,
-        ], concat!("Advance Decline LongShort_Versions_Two_SuperTrend.afl, coded as the AFL is written (the 'Without RSI' rules plus ST 2).", " Long only: the AFL's Short branch reads an undefined Close0 and stops with an AmiBroker error.", note_common!())),
-        def(NDAY, "ADR Consecutive Days with ST Filter, N-Day Exit", "Long", &[
-            F_AR, "E|Long: AR at or below the threshold (0) on N (1) consecutive bars and the daily ST (5, 1) bullish, at the close", F_AVG, F_PREV,
+        ], concat!("Advance Decline LongShort_Versions_Two_SuperTrend.afl, coded as the AFL is written (the 'Without RSI' rules plus ST 2).", " Short (Entry Type Short, declared adaptation 20-11-2026): the AFL's Short branch sets ShortPrice = Close0, a variable it never defines, so AmiBroker stops with an error; SV reads it as Close (the only price every other entry and exit line uses). Everything else on the short side is the AFL's own code: AR at or above the threshold, its side-specific stop tests (High > HSL, Low < PB) and cover prices, AD Ratio exit at or below the exit threshold. The team's ADR workbooks have no short trades, so the short side is not compared.", note_common!())),
+        def(NDAY, "ADR Consecutive Days with ST Filter, N-Day Exit", "Long/Short", &[
+            F_AR, "E|Long: AR at or below the threshold (0) on N (1) consecutive bars and the daily ST (5, 1) bullish, at the close; short (Entry Type, Close0 read as Close): AR at or above it", F_AVG, F_PREV,
             "X|N Candles (N 0 = off) or AD Ratio exit; the ST turning bearish; at the close", X_STOPS, "X|Buffer 0.25 %", X_LAST,
-        ], concat!("Exit by N days/HSL- PB Optim/V1+V2/Advance Decline LongShort_Versions_Without RSI.afl, coded as the AFL is written (the older 'Without RSI' version: exit tested before entry, N Candles / AD Ratio exits only, ST filter and consecutive candles on, buffer 0.25 %).", " The pb/ copy has the same rules and defaults (only Optimize ranges differ); the sl+pb/ copy differs only by the ST filter off by default (st_on 0).", " Long only: the Short branch reads an undefined Close0 and stops with an AmiBroker error.", note_common!())),
+        ], concat!("Exit by N days/HSL- PB Optim/V1+V2/Advance Decline LongShort_Versions_Without RSI.afl, coded as the AFL is written (the older 'Without RSI' version: exit tested before entry, N Candles / AD Ratio exits only, ST filter and consecutive candles on, buffer 0.25 %).", " The pb/ copy has the same rules and defaults (only Optimize ranges differ); the sl+pb/ copy differs only by the ST filter off by default (st_on 0).", " Short (Entry Type Short, declared adaptation 20-11-2026): the AFL's Short branch sets ShortPrice = Close0, a variable it never defines, so AmiBroker stops with an error; SV reads it as Close (the only price every other entry and exit line uses). Everything else on the short side is the AFL's own code: AR at or above the threshold, its side-specific stop tests (High > HSL, Low < PB) and cover prices, AD Ratio exit at or below the exit threshold. The team's ADR workbooks have no short trades, so the short side is not compared.", note_common!())),
         def(P211, "2-11 / 5DP Month Window with ADR Filter", "Long", &[
             "F|Window (Patch): 2-11 = from the Entry Day-th (5) trading day of a month to Exit Day (5) bars later; 5DP = from Entry Day - 1 bars before the month's last trading day to the Exit Day-th trading day of the next month",
             "F|ADR filter (off): AR at or below the threshold, consecutive or within the look back as in the other ADR AFLs",
@@ -208,9 +208,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         }
         VERSIONS | FIVE_EXIT | NO_RSI | TWO_ST | NDAY => {
             let kind = kind_of(id)?;
-            if matches!(kind, Kind::Versions | Kind::FiveExit) {
-                v.push(p("entry_type", "Entry type (0 long, 1 short)", 0.0, 0.0, 1.0, 1.0));
-            }
+            v.push(p("entry_type", "Entry type (0 long, 1 short)", 0.0, 0.0, 1.0, 1.0));
             st_params(&mut v, if kind == Kind::NDay { 1.0 } else { 0.0 }, 10.0);
             if kind == Kind::TwoSt {
                 v.push(p("st2_on", "ST 2 filter (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0));
@@ -604,11 +602,11 @@ enum Kind {
     Versions,
     /// with5DayExit.afl: Versions plus the "5DP Entry" exit, side-specific stop tests
     FiveExit,
-    /// Versions_Without RSI.afl: entry before exit, green-candle / up-close exits, long only
+    /// Versions_Without RSI.afl: entry before exit, green-candle / up-close exits (short: Close0 read as Close)
     NoRsi,
     /// Two_SuperTrend.afl: NoRsi plus a second ST
     TwoSt,
-    /// Exit by N days copies: exit before entry, N Candles / AD Ratio exits, long only
+    /// Exit by N days copies: exit before entry, N Candles / AD Ratio exits (short: Close0 read as Close)
     NDay,
 }
 
@@ -635,7 +633,8 @@ fn versions(kind: Kind, x: &Ctx, g: &dyn Fn(&str) -> f64) -> Option<Px> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
     let ratio = ad_ratio(x, breadth_index(Some(gi(g, "breadth") as f64)), Some(50.0))?;
-    let short = matches!(kind, Kind::Versions | Kind::FiveExit) && gi(g, "entry_type") == 1;
+    // all five AFLs have the Entry Type Long|Short ParamList; the three with ShortPrice = Close0 read it as Close
+    let short = gi(g, "entry_type") == 1;
     // entry signal: AR (or its N-bar mean) against the threshold
     let navg = gu(g, "avg_n");
     let mut adr_avg = vec![0.0; n];
@@ -1047,6 +1046,23 @@ mod tests {
         assert_eq!(breadth_index(Some(1.0)), 1);
         assert_eq!(breadth_index(Some(2.0)), 2);
         assert_eq!(SERIES[breadth_index(None)], ["ADVANCES_N50", "DECLINES_N50"]);
+    }
+
+    #[test]
+    fn close0_afls_run_short_at_the_close() {
+        // AR 3 on every bar but 10; short when AR >= 2 (the AFL's Short branch with Close0 read as Close)
+        let x = ctx(&flat(30), &[10]);
+        for id in [NO_RSI, TWO_ST, NDAY] {
+            let t = run(id, &x, 0, 29, &ps(&[("entry_type", 1.0), ("adr_thr", 2.0), ("exit_n", 3.0), ("st_on", 0.0), ("consecutive", 0.0)])).unwrap();
+            assert!(!t.is_empty(), "{id}");
+            assert!(t.iter().all(|t| t.dir == -1.0 && t.legs[0].px == 100.0), "{id}");
+            // still long by default
+            assert!(run(id, &x, 0, 29, &ps(&[("adr_thr", 0.5), ("exit_n", 3.0), ("st_on", 0.0), ("consecutive", 0.0)])).unwrap().iter().all(|t| t.dir == 1.0), "{id}");
+        }
+        // side-specific short stop (High > HSL), tested from the bar after entry
+        let x = ctx(&rising(30), &[]);
+        let t = run(NO_RSI, &x, 0, 29, &ps(&[("entry_type", 1.0), ("adr_thr", 2.0), ("hsl_pct", 0.3)])).unwrap();
+        assert_eq!((t[0].dir, t[0].exit_i - t[0].legs[0].i, t[0].reason.as_str()), (-1.0, 1, "HSL"));
     }
 
     #[test]

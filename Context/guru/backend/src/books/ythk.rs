@@ -43,7 +43,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy at the real Close when flat",
             "X|Sell signal: yesterday's HaClose > Supertrend OR today's HaClose < Supertrend (dead-stock exit off by default)",
             "X|Because the buy bar closes above the Supertrend, the sell signal is true on the next bar: every trade exits at the next bar's real Close",
-        ], "ST BUY SELL ON HEIKIN ASHI CHART WITH REAL PRICE - Copy.afl, coded as written. It differs from the main AFL only in a dead-stock toggle (default NO, no effect) and the sell line, which uses OR instead of AND; as written that sells on the bar after every buy."),
+        ], "ST BUY SELL ON HEIKIN ASHI CHART WITH REAL PRICE - Copy.afl. Declared adaptation (20-11-2026): the AFL cannot run in AmiBroker as written, because the dead-stock block's `else {` (deadstockbuysig = BarIndex() != 0; deadstocksellsig = 0;) is never closed (18 '{' against 17 '}'), a syntax error, so AmiBroker gives 0 trades (SV-Audit). SV runs it with that brace closed after `deadstocksellsig = 0;`; everything else is as written. It then differs from the main AFL only in the dead-stock toggle (default NO: no forced exit on the last bar, as SV codes it) and the sell line, which uses OR instead of AND: the sell signal is true on the bar after every buy, so every trade lasts one bar. BKSTFLT (Close > deadstockbuysig) is computed but, as in the main AFL, not used by the signals."),
     ]
 }
 
