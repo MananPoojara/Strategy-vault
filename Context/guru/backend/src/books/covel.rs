@@ -448,15 +448,7 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
         };
         let mut s = St6 { pos: cur.take(), done: None, closed: false };
         let (o, h, l, c) = (x.o[i], x.h[i], x.l[i], x.c[i]);
-        let probe = |z: &mut St6, hf: bool| { let mut e = walk(z, &[]); e.extend(walk(z, &bar_segs(o, h, l, c, hf))); e };
-        // V10 20 Nov (tracker cov_turtle_s2 23-05-2019): when the two extreme bar orders give the SAME fills the path decides the day (no minutes needed); the daily rule `conv` (stops
-        // before adds, on the stops of the day before) can contradict that: units added on the way up and a close back below their raised stop must have crossed it, so such a day
-        // takes the path outcome. Days the two orders disagree still go to the minutes (resolve_conv); days with no path agreement keep `conv`.
-        let conv2 = |z: &mut St6| {
-            let (mut a, mut b2) = (z.clone(), z.clone());
-            if probe(&mut a, true) == probe(&mut b2, false) { *z = a; } else { conv(z); }
-        };
-        let day = resolve_conv(x, i, true, &mut s, |z| conv2(z), |z, hf| probe(z, hf), &walk);
+        let day = resolve_conv(x, i, true, &mut s, |z| conv(z), |z, hf| { let mut e = walk(z, &[]); e.extend(walk(z, &bar_segs(o, h, l, c, hf))); e }, &walk);
         if let Some(mut p) = s.done.take() { p.od = p.od.worst(day); out.push(fin(p, false)); }
         if let Some(p) = s.pos.as_mut() { p.od = p.od.worst(day); }
         cur = s.pos;
@@ -770,26 +762,6 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].legs.iter().map(|l| (l.i, l.px)).collect::<Vec<_>>(), vec![(60, 100.0), (61, 103.0)]);
         assert!(!t[0].open && t[0].exit_i == 62 && t[0].exit_px == 96.0 && t[0].exits.is_empty(), "{:?} {} {:?}", t[0].exits, t[0].exit_px, t[0].reason);
-    }
-
-    /// V10 (tracker cov_turtle_s2 23-05-2019): a day on which both extreme bar orders give the same fills is settled by the path, not by the daily rule. Units added on the way up
-    /// (101, 102, 103: every stop rises by one add step to 99) and a close back at 98 must have crossed the raised stops although the low (98) never reached the old stop (96): all four
-    /// units leave on that bar at 99 (the daily rule used to hold them until the next bar).
-    #[test]
-    fn a_day_whose_two_bar_orders_agree_stops_units_added_and_reversed_inside_it() {
-        let d = |k: usize| format!("2000-{:02}-{:02}", 1 + k / 28, 1 + k % 28);
-        let mk = |k: usize, o: f64, h: f64, l: f64, c: f64| Row { ticker: "T".into(), date: d(k), open: o, high: h, low: l, close: c, volume: None };
-        let mut r: Vec<Row> = (0..60).map(|k| mk(k, 98.0, 100.0, 96.0, 98.0)).collect();
-        r.push(mk(60, 99.0, 100.5, 98.8, 100.2)); // entry at 100 (stop 96, next add 101)
-        r.push(mk(61, 100.2, 103.2, 98.0, 98.0)); // adds at 101, 102, 103 on the way up; closes at 98 under the raised stops (99); low 98 > the old stop 96
-        r.push(mk(62, 98.0, 98.5, 97.5, 98.0));
-        let x = Ctx::new(&r, &r, &[]);
-        let p: Params = [("ticks".to_string(), 0.0), ("stop_n".to_string(), 1.0), ("add_n".to_string(), 0.25)].into();
-        let t = run("cov_turtle_s2", &x, 55, r.len() - 1, &p).unwrap();
-        // the flat warm-up bars trade too (no minute window here); the position of interest is the last one
-        let z = t.last().unwrap();
-        assert_eq!(z.legs.iter().map(|l| (l.i, l.px)).collect::<Vec<_>>(), vec![(60, 100.0), (61, 101.0), (61, 102.0), (61, 103.0)]);
-        assert!(!z.open && z.exit_i == 61 && z.exit_px == 99.0, "{} {} {:?}", z.exit_i, z.exit_px, z.exits);
     }
 
     #[test]
