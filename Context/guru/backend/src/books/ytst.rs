@@ -717,20 +717,26 @@ impl Sig {
 /// AmiBroker regular backtest at the close of ExRem'd signals (side 1 long only, 2 short only, 3 long and short,
 /// reversing), with optional ApplyStop profit % and N-bar stops (0 off) checked from the bar after entry.
 fn backtest(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usize, to: usize) -> Vec<Trade> {
-    backtest_px(x, s, side, pb_pct, nbar, from, to, false)
+    backtest_px(x, s, side, pb_pct, nbar, from, to, false, false)
 }
 
 /// `backtest`; with `cover_vw` the AFL's `CoverPrice = ValueWhen(Cover, C)`: a short closed by the N-bar stop fills at
 /// the Close of the last (ExRem'd) Cover signal bar, kept inside the bar's range (SV-Audit Supertrend Error 2: AmiBroker
 /// covered at 1249.10, that bar's High, where the plain Close was 1246.75).
-fn backtest_px(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usize, to: usize, cover_vw: bool) -> Vec<Trade> {
+/// With `rev_vw` the AFL's `SellPrice = ValueWhen(Sell, C)` / `CoverPrice = ValueWhen(Cover, C)` also price a reversal:
+/// a long closed by a Short signal on a bar without a Sell fills at the Close of the last (ExRem'd) Sell bar, kept inside
+/// the bar's range (a short closed by a Buy likewise at the last Cover's Close), as AmiBroker's reverse uses the exit
+/// price arrays (REGIM-2 trade sheets 20-11-2026: all 49 price differences were such reversals).
+fn backtest_px(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usize, to: usize, cover_vw: bool, rev_vw: bool) -> Vec<Trade> {
     let buy = exrem(&s.buy, &s.sell);
     let sell = exrem(&s.sell, &buy);
     let short = exrem(&s.short, &s.cover);
     let cover = exrem(&s.cover, &short);
     let mut last_cover: Vec<Option<f64>> = vec![None; x.c.len()];
+    let mut last_sell: Vec<Option<f64>> = vec![None; x.c.len()];
     for i in 0..x.c.len() {
         last_cover[i] = if cover[i] { Some(x.c[i]) } else if i > 0 { last_cover[i - 1] } else { None };
+        last_sell[i] = if sell[i] { Some(x.c[i]) } else if i > 0 { last_sell[i - 1] } else { None };
     }
     let (longs, shorts) = (side != 2, side != 1);
     let mut out = Vec::new();
@@ -754,7 +760,9 @@ fn backtest_px(x: &Ctx, s: &Sig, side: i64, pb_pct: f64, nbar: usize, from: usiz
             if ex.is_none() {
                 let sig = if d > 0.0 { sell[i] || (side == 3 && short[i]) } else { cover[i] || (side == 3 && buy[i]) };
                 if sig {
-                    ex = Some((x.c[i], if d > 0.0 { "Sell signal" } else { "Cover signal" }));
+                    let own = if d > 0.0 { sell[i] } else { cover[i] };
+                    let px = if rev_vw && !own { (if d > 0.0 { last_sell[i] } else { last_cover[i] }).unwrap_or(x.c[i]) } else { x.c[i] };
+                    ex = Some((px, if own || !rev_vw { if d > 0.0 { "Sell signal" } else { "Cover signal" } } else if d > 0.0 { "Reversed by Short" } else { "Reversed by Buy" }));
                 }
             }
             if let Some((px, r)) = ex {
@@ -1573,7 +1581,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             let pb_pct = if id == BEAR { g("pb_pct") } else { 0.0 };
             let nbar = if id == BEAR || id == BEAR_TIME { g("hold_bars").round().max(0.0) as usize } else { 0 };
-            backtest_px(x, &s, side, pb_pct, nbar, from, to, id == BEAR || id == BEAR_TIME)
+            backtest_px(x, &s, side, pb_pct, nbar, from, to, id == BEAR || id == BEAR_TIME, id == REGIM2)
         }
     })
 }
@@ -1627,6 +1635,26 @@ mod tests {
         // long only: no shorts
         let tl = go(run, ALL, &r, &[("side", 1.0)]);
         assert!(tl.len() == 2);
+    }
+
+    #[test]
+    fn regim2_reversal_exits_at_the_last_sell_close() {
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..9).map(|k| bar(100.0 + k as f64)).collect();
+        v[6] = (106.0, 108.0, 101.0, 106.0); // wide bar: the last Sell's Close 102 lies inside it
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let mut s = Sig::new(9);
+        s.buy[0] = true;
+        s.sell[2] = true;
+        s.buy[4] = true;
+        s.short[6] = true; // no Sell on bar 6: the long is reversed at SellPrice = ValueWhen(Sell, C) = 102
+        let t = backtest_px(&x, &s, 3, 0.0, 0, 0, 8, false, true);
+        assert_eq!((t[1].legs[0].i, t[1].exit_i, t[1].exit_px), (4, 6, 102.0));
+        assert_eq!(t[1].reason, "Reversed by Short");
+        assert_eq!((t[2].dir, t[2].legs[0].i, t[2].legs[0].px), (-1.0, 6, 106.0));
+        // other ids keep the Close
+        let t = backtest_px(&x, &s, 3, 0.0, 0, 0, 8, false, false);
+        assert_eq!((t[1].exit_i, t[1].exit_px), (6, 106.0));
     }
 
     #[test]

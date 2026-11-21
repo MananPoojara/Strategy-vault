@@ -43,6 +43,8 @@
 use crate::books::ytsw::{close_swing, compress, expand_last};
 use crate::books::ytwh::{bound, collect, loop_val, Ev};
 use crate::books::ab::rsi_nan as rsi;
+// AFL `TSL = HC_Af_Buy - (HC_Af_Buy * TSL_Pct/100)` is float32 (AFL numbers are float32), compared with float32 Close
+use crate::books::ab::{addmul, f32r};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_tr";
@@ -299,7 +301,7 @@ pub(crate) fn cross_loop_fo(x: &Ctx, s: &Mwd, k: &CrossCfg, fo: Option<Fo>) -> V
             hi_rsi = d;
             if k.tsl_pct > 0.0 {
                 hc = c[i];
-                tsl = hc - hc * k.tsl_pct / 100.0;
+                tsl = addmul(hc, -k.tsl_pct / 100.0);
             }
             if k.rsi_trail > 0.0 {
                 rsi_trail = hi_rsi - k.rsi_trail;
@@ -322,12 +324,12 @@ pub(crate) fn cross_loop_fo(x: &Ctx, s: &Mwd, k: &CrossCfg, fo: Option<Fo>) -> V
             let aux_next = fo.is_some_and(|f| f.aux2.get(i + 1).is_some_and(|&v| v == f.next_eq));
             // `... OR ( hard_sl AND L <= hsl ) AND Aux2[i+1] == K`: AND binds tighter than OR in AFL
             let hsl_sell = hsl_hit && (fo.is_none() || aux_next);
-            let cond = c[i] <= tsl || d < rsi_trail || d < k.d_exit || athc_off || (k.swing_exit && trend[i] == -1) || hsl_sell;
+            let cond = f32r(c[i]) <= tsl || d < rsi_trail || d < k.d_exit || athc_off || (k.swing_exit && trend[i] == -1) || hsl_sell;
             if cond {
                 if !lc(x, i) || hsl_hit || athc_off || aux_next {
                     let r = if hsl_sell {
                         "Hard SL"
-                    } else if c[i] <= tsl {
+                    } else if f32r(c[i]) <= tsl {
                         "Trail SL"
                     } else if d < rsi_trail {
                         "RSI trail"
@@ -354,7 +356,7 @@ pub(crate) fn cross_loop_fo(x: &Ctx, s: &Mwd, k: &CrossCfg, fo: Option<Fo>) -> V
                     skip = true;
                 }
             } else if k.tsl_pct > 0.0 {
-                tsl = hc - hc * k.tsl_pct / 100.0;
+                tsl = addmul(hc, -k.tsl_pct / 100.0);
             }
         } else if skip && !lc(x, i) {
             sell(&mut evs, i, c[i], "Blocked exit, next bar");
@@ -405,7 +407,7 @@ pub(crate) fn trail_loop(x: &Ctx, s: &Mwd, k: &TrailCfg) -> Vec<Ev> {
             hi_rsi = d;
             if k.tsl_pct > 0.0 {
                 hc = c[i];
-                tsl = hc - hc * k.tsl_pct / 100.0;
+                tsl = addmul(hc, -k.tsl_pct / 100.0);
             }
             if k.trail_exit > 0.0 {
                 rsi_trail = hi_rsi - k.trail_exit;
@@ -423,10 +425,10 @@ pub(crate) fn trail_loop(x: &Ctx, s: &Mwd, k: &TrailCfg) -> Vec<Ev> {
             if k.tsl_pct > 0.0 {
                 hc = hc.max(c[i]);
             }
-            if c[i] <= tsl || d < rsi_trail || d < k.d_exit {
+            if f32r(c[i]) <= tsl || d < rsi_trail || d < k.d_exit {
                 // the AFL sets SkipSell on an LC bar, but its sell branch never reads it: the exit is re-tested next bar
                 if !lc(x, i) {
-                    let r = if c[i] <= tsl { "Trail SL" } else if d < rsi_trail { "RSI trail" } else { "Daily RSI exit" };
+                    let r = if f32r(c[i]) <= tsl { "Trail SL" } else if d < rsi_trail { "RSI trail" } else { "Daily RSI exit" };
                     if let Some(v) = evs.last_mut() {
                         v.exit = Some((i, bound(x, i, c[i]), i, r));
                     }
@@ -437,7 +439,7 @@ pub(crate) fn trail_loop(x: &Ctx, s: &Mwd, k: &TrailCfg) -> Vec<Ev> {
                     tsl = 0.0;
                 }
             } else if k.tsl_pct > 0.0 {
-                tsl = hc - hc * k.tsl_pct / 100.0;
+                tsl = addmul(hc, -k.tsl_pct / 100.0);
             }
         }
     }
@@ -593,6 +595,21 @@ mod tests {
         let e = cross_loop(&x, &Mwd { d, w: hi(8), m: hi(8) }, &cfg());
         assert_eq!(ev(&e), vec![(2, Some(5), "Blocked exit, next bar")]);
         assert!((e[0].exit.unwrap().1 - 104.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn trail_sl_is_float32_in_the_afl_shape() {
+        // EVEREADY 2003: highest close 26, TSL 15% = 26 - 26 * 15 / 100 = 22.100000381 in float32 = the Close 22.1
+        // (float32), so AmiBroker sells on that bar; 64-bit 22.1 > 22.099999999999998 held one more bar
+        let mut v = quiet(8);
+        v[2] = (26.0, 26.5, 25.5, 26.0);
+        v[3] = (25.0, 25.5, 24.5, 25.0);
+        v[4] = (22.5, 23.0, 22.0, 22.1);
+        let r = bars(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let d = some(&[50.0, 50.0, 61.0, 70.0, 70.0, 70.0, 70.0, 70.0]);
+        let k = CrossCfg { rsi_trail: 0.0, tsl_pct: 15.0, ..cfg() };
+        assert_eq!(ev(&cross_loop(&x, &Mwd { d, w: hi(8), m: hi(8) }, &k)), vec![(2, Some(4), "Trail SL")]);
     }
 
     #[test]

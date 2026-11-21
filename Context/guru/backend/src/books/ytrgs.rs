@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|BEAR longs: as BULL but scale out while the ST is down and sell all when it turns up; shorts: cover on a red-drop candle (one piece) or when the ST turns up, scale out on red-drop candles; no cover on a bar whose High = Close",
             "F|Each entry and each scale-out is one equal piece of equity (the AFL's SIZE / 50 % of equity; 2% at SIZE 100, the folder's 2%)",
         ],
-        notes: "Red Candle Buy and Green Candle Sell with Scalein and Scaleout (Regim 1).afl (trade_ver 1) and Red Candle Buy(Cover) and Green Candle Sell(Short) with Scalein and Scaleout (Regim 2).afl (its default BULL branch is identical to Regim 1; trade_ver 2 = its BEAR branch), both copies of each, coded as the AFLs are written. Sizing [declared adaptation]: the AFLs size every entry and scale-out at SIZE / 50 % of equity; at the default SIZE 1 that is 0.02% of equity, under one Nifty unit with RoundLotSize 1, so the defaults could not trade as literally set. Each piece is coded as 2% of the allocation (SIZE 100, the folder's '2% scale-in'), at most 50 pieces; a scale-out sells shares worth 2% of the allocation (AmiBroker: of current equity), fractional shares. The trade's P&L is exact for that share arithmetic; equity marks between the pieces are approximate. In BEAR the short scale-in uses EXIT % and the short cover / scale-out ENTRY %, as written. Loop positions opened before the test window are not traded, nor their adds and exits.",
+        notes: "Red Candle Buy and Green Candle Sell with Scalein and Scaleout (Regim 1).afl (trade_ver 1) and Red Candle Buy(Cover) and Green Candle Sell(Short) with Scalein and Scaleout (Regim 2).afl (its default BULL branch is identical to Regim 1; trade_ver 2 = its BEAR branch), both copies of each, coded as the AFLs are written. Sizing [declared adaptation]: the AFLs size every entry and scale-out at SIZE / 50 % of equity; at the default SIZE 1 that is 0.02% of equity, under one Nifty unit with RoundLotSize 1, so the defaults could not trade as literally set. Each piece is coded as 2% of the allocation (SIZE 100, the folder's '2% scale-in'), at most 50 pieces held at a time (adds less scale-outs: a scale-out frees room for a further add); a scale-out sells shares worth 2% of the allocation (AmiBroker: of current equity), fractional shares. The trade's P&L is exact for that share arithmetic; equity marks between the pieces are approximate. In BEAR the short scale-in uses EXIT % and the short cover / scale-out ENTRY %, as written. Loop positions opened before the test window are not traded, nor their adds and exits.",
         claim: None,
     }]
 }
@@ -124,6 +124,7 @@ struct Build {
     legs: Vec<Leg>,
     outs: Vec<(usize, f64, f64)>, // bar, price, shares
     shares: f64,
+    cost: f64, // allocation still invested: the money put in less the money taken out (pieces held x w)
 }
 
 impl Build {
@@ -163,7 +164,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (mt, tup) = (expand_last(&tr, &b), expand_last(&tu, &b));
     let (ep, xp) = (g("entry_pct"), g("exit_pct"));
     let w = (g("leg_pct") / 100.0).clamp(1e-6, 1.0);
-    let max_legs = ((1.0 / w) + 1e-9).floor().max(1.0) as usize;
     let bear = gi("trade_ver") == 2;
 
     let red_drop = |i: usize| o[i] > c[i] && c[i] < c[i - 1] - c[i - 1] * ep / 100.0;
@@ -257,14 +257,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         match sig {
             Sig::Open => {
                 if i >= from {
-                    cur = Some(Build { dir, legs: vec![Leg { i, px: c[i], w }], outs: Vec::new(), shares: w / c[i] });
+                    cur = Some(Build { dir, legs: vec![Leg { i, px: c[i], w }], outs: Vec::new(), shares: w / c[i], cost: w });
                 }
             }
             Sig::In => {
                 if let Some(t) = cur.as_mut() {
-                    if t.legs.len() < max_legs {
+                    // the limit is the allocation still invested (money in less money out = the pieces held: adds less
+                    // scale-outs), not every add made: a long Bear trade scales in again after its scale-outs
+                    if t.cost + w <= 1.0 + 1e-9 {
                         t.legs.push(Leg { i, px: c[i], w });
                         t.shares += w / c[i];
+                        t.cost += w;
                     }
                 }
             }
@@ -276,6 +279,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                         out.push(t.finish(i, c[i], "Scale-out sold the rest", false));
                     } else {
                         t.outs.push((i, c[i], q));
+                        t.cost -= q * c[i];
                         t.shares -= q;
                         cur = Some(t);
                     }
@@ -338,6 +342,21 @@ mod tests {
     }
 
     #[test]
+    fn scale_in_limit_counts_pieces_held() {
+        // 50% pieces: two held is the limit; after a scale-out a further red-drop candle adds again
+        let mut v = series();
+        v.truncate(13); // buy 10, add 11, scale out 12
+        v.push((108.0, 108.2, 105.5, 106.0)); // bar 13: red, -1.85% -> add (one piece held)
+        v.push((106.0, 106.5, 104.0, 104.5)); // bar 14: red, -1.4% -> two held: no add
+        let r = bars(&v);
+        let kv = [("st_tf", 3.0), ("st_period", 1.0), ("st_factor", 10.0), ("leg_pct", 50.0)];
+        let t = trades(&r, &kv);
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].legs.iter().map(|l| l.i).collect::<Vec<_>>(), vec![10, 11, 13]);
+        assert!(t[0].open);
+    }
+
+    #[test]
     fn st_down_sells_all_and_bear_branch_trades() {
         let mut v = series();
         v.truncate(12);
@@ -382,7 +401,8 @@ mod tests {
                     assert!((t.exits.iter().map(|e| e.2).sum::<f64>() - 1.0).abs() < 1e-9);
                     assert_eq!(t.exits.last().unwrap().0, t.exit_i);
                 }
-                assert!(t.legs.iter().map(|l| l.w).sum::<f64>() <= 1.0 + 1e-9);
+                // the engine's admission: never more than the allocation held at average cost
+                assert!(crate::trade_validation::check_structure(std::slice::from_ref(&t), 0, r.len() - 1).is_ok());
             }
         }
     }
