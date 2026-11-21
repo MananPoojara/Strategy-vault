@@ -99,7 +99,7 @@ pub fn path_points_with(ctx:&Ctx,t:&Trade,level:bool)->Vec<(usize,f64)> {
         let inside=|m:&[crate::intraday::Bar1],from:usize,px:f64|m.iter().skip(from).position(|b|b.l<=px&&px<=b.h).map(|j|(j+from,false)).or_else(||
             (from.max(1)..m.len()).find(|&j|(m[j-1].c-px)*(m[j].o-px)<0.).map(|j|(j,true)));
         let minute=pday(k).and_then(|m|{
-            let (lo,mut p)=match start {Fill::At(px)=>{let (j,gap)=if t.entry_kind=="limit" {first_touch(&m,px,t.dir>0.).or_else(||inside(&m,0,px))?} else {inside(&m,0,px)?};(if gap {j} else {j+1},vec![px])},_=>(0,vec![])};
+            let (lo,mut p)=match start {Fill::At(px)=>{let (j,gap)=if t.entry_kind=="limit" {first_touch(&m,px,t.dir>0.,o(k)).or_else(||inside(&m,0,px))?} else {inside(&m,0,px)?};(if gap {j} else {j+1},vec![px])},_=>(0,vec![])};
             let hi=match end {Fill::At(px)=>{let from=lo.saturating_sub(1);let j=match inside(&m,from,px) {Some(r)=>r.0,None if level=>nearest(&m,from,px)?,None=>return None};p.push(px);j.max(lo)},_=>m.len()};
             for b in &m[lo..hi] {p.push(b.l);p.push(b.h);}
             Some(p)
@@ -124,10 +124,12 @@ fn nearest(m:&[crate::intraday::Bar1],from:usize,px:f64)->Option<usize> {
 /// The minute where a LIMIT entry at `px` was first touched: a buy limit (`buy`) when a low is <= px, a sell limit when a high is >= px; a minute that
 /// opened beyond px is a gap (its whole range lies after the fill). The old "first minute whose range holds px" came later than a minute that jumped
 /// over px, so a rebound after the jump was left out of MFE (r3r4 limit 5735.804 on 18-01-2008: touched 14:52, found 15:03). R4 #349 (2).
-fn first_touch(m:&[crate::intraday::Bar1],px:f64,buy:bool)->Option<(usize,bool)> {
+fn first_touch(m:&[crate::intraday::Bar1],px:f64,buy:bool,day_open:f64)->Option<(usize,bool)> {
     // W4 (R4 #351 (3)): a first touch at the session's FIRST minute that already opens beyond px means the order was not live at the open (an intraday-placed limit: stad7_fibret,
     // twsifp_cci); a live-from-open limit would have filled at that open. No order time is known here, so keep the old reading (first minute that trades px) for those.
-    m.iter().position(|b|if buy {b.l<=px} else {b.h>=px}).map(|j|(j,if buy {m[j].o<px} else {m[j].o>px})).filter(|&(j,gap)|!(j==0&&gap))
+    m.iter().position(|b|if buy {b.l<=px} else {b.h>=px}).map(|j|(j,if buy {m[j].o<px} else {m[j].o>px}))// V10 20 Nov (tracker r3r4_bigcap_deck 22-01-2008): when the DAILY open lies on the far side of px the order was live at the open, so a first valid minute that already
+    // opens through px (the minutes before it dropped as outside the daily range, e.g. a stale first print) is a real gap fill, not a late-placed order.
+    .filter(|&(j,gap)|!(j==0&&gap)||(if buy {day_open>px} else {day_open<px}))
 }
 
 /// (MAE, MFE, bars counted) as fractions of the trade's allocation, gross; None when no finite point exists.
@@ -403,6 +405,19 @@ mod tests {
         let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
         x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
         pair(ex(&x,&one(1.,1,105.5,"limit",1,106.5,1)),(0.,106.5/105.5-1.));
+        let _=std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_limit_live_at_the_daily_open_and_gapped_through_at_the_first_valid_minute_counts_that_minute(){
+        // V10 (tracker r3r4_bigcap_deck 22-01-2008): the daily open (104) is above the buy limit 103, the first valid minute already opens through it (101): a real gap fill, the position
+        // lived through that minute's low (100); the old reading dropped the minute and counted the fill price only
+        let dir=std::env::temp_dir().join(format!("mae-live-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();
+        let day="2020-01-02,09:30,101,102,100,101.5\n2020-01-02,09:31,101.5,106,101,105\n";
+        std::fs::write(dir.join("TEST.m1.csv"),day).unwrap();
+        std::fs::write(dir.join("TEST.m1idx.csv"),format!("Date,offset,bytes\n2020-01-02,0,{}\n",day.len())).unwrap();
+        let r=path_rows();let mut x=Ctx::new(&r,&r,&[]);
+        x.minutes=crate::intraday::Minutes::load(dir.to_str().unwrap(),"TEST").map(|m|&*Box::leak(Box::new(m)));
+        pair(ex(&x,&one(1.,1,103.,"limit",1,105.,1)),(100./103.-1.,105./103.-1.));
         let _=std::fs::remove_dir_all(&dir);
     }
     #[test]
