@@ -4,7 +4,7 @@ const ID:&str="lkqts_sob";
 fn rows(c:&[f64],symbol:&str)->Vec<Row>{
     c.iter().enumerate().map(|(i,&close)|Row{ticker:symbol.into(),date:format!("2000-{:02}-{:02}",i/28+1,i%28+1),open:close,high:close*1.01,low:close*0.99,close,volume:Some(1.)}).collect()
 }
-fn empty()->State {State{ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()}}
+fn empty()->State {State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()}}
 fn owned(raw:&str)->BTreeMap<String,String>{owned_query(&query(&format!("/api/guru/connors/run?{raw}")).1,"connors")}
 fn sob_def()->connors::StrategyDef{books::lkqts::catalogue().into_iter().find(|d|d.id==ID).unwrap()}
 

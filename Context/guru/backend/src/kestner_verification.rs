@@ -334,7 +334,7 @@ fn account_long_large_loss_still_positive_combined(){let (r,t)=account_input_lon
 
 #[test]
 fn candidate_queries_reject_raw_rounding_unknown_fields_and_non_singleton_grids() {
-    let state=State{ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()};
+    let state=State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()};
     for &id in books::lkqts::STOCK_CANDIDATE_IDS {
         let base=BTreeMap::from([("id".into(),id.into())]);
         assert!(checked_params_of(&base).is_ok());
@@ -472,7 +472,7 @@ fn selected_stock_policy_cannot_be_forged_with_native_request_flags() {
         let mut r=rows(&vec![(100.,101.,99.,100.);100]);for row in &mut r{row.ticker=symbol.into();}
         let leaked=Box::leak(r.into_boxed_slice());contexts.insert(symbol.into(),Ctx::new(leaked,&[],&[]));
     }
-    let state=State{ctxs:contexts,baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()};
+    let state=State{databases:Default::default(),ctxs:contexts,baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()};
     for &id in books::lkqts::STOCK_CANDIDATE_IDS {
         for ticker in ["NIFTY 50","SPX","SPY","AAPL"] {
             let q=BTreeMap::from([("id".into(),id.into()),("ticker".into(),ticker.into()),("from".into(),"2020-04-01".into()),("native_stock".into(),"true".into()),("asset_type".into(),"individual_stock".into())]);
@@ -494,7 +494,7 @@ fn actual_stock_api_capture() {
     assert!(!output.exists());std::fs::create_dir_all(&output).unwrap();let mut cases=vec![];
     for (variable,basket,symbols,from,to) in [("VAULT_KESTNER_US_DATA_DIR","us_sp500",["AAPL","MSFT"],"1990-01-01","2001-12-31"),("VAULT_KESTNER_IN_DATA_DIR","nifty50",["RELIANCE","HDFCBANK"],"2001-01-01","2010-12-31")] {
         let root=std::env::var(variable).unwrap();let catalogue=baskets::Catalogue::load(std::path::Path::new(&root)).unwrap();
-        let state=State{ctxs:BTreeMap::new(),baskets:catalogue,vix:vec![],market_extra:BTreeMap::new()};
+        let state=State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:catalogue,vix:vec![],market_extra:BTreeMap::new()};
         for symbol in symbols {for &id in books::lkqts::STOCK_CANDIDATE_IDS {for (fee,slip) in [(0,0),(3,2)] {
             let ticker=format!("basket:{basket}:{symbol}");let stem=format!("basket_{basket}_{symbol}-{id}-fee{fee}-slip{slip}");
             let q=BTreeMap::from([("id".into(),id.into()),("ticker".into(),ticker),("from".into(),from.into()),("to".into(),to.into()),("cost".into(),fee.to_string()),("slippage".into(),slip.to_string())]);

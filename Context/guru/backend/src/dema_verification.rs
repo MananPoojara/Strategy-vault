@@ -3,7 +3,7 @@ use super::*;
 const ID:&str="hbqts_dema16_8";
 fn state()->State {
     let rows:&'static [Row]=Box::leak([100.,99.,101.,101.].iter().enumerate().map(|(i,&c)|Row{ticker:"SPX".into(),date:format!("2001-01-{:02}",i+1),open:c,high:c+1.,low:c-1.,close:c,volume:None}).collect::<Vec<_>>().into_boxed_slice());
-    State{ctxs:BTreeMap::from([("SPX".into(),Ctx::new(rows,rows,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()}
+    State{databases:Default::default(),ctxs:BTreeMap::from([("SPX".into(),Ctx::new(rows,rows,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()}
 }
 #[test]
 fn dema_raw_settings_require_exact_singleton_source_defaults() {
@@ -58,7 +58,7 @@ fn dump_case() {
     let id=std::env::var("DEMA_CASE_ID").unwrap();assert_eq!(id,ID);
     let ticker=std::env::var("DEMA_CASE_TICKER").unwrap();assert!(matches!(ticker.as_str(),"SPX"|"NIFTY 50"));
     let all=load_csv(&csv).unwrap();let rows:&'static [Row]=Box::leak(all.get(&ticker).unwrap().clone().into_boxed_slice());
-    let st=State{ctxs:BTreeMap::from([(ticker.clone(),Ctx::new(rows,rows,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()};
+    let st=State{databases:Default::default(),ctxs:BTreeMap::from([(ticker.clone(),Ctx::new(rows,rows,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()};
     let x=&st.ctxs[&ticker];let from=std::env::var("DEMA_CASE_FROM").unwrap().parse::<usize>().unwrap();let to=std::env::var("DEMA_CASE_TO").unwrap().parse::<usize>().unwrap();
     let q=BTreeMap::from([("id".into(),id.clone()),("ticker".into(),ticker),("from".into(),rows[from].date.clone()),("to".into(),rows[to].date.clone()),("cost".into(),std::env::var("DEMA_CASE_FEES").unwrap_or("0".into())),("slippage".into(),std::env::var("DEMA_CASE_SLIPPAGE").unwrap_or("0".into()))]);
     let costs=accounting::Costs::parse(&q).unwrap();let run=backtest_costs(x,&id,from,to,costs,&Params::new()).unwrap();

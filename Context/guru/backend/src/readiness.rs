@@ -214,6 +214,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         required=books::ytadr::SERIES[books::ytadr::breadth_index(p.get("breadth").copied())].to_vec();
     }
     let missing=ctx.missing(&required);
+    if missing.iter().any(|m| *m==crate::yt_aux::AUX2_SERIES) {
+        return issue("needs_data","This AFL reads AUX2 (dated F&O membership), which only the C&P cash databases carry: C&P DATABASE UPDATED TILL 16-10-2026 or C&P DATABASE UPDATED TILL 31-03-2022. The selected series has no such AUX2 (or it does not line up with the stock's dated prices). Choose a stock of a C&P database.");
+    }
     if !missing.is_empty() {
         return issue("needs_data",format!("Required market data is missing: {}. No chart, statistics, trades or optimization are available for this instrument.",missing.join(", ")));
     }

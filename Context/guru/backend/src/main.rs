@@ -17,6 +17,7 @@ mod yt_aux;
 mod basket_portfolio;
 mod yt_amibroker_portfolio;
 mod instrument_policy;
+mod databases;
 mod trade_validation;
 mod unit_exposure_report;
 mod unit_exposure_arithmetic;
@@ -823,7 +824,8 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
         let issue=readiness::check(ctx,d,from,to,&p).or_else(||native_admission(ctx,d,from,to,&selected,st,q));
         let (mut status,note)=issue.as_ref().map_or(("ready","Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results."),|i| (i.status,i.note.as_str()));
         let note=if let Some(roll)=costs.rollover_issue_for(yt_money_account(q)){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
-        format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\"}}",d.id,status,esc(&note))
+        let note_json=if status=="ready" {data_note_json(data_note(d,&selected,ctx))} else {String::new()};
+        format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\"{note_json}}}",d.id,status,esc(&note))
     }).collect();
     Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){unit_exposure_report::costs_json(costs)}else{costs.json()},source_provenance(st,q)))
 }
@@ -835,6 +837,8 @@ struct State {
     baskets:baskets::Catalogue,
     vix:Vec<Row>,
     market_extra:BTreeMap<(String,String),BTreeMap<String,f64>>,
+    /// The team's databases (`databases.rs`): `db:<id>:<SYMBOL>` series are read on demand per request.
+    databases:databases::Registry,
 }
 
 /// `aux2`: the stock's dated AUX2 (yt_aux::native_aux2), loaded only for a strategy whose AFL reads it.
@@ -922,9 +926,20 @@ fn select_context<'a>(st:&'a State,q:&BTreeMap<String,String>)->Result<SelectedC
             SelectedContext::Native{rows,evidence,aux2}
         });
     }
+    // `db:<id>:<SYMBOL>`: one series of a registry database, read from its native file for this request only.
+    if let Some(series)=st.databases.series(ticker,q.get("id").map_or(true,|id|yt_aux::reads_aux2(id))){
+        for key in ["from","to"] {if q.get(key).is_some_and(|value|!value.is_empty()&&!baskets::valid_date(value)){return Err(format!("needs_data: Native requested {key} must be a valid YYYY-MM-DD date; no date is repaired."));}}
+        let databases::Series{rows,evidence,aux2}=series?;
+        return Ok(SelectedContext::Native{rows,evidence,aux2});
+    }
     Err(format!("unknown ticker {ticker}"))
 }
-fn source_provenance(st:&State,q:&BTreeMap<String,String>)->String{st.baskets.provenance_json(q.get("ticker").map(String::as_str).unwrap_or(BENCHMARK)).unwrap_or("null".into())}
+fn source_provenance(st:&State,q:&BTreeMap<String,String>)->String{let ticker=q.get("ticker").map(String::as_str).unwrap_or(BENCHMARK);st.baskets.provenance_json(ticker).or_else(||st.databases.provenance_json(ticker)).unwrap_or("null".into())}
+/// Instrument type of the selected series: the server-owned native evidence, else the preloaded ticker's type.
+fn selected_type(selected:&SelectedContext,ctx:&Ctx)->&'static str {selected.evidence().map_or_else(||instrument_policy::selected_type(&ctx.r[0].ticker,false),|e|e.asset_type())}
+/// Jay's YT admission rule: an admitted run on a data type the team never ran this rule on is labelled, not blocked.
+fn data_note(def:&connors::StrategyDef,selected:&SelectedContext,ctx:&Ctx)->Option<String>{instrument_policy::data_note(def,&ctx.r[0].ticker,selected_type(selected,ctx))}
+fn data_note_json(note:Option<String>)->String{note.map_or(String::new(),|n|format!(",\"data_note\":\"{}\"",esc(&n)))}
 /// Read-only chart history from the same admitted source used by strategy calculations.
 /// It intentionally retains pre-period bars so indicators can use the engine's warmup.
 fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
@@ -939,8 +954,10 @@ fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
     out.push_str(",\"v\":");arr(&mut out,&mut rows.iter().map(|r|r.volume.map_or("null".into(),source_num)));out.push('}');Ok(out)
 }
 fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Option<readiness::Issue>{
-    let Some(evidence)=selected.evidence() else {return instrument_policy::check(def,&ctx.r[0].ticker,false)};
+    let database=databases::database_of_ticker(q.get("ticker").map(String::as_str).unwrap_or(BENCHMARK));
+    let Some(evidence)=selected.evidence() else {return instrument_policy::check(def,&ctx.r[0].ticker,false).or_else(||instrument_policy::database_issue(def,&ctx.r[0].ticker,database))};
     if let Some(issue)=instrument_policy::check_native(def,&ctx.r[0].ticker,evidence){return Some(issue);}
+    if let Some(issue)=instrument_policy::database_issue(def,&ctx.r[0].ticker,database){return Some(issue);}
     // Intraday rules read the symbol's 1-minute file: report a missing file instead of running to empty trades.
     if instrument_policy::intraday_rule(def) {
         if let Err(why)=intraday::available(q.get("ticker").map(String::as_str).unwrap_or("")) {
@@ -1344,6 +1361,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, if run.unit_exposure_report.is_some(){unit_exposure_report::stats_json(&financial_stats(ctx,&run,costs))}else{stats_json(&financial_stats(ctx, &run, costs))}, spark.join(","),if run.unit_exposure_report.is_some(){unit_exposure_report::costs_json(costs)}else if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
+        if let Some(note)=data_note(d,&selected,ctx){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,"{}}}",data_note_json(Some(note)));}
     }
     Ok(format!("[{}]", rows.join(",")))
 }
@@ -1558,7 +1576,14 @@ fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run
     format!("{{\"id\":\"{}\",\"book\":\"hbiab\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{},\"ohlc\":{},\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",id,dates,numbers(&ctx.c[from..=to]),numbers(&run.equity),numbers(&gross.equity),numbers(&run.bh),list(trades),ohlc,account.json(ctx),stats_json(&financial_stats(ctx,run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,run)),bandy_costs_json(costs),esc(books::hbiab_reviewed::basis(id)))
 }
 
+/// `detail_run` plus the run's `data_note` (Jay's YT admission rule) when the selected data type is untested.
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    let mut body=detail_run(st,q)?;
+    let note=(||{let selected=select_context(st,q).ok()?;let held=selected.context(st);let id=q.get("id")?;let def=query_catalogue(q).into_iter().find(|d|d.id==id.as_str())?;data_note(&def,&selected,&held)})();
+    if note.is_some()&&body.ends_with('}'){body.pop();body.push_str(&data_note_json(note));body.push('}');}
+    Ok(body)
+}
+fn detail_run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx, from, to, cost) = resolve_context(&held, q)?;
@@ -1576,7 +1601,16 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     // Intraday YT AFLs record each trade's candle / minute clock and candle excursions while they run.
     let intraday_rule=instrument_policy::intraday_rule(def);
     let (raw_run,timings)=intraday::capture_timings(||selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p));
-    let run = whole_unit_run(ctx,raw_run?,costs.side_rate(),capital,id)?;
+    // YT: when only the account cannot be computed (a short losing 100% or more on a dead stock, a capital that cannot
+    // buy one unit) the trade list is still the AFL's; it is returned with the performance figures withheld
+    let run = match raw_run.and_then(|run|whole_unit_run(ctx,run,costs.side_rate(),capital,id)) {
+        Err(e) if def.book.starts_with("yt_") && yt_account_only_error(&e) => {
+            let trades=connors::run(id,ctx,from,to,&p).ok_or(e.clone())?;
+            trade_validation::check_structure(&trades,from,to).map_err(|_|e.clone())?;
+            return Ok(yt_trades_only_json(ctx,&trades,from,to,costs,&e));
+        }
+        r => r?,
+    };
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
@@ -1740,6 +1774,24 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         o.pop();let _=write!(o,",\"whole_unit_account\":{{\"capital\":{},\"basis\":\"AmiBroker-style money account: starting capital {}; each entry buys the largest whole number of units the account can pay for including the entry cost, and the remainder stays as idle cash. Equity, CAGR and drawdown are on this account, marked to each close; CAGR counts 365-day years. Equity series are this money equity divided by the starting capital. Trade percentages are per unit, unchanged.\"}}}}",num(capital),num(capital));
     }
     Ok(o)
+}
+
+/// The YT account errors that leave the AFL's trade list valid: the normalized or whole-unit equity cannot be formed.
+fn yt_account_only_error(e: &str) -> bool {
+    e.starts_with("calculation_unavailable:") && (e.contains("nonpositive") || e.contains("cannot buy one whole unit"))
+}
+
+/// A YT run whose account cannot be computed: the trade list (per-unit returns) with every performance figure withheld.
+fn yt_trades_only_json(ctx: &Ctx, trades: &[Trade], from: usize, to: usize, costs: accounting::Costs, reason: &str) -> String {
+    let rows: Vec<String> = trades.iter().map(|t| {
+        let ret = accounting::TradeLedger::amibroker(ctx, t, 1., costs).net_ret;
+        let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, num(l.px), num(l.w))).collect();
+        format!("{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"exits\":[{}]}}",
+            t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px), num(t.avg_px()), num(ret),
+            t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind, t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","))
+    }).collect();
+    format!("{{\"dates\":[{}],\"trades\":[{}],\"performance_withheld\":true,\"withheld_reason\":\"{}\",\"stats\":null,\"accounting_basis\":\"Trade list only: the AFL's trades with per-unit returns. Equity, money and every performance figure are withheld because the account cannot be formed ({}).\"}}",
+        (from..=to).map(|k| format!("\"{}\"", ctx.r[k].date)).collect::<Vec<_>>().join(","), rows.join(","), esc(reason), esc(reason))
 }
 
 /// Basket jobs use their own bounded, fail-fast permit. The shared single-stock
@@ -2192,6 +2244,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/yt/summary" => json(summary(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/yt/run" => json(detail(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/yt/params" => json(Ok(params_json("yt")), &mut stream),
+        "/api/guru/yt/databases" => json(Ok(st.databases.json(&st.ctxs,&st.baskets).to_string()), &mut stream),
         "/api/guru/yt/basket-run" => basket_json(&st,&owned_query(&q,"yt"),&mut stream),
         "/api/guru/yt/optimize" => json(optimize(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/guru/connors/progress" | "/api/guru/chande/progress" | "/api/guru/ross/progress" | "/api/guru/yt/progress" => json(Ok(progress_json()), &mut stream),
@@ -2211,7 +2264,7 @@ mod pristine_route_tests {
         use std::net::Shutdown;
         let listener=TcpListener::bind("127.0.0.1:0").unwrap();
         let address=listener.local_addr().unwrap();
-        let state=Arc::new(State{ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()});
+        let state=Arc::new(State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()});
         let server=std::thread::spawn(move||{
             let (stream,_)=listener.accept().unwrap();
             stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
@@ -2337,11 +2390,26 @@ fn main() {
                     c.extra.insert(key.clone(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
                 }
             }
+            // BENCH.* = NIFTY 50 on this series' dates, as native stock contexts carry it (native_stock_context): the YT
+            // stock AFLs' market filter. Read only by those AFLs, which now also run on the Indian indices and the
+            // NSE index futures (Jay's admission rule, 20-11-2026).
+            if market==Some(baskets::Market::India) || instrument_policy::selected_type(t,false)=="futures" {
+                if let Some(bench)=data.get(BENCHMARK) {
+                    let by_date:BTreeMap<&str,&Row>=bench.iter().map(|r|(r.date.as_str(),r)).collect();
+                    for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)] {
+                        c.extra.insert(format!("BENCH.{name}"),rows.iter().map(|r|by_date.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect());
+                    }
+                }
+            }
             (t.clone(), c)
         })
         .collect();
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
-    let st = Arc::new(State { ctxs,baskets,vix,market_extra:extra });
+    let databases=databases::Registry::new(std::env::var_os("AMIBROKER_DATA_DIR").map(std::path::PathBuf::from));
+    let st = Arc::new(State{databases, ctxs,baskets,vix,market_extra:extra });
+    // Build the database list (file listings, first/last dates) off the request path; it is read-only and small.
+    let warm=st.clone();
+    std::thread::spawn(move||{let t=std::time::Instant::now();let n=warm.databases.json(&warm.ctxs,&warm.baskets).len();println!("databases: list built ({n} bytes, {:.1?})",t.elapsed());});
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("bind");
     println!("Guru API on http://localhost:{port}/api/gurus  ({} tickers from {csv})", data.len());
     for s in listener.incoming().flatten() {
@@ -2353,12 +2421,63 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// `db:<id>:<SYMBOL>` tickers through the request path, on fixture native files (not the real data).
+    #[test]
+    fn db_tickers_resolve_to_native_series_with_admission_aux_limit_and_data_note() {
+        let root=databases::tests::fixture();
+        let nifty:&'static [Row]=Box::leak((0..60).map(|i|Row{ticker:"NIFTY 50".into(),date:format!("2021-{:02}-{:02}",1+i/28,1+i%28),open:100.,high:101.,low:99.,close:100.,volume:None}).collect::<Vec<_>>().into_boxed_slice());
+        let st=State{databases:databases::Registry::new(Some(root.clone())),ctxs:BTreeMap::from([("NIFTY 50".into(),Ctx::new(nifty,nifty,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()};
+        let q=|ticker:&str,id:Option<&str>|{let mut q=BTreeMap::from([("ticker".to_string(),ticker.to_string()),("_guru".to_string(),"yt".to_string())]);if let Some(id)=id{q.insert("id".into(),id.into());}q};
+        let fo=crate::books::yttr::FO_IDS[0];
+        // a C&P stock: native evidence typed individual_stock, the stock's dated AUX2 loaded for an AUX2 AFL, BENCH.* present
+        let selected=select_context(&st,&q("db:cp_old_2022:RELIANCE",Some(fo))).unwrap();
+        let SelectedContext::Native{rows,evidence,aux2}=&selected else {panic!("db: ticker is a native series")};
+        assert_eq!((rows.len(),evidence.asset_type(),aux2.as_ref().map(Vec::len)),(60,"individual_stock",Some(60)));
+        let held=selected.context(&st);assert!(held.series("BENCH.Close").is_some() && held.series(yt_aux::AUX2_SERIES).is_some());
+        let def=|id:&str|connors::catalogue().into_iter().find(|d|d.id==id).unwrap();
+        assert!(native_admission(&held,&def(fo),0,59,&selected,&st,&q("db:cp_old_2022:RELIANCE",Some(fo))).is_none());
+        // the same AFL on a stock of a database without F&O AUX2: blocked with the plain AUX2 reason
+        let q2=q("db:nifty50_cp_2026:RELIANCE",Some(fo));let other=select_context(&st,&q2).unwrap();let held2=other.context(&st);
+        let issue=readiness::check(&held2,&def(fo),0,59,&Params::new()).or_else(||native_admission(&held2,&def(fo),0,59,&other,&st,&q2)).unwrap();
+        assert!(issue.note.contains("AUX2"),"{}",issue.note);
+        let body=readiness_json(&st,&q2).unwrap();assert!(body.contains("only the C&P cash databases carry"),"{body}");
+        // a Kora (futures) AFL on the stock: admitted; the untested type is labelled, not blocked
+        let kr=crate::books::ytkr::IDS.iter().find(|&&id|id!=crate::books::ytkr::OPEN_CLOSE_LS).copied().unwrap();
+        assert!(native_admission(&held,&def(kr),0,59,&selected,&st,&q("db:cp_old_2022:RELIANCE",Some(kr))).is_none());
+        assert_eq!(data_note(&def(kr),&selected,&held).unwrap(),"Not checked against the team's runs on stock data.");
+        let body=readiness_json(&st,&q("db:cp_old_2022:RELIANCE",Some(kr))).unwrap();
+        assert!(body.contains("\"status\":\"needs_data\"") || body.contains("\"data_note\":\"Not checked against the team's runs on stock data.\""),"{body}");
+        // an index of the New Sector database: typed index, no volume; a volume rule is blocked by readiness
+        let idx=select_context(&st,&q("db:idx_new_sector:NIFTYAUTO",None)).unwrap();let held3=idx.context(&st);
+        assert_eq!(selected_type(&idx,&held3),"index");assert!(!held3.has_volume);
+        let volume=connors::catalogue().into_iter().find(|d|d.book.starts_with("yt_")&&d.needs_volume).unwrap();
+        assert_eq!(readiness::check(&held3,&volume,0,59,&Params::new()).unwrap().status,"needs_data");
+        assert!(source_provenance(&st,&q("db:idx_new_sector:NIFTYAUTO",None)).contains("\"database\":\"idx_new_sector\""));
+        assert!(select_context(&st,&q("db:cp_old_2022:NOPE",None)).is_err());
+        let _=std::fs::remove_dir_all(root);
+    }
     #[test]
     fn yt_rollover_is_a_tradesheet_setting_not_an_engine_charge() {
         let rollover=accounting::Costs{fees_bps:0.,slippage_bps:0.,rollover_bps:1.};
         assert!(rollover.rollover_issue_for(true).is_none(),"YT: Rollover only sets the tradesheet's D1/E1");
         assert!(rollover.rollover_issue_for(false).unwrap().contains("contract"),"other catalogues keep the block");
         assert!(accounting::Costs::default().rollover_issue_for(false).is_none());
+    }
+    #[test]
+    fn yt_account_failure_keeps_the_trade_list() {
+        // a short losing 100% (dead stock rising) cannot form a normalized or whole-unit account: the trades stay
+        let dates=["2020-01-01","2020-01-02","2020-01-03"];
+        let rows:Vec<Row>=[10.,15.,25.].iter().zip(dates).map(|(&c,d)|Row{ticker:"DEAD".into(),date:d.into(),open:c,high:c,low:c,close:c,volume:None}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        let t=Trade{dir:-1.,legs:vec![connors::Leg{i:0,px:10.,w:1.}],exit_i:2,exit_px:25.,reason:"SL".into(),entry_kind:"close",signal_i:2,open:false,exits:vec![]};
+        let e=normalized_run(&ctx,vec![t.clone()],0,2,0.).err().unwrap();
+        assert!(yt_account_only_error(&e),"{e}");
+        assert!(yt_account_only_error("calculation_unavailable: Starting capital 1 cannot buy one whole unit of X at 2 on 2020-01-01"));
+        assert!(!yt_account_only_error("needs_data: no rows"));
+        let body=yt_trades_only_json(&ctx,&[t],0,2,Default::default(),&e);
+        assert!(body.contains("\"trades\":[{\"dir\":-1,") && body.contains("\"entry\":\"2020-01-01\"") && body.contains("\"exit_px\":25,"),"{body}");
+        assert!(body.contains("\"performance_withheld\":true") && body.contains("\"stats\":null"));
+        assert_eq!(body.matches("\"dir\":").count(),1);
     }
     #[test]
     fn yt_whole_unit_account_buys_whole_units_and_keeps_idle_cash() {
@@ -2655,7 +2774,7 @@ mod tests {
         let spx=benchmark("SPX",200.);let nifty=benchmark("NIFTY 50",9999.);
         let india_vix=spx.iter().map(|r|Row{ticker:"INDIA VIX".into(),date:r.date.clone(),open:20.,high:21.,low:19.,close:20.,volume:None}).collect();
         let extras=BTreeMap::from([(("*".into(),"VIX.Close".into()),spx.iter().map(|r|(r.date.clone(),999999.)).collect())]);
-        let state=State{ctxs:BTreeMap::from([("SPX".into(),Ctx::new(spx,spx,&[])),("NIFTY 50".into(),Ctx::new(nifty,nifty,&[]))]),baskets:baskets::Catalogue::load(&dir).unwrap(),vix:india_vix,market_extra:extras};
+        let state=State{databases:Default::default(),ctxs:BTreeMap::from([("SPX".into(),Ctx::new(spx,spx,&[])),("NIFTY 50".into(),Ctx::new(nifty,nifty,&[]))]),baskets:baskets::Catalogue::load(&dir).unwrap(),vix:india_vix,market_extra:extras};
         let q=BTreeMap::from([("ticker".into(),"basket:us_sp500:AAPL".into()),("id".into(),"f1a".into()),("cost".into(),"3".into()),("slippage".into(),"2".into())]);
         (NativeFixture(dir),state,q)
     }
@@ -2714,7 +2833,7 @@ mod tests {
 
     fn accounting_state()->State {
         let rows:&'static [Row]=Box::leak((0..80).map(|i|{let close=100.+i as f64;Row{ticker:"SPX".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:close+0.5,high:close+2.,low:close-1.,close,volume:Some(100.)}}).collect::<Vec<_>>().into_boxed_slice());
-        State{ctxs:BTreeMap::from([("SPX".into(),Ctx::new(rows,rows,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()}
+        State{databases:Default::default(),ctxs:BTreeMap::from([("SPX".into(),Ctx::new(rows,rows,&[]))]),baskets:Default::default(),vix:vec![],market_extra:Default::default()}
     }
     fn accounting_query()->BTreeMap<String,String>{
         BTreeMap::from([("ticker".into(),"SPX".into()),("id".into(),"ch_65sma3cc".into()),("_guru".into(),"chande".into()),("cost".into(),"3".into()),("slippage".into(),"2".into())])

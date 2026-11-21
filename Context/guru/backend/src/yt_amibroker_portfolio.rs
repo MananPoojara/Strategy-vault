@@ -401,7 +401,9 @@ pub(crate) fn admission(def: &crate::connors::StrategyDef) -> Result<(), String>
     if crate::instrument_policy::intraday_rule(def) { return Err("not_testable: This is an intraday AFL (1-minute F&O futures bars); the AmiBroker portfolio mode runs daily stock AFLs only.".into()); }
     if def.status != crate::connors::Status::Live { return Err("not_testable: This strategy is not live in the catalogue.".into()); }
     let p = crate::instrument_policy::policy(def);
-    if !p.allowed_types.contains(&"individual_stock") || p.requirement == "source_review_required" {
+    // The team's own types (`team_types`): Jay's widening of the single-series YT admission (20-11-2026) leaves this
+    // stock-universe portfolio mode unchanged.
+    if !p.team_types.contains(&"individual_stock") || p.requirement == "source_review_required" {
         return Err("not_testable: This AFL is admitted for index, ETF or futures series only; an index cannot substitute for a stock universe.".into());
     }
     Ok(())

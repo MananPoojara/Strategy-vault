@@ -158,7 +158,7 @@ fn one_session_summary_uses_bandy_cash_costs_and_matches_detail() {
         })
         .collect();
     let rows: &'static [Row] = Box::leak(rows.into_boxed_slice());
-    let st = State {
+    let st = State{databases:Default::default(),
         ctxs: BTreeMap::from([("SPY".into(), Ctx::new(rows, rows, &[]))]),
         baskets: baskets::Catalogue::default(),
         vix: vec![],
@@ -242,7 +242,7 @@ fn one_session_summary_uses_bandy_cash_costs_and_matches_detail() {
     let mut gap_rows = rows.to_vec();
     gap_rows.last_mut().unwrap().date = "2001-01-24".into();
     let gap_rows: &'static [Row] = Box::leak(gap_rows.into_boxed_slice());
-    let gap_state = State {
+    let gap_state = State{databases:Default::default(),
         ctxs: BTreeMap::from([("SPY".into(), Ctx::new(gap_rows, gap_rows, &[]))]),
         baskets: baskets::Catalogue::default(),
         vix: vec![],

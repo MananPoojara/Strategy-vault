@@ -1,7 +1,7 @@
 //! Synthetic integration guards only; market account/handler acceptance stays separate.
 use super::*;
 const ID:&str="lkqts_macs";
-fn empty()->State{State{ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()}}
+fn empty()->State{State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()}}
 fn owned(raw:&str)->BTreeMap<String,String>{owned_query(&query(&format!("/api/guru/connors/run?{raw}")).1,"connors")}
 fn definition()->connors::StrategyDef{books::lkqts::catalogue().into_iter().find(|d|d.id==ID).unwrap()}
 fn source(to:usize,future_change:bool)->baskets::macs_source_data::ValidatedSeries{

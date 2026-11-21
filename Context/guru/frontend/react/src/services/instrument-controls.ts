@@ -1,6 +1,8 @@
 import {bandyAccountMethod} from "./bandy-source-account";
 import {unitExposureMethod} from './unit-exposure-report';
-export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string; requirement?: string }
+export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string; requirement?: string;
+  /** New engines (DB_CONTRACT 20-11-2026): the types the team ran it on; allowed_types is widened beyond them. */
+  team_types?: string[]; databases?: string[] | null; needs_volume?: boolean }
 
 /** Intraday YT AFLs run on the 1-minute F&O futures data only: the daily `basket:ieodfo:*` carrier series. */
 export const intradayMethod = (policy?: InstrumentPolicy) => policy?.requirement === 'intraday_futures';
@@ -12,13 +14,15 @@ export function instrumentTickers<T extends {ticker: string}>(policy: Instrument
   const controls = instrumentControls(policy,id,book);
   if (intradayMethod(policy)) return [];
   if (unitExposureMethod(id,book)) return controls.index ? indices.filter(t=>['SPX','NIFTY 50'].includes(t.ticker)) : [];
-  if (krSpotMethod(id,book)) return controls.index ? indices.filter(t=>KR_SPOT.includes(t.ticker)) : [];
+  if (krSpotMethod(id,book,policy)) return controls.index ? indices.filter(t=>KR_SPOT.includes(t.ticker)) : [];
   return [...(controls.index ? indices : []), ...(controls.etf ? etfs : []), ...(controls.futures ? futures : [])];
 }
 
-/** Kora Reddy BuyShort at Open or Close: the team ran it on these two spot indices only (all other Kora rules use futures). */
+/** Kora Reddy BuyShort at Open or Close: the team ran it on these two spot indices only (all other Kora rules use futures).
+ * Only for old engines: a policy with `team_types` carries the widened allowed_types itself, so no special case. */
 const KR_SPOT = ['NIFTY 50', 'NIFTYBANK'];
-export const krSpotMethod = (id?: string, book?: string) => id === 'ytkr_buyshort_open_or_close' && book === 'yt_kr';
+export const krSpotMethod = (id?: string, book?: string, policy?: InstrumentPolicy) =>
+  id === 'ytkr_buyshort_open_or_close' && book === 'yt_kr' && !Array.isArray(policy?.team_types);
 
 /** Navigation follows reviewed types; an unresolved policy still uses the API's admission gate. */
 export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?: string) {
@@ -29,7 +33,7 @@ export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?
   }
   if (intradayMethod(policy)) return {index:false,stock:false,basket:false,etf:false,futures:false,
     note:'This intraday AFL needs 1-minute bars: choose an F&O futures symbol (ieodfo) above. Spot indices, the daily near-month futures, cash stocks and baskets have no intraday bars.'};
-  if (krSpotMethod(id,book)) return {index:types.includes('index'),stock:false,basket:false,etf:false,futures:false,
+  if (krSpotMethod(id,book,policy)) return {index:types.includes('index'),stock:false,basket:false,etf:false,futures:false,
     note:'The team ran this Kora Reddy rule on the NSE spot indices, not futures: it reproduces their workbooks on Nifty 50 and Nifty Bank. Other indices, futures, ETFs and stock baskets are not admitted.'};
   if (unitExposureMethod(id,book)) return {index:types.length===1 && types[0]==='index'
     && policy?.execution_scope==='single_symbol_index_timing_research',stock:false,basket:false,etf:false,futures:false,

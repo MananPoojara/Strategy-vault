@@ -22,11 +22,18 @@ pub struct NativeEvidence {
     mapped_index:&'static str,adjustment_status:String,
     /// `ieodfo`: the daily carrier of the 1-minute F&O futures (IEOD) database, typed as futures with intraday data.
     intraday_futures:bool,
+    /// Instrument type this source's prices are: `individual_stock` (cash stocks), `futures` (allfo = the F&O
+    /// stock futures prices of fo_updated_2024; ieodfo) or, for a registry database (`databases.rs`), `index`.
+    asset_type:&'static str,
 }
 impl NativeEvidence {
     pub fn market(&self)->Market {self.market}
     pub fn currency(&self)->&'static str {self.market.currency()}
-    pub fn asset_type(&self)->&'static str {if self.intraday_futures {"futures"} else {"individual_stock"}}
+    pub fn asset_type(&self)->&'static str {self.asset_type}
+    /// Evidence for a `db:<id>:<SYMBOL>` series of a fixed registry database (Indian team AmiBroker copies).
+    pub(crate) fn database(asset_type:&'static str,name:&str)->Self {
+        Self{market:Market::India,membership_kind:"current_snapshot".into(),membership_source:format!("Team AmiBroker database {name}"),membership_source_sha:String::new(),mapped_index:"NIFTY 50",adjustment_status:"not_independently_verified".into(),intraday_futures:false,asset_type}
+    }
     /// The series is the daily aggregate of the F&O futures 1-minute database (basket `ieodfo`); intraday bars exist.
     pub fn intraday_futures(&self)->bool {self.intraday_futures}
     pub fn membership_kind(&self)->&str {&self.membership_kind}
@@ -37,13 +44,13 @@ impl NativeEvidence {
     pub fn source_price_units_verified(&self)->bool {false}
     #[cfg(test)]
     pub(crate) fn us_test_fixture()->Self {
-        Self{market:Market::UnitedStates,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:"a".repeat(64),mapped_index:"SPX",adjustment_status:"not_independently_verified".into(),intraday_futures:false}
+        Self{market:Market::UnitedStates,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:"a".repeat(64),mapped_index:"SPX",adjustment_status:"not_independently_verified".into(),intraday_futures:false,asset_type:"individual_stock"}
     }
     #[cfg(test)]
     pub(crate) fn india_test_fixture(intraday_futures:bool)->Self {
-        Self{market:Market::India,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:String::new(),mapped_index:"NIFTY 50",adjustment_status:"not_independently_verified".into(),intraday_futures}
+        Self{market:Market::India,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:String::new(),mapped_index:"NIFTY 50",adjustment_status:"not_independently_verified".into(),intraday_futures,asset_type:if intraday_futures {"futures"} else {"individual_stock"}}
     }
-    fn json(&self)->String {
+    pub(crate) fn json(&self)->String {
         format!("\"trusted_market\":\"{}\",\"currency\":\"{}\",\"asset_type\":\"{}\",\"timeframe\":\"D\",\"membership_kind\":\"{}\",\"membership_source\":\"{}\",\"membership_source_sha256\":{},\"mapped_index\":\"{}\",\"adjustment_status\":\"{}\",\"source_price_units_verified\":false,\"historical_membership_verified\":false,\"corporate_actions_independently_verified\":false",
             self.market.code(),self.currency(),self.asset_type(),esc(&self.membership_kind),esc(&self.membership_source),
             if self.membership_source_sha.is_empty(){"null".into()}else{format!("\"{}\"",self.membership_source_sha)},self.mapped_index,esc(&self.adjustment_status))
@@ -78,7 +85,11 @@ fn native_evidence<'a>(basket:&str,optional:impl Fn(&str)->Option<&'a str>)->Res
     let membership_source=optional("membership_source").unwrap_or("Legacy Indian native watchlist source; see source provenance");
     let membership_source_sha=optional("membership_source_sha256").unwrap_or("");
     if !text_safe(membership_source)||explicit_us&&(!valid_sha(membership_source_sha)||optional("membership_source").is_none())||!membership_source_sha.is_empty()&&!valid_sha(membership_source_sha){return Err("Native membership source and exact source SHA-256 are required".into());}
-    Ok(NativeEvidence{market,membership_kind:membership_kind.into(),membership_source:membership_source.into(),membership_source_sha:membership_source_sha.to_ascii_lowercase(),mapped_index,adjustment_status:adjustment_status.into(),intraday_futures:basket=="ieodfo"})
+    Ok(NativeEvidence{market,membership_kind:membership_kind.into(),membership_source:membership_source.into(),membership_source_sha:membership_source_sha.to_ascii_lowercase(),mapped_index,adjustment_status:adjustment_status.into(),intraday_futures:basket=="ieodfo",
+        // allfo is the team's F&O database fo_updated_2024: stock FUTURES prices (Database Directory "Futures Prices"),
+        // not cash stocks. Typed futures (20-11-2026): YT rules admit it through their widened types; stock-only
+        // methods of the other books no longer treat futures prices as an actual stock.
+        asset_type:if matches!(basket,"ieodfo"|"allfo") {"futures"} else {"individual_stock"}})
 }
 
 #[derive(Default)]
@@ -342,7 +353,7 @@ mod tests {
     }
     #[test]
     fn lazy_endpoint_uses_original_symbol_native_bars_and_explicit_coverage_blocks(){
-        let f=fixture();let state=crate::State{ctxs:Default::default(),baskets:Catalogue::load(&f.0).unwrap(),vix:vec![],market_extra:Default::default()};
+        let f=fixture();let state=crate::State{databases:Default::default(),ctxs:Default::default(),baskets:Catalogue::load(&f.0).unwrap(),vix:vec![],market_extra:Default::default()};
         let mut q=std::collections::BTreeMap::from([("ticker".into(),"basket:nifty50:RELIANCE".into()),("id".into(),"f1a".into())]);
         let readiness=crate::readiness_json(&state,&q).unwrap();assert!(readiness.contains("\"status\":\"ready\"")&&readiness.contains("\"symbol\":\"RELIANCE\""));
         let run=crate::detail(&state,&q).unwrap();assert!(run.contains("\"ohlc\":{"));assert!(run.contains("\"o\":[100,105]"));assert!(run.contains("\"v\":[1000,2000]"));assert!(run.contains("\"benchmark_symbol\":\"RELIANCE\""));assert!(!run.contains("777"));

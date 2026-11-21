@@ -1227,7 +1227,7 @@ mod tests {
         }
         std::fs::write(directory.join("index.csv"), index).unwrap();
         let rows: &'static [Row] = Box::leak(benchmark.into_boxed_slice());
-        let state = State {
+        let state = State{databases:Default::default(),
             ctxs: BTreeMap::from([("NIFTY 50".into(), Ctx::new(rows, rows, &[]))]),
             baskets: baskets::Catalogue::load(&directory).unwrap(),
             vix: vec![],

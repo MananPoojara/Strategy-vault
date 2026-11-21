@@ -38,6 +38,7 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/yt/params"
             | "guru/yt/optimize"
             | "guru/yt/progress"
+            | "guru/yt/databases"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
@@ -80,7 +81,7 @@ mod tests {
             assert!(allowed_engine_path(&format!("guru/ross/{route}")));
             assert!(allowed_engine_path(&format!("guru/chande/{route}")));
         }
-        for route in ["strategies","summary","readiness","run","params","optimize","progress"] {
+        for route in ["strategies","summary","readiness","run","params","optimize","progress","databases"] {
             assert!(allowed_engine_path(&format!("guru/yt/{route}")));
         }
         assert!(!is_optimization_path("guru/yt/progress"));

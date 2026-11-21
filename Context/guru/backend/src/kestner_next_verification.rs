@@ -4,7 +4,7 @@ use super::*;
 fn observations(closes:&[f64])->Vec<Row> {
     closes.iter().enumerate().map(|(i,&c)|Row{ticker:"AAPL".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:c,high:c+1.,low:c-1.,close:c,volume:Some(1.)}).collect()
 }
-fn empty_state()->State {State{ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()}}
+fn empty_state()->State {State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()}}
 fn value(state:&books::lkqts::NextRuleState,key:&str)->f64 {
     state.values.iter().find(|(k,_)|*k==key).unwrap().1
 }
@@ -230,7 +230,7 @@ fn actual_next_four_api_capture() {
     for (market,variable) in [("us","VAULT_KESTNER_US_DATA_DIR"),("in","VAULT_KESTNER_IN_DATA_DIR")] {
         let root=PathBuf::from(std::env::var(variable).expect("Explicit read-only native whitelist root required"));
         let catalogue=baskets::Catalogue::load(&root).unwrap();
-        states.insert(market,State{ctxs:BTreeMap::new(),baskets:catalogue,vix:vec![],market_extra:BTreeMap::new()});
+        states.insert(market,State{databases:Default::default(),ctxs:BTreeMap::new(),baskets:catalogue,vix:vec![],market_extra:BTreeMap::new()});
     }
     // Additive private chart-source evidence, inside actual_next_four_api_capture
     // after the two states exist and before the480 strategy-handler requests.
