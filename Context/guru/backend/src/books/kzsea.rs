@@ -9,7 +9,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "kzsea";
 const ID: &str = "kzsea_date";
 
-const NOTE: &str = "A|Declared readings (lane K2), 4: (1) ONE scaling rule for the S&P point threshold: Thr = 0.5 S&P point at an S&P level of about 700 = 0.0714% of the price, so HistChg (the mean open-to-close change over the past instances of the date) is taken as a percentage of the open; (2) 'the same date' is the calendar date of the bar being traded in each of the previous Wind years, an instance counts only if the market traded that day, and YCount = Wind needs the data to start at or before Wind years earlier (the article's YCount); (3) the trade is made at the open of the bar and exited at its close ('exit all trades at the close'); the profit target and money-management stop of the article's test are not printed and are omitted; (4) no costs. The article's S&P 500 result is not comparable.";
+const NOTE: &str = "A|Declared readings (lane K2), 5 (declared adaptation #340): (1) ONE scaling rule for the S&P point threshold: Thr = 0.5 S&P point at an S&P level of about 700 = 0.0714% of the price, so HistChg (the mean open-to-close change over the past instances of the date) is taken as a percentage of the open; (2) 'the same date' is the calendar date of the bar being traded in each of the previous Wind years, an instance counts only if the market traded that day, and YCount = Wind needs the data to start at or before Wind years earlier (the article's YCount); (3) past instances dated before the series' real-open start (NIFTY 50 2011-01-01, NIFTYMIDCAP100 2013-04-01; the file's earlier open is about the previous close) are skipped in HistCnt, HistPct and HistChg, the history shown is not clamped; (4) the trade is made at the open of the bar and exited at its close ('exit all trades at the close'); the profit target and money-management stop of the article's test are not printed and are omitted; (5) no costs. The article's S&P 500 result is not comparable.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: ID, name: "Date-specific open-to-close seasonal (Katz)", group: "Seasonality and Trading (Katz, 1997)", session: 0, dir: "Long/Short", status: Status::Live,
@@ -23,6 +23,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     (id == ID).then(|| vec![ParamDef { key: "wind", label: "Lookback (years)", def: 6., min: 3., max: 15., step: 1. }, ParamDef { key: "thr", label: "Threshold (% of the open; 0.5 S&P pts)", def: 0.0714, min: 0., max: 0.5, step: 0.01 }])
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close, so an open-to-close change is not an observation).
+/// Measured on the vault index files: median |open / previous close - 1| is 0.02% on NIFTY 50 until 2010 (0.3% after) and 0.01% on NIFTYMIDCAP100 until 2013-03 (0.2-0.3% after).
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+
 fn ymd(d: &str) -> Option<(i32, u32, u32)> {
     let mut it = d.split('-');
     Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?.parse().ok()?))
@@ -33,6 +37,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let wind = p.get("wind").copied().unwrap_or(6.0).round().max(1.0) as i32;
     let thr = p.get("thr").copied().unwrap_or(0.0714) / 100.0;
     let dates: Vec<Option<(i32, u32, u32)>> = x.r.iter().map(|r| ymd(&r.date)).collect();
+    let cut = x.r.first().and_then(|r| real_open_from(&r.ticker));
     let first_year = dates.iter().flatten().map(|d| d.0).min()?;
     let idx: HashMap<(i32, u32, u32), usize> = dates.iter().enumerate().filter_map(|(i, d)| d.map(|d| (d, i))).collect();
     let mut out: Vec<Trade> = vec![];
@@ -42,6 +47,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let (mut cnt, mut up, mut chg) = (0usize, 0usize, 0.0);
         for k in 1..=wind {
             if let Some(&j) = idx.get(&(y - k, m, dd)) {
+                if cut.is_some_and(|c| x.r[j].date.as_str() < c) { continue; } // synthetic open: not an observation
                 cnt += 1;
                 if x.c[j] > x.o[j] { up += 1; }
                 chg += (x.c[j] - x.o[j]) / x.o[j];
