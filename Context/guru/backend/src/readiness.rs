@@ -611,7 +611,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if let Some(g) = crate::gate::get(def.id) {
         // A fixed-USD-amount withhold does not apply on a US stock, the amount's home (user decision 2026-10-21).
-        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock && !(india(ctx) && crate::gate::india_reopened(def.id)) { // R4 #376: re-opened on Indian runs
+        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock && !(india(ctx) && crate::gate::india_reopened_on(def.id, ctx.native_market.is_some(), ctx.r.first().map_or("", |r| r.ticker.as_str()))) { // R4 #376: re-opened on Indian runs
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
