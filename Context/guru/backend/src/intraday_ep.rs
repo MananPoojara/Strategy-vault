@@ -91,7 +91,7 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
 /// Rules whose time filter is a US Eastern clock time the book gives no NSE equivalent for: SPY and SPX only.
 pub const US: &[&str] = &["jmls_ls_model"];
 /// Lane M1 (17 Nov 2026, R4 #340 / #346 (4)): rules on the NIFTY / BANKNIFTY futures 1-minute series with volume (Ctx::fut, lane DI): NIFTY 50 and NIFTYBANK only.
-pub const M1: &[&str] = &["jbudt_volspike", "aanto_trend_one", "tdscal_scalper", "sprfs_fut_nr4ib", "sprfs_fut_hvr_nr4ib", "sprfs_fut_hvr_nr4", "atm04_fut_vomund"];
+pub const M1: &[&str] = &["jbudt_volspike", "aanto_trend_one", "tdscal_scalper", "sprfs_fut_nr4ib", "sprfs_fut_hvr_nr4ib", "sprfs_fut_hvr_nr4", "atm04_fut_vomund", "atm03_fut_or_rev"];
 pub fn m1(id: &str) -> bool { M1.contains(&id) }
 pub fn id(id: &str) -> bool { M1.contains(&id) || IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) || K44_SPX.contains(&id) || K45_SPX.contains(&id) || K46.contains(&id) || K46_SPX.contains(&id) || K48.contains(&id) || K48_SPX.contains(&id) || K55.contains(&id) || K53.contains(&id) || K53_SPY.contains(&id) || K70.contains(&id) || K75.contains(&id) || K75_SPY.contains(&id) || K80.contains(&id) || PA1.contains(&id) || PA1_SPX.contains(&id) || D1_SPX.contains(&id) || CV4_US.contains(&id) }
 pub fn us_id(id: &str) -> bool { US.contains(&id) || CV4_US.contains(&id) }
