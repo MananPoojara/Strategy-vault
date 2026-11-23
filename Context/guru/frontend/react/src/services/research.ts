@@ -62,6 +62,7 @@ export interface DailyWorkRow {
   newly_held: number | null; newly_held_list: { strategy: string; book: string; reason: string }[]; held: number; backtested_total: number; books_added: number;
   deploys: number; worked_by: string; avg_tokens_per_strategy: number | null; proof: string;
   added_list?: { strategy: string; book: string }[] | null; other_minutes?: number; other_tokens?: number;
+  new_list?: { strategy: string; book: string; backtested: boolean }[] | null; note?: string | null; health?: string | null;
 }
 export interface DailyWork { schema: number; method: string; rows: DailyWorkRow[] }
 let dailyWorkLoad: Promise<DailyWork | null> | undefined;
