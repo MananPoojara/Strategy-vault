@@ -134,7 +134,7 @@ pub const K48_SPX: &[&str] = &["rsrl_rlevels"];
 // ---- lane K55 block (5 Nov 2026, decision #230; authors/titles-1030/K55.tsv; books/jbcdt.rs, jbudt.rs, stad.rs)
 /// No fixed amount: all four minute tickers. Compleat Day Trader I CTOD / Stochastic POP / MAC (5-minute), The Ultimate Day
 /// Trader's POP (5-minute), STAD Vol 2 BullBeater (5-minute) and Opening Gap (10-minute, multi-unit account).
-pub const K55: &[&str] = &["jbcdt_ctod", "jbcdt_pop", "jbcdt_mac", "jbudt_pop", "stad2_bullbeater", "stad2_opengap"];
+pub const K55: &[&str] = &["jbcdt_ctod", "jbcdt_pop", "jbcdt_mac", "jbudt_pop", "jbudt_mac_mom30" /* lane I1, 23 Nov 2026 */, "stad2_bullbeater", "stad2_opengap"];
 // jbcdt_mom_roc and jbcdt_oc_osc stay held (no exit / trader-chosen lengths and threshold; decision #230 (4)).
 // ---- end lane K55 block
 // ---- lane K53 block (5 Nov 2026, decision #229; authors/titles-1030/K53.tsv; books/k53intra.rs, books/jchr1.rs)

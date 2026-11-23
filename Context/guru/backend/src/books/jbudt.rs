@@ -64,9 +64,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|\"The trend filter I suggest is a 14-period moving average of the 14-period momentum. When the 14-period momentum crosses above its 14-period moving average the trend is up and we can buy on new buy triggers ... below ... we can only take the sell signals\" (ch.13, Filtering)",
               "X|\"Reverse your position on a new signal or if the relationship between momentum and its moving average changes\" (ch.13, Description of Method): reverse on the close when the filter flips (p.flip=0 = [old vault reading] exit flat instead, p.164); the opposite stop is armed only once the filter agrees"],
             "Momentum = close - close 14 bars ago (ch.9 definition); simple 14-bar MA of it. The book shows this filter only on intraday charts (10-, 30- and 240-minute); daily bars are a declared time-frame transfer. The filter state is read at the previous close when the stop is placed. Partial exits after the fifth bar and end-of-day exits (intraday) are alternatives, not coded."),
-        def!("jbudt_mac_mom30", "MAC with momentum 28 / MA 28 confirmation (30-minute bars)", "Ch.6 · Moving Average Channel", "Long/Short", NeedsData("intraday 30-minute bars (the method is shown on 30-minute S&P futures with exit at the end of the day)"),
-            &[MAC_RULES[0], MAC_RULES[1], "F|\"The trend is confirmed with the use of the 28 period Momentum indicator and its 28 period simple moving average\" (ch.6)", "X|\"Exit at the end of the day and/ or on a profit target\" (ch.6)"],
-            "On daily charts the author swaps the confirmation for a 57-period MA (see jbudt_mac_ad57 and jbudt_mac_mom_daily)."),
+        def!("jbudt_mac_mom30", "MAC with momentum 28 / MA 28 confirmation (30-minute bars, exit at the end of the day)", "Ch.6 · Moving Average Channel", "Long/Short", Live,
+            &[MAC_RULES[0], MAC_RULES[1], "F|\"The trend is confirmed with the use of the 28 period Momentum indicator and its 28 period simple moving average\" (ch.6); \"When the Momentum indicator crosses its moving average, it gives a sell signal\" (Figure 6.4 text)",
+              "E|\"When the channel boundary is exceeded and the confirmation signal is giving or has already given the same signal, the trade is triggered\" (ch.6, Fig. 6.4 text; PDF p.87)",
+              "X|\"Exit at the end of the day and/ or on a profit target\" (ch.6, PDF p.87-88); the 'Follow-Through' options (opposite signal, trailing stop, 'a predetermined resistance point', PDF p.89) print no value",
+              "A|Read (lead ruling 23 Nov 2026, lane I1; four labelled details): (1) trigger = the first 30-minute close at which the two-bar MAC pattern (the bar's low above the 10-bar simple MA of highs for two consecutive bars; short: the high below the 8-bar simple MA of lows) and the confirmation both hold, i.e. a bar at which they did not both hold on the bar before ('is giving or has already given'); entry at that bar's close, never on the day's last bar; (2) confirmation = Momentum(28) = close - the close 28 bars earlier, against its 28-bar simple moving average: above = bullish, below = bearish (the state, not only the cross, because the text allows the signal to have been given earlier); (3) exit = the close of the day's last 30-minute bar ONLY: the profit target has no printed value and is not modelled, and the opposite-signal / trailing-stop alternatives (PDF p.89) are not modelled either, a trigger inside a trade is ignored (one position at a time); (4) session-aligned 30-minute bars built from the vault's 1-minute file, one continuous series across days (the averages and Momentum carry overnight). 'Completely above/below' = strictly outside the channel (as jb624 / jbcdt MAC).",
+              "A|Minute path: every order fills at a bar's close, so no order depends on the path inside a minute [convention]. The book's chart is the 30-minute S&P 500 futures (Figure 6.4-6.5) and it names the SPY as the stock equivalent: SPY and SPX are the book's market (SPX is the index, not the futures: a labelled substitute); NIFTY 50 and NIFTYBANK 30-minute bars (NSE open to 15:30 IST) are a declared Indian application (R4 #340, UNVERIFIED); cash-index shorts are hypothetical."],
+            "Lead ruling 23 Nov 2026 (I1): the profit target is unstated, so the day-end exit alone is the card's labelled reading; the book prints no performance table for this method (Figures 6.4-6.5 are two chart examples). The daily versions are jbudt_mac_ad57 (live) and jbudt_mac_mom_daily (held: the daily momentum length is not given). No costs in the vault's run."),
         def!("jbudt_mac_mom_daily", "MAC with 57-period MA of momentum (daily)", "Ch.6 · Moving Average Channel", "Long/Short", NotTestable("the momentum length for the daily version is not given (\"a 57 period simple moving average of the MOM\")"),
             &[MAC_RULES[0], MAC_RULES[1], "F|\"In such cases I prefer to use a 57 period simple moving average of the MOM\" (ch.6)"],
             "The Williams A/D alternative in the same sentence is fully specified: jbudt_mac_ad57."),
@@ -108,7 +112,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "jbudt_gap_fpo" => ("jbudt_gap", "Gap day trading", "First profitable opening exit"),
         "jbudt_gap_split" => ("jbudt_gap", "Gap day trading", "EOD if losing, half EOD + half FPO if winning"),
         "jbudt_mac_ad57" => ("jbudt_mac", "Moving Average Channel (Ultimate Day Trader)", "Daily · Williams A/D 57"),
-        "jbudt_mac_mom30" => ("jbudt_mac", "Moving Average Channel (Ultimate Day Trader)", "30-minute · MOM 28 (needs data)"),
+        "jbudt_mac_mom30" => ("jbudt_mac", "Moving Average Channel (Ultimate Day Trader)", "30-minute · MOM 28 (day-end exit)"),
         "jbudt_mac_mom_daily" => ("jbudt_mac", "Moving Average Channel (Ultimate Day Trader)", "Daily · MOM/MA 57 (not testable)"),
         "jbudt_tb16" => ("jbudt_tb", "Trend breakout (16-bar)", "Stop and reverse"),
         "jbudt_tb16_mom" => ("jbudt_tb", "Trend breakout (16-bar)", "Momentum 14 / MA 14 filter"),
@@ -134,6 +138,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "jbudt_pop" => vec![p("bar", "Bar size (minutes; 5 default; 10, 15, 30 the chapter's other figures)", 5., 5., 30., 5.), p("k", "Stochastic length (bars)", 9., 2., 50., 1.),
             p("smooth", "%K smoothing (bars)", 3., 1., 10., 1.), p("upper", "Buy above (%K)", 70., 50., 95., 5.), p("lower", "Sell below (%K)", 30., 5., 50., 5.)], // intraday EP block (K55)
         "jbudt_volspike" => vec![p("bar", "Bar size (minutes; 10 preferred, ch.8)", 10., 5., 30., 5.), p("mult", "Spike: volume at least this multiple (4)", 4., 2., 10., 0.5), p("win", "of the lowest of the previous bars (4)", 4., 1., 10., 1.)],
+        "jbudt_mac_mom30" => vec![p("bar", "Bar size (minutes; 30 = Figures 6.4-6.5)", 30., 5., 60., 5.), p("mah", "MA of highs (bars)", 10., 2., 50., 1.), p("mal", "MA of lows (bars)", 8., 2., 50., 1.),
+            p("bars", "Consecutive complete bars outside the channel", 2., 1., 4., 1.), p("mom", "Momentum length", 28., 5., 60., 1.), p("ma", "MA of momentum (bars)", 28., 5., 60., 1.)], // lane I1
         "jbudt_mac_ad57" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars", 2., 1., 4., 1.), p("ad_ma", "MA of Williams A/D (bars)", 57., 20., 80., 1.)],
         "jbudt_tb16" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01)],
         "jbudt_tb16_mom" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01), p("mom", "Momentum length", 14., 5., 40., 1.), p("ma", "MA of momentum (bars)", 14., 5., 40., 1.),
@@ -149,6 +155,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| getp(id, p, k);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     if id == "jbudt_pop" { return Some(pop(x, from, to, u("bar") as u16, u("k"), u("smooth"), g("upper"), g("lower"))); } // intraday EP block (K55)
+    if id == "jbudt_mac_mom30" { return Some(mac_mom30(x, from, to, u("bar") as u16, u("mah"), u("mal"), u("bars"), u("mom"), u("ma"))); } // lane I1
     if id == "jbudt_volspike" { return Some(volspike(x, from, to, u("bar") as u16, g("mult"), u("win"))); } // lane M1
     let mut out = Vec::new();
     let mut cur: Option<Trade> = None;
@@ -384,4 +391,99 @@ fn volspike(x: &Ctx, from: usize, to: usize, n: u16, mult: f64, win: usize) -> V
     out
 }
 // ---- end lane M1 block
+// ---- lane I1 block (23 Nov 2026, lead ruling): MAC with momentum confirmation on 30-minute bars
+/// Ultimate Day Trader ch.6: two consecutive 30-minute bars completely outside the 10/8 simple MA channel with Momentum(`mom`)
+/// on the same side of its `ma`-bar simple average; the trade is triggered on the close of the first bar at which both hold
+/// (not both on the bar before); out at the close of the day's last bar. One position at a time, no entry on a day's last bar.
+fn mac_mom30(x: &Ctx, from: usize, to: usize, n: u16, nh: usize, nl: usize, bars: usize, mom: usize, ma: usize) -> Vec<Trade> {
+    let b = super::n1intra::series(x, from, to, n);
+    let k = b.len();
+    // plain window sums (as jbcdt::mac: no running sum, so no rounding drift near a tie)
+    let avg = |v: &[f64], m: usize| -> Vec<f64> { (0..v.len()).map(|j| if j + 1 < m || v[j + 1 - m..=j].iter().any(|t| t.is_nan()) { f64::NAN } else { v[j + 1 - m..=j].iter().sum::<f64>() / m as f64 }).collect() };
+    let mah = avg(&b.iter().map(|z| z.h).collect::<Vec<_>>(), nh);
+    let mal = avg(&b.iter().map(|z| z.l).collect::<Vec<_>>(), nl);
+    let mo: Vec<f64> = (0..k).map(|j| if j >= mom { b[j].c - b[j - mom].c } else { f64::NAN }).collect();
+    let mm = avg(&mo, ma);
+    let gt = |a: f64, c: f64| a - c > 1e-9 * c.abs();
+    let (mut up, mut dn) = (0usize, 0usize);
+    let (mut bull, mut bear) = (vec![false; k], vec![false; k]);
+    for j in 0..k {
+        up = if mah[j].is_finite() && gt(b[j].l, mah[j]) { up + 1 } else { 0 };
+        dn = if mal[j].is_finite() && gt(mal[j], b[j].h) { dn + 1 } else { 0 };
+        if mm[j].is_finite() {
+            bull[j] = up >= bars && gt(mo[j], mm[j]);
+            bear[j] = dn >= bars && gt(mm[j], mo[j]);
+        }
+    }
+    let (mut out, mut cur) = (vec![], None::<(f64, usize, f64)>);
+    for j in 0..k {
+        let z = &b[j];
+        if let Some((d, ei, ep)) = cur {
+            if z.last { out.push(crate::intraday::day_trade(d, ei, ep, z.i, z.c, "end of day", "close", false)); cur = None; }
+            continue;
+        }
+        if z.last || j == 0 { continue; }
+        if bull[j] && !bull[j - 1] { cur = Some((1.0, z.i, z.c)); } else if bear[j] && !bear[j - 1] { cur = Some((-1.0, z.i, z.c)); }
+    }
+    out
+}
+// ---- end lane I1 block
 // ---- end intraday EP block
+
+#[cfg(test)]
+mod i1_tests {
+    use crate::connors::{Ctx, Params};
+    fn minutes(days: &[(String, Vec<String>)]) -> &'static crate::intraday::Minutes {
+        let dir = std::env::temp_dir().join(format!("i1mac{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut body, mut idx) = (String::from("Date,Time,Open,High,Low,Close\n"), String::from("Date,offset,bytes\n"));
+        for (d, lines) in days {
+            let start = body.len();
+            for l in lines { body.push_str(&format!("{d},{l}\n")); }
+            idx.push_str(&format!("{d},{start},{}\n", body.len() - start));
+        }
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), &idx).unwrap();
+        Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap()))
+    }
+    fn row(d: &str) -> crate::Row { crate::Row { ticker: "T".into(), date: d.into(), open: 1., high: 1., low: 1., close: 1., volume: None } }
+
+    /// By hand: 5 US days x 13 thirty-minute bars (09:30-16:00), bar j closes at c_j = 100 + 0.1 j^2 with a 0.1 range. Momentum(28)
+    /// first has a 28-bar average at bar 55 (28 + 27), where it is above that average (accelerating) and two bars are above the
+    /// channel -> long at bar 55's close (day 5's 4th bar), out at day 5's last bar (j = 64). Mirror (falling) -> a short.
+    #[test]
+    fn trigger_on_the_first_bar_with_pattern_and_confirmation_then_day_end() {
+        for dir in [1.0, -1.0] {
+            let c = |j: usize| 100.0 + dir * 0.1 * (j * j) as f64;
+            let dates: Vec<String> = (2..7).map(|d| format!("2020-01-0{d}")).collect();
+            let days: Vec<(String, Vec<String>)> = dates.iter().enumerate().map(|(di, d)| (d.clone(), (570..960u16).map(|m| {
+                let p = c(di * 13 + (m as usize - 570) / 30);
+                format!("{:02}:{:02},{p},{},{},{p}", m / 60, m % 60, p + 0.1, p - 0.1)
+            }).collect())).collect();
+            let r: Vec<crate::Row> = dates.iter().map(|d| row(d)).collect();
+            let mut x = Ctx::new(&r, &r, &[]);
+            x.minutes = Some(minutes(&days));
+            let t = super::run("jbudt_mac_mom30", &x, 0, 4, &Params::new()).unwrap();
+            let v: Vec<(f64, usize, f64, usize, f64, String)> = t.iter().map(|z| (z.dir, z.legs[0].i, (z.legs[0].px * 1e6).round() / 1e6, z.exit_i, (z.exit_px * 1e6).round() / 1e6, z.reason.clone())).collect();
+            assert_eq!(v, vec![(dir, 4, (c(55) * 1e6).round() / 1e6, 4, (c(64) * 1e6).round() / 1e6, "end of day".to_string())], "dir {dir}");
+        }
+    }
+
+    /// Reference comparison (run by hand): VAULT_US, VAULT_IDX, VAULT_M1_DIR as the K55 dump; I1_OUT=<csv>
+    /// cargo test --release i1_dump -- --ignored; then authors/india-1123/I1w/cmp.py <csv>.
+    #[test]
+    #[ignore]
+    fn i1_dump() {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("I1_OUT").unwrap()).unwrap());
+        for (file, t) in [("VAULT_US", "SPY"), ("VAULT_US", "SPX"), ("VAULT_IDX", "NIFTY 50"), ("VAULT_IDX", "NIFTYBANK")] {
+            let rows = crate::load_csv(&std::env::var(file).unwrap()).unwrap().remove(t).unwrap();
+            let mut x = Ctx::new(&rows, &rows, &[]);
+            x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(&std::env::var("VAULT_M1_DIR").unwrap(), t).unwrap())));
+            let from = rows.partition_point(|r| r.date.as_str() < x.minutes.unwrap().first());
+            for z in crate::connors::run("jbudt_mac_mom30", &x, from, rows.len() - 1, &Params::new()).unwrap() {
+                for l in &z.legs { writeln!(f, "jbudt_mac_mom30,{t},{},{},{},{},{},{},{}", z.dir, rows[l.i].date, l.px, rows[z.exit_i].date, z.exit_px, z.reason, z.open).unwrap(); }
+            }
+        }
+    }
+}
