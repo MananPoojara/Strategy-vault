@@ -85,6 +85,21 @@ pub fn resolve_conv<S: Clone>(x: &crate::connors::Ctx, i: usize, on: bool, st: &
     if amb { Day::Ambiguous } else { Day::Minutes }
 }
 
+/// V10 (20-23 Nov 2026, tracker cov_turtle_s2 23-05-2019 and the same shortcut in btp / atm00 / dbnotp): `resolve_conv` settles a day on which the two extreme bar orders give the SAME
+/// fills with the module's own daily rule `conv`. That rule can contradict the path (an exit/stop that every path to the close must have crossed, taken a bar late). Here such a day
+/// takes the path outcome; a day whose orders differ goes to the real minutes as before, and with no minutes keeps `conv`. Returns (the day's mark, whether the state is the path
+/// outcome - true for equal-probe days and for minute-resolved days - so a caller that runs a close-of-bar step after minute days runs it after these days too).
+pub fn resolve_path<S: Clone>(x: &crate::connors::Ctx, i: usize, on: bool, st: &mut S, conv: impl Fn(&mut S),
+    probe: impl Fn(&mut S, bool) -> Vec<Ev>, walk: impl Fn(&mut S, &[Seg]) -> Vec<Ev>) -> (Day, bool) {
+    if !on { conv(st); return (Day::Plain, false); }
+    let (mut a, mut b) = (st.clone(), st.clone());
+    if probe(&mut a, true) == probe(&mut b, false) { *st = a; return (Day::Plain, true); }
+    let Some(m) = crate::intraday_w2b::day(x, i).filter(|m| !m.is_empty()) else { conv(st); return (Day::Convention, false) };
+    let (amb, s) = walk_minutes(&m, x.o[i], st.clone(), &walk);
+    *st = s;
+    (if amb { Day::Ambiguous } else { Day::Minutes }, true)
+}
+
 /// One fill of a bar walk: what happened (module code), at which price, and whether the path was moving up (the level is
 /// touched from below: a buy stop, a sell limit, a short's stop) or down.
 #[derive(Clone, Copy, Debug, PartialEq)]
