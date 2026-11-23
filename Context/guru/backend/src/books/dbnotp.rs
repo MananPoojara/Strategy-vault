@@ -153,8 +153,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut z = B6 { ps: Some(ps), closed: None, cancel: false };
             let day = if on {
                 let ot = off(t);
-                resolve_conv(x, t, true, &mut z, conv, |w: &mut B6, f: bool| { let mut v = held_walk(w, o[t], &[], style, comm, ot); v.extend(held_walk(w, o[t], &bar_segs(o[t], h[t], l[t], c[t], f), style, comm, ot)); v },
-                    |w: &mut B6, sg: &[Seg]| held_walk(w, o[t], sg, style, comm, ot))
+                crate::intraday_ep6::resolve_path(x, t, true, &mut z, conv, |w: &mut B6, f: bool| { let mut v = held_walk(w, o[t], &[], style, comm, ot); v.extend(held_walk(w, o[t], &bar_segs(o[t], h[t], l[t], c[t], f), style, comm, ot)); v },
+                    |w: &mut B6, sg: &[Seg]| held_walk(w, o[t], sg, style, comm, ot)).0
             } else { conv(&mut z); Day::Plain };
             od = od.worst(day);
             let ps = z.ps.unwrap();
@@ -214,7 +214,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     }
                     ev
                 };
-                resolve_conv(x, t, true, &mut z, conv, |w: &mut B6, f: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[t], h[t], l[t], c[t], f))); v }, walk)
+                crate::intraday_ep6::resolve_path(x, t, true, &mut z, conv, |w: &mut B6, f: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[t], h[t], l[t], c[t], f))); v }, walk).0
             } else { conv(&mut z); Day::Plain };
             if z.cancel { continue; }
             let Some(ps) = z.ps else { continue };
@@ -292,3 +292,20 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "David Bowden trades the ABC swing method on stocks, stock index futures and currencies; runs on indices, ETFs and US/India stocks are a declared application of his three exit styles, not the author's test.",
     basis: "David Bowden, The Number One Trading Plan (Safety in the Market), ABC trading rules p.46-49, swing charts p.62-65, trailing swing stop p.73, entry stop p.76",
 };
+
+#[cfg(test)]
+mod v10_eq_path_tests {
+    /// V10 (tracker follow-up, 23 Nov 2026): a day whose two extreme bar orders agree follows the path, not the module's daily rule. NIFTY 50 (VAULT_IDX), no minutes, default parameters.
+    #[test]
+    fn abc_currency_stop_follows_the_path_bar() {
+        use crate::connors::{Ctx, Params};
+        let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
+        let data = crate::load_csv(&path).unwrap_or_else(|e| panic!("this test needs real data: set VAULT_IDX to idx_data.csv ({e})"));
+        let rows = &data["NIFTY 50"];
+        let x = Ctx::new(rows, rows, &[]);
+        let t = super::run("dbnotp_abc_currency", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let z = t.iter().find(|z| rows[z.legs[0].i].date == "2011-02-28").expect("the trade");
+        assert_eq!(rows[z.exit_i].date, "2011-02-28", "{} {}", z.exit_px, z.reason);
+        assert!((z.exit_px - 5338.4).abs() < 0.06, "{}", z.exit_px);
+    }
+}

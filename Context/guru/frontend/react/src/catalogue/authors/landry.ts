@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 290,
-  author: { id: 'landry', name: 'Dave Landry', tagline: 'Swing trading · pullbacks, knockouts and bow ties with exact triggers', books: [{ id: 'dlost', title: 'Dave Landry on Swing Trading', year: 2001, blurb: 'Landry, 2001 · Simple Pullback, Trend Knockout, Bow Tie, Oscillator Swing System, CVR III-Modified' }, { id: 'dlstfl', title: 'Swing Trading for a Living (workbook)', year: 2002, blurb: 'Landry, 2002 · Close Count and the VIX High/Low system' }, { id: 'dl10b', title: "10 Best Swing Trading Patterns", year: 2003, blurb: "Landry, 2003 · Explosion Gap Pivots and Reversal Gap; the rest need trend judgement" }, { id: "sclan220", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V16/C07/055VOLA.pdf"], title: "A Volatility Trade In Gold (Landry, S&C V.16:7)", year: 1998, blurb: "Landry · 2/20-day EMA breakout with an EMA trailing stop" }] },
+  author: { id: 'landry', name: 'Dave Landry', tagline: 'Swing trading · pullbacks, knockouts and bow ties with exact triggers', books: [ { id: 'dl220', title: "The 2/20-Day EMA Breakout System (Landry, S&C 1996)", year: 1996, blurb: "Landry, 1996 · two-day-low alert above the 20-day EMA, stop entry 10 ticks beyond the two-day extreme, trailing EMA stop; run on the NSE indices, readings declared, unverified" },{ id: 'dlost', title: 'Dave Landry on Swing Trading', year: 2001, blurb: 'Landry, 2001 · Simple Pullback, Trend Knockout, Bow Tie, Oscillator Swing System, CVR III-Modified' }, { id: 'dlstfl', title: 'Swing Trading for a Living (workbook)', year: 2002, blurb: 'Landry, 2002 · Close Count and the VIX High/Low system' }, { id: 'dl10b', title: "10 Best Swing Trading Patterns", year: 2003, blurb: "Landry, 2003 · Explosion Gap Pivots and Reversal Gap; the rest need trend judgement" }, { id: "sclan220", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V16/C07/055VOLA.pdf"], title: "A Volatility Trade In Gold (Landry, S&C V.16:7)", year: 1998, blurb: "Landry · 2/20-day EMA breakout with an EMA trailing stop" }] },
   identities: ["Dave Landry"],
   profile: {
     "kind": "person",
@@ -24,6 +24,7 @@ export default {
     "confidence": "medium"
   },
   sourceReview: {
+    "dl220": {"type":"article","people":["Dave Landry"]},
     "dlost": {"type":"book","people":["Dave Landry"]},
     "dlstfl": {"type":"course_manual","people":["Dave Landry"]},
     "dl10b": {"type":"book","people":["Dave Landry"]},

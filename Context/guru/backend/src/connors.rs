@@ -270,7 +270,7 @@ pub fn streak(n: usize, pred: impl Fn(usize) -> bool) -> Vec<usize> {
 
 /// Lane IN2 (R4 #340): name of the NIFTY / BANKNIFTY futures daily-volume series, and the volume rules that may read it as a labelled adaptation.
 pub const FUT_VOL: &str = "FUT1.Volume";
-pub const FUT_VOL_IDS: &[&str] = &["scsaitta_volma", "fotol_bb_breakout"];
+pub const FUT_VOL_IDS: &[&str] = &["scsaitta_volma", "fotol_bb_breakout", "stda_obv_ma6"];
 pub struct Ctx<'a> {
     pub r: &'a [Row],
     pub o: Vec<f64>,
@@ -299,6 +299,8 @@ pub struct Ctx<'a> {
     /// The market benchmark's own consecutive down closes (SPX for US instruments, NIFTY 50 for Indian ones, i.e. the
     /// `bench` rows given to `new`), aligned by date; NaN where the benchmark has no bar on that date.
     pub bench_down: Vec<f64>,
+    /// The benchmark's own 100-day historical volatility (same `hv` formula as `hv100`), aligned by date; NaN where it has no bar (lane K1, TMCAP rule B).
+    pub bench_hv100: Vec<f64>,
     /// Trusted market of a server-qualified native stock (set only by the server from catalogue evidence; None for
     /// index/ETF series). Used for the instrument's real tick in stock runs: NSE 0.05 INR, US 0.01 USD.
     pub native_market: Option<crate::baskets::Market>,
@@ -391,6 +393,11 @@ impl<'a> Ctx<'a> {
             bench_down: {
                 let bd = streak(bench.len(), |k| k > 0 && bench[k].close < bench[k - 1].close);
                 let at: std::collections::HashMap<&str, f64> = bench.iter().zip(bd).map(|(b, d)| (b.date.as_str(), d as f64)).collect();
+                r.iter().map(|x| at.get(x.date.as_str()).copied().unwrap_or(f64::NAN)).collect()
+            },
+            bench_hv100: {
+                let bc: Vec<f64> = bench.iter().map(|b| b.close).collect();
+                let at: std::collections::HashMap<&str, f64> = bench.iter().zip(hv(&bc, 100)).map(|(b, d)| (b.date.as_str(), d)).collect();
                 r.iter().map(|x| at.get(x.date.as_str()).copied().unwrap_or(f64::NAN)).collect()
             },
             has_volume: r.iter().any(|x| x.volume.map_or(false, |v| v > 0.0)),
@@ -663,6 +670,7 @@ pub enum Status {
     NotTestable(&'static str),
 }
 
+#[derive(Clone)]
 pub struct Claim {
     pub trades: &'static str,
     pub win: &'static str,
@@ -671,6 +679,7 @@ pub struct Claim {
     pub period: &'static str,
 }
 
+#[derive(Clone)]
 pub struct StrategyDef {
     pub id: &'static str,
     pub name: &'static str,
@@ -701,7 +710,17 @@ pub fn claim(trades: &'static str, win: &'static str, avg: &'static str, hold: &
     Some(Claim { trades, win, avg, hold, period })
 }
 
+/// Q39 (W2): the catalogue is built once per process. Every book's catalogue() leaks its generated notes/rules (Box::leak to get
+/// &'static str), and this function ran on EVERY request (summary, run, readiness, strategies): one /connors/strategies call
+/// retained ~184 MB that was never freed (measured 8 calls: 201 -> 1,718 MB). Tests keep building it fresh (they change state between calls).
+#[cfg(not(test))]
 pub fn catalogue() -> Vec<StrategyDef> {
+    static CATALOGUE: std::sync::OnceLock<Vec<StrategyDef>> = std::sync::OnceLock::new();
+    CATALOGUE.get_or_init(build_catalogue).clone()
+}
+#[cfg(test)]
+pub fn catalogue() -> Vec<StrategyDef> { build_catalogue() }
+fn build_catalogue() -> Vec<StrategyDef> {
     use Status::*;
     let d = |id, name, group, session, dir, status, rules, notes, claim| StrategyDef {
         id, name, group, session, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules, notes, claim,
