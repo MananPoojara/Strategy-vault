@@ -13,7 +13,7 @@ pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option
 pub fn family_of(_id: &str) -> Option<(&'static str, &'static str, &'static str)> { None }
 
 /// Ids of the K4 cards that run on the NIFTY / BANKNIFTY futures minute series (registered in intraday_ep::M1 by `K4`).
-pub const K4: &[&str] = &["sdrbk_rbreaker", "ymgap_fade", "ndt1_neural_dt1", "ndt60_neural_dt60"];
+pub const K4: &[&str] = &["sdrbk_rbreaker", "ymgap_fade", "ndt1_neural_dt1", "ndt60_neural_dt60", "dmpub_epfft5", "dmpub_epfft1"];
 pub fn k4(id: &str) -> bool { K4.contains(&id) }
 
 /// One N-minute bar series. `day[k]` = the daily-row index (Ctx row) of bar k; `stamp[k]` = TradeStation time stamp (bucket end,
