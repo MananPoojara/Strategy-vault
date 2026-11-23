@@ -14,7 +14,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "E|\"If iMP <> 1 and iDiff CROSS OVER 0 and CLOSE > average(CLOSE, BuyAvg) then Buy (\\\"B\\\") NEXT BAR MARKET\"; \"If iMP <> -1 and iDiff CROSS UNDER 0 and CLOSE < average(CLOSE, SellAvg) then Sell Short (\\\"S\\\") NEXT BAR MARKET\" (BuyAvg = SellAvg = 5)",
         "X|\"SETSTOPLOSS (StopAmount * BIGPOINTVALUE)\" (StopAmount 1 = one point); trailing: \"iStopPrice = LOW - AvgTrueRange(ATRLength) * NumATRs\" then \"iStopPrice = iStopPrice + iAF * (iTradeHH - iStopPrice)\", \"Sell (\\\"LX\\\") NEXT BAR iStopPrice STOP\" (afStep .0025, afLimit .6, ATR 5, 2.25)",
         "X|\"If MAXPOSITIONPROFIT >= (GetFlatAmount * BIGPOINTVALUE) then If iMP = 1 and iDiff CROSS UNDER 0 and CLOSE >= average(CLOSE, SellAvg) then Sell (\\\"LX Flat\\\") NEXT BAR MARKET\" (mirrored for a short; GetFlatAmount 1)",
-        NOTE], NOTE)]
+        ], NOTE)]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { (id == ID).then_some((ID, "SP_U (finf.com)", "MACD cross + ATR trail")) }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
