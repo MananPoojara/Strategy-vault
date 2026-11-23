@@ -19,7 +19,7 @@ use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "acbff";
 /// Admitted ids (authors/collins/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */, "acbff_5c1_day" /* D1-16: sides fixed, book table reproduced */];
+pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */, "acbff_5c1_day" /* D1-16: sides fixed, book table reproduced */, "acbff_quiz_20ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
@@ -616,7 +616,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         // ---- not testable
         sd!("acbff_ch4_sp_range", "S&P range sell stop (Black Monday, Ch 4)", g4, "Short", NotTestable("Entry only (low minus previous range sell stop, p.12); the book gives no exit."), &["E|subtract the previous daily range from the low for a sell stop (p.12)"], "", None),
         sd!("acbff_walkforward", "Annual re-optimisation (Ch 23)", g4, "Long/Short", NotTestable("A parameter-selection procedure (best ROA over 600 (e,n,p,q) combinations per 5-year block), not a trading rule; the fixed-parameter rows (Tables 23.2/23.3) are acbff_three with those params."), &["F|optimise e 5-50, n 2-4, p 5/10, q 5-50 on the prior five years, trade the next year (p.88)"], "", None),
-        sd!("acbff_quiz_20ma", "Quiz example: 20-day average + 75% range stop (Ch 45)", g4, "Long/Short", NotTestable("Quiz illustration with no code: whether 'the previous 20-day closing average' includes yesterday's close is not stated (p.198)."), &["E|close above the previous 20-day average: buy next open + 75% of the previous day's range on a stop; vice versa; perpetual"], "", None),
+        sd!("acbff_quiz_20ma", "Quiz example: 20-day average + 75% range stop (Ch 45)", g4, "Long/Short", Live, &["E|close above the previous 20-day average: buy next open + 75% of the previous day's range on a stop; vice versa; perpetual", "X|the system is perpetual: the opposite signal's entry stop closes the position and reverses it (Ch 45 quiz, p.198)", "A|Declared readings (lane I2, 3; R4 #340/#348/#382): (1) 'the previous 20-day closing average' = the simple average of the 20 closes ending the day before the signal close (the book does not say whether the signal close is in it); (2) the stop order is placed at every close while the condition holds and the position is not already on that side, and lapses after one bar; (3) the opposite signal reverses at the stop (perpetual), the stop being at the next open plus or minus 75% of the signal bar's range, so it never lies behind the open (no same-bar order ambiguity). Quiz illustration without a results table; run on the vault's index series, declared adaptation, UNVERIFIED."], "Collins quiz example (Ch 45, p.198): 20-day average with a 75% range entry stop, stop and reverse.", None),
     ]
 }
 
@@ -665,6 +665,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "acbff_short_dom" | "acbff_dom" | "acbff_dom_day" => vec![p("n", "Long start day", 21., 1., 28., 1.), p("p", "Short start day", 6., 1., 28., 1.)],
         "acbff_dom_day_cc" => vec![p("n", "Long start day", 21., 1., 28., 1.), p("p", "Short start day", 6., 1., 28., 1.), p("close_all", "Lower-close filter on all long days (text p.119)", 0., 0., 1., 1.)],
         "acbff_moy" | "acbff_moy_dom" | "acbff_moy_dom_day" | "acbff_cal3" | "acbff_cal2_day" => vec![p("n", "Month ending the short (long from next)", 10., 1., 12., 1.), p("p", "Month ending the long", 4., 1., 12., 1.)],
+        "acbff_quiz_20ma" => vec![p("k", "Entry stop x previous day's range (book 0.75)", 0.75, 0.1, 2., 0.05)],
         "acbff_rx_filter" => vec![p("u", "Filter threshold (0 = no filter)", 0.6, 0., 1., 0.05), p("n", "Filter days", 20., 5., 50., 1.), p("k", "Stop x 3-day avg range", 0.5, 0.1, 2., 0.05)],
         "acbff_cup_3day" | "acbff_3rd_fade" => vec![tick()],
         "acbff_5d_avg_fade" => vec![tick(), p("exit_late", "1 = exit one day later (code under next-bar timing)", 0., 0., 1., 1.)],
@@ -982,6 +983,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let f = five(x, 40, 2, 5, 50, 10, 15, lr);
             let ccc = persist(n, |i| { let t = f.u[i] + f.q[i] + f.xo[i] + f.y[i] + f.z[i]; (t > 0.0, t < 0.0) });
             perp(&|i| { let t = aaa[i] + domf(&k, i) + ccc[i]; (t > 0.0, t < 0.0) })
+        }
+        // Lane I2 (Q386, 24 Nov 2026): Ch 45 quiz example, p.198; the average is the 20 closes ending the day before the signal close
+        "acbff_quiz_20ma" => {
+            let ma = mean(c, 20); let k = g("k");
+            engine(x, from, to, |i, ps, nx, _| {
+                if i < 21 { return; }
+                let (o1, d) = (op[i + 1], k * (h[i] - l[i]));
+                if ps.mp < 1 && c[i] > ma[i - 1] { put(nx, Buy, T::Stop(o1 + d), "buy stop"); }
+                if ps.mp > -1 && c[i] < ma[i - 1] { put(nx, Short, T::Stop(o1 - d), "short stop"); }
+            })
         }
         "acbff_rx_filter" => {
             let xs: Vec<f64> = (0..n).map(|i| if i >= 2 && ((c[i] > c[i - 1] && c[i - 1] > c[i - 2]) || (c[i] < c[i - 1] && c[i - 1] < c[i - 2])) { 1.0 } else { 0.0 }).collect();
@@ -1323,6 +1334,23 @@ mod i2_dump {
                 for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
                     writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
                 }
+            }
+        }
+    }
+
+    /// Lane I2 hand-run dump for the quiz card's pandas reference (Q385_CSV=<idx_data.csv> Q385_OUT6=<file>
+    /// cargo test --release i2_quiz_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_quiz_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("Q385_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("Q385_OUT6").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("acbff_quiz_20ma", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "acbff_quiz_20ma,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
             }
         }
     }
