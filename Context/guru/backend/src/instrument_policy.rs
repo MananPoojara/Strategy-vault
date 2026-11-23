@@ -1100,6 +1100,9 @@ fn base_policy(def:&StrategyDef)->Policy {
     if def.book==crate::books::ewtrin::BOOK {return index(crate::books::ewtrin::index_only());} // lane K1
     if def.book==crate::books::mwpm::BOOK {return index(crate::books::mwpm::index_only());} // lane K1 Q381
     if def.book==crate::books::fxsolo::BOOK {return index(crate::books::fxsolo::index_only());} // lane K1 Q381
+    if def.book==crate::books::fxgap::BOOK {return index(crate::books::fxgap::index_only());} // lane K1 Q381
+    if def.book==crate::books::agdmi::BOOK {return index(crate::books::agdmi::index_only());} // lane K1 Q381
+    if def.book==crate::books::invcr::BOOK {return index(crate::books::invcr::index_only());} // lane K1 Q381
     if def.book==crate::books::kpdr::BOOK {return index("Kaeppel discount-rate timing: an index rule (the S&P 500 in the article), run on the NSE indices NIFTY 50 and NIFTY BANK only, with the RBI repo-rate change list in place of the US discount rate (declared adaptation, R4 #340); UNVERIFIED");} // lane K1
     if def.book==crate::books::thvl::BOOK {return index("Hayes 30-week momentum of the Value Line Composite: an index rule, run on actual indices only (US and NSE); the Value Line itself is not held, so any index is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
     if def.book==crate::books::tmcap::BOOK {return stock("TradingMarkets Capital Appreciation Program (TMCAP): a stock method (volatility twice the market's), run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets; benchmark SPX or NIFTY 50); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
@@ -1497,6 +1500,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
     // intraday phase 1: minute data now exists for these, so the hold says what still blocks them
     match id {
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>return Some("Held: needs NYSE TICK data. Real 15-minute bars are now built from 1-minute data (SPY 2000-2025, SPX 2008-2026, NIFTY 50 2008-2026), but these day trades are taken only on days the course's 30-signal Market Timing count gives a buy bias, and one of the 30 signals is the NYSE TICK, which the vault does not have; counting only the other signals changes the strategy."),
+        "fxgap_weekly"=>return Some("Held: the result depends on the order of events inside a daily bar (decisions #175/#240). On the Indian and US indices the 150-pip stop and the retrace to the previous week's close fall in the same daily bar in up to 5.9 percent of gap trades, and the retrace and a fall back to the entry (the breakeven stop the guide makes live as soon as the previous close is hit, p.23 and p.32) in 51-60 percent; resolving it needs the 1-minute path (NIFTY 50 and SPX from 2008), not built. The rule is coded and its daily-bar reference matches (0 mismatches over 13,720 trades) but no results are published."),
         "cwin_vix_gap_window"=>return Some("Held: needs data, not rules (decision #244; the rule is coded from the Connors Windows course, VIX Gap Window): waiting for the rebuilt India VIX daily file. India VIX and NIFTY 50 1-minute bars are now cleaned (2015-2026), but the rule compares today's VIX minutes with yesterday's VIX high and low, which must come from the same rebuilt daily India VIX that a separate review is producing. There is no intraday CBOE VIX, so US runs stay held."),
         _=>{}
     }
