@@ -57,6 +57,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 mod tests {
     use super::*;
     #[test]
+    fn five_weekday_cards_are_one_family() {
+        let f: std::collections::HashSet<_> = IDS.iter().map(|i| family_of(i).unwrap()).collect();
+        assert_eq!(f.len(), 1);
+        assert_eq!(f.into_iter().next().unwrap().0, "jsrev2");
+        assert!(family_of("jsrev2_sat").is_none());
+    }
+    #[test]
     fn dates() { assert_eq!(dn("1970-01-01"), Some((0, 3))); assert_eq!(dn("2026-11-24").unwrap().1, 1); assert_eq!(prev_weekday(dn("2026-11-23").unwrap().0, 0), dn("2026-11-20").unwrap().0); }
     #[test]
     fn sane_runs() {
