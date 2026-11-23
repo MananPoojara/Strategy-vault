@@ -9,9 +9,11 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "dmpub";
 const IDS: [&str; 2] = ["dmpub_poly4", "dmpub_fm4"];
 const HELD: [&str; 2] = ["dmpub_epfft5", "dmpub_epfft1"];
+#[allow(dead_code)]
 const HELD_WHY: &str = "Held on Indian data (R4 #377, lead review 23 Nov 2026): the End Point FFT rules use fixed S&P index POINT thresholds (pntup/pntdn 1.0/3.0, pup/pdn 2.75/1.25 points) that mean different things on NIFTY (about 25,000) than on the S&P (about 1,400); rescaling them would be invented. The rule is coded in this file but not published; it needs S&P 500 e-mini minute data.";
 
 const NOTE: &str = "A|Adapted (R4 #340, lane K2 23 Nov 2026), UNVERIFIED: the papers trade S&P 500 / E-mini futures (Sep/99, Mar/00, Sep/02) in dollars and print their results for that contract; the rule runs here on the NIFTY 50 / NIFTYBANK FUTURES 1-minute series (lane DI; nearest-expiry continuous, NOT back-adjusted; days with a blank volume are absent), session 09:15-15:30 IST, bars aligned to the session open (09:15 ...; the 15:30 auction minute dropped). The book's walk-forward results are for a different contract and period and are not reproduced. Parameters = the paper's Figure 1 optimum (a single walk-forward test window; no optimiser is run here); percent parameters carry over unchanged, point parameters (EPFFT pntup/pntdn) are used as printed in index points with no rescaling. Readings of what the paper leaves open, 4, all labelled: (1) one continuous bar series across days for the curve (the papers' windows span days; the nearest-expiry roll gap is inside it); (2) 'at the market' = the next bar's open, a signal on the day's last bar is not taken, 'exit on the close' = the last bar's close (the 1-minute paper: one minute before the close = the close of the second-to-last bar); (3) at each new day the curve's high/low trackers restart at that bar and, while flat, both are tracked, so the first move of either size opens a position; after an entry the tracker of the held side starts at that bar's curve value; (4) no signal before the curve's warm-up (60 bars LS polynomial, 150 bars fading memory so its start-up transient 0.91^150 is gone, 512 bars EPFFT); EPFFT zeroes the bins whose magnitude is below thres*max over all 512 bins (DC included). No costs.";
+const NOTE_EP: &str = "A|Adapted (R4 #340, lane K2 23 Nov 2026), UNVERIFIED: the papers trade S&P 500 / E-mini futures (Sep/99, Mar/00, Sep/02) in dollars and print their results for that contract; the rule runs here on the NIFTY 50 / NIFTYBANK FUTURES 1-minute series (lane DI; nearest-expiry continuous, NOT back-adjusted; days with a blank volume are absent), session 09:15-15:30 IST, bars aligned to the session open (09:15 ...; the 15:30 auction minute dropped). The book's walk-forward results are for a different contract and period and are not reproduced. Parameters = the paper's Figure 1 optimum (a single walk-forward test window; no optimiser is run here); percent parameters carry over unchanged, the printed point parameters (EPFFT pntup/pntdn, pup/pdn) are S&P index points: they follow ONE stated price-relative scaling rule (R4 #380, re-opened 24 Nov 2026, lane K4): threshold = printed points x the bar's close / ref, ref = the S&P level of the paper's own test window (1,400 for the 5-minute paper, S&P Mar/00, 30 Nov-30 Dec 1999; 1,000 for the 1-minute paper, ES Sep/02, 12 Jun-12 Jul 2002), counted as ONE labelled detail. Readings of what the paper leaves open, 4, all labelled: (1) one continuous bar series across days for the curve (the papers' windows span days; the nearest-expiry roll gap is inside it); (2) 'at the market' = the next bar's open, a signal on the day's last bar is not taken, 'exit on the close' = the last bar's close (the 1-minute paper: one minute before the close = the close of the second-to-last bar); (3) at each new day the curve's high/low trackers restart at that bar and, while flat, both are tracked, so the first move of either size opens a position; after an entry the tracker of the held side starts at that bar's curve value; (4) the point-threshold scaling rule above. Vault convention, not an unstated rule detail (as 'bars before the third are skipped' on other cards): no signal before the curve's warm-up (512 bars EPFFT); EPFFT zeroes the bins whose magnitude is below thres*max over all 512 bins (DC included). No costs.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mk = |id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str| StrategyDef { id, name, group: "Meyers intraday papers", session: 0, dir: "Long/Short", status: Status::Live,
@@ -27,14 +29,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Paper: 'The Fading Memory 4th Order Polynomial' (2000), 10 pp. Figure 1 optimum beta 0.910, pctup 1.10%, pctdn 0.60% (S&P Mar/00, 11 Jan - 11 Feb 2000)."),
         mk(HELD[0], "End Point FFT System (5-min futures)", &["F|Each bar: take ln of the last 512 closes, end-flatten (a=x1, b=(xn-x1)/(n-1)), FFT, zero the bins below 0.15*max magnitude, inverse FFT, add back the trend and exp; y = last point, y1 = the point before; dsumEP += y-y1 (pp. 2-3)",
             "E|Buy at the market when dsumEP has moved up by more than pntup=1.0 points from its lowest while short; sell (reverse) when down by more than pntdn=3.0 points from its highest while long",
-            "X|Exit on the close", NOTE],
-            "Paper: 'The End Point Fast Fourier Transform' (2000), 9 pp. Figure 1 optimum pntup 1.0, pntdn 3.0 (S&P Mar/00 5-min, 30 Nov - 30 Dec 1999). Points are not rescaled to the NIFTY level."),
+            "X|Exit on the close", NOTE_EP],
+            "Paper: 'The End Point Fast Fourier Transform' (2000), 9 pp. Figure 1 optimum pntup 1.0, pntdn 3.0 (S&P Mar/00 5-min, 30 Nov - 30 Dec 1999). Points are scaled by close / 1,400 (R4 #380)."),
         mk(HELD[1], "End Point FFT System (1-min futures, E-mini paper)", &["F|Same EPFFT as the 5-minute paper on 1-minute bars: 512 bars, thres=0.13 of the maximum magnitude; sumEP += ep-ep1",
             "E|Buy at the market when sumEP has moved up by more than pup=2.75 points from its lowest while short; sell (reverse) when down by more than pdn=1.25 points from its highest while long",
-            "X|Close the position 1 minute before the close (no overnight)", NOTE],
+            "X|Close the position 1 minute before the close (no overnight)", NOTE_EP],
             "Paper: 'Trading The E-Mini Using The End Point Fast Fourier Transform' (2003), 16 pp. Figure 4 optimum thres 0.13, pntup 2.75, pntdn 1.25 (ES Sep/02 1-min, 12 Jun - 12 Jul 2002)."),
     ];
-    for d in &mut v { if HELD.contains(&d.id) { d.status = Status::NeedsData(HELD_WHY); } }
     v
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -45,6 +46,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "dmpub_poly4" => Some(vec![p("bar", "Bar size (minutes; 5 per the paper)", 5., 1., 30., 1.), p("t", "T, closes in the least-squares fit", 60., 10., 200., 1.), p("pctup", "pctup, % rise of Pf from its low", 0.90, 0.05, 3., 0.05), p("pctdn", "pctdn, % fall of Pf from its high", 0.75, 0.05, 3., 0.05)]),
         "dmpub_fm4" => Some(vec![p("bar", "Bar size (minutes; 5 per the paper)", 5., 1., 30., 1.), p("beta", "beta (memory)", 0.91, 0.5, 0.99, 0.01), p("pctup", "pctup, % rise of X4est from its low", 1.10, 0.05, 3., 0.05), p("pctdn", "pctdn, % fall of X4est from its high", 0.60, 0.05, 3., 0.05)]),
+        "dmpub_epfft5" => Some(vec![p("bar", "Bar size (minutes; 5 per the paper)", 5., 1., 30., 1.), p("thres", "thres (fraction of the maximum magnitude)", 0.15, 0.01, 0.9, 0.01), p("pup", "pntup (S&P points at ref, scaled by close / ref)", 1.0, 0.1, 20., 0.05), p("pdn", "pntdn (S&P points at ref, scaled by close / ref)", 3.0, 0.1, 20., 0.05), p("ref", "S&P level of the paper's test window (Dec 1999)", 1400., 100., 5000., 100.)]),
+        "dmpub_epfft1" => Some(vec![p("bar", "Bar size (minutes; 1 per the paper)", 1., 1., 30., 1.), p("thres", "thres (fraction of the maximum magnitude)", 0.13, 0.01, 0.9, 0.01), p("pup", "pup (S&P points at ref, scaled by close / ref)", 2.75, 0.1, 20., 0.05), p("pdn", "pdn (S&P points at ref, scaled by close / ref)", 1.25, 0.1, 20., 0.05), p("ref", "S&P level of the paper's test window (Jun-Jul 2002)", 1000., 100., 5000., 100.)]),
         _ => None,
     }
 }
@@ -85,7 +88,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 s += y - y1;
                 f[k] = s; // sumEP starts at 0 on the first full window
             }
-            curve_system(&bars, &f, 511, Thr::Pts(g("pup"), g("pdn")), one_before)
+            curve_system(&bars, &f, 511, Thr::Pts(g("pup"), g("pdn"), g("ref")), one_before)
         }
     })
 }
@@ -93,7 +96,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[derive(Clone, Copy)]
 struct B { i: usize, o: f64, c: f64, last: bool, pen: bool }
 #[derive(Clone, Copy)]
-enum Thr { Pct(f64, f64), Pts(f64, f64) }
+enum Thr { Pct(f64, f64), Pts(f64, f64, f64) }
 
 /// Continuous bar series over rows from..=to; `pen` marks the second-to-last bar of a day.
 fn bars(x: &Ctx, from: usize, to: usize, n: u16, _one: bool) -> (Vec<B>, bool) {
@@ -116,8 +119,8 @@ fn curve_system(b: &[B], f: &[f64], warm: usize, th: Thr, exit_pen: bool) -> Vec
     let mut out = vec![];
     let (mut pos, mut ep, mut ei) = (0.0f64, 0.0f64, 0usize);
     let (mut lo, mut hi) = (f64::NAN, f64::NAN);
-    let up = |lo: f64, c: f64| match th { Thr::Pct(u, _) => c > lo * (1.0 + u / 100.0), Thr::Pts(u, _) => c > lo + u };
-    let dn = |hi: f64, c: f64| match th { Thr::Pct(_, d) => c < hi * (1.0 - d / 100.0), Thr::Pts(_, d) => c < hi - d };
+    let up = |lo: f64, c: f64, px: f64| match th { Thr::Pct(u, _) => c > lo * (1.0 + u / 100.0), Thr::Pts(u, _, rf) => c > lo + u * px / rf };
+    let dn = |hi: f64, c: f64, px: f64| match th { Thr::Pct(_, d) => c < hi * (1.0 - d / 100.0), Thr::Pts(_, d, rf) => c < hi - d * px / rf };
     let mut pend: Option<f64> = None; // order for the next bar's open: +1 buy, -1 sell
     for k in 0..b.len() {
         let z = &b[k];
@@ -137,8 +140,8 @@ fn curve_system(b: &[B], f: &[f64], warm: usize, th: Thr, exit_pen: bool) -> Vec
         if z.last || (exit_pen && z.pen) { continue; }
         if pos <= 0.0 { lo = lo.min(c); }
         if pos >= 0.0 { hi = hi.max(c); }
-        if pos <= 0.0 && up(lo, c) { pend = Some(1.0); lo = f64::INFINITY; hi = c; }
-        else if pos >= 0.0 && dn(hi, c) { pend = Some(-1.0); hi = f64::NEG_INFINITY; lo = c; }
+        if pos <= 0.0 && up(lo, c, z.c) { pend = Some(1.0); lo = f64::INFINITY; hi = c; }
+        else if pos >= 0.0 && dn(hi, c, z.c) { pend = Some(-1.0); hi = f64::NEG_INFINITY; lo = c; }
     }
     out
 }
@@ -208,7 +211,8 @@ mod tests {
         let d = |id: &str| params(id).unwrap().iter().map(|p| p.def).collect::<Vec<_>>();
         assert_eq!(d("dmpub_poly4"), vec![5., 60., 0.90, 0.75]);
         assert_eq!(d("dmpub_fm4"), vec![5., 0.91, 1.10, 0.60]);
-        assert!(params("dmpub_epfft5").is_none() && params("dmpub_epfft1").is_none()); // held, R4 #377
+        assert_eq!(d("dmpub_epfft5"), vec![5., 0.15, 1.0, 3.0, 1400.]);
+        assert_eq!(d("dmpub_epfft1"), vec![1., 0.13, 2.75, 1.25, 1000.]);
     }
     #[test]
     fn ls_weights_forecast_a_cubic_exactly() {
