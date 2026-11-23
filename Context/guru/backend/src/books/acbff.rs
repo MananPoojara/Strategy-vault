@@ -169,6 +169,7 @@ impl<'a, 'b> Eng<'a, 'b> {
 
 /// Run a strategy script. `s(i, pos, next, this_close)` is called at the close of bar i (position as of the
 /// script run); `next` holds orders for bar i+1, `this_close` orders fill at bar i's close.
+thread_local! { static FUT_MIN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 fn engine<F: FnMut(usize, &Pos, &mut Vec<O>, &mut Vec<O>)>(x: &Ctx, from: usize, to: usize, s: F) -> Vec<Trade> { engine_ep6(x, from, to, false, s) }
 
 /// `engine` with EP6 (#243, lane K63): with `on`, an order-dependent bar is decided on its real 1-minute path (intraday_ep6).
@@ -480,6 +481,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Text (p.83) says 'buy at market'; code uses the 50% stop; code used.", cl("97", "55.67%", "$595.88 (net $57,800)", "multi-day", SP)),
         sd!("acbff_fut_2hl_3", "2d high/low exit #3 on NIFTY futures daily bars (Table 22.2)", g21, "Long/Short", Live,
             &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror short (App. p.215-216)", "X|second-high/low targets; average market exit; mirror", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_2hl_3 (Table 22.2; entry stop 0.5 x the 3-day average range from the next open, the second-high / second-low targets, the 40-day average market exit; the text-vs-code difference noted on that card is read as the code, as there), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Stop / limit / market orders are walked on the daily bar path (open, the extreme nearer the open, the other extreme, close; the engine convention, no minute walk); the share of trades whose outcome depends on that order is in the gate row. The book's table is the S&P full futures 2001-2005; not comparable. No costs."], "Same rule as acbff_2hl_3 on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
+        sd!("acbff_fut_2hl_2", "2d high/low exit #2 on NIFTY futures daily bars (Table 22.1)", g21, "Long/Short", Live,
+            &["E|\"if c > average(c,25) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror short (App. p.215)",
+            "X|second-high/low targets; average(c,25) market exit; mirror",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_2hl_2 (Table 22.1; entry stop 0.5 x the 3-day average range from the next open, the second-high / second-low targets, the 25-day average market exit), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Same-day order of stop, limit and market orders: on a day whose outcome depends on the order of the daily high and low (R4 #240: 62 of 323 and 15 of 49 trades for rx_filter, 21 of 269 and 7 of 71 for 2hl_2 on the daily path) the orders are walked on that day's FUT1 1-minute bars (EP6 resolver, gaps between minutes filled at the next minute open); other days use the daily bar path. The book's table is the S&P full futures; not comparable. No costs."], "Same rule as acbff_2hl_2 on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
+        sd!("acbff_fut_rx_filter", "Range expansion with two-same-way filter on NIFTY futures daily bars (Table 33.1)", g33, "Long/Short", Live,
+            &["F|x=1 if two closes in a row the same way, else 0; filter average(x,n) >= u, n=20 u=.6 (App. p.227)",
+            "E|\"if average(x,n) >= u then buy next bar at o of tomorrow+(.5*average(range,3)) stop\"; mirror short",
+            "X|\"sell next bar at o of tomorrow-(.5*average(range,3)) stop\"; \"buy to cover next bar at o of tomorrow+(.5*average(range,3)) stop\"",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_rx_filter (Table 33.1; x = 1 when two closes in a row go the same way, filter average(x,20) >= 0.6, entry and exit stops at the next open +- 0.5 x the 3-day average range; the book's default u = 0.6), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Same-day order of stop, limit and market orders: on a day whose outcome depends on the order of the daily high and low (R4 #240: 62 of 323 and 15 of 49 trades for rx_filter, 21 of 269 and 7 of 71 for 2hl_2 on the daily path) the orders are walked on that day's FUT1 1-minute bars (EP6 resolver, gaps between minutes filled at the next minute open); other days use the daily bar path. The book's table is the S&P full futures; not comparable. No costs."], "Same rule as acbff_rx_filter on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         sd!("acbff_2hl_4", "2d high/low exit #4 · limit entries (Table 22.3)", g21, "Long/Short", Live,
             &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow-.5*average(range,3) limit\"; mirror (App. p.218)", "X|second-high/low targets; average(c,40) market exits"], SNOTE, cl("99", "63.64%", "$1,856.31 (net $183,775)", "multi-day", SP)),
         sd!("acbff_wk_rx", "One-week range expansion (Table 25.1/25.3)", g25, "Long/Short", Live,
@@ -728,12 +738,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(base) = id.strip_prefix("acbff_fut_") { // lane I2 (R4 #340): the same rule on NIFTY futures daily bars
         let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
         if rows.len() < 2 { return Some(vec![]); }
-        let y = Ctx::new(&rows, &rows, &[]);
-        return Some(crate::books::sprfs::remap(run(&format!("acbff_{base}"), &y, 0, rows.len() - 1, p)?, &map));
+        let mut y = Ctx::new(&rows, &rows, &[]);
+        // order-dependent stop days of these ids are walked on the FUT1 minutes (EP6 resolver, R4 #175/#240)
+        let fm = matches!(base, "2hl_2" | "rx_filter");
+        if fm { y.minutes = x.fut.map(|f| f.cut_at(15 * 60 + 30)); }
+        FUT_MIN.with(|f| f.set(fm));
+        let r = run(&format!("acbff_{base}"), &y, 0, rows.len() - 1, p);
+        FUT_MIN.with(|f| f.set(false));
+        return Some(crate::books::sprfs::remap(r?, &map));
     }
     if id == "acbff_mega_1min" { return Some(mega_minutes(x, from, to)); } // lane K38: real 1-minute bars
     let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
-    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
+    let on = crate::intraday_ep6::on(id, p) || FUT_MIN.with(|f| f.get()); // EP6 (#243, lane K63); lane I2: the futures minute walk
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(0.0));
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -848,7 +864,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let k = g("k"); let ma = mean(c, u("ma"));
             let f = five(x, 40, 2, 5, 50, 10, 15, false);
             let (mut hh, mut ll) = (0.0f64, 0.0f64);
-            engine(x, from, to, move |i, ps, nx, _| {
+            engine_ep6(x, from, to, on, move |i, ps, nx, _| {
                 if ps.mp == 1 && ps.bse(i) == 0 { hh = h[i]; }
                 if ps.mp == -1 && ps.bse(i) == 0 { ll = l[i]; }
                 let o1 = op[i + 1];
@@ -970,7 +986,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "acbff_rx_filter" => {
             let xs: Vec<f64> = (0..n).map(|i| if i >= 2 && ((c[i] > c[i - 1] && c[i - 1] > c[i - 2]) || (c[i] < c[i - 1] && c[i - 1] < c[i - 2])) { 1.0 } else { 0.0 }).collect();
             let ax = mean(&xs, u("n")); let (uu, k) = (g("u"), g("k"));
-            engine(x, from, to, |i, _, nx, _| {
+            engine_ep6(x, from, to, on, |i, _, nx, _| {
                 let o1 = op[i + 1]; let d = k * ar3[i];
                 if ax[i] >= uu { put(nx, Buy, T::Stop(o1 + d), "buy stop"); }
                 put(nx, Sell, T::Stop(o1 - d), "exit stop");
@@ -1303,7 +1319,7 @@ mod i2_dump {
             let rows = &data[t];
             let mut x = Ctx::new(rows, &[], &[]);
             x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
-            for id in ["acbff_fut_5c_perp", "acbff_fut_5c1_perp", "acbff_fut_2hl_3"] {
+            for id in ["acbff_fut_5c_perp", "acbff_fut_5c1_perp", "acbff_fut_2hl_3", "acbff_fut_2hl_2", "acbff_fut_rx_filter"] {
                 for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
                     writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
                 }

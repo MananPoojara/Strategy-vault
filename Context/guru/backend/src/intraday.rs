@@ -11,7 +11,7 @@ use std::io::{Read, Seek, SeekFrom};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bar1 { pub m: u16, pub o: f64, pub h: f64, pub l: f64, pub c: f64 }
 
-pub struct Minutes { idx: BTreeMap<String, (u64, usize)>, path: std::path::PathBuf }
+pub struct Minutes { idx: BTreeMap<String, (u64, usize)>, path: std::path::PathBuf, cut: u16 } // cut: 0 = every minute; else `day()` drops the minutes from this minute of the day on (lane I2)
 
 impl Minutes {
     /// None when the ticker has no minute files (every current result then stays exactly as before).
@@ -22,24 +22,33 @@ impl Minutes {
             let mut f = l.split(',');
             Some((f.next()?.to_string(), (f.next()?.parse().ok()?, f.next()?.parse().ok()?)))
         }).collect();
-        (!idx.is_empty()).then(|| Minutes { idx, path: format!("{dir}/{t}.m1.csv").into() })
+        (!idx.is_empty()).then(|| Minutes { idx, path: format!("{dir}/{t}.m1.csv").into(), cut: 0 })
     }
     pub fn first(&self) -> &str { self.idx.keys().next().map_or("", |s| s.as_str()) }
     pub fn last(&self) -> &str { self.idx.keys().next_back().map_or("", |s| s.as_str()) }
     /// The day's minutes in time order, or None (no file, day excluded, or a malformed row).
+    /// The same file with `day()` stopping before minute-of-day `m` (e.g. 15:30 = 930: the futures daily bar excludes those
+    /// minutes, so a walk over them would leave the bar). One shared copy per (file, cut).
+    pub fn cut_at(&self, m: u16) -> &'static Minutes {
+        use std::sync::{Mutex, OnceLock};
+        static C: OnceLock<Mutex<std::collections::HashMap<(std::path::PathBuf, u16), &'static Minutes>>> = OnceLock::new();
+        let mut g = C.get_or_init(Default::default).lock().unwrap();
+        g.entry((self.path.clone(), m)).or_insert_with(|| Box::leak(Box::new(Minutes { idx: self.idx.clone(), path: self.path.clone(), cut: m })))
+    }
     pub fn day(&self, date: &str) -> Option<Vec<Bar1>> {
         let &(off, n) = self.idx.get(date)?;
         let mut f = std::fs::File::open(&self.path).ok()?;
         f.seek(SeekFrom::Start(off)).ok()?;
         let mut buf = vec![0u8; n];
         f.read_exact(&mut buf).ok()?;
-        std::str::from_utf8(&buf).ok()?.lines().map(|l| {
+        let all: Option<Vec<Bar1>> = std::str::from_utf8(&buf).ok()?.lines().map(|l| {
             let v: Vec<&str> = l.split(',').collect();
             if v.len() < 6 || v[0] != date { return None; }
             let (hh, mm) = v[1].split_once(':')?;
             let num = |s: &str| s.parse::<f64>().ok();
             Some(Bar1 { m: hh.parse::<u16>().ok()? * 60 + mm.parse::<u16>().ok()?, o: num(v[2])?, h: num(v[3])?, l: num(v[4])?, c: num(v[5])? })
-        }).collect()
+        }).collect();
+        all.map(|v| if self.cut == 0 { v } else { v.into_iter().filter(|z| z.m < self.cut).collect() })
     }
 }
 
@@ -71,7 +80,7 @@ impl Minutes {
             head = false;
             pos += n as u64;
         }
-        (!idx.is_empty()).then(|| Minutes { idx, path: path.into() })
+        (!idx.is_empty()).then(|| Minutes { idx, path: path.into(), cut: 0 })
     }
     /// The day's minutes with their volumes (before 15:30), or None.
     pub fn fut_day(&self, date: &str) -> Option<(Vec<Bar1>, Vec<f64>)> {
