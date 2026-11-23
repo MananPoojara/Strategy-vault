@@ -12,7 +12,7 @@ pub const BOOK: &str = "prap3";
 pub const REVIEWED: &[&str] = &["prap3_power10", "prap3_selloff", "prap3_lllh", "prap3_raptor2mod"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const COMMON: &str = "Unstated in the rules page (labelled): the Liquidity Filter formula (the Raptor-family definition: 1,000,000 x MA20(close x volume) / MA65(benchmark close x volume), 'greater than 3' as books::prap2), HV(100) = population st.dev of 100 ln returns x sqrt(252) x 100 and Wilder ADX(10) / RSI(2) (the family's AmiBroker conventions); a limit buy fills when the next day's low is below the limit, at min(open, limit), and is live on that day only; an exit condition is tested at every close from the fill day's own close, and the sale is at the next open. One position per stock. ";
+macro_rules! common { () => { "Stated unstated readings (labelled, 3 for every card): (1) Liquidity Filter 'greater than 3' = 1,000,000 x MA20(close x volume) / MA65(benchmark close x volume), the Raptor-family definition of books::prap2, with the NIFTY 50 as the benchmark (a labelled swap for the S&P 500 x NYSE volume); (2) a limit buy is live for the next session only and fills when that session's low is below the limit, at min(open, limit); (3) the exit condition is tested at every close from the fill day's own close and the sale is at the next open. Engine conventions (not readings): HV(100) = population st.dev of 100 ln returns x sqrt(252) x 100, Wilder ADX(10) and RSI(2) (the family's AmiBroker definitions), simple moving averages, one position per stock at a time. " }; }
 
 const POWER: &[&str] = &[
     "F|\"1. The stock's close is above the 200-day moving average. 2. The stock's Liquidity Filter is greater than 3. 3. The 10-period ADX is greater than 20. 4. The 100 period Historical Volatility reading is greater than 20.\" (Strategy One - Power10 Rules)",
@@ -45,13 +45,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_volume: true, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None };
     vec![
         d("prap3_power10", "Raptor 3 Strategy One - Power10 (RSI(2) < 10, 3 down closes, 3-day loss >= 5%, 3-15% limit)", POWER,
-          concat!("[Printed rules; four labelled unstated details, unverified] ", "Limit % = max(15 - the 3-day loss in %, 3), taken below yesterday's low (p.ref_low = 1, the rule's wording; 0 = below the close, the worked example's wording). ", "The 3-day loss is 1 - close / close 3 bars earlier. ", "Exit: first close above the 5-day SMA. ")),
+          concat!("[Printed rules; unverified] ", common!(), "(4) Power10 only: the limit % = max(15 - the 3-day loss in %, 3), taken below yesterday's low (p.ref_low = 1, the rule's wording; 0 = below the close, the worked example's wording). The 3-day loss is 1 - close / close 3 bars earlier; 'down 3 days in a row' = three closes each below the one before. Exit: first close above the 5-day SMA. ")),
         d("prap3_selloff", "Raptor 3 Strategy Two - SellOff (2 down closes, RSI(2) < 20, low 3% under the prior close, limit 7% under the low)", SELLOFF,
-          "[Printed rules; unverified] Exit: first close above the 5-day SMA. "),
+          concat!("[Printed rules; unverified] ", common!(), "No fourth reading: 'down 2 or more days in a row' = at least two closes each below the one before; '3% or more below yesterday's close' is tested on today's low. Exit: first close above the 5-day SMA. ")),
         d("prap3_lllh", "Raptor 3 Strategy Three - LLLH (lower highs and lows, RSI(2) < 10, ADX(10) > 35, limit 3% under the close)", LLLH,
-          "[Printed rules; unverified] 'Lower highs at least 2 of the last 3 days' counts the three bars ending today, each against its own previous bar. Exit: RSI(2) closes above 65. "),
+          concat!("[Printed rules; unverified] ", common!(), "(4) 'Lower highs (lows) at least 2 of the last 3 days' counts the three bars ending today, each against its own previous bar. Exit: RSI(2) closes above 65. ")),
         d("prap3_raptor2mod", "Raptor 3 Strategy Four - Raptor II Modified (RSI(2) < 15, 15% / 5 days or 7.5% / 2 days, limit 8% under the close)", MOD,
-          "[Printed rules; unverified] Exit: RSI(2) closes above 50. "),
+          concat!("[Printed rules; unverified] ", common!(), "(4) 'Drops 15% in the last 5 days or 7.5% in the last 2' = today's close at least 15% (7.5%) under the close 5 (2) bars earlier. Exit: RSI(2) closes above 50. ")),
         StrategyDef { id: "prap3_portfolio", name: "Raptor 3 portfolio (5 slots per strategy, highest HV(100) first; aggressive: 2 x open slots)", group: "Raptor 3 (Chairman's Club, 2007) · stocks", session: 0, dir: "Long",
             status: NeedsData("a stock universe on one equity curve: 'rank the stocks by their historical volatility and put in orders each day only for the stocks with the highest volatility' with at most 5 positions per strategy (20 across the four), and the Aggressive version's 'open slots times 2' orders (up to 10 positions per strategy, possibly on margin); the engine backtests one ticker per run"),
             needs_volume: true, needs_vix: false, needs_series: &[], book: BOOK,
@@ -150,7 +150,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && reviewed(def.id),
-    label: "The Raptor 3 rules page describes per-stock setups traded as a 5-slot-per-strategy portfolio on US stocks; runs on single NSE stocks (against the NIFTY 50's close x volume for the Liquidity Filter, a labelled benchmark swap), other US/Indian stocks and ETFs are a declared application, not the book's own universe. Not run on indices.",
+    label: "The Raptor 3 rules page describes per-stock setups traded as a 5-slot-per-strategy portfolio on US stocks; runs on NSE stocks only, against the NIFTY 50's close x volume for the Liquidity Filter (a labelled benchmark swap), as a declared application outside the book's own universe. Not run on indices, ETFs or US stocks.",
     basis: "TradingMarkets Chairman's Club, Raptor 3 System Rules (Raptor3 rules.mdi pages 1-4 and 6); independent check authors/conv-1123/k3w/prap3_ref.py",
 };
 
