@@ -299,6 +299,8 @@ pub struct Ctx<'a> {
     /// The market benchmark's own consecutive down closes (SPX for US instruments, NIFTY 50 for Indian ones, i.e. the
     /// `bench` rows given to `new`), aligned by date; NaN where the benchmark has no bar on that date.
     pub bench_down: Vec<f64>,
+    /// The benchmark's own 100-day historical volatility (same `hv` formula as `hv100`), aligned by date; NaN where it has no bar (lane K1, TMCAP rule B).
+    pub bench_hv100: Vec<f64>,
     /// Trusted market of a server-qualified native stock (set only by the server from catalogue evidence; None for
     /// index/ETF series). Used for the instrument's real tick in stock runs: NSE 0.05 INR, US 0.01 USD.
     pub native_market: Option<crate::baskets::Market>,
@@ -391,6 +393,11 @@ impl<'a> Ctx<'a> {
             bench_down: {
                 let bd = streak(bench.len(), |k| k > 0 && bench[k].close < bench[k - 1].close);
                 let at: std::collections::HashMap<&str, f64> = bench.iter().zip(bd).map(|(b, d)| (b.date.as_str(), d as f64)).collect();
+                r.iter().map(|x| at.get(x.date.as_str()).copied().unwrap_or(f64::NAN)).collect()
+            },
+            bench_hv100: {
+                let bc: Vec<f64> = bench.iter().map(|b| b.close).collect();
+                let at: std::collections::HashMap<&str, f64> = bench.iter().zip(hv(&bc, 100)).map(|(b, d)| (b.date.as_str(), d)).collect();
                 r.iter().map(|x| at.get(x.date.as_str()).copied().unwrap_or(f64::NAN)).collect()
             },
             has_volume: r.iter().any(|x| x.volume.map_or(false, |v| v > 0.0)),
