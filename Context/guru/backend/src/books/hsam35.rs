@@ -14,7 +14,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "F|\"avg = (close + close[1] + high + low)/4.0; if(close<=avg) then buyDay = 1; if(close>avg) then sellDay = 1\"; \"dlat = range * .50; dla = maxlist(dlat,(8*minmove/pricescale)); dla1 = range\"",
         "E|buyDay: \"stopb = maxlist(open of tomorrow + dla,low[1],openWeek); stops = minlist(open of tomorrow - dla1,high[1],openWeek)\"; sellDay: \"stopb = maxlist(open of tomorrow + dla1,low[1],openWeek); stops = minlist(open of tomorrow - dla,high[1],openWeek)\"; \"if(marketposition <> 1) then Buy (\\\"samurai35 buy\\\") tomorrow at stopb stop; if(marketposition <> -1) then Sell Short (\\\"samurai35 sell\\\") tomorrow at stops stop\"",
         "X|stop and reverse; \"if(marketPosition = 1 ) then Sell(\\\"longProf\\\") next bar at entryPrice + (profObj/bigPointValue) limit\" (profObj 3000 / 1000 = 3 points); short mirrored",
-        NOTE], NOTE)]
+        ], NOTE)]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { (id == ID).then_some((ID, "Samurai 35 (John R. Hill)", "stop and reverse")) }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
