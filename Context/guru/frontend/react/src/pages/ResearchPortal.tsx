@@ -650,14 +650,6 @@ function BacktestPie() {
           <text x={100} y={112} className="rp-pie-l">{hs || hg ? pct((hs ?? hg)!.count, total) : "resources"}</text>
         </svg>
         <div className="rp-bt-side">
-          <div className={`rp-bt-why ${hs ? `bt-${hs.group}` : "bt-pending"}`} aria-live="polite">
-            {hs ? <>
-              <p className={`rp-bt-k bt-${hs.group}`}>{BT_GROUPS[hs.group]} · {num(hs.count)} ({pct(hs.count, total)})</p>
-              <h3>{hs.label}</h3>
-              <p>{hs.why}</p>
-              <p className="rp-small rp-muted">{Object.entries(hs.kinds).map(([k, n]) => `${num(n)} ${k}`).join(", ")}{hs.examples.length > 0 ? `. For example: ${hs.examples.join(" · ")}` : ""}</p>
-            </> : <p className="rp-muted">Hover a slice or a row to see why.</p>}
-          </div>
           {groups.map(x => (
             <div key={x.g} className="rp-bt-group">
               <p className={`rp-bt-h bt-${x.g}`} onMouseEnter={() => setHover(x.g)} onMouseLeave={() => setHover(null)}><i className="rp-swatch" /><b>{x.label}</b> <span>{num(x.count)} · {pct(x.count, total)}</span></p>
@@ -666,6 +658,14 @@ function BacktestPie() {
                   <i style={{ opacity: Math.max(0.3, 1 - i * (0.7 / Math.max(1, x.slices.length - 1))) }} /><span>{s.label}</span><b>{num(s.count)}</b><span className="rp-muted">{pct(s.count, total)}</span>
                 </li>))}</ul>
             </div>))}
+          <div className={`rp-bt-why ${hs ? `bt-${hs.group}` : "bt-pending"}`} aria-live="polite">
+            {hs ? <>
+              <p className={`rp-bt-k bt-${hs.group}`}>{BT_GROUPS[hs.group]} · {num(hs.count)} ({pct(hs.count, total)})</p>
+              <h3>{hs.label}</h3>
+              <p>{hs.why}</p>
+              <p className="rp-small rp-muted">{Object.entries(hs.kinds).map(([k, n]) => `${num(n)} ${k}`).join(", ")}{hs.examples.length > 0 ? `. For example: ${hs.examples.join(" · ")}` : ""}</p>
+            </> : <p className="rp-muted">Hover a slice or a row to see why.</p>}
+          </div>
         </div>
       </div>
       <p className="rp-small rp-muted">{num(total)} unique resources (books, papers, articles, magazine issues, courses, code) from the {num(d.ledger_rows)}-row share ledger; left out: {skipped}. The reasons are a keyword reading of each reviewer's note. Generated {fmtStamp(d.generated_at)}.</p>
