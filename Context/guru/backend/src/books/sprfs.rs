@@ -209,9 +209,9 @@ pub(crate) fn fut_daily_rows(x: &Ctx, from: usize, to: usize) -> (Vec<crate::Row
     let (mut rows, mut map) = (vec![], vec![]);
     for i in from..=to {
         let r = &x.r[i];
-        let Some((m, _)) = f.fut_day(&r.date) else { continue };
+        let Some((m, mv)) = f.fut_day(&r.date) else { continue };
         rows.push(crate::Row { ticker: r.ticker.clone(), date: r.date.clone(), open: m[0].o, high: m.iter().map(|z| z.h).fold(f64::MIN, f64::max),
-            low: m.iter().map(|z| z.l).fold(f64::MAX, f64::min), close: m[m.len() - 1].c, volume: None });
+            low: m.iter().map(|z| z.l).fold(f64::MAX, f64::min), close: m[m.len() - 1].c, volume: Some(mv.iter().sum()) });
         map.push(i);
     }
     (rows, map)
