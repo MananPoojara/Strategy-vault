@@ -527,6 +527,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"if c < c[1] and c[1] > c[2] and ... c[5] > c[6] then buy next bar at market\"; mirror sell short; no other exit (App. p.229)", "X|stop and reverse on the opposite signal (no other exit in the code)"], "Stop and reverse only.", cl("24", "58.33%", "$11,286 (net $270,863)", "long-term", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_5c1_perp", "Five one-way, one opposite, one irrelevant · perpetual (Table 36.3)", g33, "Long/Short", Live,
             &["E|\"if c[1] < c[2] and c[2] > c[3] and ... c[6] > c[7] then buy next bar at market\"; mirror (App. p.230)", "X|stop and reverse on the opposite signal (no other exit in the code)"], "Stop and reverse only.", cl("24", "66.67%", "$13,351.56 (net $320,438)", "long-term", "S&P full futures 1-2-96 to 11-19-05")),
+        sd!("acbff_fut_5c_perp", "Five same-way closes then opposite · perpetual, NIFTY futures daily bars (Table 36.2)", g33, "Long/Short", Live,
+            &["E|\"if c < c[1] and c[1] > c[2] and ... c[5] > c[6] then buy next bar at market\"; mirror sell short; no other exit (App. p.229-230)", "X|stop and reverse on the opposite signal (no other exit in the code)", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as the card it names (Table 36.2: sides as printed, stop and reverse on the opposite signal, market orders at the next open), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). The book's table is the S&P full futures 1996-2005 (24 trades); it is not comparable. No costs."], "Same rule as acbff_5c_perp on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
+        sd!("acbff_fut_5c1_perp", "Five one-way, one opposite, one irrelevant · perpetual, NIFTY futures daily bars (Table 36.3)", g33, "Long/Short", Live,
+            &["E|\"if c[1] < c[2] and c[2] > c[3] and ... c[6] > c[7] then buy next bar at market\"; mirror sell short; no other exit (App. p.229-230)", "X|stop and reverse on the opposite signal (no other exit in the code)", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as the card it names (Table 36.3: sides as printed, stop and reverse on the opposite signal, market orders at the next open), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). The book's table is the S&P full futures 1996-2005 (24 trades); it is not comparable. No costs."], "Same rule as acbff_5c1_perp on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         sd!("acbff_5c1_day", "Five one-way, one opposite, one irrelevant · day (Table 36.3)", g33, "Long/Short", Live,
             &["E|as 36.3 perpetual + \"setexitonclose\" (App. p.230: type it at the end for the day version)", "X|setexitonclose: out at the close of the entry day"], MAP, cl("59", "64.41%", "$760.59 (net $44,875)", "day", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_3rd_fade", "Third day fade (Table 37.1)", g33, "Long/Short", Live,
@@ -719,6 +723,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let defs = catalogue();
     let d = defs.iter().find(|d| d.id == id)?;
     if d.status != Status::Live || from > to || to >= x.r.len() { return None; }
+    if let Some(base) = id.strip_prefix("acbff_fut_") { // lane I2 (R4 #340): the same rule on NIFTY futures daily bars
+        let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
+        if rows.len() < 2 { return Some(vec![]); }
+        let y = Ctx::new(&rows, &rows, &[]);
+        return Some(crate::books::sprfs::remap(run(&format!("acbff_{base}"), &y, 0, rows.len() - 1, p)?, &map));
+    }
     if id == "acbff_mega_1min" { return Some(mega_minutes(x, from, to)); } // lane K38: real 1-minute bars
     let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
@@ -1273,3 +1283,29 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Art Collins tested these TradeStation systems on S&P, NASDAQ and Russell futures (and bonds/currencies); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, 1 tick = 0.10 point US / 0.05 point India.",
     basis: "Art Collins, Beating the Financial Futures Market (Wiley 2006), printed TradeStation code pp.205-238",
 };
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (I2_CSV=<idx_data.csv> I2_FUT_DIR=<data/intraday> I2_OUT=<file.csv>
+    /// cargo test --release i2_acbff_fut_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_acbff_fut_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_FUT_DIR").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for id in ["acbff_fut_5c_perp", "acbff_fut_5c1_perp"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+                }
+            }
+        }
+    }
+}
