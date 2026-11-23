@@ -37,7 +37,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("atm10_fut_one_pct", "1-percent strategy on NIFTY / BANKNIFTY futures daily bars · buy the close of a 1% down day, +1% target / -1% stop next day", "Trading Strategies May 2010 p.28-31", "Long", Live,
           &["E|Down day: \"closes and lows at least 1 percent below the previous days' prices\" (both close-to-close and low-to-low); \"going long on the close of each down day\"",
             "X|\"1. Exit the next day 1 percent above the down day's closing price. 2. If the next day's opening price is more than 1 percent below the previous close, exit on the open. 3. If the 1-percent target is not reached and rule 2 is false, exit on the close or with a stop-loss 1 percent below the down day's closing price.\"",
-            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: the book trades QQQQ (Nasdaq-100 ETF); the rule is a pure percentage timing rule, so it runs on the NIFTY 50 / NIFTYBANK FUTURES (the tradable instrument, not the cash index): daily bars from the FUT1 1-minute series (lane DI, before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a roll day's close-to-close change includes the roll basis, so some 'down days' and gaps are roll artefacts). Same code and readings as atm10_one_pct (stop first if both stop and target trade on the day [B]); no costs; the book's QQQQ table is not comparable."],
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: the book trades QQQQ (Nasdaq-100 ETF); the rule is a pure percentage timing rule, so it runs on the NIFTY 50 / NIFTYBANK FUTURES (the tradable instrument, not the cash index): daily bars from the FUT1 1-minute series (lane DI, before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a roll day's close-to-close change includes the roll basis, so some 'down days' and gaps are roll artefacts). Same code and readings as atm10_one_pct (on the day after the signal the open check, the 1% stop and the 1% target are walked on the FUT1 1-minute bars, R4 #175/#240: the first minute that reaches either level decides, a stop fills at min(minute open, stop), a target at max(minute open, target); a single minute spanning both levels would take the stop first [B], and none occurs in the data; 6.6% of NIFTY 50 and 4.0% of NIFTYBANK trades had both levels inside the daily bar, so the daily-bar order would have mattered there); no costs; the book's QQQQ table is not comparable."],
           "Same rule as atm10_one_pct on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         d("atm10_weak_rotation", "Weak-stock rotation (Dow 30) · buy the 5 biggest 14-day decliners, hold >= 5 days", "TSL Mar 2010 p.44-47 (Knapp)", "Long",
           NeedsData("the 30 Dow stocks (daily cross-sectional ranking of 14-day percentage change); the engine runs one instrument at a time"),
@@ -63,7 +63,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm10_vol_scalein" => vec![p("fast", "Fast EMA", 20., 5., 50., 1.), p("slow", "Slow EMA", 50., 20., 200., 5.), p("trend", "Trend SMA", 200., 50., 300., 10.),
             p("add_k", "Add every x ATR above the last entry", 3., 0.5, 6., 0.5), p("stop_k", "Stop x ATR below the last entry", 6., 1., 10., 0.5), p("atr_n", "ATR length", 10., 5., 30., 1.),
             p("max", "Maximum entries", 4., 1., 8., 1.), p("w", "Weight per entry (fraction of equity)", 0.03, 0.01, 1., 0.01)],
-        "atm10_one_pct" | "atm10_fut_one_pct" => vec![p("drop", "Down-day size %", 1., 0.25, 5., 0.25), p("tgt", "Target % above the entry close", 1., 0.25, 5., 0.25), p("stop", "Stop % below the entry close", 1., 0.25, 5., 0.25), p("tgt_first", "1 = target before stop when both trade in one bar (labelled option)", 0., 0., 1., 1.)],
+        "atm10_one_pct" | "atm10_fut_one_pct" => vec![p("drop", "Down-day size %", 1., 0.25, 5., 0.25), p("tgt", "Target % above the entry close", 1., 0.25, 5., 0.25), p("stop", "Stop % below the entry close", 1., 0.25, 5., 0.25), p("tgt_first", "1 = target before stop when both trade in one bar (the daily card) / in one minute (the futures card; the futures card reads the order from the minute path otherwise)", 0., 0., 1., 1.)],
         "atm10_weak_rotation" | "atm10_not_testable" => vec![],
         _ => return None,
     })
@@ -166,10 +166,32 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "atm10_weak_rotation" | "atm10_not_testable" => vec![],
         "atm10_fut_one_pct" => {
+            // EP6-style minute walk (R4 #175/#240): the next day's open check, 1% stop and 1% target are resolved on the day's
+            // FUT1 1-minute bars; only a single minute that spans both levels falls back to `tgt_first` (default: stop first).
+            let (dr, tg, st, tf) = (1. - g("drop") / 100., 1. + g("tgt") / 100., 1. - g("stop") / 100., g("tgt_first") > 0.5);
             let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
-            if rows.is_empty() { return Some(vec![]); }
-            let y = Ctx::new(&rows, &rows, &[]);
-            crate::books::sprfs::remap(run("atm10_one_pct", &y, 0, rows.len() - 1, p)?, &map)
+            let (Some(f), true) = (x.fut, rows.len() > 1) else { return Some(vec![]) };
+            let mut out = vec![];
+            for i in 1..rows.len() {
+                let (c, l) = (rows[i].close, rows[i].low);
+                if !(c <= rows[i - 1].close * dr && l <= rows[i - 1].low * dr) { continue; }
+                let t = new_trade(1., map[i], c, "close");
+                if i == rows.len() - 1 { out.push(Trade { exit_i: map[i], exit_px: c, signal_i: map[i], reason: "open".into(), open: true, ..t }); break; }
+                let j = i + 1;
+                let e = c;
+                let Some((m, _)) = f.fut_day(&rows[j].date) else { continue };
+                let (px, why) = if m[0].o < e * st { (m[0].o, "open more than 1% lower: exit at the open") } else {
+                    let mut r = None;
+                    for z in &m {
+                        let (sh, th) = (z.l <= e * st, z.h >= e * tg);
+                        if sh && !(th && tf) { r = Some((z.o.min(e * st), "1% stop")); break; }
+                        if th { r = Some((z.o.max(e * tg), "1% target")); break; }
+                    }
+                    r.unwrap_or((m[m.len() - 1].c, "exit at the close"))
+                };
+                out.push(done(t, map[j], px, map[j], why));
+            }
+            out
         }
         _ => return None,
     })
