@@ -268,3 +268,17 @@ circle.rp-slice { stroke: var(--c); }
 .rp-bt-why p { margin: 0 0 6px; line-height: 1.45; }
 .rp-bt-k { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--c); font-weight: 600; }
 @media (max-width: 720px) { .rp-bt-pie { grid-template-columns: 1fr; justify-items: center; } .rp-bt-side { width: 100%; } }
+
+.rp-bt-ex { margin: 4px 0 6px; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+.rp-bt-ex li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-bt-list { margin-top: 18px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); display: grid; gap: 10px; }
+.rp-bt-list-h { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
+.rp-bt-list-h h3 { margin: 2px 0 4px; font-size: 18px; } .rp-bt-list-h p { margin: 0; }
+.rp-bt-table td:first-child { font-weight: 600; min-width: 220px; } .rp-bt-table td { vertical-align: top; }
+/* day cards: strategy names and the reason for quiet days (23 Nov 2026) */
+.cw-names { margin: 10px 0 4px; }
+.cw-names h5 { margin: 0 0 4px; font-size: 13px; }
+.cw-names ul { margin: 0; padding-left: 18px; columns: 2 320px; column-gap: 24px; font-size: 13px; line-height: 1.5; }
+.cw-names li { break-inside: avoid; }
+.cw-health { margin: 4px 0 0; }
+.cw-day.quiet .cw-quiet b, .cw-quiet b { color: var(--ink); }

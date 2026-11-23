@@ -10,6 +10,7 @@ pub const REVIEWED_LANEC: &[&str] = &["sprfs_nr4ib", "sprfs_hvr_nr4ib", "sprfs_h
 pub fn reviewed_lanec(id: &str) -> bool { REVIEWED_LANEC.contains(&id) }
 
 const NOTE: &str = "Futures rules run on the index (instrument swap). Range = high - low. NR4 = today's range strictly smaller than each of the 3 prior ranges (p.8 \"the smallest of the last four days\"; ties are not 'smallest') [Book silent on ties]. Inside bar (p.8): high <= prior high and low >= prior low, not both equal. Orders for the next session only: buy stop 1 tick above the setup high, sell stop 1 tick below its low (one real tick of the traded instrument: 0.05 on NSE, 0.01 on US indices, ETFs and stocks; p.tick=0.05 keeps the earlier fixed 0.05 everywhere). If the bar opens through a stop it fills at the open. Entry bar [Book silent]: TradeStation's bar path (open, the extreme nearer the open, the other extreme, close) decides which stop fills first and whether the protective stop (Rule 3) is reached after the fill on the same bar. Protective stop fills at its level, or at the open on a gap. Exit MOC on the 3rd day counting the entry day as day 1 (examples p.13, 14, 25: entry Aug 14, exit MOC Aug 16). Rule 4's optional profit objective / tightened stop is the trader's choice (\"or exit on the 3-Day Rule\"); Rule 5 applies when \"you have no pre-identified profit exit\", which is the path every worked example follows. Setups are taken only while flat.";
+const FUT_NOTE: &str = "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: the book trades futures (S&P, NASDAQ, British Pound, lumber) and prints no NIFTY result. Daily bars are built from the NIFTY 50 / NIFTYBANK FUT1 1-minute series staged by lane DI (nearest-expiry continuous, NOT back-adjusted: a position carried over a contract roll includes the roll gap): open = first minute's open, high / low = the extremes of the minutes before 15:30, close = last minute's close, session 09:15-15:29 IST; days absent from the minute file are absent from the series. The setup (NR4 = range strictly below each of the 3 prior ranges; IB = high <= and low >= prior with not both equal; HVR 10/100 or 6/100 below 50% on futures closes) and the entry (stop one tick above the high / below the low of the setup bar, the next session only; tick = the NSE 0.05, the book's 'one tick'), protective stop one tick beyond the opposite extreme, MOC exit on the 3rd day are the book's rules (p.8, p.11, p.24) as on the index card. Same-day order of the two entry stops and the protective stop uses the daily TradeStation path (open, the extreme nearer the open, the other extreme, close; a tie: the low first); the 1-minute resolver is not used here. Readings: ties in NR4 (strictly smaller), HV formula (sample sd of daily log returns), the order convention: 3 declared, none printed in the book. No costs. No claim: the book's 12-trade S&P table is not comparable.";
 const SAR_GAP: &str = "Discretionary: \"We handle this by using our own discretion, as you should too on doing a 'Stop and Reverse' (SAR) ... you can elect to initially put a SAR on the opposite side\" (p.23). The NASDAQ example then holds \"until either a new NR4/IB signal is generated while the market remained under 50% in the HVR or the HVR rose above 50%\" with no stop stated.";
 const POS_GAP: &str = "One example only (British Pound, p.15): \"If you were entering short ... on a position trade and were using a protective stop at the 3-day high, you would have been stopped out on the open of September 21st\". The book does not say whether the 3-day high trails daily, includes the entry day, or replaces the NR4/IB protective stop.";
 
@@ -38,6 +39,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Stop orders 1 tick beyond the NR4 bar, next session only (Rule 2 applied to the NR4 bar, p.11)",
             "X|Protective stop 1 tick beyond the opposite extreme of the NR4 bar; MOC on the 3rd day (Rules 3, 5, p.11)",
         ], HVR_NOTE),
+        d("sprfs_fut_nr4ib", "NR4/IB breakout on NIFTY / BANKNIFTY futures daily bars, 3-day MOC exit", Live, core, FUT_NOTE),
+        d("sprfs_fut_hvr_nr4ib", "HVR-NR4/IB breakout on futures daily bars (HV 10/100 or 6/100 < 50%)", Live, &["F|HVR-NR4/IB setup: NR4/IB with HV(10)/HV(100) or HV(6)/HV(100) below 50% (p.24)", "E|Stop orders 1 tick beyond the setup bar, next session only (Rules 2-3, p.11)", "X|Protective stop at the opposite extreme; MOC exit on the 3rd day (Rules 3, 5, p.11)", FUT_NOTE], FUT_NOTE),
+        d("sprfs_fut_hvr_nr4", "HVR/NR4 (no inside bar) on futures daily bars", Live, &["F|HVR/NR4 variation: NR4 with HV(10)/HV(100) or HV(6)/HV(100) below 50% (p.24)", "E|Stop orders 1 tick beyond the NR4 bar, next session only (Rule 2, p.11)", "X|Protective stop at the opposite extreme; MOC exit on the 3rd day (Rules 3, 5, p.11)", FUT_NOTE], FUT_NOTE),
         d("sprfs_sar", "Fake-out reversal (stop and reverse)", NotTestable(SAR_GAP), &["E|\"on the day of entry ONLY if one side of the trade is triggered, you can elect to initially put a SAR on the opposite side\" p.23"], SAR_GAP),
         d("sprfs_position", "Position trade with a 3-day-high protective stop", NotTestable(POS_GAP), &["X|\"using a protective stop at the 3-day high\" p.15"], POS_GAP),
     ]
@@ -48,6 +52,9 @@ const HVR_NOTE: &str = concat!("Futures rules run on the index (instrument swap)
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "sprfs_nr4ib" => ("sprfs", "Rapid Fire NR4/IB", "NR4/IB"),
+        "sprfs_fut_nr4ib" => ("sprfs", "Rapid Fire NR4/IB", "NR4/IB · NIFTY futures"),
+        "sprfs_fut_hvr_nr4ib" => ("sprfs", "Rapid Fire NR4/IB", "HVR-NR4/IB · NIFTY futures"),
+        "sprfs_fut_hvr_nr4" => ("sprfs", "Rapid Fire NR4/IB", "HVR/NR4 · NIFTY futures"),
         "sprfs_hvr_nr4ib" => ("sprfs", "Rapid Fire NR4/IB", "HVR-NR4/IB"),
         "sprfs_hvr_nr4" => ("sprfs", "Rapid Fire NR4/IB", "HVR/NR4"),
         "sprfs_sar" => ("sprfs", "Rapid Fire NR4/IB", "SAR · not testable"),
@@ -60,8 +67,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let mut v = vec![p("tick", "One tick in price points (-1 = the instrument's real tick: NSE 0.05, US 0.01)", -1.0, -1.0, 1.0, 0.01), p("hold", "MOC exit on day (entry day = 1)", 3.0, 1.0, 10.0, 1.0)];
     match id {
-        "sprfs_nr4ib" => {}
-        "sprfs_hvr_nr4ib" | "sprfs_hvr_nr4" => v.extend([p("hv_a", "Short HV days (1)", 10.0, 3.0, 30.0, 1.0), p("hv_b", "Short HV days (2)", 6.0, 3.0, 30.0, 1.0),
+        "sprfs_nr4ib" | "sprfs_fut_nr4ib" => {}
+        "sprfs_hvr_nr4ib" | "sprfs_hvr_nr4" | "sprfs_fut_hvr_nr4ib" | "sprfs_fut_hvr_nr4" => v.extend([p("hv_a", "Short HV days (1)", 10.0, 3.0, 30.0, 1.0), p("hv_b", "Short HV days (2)", 6.0, 3.0, 30.0, 1.0),
             p("hv_long", "Long HV days", 100.0, 50.0, 250.0, 10.0), p("ratio", "HVR trigger (short/long below)", 0.5, 0.2, 1.0, 0.05)]),
         _ => return None,
     }
@@ -178,6 +185,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if validate(id, p).is_some() || from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let (tick, hold) = (if g("tick") < 0.0 { x.market_tick() } else { g("tick") }, g("hold") as usize);
+    if id.starts_with("sprfs_fut_") { return Some(fut_run(id, x, from, to, &g)); }
     let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
     Some(match id {
@@ -190,6 +198,48 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             nr4_trades_ep6(x, from, to, tick, hold, &|s| nr4(x, s) && (!ib || inside(x, s)) && hvr(s), on)
         }
     })
+}
+
+/// Daily NIFTY / BANKNIFTY futures bars from the FUT1 minutes (before 15:30), then the index card's NR4 machinery on them
+/// (daily TradeStation path, no minute resolver); trade indices are mapped back to `x.r`.
+/// Daily futures bars (open = first minute's open, high / low = extremes, close = last close, minutes before 15:30) for the
+/// days of `x.r[from..=to]` the FUT1 file holds, and each bar's index into `x.r`.
+pub(crate) fn fut_daily_rows(x: &Ctx, from: usize, to: usize) -> (Vec<crate::Row>, Vec<usize>) {
+    let Some(f) = x.fut else { return (vec![], vec![]) };
+    let (mut rows, mut map) = (vec![], vec![]);
+    for i in from..=to {
+        let r = &x.r[i];
+        let Some((m, mv)) = f.fut_day(&r.date) else { continue };
+        rows.push(crate::Row { ticker: r.ticker.clone(), date: r.date.clone(), open: m[0].o, high: m.iter().map(|z| z.h).fold(f64::MIN, f64::max),
+            low: m.iter().map(|z| z.l).fold(f64::MAX, f64::min), close: m[m.len() - 1].c, volume: Some(mv.iter().sum()) });
+        map.push(i);
+    }
+    (rows, map)
+}
+
+/// Maps a trade found on futures-daily bars back to indices of the index rows.
+pub(crate) fn remap(t: Vec<Trade>, map: &[usize]) -> Vec<Trade> {
+    t.into_iter().map(|mut t| {
+        for l in &mut t.legs { l.i = map[l.i]; }
+        for e in &mut t.exits { e.0 = map[e.0]; }
+        t.exit_i = map[t.exit_i]; t.signal_i = map[t.signal_i];
+        t
+    }).collect()
+}
+
+fn fut_run(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
+    let (rows, map) = fut_daily_rows(x, from, to);
+    if rows.is_empty() { return vec![]; }
+    let y = Ctx::new(&rows, &rows, &[]);
+    let tick = if g("tick") < 0.0 { y.market_tick() } else { g("tick") };
+    let hold = g("hold") as usize;
+    let tr = if id == "sprfs_fut_nr4ib" { nr4_trades_ep6(&y, 0, rows.len() - 1, tick, hold, &|s| nr4(&y, s) && inside(&y, s), false) } else {
+        let (a, b, l) = (hv(&y.c, g("hv_a") as usize), hv(&y.c, g("hv_b") as usize), hv(&y.c, g("hv_long") as usize));
+        let r = g("ratio");
+        let ib = id == "sprfs_fut_hvr_nr4ib";
+        nr4_trades_ep6(&y, 0, rows.len() - 1, tick, hold, &|s| nr4(&y, s) && (!ib || inside(&y, s)) && l[s] > 0.0 && (a[s] / l[s] < r || b[s] / l[s] < r), false)
+    };
+    remap(tr, &map)
 }
 
 #[cfg(test)]
@@ -217,5 +267,27 @@ mod tests {
         assert_eq!(t[0].exit_i, 4);
         assert_eq!(t[0].dir, -1.0);
         assert!((t[0].ret(0.0) + 10.1 / 94.95).abs() < 1e-9);
+    }
+
+    /// Lane I2 hand-run dump for the pandas reference (I2_CSV=<idx_data.csv> I2_FUT_DIR=<data/intraday> I2_OUT=<file.csv>
+    /// cargo test --release i2_sprfs_fut_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_sprfs_fut_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_FUT_DIR").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for id in ["sprfs_fut_nr4ib", "sprfs_fut_hvr_nr4ib", "sprfs_fut_hvr_nr4"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+                }
+            }
+        }
     }
 }
