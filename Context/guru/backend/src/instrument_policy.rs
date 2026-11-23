@@ -1097,6 +1097,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if def.book==crate::books::mmpoulos::BOOK {return stock("Poulos Market Mastery Method 4 (Profits Run): a stock method, run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane CV5
     if def.book==crate::books::gmsi::BOOK {return index(crate::books::gmsi::index_only());} // lane K1
     if def.book==crate::books::ewtrin::BOOK {return index(crate::books::ewtrin::index_only());} // lane K1
+    if def.book==crate::books::mwpm::BOOK {return index(crate::books::mwpm::index_only());} // lane K1 Q381
     if def.book==crate::books::kpdr::BOOK {return index("Kaeppel discount-rate timing: an index rule (the S&P 500 in the article), run on the NSE indices NIFTY 50 and NIFTY BANK only, with the RBI repo-rate change list in place of the US discount rate (declared adaptation, R4 #340); UNVERIFIED");} // lane K1
     if def.book==crate::books::thvl::BOOK {return index("Hayes 30-week momentum of the Value Line Composite: an index rule, run on actual indices only (US and NSE); the Value Line itself is not held, so any index is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
     if def.book==crate::books::tmcap::BOOK {return stock("TradingMarkets Capital Appreciation Program (TMCAP): a stock method (volatility twice the market's), run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets; benchmark SPX or NIFTY 50); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
