@@ -249,7 +249,7 @@ fn bernstein_g1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Op
 pub const INTRADAY_P1:&[&str]=&["ss_momentum_pinball","ss_80_20","ats_15min_adx_breakout","ptjdt_adx15_breakout"];
 pub const INTRADAY_P1_TICKERS:&[&str]=&["SPY","SPX","NIFTY 50","NIFTYBANK"];
 pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id) || crate::intraday_w2b::id(id) || crate::intraday_w3::id(id) || crate::intraday_ep::id(id)} // + intraday wave 2b, wave 3, EP (K39)
-pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && !crate::intraday_w3::held(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book) || crate::intraday_w3::book(def.book) || crate::intraday_ep::book(def.book))} // + intraday wave 2b, wave 3, EP (K39)
+pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && !crate::intraday_w3::held(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book) || crate::intraday_w3::book(def.book) || crate::intraday_ep::book(def.book) || crate::intraday_ep::m1(def.id))} // + intraday wave 2b, wave 3, EP (K39)
 // ---- intraday wave 1 (claude/intraday-w1, 2026-10-24): same block, more day-trade rules on the minute path
 /// No fixed amount: run on all four minute tickers (declared application).
 pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pct_oops","btp2_10pct_oops_long","btp2_10pct_oops_short",
@@ -339,7 +339,7 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
     if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
     if crate::intraday_ep::m1(def.id) { // lane M1
         if def.book=="dmpub" || def.book=="tmem" || def.book=="pvbs" {return Some(Issue{status:"needs_data",note:format!("This rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI; bars or daily bars built from it) as a declared adaptation of a US e-mini S&P rule (lane K2); {ticker} has no futures minute series, so no result is published.")});}
-        if matches!(def.id,"aanto_trend_one"|"tdscal_scalper") {return Some(Issue{status:"needs_data",note:format!("This intraday-bar rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI) as a declared adaptation of a US e-mini S&P rule (lane I2); {ticker} has no futures minute series, so no result is published.")});}
+        if (matches!(def.id,"aanto_trend_one"|"tdscal_scalper"|"sprfs_fut_nr4ib"|"sprfs_fut_hvr_nr4ib"|"sprfs_fut_hvr_nr4"|"atm04_fut_vomund"|"atm03_fut_or_rev"|"acbff_fut_5c_perp"|"acbff_fut_5c1_perp"|"acbff_fut_2hl_3"|"atm10_fut_one_pct"|"acbff_fut_2hl_2"|"acbff_fut_rx_filter") || crate::books::k4x::k4(def.id)) {return Some(Issue{status:"needs_data",note:format!("This intraday-bar rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI) as a declared adaptation of a US e-mini S&P rule (lane I2); {ticker} has no futures minute series, so no result is published.")});}
         return Some(Issue{status:"needs_data",note:format!("This rule needs traded volume on 1-minute bars. The vault holds that only for the NIFTY and BANKNIFTY futures (lane DI, nearest-expiry continuous, 2018-12 to 2026-11 and 2023-09 to 2026-08); it runs on NIFTY 50 and NIFTYBANK as a declared adaptation of a US/stock rule, and {ticker} has no minute volume, so no result is published.")});
     }
     if intraday_w1_spx_id(def.id) && (native_stock || INTRADAY_P1_TICKERS.contains(&ticker)) { // intraday wave 1
@@ -1096,6 +1096,11 @@ fn base_policy(def:&StrategyDef)->Policy {
     if def.id==crate::books::ecqt::PAIR {return requirement("etf",&["etf"],ECQT_PAIR_BASIS);} // lane P1: Chan's GLD/GDX pair on the GLD context
     if def.id=="vvqmm_pairs" {let mut p=requirement("index_or_etf",&["index","etf"],PAIRS_BASIS);p.market_adaptation=true;return p;} // lane P1 pairs block
     if def.book==crate::books::mmpoulos::BOOK {return stock("Poulos Market Mastery Method 4 (Profits Run): a stock method, run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane CV5
+    if def.book==crate::books::gmsi::BOOK {return index(crate::books::gmsi::index_only());} // lane K1
+    if def.book==crate::books::ewtrin::BOOK {return index(crate::books::ewtrin::index_only());} // lane K1
+    if def.book==crate::books::mwpm::BOOK {return index(crate::books::mwpm::index_only());} // lane K1 Q381
+    if def.book==crate::books::fxsolo::BOOK {return index(crate::books::fxsolo::index_only());} // lane K1 Q381
+    if def.book==crate::books::kpdr::BOOK {return index("Kaeppel discount-rate timing: an index rule (the S&P 500 in the article), run on the NSE indices NIFTY 50 and NIFTY BANK only, with the RBI repo-rate change list in place of the US discount rate (declared adaptation, R4 #340); UNVERIFIED");} // lane K1
     if def.book==crate::books::thvl::BOOK {return index("Hayes 30-week momentum of the Value Line Composite: an index rule, run on actual indices only (US and NSE); the Value Line itself is not held, so any index is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
     if def.book==crate::books::tmcap::BOOK {return stock("TradingMarkets Capital Appreciation Program (TMCAP): a stock method (volatility twice the market's), run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets; benchmark SPX or NIFTY 50); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
     if let Some(a)=admission(def) {let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],a.basis);p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;} // per-book ADMISSION table
@@ -1778,7 +1783,7 @@ mod tests {
             // the newer entry must admit only these ids, and the book's other routes must not admit them.
             const NEW_IDS:&[&str]=&["sbma_p73_rsi34","sbma_p73_rsi51_short","sbma_p73_200_rsi65","fejmma_barnes_5pct","kfsc_stoch","ch_ntt_qstick_zero","ch_ntt_cmo_zero","ch_ntt_cmo_ma",crate::books::nkms2::CHAIKIN_ID];
             let new_entry=admitted.iter().all(|d|NEW_IDS.contains(&d.id));
-            for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)
+            for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && !crate::intraday_ep::m1(d.id) && reviewed_cash_rule(d)!=(a.reviewed)(d)
                 && !(new_entry && NEW_IDS.contains(&d.id) && crate::books::ADMISSIONS.iter().any(|o|!std::ptr::eq(*o,*a) && (o.reviewed)(d))) && !(new_entry && !NEW_IDS.contains(&d.id)) && !(!new_entry && NEW_IDS.contains(&d.id))) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1957,7 +1962,7 @@ mod tests {
         // + atm00_fourplay, admitted by books::units::ADMISSION (multi-unit account, lane K44)
         let mut want:Vec<&str>=atm00::REVIEWED.iter().chain(atm01::REVIEWED.iter()).chain(atm02::REVIEWED.iter()).chain(atm10::REVIEWED.iter()).chain(["atm00_fourplay"].iter()).copied().collect();
         assert!(!atm00::REVIEWED.contains(&"atm00_fourplay") && held_reason("atm00_fourplay").is_none());
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !crate::intraday_ep::m1(d.id)).map(|d|d.id).collect(); // lane I2: M1 futures cards are admitted by the M1 route, not this table
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);

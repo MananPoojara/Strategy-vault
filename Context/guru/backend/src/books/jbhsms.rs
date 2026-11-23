@@ -311,3 +311,28 @@ mod tests {
         assert_eq!((t2[0].exit_i, t2[0].reason.as_str()), (2, "Close-only stop"));
     }
 }
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 (R4 #376): hand-run dump of the S&P key-date cards on the Indian index files for the pandas reference
+    /// (I2_CSV=<idx_data.csv> I2_OUT=<file.csv> cargo test --release i2_jbhsms_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_jbhsms_dump() {
+        use std::io::Write;
+        let (csv, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
+            let Some(rows) = data.get(t) else { continue };
+            let x = Ctx::new(rows, &[], &[]);
+            for k in KD.iter().filter(|k| k.0.starts_with("jbhsms_sp_")) {
+                for z in run(k.0, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{},{t},{},{},{},{},{}", k.0, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
+                }
+            }
+        }
+    }
+}
