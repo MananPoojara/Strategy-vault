@@ -663,6 +663,7 @@ pub enum Status {
     NotTestable(&'static str),
 }
 
+#[derive(Clone)]
 pub struct Claim {
     pub trades: &'static str,
     pub win: &'static str,
@@ -671,6 +672,7 @@ pub struct Claim {
     pub period: &'static str,
 }
 
+#[derive(Clone)]
 pub struct StrategyDef {
     pub id: &'static str,
     pub name: &'static str,
@@ -701,7 +703,17 @@ pub fn claim(trades: &'static str, win: &'static str, avg: &'static str, hold: &
     Some(Claim { trades, win, avg, hold, period })
 }
 
+/// Q39 (W2): the catalogue is built once per process. Every book's catalogue() leaks its generated notes/rules (Box::leak to get
+/// &'static str), and this function ran on EVERY request (summary, run, readiness, strategies): one /connors/strategies call
+/// retained ~184 MB that was never freed (measured 8 calls: 201 -> 1,718 MB). Tests keep building it fresh (they change state between calls).
+#[cfg(not(test))]
 pub fn catalogue() -> Vec<StrategyDef> {
+    static CATALOGUE: std::sync::OnceLock<Vec<StrategyDef>> = std::sync::OnceLock::new();
+    CATALOGUE.get_or_init(build_catalogue).clone()
+}
+#[cfg(test)]
+pub fn catalogue() -> Vec<StrategyDef> { build_catalogue() }
+fn build_catalogue() -> Vec<StrategyDef> {
     use Status::*;
     let d = |id, name, group, session, dir, status, rules, notes, claim| StrategyDef {
         id, name, group, session, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules, notes, claim,

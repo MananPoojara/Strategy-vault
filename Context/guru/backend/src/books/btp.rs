@@ -370,6 +370,7 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
         });
         if let Some(od) = pick { enter(st, od, j, o[j]); ev.push(crate::intraday_ep6::Ev { k: 0, px: o[j], up: false }); }
     };
+    let daily_path = std::cell::Cell::new(false);
     let walk = |j: usize, st: &mut Bst, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
         let mut ev = vec![];
         if !st.started { open_phase(j, st, &mut ev); }
@@ -395,7 +396,8 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 let Some((lv, k, od)) = best else { arm(j, st, cur, end); break };
                 let px = g.fill(lv);
                 match k {
-                    0 => enter(st, &od.unwrap(), j, px),
+                    // V10: a stop entry on a DAILY-bar path segment (the equal-probe walk only: `daily_path`, never the minute walk, whose segments already carry the minutes) fills as the daily rule does (R4 #349 (1): the first minute that reaches the level, at its open when it opens beyond it); minute-gap segments already carry that open
+                    0 => { let o0 = od.unwrap(); let fill = if g.gap || !daily_path.get() { px } else { stop_fill(j, lv, o0.dir > 0.0) }; enter(st, &o0, j, fill) }
                     4 => { let p = st.pos.as_mut().unwrap(); if let Some((_, why)) = half_level(p) { p.half = Some((j, px)); p.why_half = why; } }
                     _ => {
                         let p = st.pos.take().unwrap();
@@ -432,9 +434,10 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
     for j in from..=to {
         let day = if ex.order {
             let mut ep = Bst { pos: st.pos.take(), exit_open: st.exit_open.take(), first: st.first, ..Default::default() };
-            let day = crate::intraday_ep6::resolve_conv(x, j, true, &mut ep, |s| bar_old(j, s),
-                |s, hf| walk(j, s, &crate::intraday_ep6::bar_segs(o[j], h[j], l[j], c[j], hf)), |s, segs| walk(j, s, segs));
-            if matches!(day, crate::intraday_ep6::Day::Minutes | crate::intraday_ep6::Day::Ambiguous) { close_phase(j, &mut ep); }
+            // V10: equal-probe days follow the path (resolve_path) and then run the close-of-bar step like minute days (gipsons: the diagnostic without it dropped the close exits)
+            let (day, via_path) = crate::intraday_ep6::resolve_path(x, j, true, &mut ep, |s| bar_old(j, s),
+                |s, hf| { daily_path.set(true); let r = walk(j, s, &crate::intraday_ep6::bar_segs(o[j], h[j], l[j], c[j], hf)); daily_path.set(false); r }, |s, segs| walk(j, s, segs));
+            if via_path { close_phase(j, &mut ep); }
             st = ep;
             day
         } else {
@@ -1178,5 +1181,22 @@ mod tests {
         assert_eq!(days("1970-01-01"), 0);
         assert_eq!((days("2024-01-08") + 3).div_euclid(7), (days("2024-01-12") + 3).div_euclid(7)); // Mon..Fri
         assert_ne!((days("2024-01-12") + 3).div_euclid(7), (days("2024-01-15") + 3).div_euclid(7));
+    }
+}
+
+#[cfg(test)]
+mod v10_eq_path_tests {
+    /// V10 (tracker follow-up, 23 Nov 2026): a day whose two extreme bar orders agree follows the path, not the module's daily rule. NIFTY 50 (VAULT_IDX), no minutes, default parameters.
+    #[test]
+    fn btp2_momentum_ma_long_exits_on_the_path_bar() {
+        use crate::connors::{Ctx, Params};
+        let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
+        let data = crate::load_csv(&path).unwrap_or_else(|e| panic!("this test needs real data: set VAULT_IDX to idx_data.csv ({e})"));
+        let rows = &data["NIFTY 50"];
+        let x = Ctx::new(rows, rows, &[]);
+        let t = super::run("btp2_momentum_ma_long", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let z = t.iter().find(|z| rows[z.legs[0].i].date == "2016-05-18").expect("the trade");
+        assert_eq!(rows[z.exit_i].date, "2016-05-18", "{} {}", z.exit_px, z.reason);
+        assert!((z.exit_px - 7879.7).abs() < 0.06, "{}", z.exit_px);
     }
 }

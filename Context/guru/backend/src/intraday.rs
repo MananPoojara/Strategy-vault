@@ -406,9 +406,9 @@ mod tests {
             let rows = &data[t];
             let mut x = crate::connors::Ctx::new(rows, &[], &[]);
             x.fut = Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
-            for (id, var, p) in [("as51_vwap_sd", "tgt1", vec![("tgt", 1.0)]), ("as51_vwap_sd", "tgt2", vec![("tgt", 2.0)]), ("jbudt_volspike", "bar10", vec![]), ("jbudt_volspike", "bar5", vec![("bar", 5.0)])] {
+            for (id, var, p) in [("as51_vwap_sd", "tgt1", vec![("tgt", 1.0)]), ("as51_vwap_sd", "tgt2", vec![("tgt", 2.0)]), ("jbudt_volspike", "bar10", vec![]), ("jbudt_volspike", "bar5", vec![("bar", 5.0)]), ("aanto_trend_one", "bar15", vec![]), ("tdscal_scalper", "bar5", vec![])] {
                 let p: crate::connors::Params = p.into_iter().map(|(k, v): (&str, f64)| (k.to_string(), v)).collect();
-                let tr = if id.starts_with("as51") { Some(crate::books::as51ts::vwap_sd(&x, 0, rows.len() - 1, 2.0, p.get("tgt") == Some(&2.0))) } else { crate::books::jbudt::run(id, &x, 0, rows.len() - 1, &p) }.unwrap();
+                let tr = if id.starts_with("as51") { Some(crate::books::as51ts::vwap_sd(&x, 0, rows.len() - 1, 2.0, p.get("tgt") == Some(&2.0))) } else if id.starts_with("aanto") { crate::books::aanto::run(id, &x, 0, rows.len() - 1, &p) } else if id.starts_with("tdscal") { crate::books::tdscal::run(id, &x, 0, rows.len() - 1, &p) } else { crate::books::jbudt::run(id, &x, 0, rows.len() - 1, &p) }.unwrap();
                 for z in tr {
                     writeln!(f, "{id},{t},{var},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
                 }
