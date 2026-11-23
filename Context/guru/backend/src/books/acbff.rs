@@ -478,6 +478,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_2hl_3", "2d high/low exit #3 (Table 22.2)", g21, "Long/Short", Live,
             &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror with c < l[1] (App. p.216)", "X|second-high/low targets; \"if c < average(c,40) then sell next bar at market\"; mirror"],
             "Text (p.83) says 'buy at market'; code uses the 50% stop; code used.", cl("97", "55.67%", "$595.88 (net $57,800)", "multi-day", SP)),
+        sd!("acbff_fut_2hl_3", "2d high/low exit #3 on NIFTY futures daily bars (Table 22.2)", g21, "Long/Short", Live,
+            &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror short (App. p.215-216)", "X|second-high/low targets; average market exit; mirror", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_2hl_3 (Table 22.2; entry stop 0.5 x the 3-day average range from the next open, the second-high / second-low targets, the 40-day average market exit; the text-vs-code difference noted on that card is read as the code, as there), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Stop / limit / market orders are walked on the daily bar path (open, the extreme nearer the open, the other extreme, close; the engine convention, no minute walk); the share of trades whose outcome depends on that order is in the gate row. The book's table is the S&P full futures 2001-2005; not comparable. No costs."], "Same rule as acbff_2hl_3 on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         sd!("acbff_2hl_4", "2d high/low exit #4 · limit entries (Table 22.3)", g21, "Long/Short", Live,
             &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow-.5*average(range,3) limit\"; mirror (App. p.218)", "X|second-high/low targets; average(c,40) market exits"], SNOTE, cl("99", "63.64%", "$1,856.31 (net $183,775)", "multi-day", SP)),
         sd!("acbff_wk_rx", "One-week range expansion (Table 25.1/25.3)", g25, "Long/Short", Live,
@@ -1301,7 +1303,7 @@ mod i2_dump {
             let rows = &data[t];
             let mut x = Ctx::new(rows, &[], &[]);
             x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
-            for id in ["acbff_fut_5c_perp", "acbff_fut_5c1_perp"] {
+            for id in ["acbff_fut_5c_perp", "acbff_fut_5c1_perp", "acbff_fut_2hl_3"] {
                 for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
                     writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
                 }
