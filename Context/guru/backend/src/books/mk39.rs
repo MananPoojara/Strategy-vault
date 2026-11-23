@@ -54,8 +54,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && reviewed(def.id),
-    label: "Murphy's K39 is a price-only technique shown on US stocks (MSFT, CSCO) and mutual funds; it runs on actual indices, ETFs and stocks as a declared application. NSE indices and stocks are used here; the rule has no volume or contract-specific amount.",
-    basis: "Murphy, Ten Laws of Technical Trading, section K39 (StockCharts add-on); independent check authors/conv-1123/k3w/mk39_ref.py",
+    label: "Murphy's K39 is a price-only technique shown on US stocks (MSFT, CSCO) and mutual funds; it runs here only on actual NSE indices (NIFTY 50, NIFTYBANK, NIFTYIT, NIFTYMIDCAP100, NIFTYMIDCAPSELECT) and NSE stocks, the two classes the independent reference covers, as a declared application. US stocks, ETFs and funds are not admitted.",
+    basis: "Murphy, Ten Laws of Technical Trading, section K39 (StockCharts add-on); independent check authors/conv-1123/k3w/mk39_ref.py on the five NSE indices and three NSE stocks",
 };
 
 #[cfg(test)]
