@@ -920,9 +920,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
           claim("≈13", "69% / 62% / 54% / 46% (C / NO / NC / 2C)", "$237 / $525 / $310 / $485", "0-2 days", "89H-95U, S&P futures (A.14)")),
         m("ss_study_oops_adx_gapper_sell", "Oops (ADX Gapper) sell", "Short", vec!["F|\"Filters: Only ADX(12)>30 & w/ADX(28) trend\" (-DI(28) > +DI(28))", "F|opened above the previous day's high", "E|\"Enter at: PD High\"", "X|Exit 0 = close, 1 = next open (default), 2 = next close, 3 = 2nd close"],
           claim("≈16", "69% / 50% / 56% / 50% (C / NO / NC / 2C)", "$292 / $408 / $378 / $136", "0-2 days", "89H-95U, S&P futures (A.15)")),
-        m("ss_study_fresh_adx_buy", "Fresh ADX buy", "Long", vec!["F|\"periods in which the ADX is above 30 and rising. Trades are taken only in the direction of the trend.\" (ADX(14), +DI > -DI)", "E|\"buying a close that is less than the close of two days ago\" (fresh: yesterday was not such a close)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close. \"No protective stops\"", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table, so the readings are not confirmed (gate note)"],
+        m("ss_study_fresh_adx_buy", "Fresh ADX buy", "Long", vec!["F|\"periods in which the ADX is above 30 and rising. Trades are taken only in the direction of the trend.\" (ADX(14), +DI > -DI)", "E|\"buying a close that is less than the close of two days ago\" (fresh: yesterday was not such a close)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close. \"No protective stops\"", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); US runs WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table (gate note); RE-OPENED ON INDIA under R4 #376: a count that differs from a US table is not a defect on Indian data, and the independent reference reproduces every NIFTY 50 / NIFTYBANK / NIFTYMIDCAP100 trade with 0 mismatches"],
           claim("≈61", "49% / 51% / 56% / 61% (NC / 2C / 3C / 4C)", "$110 / $48 / $119 / $354", "1-4 days", "86H-95U, S&P futures (A.16)")),
-        m("ss_study_fresh_adx_sell", "Fresh ADX sell", "Short", vec!["F|\"ADX is above 30 and rising\", downtrend (-DI > +DI)", "E|\"selling a close that is greater than the close of two days ago\" (fresh)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table, so the readings are not confirmed (gate note)"],
+        m("ss_study_fresh_adx_sell", "Fresh ADX sell", "Short", vec!["F|\"ADX is above 30 and rising\", downtrend (-DI > +DI)", "E|\"selling a close that is greater than the close of two days ago\" (fresh)", "X|Exit 2 = next close (default), 3 = 2nd, 4 = 3rd, 5 = 4th close", "F|Unstated in the book: the ADX length; vault reading: ADX(14) with Wilder smoothing (Wilder's standard length; the text p.227 and Exhibits A.16-A.17 give none); p.adx_len changes it", "F|Unstated in the book: what makes a setup 'fresh'; vault reading: yesterday's close was not itself a setup close (p.fresh = 0 counts every setup)", "F|Adapted: 2 unstated details (R4 #297); US runs WITHHELD (R4 #303): with these readings the trade count falls 31-44% short of Moore's table (gate note); RE-OPENED ON INDIA under R4 #376: a count that differs from a US table is not a defect on Indian data, and the independent reference reproduces every NIFTY 50 / NIFTYBANK / NIFTYMIDCAP100 trade with 0 mismatches"],
           claim("≈34", "44% / 50% / 41% / 29% (NC / 2C / 3C / 4C)", "$-51 / $10 / $-18 / $-252", "1-4 days", "86H-95U, S&P futures (A.17)")),
         m("ss_study_gap_failure_buy", "Gap failure buy (50%)", "Long", vec!["F|\"the market opens below the previous day's low and closes in the upper 50 percent of its range ... The gap does not necessarily have to be filled\"", "E|\"Enter on: Close\"", "X|\"Exit on Next Open\""],
           claim("≈113", "62%", "$96", "overnight", "86H-95U, S&P futures (A.18)")),
@@ -1502,6 +1502,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lane I2 (R4 #376): hand-run dump of the Fresh ADX studies on the Indian index files for the pandas reference
+    /// (I2_CSV=<idx_data.csv> I2_OUT=<file.csv> cargo test --release i2_fresh_adx_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_fresh_adx_dump() {
+        use std::io::Write;
+        let (csv, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
+            let Some(rows) = data.get(t) else { continue };
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["ss_study_fresh_adx_buy", "ss_study_fresh_adx_sell"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
+                }
+            }
+        }
+    }
 
     fn row(i: usize, o: f64, h: f64, l: f64, c: f64) -> Row {
         Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }
