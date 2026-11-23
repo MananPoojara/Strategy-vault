@@ -661,7 +661,7 @@ fn catalogue_json(guru: &str) -> String {
         .map(|d| {
             let gated = gate::get(d.id);
             let (status, why) = match d.status {
-                Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !instrument_policy::reviewed_cash_rule(d) => ("not_testable", gated.map_or("", |g| g.reason)),
+                Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !instrument_policy::reviewed_cash_rule(d) && !gate::india_reopened(d.id) => ("not_testable", gated.map_or("", |g| g.reason)),
                 // a held rule's plain-language card reason (instrument_policy::held_reason) replaces the generic review note
                 Status::Live if instrument_policy::held_reason(d.id).is_some() => ("not_testable", instrument_policy::held_reason(d.id).unwrap_or("")),
                 Status::Live if instrument_policy::policy(d).requirement=="source_review_required" => ("not_testable", "Source-specific rules and required instrument have not completed admission review; no backtest is published."),
