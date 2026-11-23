@@ -337,7 +337,7 @@ pub fn m3_withdrawn(id:&str,ticker:&str)->bool {
 fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
     if crate::intraday_ep::m1(def.id) { // lane M1
-        if def.book=="dmpub" || def.book=="tmem" {return Some(Issue{status:"needs_data",note:format!("This rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI; bars or daily bars built from it) as a declared adaptation of a US e-mini S&P rule (lane K2); {ticker} has no futures minute series, so no result is published.")});}
+        if def.book=="dmpub" || def.book=="tmem" || def.book=="pvbs" {return Some(Issue{status:"needs_data",note:format!("This rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI; bars or daily bars built from it) as a declared adaptation of a US e-mini S&P rule (lane K2); {ticker} has no futures minute series, so no result is published.")});}
         if def.id=="aanto_trend_one" {return Some(Issue{status:"needs_data",note:format!("This 15-minute rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI) as a declared adaptation of a US e-mini S&P rule (lane I2); {ticker} has no futures minute series, so no result is published.")});}
         return Some(Issue{status:"needs_data",note:format!("This rule needs traded volume on 1-minute bars. The vault holds that only for the NIFTY and BANKNIFTY futures (lane DI, nearest-expiry continuous, 2018-12 to 2026-11 and 2023-09 to 2026-08); it runs on NIFTY 50 and NIFTYBANK as a declared adaptation of a US/stock rule, and {ticker} has no minute volume, so no result is published.")});
     }
