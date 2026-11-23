@@ -407,7 +407,8 @@ const POSITIVE_RAW_ONLY: &[&str] = &["stad12_shifty", "jkbwts_ehrlich17", "ch_bt
     "ch_bta2_adx_rising", "ch_bta2_pullback",
     "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */,
     "scnbps_cross" /* lane PG: Balsara crossover on &CL (R4 #326) */,
-    "hcta_crude_oil_feb_long", "hcta_crude_oil_apr_long" /* lane D2: Almanac crude seasonals hold across 2020-04-20 */];
+    "hcta_crude_oil_feb_long", "hcta_crude_oil_apr_long" /* lane D2: Almanac crude seasonals hold across 2020-04-20 */,
+    "hcta12m_02_l_cl_10" /* lane K3: the February long crude trade of 2020 is held across 2020-04-20, like hcta_crude_oil_feb_long */];
 /// The first bar whose unadjusted open/high/low/close is <= 0, for a POSITIVE_RAW_ONLY card on a futures context.
 pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
     if !POSITIVE_RAW_ONLY.contains(&id) { return None; }
