@@ -19,13 +19,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
             rules: &["E|\"The setup for a buy signal is two lower lows followed by a higher low. Assume today the setup was satisfied. You enter long on tomorrow's close if two other conditions are met. First, today's close must be above a 28-day simple moving average. Second, tomorrow's open must be greater than today's close.\"",
                 "X|\"Once long, trail a stop at the lowest low of the past ten days. Short trades are the mirror image of long trades.\"", NOTE_A],
-            notes: "Freeburg, Formula Research V:9 (21 Jun 1997), simple reversal system.", claim: None },
+            notes: "Freeburg, Formula Research V:9 (21 Jun 1997), simple reversal system. #340 declared application: the source is a futures system run here on NSE cash indices; the rule uses only price (no contract-specific amount), so it is market-agnostic.", claim: None },
         StrategyDef { id: ATR, name: "ATR system (Bagsarian): 84-day high buy stop, 4 x true-range trail or relative-strength band exit", group: "Formula Research V:9 trade management (Freeburg, 1997)", session: 0, dir: "Long/Short", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
             rules: &["E|\"Place a buy stop tomorrow one tick above the highest high of the past 84 days. If you are filled there are two ways to get out. Choose the tighter of the two stops.\"",
                 "X|\"The first exit is a dynamic trailing stop. ... Multiply the true range by four. Calculate an 8-day exponential average of this product, which we will call P. On the first day of the trade your stop is the entry price minus P. Thereafter, subtract P from each day's close. If the result is higher than the current exit, raise the stop to the newly computed level.\"",
                 "X|\"The second exit is a volatility stop. Each day divide the close by its 144-day simple moving average. The result is a relative strength indicator we can call R. ... Take a 21-day simple moving average of R. Plot bands at intervals 3% above and below the 21-day smoothing. If R drops below the lower band, exit the trade on tomorrow's open.\" Sell signals are the exact opposite.", NOTE_B],
-            notes: "Freeburg, Formula Research V:9 (21 Jun 1997), ATR system by George Bagsarian.", claim: None },
+            notes: "Freeburg, Formula Research V:9 (21 Jun 1997), ATR system by George Bagsarian. #340 declared application: the source is a futures system run here on NSE cash indices; the rule uses only price (no contract-specific amount), so it is market-agnostic.", claim: None },
     ]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
