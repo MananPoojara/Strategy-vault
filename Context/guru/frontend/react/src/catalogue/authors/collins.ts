@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 440,
-  author: { id: 'collins', name: "Art Collins", tagline: "Index-futures day and swing systems with printed TradeStation code", books: [{ id: 'acbff', title: "Beating the Financial Futures Market", year: 2006, blurb: "Collins, 2006 · 75 daily S&P systems run code-exact on the index; intraday, bond and soybean systems need data" }] },
+  author: { id: 'collins', name: "Art Collins", tagline: "Index-futures day and swing systems with printed TradeStation code", books: [{ id: 'acbff', title: "Beating the Financial Futures Market", year: 2006, blurb: "Collins, 2006 · 75 daily S&P systems run code-exact on the index; intraday, bond and soybean systems need data; the two perpetual five-close systems (Tables 36.2, 36.3) also run on NIFTY futures daily bars (unverified); so does the 2d high/low exit #3 system (Table 22.2)" }] },
   identities: ["Art Collins"],
   profile: {
     "kind": "person",

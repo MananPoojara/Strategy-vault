@@ -202,16 +202,33 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 /// Daily NIFTY / BANKNIFTY futures bars from the FUT1 minutes (before 15:30), then the index card's NR4 machinery on them
 /// (daily TradeStation path, no minute resolver); trade indices are mapped back to `x.r`.
-fn fut_run(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
-    let Some(f) = x.fut else { return vec![] };
+/// Daily futures bars (open = first minute's open, high / low = extremes, close = last close, minutes before 15:30) for the
+/// days of `x.r[from..=to]` the FUT1 file holds, and each bar's index into `x.r`.
+pub(crate) fn fut_daily_rows(x: &Ctx, from: usize, to: usize) -> (Vec<crate::Row>, Vec<usize>) {
+    let Some(f) = x.fut else { return (vec![], vec![]) };
     let (mut rows, mut map) = (vec![], vec![]);
     for i in from..=to {
         let r = &x.r[i];
-        let Some((m, _)) = f.fut_day(&r.date) else { continue };
+        let Some((m, mv)) = f.fut_day(&r.date) else { continue };
         rows.push(crate::Row { ticker: r.ticker.clone(), date: r.date.clone(), open: m[0].o, high: m.iter().map(|z| z.h).fold(f64::MIN, f64::max),
-            low: m.iter().map(|z| z.l).fold(f64::MAX, f64::min), close: m[m.len() - 1].c, volume: None });
+            low: m.iter().map(|z| z.l).fold(f64::MAX, f64::min), close: m[m.len() - 1].c, volume: Some(mv.iter().sum()) });
         map.push(i);
     }
+    (rows, map)
+}
+
+/// Maps a trade found on futures-daily bars back to indices of the index rows.
+pub(crate) fn remap(t: Vec<Trade>, map: &[usize]) -> Vec<Trade> {
+    t.into_iter().map(|mut t| {
+        for l in &mut t.legs { l.i = map[l.i]; }
+        for e in &mut t.exits { e.0 = map[e.0]; }
+        t.exit_i = map[t.exit_i]; t.signal_i = map[t.signal_i];
+        t
+    }).collect()
+}
+
+fn fut_run(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
+    let (rows, map) = fut_daily_rows(x, from, to);
     if rows.is_empty() { return vec![]; }
     let y = Ctx::new(&rows, &rows, &[]);
     let tick = if g("tick") < 0.0 { y.market_tick() } else { g("tick") };
@@ -222,12 +239,7 @@ fn fut_run(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -
         let ib = id == "sprfs_fut_hvr_nr4ib";
         nr4_trades_ep6(&y, 0, rows.len() - 1, tick, hold, &|s| nr4(&y, s) && (!ib || inside(&y, s)) && l[s] > 0.0 && (a[s] / l[s] < r || b[s] / l[s] < r), false)
     };
-    tr.into_iter().map(|mut t| {
-        for l in &mut t.legs { l.i = map[l.i]; }
-        for e in &mut t.exits { e.0 = map[e.0]; }
-        t.exit_i = map[t.exit_i]; t.signal_i = map[t.signal_i];
-        t
-    }).collect()
+    remap(tr, &map)
 }
 
 #[cfg(test)]
