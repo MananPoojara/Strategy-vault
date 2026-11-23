@@ -1094,6 +1094,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     if def.id==crate::books::ecqt::PAIR {return requirement("etf",&["etf"],ECQT_PAIR_BASIS);} // lane P1: Chan's GLD/GDX pair on the GLD context
     if def.id=="vvqmm_pairs" {let mut p=requirement("index_or_etf",&["index","etf"],PAIRS_BASIS);p.market_adaptation=true;return p;} // lane P1 pairs block
     if def.book==crate::books::mmpoulos::BOOK {return stock("Poulos Market Mastery Method 4 (Profits Run): a stock method, run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane CV5
+    if def.book==crate::books::thvl::BOOK {return index("Hayes 30-week momentum of the Value Line Composite: an index rule, run on actual indices only (US and NSE); the Value Line itself is not held, so any index is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
+    if def.book==crate::books::tmcap::BOOK {return stock("TradingMarkets Capital Appreciation Program (TMCAP): a stock method (volatility twice the market's), run on actual stocks only (US S&P 500 and NSE Nifty 50 baskets; benchmark SPX or NIFTY 50); India is a declared adaptation (R4 #340); UNVERIFIED");} // lane K1
     if let Some(a)=admission(def) {let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],a.basis);p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;} // per-book ADMISSION table
     if let Some(p)=schaap_policy(def) {return p;} // Schaap block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block

@@ -3,6 +3,7 @@ import type {AuthorFile} from '../author-files';
 export default {
   order: 10,
   author: { id: 'connors', name: 'Larry Connors', photo: 'img/gurus/connors.jpg', books: [
+    { id: "tmcap", sourceIds: [], title: "Capital Appreciation Program (TMCAP)", year: 2005, blurb: "Connors / TradingMarkets · stocks above the 200-day with volatility twice the market's, five closes under the 2-day average, out when RSI(2) tops 75; stock method, India a declared adaptation, unverified" },
     { id: "ccl07", sourceIds: [], title: "Chairman's Club December 2007 (Las Vegas manual)", year: 2007, blurb: "Connors / TradingMarkets · RSI 10 Scale-In on SPY, the 10 Worst Performers rule, the AmiBroker class project and Curt Carlson's breakout study run here; the Short Selling Methodology is the live h10 rule" },
     { id: 'stc9', sourceIds: ['source-a9f1f241140ddd2d'], title: 'Swing Trading College IX', year: 2010, live: true },
     { id: 'alpha', sourceIds: ['source-8e3431fb32b0bfa0'], title: 'The Alpha Formula (with Chris Cain)', year: 2020, blurb: 'Connors Research, 2020 · Rising Assets, Weekly Mean Reversion, Dynamic Treasuries, ETF Avalanches and the combined Alpha Formula portfolio' },
@@ -52,6 +53,7 @@ export default {
     "confidence": "high"
   },
   sourceReview: {
+    "tmcap": {"type":"course_manual","people":["Larry Connors"]},
     "ccl07": {"type":"course_manual","people":["Larry Connors","Curt Carlson"]},
     "stc9": {"type":"course_manual","people":[]},
     "alpha": {"type":"book","people":["Chris Cain","Larry Connors"]},
