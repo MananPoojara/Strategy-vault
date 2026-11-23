@@ -270,7 +270,7 @@ pub fn streak(n: usize, pred: impl Fn(usize) -> bool) -> Vec<usize> {
 
 /// Lane IN2 (R4 #340): name of the NIFTY / BANKNIFTY futures daily-volume series, and the volume rules that may read it as a labelled adaptation.
 pub const FUT_VOL: &str = "FUT1.Volume";
-pub const FUT_VOL_IDS: &[&str] = &["scsaitta_volma", "fotol_bb_breakout"];
+pub const FUT_VOL_IDS: &[&str] = &["scsaitta_volma", "fotol_bb_breakout", "stda_obv_ma6"];
 pub struct Ctx<'a> {
     pub r: &'a [Row],
     pub o: Vec<f64>,

@@ -72,6 +72,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"a five-day holding period --- that is, exiting on the close of the fifth day after the entry day\""],
           "AIQ 'esa' = exponential average, 21 days per the text [B]. Entry at the close of the signal day [B: the article does not name the entry order]. One position at a time. Book: S&P 500 index +0.55% per trade (no count given); stocks 2,014 trades +2.33%.",
           c("n/a", "n/a", "+0.55% (S&P 500 index)", "5 days", "1/1/1999-7/15/2003")),
+        d("atm04_fut_vomund", "Volume-spike screen (Vomund) on NIFTY / BANKNIFTY futures daily bars · volume >= 2 x avg(21), upper-half close, RSI(14) < 30, hold 5 days", "Trading Strategies Mar 2004", "Long", Live, false,
+          &["E|\"Volume if [volume] >= [volume esa] * 2. Price if [close]>([high]+[low])/2. RSI if [RSI Wilder] <30. Allworks if Volume and price and RSI.\" (AIQ code); \"daily volume must be at least twice its 21-day average\"",
+            "X|\"a five-day holding period --- that is, exiting on the close of the fifth day after the entry day\"",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: the article tests the S&P 500 index (+0.55% per trade, no count) and stocks; this runs the same code and readings (EMA(21) with SMA seed, Wilder RSI(14), entry at the signal close, one position at a time) on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI, before 15:30 IST, volume = the sum of the day's minute volumes, nearest-expiry continuous, not back-adjusted: roll days carry the basis in price and the volume shifts between contracts). Days with a blank minute volume are absent. No costs; the book's figures are not comparable."],
+          "Same rule as atm04_vomund on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         d("atm04_60min", "60-minute breakout (first-hour range, third 30-minute bar)", "TSL Jan 2004 (stocks + SPY/QQQ)", "Long/Short",
           Live, false,
           &["E|\"Buy if the closing price of the third 30-minute bar is above the high of the first 60 minutes of the day\"; short below the low (p.70); stock column p.50: \"After the first 60 minutes have ended, if the closing price of the current 30-minute bar is above the high of the range, we will go long on the next open ... There will be only one trade per day.\"",
@@ -104,7 +109,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     let v: &'static str = catalogue().into_iter().find(|d| d.id == id)?.name;
     Some(match id {
-        "atm04_glitch" | "atm04_rsi_agita" | "atm04_blues" | "atm04_wma" | "atm04_vomund" => ("atm04_counter", "Active Trader 2004 · countertrend", v),
+        "atm04_glitch" | "atm04_rsi_agita" | "atm04_blues" | "atm04_wma" | "atm04_vomund" | "atm04_fut_vomund" => ("atm04_counter", "Active Trader 2004 · countertrend", v),
         "atm04_monthly_bo" | "atm04_cci_weekly" | "atm04_55_trail" | "atm04_55_simple" | "atm04_oddball" => ("atm04_trend", "Active Trader 2004 · trend", v),
         "atm04_qqq_crash" | "atm04_four_pct" => ("atm04_altucher", "Altucher (Trade Like a Hedge Fund)", v),
         "atm04_60min" => ("atm04_intraday", "Active Trader 2004 · intraday (1-minute bars)", v), // intraday EP block (K39)
@@ -128,7 +133,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm04_four_pct" => vec![p("pct", "Gain from previous close %", 4., 1., 10., 0.5), p("down2", "1 = also require the prior day down >= 2% (variation)", 0., 0., 1., 1.)],
         "atm04_rsi_agita" => vec![p("n", "RSI length", 20., 5., 50., 1.), p("exit", "Exit when RSI crosses above", 55., 40., 70., 1.), p("w", "Leg weight (fraction of equity)", 0.08, 0.01, 1., 0.01)],
         "atm04_blues" => vec![p("n", "Lowest close lookback", 125., 10., 250., 5.), p("add", "Add when close is this % below the previous entry", 50., 10., 80., 5.), p("tgt", "Profit target % per position", 80., 10., 200., 5.), p("w", "Position weight (fraction of equity)", 0.09, 0.01, 1., 0.01)],
-        "atm04_vomund" => vec![p("vn", "Volume average length", 21., 5., 50., 1.), p("vk", "Volume multiple", 2., 1., 5., 0.25), p("rn", "RSI length", 14., 2., 30., 1.), p("rl", "RSI below", 30., 10., 50., 1.), p("hold", "Days held after entry", 5., 1., 20., 1.)],
+        "atm04_vomund" | "atm04_fut_vomund" => vec![p("vn", "Volume average length", 21., 5., 50., 1.), p("vk", "Volume multiple", 2., 1., 5., 0.25), p("rn", "RSI length", 14., 2., 30., 1.), p("rl", "RSI below", 30., 10., 50., 1.), p("hold", "Days held after entry", 5., 1., 20., 1.)],
         "atm04_60min" => vec![p("third", "Entry bar: 0 = any 30-minute close after the first hour (the stock column's rule, p.50), 1 = the third 30-minute bar only (the entry-rule line)", 0., 0., 1., 1.)], // intraday EP block (K39)
         "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_oddball" | "atm04_other" => vec![],
         _ => return None,
@@ -317,6 +322,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             out
         }
+        "atm04_fut_vomund" => {
+            let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
+            if rows.is_empty() { return Some(vec![]); }
+            let y = Ctx::new(&rows, &rows, &[]);
+            crate::books::sprfs::remap(run("atm04_vomund", &y, 0, rows.len() - 1, p)?, &map)
+        }
         "atm04_60min" => min60(x, from, to, g("third") >= 0.5), // intraday EP block (K39)
         "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_oddball" | "atm04_other" => vec![],
         _ => return None,
@@ -362,5 +373,29 @@ mod tests {
         let t = run("atm04_four_pct", &x, 0, 3, &Params::new()).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (2, 105., 3, 104.));
+    }
+}
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (I2_CSV=<idx_data.csv> I2_FUT_DIR=<data/intraday> I2_OUT=<file.csv>
+    /// cargo test --release i2_atm04_fut_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_atm04_fut_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_FUT_DIR").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for z in run("atm04_fut_vomund", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "atm04_fut_vomund,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+            }
+        }
     }
 }

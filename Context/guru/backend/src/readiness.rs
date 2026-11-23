@@ -611,7 +611,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if let Some(g) = crate::gate::get(def.id) {
         // A fixed-USD-amount withhold does not apply on a US stock, the amount's home (user decision 2026-10-21).
-        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock && !(india(ctx) && crate::gate::india_reopened(def.id)) { // R4 #376: re-opened on Indian runs
+        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock && !(india(ctx) && crate::gate::india_reopened_on(def.id, ctx.native_market.is_some(), ctx.r.first().map_or("", |r| r.ticker.as_str()))) { // R4 #376: re-opened on Indian runs
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
@@ -1022,6 +1022,7 @@ mod tests {
         // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
         for &id in crate::options::RULES {
             let mut r=rows();
+            if id=="fotol_calendar_spread" {for x in r.iter_mut(){x.ticker="NIFTY 50".into();}} // lane K2: gate-allowed on NIFTY 50 / NIFTYBANK only
             if id.starts_with("as51_opt") {let t=if crate::books::as51ts::BNF_IDS.contains(&id) {"NIFTYBANK"} else {"NIFTY 50"}; for x in r.iter_mut(){x.ticker=t.into();}} // lanes F2 / F4: gate-allowed on NIFTY 50 / NIFTYBANK only; no weekly store loaded here
             let mut ctx=Ctx::new(&r,&r,&[]);
             ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
