@@ -1226,7 +1226,7 @@ mod tests {
         for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
             let Some(rows) = data.get(t) else { continue };
             let x = Ctx::new(rows, &[], &[]);
-            for id in ["kftsm_4_9_18"] {
+            for id in ["kftsm_4_9_18", "kftsm_hh_cross"] {
                 for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
                     writeln!(f, "{id},{t},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
                 }
