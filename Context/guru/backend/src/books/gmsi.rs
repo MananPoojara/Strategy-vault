@@ -10,7 +10,7 @@ pub const BOOK: &str = "gmsi";
 pub const REVIEWED: &[&str] = &["gmsi_us", "gmsi_in"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared adaptation, R4 #340] The study runs the NASDAQ composite on NASDAQ advance/decline data, 1979-2004 (Figure 1: at zero, 54.17% winning years, 44.01% of time invested, 22.38% a year while invested; at +300, 56% winning years, 21.04% of time invested, maximum drawdown -4.1% against -77.93% for buy and hold). The vault holds no NASDAQ breadth, so the rule runs on the breadth it has: `gmsi_in` = NSE advances/declines (1999-) on the NSE indices NIFTY 50 and NIFTY BANK, `gmsi_us` = NYSE advances/declines (US sources) on the US indices SPX, NDX and DJI; indices only, never single stocks or ETFs. Nothing is compared with Figure 1 (different market, different breadth, different period; the table's 'winning percentage' counts winning years, not trades). UNVERIFIED. Default level 0 (the 'commonly used' level the text names first; +300 is the other level it recommends, p.level 300). [Declared readings, each an unstated detail] (1) The ratio is (A-D)/(A+D) x 1000 (the scale on which levels such as +300 and +800 make sense) and the oscillator uses 19- and 39-day exponential averages of it, each seeded with the first ratio. (2) The calibrated summation index is computed from the two averages alone: the running sum of the oscillator equals 19 x EMA39 - 9 x EMA19 plus a constant fixed by the start date, and the calibration drops that constant so a flat zero ratio reads zero, as the author's 'adjusted for zero-level neutral' and Miekka's start-independent calibration describe (the calibration formula itself is not printed). (3) The index is read on each close: long at the close of a day when it rises above the level (it was at or below on the previous breadth day), out at the close of the first day it falls to or below the level; filters the text only suggests (65-day average, direction, a 21-day average of the index) are not applied. Missing breadth days leave the position unchanged.";
+const NOTE: &str = "[Declared adaptation, R4 #340] The study runs the NASDAQ composite on NASDAQ advance/decline data, 1979-2004 (Figure 1: at zero, 54.17% winning years, 44.01% of time invested, 22.38% a year while invested; at +300, 56% winning years, 21.04% of time invested, maximum drawdown -4.1% against -77.93% for buy and hold). The vault holds no NASDAQ breadth, so the rule runs on the breadth it has: `gmsi_in` = NSE advances/declines (1999-) on the NSE indices NIFTY 50 and NIFTY BANK, `gmsi_us` = NYSE advances/declines (US sources) on the US indices SPX, NDX and DJI; indices only, never single stocks or ETFs. Nothing is compared with Figure 1 (different market, different breadth, different period; the table's 'winning percentage' counts winning years, not trades). UNVERIFIED. Default level 0 (the 'commonly used' level the text names first; +300 is the other level it recommends, p.level 300). [Declared readings, each an unstated detail] (1) The ratio is (A-D)/(A+D) x 1000 (the scale on which levels such as +300 and +800 make sense) and the oscillator uses 19- and 39-day exponential averages of it, each seeded with the first ratio. (2) The calibrated summation index is computed from the two averages alone: the running sum of the oscillator equals 19 x EMA39 - 9 x EMA19 plus a constant fixed by the start date, and the calibration drops that constant so a flat zero ratio reads zero, as the author's 'adjusted for zero-level neutral' and Miekka's start-independent calibration describe (the calibration formula itself is not printed). (3) The index is read on each close: the index is read on each close; breadth is published after the close, so a rise above the level (it was at or below on the previous breadth day) is bought at the NEXT bar's close and the first fall to or below the level is sold at the next bar's close (R4 #374, as kpdr); filters the text only suggests (65-day average, direction, a 21-day average of the index) are not applied. Missing breadth days leave the position unchanged.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mk = |id: &'static str, name: &'static str, series: &'static [&'static str]| StrategyDef { id, name, group: "Morris McClellan summation index", session: 0, dir: "Long", status: Status::Live,
@@ -49,8 +49,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let c = &x.c;
     let (mut ef, mut es, mut started) = (0.0, 0.0, false);
     let (mut prev, mut cur) = (f64::NAN, None::<(usize, f64)>);
+    // Breadth is published after the close (R4 #374, as kpdr): a signal read on bar i is filled at the close of the NEXT bar (i+1).
+    let mut pend: Option<bool> = None; // Some(true) = enter, Some(false) = exit
     let mut out = vec![];
     for i in 0..=to {
+        if i >= from {
+            match (pend.take(), cur) {
+                (Some(true), None) => cur = Some((i, c[i])),
+                (Some(false), Some((e, ep))) => {
+                    out.push(Trade { dir: 1., legs: vec![Leg { i: e, px: ep, w: 1. }], exit_i: i, exit_px: c[i], reason: "summation index fell back to the level".into(), entry_kind: "close", signal_i: i, open: false, exits: vec![] });
+                    cur = None;
+                }
+                _ => {}
+            }
+        }
         let (ai, di) = (adv[i], dec[i]);
         if !(ai.is_finite() && di.is_finite() && ai + di > 0.0) { continue; }
         let r = 1000.0 * (ai - di) / (ai + di);
@@ -58,14 +70,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let si = (k_slow * es) - (k_fast * ef); // 19 x EMA39 - 9 x EMA19 for 19/39 (a general running-sum identity)
         let was = prev; prev = si;
         if i < from { continue; }
-        match cur {
-            None if was.is_finite() && was <= lvl && si > lvl => cur = Some((i, c[i])),
-            Some((e, ep)) if si <= lvl => {
-                out.push(Trade { dir: 1., legs: vec![Leg { i: e, px: ep, w: 1. }], exit_i: i, exit_px: c[i], reason: "summation index fell back to the level".into(), entry_kind: "close", signal_i: i, open: false, exits: vec![] });
-                cur = None;
-            }
-            _ => {}
-        }
+        if cur.is_none() && was.is_finite() && was <= lvl && si > lvl { pend = Some(true); }
+        else if cur.is_some() && si <= lvl { pend = Some(false); }
     }
     if let Some((e, ep)) = cur {
         out.push(Trade { dir: 1., legs: vec![Leg { i: e, px: ep, w: 1. }], exit_i: to, exit_px: c[to], reason: "open".into(), entry_kind: "close", signal_i: to, open: true, exits: vec![] });
