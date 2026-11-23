@@ -34,6 +34,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"1. Exit the next day 1 percent above the down day's closing price. 2. If the next day's opening price is more than 1 percent below the previous close, exit on the open. 3. If the 1-percent target is not reached and rule 2 is false, exit on the close or with a stop-loss 1 percent below the down day's closing price.\""],
           "Next day: an open more than 1% below the entry close exits at the open; otherwise the target (limit, an open above it fills at the open) and the 1% stop work intraday, stop first if both trade [B]; otherwise exit at the close. Book: QQQQ 2/25/2000-2/24/2010, 500 shares, $5 per trade.",
           c("411", "72.5% (298 of 411)", "net $29,627 / 500 sh", "1 day", "QQQQ 2/25/2000-2/24/2010")),
+        d("atm10_fut_one_pct", "1-percent strategy on NIFTY / BANKNIFTY futures daily bars · buy the close of a 1% down day, +1% target / -1% stop next day", "Trading Strategies May 2010 p.28-31", "Long", Live,
+          &["E|Down day: \"closes and lows at least 1 percent below the previous days' prices\" (both close-to-close and low-to-low); \"going long on the close of each down day\"",
+            "X|\"1. Exit the next day 1 percent above the down day's closing price. 2. If the next day's opening price is more than 1 percent below the previous close, exit on the open. 3. If the 1-percent target is not reached and rule 2 is false, exit on the close or with a stop-loss 1 percent below the down day's closing price.\"",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: the book trades QQQQ (Nasdaq-100 ETF); the rule is a pure percentage timing rule, so it runs on the NIFTY 50 / NIFTYBANK FUTURES (the tradable instrument, not the cash index): daily bars from the FUT1 1-minute series (lane DI, before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a roll day's close-to-close change includes the roll basis, so some 'down days' and gaps are roll artefacts). Same code and readings as atm10_one_pct (stop first if both stop and target trade on the day [B]); no costs; the book's QQQQ table is not comparable."],
+          "Same rule as atm10_one_pct on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         d("atm10_weak_rotation", "Weak-stock rotation (Dow 30) · buy the 5 biggest 14-day decliners, hold >= 5 days", "TSL Mar 2010 p.44-47 (Knapp)", "Long",
           NeedsData("the 30 Dow stocks (daily cross-sectional ranking of 14-day percentage change); the engine runs one instrument at a time"),
           &["E|\"1. Go long tomorrow at the open the five stocks that made the largest percentage declines over the past 14 days. 2. Hold the stocks at least five days.\"", "X|\"3. Sell tomorrow at the open when a stock is no longer among the five biggest percentage decliners over the past 14 days.\""],
@@ -58,7 +63,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm10_vol_scalein" => vec![p("fast", "Fast EMA", 20., 5., 50., 1.), p("slow", "Slow EMA", 50., 20., 200., 5.), p("trend", "Trend SMA", 200., 50., 300., 10.),
             p("add_k", "Add every x ATR above the last entry", 3., 0.5, 6., 0.5), p("stop_k", "Stop x ATR below the last entry", 6., 1., 10., 0.5), p("atr_n", "ATR length", 10., 5., 30., 1.),
             p("max", "Maximum entries", 4., 1., 8., 1.), p("w", "Weight per entry (fraction of equity)", 0.03, 0.01, 1., 0.01)],
-        "atm10_one_pct" => vec![p("drop", "Down-day size %", 1., 0.25, 5., 0.25), p("tgt", "Target % above the entry close", 1., 0.25, 5., 0.25), p("stop", "Stop % below the entry close", 1., 0.25, 5., 0.25), p("tgt_first", "1 = target before stop when both trade in one bar (labelled option)", 0., 0., 1., 1.)],
+        "atm10_one_pct" | "atm10_fut_one_pct" => vec![p("drop", "Down-day size %", 1., 0.25, 5., 0.25), p("tgt", "Target % above the entry close", 1., 0.25, 5., 0.25), p("stop", "Stop % below the entry close", 1., 0.25, 5., 0.25), p("tgt_first", "1 = target before stop when both trade in one bar (labelled option)", 0., 0., 1., 1.)],
         "atm10_weak_rotation" | "atm10_not_testable" => vec![],
         _ => return None,
     })
@@ -160,7 +165,37 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             out
         }
         "atm10_weak_rotation" | "atm10_not_testable" => vec![],
+        "atm10_fut_one_pct" => {
+            let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
+            if rows.is_empty() { return Some(vec![]); }
+            let y = Ctx::new(&rows, &rows, &[]);
+            crate::books::sprfs::remap(run("atm10_one_pct", &y, 0, rows.len() - 1, p)?, &map)
+        }
         _ => return None,
     })
 }
 
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (I2_CSV=<idx_data.csv> I2_FUT_DIR=<data/intraday> I2_OUT=<file.csv>
+    /// cargo test --release i2_atm10_fut_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_atm10_fut_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_FUT_DIR").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for z in run("atm10_fut_one_pct", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "atm10_fut_one_pct,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+            }
+        }
+    }
+}
