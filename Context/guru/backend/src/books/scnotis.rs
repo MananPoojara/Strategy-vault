@@ -91,6 +91,6 @@ mod tests {
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scnotis",
-    label: "Notis tested Williams' 75% system on the S&P 500 futures contract (1987-1988); the vault runs the printed rule on the five NSE index series (NIFTY 50, NIFTYBANK, NIFTYIT, NIFTYMIDCAP100, NIFTYMIDCAPSELECT), a declared adaptation, indices only.",
+    label: "Notis tested Williams' 75% system on the S&P 500 futures contract (1987-1988); the vault runs the printed rule on four NSE index series (NIFTY 50, NIFTYBANK, NIFTYIT, NIFTYMIDCAPSELECT), a declared adaptation, indices only; NIFTYMIDCAP100 is excluded because 6.3% of its trades fall on bars that touch both levels (over the 5% line, #240).",
     basis: "Technical Analysis of Stocks & Commodities V.7:3 pp.96-99 (Testing breakout systems); independent check authors/conv-1123/i2w/scnotis_ref.py",
 };
