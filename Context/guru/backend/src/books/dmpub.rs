@@ -7,14 +7,16 @@
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "dmpub";
-const IDS: [&str; 4] = ["dmpub_poly4", "dmpub_fm4", "dmpub_epfft5", "dmpub_epfft1"];
+const IDS: [&str; 2] = ["dmpub_poly4", "dmpub_fm4"];
+const HELD: [&str; 2] = ["dmpub_epfft5", "dmpub_epfft1"];
+const HELD_WHY: &str = "Held on Indian data (R4 #377, lead review 23 Nov 2026): the End Point FFT rules use fixed S&P index POINT thresholds (pntup/pntdn 1.0/3.0, pup/pdn 2.75/1.25 points) that mean different things on NIFTY (about 25,000) than on the S&P (about 1,400); rescaling them would be invented. The rule is coded in this file but not published; it needs S&P 500 e-mini minute data.";
 
 const NOTE: &str = "A|Adapted (R4 #340, lane K2 23 Nov 2026), UNVERIFIED: the papers trade S&P 500 / E-mini futures (Sep/99, Mar/00, Sep/02) in dollars and print their results for that contract; the rule runs here on the NIFTY 50 / NIFTYBANK FUTURES 1-minute series (lane DI; nearest-expiry continuous, NOT back-adjusted; days with a blank volume are absent), session 09:15-15:30 IST, bars aligned to the session open (09:15 ...; the 15:30 auction minute dropped). The book's walk-forward results are for a different contract and period and are not reproduced. Parameters = the paper's Figure 1 optimum (a single walk-forward test window; no optimiser is run here); percent parameters carry over unchanged, point parameters (EPFFT pntup/pntdn) are used as printed in index points with no rescaling. Readings of what the paper leaves open, 4, all labelled: (1) one continuous bar series across days for the curve (the papers' windows span days; the nearest-expiry roll gap is inside it); (2) 'at the market' = the next bar's open, a signal on the day's last bar is not taken, 'exit on the close' = the last bar's close (the 1-minute paper: one minute before the close = the close of the second-to-last bar); (3) at each new day the curve's high/low trackers restart at that bar and, while flat, both are tracked, so the first move of either size opens a position; after an entry the tracker of the held side starts at that bar's curve value; (4) no signal before the curve's warm-up (60 bars LS polynomial, 150 bars fading memory so its start-up transient 0.91^150 is gone, 512 bars EPFFT); EPFFT zeroes the bins whose magnitude is below thres*max over all 512 bins (DC included). No costs.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mk = |id: &'static str, name: &'static str, rules: &'static [&'static str], notes: &'static str| StrategyDef { id, name, group: "Meyers intraday papers", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None };
-    vec![
+    let mut v = vec![
         mk(IDS[0], "4th Order Polynomial System (5-min futures)", &["F|Pf = least-squares 4th-degree polynomial through the last T=60 closes, forecast for the next bar (p. 1-2)",
             "E|Buy at the market when Pf has moved up by more than pctup=0.90% from its lowest value recorded while short; sell (reverse) when it has moved down by more than pctdn=0.75% from its highest while long (p. 2)",
             "X|Exit all trades at the close of each day (market on close); no overnight position", NOTE],
@@ -23,26 +25,26 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy at the market when X4est has moved up by more than pctup=1.10% from its lowest while short; sell (reverse) when it has moved down by more than pctdn=0.60% from its highest while long",
             "X|Exit all trades at the close of each day", NOTE],
             "Paper: 'The Fading Memory 4th Order Polynomial' (2000), 10 pp. Figure 1 optimum beta 0.910, pctup 1.10%, pctdn 0.60% (S&P Mar/00, 11 Jan - 11 Feb 2000)."),
-        mk(IDS[2], "End Point FFT System (5-min futures)", &["F|Each bar: take ln of the last 512 closes, end-flatten (a=x1, b=(xn-x1)/(n-1)), FFT, zero the bins below 0.15*max magnitude, inverse FFT, add back the trend and exp; y = last point, y1 = the point before; dsumEP += y-y1 (pp. 2-3)",
+        mk(HELD[0], "End Point FFT System (5-min futures)", &["F|Each bar: take ln of the last 512 closes, end-flatten (a=x1, b=(xn-x1)/(n-1)), FFT, zero the bins below 0.15*max magnitude, inverse FFT, add back the trend and exp; y = last point, y1 = the point before; dsumEP += y-y1 (pp. 2-3)",
             "E|Buy at the market when dsumEP has moved up by more than pntup=1.0 points from its lowest while short; sell (reverse) when down by more than pntdn=3.0 points from its highest while long",
             "X|Exit on the close", NOTE],
             "Paper: 'The End Point Fast Fourier Transform' (2000), 9 pp. Figure 1 optimum pntup 1.0, pntdn 3.0 (S&P Mar/00 5-min, 30 Nov - 30 Dec 1999). Points are not rescaled to the NIFTY level."),
-        mk(IDS[3], "End Point FFT System (1-min futures, E-mini paper)", &["F|Same EPFFT as the 5-minute paper on 1-minute bars: 512 bars, thres=0.13 of the maximum magnitude; sumEP += ep-ep1",
+        mk(HELD[1], "End Point FFT System (1-min futures, E-mini paper)", &["F|Same EPFFT as the 5-minute paper on 1-minute bars: 512 bars, thres=0.13 of the maximum magnitude; sumEP += ep-ep1",
             "E|Buy at the market when sumEP has moved up by more than pup=2.75 points from its lowest while short; sell (reverse) when down by more than pdn=1.25 points from its highest while long",
             "X|Close the position 1 minute before the close (no overnight)", NOTE],
             "Paper: 'Trading The E-Mini Using The End Point Fast Fourier Transform' (2003), 16 pp. Figure 4 optimum thres 0.13, pntup 2.75, pntdn 1.25 (ES Sep/02 1-min, 12 Jun - 12 Jul 2002)."),
-    ]
+    ];
+    for d in &mut v { if HELD.contains(&d.id) { d.status = Status::NeedsData(HELD_WHY); } }
+    v
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    IDS.contains(&id).then_some(("dmpub", "Meyers intraday curve systems", match id { "dmpub_poly4" => "4th-order polynomial", "dmpub_fm4" => "Fading memory 4th order", "dmpub_epfft5" => "End point FFT 5-min", _ => "End point FFT 1-min" }))
+    (IDS.contains(&id) || HELD.contains(&id)).then_some(("dmpub", "Meyers intraday curve systems", match id { "dmpub_poly4" => "4th-order polynomial", "dmpub_fm4" => "Fading memory 4th order", "dmpub_epfft5" => "End point FFT 5-min", _ => "End point FFT 1-min" }))
 }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
         "dmpub_poly4" => Some(vec![p("bar", "Bar size (minutes; 5 per the paper)", 5., 1., 30., 1.), p("t", "T, closes in the least-squares fit", 60., 10., 200., 1.), p("pctup", "pctup, % rise of Pf from its low", 0.90, 0.05, 3., 0.05), p("pctdn", "pctdn, % fall of Pf from its high", 0.75, 0.05, 3., 0.05)]),
         "dmpub_fm4" => Some(vec![p("bar", "Bar size (minutes; 5 per the paper)", 5., 1., 30., 1.), p("beta", "beta (memory)", 0.91, 0.5, 0.99, 0.01), p("pctup", "pctup, % rise of X4est from its low", 1.10, 0.05, 3., 0.05), p("pctdn", "pctdn, % fall of X4est from its high", 0.60, 0.05, 3., 0.05)]),
-        "dmpub_epfft5" => Some(vec![p("bar", "Bar size (minutes; 5 per the paper)", 5., 1., 30., 1.), p("thres", "Low-pass threshold, fraction of the maximum magnitude", 0.15, 0.01, 0.9, 0.01), p("pup", "pntup, points rise of dsumEP from its low", 1.0, 0.25, 20., 0.25), p("pdn", "pntdn, points fall of dsumEP from its high", 3.0, 0.25, 20., 0.25)]),
-        "dmpub_epfft1" => Some(vec![p("bar", "Bar size (minutes; 1 per the paper)", 1., 1., 30., 1.), p("thres", "Low-pass threshold, fraction of the maximum magnitude", 0.13, 0.01, 0.9, 0.01), p("pup", "pup, points rise of sumEP from its low", 2.75, 0.25, 20., 0.25), p("pdn", "pdn, points fall of sumEP from its high", 1.25, 0.25, 20., 0.25)]),
         _ => None,
     }
 }
@@ -206,8 +208,7 @@ mod tests {
         let d = |id: &str| params(id).unwrap().iter().map(|p| p.def).collect::<Vec<_>>();
         assert_eq!(d("dmpub_poly4"), vec![5., 60., 0.90, 0.75]);
         assert_eq!(d("dmpub_fm4"), vec![5., 0.91, 1.10, 0.60]);
-        assert_eq!(d("dmpub_epfft5"), vec![5., 0.15, 1.0, 3.0]);
-        assert_eq!(d("dmpub_epfft1"), vec![1., 0.13, 2.75, 1.25]);
+        assert!(params("dmpub_epfft5").is_none() && params("dmpub_epfft1").is_none()); // held, R4 #377
     }
     #[test]
     fn ls_weights_forecast_a_cubic_exactly() {

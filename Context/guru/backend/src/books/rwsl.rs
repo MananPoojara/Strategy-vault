@@ -66,6 +66,6 @@ mod tests {
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "rwsl",
-    label: "Daily close-to-close momentum cross with no currency amounts, written for stocks and stock indexes (p. 3): runs on daily indices, ETFs and stocks, US and India, as a declared application.",
+    label: "Daily close-to-close momentum cross with no currency amounts, written for stocks and stock indexes (p. 3): run and independently checked on the five NSE index series only (NIFTY 50, NIFTYBANK, NIFTYIT, NIFTYMIDCAP100, NIFTYMIDCAPSELECT).",
     basis: "The Slingshot Trading Method (Ryan Watts), pp. 9-11, 15-16; independent check authors/conv-1123/k2w/rwsl_ref.py",
 };

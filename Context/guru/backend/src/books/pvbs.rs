@@ -21,7 +21,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> { (id == ID).then(|| vec![Param
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if id != ID || to >= x.c.len() || from > to { return None; }
     let n = p.get("bar").copied().unwrap_or(5.0).round().max(1.0) as u16;
-    let f = x.fut?;
+    let Some(f) = x.fut else { return Some(vec![]) };
     let mut out = vec![];
     let mut prev: Option<(f64, f64, f64)> = None; // previous day's high, low, close
     for i in from..=to {
