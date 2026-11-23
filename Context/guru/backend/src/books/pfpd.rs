@@ -211,8 +211,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && reviewed(def.id),
-    label: "The course teaches these methods on exchange-traded funds (long ETFs and 'short' inverse ETFs); they run here on actual ETFs, with the course's 300,000-share average-volume filter read on the ticker's own volume, as a declared application where an ETF is not a US fund. Not run on indices or single stocks.",
-    basis: "Bill Poulos, ETF Profit Driver, Modules 2-5 (presentation.xml slide text); independent check authors/conv-1123/k3w/pfpd_ref.py",
+    label: "The course teaches these methods on exchange-traded funds; they run here only on the six US ETFs the independent reference covers (SPY, QQQ, XLE, EWJ, IWM, XLK), a declared application of the course's ETF universe, with the course's 300,000-share average-volume filter read on the ticker's own volume. Other ETFs (including Indian ETFs), indices and stocks are not admitted.",
+    basis: "Bill Poulos, ETF Profit Driver, Modules 2-5 (presentation.xml slide text); independent check authors/conv-1123/k3w/pfpd_ref.py on SPY, QQQ, XLE, EWJ, IWM, XLK",
 };
 
 #[cfg(test)]
