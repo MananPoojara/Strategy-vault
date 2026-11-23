@@ -18,8 +18,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"if t>=notbef and t<notaft and startnow>=2 and rfilter and date>entrydate(1) then: if hitoday>=ssetup and marketposition>-1 then Sell Short Next Bar at senter+(hitoday-ssetup)/div stop; if ltoday<=bsetup and marketposition<1 then Buy Next Bar at benter-(bsetup-ltoday)/div stop\" (notbef 715, notaft 1229, xdiv 3)",
             "E|\"if marketposition=-1 then Buy Next Bar at entryprice+reverse stop; if marketposition=1 then Sell Short Next Bar at entryprice-reverse stop; if marketposition=0 then Buy Next Bar at bbreak stop and Sell Short Next Bar at sbreak stop\" (reverse 2.00)",
             "X|\"if t>=notaft and t<>sess1endtime then: Buy to Cover at entryprice+reverse stop; Sell at entryprice-reverse stop; Buy to Cover Next Bar at h+.05 stop; Sell Next Bar at l-.05 stop\"; header: \"Close End of Day\"",
-            NOTE],
-        notes: "Published results: none in the folder (code only). Not reproduced: different market and period.",
+        ],
+        notes: NOTE,
         claim: None,
     }]
 }
