@@ -291,7 +291,7 @@ static QUAD: &[Seg] = &[
 const NOSTOP: &str = "X|\"Stops were not used and if the market traded both above and below the opening range the given amount, a buy and a sell could be registered.\" (printed p.123) Each level is its own test.";
 const ORB_E: &str = "E|ORB: \"A trade taken with entry at a predetermined level above or below the open\" (printed p.139). Buy (sell) on a stop/limit at today's open ± the level when the day's range reaches it; fill at the level. B/S as printed (\"determined by Gross Profits\").";
 const ORB_X: &str = "X|\"Exit on the close of the same day of entry\" (printed p.123); for the 2/3 Bar NR tables the close 1, 2 or 5 days after entry (\"No. of days in trade\", printed pp.173, 186).";
-const LVL: &str = "F|Levels are S&P 500 futures points as printed (80 points = 0.80 index points; printed p.17: open 271.00 to 272.90 = \"190 points\"). level_mode = 1 [labelled option, not the tested default]: use the book's Chapter 1 Stretch = average over the previous 10 days of |open − the extreme closest to the open| (printed p.1, p.286) × stretch_mult.";
+const LVL: &str = "F|Levels are S&P 500 futures points as printed (80 points = 0.80 index points; printed p.17: open 271.00 to 272.90 = \"190 points\"). level_mode = 1 [labelled option, not the tested default]: use the book's Chapter 1 Stretch = average over the previous 10 days of |open − the extreme closest to the open| (printed p.1, p.286) × stretch_mult. On the NSE indices (R4 #380) the multi-day 2 Bar NR / 3 Bar NR rows scale each level by the day's open / 271.00 (the S&P open printed on p. 17; param ref), and opens before the series' real-open start are not traded.";
 const R_CTL: &[&str] = &["F|Control group: any day (\"made no reference to range size\", printed pp.20, 105)", ORB_E, ORB_X, NOSTOP, LVL];
 const R_ID: &[&str] = &["F|Inside Day (Day 2): \"the Inside Day's high is less than the previous day's high and the Inside Day's low is greater than the previous day's low\" (printed p.123)", ORB_E, ORB_X, NOSTOP, LVL];
 const R_DOJI: &[&str] = &["F|Doji (Day 2): \"The difference between the open and close of yesterday is less than\" the doji value (\"50 Doji\" = 50 points = 0.50; printed p.132, p.139)", ORB_E, ORB_X, NOSTOP, LVL];
@@ -470,6 +470,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         }
         if matches!(o.pat, Pat::DojiR1 | Pat::R1) { v.push(p("r1", "R1: yesterday's range below (points)", 2.00, 0., 200., 0.1)); }
         if matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) { v.push(p("look", "Narrowest within the previous N market days", 20., 10., 40., 1.)); }
+        if matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) && o.hold > 0.0 { v.push(p("ref", "NSE indices only (#380): the level is scaled by the day's open / this S&P 500 reference (printed open 271.00, p.17); US series keep the printed points", 271., 50., 2000., 1.)); }
         level_params(&mut v);
         if o.hold == 0.0 { v.push(p("path", "Same-day ORB fill: 1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bars (fill at the level)", 1., 0., 1., 1.)); } // intraday wave 1
         return Some(v);
@@ -565,6 +566,9 @@ fn orb_fill(x: &Ctx, i: usize, lvl: f64, mode: f64, mult: f64, sn: usize) -> Opt
     hit.then_some(px)
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+
 // ---- intraday wave 1
 /// The same-day ORB tests that fill on real 1-minute bars (admitted on SPX with the printed S&P points).
 pub fn same_day_orb(id: &str) -> bool { ORBS.iter().any(|o| o.id == id && o.hold == 0.0) || matches!(id, "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb") }
@@ -589,12 +593,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(o) = ORBS.iter().find(|o| o.id == id) {
         let (pts, side, hold) = (g("pts"), if g("side") >= 0.0 { 1.0 } else { -1.0 }, g("hold").max(0.0) as usize);
         let lvl = o.lvl.signum() * pts;
+        // #380: the N-bar NR multi-day rows run on the NSE indices with the printed S&P points scaled by the day's open / 271.00; opens before the series' real-open start are not traded
+        let nse_scaled = matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) && o.hold > 0.0 && x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY"));
+        let cut = if nse_scaled { x.r.first().and_then(|r| real_open_from(&r.ticker)) } else { None };
+        let sref = if g("ref") > 0.0 { g("ref") } else { 271.0 };
         let (doji, r1, look) = (g("doji"), g("r1"), g("look").max(1.0) as usize);
         let (mode, mult, sn) = (g("level_mode"), g("stretch_mult"), g("stretch_n").max(1.0) as usize);
         let minute = hold == 0 && o.hold == 0.0 && g("path") >= 0.5; // intraday wave 1: same-day rows only
         if minute && x.minutes.is_none() { return Some(out); }
         for i in start..=to {
+            if cut.is_some_and(|c| x.r[i].date.as_str() < c) { continue; }
             if !pat_ok(x, o.pat, i - 1, doji, r1, look) { continue; }
+            let lvl = if nse_scaled { lvl * x.o[i] / sref } else { lvl };
             if let Some(px) = if minute { orb_fill_m(x, i, lvl, mode, mult, sn) } else { orb_fill(x, i, lvl, mode, mult, sn) } {
                 let kind = if (lvl >= 0.0) == (side > 0.0) { "stop" } else { "limit" };
                 out.push(trade(x, side, i, px, hold, to, kind, o.name));
@@ -698,6 +708,31 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 #[cfg(test)]
 mod tests {
+    /// hand-run dump for the pandas reference (Q386 N-bar NR rows on the NSE indices): TCDT_CSV=<idx_data.csv> TCDT_OUT=<file> cargo test --release tcdt_nse_dump -- --ignored
+    #[test]
+    fn nbar_nr_rows_run_on_the_nse_indices() {
+        for o in super::ORBS.iter().filter(|o| matches!(o.pat, super::Pat::Bnr2 | super::Pat::Bnr3) && o.hold > 0.0) {
+            let d = super::catalogue().into_iter().find(|d| d.id == o.id).unwrap();
+            for t in ["NIFTY 50", "NIFTYBANK"] { let c = crate::instrument_policy::check(&d, t, false); assert!(c.is_none(), "{} {t}: {:?}", o.id, c.map(|i| i.note)); }
+        }
+    }
+    #[test]
+    #[ignore]
+    fn tcdt_nse_dump() {
+        use std::io::Write;
+        use crate::connors::{Ctx, Params};
+        let data = crate::load_csv(&std::env::var("TCDT_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("TCDT_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for o in super::ORBS.iter().filter(|o| matches!(o.pat, super::Pat::Bnr2 | super::Pat::Bnr3) && o.hold > 0.0) {
+                for z in super::run(o.id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{},{t},{},{},{},{},{},{}", o.id, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
+    }
     use super::*;
     use crate::Row;
     fn bars(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
@@ -782,4 +817,12 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| def.book=="tcdt" && crate::books::tcdt::reviewed(def.id),
     label: "Toby Crabel tested these patterns on S&P 500 futures (open-to-close tables, 1982-88) and T-Bond futures (upthrusts, 1978-87); runs on indices, ETFs and single stocks (US and India) are a declared application.",
     basis: "Day Trading with Short Term Price Patterns and Opening Range Breakout (Traders Press, 1990): Open to Close Bias Tables A and B printed p.67-69 (pattern convention p.51); Upthrust and Spring reversals printed p.261-265, pivot top p.284. Index/ETF/stock runs are a declared application.",
+};
+
+/// The 24 multi-day 2 Bar NR / 3 Bar NR open-range-breakout rows re-opened on the NSE indices (lane K2, R4 #383 / #380).
+pub fn nbar_nse(id: &str) -> bool { ORBS.iter().any(|o| o.id == id && matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) && o.hold > 0.0) }
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nbar_nse(def.id),
+    label: "Crabel's N-bar NR opening-range breakout was printed on S&P 500 futures index points (1982-88). Run on the NSE index series only, each printed point level scaled by the day's open / 271.00 (the S&P open printed on p. 17), a declared adaptation (R4 #340 / #380); opens before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Crabel, Day Trading with Short Term Price Patterns and Opening Range Breakout, 2 Bar NR pp. 166-173, 3 Bar NR pp. 180-186 (tables), p. 285, p. 17; independent check authors/conv-1123/k2w/tcdt_ref.py",
 };

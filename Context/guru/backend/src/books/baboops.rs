@@ -63,7 +63,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             // intraday wave 1
             p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bars", 1.0, 0.0, 1.0, 1.0)],
         "baboops_stoops" => vec![p("gap", "Minimum opening gap, ticks (book 15; tested 5-25; 30 from July 1997)", 15.0, 0.0, 60.0, 5.0),
-            p("hilo", "Entry offset from yesterday's extreme, ticks (book -2; tested -2..6)", -2.0, -10.0, 10.0, 1.0), tick()],
+            p("hilo", "Entry offset from yesterday's extreme, ticks (book -2; tested -2..6)", -2.0, -10.0, 10.0, 1.0), tick(),
+            p("ref", "NSE indices only (#380): the tick is scaled by the previous close / this S&P 500 level (about 1,000, a labelled reading); US series keep the book's ticks", 1000.0, 100.0, 5000.0, 50.0)],
         _ => return None,
     })
 }
@@ -116,7 +117,31 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     // gap and hilo are whole ticks; round the price distances to kill float noise
     let (gap, hilo) = ((g("gap") * t * 1e6).round() / 1e6, (g("hilo") * t * 1e6).round() / 1e6);
     if id == "baboops_oops" && g("path") >= 0.5 { return Some(oops_minutes(x, from, to, gap, hilo)); } // intraday wave 1
+    if id == "baboops_stoops" && x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY")) { return Some(oops_nse(x, from, to, g("gap"), g("hilo"), t, g("ref").max(1.0))); }
     Some(oops(x, from, to, gap, hilo, id == "baboops_stoops"))
+}
+
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+pub fn nse_id(id: &str) -> bool { id == "baboops_stoops" }
+/// STOOPS on the NSE indices (R4 #380): the book's S&P tick (0.05 index points at an S&P level of about 1,000, param ref) is scaled by the previous close / ref, so
+/// the 15-tick gap and the 2-tick entry offset keep their tick counts and become the same percentage of the price. Trades before the real-open start are skipped.
+fn oops_nse(x: &Ctx, from: usize, to: usize, gap_ticks: f64, hilo_ticks: f64, tick: f64, sref: f64) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let cut = x.r.first().and_then(|r| real_open_from(&r.ticker));
+    let mut out = vec![];
+    for i in from.max(1)..=to {
+        if cut.is_some_and(|d| x.r[i].date.as_str() < d) { continue; }
+        let tk = tick * c[i - 1] / sref;
+        let (gap, hilo) = (gap_ticks * tk, hilo_ticks * tk);
+        let (dir, lv) = if o[i] < l[i - 1] - gap - 1e-9 { (1.0, l[i - 1] + hilo) } else if o[i] > h[i - 1] + gap + 1e-9 { (-1.0, h[i - 1] - hilo) } else { continue };
+        let hit = if dir > 0.0 { h[i] >= lv - 1e-9 } else { l[i] <= lv + 1e-9 };
+        if !hit { continue; }
+        let px = if dir * (o[i] - lv) >= 0.0 { o[i] } else { lv };
+        let (k, ex, why, open) = if i + 1 <= to { (i + 1, o[i + 1], "exit on the next open", false) } else { (to, c[to], "open", true) };
+        out.push(Trade { dir, legs: vec![Leg { i, px, w: 1.0 }], exit_i: k, exit_px: ex, reason: why.into(), entry_kind: "stop", signal_i: if open { k } else { i }, open, exits: vec![] });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -142,5 +167,31 @@ mod tests {
         let p = Params::from([("gap".to_string(), 5.0), ("path".to_string(), 0.0)]);
         let t = run("baboops_oops", &x, 0, 3, &p).unwrap();
         assert_eq!((t.len(), t[1].dir, t[1].legs[0].px, t[1].exit_px), (2, -1.0, 100.0, 99.3));
+    }
+}
+
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nse_id(def.id),
+    label: "Babcock's STOOPS gap rule is written in S&P 500 ticks (15-tick gap, 2-tick entry, tick 0.05). Run on the NSE index series only, the tick scaled by the previous close / 1,000 (the S&P level of the book's window, a labelled reading), a declared adaptation (R4 #340 / #380); opens before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Babcock, The Best Mechanical Day Trading System I Know, STOOPS pp. 13-19; independent check authors/conv-1123/k2w/stoops_ref.py",
+};
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: STOOPS_CSV=<idx_data.csv> STOOPS_OUT=<file> cargo test --release stoops_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn stoops_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("STOOPS_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("STOOPS_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("baboops_stoops", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "baboops_stoops,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
     }
 }
