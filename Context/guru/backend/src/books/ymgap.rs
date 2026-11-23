@@ -17,9 +17,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|\"vGAPSize = absvalue(closed(1) - opend(0))\"; \"if(vGAPSize > iGAPSizeMin and vGAPSize < iGAPSizeMax) then vIsGAPDay = true\"; \"if(vGAPSize > iGAPSizeMax and iGAPBuyMax) then vIsGAPDay = true\" (10 / 70)",
             "E|\"if (MarketPosition(0) = 0 and EntriesToday(Date) = 0 and vIsGAPDay) then: gap up: (gap > max: buy LEGB) else sellshort SE this bar on close; gap down: (gap > max: sellshort SEGB) else buy LE this bar on close\"",
             "X|fade: \"vStopLoss = opend(0) + (vGAPSize * 1.5)\" (gap < 40, else + vGAPSize), \"vProfitTarget = opend(0) - vGAPSize\" (mirrored for gap down); followed gap: stop and target opend(0) -/+ vGAPSize / 2; \"setexitonclose\"",
-        ],
-        notes: NOTE,
-        claim: None,
+            ],
+        notes: "Published results: none (author: \"this strategy doesn't do well when back testing\"). Not reproduced: different market.", claim: None,
     }]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { (id == ID).then_some(("ymgap", "YM Fade The Gap", "5-minute NIFTY / BANKNIFTY futures")) }

@@ -132,6 +132,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 #[cfg(test)]
 mod tests {
+    /// Lane I2 (R4 #376): hand-run dump of the twelve cells on the Indian index files for the pandas reference
+    /// (I2_CSV=<idx_data.csv> I2_OUT=<file.csv> cargo test --release i2_mjlbb_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_mjlbb_dump() {
+        use std::io::Write;
+        use crate::connors::Params;
+        let (csv, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
+            let Some(rows) = data.get(t) else { continue };
+            let x = crate::connors::Ctx::new(rows, &[], &[]);
+            for c in CELLS {
+                for z in run(c.id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{},{t},{},{},{},{},{}", c.id, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
+                }
+            }
+        }
+    }
+
     use super::*;
     #[test]
     fn envelope_cross_back() {

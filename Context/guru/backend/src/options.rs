@@ -261,7 +261,7 @@ pub fn is_option_rule(id: &str) -> bool { RULES.contains(&id) }
 /// Every rule that runs on real option prices (instrument_policy admits each on its own instruments).
 pub const RULES: &[&str] = &["oiss_short_put", "oiss_short_call", "oiss_plus_three_put", "oiss_plus_three_call", "otvt_cvr1_sell_puts",
     "ccl08_weekly_rsi_options", "mahrs_covered_calls", "spmt_eom_puts",
-    "ccl08_quick_scalp", "fotol_adjusted_cc", "fotol_bb_breakout", "fotol_covered_call", "fotol_monthend_call", "fotol_pullback_calls", // + lane K29
+    "ccl08_quick_scalp", "fotol_adjusted_cc", "fotol_bb_breakout", "fotol_covered_call", "fotol_monthend_call", "fotol_pullback_calls", "fotol_calendar_spread", // + lane K29
     "hfm_und", "hfm_und_long", "hfm_und_short", // + lane K34 (decision 186)
     "otvt_diz_short_strangle", // + lane K54 (decision #229 (4))
     "as51_opt_multi_sell", "as51_opt_oi_buy", "as51_opt_theta", "as51_opt_btst", "as51_opt_3pm", // + lane F2 (R4 #293), weekly 1-minute

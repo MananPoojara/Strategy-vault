@@ -270,6 +270,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Time exits BarToExitOn(L) = 3, BarToExitOn(S) = 47: \"a three-day exit for long trades and a 47-day exit for short trades\" (Fig. 2, SPY 3/10/2000-3/11/2003)"],
           "TradeStation (inputs BarToExitOn = TradeStation's built-in 'TimeExit (Bars)': exit next bar at market when BarsSinceEntry = N, i.e. at the open of bar entry + N + 1). EMA = XAverage(10). Opposite signal reverses (TradeStation). The 3/47 lengths are the article's optimised values (it also reports 3/3-4 day variants).",
           c("13", "69% (9 of 13)", "$355.46/100 sh", "winners 21 bars", "SPY 3/10/2000-3/11/2003, 100 shares, no costs: net $4,621 (long 8 trades $862, short 5 trades $3,759)")),
+        d("atm03_fut_or_rev", "Outside reversal days on NIFTY / BANKNIFTY futures daily bars · long exit after 3 bars, short after 47", "Trading Strategies Apr-May 2003 (Andrews)", "Long/Short", Live, false,
+          &["F|Bullish: \"high > high[1] and low < low[1] and (high - close)/(high - low) < .50 and close > open and close > close[2] and 10-day EMA < 10-day EMA[1] and low < 10-day EMA\"; bearish = inverted (Apr 2003 p.42; May 2003 p.42)",
+            "E|\"Trades were entered on the open the day after the outside day.\"",
+            "X|Time exits BarToExitOn(L) = 3, BarToExitOn(S) = 47: \"a three-day exit for long trades and a 47-day exit for short trades\" (Fig. 2, SPY 3/10/2000-3/11/2003)",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and readings as atm03_or_rev (TradeStation TimeExit: exit at the open of entry bar + N + 1; XAverage(10); an opposite signal reverses; the 3/47 lengths are the article's optimised values, used as the book-literal defaults) run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Entries and exits are at the next open, so there is no intrabar order. No costs; the article's SPY figure (13 trades, 69%) is not comparable."],
+          "Same rule as atm03_or_rev on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         d("atm03_ob_cont", "Outside bar continuation · stop-and-reverse", "Trading Strategies Sep 2003 (Andrews & Etzkorn)", "Long/Short", Live, false,
           &["F|\"high > high[1] and low < low[1] and (high - close)/(high - low) < .50 and close > open and close > close[2] and close > 20-day moving average and (high[1] > 20-day moving average[1] or high[2] > 20-day moving average[2])\"; invert for bearish",
             "E|\"Buy the next day on the open.\" (sell short the next day on the open after a bearish bar)",
@@ -336,7 +342,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "atm03_triple2" | "atm03_triple5" => ("atm03_triple", "Triple screen SMA", if id == "atm03_triple2" { "2% stop" } else { "5% stop" }),
         "atm03_mfi" | "atm03_cmo_srsi" => ("atm03_osc", "Active Trader 2003 · oscillator scale-ins", v),
         "atm03_twobar" | "atm03_harris_delay" => ("atm03_patterns", "Active Trader 2003 · bar patterns", v),
-        "atm03_or_rev" | "atm03_ob_cont" | "atm03_ob_cont_stops" => ("atm03_outside", "Outside bars (Andrews)", v),
+        "atm03_or_rev" | "atm03_fut_or_rev" | "atm03_ob_cont" | "atm03_ob_cont_stops" => ("atm03_outside", "Outside bars (Andrews)", v),
         "atm03_memorial" | "atm03_july4" => ("atm03_seasonal", "Market History holidays", v),
         "atm03_meyers" | "atm03_intraday_misc" | "atm03_chart_patterns" => ("atm03_other", "Active Trader 2003 · not testable", v),
         "atm03_shirley" => ("atm03_shirley", "Shirley 10-minute SPY breakout (Active Trader)", v),
@@ -359,7 +365,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm03_mfi" => vec![p("n", "MFI length", 14., 5., 30., 1.), p("lo", "Oversold level", 25., 10., 40., 1.), p("hi", "Overbought level", 75., 60., 90., 1.), p("w", "Leg weight (fraction of equity)", 0.05, 0.01, 1., 0.01)],
         "atm03_twobar" => vec![tick()],
         "atm03_cmo_srsi" => vec![p("srsi_n", "Entry StochRSI length", 14., 5., 30., 1.), p("cmo_n", "CMO length", 20., 5., 40., 1.), p("cmo_in", "Entry CMO below", -28., -60., 0., 1.), p("srsi_x", "Exit StochRSI length", 2., 2., 14., 1.), p("srsi_hi", "Exit StochRSI above", 90., 50., 100., 1.), p("cmo_out", "Exit CMO above", 20., 0., 60., 1.), p("w", "Leg weight (fraction of equity)", 0.10, 0.01, 1., 0.01), p("max_legs", "Maximum legs (0 = unlimited)", 0., 0., 20., 1.)],
-        "atm03_or_rev" => vec![p("ema", "EMA length", 10., 3., 30., 1.), p("xl", "BarToExitOn long", 3., 1., 60., 1.), p("xs", "BarToExitOn short", 47., 1., 60., 1.)],
+        "atm03_or_rev" | "atm03_fut_or_rev" => vec![p("ema", "EMA length", 10., 3., 30., 1.), p("xl", "BarToExitOn long", 3., 1., 60., 1.), p("xs", "BarToExitOn short", 47., 1., 60., 1.)],
         "atm03_ob_cont" => vec![p("ma", "Moving average length", 20., 5., 50., 1.)],
         "atm03_spike" => vec![p("pct", "Spike size %", 1.5, 0.5, 5., 0.25), p("xl", "Long exit (days)", 3., 1., 10., 1.), p("xs", "Short exit (days)", 5., 1., 10., 1.)],
         "atm03_memorial" => vec![p("after", "Exit: sessions after the holiday", 4., 1., 10., 1.)],
@@ -556,6 +562,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             finish(&mut out, cur, x, to);
             out
+        }
+        "atm03_fut_or_rev" => {
+            let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
+            if rows.len() < 2 { return Some(vec![]); }
+            let y = Ctx::new(&rows, &rows, &[]);
+            crate::books::sprfs::remap(run("atm03_or_rev", &y, 0, rows.len() - 1, p)?, &map)
         }
         "atm03_or_rev" => {
             let e = xavg(c, u("ema"));
@@ -759,5 +771,29 @@ mod k75_tests {
         assert_eq!(amb, 0);
         assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, (z.legs[0].px * 100.).round(), (z.exit_px * 100.).round())).collect::<Vec<_>>(), vec![(1., 5, 10102., 9927.)]);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (I2_CSV=<idx_data.csv> I2_FUT_DIR=<data/intraday> I2_OUT=<file.csv>
+    /// cargo test --release i2_atm03_fut_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_atm03_fut_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_FUT_DIR").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for z in run("atm03_fut_or_rev", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "atm03_fut_or_rev,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+            }
+        }
     }
 }

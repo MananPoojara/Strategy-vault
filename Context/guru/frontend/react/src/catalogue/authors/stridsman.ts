@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 110,
-  author: { id: 'stridsman', name: 'Thomas Stridsman', tagline: 'System evaluation · the Active Trader systems re-tested with full code', books: [{ id: 'strmm', title: 'Trading Systems and Money Management', year: 2003, blurb: 'Stridsman, 2003 · eight Active Trader systems and their variants' }, { id: 'strtw', title: 'Trading Systems That Work', year: 2000, blurb: 'Stridsman, 2000 · systems from the book’s TradeStation code' }] },
+  author: { id: 'stridsman', name: 'Thomas Stridsman', tagline: 'System evaluation · the Active Trader systems re-tested with full code', books: [ { id: 'stda', title: "Short-term strategy, long-term perspective (Stridsman, Active Trader 2000)", year: 2000, blurb: "Stridsman, 2000 · OBV above its 200-day average with the high and close crossing the 6-day average, percent stop / lock / target and an 8-day exit; run on NIFTY 50 and NIFTYBANK with futures volume, readings declared, unverified" },{ id: 'strmm', title: 'Trading Systems and Money Management', year: 2003, blurb: 'Stridsman, 2003 · eight Active Trader systems and their variants' }, { id: 'strtw', title: 'Trading Systems That Work', year: 2000, blurb: 'Stridsman, 2000 · systems from the book’s TradeStation code' }] },
   identities: ["Thomas Stridsman"],
   profile: {
     "kind": "person",
@@ -22,6 +22,7 @@ export default {
     "confidence": "high"
   },
   sourceReview: {
+    "stda": {"type":"article","people":["Thomas Stridsman"]},
     "strmm": {"type":"book","people":["Thomas Stridsman"]},
     "strtw": {"type":"book","people":["Thomas Stridsman"]},
   },

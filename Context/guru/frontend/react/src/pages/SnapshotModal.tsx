@@ -49,7 +49,10 @@ export function DailyWorkCards({ data }: { data: DailyWork }) {
         return (
           <article key={r.date} className={`cw-day${quiet ? " quiet" : ""}`}>
             <header className="cw-head"><h4>{longDate(r.date)}</h4><span className="cw-who">{r.worked_by === "-" ? "No work recorded" : r.worked_by}</span>{r.deploys > 0 && <span className="cw-tag">{r.deploys} deploy{r.deploys === 1 ? "" : "s"}</span>}</header>
-            {quiet ? <p className="cw-quiet">No releases and no recorded sessions this day.</p> : <>
+            {quiet ? <>
+              <p className="cw-quiet"><b>Why nothing ran:</b> {r.note ?? "No releases and no recorded sessions this day, and no recorded reason."}</p>
+              {r.health && <p className="cw-health rp-small rp-muted">{r.health}</p>}
+            </> : <>
               <div className="cw-kpis">
                 <div><b>{num(r.new)}</b><span>new strategies</span></div>
                 <div className="ok"><b>{num(r.backtested_day)}</b><span>backtested</span></div>
@@ -62,9 +65,16 @@ export function DailyWorkCards({ data }: { data: DailyWork }) {
                 <div><h5>Fixing errors</h5><p><b>{dur(r.fix_minutes)}</b> active · <b>{fmtTokens(r.fix_tokens)}</b> tokens</p></div>
                 {(r.other_minutes ?? 0) > 0 && <div><h5>Lead, reviews and UI</h5><p><b>{dur(r.other_minutes)}</b> active · <b>{fmtTokens(r.other_tokens ?? null)}</b> tokens</p></div>}
               </div>
+              {r.added_list && r.added_list.length > 0 && <div className="cw-names"><h5>Backtested this day ({r.added_list.length})</h5>
+                <ul>{r.added_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">· {x.book}</span></li>)}</ul></div>}
+              {r.new_list && r.new_list.some(x => !x.backtested) && <div className="cw-names"><h5>New this day, not yet backtested ({r.new_list.filter(x => !x.backtested).length})</h5>
+                <ul>{r.new_list.filter(x => !x.backtested).map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">· {x.book}</span></li>)}</ul></div>}
+              {r.added_list == null && (r.backtested_day > 0 || r.new > 0) && <p className="rp-small rp-muted">Strategy names for this day are not available: the run files it would be compared against were not kept.</p>}
+              {r.note && <p className="cw-quiet"><b>Note:</b> {r.note}</p>}
+              {r.health && <p className="cw-health rp-small rp-muted">{r.health}</p>}
               <p className="cw-eod">End of day: <b>{num(r.backtested_total)}</b> backtested · <b>{num(r.held)}</b> held</p>
               <div className="cw-more">
-                {r.added_list && r.added_list.length > 0 && <details><summary>Strategies backtested this day ({r.added_list.length})</summary><ul>{r.added_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span></li>)}</ul></details>}
+
                 {r.newly_held_list.length > 0 && <details><summary>Newly held ({r.newly_held_list.length})</summary><ul>{r.newly_held_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span> · {x.reason}</li>)}</ul></details>}
                 <details><summary>Proof</summary><p className="rp-small">{r.proof}</p></details>
               </div>

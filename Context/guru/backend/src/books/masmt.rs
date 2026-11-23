@@ -525,6 +525,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Lane I2 (R4 #376): hand-run dump of masmt_vakkur_may_oct on the Indian index files for the pandas reference
+    /// (I2_CSV=<idx_data.csv> I2_OUT=<file.csv> cargo test --release i2_masmt_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_masmt_dump() {
+        use std::io::Write;
+        let (csv, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
+            let Some(rows) = data.get(t) else { continue };
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["masmt_vakkur_may_oct"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
+                }
+            }
+        }
+    }
 
     #[test]
     fn six_percent_swing_by_hand() {
