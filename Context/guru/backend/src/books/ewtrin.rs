@@ -9,7 +9,7 @@ pub const BOOK: &str = "ewtrin";
 pub const REVIEWED: &[&str] = &["ewtrin_us", "ewtrin_in"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared adaptation, R4 #340] The listing is written for the S&P e-mini daily with two TRIN feeds, NYSE ($TRIN) and NASDAQ ($TRINQ); the vault holds no NASDAQ TRIN, so the rule runs on the one TRIN it has per market: `ewtrin_us` = NYSE TRIN on the US indices SPX, NDX and DJI, `ewtrin_in` = NSE TRIN on NIFTY 50 and NIFTY BANK; indices only, never single stocks or ETFs. The listing sums the logs of the two TRINs and the oscillator is scale-free (it normalises the running sum between its 5-bar highest and lowest), so one TRIN counted twice and one TRIN alone give the same signals; the second feed's information is the only thing lost. The document prints no results; nothing is compared. UNVERIFIED. All five entry types A-E are on (the listing's defaults). [Declared readings, each an unstated detail] (1) The listing's DoubleUp input (two contracts after a losing trade) is a position size, not a signal, and one unit is traded; (2) bars with no TRIN reading are skipped, so every look-back counts TRIN days; (3) the first 20 TRIN days only warm up the running sum and its smoothing, no orders; (4) orders fill in the listing's order (A to E, buy then sell, then the exit) at the bar close and a new entry reverses an open position; an entry in the direction already held is ignored.";
+const NOTE: &str = "[Declared adaptation, R4 #340] The listing is written for the S&P e-mini daily with two TRIN feeds, NYSE ($TRIN) and NASDAQ ($TRINQ); the vault holds no NASDAQ TRIN, so the rule runs on the one TRIN it has per market: `ewtrin_us` = NYSE TRIN on the US indices SPX, NDX and DJI, `ewtrin_in` = NSE TRIN on NIFTY 50 and NIFTY BANK; indices only, never single stocks or ETFs. The listing sums the logs of the two TRINs and the oscillator is scale-free (it normalises the running sum between its 5-bar highest and lowest), so one TRIN counted twice and one TRIN alone give the same signals; the second feed's information is the only thing lost. The document prints no results; nothing is compared. UNVERIFIED. All five entry types A-E are on (the listing's defaults). [Declared readings, each an unstated detail] (1) The listing's DoubleUp input (two contracts after a losing trade) is a position size, not a signal, and one unit is traded; (2) bars with no TRIN reading are skipped, so every look-back counts TRIN days; (3) the first 20 TRIN days only warm up the running sum and its smoothing, no orders; (4) TRIN is published after the close (R4 #374), so the orders read on a bar fill at the NEXT bar's close, in the listing's order (A to E, buy then sell, then the exit), and a new entry reverses an open position; an entry in the direction already held is ignored.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mk = |id: &'static str, name: &'static str, series: &'static [&'static str]| StrategyDef { id, name, group: "Emini-Watch Better TRIN system", session: 0, dir: "Long/Short", status: Status::Live,
@@ -55,7 +55,21 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         out.push(Trade { dir, legs: vec![Leg { i: e.0, px: e.1, w: 1. }], exit_i: i, exit_px: c[i], reason: why.into(), entry_kind: "close", signal_i: i, open: false, exits: vec![] });
     };
     let mut k = 0usize;
+    let mut pend: Vec<i8> = vec![]; // orders read on the previous bar, filled at this bar's close (TRIN is published after the close, R4 #374)
     for i in 0..=to {
+        if i >= from && !pend.is_empty() {
+            let kk = k;
+            for o in std::mem::take(&mut pend) {
+                match (o, pos) {
+                    (1, 1) | (-1, -1) => {}
+                    (1, -1) | (-1, 1) => { let e = entry.take().unwrap(); close(&mut out, e, pos as f64, i, "reversal"); pos = o; entry = Some((i, c[i], kk)); }
+                    (1, 0) | (-1, 0) => { pos = o; entry = Some((i, c[i], kk)); }
+                    (2, 1) => { let e = entry.take().unwrap(); close(&mut out, e, 1.0, i, "oscillator turned down from a peak at or above zero"); pos = 0; }
+                    (3, -1) => { let e = entry.take().unwrap(); close(&mut out, e, -1.0, i, "oscillator turned up from a trough at or below zero"); pos = 0; }
+                    _ => {}
+                }
+            }
+        }
         let t = tr[i];
         if !(t.is_finite() && t > 0.0) { continue; }
         let v3 = -(2.0 * t.ln()) * 100.0; // the listing's two feeds are the same TRIN here
@@ -91,16 +105,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         for q in 0..5 { if on[q] { if buys[q] { orders.push(1); } if sells[q] { orders.push(-1); } } }
         if pos_open == 1 && kk > ent_k + 1 && v0 < v1 && v1 >= v2 && v1 >= 0.0 { orders.push(2); }
         if pos_open == -1 && kk > ent_k + 1 && v0 > v1 && v1 <= v2 && v1 <= 0.0 { orders.push(3); }
-        for o in orders {
-            match (o, pos) {
-                (1, 1) | (-1, -1) => {}
-                (1, -1) | (-1, 1) => { let e = entry.take().unwrap(); close(&mut out, e, pos as f64, i, "reversal"); pos = o; entry = Some((i, c[i], kk)); }
-                (1, 0) | (-1, 0) => { pos = o; entry = Some((i, c[i], kk)); }
-                (2, 1) => { let e = entry.take().unwrap(); close(&mut out, e, 1.0, i, "oscillator turned down from a peak at or above zero"); pos = 0; }
-                (3, -1) => { let e = entry.take().unwrap(); close(&mut out, e, -1.0, i, "oscillator turned up from a trough at or below zero"); pos = 0; }
-                _ => {}
-            }
-        }
+        pend = orders;
     }
     if let Some(e) = entry {
         out.push(Trade { dir: pos as f64, legs: vec![Leg { i: e.0, px: e.1, w: 1. }], exit_i: to, exit_px: c[to], reason: "open".into(), entry_kind: "close", signal_i: to, open: true, exits: vec![] });
