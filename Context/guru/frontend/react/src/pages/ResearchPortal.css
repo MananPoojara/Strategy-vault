@@ -263,7 +263,7 @@ circle.rp-slice { stroke: var(--c); }
 .rp-bt-h span { color: var(--ink2); margin-left: auto; font-variant-numeric: tabular-nums; }
 .rp-bt .rp-pie-legend li { grid-template-columns: 12px minmax(0, 1fr) auto 56px; font-size: 13px; padding: 2px 6px; cursor: default; }
 .rp-bt .rp-pie-legend i { background: var(--c); }
-.rp-bt-why { border-left: 3px solid var(--c); padding: 4px 0 4px 14px; }
+.rp-bt-why { border-left: 3px solid var(--c, var(--ink3)); padding: 4px 0 4px 14px; min-height: 112px; }
 .rp-bt-why h3 { margin: 2px 0 6px; font-size: 17px; }
 .rp-bt-why p { margin: 0 0 6px; line-height: 1.45; }
 .rp-bt-k { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--c); font-weight: 600; }
