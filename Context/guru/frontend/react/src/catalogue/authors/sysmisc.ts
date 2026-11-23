@@ -21,6 +21,8 @@ export default {
     "confidence": "low"
   },
   sourceReview: {
+    "jwtri": {"type":"article","people":["Jack L. Weinberg"]},
+    "thvl": {"type":"article","people":["Tim Hayes"]},
     "dwshark": {"type":"article","people":["Walter T. Downs"]},
     "fmess": {"type":"book","people":["John Forman"]},
     "lbspx": {"type":"code_package","people":["Labunsky"]},
