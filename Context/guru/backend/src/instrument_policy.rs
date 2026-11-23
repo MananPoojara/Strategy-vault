@@ -3612,7 +3612,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(id,"chntt")));
             assert!(policy(&d).source_basis.contains("Chande"));
         }
-        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt")] {
+        for (id,book) in [/* ch_bta2_65sma_ravi_x14: admitted on the NSE indices (chbta2::ADMISSION_NSE, lane K2, R4 #380) */("ch_ntt_vidya_cmo","chntt")] {
             let d=def(id,book);
             assert!(!reviewed_cash_rule(&d));
             assert!(check(&d,"NIFTY 50",false).is_some());
