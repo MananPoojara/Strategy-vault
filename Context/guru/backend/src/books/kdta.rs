@@ -12,7 +12,7 @@ use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, 
 
 pub const BOOK: &str = "kdta";
 /// Admitted ids (authors/kirkpatrick/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */, "kdta_nh_nl", "kdta_nh_nl_nse" /* lane CV6 Q9, R4 #340 / #343 / #347 */];
+pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_crabel_inside" /* lane I2, Q386 re-open */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */, "kdta_nh_nl", "kdta_nh_nl_nse" /* lane CV6 Q9, R4 #340 / #343 / #347 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
@@ -139,9 +139,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let nt = |id, name, group, dir, why, rules| d(id, name, group, dir, NotTestable(why), false, &[], rules, "");
     let nd = |id, name, group, dir, why, rules| d(id, name, group, dir, NeedsData(why), false, &[], rules, "");
     v.extend([
-        nt("kdta_crabel_inside", "Crabel inside-bar open breakouts", "Ch 17 · Inside bar (p.383-384)", "Long/Short",
-           "no exit is stated for any of Crabel's inside-bar tests (only winning percentages: 68%, 74%, 80%, 90%)",
-           &["E|\"buying at the next opening, if it occurred above the inside bar close and selling at the next opening, if it occurred below the inside bar close\" (p.383)", "E|Four-day pattern: Day 2 higher low, Day 3 inside, Day 4 opens below mid-range and close of the inside day -> sell (p.384)"]),
+        d("kdta_crabel_inside", "Crabel inside-bar open breakouts", "Ch 17 · Inside bar (p.383-385)", "Long/Short", Live, false, &[],
+            &["E|\"Crabel tested buying at the next opening, if it occurred above the inside bar close and selling at the next opening, if it occurred below the inside bar close\" (p.384, Figure 17.10: 68% winners, S&P futures 1982-1986)",
+              "X|\"His exit criterion was to close the position on the close of the day the trade was entered.\" (p.385)",
+              "A|Declared readings (lane I2, Q386 re-open, R4 #339/#343/#348): the original hold said 'no exit is stated'; the exit is printed on p.385, after Figures 17.10-17.11. (1) an inside bar = a high below the previous bar's high and a low above the previous bar's low (strict); (2) an open equal to the inside bar's close takes no trade; (3) only the base test of Figure 17.10 is run: the 74% (higher inside close and higher open), 80% and 90% four-day variants add conditions the book describes only in prose and are not applied; (4) the book's market is S&P futures 1982-1986, run here on daily index bars as a declared adaptation (R4 #340). Entry at the open and exit at the close of the same day, no stop, so no same-bar order ambiguity (#240 n/a). UNVERIFIED."],
+            "Crabel inside-bar open breakout, Kirkpatrick and Dahlquist ch.17 p.384-385; the book prints only the winning percentage (68%), no trade count."),
         nt("kdta_connors_wr", "Connors wide-range bar reversal", "Ch 17 · Wide-range bar (p.391)", "Long/Short",
            "\"a two-standard deviation decline\" is not defined (standard deviation of what, over how long) and the stop is moved by judgement (\"If the buy is near the previous day's low, then lower the stop to give some room\")",
            &["E|\"place a buy entry stop at the first day's close with a protection stop at the first day's low\" (p.391)", "X|\"sell on the close, or if the close on the action day is within 10-15% of the high sell on the next day opening\""]),
@@ -220,6 +222,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let base = id.trim_end_matches("_nse");
     Some(match base {
+        "kdta_crabel_inside" => vec![],
         "kdta_vix_ema" => vec![p("ema", "VIX EMA length", 10.0, 3.0, 30.0, 1.0)],
         "kdta_rsi_wrong_long" | "kdta_rsi_wrong_short" => vec![
             p("rsi", "RSI length", 14.0, 5.0, 30.0, 1.0), p("hi", "Upper RSI level", 75.0, 55.0, 90.0, 1.0),
@@ -416,6 +419,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if first_on_after(x, i, 10, 1) && d != 1 { Some((1, "October 1".into())) }
                 else if first_on_after(x, i, 5, 15) && d == 1 { Some((if shorts { -1 } else { 0 }, "May 15".into())) } else { None }
             })
+        }
+        "kdta_crabel_inside" => {
+            // lane I2 (Q386 re-open): inside bar yesterday, trade the open against its close, out at the close of the same day
+            let mut out: Vec<Trade> = vec![];
+            for i in from.max(2)..=to {
+                let s = i - 1;
+                if !(x.h[s] < x.h[s - 1] && x.l[s] > x.l[s - 1]) { continue; }
+                let dir = if x.o[i] > x.c[s] { 1.0 } else if x.o[i] < x.c[s] { -1.0 } else { continue };
+                out.push(Trade { dir, legs: vec![Leg { i, px: x.o[i], w: 1.0 }], exit_i: i, exit_px: x.c[i], reason: "close of the entry day".into(), entry_kind: "open", signal_i: s, open: false, exits: Vec::new() });
+            }
+            out
         }
         "kdta_two_bar" => {
             // lane D3 (PASS 3): stop entries one tick beyond the signal bar, exit stop at the completed day's low (high), same-side stops only
@@ -664,3 +678,23 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Kirkpatrick and Dahlquist cite or test these rules on the DJIA, S&P 500, NYSE breadth, 18 or 19 futures/stocks and AAPL; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test. Breadth rules read NYSE breadth on US instruments and NSE breadth on Indian ones (thresholds unchanged).",
     basis: "Kirkpatrick and Dahlquist, Technical Analysis (FT Press 2006): VIX 10-day EMA (Box 7.3 p.98), RSI is wrong (p.440), Apple-a-Day systems (Box 22.1-22.2 p.551-564), May-October (p.165), 6% pullback (p.387), two-bar breakout (ch.17 p.382, lane D3 PASS 3), one-day A/D line (p.133), 10-day A/D ratio 1.91 (p.138), Zweig breadth thrust (p.142), Haurlan 200-day (p.136), Arms Index rules (p.143-145), plurality index Bollinger breakout (p.137, lane R2A R4 #297). Reviewed in authors/kirkpatrick/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
 };
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (Q385_CSV=<idx_data.csv> Q385_OUT7=<file> cargo test --release i2_crabel_dump -- --ignored)
+    #[test]
+    #[ignore]
+    fn i2_crabel_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("Q385_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("Q385_OUT7").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("kdta_crabel_inside", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "kdta_crabel_inside,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
+}
