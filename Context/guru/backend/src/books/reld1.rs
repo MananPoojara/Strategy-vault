@@ -4,7 +4,7 @@
 use crate::connors::{Ctx, ParamDef, Params, StrategyDef, Trade};
 
 /// Minute-path cards of the lane: SPX only (S&P points).
-pub const SPX_IDS: &[&str] = &["clomw_early_range_breakout", "lpgap_fade_spx"];
+pub const SPX_IDS: &[&str] = &["clomw_early_range_breakout", "lpgap_fade_spx", "impet_demo"];
 /// Minute-path cards of the lane on all four minute tickers (no fixed amount; a tick = #57).
 pub const ALL_IDS: &[&str] = &[];
 pub fn catalogue() -> Vec<StrategyDef> { vec![] }
