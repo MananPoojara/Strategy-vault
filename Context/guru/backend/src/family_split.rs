@@ -64,6 +64,12 @@ const SPLIT: &[(&str, Mode)] = &[
     ("fzhci_nt", Mode::Each), ("mm_nt", Mode::Each), ("onc_nt", Mode::Each), ("jjm_nt", Mode::Each),
     ("rwarms_nt", Mode::Each), ("jkennedy_nt", Mode::Each), ("gmaclean_nt", Mode::Each), ("dmpub", Mode::Each),
     ("scevkc", Mode::Each), ("mscvl_systems", Mode::Each), ("msadd_candle", Mode::Each), ("acbff_eitheror", Mode::Each),
+    // Q390 re-check batch 8 (R4 #387, lane K4; authors/code-1123/Q390-recheck-8.tsv)
+    ("mkits_gold", Mode::Each), ("acbff_calendar", Mode::Each), ("msadd_misc", Mode::Each), ("atm02_tsl", Mode::Each),
+    ("msadd_stoch", Mode::Each), ("acbff_extremes", Mode::Each), ("masmt_cal", Mode::Each), ("jscgf", Mode::Each),
+    ("atmcsa", Mode::Each), ("lwlts_oops", Mode::Each), ("msadd_trix", Mode::Each), ("mbsot_patterns_nt", Mode::Each),
+    ("cwin_windows", Mode::Each), ("wdgig_other", Mode::Each), ("rwmts_intraday", Mode::Each), ("hbqts_entries", Mode::Each),
+    ("acbff_potpourri", Mode::Each),
 ];
 
 /// R4 #387 variant check on the 'Each' families: ids that differ only by a number, parameter or version suffix are ONE method.
@@ -152,6 +158,50 @@ const MERGE: &[(&[&str], &str)] = &[
     (&["msadd_n_can_ss", "msadd_o_can_ss"], "N-CAN-SS  CANDLE SHOOTING STAR PATTERN"),
     (&["msadd_n_can_st", "msadd_o_can_st"], "N-CAN-ST  CANDLE MORN/EVEN STAR PATTERN"),
     (&["acbff_three", "acbff_five", "acbff_five_4of5", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345"], "First three either-or indicators combined"),
+    // Q390 re-check batch 8
+    (&["mkits_gold_rsdiv", "mkits_gold_rs_dxy"], "Gold: Relative Strength divergence"),
+    (&["mkits_gold_dis_xau", "mkits_gold_dis_dxy"], "Gold: Disparity"),
+    (&["mkits_gold_lrs_xau", "mkits_gold_lrs_dxy"], "Gold: LRS divergence"),
+    (&["mkits_gold_z_xau", "mkits_gold_z_dxy"], "Gold: Z-Score divergence"),
+    (&["mkits_gold_lrs2_slv", "mkits_gold_lrs2_xau"], "Gold: Double LRS divergence"),
+    (&["acbff_monday", "acbff_tuesday", "acbff_wed_fri", "acbff_dow"], "Monday rule"),
+    (&["acbff_short_dom", "acbff_dom", "acbff_dom_day", "acbff_dom_day_cc"], "Perennially short S&P"),
+    (&["acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight"], "Index month of year"),
+    (&["msadd_my_system", "msadd_my_system1", "msadd_n_sar_c", "msadd_o_sar_c"], "My System"),
+    (&["msadd_n_bnd_cs", "msadd_o_bnd_cs"], "N-BND-CS  TRADING BAND XOVER W/ STOPS"),
+    (&["msadd_n_bol_c", "msadd_o_bol_c"], "N-BOL-C   BOLLINGER BAND SWING TRADER"),
+    (&["msadd_n_cha_ps", "msadd_o_cha_ps"], "N-CHA-PS  CHAIKIN +1000/-1000 PEAKS W/ST"),
+    (&["msadd_n_dmi_c", "msadd_o_dmi_c"], "N-DMI-C   DMI +DI/-DI XOVER"),
+    (&["atm02_pair_rank", "atm02_pair_ema", "atm02_pair_trend"], "Pair-trade system: long weakest / short strongest of 10 semis"),
+    (&["atm02_vol_bench_stock", "atm02_vol_bench_fut"], "Volatility benchmark system, stocks"),
+    (&["msadd_n_sto_c", "msadd_n_sto_cs", "msadd_o_sto_c", "msadd_o_sto_cs"], "N-STO-C   STOCH +80/+20 XOVER"),
+    (&["msadd_n_sto_5t", "msadd_n_sto_8t", "msadd_o_sto_5t", "msadd_o_sto_8t"], "N-STO-5T  STOCH +80/+20 W/ 5% TREND"),
+    (&["msadd_n_sto_ps", "msadd_o_sto_ps"], "N-STO-PS  STOCH +80/+20 PEAKS W/ STOPS"),
+    (&["msadd_n_sto_fps", "msadd_o_sto_fps"], "N-STO-FPS STOCH FIB COMP PEAKS W/ STOPS"),
+    (&["acbff_fut_rx_filter", "acbff_rx_filter"], "Range expansion with two-same-way filter on NIFTY futures daily bars"),
+    (&["acbff_5c_day", "acbff_5c_perp", "acbff_fut_5c_perp", "acbff_5c1_perp", "acbff_fut_5c1_perp", "acbff_5c1_day"], "First contrary close after five same-way closes"),
+    (&["masmt_bsm", "masmt_ndr_oct1_may3", "masmt_harding_bsm", "masmt_vakkur_may_oct"], "Hirsch Best Six Months"),
+    (&["masmt_sept_avoid", "masmt_colby_sept_short"], "Avoid September entirely"),
+    (&["masmt_vakkur_switch", "masmt_vakkur_lev_seasonal", "masmt_vakkur_lev_all"], "Vakkur switching strategy"),
+    (&["jscgf_ma", "jscgf_ma_x"], "Simple moving-average system"),
+    (&["jscgf_ma_turn", "jscgf_ma6"], "Moving-average turn system"),
+    (&["jscgf_bo", "jscgf_wk4", "jscgf_generic"], "Breakout system"),
+    (&["atmcsa_bo20", "atmcsa_bo20_mod"], "Basic currency trend system"),
+    (&["atmcsa_tct_trend", "atmcsa_tct_counter"], "Trend/countertrend system"),
+    (&["lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9", "lwlts_oops_buy_bonds", "lwlts_oops_sell_bonds_wed", "lwlts_oops_buy_bonds_ma9", "lwlts_oops_sell_bonds_ma9", "lwlts_oops_tdm18"], "Oops! buy"),
+    (&["msadd_n_trx_m", "msadd_o_trx_m"], "N-TRX-M   TRIX MOVING AVERAGE"),
+    (&["msadd_n_txm_5t", "msadd_n_txm_8t", "msadd_o_txm_5t", "msadd_o_txm_8t"], "N-TXM-5T  TRIX MOMENTUM W/ 5% TREND"),
+    (&["msadd_n_txm_p", "msadd_o_txm_p"], "N-TXM-P   TRIX MOMENTUM PEAKS"),
+    (&["msadd_n_txm_fp", "msadd_o_txm_fp"], "N-TXM-FP  TRIX MOMENTUM FIB COMP PEAKS"),
+    (&["cwin_single_window", "cwin_aggressive_window", "cwin_first_window", "cwin_weekly_window", "cwin_window_two_rule_exit_test"], "SingleWindows"),
+    (&["cwin_gap_window_intraday", "cwin_gap_window_close"], "GapWindows"),
+    (&["wdgig_double", "wdgig_db_rise", "wdgig_plan8"], "Double Top/Bottom by-products"),
+    (&["wdgig_thrust", "wdgig_plan9", "wdgig_sr", "wdgig_cotton"], "The Thrust Method"),
+    (&["rwmts_2h_rsi400", "rwmts_60m_rsi200h", "rwmts_30m_rsi100h", "rwmts_15m_5m_rsi"], "RSI extremes with 400-hour MA filter, 2-hour bars"),
+    (&["rwmts_60m_rsi_cross", "rwmts_30m_rsi_cross"], "RSI(14) 25/75 crossover, 3% target / 1% stop, 60-minute bars"),
+    (&["hbqts_chandelier", "hbqts_chandelier_1line"], "Chandelier stop 3 x ATR(10) below the highest high"),
+    (&["acbff_5v15", "acbff_3v30"], "5 vs 15-day closing averages"),
+    (&["acbff_bean_march", "acbff_bean_july"], "Soybean seasonal"),
 ];
 fn merged(id: &str) -> Option<(&'static str, &'static str)> {
     MERGE.iter().find(|(ids, _)| ids.contains(&id)).map(|(ids, name)| (ids[0], *name))
@@ -208,7 +258,7 @@ pub fn apply(id: &str, f: (&'static str, &'static str, &'static str)) -> (&'stat
 mod tests {
     use super::*;
     /// (family, ids in the family, methods after the split) at 24 Nov 2026: update when ids are added to these families.
-    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4), ("atm04_counter", 6, 5), ("atm10", 6, 5), ("fotol", 6, 6), ("jb30d_rev", 5, 2), ("hsta_holiday", 5, 5), ("lwrsr_other", 5, 5), ("kfst_other", 5, 5), ("mkits_fx", 5, 3), ("mkits_other", 5, 5), ("rwmts_bands", 5, 3), ("dmst2_breakout", 5, 4), ("lwppt", 5, 5), ("lwmil", 5, 5), ("lwcot_cot", 5, 5), ("rwtlc_disc", 5, 5), ("mahrs_income", 5, 4), ("lkcpt_barnes", 5, 3), ("ndbrm_tape", 5, 3), ("lwad", 5, 5), ("dvetf_style", 5, 2), ("jbeft_intraday", 5, 4), ("jbeft_other", 5, 5), ("kfgei_weekly", 5, 3), ("prpr", 5, 5), ("hkcgdt_nt", 5, 4), ("atm03_counter", 5, 4), ("atm04_trend", 5, 3), ("ftm_km", 5, 2), ("atmrc", 5, 4), ("lwnl_patterns", 5, 5), ("lwnl_od", 5, 2), ("wmny_timing", 5, 5), ("ftm2_nd", 5, 5), ("ftm2_nt", 5, 5), ("mbbb2_bigblue2", 5, 5), ("mslib_carayo", 5, 4), ("csmlt_nt", 7, 7), ("djhta_nt", 5, 5), ("pvelez_nt", 5, 5), ("epfpp_nt", 5, 5), ("jfeot_tests", 5, 5), ("otvt_hv", 4, 2), ("cov_turtle", 4, 3), ("hpetf_mdd", 4, 2), ("tharp_common", 5, 5), ("lwlts_tdw", 4, 2), ("tcdt_other", 4, 3), ("jt_bollinger", 4, 2), ("lebcafm_adx", 4, 4), ("ehrs_indicators", 4, 4), ("ehmtc", 4, 4), ("hsta_forecast", 4, 4), ("rgs_toolbox", 4, 4), ("kfbpm_2sys", 4, 3), ("dlost_pullbacks", 4, 4), ("mbhfe_breadth", 4, 2), ("mbhfe_stocks", 4, 4), ("mbsot_timing_nt", 4, 4), ("mkits_dax", 4, 2), ("rwmts_ma", 4, 2), ("hbqts_osc", 4, 4), ("hbiab_misc", 4, 4), ("dmast_poly", 4, 3), ("eltfl_tools", 4, 4), ("lwsss", 4, 4), ("gb10_or", 4, 4), ("rwtlc_rsix", 4, 2), ("lkcpt_bernstein", 4, 3), ("lkcpt_jensen", 4, 3), ("jsdow_composite", 4, 4), ("mzwws_thrust", 4, 2), ("rjmil_systems", 4, 4), ("dvetf_sector", 4, 2), ("dl10b_resumption", 4, 4), ("kfgei_alloc", 4, 4), ("dgdwb_darvas", 4, 2), ("sglr_cal", 4, 4), ("cgtdd_judgement", 4, 4), ("palets_dv", 4, 2), ("zsms", 4, 3), ("sbcft_filters", 4, 3), ("ckbtm_lists", 4, 4), ("phbt_surveys", 4, 2), ("mpasi_nt", 4, 3), ("mjzz", 4, 4), ("mlhpt_bo", 4, 4), ("cpgap_gap_fill", 4, 3), ("atm03_trend", 4, 4), ("atmmisc", 4, 4), ("lwicw_holidays", 7, 7), ("ltsfut", 4, 4), ("ccl08_options", 4, 4), ("bfmm_mm1", 4, 3), ("rinadz_osc", 4, 4), ("mslib_ma", 4, 4), ("rrlft", 4, 4), ("mptae_ma", 4, 4), ("fzhci_nt", 4, 4), ("mm_nt", 6, 6), ("onc_nt", 4, 4), ("jjm_nt", 6, 6), ("rwarms_nt", 7, 7), ("jkennedy_nt", 6, 6), ("gmaclean_nt", 4, 4), ("dmpub", 4, 3), ("scevkc", 4, 2), ("mscvl_systems", 29, 21), ("msadd_candle", 20, 10), ("acbff_eitheror", 18, 7)];
+    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4), ("atm04_counter", 6, 5), ("atm10", 6, 5), ("fotol", 6, 6), ("jb30d_rev", 5, 2), ("hsta_holiday", 5, 5), ("lwrsr_other", 5, 5), ("kfst_other", 5, 5), ("mkits_fx", 5, 3), ("mkits_other", 5, 5), ("rwmts_bands", 5, 3), ("dmst2_breakout", 5, 4), ("lwppt", 5, 5), ("lwmil", 5, 5), ("lwcot_cot", 5, 5), ("rwtlc_disc", 5, 5), ("mahrs_income", 5, 4), ("lkcpt_barnes", 5, 3), ("ndbrm_tape", 5, 3), ("lwad", 5, 5), ("dvetf_style", 5, 2), ("jbeft_intraday", 5, 4), ("jbeft_other", 5, 5), ("kfgei_weekly", 5, 3), ("prpr", 5, 5), ("hkcgdt_nt", 5, 4), ("atm03_counter", 5, 4), ("atm04_trend", 5, 3), ("ftm_km", 5, 2), ("atmrc", 5, 4), ("lwnl_patterns", 5, 5), ("lwnl_od", 5, 2), ("wmny_timing", 5, 5), ("ftm2_nd", 5, 5), ("ftm2_nt", 5, 5), ("mbbb2_bigblue2", 5, 5), ("mslib_carayo", 5, 4), ("csmlt_nt", 7, 7), ("djhta_nt", 5, 5), ("pvelez_nt", 5, 5), ("epfpp_nt", 5, 5), ("jfeot_tests", 5, 5), ("otvt_hv", 4, 2), ("cov_turtle", 4, 3), ("hpetf_mdd", 4, 2), ("tharp_common", 5, 5), ("lwlts_tdw", 4, 2), ("tcdt_other", 4, 3), ("jt_bollinger", 4, 2), ("lebcafm_adx", 4, 4), ("ehrs_indicators", 4, 4), ("ehmtc", 4, 4), ("hsta_forecast", 4, 4), ("rgs_toolbox", 4, 4), ("kfbpm_2sys", 4, 3), ("dlost_pullbacks", 4, 4), ("mbhfe_breadth", 4, 2), ("mbhfe_stocks", 4, 4), ("mbsot_timing_nt", 4, 4), ("mkits_dax", 4, 2), ("rwmts_ma", 4, 2), ("hbqts_osc", 4, 4), ("hbiab_misc", 4, 4), ("dmast_poly", 4, 3), ("eltfl_tools", 4, 4), ("lwsss", 4, 4), ("gb10_or", 4, 4), ("rwtlc_rsix", 4, 2), ("lkcpt_bernstein", 4, 3), ("lkcpt_jensen", 4, 3), ("jsdow_composite", 4, 4), ("mzwws_thrust", 4, 2), ("rjmil_systems", 4, 4), ("dvetf_sector", 4, 2), ("dl10b_resumption", 4, 4), ("kfgei_alloc", 4, 4), ("dgdwb_darvas", 4, 2), ("sglr_cal", 4, 4), ("cgtdd_judgement", 4, 4), ("palets_dv", 4, 2), ("zsms", 4, 3), ("sbcft_filters", 4, 3), ("ckbtm_lists", 4, 4), ("phbt_surveys", 4, 2), ("mpasi_nt", 4, 3), ("mjzz", 4, 4), ("mlhpt_bo", 4, 4), ("cpgap_gap_fill", 4, 3), ("atm03_trend", 4, 4), ("atmmisc", 4, 4), ("lwicw_holidays", 7, 7), ("ltsfut", 4, 4), ("ccl08_options", 4, 4), ("bfmm_mm1", 4, 3), ("rinadz_osc", 4, 4), ("mslib_ma", 4, 4), ("rrlft", 4, 4), ("mptae_ma", 4, 4), ("fzhci_nt", 4, 4), ("mm_nt", 6, 6), ("onc_nt", 4, 4), ("jjm_nt", 6, 6), ("rwarms_nt", 7, 7), ("jkennedy_nt", 6, 6), ("gmaclean_nt", 4, 4), ("dmpub", 4, 3), ("scevkc", 4, 2), ("mscvl_systems", 29, 21), ("msadd_candle", 20, 10), ("acbff_eitheror", 18, 7), ("mkits_gold", 15, 10), ("acbff_calendar", 14, 3), ("msadd_misc", 13, 6), ("atm02_tsl", 12, 9), ("msadd_stoch", 12, 4), ("acbff_extremes", 12, 6), ("masmt_cal", 11, 5), ("jscgf", 11, 7), ("atmcsa", 11, 9), ("lwlts_oops", 10, 2), ("msadd_trix", 10, 4), ("mbsot_patterns_nt", 9, 9), ("cwin_windows", 9, 4), ("wdgig_other", 9, 4), ("rwmts_intraday", 9, 5), ("hbqts_entries", 9, 8), ("acbff_potpourri", 8, 6)];
     #[test]
     fn stems_group_variants() {
         assert_eq!(stem("200 dma violated by 100%"), stem("200 dma violated by 50%"));
