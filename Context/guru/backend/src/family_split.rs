@@ -16,6 +16,11 @@ const SPLIT: &[(&str, Mode)] = &[
     ("mssta_systems", Mode::Each), ("msws_gm3", Mode::Each), ("mscvl_systems", Mode::Each), ("apwms_other", Mode::Each), ("lwnl_commodity", Mode::Each),
     ("mbhfe_macro", Mode::Each), ("jsats", Mode::Each), ("khtwg", Mode::Each), ("kdta_other", Mode::Each), ("acbff_intraday", Mode::Each),
     ("capttm_other", Mode::Each), ("mstt_equis", Mode::Each), ("jchr2", Mode::Each), ("msws_gm8", Mode::Each),
+    // batch 2 (24 Nov 2026)
+    ("mkits_gold", Mode::Stem), ("msadd_cci", Mode::Stem), ("msadd_stoch", Mode::Stem), ("r3r4", Mode::Stem), ("lwlts_oops", Mode::Stem),
+    ("acbff_eitheror", Mode::Each), ("acbff_calendar", Mode::Each), ("cktwo", Mode::Each), ("msadd_misc", Mode::Each), ("tdperl_other", Mode::Each),
+    ("apsmts_other", Mode::Each), ("apoi_other", Mode::Each), ("mbsot_patterns_nt", Mode::Each), ("lbi12_twelve", Mode::Each), ("atm02_tsl", Mode::Each),
+    ("lebcafm_daytrading", Mode::Each), ("mbsot_macro", Mode::Each), ("masmt_cal", Mode::Each), ("tkttl_setups", Mode::Each), ("jscgf", Mode::Each), ("atmcsa", Mode::Each),
 ];
 
 /// System stem of a strategy name (same normalisation as the audit: authors/conv-1123/Q390-families.tsv).
