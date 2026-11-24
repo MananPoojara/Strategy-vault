@@ -1600,7 +1600,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // rwtlc_rsix: admitted on SPX only, $7,500 / $50 = 150 E-mini points (lane K74, R4 #277; rwtlc::ADMISSION_SPX)
         // ---- end Richard L. Weissman held
         // ---- Bruce Babcock block (26 Oct 2026, lane B): held Live rules
-        "bab80_novapr_stop10k"|"bab80_novapr_stop5k"=>"Held: fixed dollar stop on the S&P futures contract. These pages of the calendar test add a $10,000 or $5,000 stop per S&P contract, 20 or 10 S&P points at $500 a point (p.16-19); a fixed point amount has no equivalent on other indices, ETFs or stocks. The rule without a stop is live; running the stops on SPX with the book's points is a decision for the user.",
         // ---- end Bruce Babcock held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
@@ -2238,9 +2237,10 @@ mod tests {
     fn babcock_held_rules_have_plain_card_reasons() {
         use crate::books::{bab80};
         let all:Vec<StrategyDef>=bab80::catalogue().into_iter().collect();
-        for id in ["bab80_novapr_stop10k", "bab80_novapr_stop5k"] {
+        // R4 #380 (lane K2, 24 Nov 2026): the two stop pages and the short-term system are re-opened on the NSE indices (bab80::ADMISSION_NSE)
+        for id in ["bab80_novapr_stop10k", "bab80_novapr_stop5k", "bab80_shortterm"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && held_reason(id).is_none() && bab80::nse_scaled(id) && check(d,"NIFTY 50",false).is_none() && check(d,"NIFTYBANK",false).is_none(),"{id}");
         }
     }
     // ---- end Bruce Babcock held ----
@@ -3612,7 +3612,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(id,"chntt")));
             assert!(policy(&d).source_basis.contains("Chande"));
         }
-        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt")] {
+        for (id,book) in [/* ch_bta2_65sma_ravi_x14: admitted on the NSE indices (chbta2::ADMISSION_NSE, lane K2, R4 #380) */("ch_ntt_vidya_cmo","chntt")] {
             let d=def(id,book);
             assert!(!reviewed_cash_rule(&d));
             assert!(check(&d,"NIFTY 50",false).is_some());
