@@ -30,6 +30,9 @@ const SPLIT: &[(&str, Mode)] = &[
     // batch 4 (24 Nov 2026)
     ("mbsot_appel", Mode::Stem), ("strtw_gd", Mode::Stem), ("lkqts_monthly", Mode::Stem), ("sfo_sector", Mode::Stem),
     ("maetf_alloc", Mode::Each), ("acbff_potpourri", Mode::Each), ("cbpst_acme", Mode::Each), ("svtv2_rules", Mode::Each), ("ramtm_models", Mode::Each), ("jswct_campaign", Mode::Each), ("mslib_combined", Mode::Each), ("jsgsta", Mode::Each), ("ch_ntt_ideas", Mode::Each), ("wdnbp_other", Mode::Each), ("ecqt", Mode::Each), ("lkcpt_krut", Mode::Each), ("acbff_other", Mode::Each), ("mzwws_models", Mode::Each), ("lebws", Mode::Each), ("masmt_ma", Mode::Each), ("mpmm_interp", Mode::Each), ("cgift_nt", Mode::Each), ("dgnl_spi", Mode::Each), ("atm01_tsl", Mode::Each), ("wmny_breadth", Mode::Each), ("kllien_nt", Mode::Each), ("ws5_momentum_windows", Mode::Each), ("msadd_rsi", Mode::Each),
+    // batch 5 (24 Nov 2026)
+    ("lwlts_vb", Mode::Stem), ("apwms_haurlan", Mode::Stem), ("acbff_patterns", Mode::Stem), ("fejmma_mma", Mode::Stem), ("tcdt_idpat", Mode::Stem), ("strmm_rs", Mode::Stem),
+    ("cov_wott", Mode::Each), ("mhp_other", Mode::Each), ("pbwts_examples", Mode::Each), ("ehmd_indicators", Mode::Each), ("tdnsta_other", Mode::Each), ("lkcpt_chande", Mode::Each), ("lkcpt_demark", Mode::Each), ("mzwws_seasonal", Mode::Each), ("wbmdd_other", Mode::Each), ("sbma_single", Mode::Each), ("jbcaf_nt", Mode::Each), ("dgnl_methods", Mode::Each), ("mapsl", Mode::Each), ("atm00_tsl", Mode::Each), ("msws_gm1", Mode::Each), ("jcurt_other", Mode::Each), ("gg_nt", Mode::Each), ("bstacm_nt", Mode::Each), ("mmft_boucher", Mode::Each), ("lwdg2_tools", Mode::Each), ("lebtc_exits", Mode::Each),
 ];
 
 /// System stem of a strategy name (same normalisation as the audit: authors/conv-1123/Q390-families.tsv).
