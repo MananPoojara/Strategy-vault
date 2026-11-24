@@ -866,6 +866,12 @@ window.JoeRossEvidence = {
       "blurb": "Contextual price patterns, Traders Trick entries and discretionary trade management. Contract-level backtests remain unavailable."
     },
     {
+      "id": "jross40",
+      "title": "Andy's E-mini Bar: 40 Minutes",
+      "year": 2005,
+      "blurb": "Course e-book: two 40-minute trigger bars, limit entries at the bar extreme, 8-tick target and 20-tick stop. Run on NIFTY 1-minute bars with the points scaled; unverified."
+    },
+    {
       "id": "jr_loc",
       "title": "The Law of Charts",
       "year": null,
