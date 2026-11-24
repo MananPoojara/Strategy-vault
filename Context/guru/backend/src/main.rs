@@ -2231,6 +2231,7 @@ fn main() {
     // lane PF: the T-bond back-adjusted close for Meyers' T-bond & breadth system (dmtbb)
     if data.contains_key("SPX") { if let Some(m) = futures::load_tbond(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908")) { extra.entry(("*".to_string(), futures::TBOND_SERIES.to_string())).or_insert(m); } }
     if data.contains_key("SPX") { for (k, v) in futures::load_index_highs(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908")) { extra.entry(k).or_insert(v); } } // lane PG: Dow averages' highs (stad7_dow)
+    if data.contains_key("NIFTY 50") { for t in &books::rbhetf::UNIVERSE[1..] { if let Some(rows) = data.get(*t) { extra.insert(("NIFTY 50".to_string(), books::rbhetf::idx_key(t)), rows.iter().map(|r| (r.date.clone(), r.close)).collect()); } } } // lane K3 (rbhetf): the other NSE indices ranked by ReIS, on the NIFTY 50 calendar
     futures::leg2_series(data, &mut extra); // lane P1: the second leg of a two-contract spread (&NQ on the &ES context)
     // lane P1: Chan's GLD/GDX pair reads GDX (Norgate, futures/norgate-us-etfs-20200908 next to the US price file) on the GLD context
     if data.contains_key("GLD") { if let Some(m)=books::ecqt::gdx_series(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-etfs-20200908/GDX.csv")) {extra.entry(("GLD".into(),books::ecqt::GDX.into())).or_insert(m);} }
