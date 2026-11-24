@@ -370,8 +370,16 @@ impl<'a> Eng<'a> {
                 argc(2)?;
                 let k = self.k(&a[1])?;
                 let back_by = if name == "ref" { -k } else { k };
-                if back_by < 0.0 { return Err(format!("{name}() with offset {k} reads a future bar")); }
                 if (back_by - back_by.round()).abs() > 1e-9 { return Err("fractional offset".into()); }
+                if back_by < 0.0 {
+                    // Lane K3 (24 Nov 2026, Q399 (b)): a positive offset is causal only inside an enclosing Ref(.,-j) with j >= the offset (net offset
+                    // >= 0), as mslib_ponte_mp prints Ref(Cross(...) AND Ref(C,+1) > C, -1); anywhere else it still reads a future bar and is refused.
+                    let kf = (-back_by).round() as usize;
+                    if self.ref_shift < kf { return Err(format!("{name}() with offset {k} reads a future bar")); }
+                    self.ref_shift -= kf; let s = self.ev(&a[0]); self.ref_shift += kf;
+                    let s = s?; let n = s.len();
+                    return Ok(Rc::new((0..n).map(|i| if i + kf < n { s[i + kf] } else { NAN }).collect()));
+                }
                 let kk = back_by.round() as usize; self.ref_shift += kk; let s = self.ev(&a[0]); self.ref_shift -= kk; back(&s?, kk)
             }
             "mov" => {
