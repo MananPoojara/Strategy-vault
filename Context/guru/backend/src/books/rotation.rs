@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 pub static PRELOADED: OnceLock<&'static BTreeMap<String, Vec<Row>>> = OnceLock::new();
 
 pub const IDS: &[&str] = &["alpha_dyn_treasuries", "alpha_rising_assets", "fbrs_combo_top3", "fgitc_rotation", "fgtofd_sector_tilt", "kfgei_alloc_combined",
-    "kfgei_alloc_corr", "kfgei_alloc_rar", "kfgei_alloc_vol", "stv7_bull_someplace", "stv7_sell_in_may", "maetf_small_large", "maetf_eafe_sp"]; // + lane D1 pass 2 (R4 #340: IWM / SPY and EFA / SPY stand in for the Russell and EAFE indexes) + lane K54 (decision #229 (5), (10))
+    "kfgei_alloc_corr", "kfgei_alloc_rar", "kfgei_alloc_vol", "stv7_bull_someplace", "stv7_sell_in_may", "maetf_small_large", "maetf_eafe_sp", "ftfed_small_large"]; // + lane D1 pass 2 (R4 #340: IWM / SPY and EFA / SPY stand in for the Russell and EAFE indexes) + lane K54 (decision #229 (5), (10))
 pub fn is_rotation(id: &str) -> bool { IDS.contains(&id) }
 pub const ANCHOR: &str = "SPY";
 pub const SECTORS: &[&str] = &["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"];
@@ -99,6 +99,22 @@ fn events(id: &str, x: &Ctx, u: &U, from: usize, to: usize, p: &Params) -> (Vec<
                 let (r0, r1) = (ret(&u.c[0], k, k - b), ret(&u.c[1], k, k - b));
                 let a = if r0 > r1 { 0 } else { 1 };
                 ev.push(Ev { k, open: false, hold: vec![(a, 1.)], why: format!("{} returned more in {} (IWM {}, SPY {}); held the next calendar year", name(a), &x.r[k].date[..4], pct(r0), pct(r1)) });
+            }
+            (ev, true)
+        }
+        "ftfed_small_large" => {
+            // u = [IWM, SPY]. Roberts 'Follow the Fed' standard strategy: at month t, T-bill-12m(t) (12 monthly bill returns compounded) below Inflation-12m(t) (CPI 12-month change) = Small, else Large;
+            // the signal of month t is applied two months later (the book's revision lag): decided at the last close of month t+1 with the CPI released by then, held from the first open of month t+2
+            let (Some(tb), Some(cpi)) = (x.extra.get("DTB3"), x.extra.get("CPIAUCNS_yoy_release")) else { return (ev, true) };
+            let rate = |k: usize| (k.saturating_sub(6)..=k).rev().map(|i| tb[i]).find(|v| v.is_finite());
+            for j in 11..me.len().saturating_sub(1) {
+                let (k, f) = (me[j + 1], me[j + 1] + 1);
+                if f >= n || !u.all(&[f]) || !cpi[k].is_finite() { continue; }
+                let rs: Vec<Option<f64>> = (j - 11..=j).map(|m| rate(me[m])).collect();
+                if rs.iter().any(|r| r.is_none()) { continue; }
+                let tb12 = (rs.iter().map(|r| 1. + r.unwrap() / 1200.).product::<f64>() - 1.) * 100.;
+                let a = if tb12 < cpi[k] { 0 } else { 1 };
+                ev.push(Ev { k: f, open: true, hold: vec![(a, 1.)], why: format!("{} (T-bill-12m {:.2}% {} inflation-12m {:.2}%; month {} signal applied two months later)", if a == 0 { "Small (IWM)" } else { "Large (SPY)" }, tb12, if a == 0 { "below" } else { "at or above" }, cpi[k], &x.r[me[j]].date[..7]) });
             }
             (ev, true)
         }
@@ -314,7 +330,7 @@ pub fn account(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params,
         let data = data.ok_or("needs_data: the loaded price file is not available to the rotation")?;
         let names: Vec<&'static str> = match id {
             "stv7_sell_in_may" => vec!["SPY", if p.get("sector").copied().unwrap_or(0.) >= 0.5 { "XLV" } else { "XLP" }],
-            "maetf_small_large" => vec!["IWM", "SPY"],
+            "maetf_small_large" | "ftfed_small_large" => vec!["IWM", "SPY"],
             "maetf_eafe_sp" => vec!["EFA", "SPY"],
             "alpha_rising_assets" => RISING.to_vec(),
             "alpha_dyn_treasuries" => TREASURY.to_vec(),
