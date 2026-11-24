@@ -403,7 +403,7 @@ pub fn invalid_bar(x: &Ctx, i: usize) -> bool {
 /// stays whole for every other card (raw_basis refuses a trade whose unadjusted entry price is not positive).
 /// Lane F1C (R4 #326): six Chande ch.5 systems on crude enter at the 2020-04-20 close (unadjusted -37.63), so on &CL their run
 /// ends 2020-04-17 (ch_bta2_adx30 does not trade there and keeps the whole series).
-const POSITIVE_RAW_ONLY: &[&str] = &["stad12_shifty", "jkbwts_ehrlich17", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref", "ch_bta2_cbo_20tick",
+const POSITIVE_RAW_ONLY: &[&str] = &["stad12_shifty", "jkbwts_ehrlich17", "lebfut_roughneck", "ch_bta2_cbo_trail5", "ch_bta2_cbo_volexit", "ch_bta2_cbo_inside", "ch_bta2_cbo_ref", "ch_bta2_cbo_20tick",
     "ch_bta2_adx_rising", "ch_bta2_pullback",
     "scpee_tcf_cl", "scpee_tii_cl" /* lane PA1, R4 #324 review 9af03996 B1 */,
     "scnbps_cross" /* lane PG: Balsara crossover on &CL (R4 #326) */,
@@ -434,6 +434,7 @@ pub const CARDS: &[(&str, &str, &str)] = &[
     ("jkbwts_one_night_stand", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.16-17 One Night Stand, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
     ("jkbwts_stuckey19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.28-29 Stuckey19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
     ("jkbwts_williams19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.34-35 Williams 19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("lebfut_roughneck", "&CL", "LeBeau & Elden, Roughneck Crude Oil Trading System manual (System Traders Club, 1999) and its TradeStation code: run on the Norgate crude oil continuous contract (R4 #293 (1), R4 #392); stops and offsets in the quote's own points (0.01 = one point), the $1,000 money stop = 1.00 at $1,000 per point; the manual's printed 59-trade list is reproduced on the vendor's own data file by the module test, not on Norgate."),
 ];
 /// Lane F3 (R4 #294): Harris's single-market patterns (books::mhstp), each on the contract its Pattern Library page names.
 const CARDS_F3: &[(&str, &str, &str)] = &[
