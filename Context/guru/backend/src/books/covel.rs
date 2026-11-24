@@ -22,7 +22,7 @@ pub fn reviewed_wilcox(id: &str) -> bool { REVIEWED_WILCOX.contains(&id) }
 const TURTLE_NOTE: &str = "Futures rules run on the index (instrument swap). N = Turtle N: (19*PDN+TR)/20 seeded with the 20-day simple average of TR (OTR p.14). Unit = 1% of equity per N, so each unit's weight = 1% x fill / N (N of the day before the breakout, frozen for the trade's adds and stops, as in the book's worked examples). Stop/limit fills: at the level, or at the open when the market opens through it. Daily-bar order (book silent): on the entry bar entry -> adds -> stops/exit vs the bar's adverse extreme; on later bars open gaps -> stops/exit -> adds; no re-entry on an exit bar. 1 tick = the instrument's tick (US 0.01, NSE 0.05; #57). Multi-unit account (lane K74, decisions #212, #266, #277): each unit is its own trade, sized at 1% of the account per N when it fills, so 4 units can hold more than the whole account (leverage, as the Turtles traded on margin); a run whose account reaches 0 is wiped out and stops there. Same-day order (decisions #240, #243): on a day whose daily bar does not say whether the breakout, an add or a stop came first (3-19% of positions), the order is taken from real 1-minute bars; because that order changes the result materially (#243 (c)), only the minute window of the 1-minute tickers is published (SPY 2000-2025, SPX 2008-2026, and for System 2 NIFTY 50 / NIFTYBANK 2008-2026); System 1's NIFTY results are withdrawn (decision #231: far above tradable SPY over the same dates). Not modelled (need several futures): correlated/direction unit limits, buy-strongest, rolls; contract truncation; the notional-account 20% cut after 10% loss (yearly reset is Rich's subjective call).";
 const WOTT_NOTE: &str = "Way of the Turtle ch.10 test system (27 US futures, Jan 1996-Jun 2006, Trading Blox). Run on one index (instrument swap). Size = 0.5% of equity per ATR (p.136), weight = 0.5% x fill / ATR of the signal day. ATR = the book's N (\"N is simply the 20-day exponential moving average of the True Range, which is now more commonly known as the ATR\", p.252). Table 10-1 is a portfolio result: not comparable to a single index.";
 const PORTFOLIO_GAP: &str = "Needs several correlated futures markets traded together: unit limits per closely correlated group (6), loosely correlated (10) and per direction (12), and buying the strongest / shorting the weakest market of a group. Only single indices exist in the vault.";
-const WHIPSAW_GAP: &str = "Book states the stop (1/2 N per unit) and that a stopped unit is re-entered at its original entry price, but not the re-entered unit's stop, whether re-entries count toward the 4-unit limit, or whether re-entry continues after the 10/20-day exit price was hit. Not coded rather than invent these.";
+const WHIPSAW_NOTE: &str = "[Adapted: 4 labelled readings, R4 #392; unverified] Original Turtle Rules p.24: stops at 1/2 N (1/2% of the account per unit) with the stopped unit re-entered when the market reaches its original entry price. The book states neither (1) the re-entered unit's stop, (2) whether re-entries count toward the 4-unit limit, (3) whether re-entry goes on after the 10/20-day exit price is hit, nor (4) the re-entry price. Readings: (1) the re-entered unit's stop is again 1/2 N from its re-entry fill, N frozen at the trade's entry; every unit's stop stays 1/2 N from its own entry (the book's 'raise earlier stops 1/2 N per added unit' belongs to the 2N stop and is not applied); (2) a re-entry replaces its stopped unit, so the position never holds more than 4 units and no new unit is added while one is waiting; (3) re-entry stops once the 20-day exit price is reached: the waiting units are dropped and the position is over (a fresh 55-day breakout is needed); (4) the unit re-enters at its original entry price, or at the open when the market opens through it. Entry system: the 55/20 System 2 breakout (all breakouts taken), the system the alternate stop is declared on; everything else as cov_turtle_s2. Daily-bar order (book silent): a unit stopped on a bar re-enters on a later bar; on days the daily bar cannot order the stop and the re-entry the order is taken from real 1-minute bars, like cov_turtle_s2.";
 const ATH_NOTE: &str = "Rule source: Cole Wilcox & Eric Crittenden (Blackstar Funds), 'Does Trend Following Work on Stocks?' (Nov 2005), p.3-6 and Appendix 4 p.18; Covel's Trend Following quotes it (p.309-312). [Declared readings] 'Entire history' = every bar the vault holds for the instrument. The paper does not print the ATR length: Wilder ATR(14) is the labelled default (options). The stop trails the highest close since the entry day (option: the highest high): stop = that close - 10 x ATR, and it only rises; 'breached' = a close below the stop (option: the day's low), sold at the next open ('exit a stock on the open the day after the exit level was breached'). One position at a time; a new all-time-high close while flat buys at the next open. Not applied: the paper's $15 minimum price and $500,000 / $1,000,000 average daily dollar-volume filters (they need unadjusted prices, the stock's exchange and a CPI series, and the averaging period is not printed), and its 0.5% round-turn costs. The paper tested 24,000+ US stocks including delisted ones (1983-2004, dividend-adjusted); vault baskets are today's index members (survivorship) and vault US prices are not dividend-adjusted. Indices and ETFs are a declared application.";
 
 const TFM_NOTE: &str = "Trend Following Manifesto course, Alternative Trend Following Entries guide (stocks/futures/forex chart examples, no published results). Run on one index (instrument swap). Signal from the day's bar, executed at the next open (the course's Trade Walk Through p.2: \"The trading signal was given on 1/2/2013 ... The shares were bought on the open of the next trading day\"). Full position, one unit: the course's 2-ATR initial stop and pyramiding overlay is not coded (see cov_tfm_atr_pyramid). Moving averages are simple (the guide: \"simple moving average\").";
@@ -53,9 +53,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|2N stop from each unit's entry; earlier units' stops raised by 1/2 N per added unit p.23",
             "X|\"The System 2 exit was a 20 day low for long positions and a 20 day high for short positions. All the Units in the position would be exited\" p.27",
         ], TURTLE_NOTE),
-        d("cov_turtle_whipsaw", "Turtle Whipsaw stop (alternate)", "Original Turtle Rules · Ch 5", "Long/Short", NotTestable(WHIPSAW_GAP), &[
+        d("cov_turtle_whipsaw", "Turtle Whipsaw stop (alternate)", "Original Turtle Rules · Ch 5", "Long/Short", Live, &[
             "X|\"stops were placed at 1/2 N for 1/2% account risk. If a given Unit was stopped out, the Unit would be re-entered if the market reached the original entry price.\" OTR p.24",
-        ], WHIPSAW_GAP),
+            "E|Entry, units and 10/20-day exit as System 2 (55/20), p.20-21, 27; 4-unit single-market limit p.17",
+        ], WHIPSAW_NOTE),
         d("cov_turtle_portfolio", "Turtle portfolio unit limits & buy-strength", "Original Turtle Rules · Ch 3, 7", "Long/Short", NeedsData(PORTFOLIO_GAP), &[
             "F|Levels: single market 4 Units, closely correlated markets 6, loosely correlated 10, single direction 12 (OTR p.17)",
             "F|\"If the signals came all at once, we always bought the strongest markets and sold short the weakest markets in a group\" p.30",
@@ -150,7 +151,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "cov_turtle_s1" => ("cov_turtle", "Turtle Trading Rules", "System 1"),
         "cov_turtle_s2" => ("cov_turtle", "Turtle Trading Rules", "System 2"),
-        "cov_turtle_whipsaw" => ("cov_turtle", "Turtle Trading Rules", "Whipsaw stop · not testable"),
+        "cov_turtle_whipsaw" => ("cov_turtle", "Turtle Trading Rules", "Whipsaw stop (1/2 N, re-entry)"),
         "cov_turtle_portfolio" => ("cov_turtle", "Turtle Trading Rules", "Portfolio limits · data missing"),
         "cov_wott_atr_cbo" => ("cov_wott", "Way of the Turtle systems", "ATR Channel Breakout"),
         "cov_wott_bollinger_cbo" => ("cov_wott", "Way of the Turtle systems", "Bollinger Breakout"),
@@ -187,6 +188,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let v = match id {
         "cov_turtle_s1" => { let mut v = turtle(20.0, 10.0); v.push(p("failsafe", "Failsafe breakout days", 55.0, 30.0, 100.0, 5.0)); v.push(p("filter", "Skip after a winning last breakout (1 = book)", 1.0, 0.0, 1.0, 1.0)); v }
         "cov_turtle_s2" => turtle(55.0, 20.0),
+        "cov_turtle_whipsaw" => { let mut v = turtle(55.0, 20.0); v.iter_mut().find(|d| d.key == "stop_n").unwrap().def = 0.5; v }
         "cov_wott_donchian_trend" | "cov_wott_donchian_time" => {
             let mut v = vec![p("entry", "Entry breakout days", 20.0, 10.0, 60.0, 5.0), p("fast", "Fast EMA days", 25.0, 10.0, 100.0, 5.0), p("slow", "Slow EMA days", 350.0, 150.0, 500.0, 50.0), tick()];
             v.extend(if id.ends_with("trend") { vec![p("exit", "Exit breakout days", 10.0, 5.0, 40.0, 5.0), p("stop_n", "Stop (ATR)", 2.0, 0.5, 6.0, 0.5)] } else { vec![p("hold", "Exit after (trading days)", 80.0, 20.0, 200.0, 10.0)] });
@@ -252,21 +254,57 @@ fn stop_entry(x: &Ctx, i: usize, up: f64, dn: f64) -> Option<(f64, f64)> {
     }
 }
 
-struct Bo { entry: usize, exit: usize, hold: usize, stop: f64, add: f64, units: usize, tick: f64 }
+struct Bo { entry: usize, exit: usize, hold: usize, stop: f64, add: f64, units: usize, tick: f64, reenter: bool }
 
 #[derive(Clone)]
-struct Pos { dir: f64, n: f64, legs: Vec<Leg>, stops: Vec<f64>, out: Vec<Option<(usize, f64, &'static str)>>, next_add: f64, entry_i: usize, od: crate::intraday_ep6::Day }
+struct Pos { dir: f64, n: f64, legs: Vec<Leg>, stops: Vec<f64>, out: Vec<Option<(usize, f64, &'static str)>>, next_add: f64, entry_i: usize, od: crate::intraday_ep6::Day,
+    // cov_turtle_whipsaw only (Bo.reenter): each leg's original entry price, whether a stopped leg is already waiting, the waiting (price, stop bar) list, re-entered legs
+    orig: Vec<f64>, seen: Vec<bool>, wait: Vec<(f64, usize)>, reent: usize }
 
 impl Pos {
     fn live(&self) -> usize { self.out.iter().filter(|o| o.is_none()).count() }
+    /// A unit may be added: all held (the book's rule); in the whipsaw alternative no unit is waiting to be re-entered and the units not re-entries are below the limit.
+    fn can_add(&self, b: &Bo) -> bool {
+        if b.reenter { self.wait.is_empty() && self.live() > 0 && self.legs.len() - self.reent < b.units } else { self.live() == self.legs.len() && self.legs.len() < b.units }
+    }
+    fn push_unit(&mut self, b: &Bo, leg: Leg, orig: f64) {
+        let fill = leg.px;
+        self.legs.push(leg);
+        self.stops.push(if b.stop > 0.0 { fill - self.dir * b.stop * self.n } else { -self.dir * f64::INFINITY });
+        self.out.push(None); self.orig.push(orig); self.seen.push(false);
+    }
+    /// Whipsaw alternative (OTR p.24): a unit stopped out waits for the market to reach its ORIGINAL entry price again; the 10/20-day exit being hit ends the re-entries.
+    fn sweep(&mut self) {
+        let mut exit_hit = false;
+        for k in 0..self.legs.len() {
+            if self.seen[k] { continue; }
+            if let Some((bar, _, why)) = self.out[k] { self.seen[k] = true; if why == "N stop" { self.wait.push((self.orig[k], bar)); } else { exit_hit = true; } }
+        }
+        if exit_hit { self.wait.clear(); }
+    }
+    /// No unit held and the bar reached the exit price: the waiting units are dropped.
+    fn cancel_if_exit(&mut self, x: &Ctx, i: usize, ex: f64) {
+        if self.live() == 0 && !self.wait.is_empty() && ex.is_finite() && (if self.dir > 0.0 { x.l[i] <= ex } else { x.h[i] >= ex }) { self.wait.clear(); }
+    }
+    /// Daily rule: a waiting unit re-enters on a LATER bar that reaches its original entry price (gap = open fill).
+    fn rearm(&mut self, x: &Ctx, b: &Bo, i: usize, size: &dyn Fn(f64, f64, f64) -> f64, ex: f64) {
+        let mut k = 0;
+        while k < self.wait.len() {
+            let (px, bar) = self.wait[k];
+            if bar < i && (if self.dir > 0.0 { x.h[i] >= px } else { x.l[i] <= px }) {
+                let fill = if self.dir > 0.0 { x.o[i].max(px) } else { x.o[i].min(px) };
+                let w = size(self.n, fill, ex);
+                self.push_unit(b, Leg { i, px: fill, w }, px); self.reent += 1; self.wait.remove(k);
+            } else { k += 1; }
+        }
+    }
     /// Adds at next_add while the bar reaches it (gap = open fill); earlier stops move up by add x N.
     fn adds(&mut self, x: &Ctx, b: &Bo, i: usize, size: &dyn Fn(f64, f64, f64) -> f64, ex: f64) {
-        while self.live() == self.legs.len() && self.legs.len() < b.units && (if self.dir > 0.0 { x.h[i] >= self.next_add } else { x.l[i] <= self.next_add }) {
+        while self.can_add(b) && (if self.dir > 0.0 { x.h[i] >= self.next_add } else { x.l[i] <= self.next_add }) {
             let fill = if self.dir > 0.0 { x.o[i].max(self.next_add) } else { x.o[i].min(self.next_add) };
-            for s in &mut self.stops { *s += self.dir * b.add * self.n; }
-            self.legs.push(Leg { i, px: fill, w: size(self.n, fill, ex) });
-            self.stops.push(if b.stop > 0.0 { fill - self.dir * b.stop * self.n } else { -self.dir * f64::INFINITY });
-            self.out.push(None);
+            if !b.reenter { for s in &mut self.stops { *s += self.dir * b.add * self.n; } } // whipsaw alternative: stops stay 1/2 N from each unit's own entry
+            let w = size(self.n, fill, ex);
+            self.push_unit(b, Leg { i, px: fill, w }, fill);
             self.next_add = fill + self.dir * b.add * self.n;
         }
     }
@@ -311,8 +349,10 @@ fn breakout(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn Fn(
         if let Some(mut p) = cur.take() {
             let ex = exl(p.dir);
             p.exits(x, i, ex, true);
+            if b.reenter { p.sweep(); p.cancel_if_exit(x, i, ex); }
             if p.live() > 0 && b.hold > 0 && i >= p.entry_i + b.hold { p.close_all(i, x.c[i], "time exit"); }
-            if p.live() == 0 { out.push(p.trade(false)); continue; } // no re-entry on an exit bar
+            if p.live() == 0 && p.wait.is_empty() { out.push(p.trade(false)); continue; } // no re-entry on an exit bar
+            if b.reenter { p.rearm(x, b, i, size, ex); }
             p.adds(x, b, i, size, ex);
             cur = Some(p);
             continue;
@@ -324,10 +364,11 @@ fn breakout(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn Fn(
         let ex = exl(dir);
         let mut p = Pos { dir, n: nn, legs: vec![Leg { i, px: fill, w: size(nn, fill, ex) }],
             stops: vec![if b.stop > 0.0 { fill - dir * b.stop * nn } else { -dir * f64::INFINITY }], out: vec![None], next_add: fill + dir * b.add * nn, entry_i: i,
-            od: crate::intraday_ep6::Day::Plain };
+            od: crate::intraday_ep6::Day::Plain, orig: vec![fill], seen: vec![false], wait: vec![], reent: 0 };
         p.adds(x, b, i, size, ex);
         p.exits(x, i, ex, false);
-        if p.live() == 0 { out.push(p.trade(false)); } else { cur = Some(p); }
+        if b.reenter { p.sweep(); p.cancel_if_exit(x, i, ex); }
+        if p.live() == 0 && p.wait.is_empty() { out.push(p.trade(false)); } else { cur = Some(p); }
     }
     if let Some(mut p) = cur { p.close_all(to, x.c[to], "open"); out.push(p.trade(true)); }
     out
@@ -356,13 +397,15 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
         let entry = if cur.is_none() && nn.is_finite() { levels(i) } else { None };
         let new_pos = |dir: f64, fill: f64| Pos { dir, n: nn, legs: vec![Leg { i, px: fill, w: size(nn, fill, exl(dir)) }],
             stops: vec![if b.stop > 0.0 { fill - dir * b.stop * nn } else { -dir * f64::INFINITY }], out: vec![None], next_add: fill + dir * b.add * nn,
-            entry_i: i, od: Day::Plain };
+            entry_i: i, od: Day::Plain, orig: vec![fill], seen: vec![false], wait: vec![], reent: 0 };
         // the daily rule of `breakout`, unchanged
         let conv = |s: &mut St6| {
             if let Some(mut p) = s.pos.take() {
                 let ex = exl(p.dir);
                 p.exits(x, i, ex, true);
-                if p.live() == 0 { s.done = Some(p); s.closed = true; return; }
+                if b.reenter { p.sweep(); p.cancel_if_exit(x, i, ex); }
+                if p.live() == 0 && p.wait.is_empty() { s.done = Some(p); s.closed = true; return; }
+                if b.reenter { p.rearm(x, b, i, size, ex); }
                 p.adds(x, b, i, size, ex);
                 s.pos = Some(p);
                 return;
@@ -374,13 +417,13 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
             let mut p = new_pos(dir, fill);
             p.adds(x, b, i, size, ex);
             p.exits(x, i, ex, false);
-            if p.live() == 0 { s.done = Some(p); s.closed = true; } else { s.pos = Some(p); }
+            if b.reenter { p.sweep(); p.cancel_if_exit(x, i, ex); }
+            if p.live() == 0 && p.wait.is_empty() { s.done = Some(p); s.closed = true; } else { s.pos = Some(p); }
         };
         let add_unit = |p: &mut Pos, f: f64| {
-            for st in &mut p.stops { *st += p.dir * b.add * p.n; }
-            p.legs.push(Leg { i, px: f, w: size(p.n, f, exl(p.dir)) });
-            p.stops.push(if b.stop > 0.0 { f - p.dir * b.stop * p.n } else { -p.dir * f64::INFINITY });
-            p.out.push(None);
+            if !b.reenter { for st in &mut p.stops { *st += p.dir * b.add * p.n; } }
+            let w = size(p.n, f, exl(p.dir));
+            p.push_unit(b, Leg { i, px: f, w }, f);
             p.next_add = f + p.dir * b.add * p.n;
         };
         let lvl = |p: &Pos, k: usize| { let ex = exl(p.dir); let sk = p.stops[k];
@@ -396,8 +439,16 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
                         let (t, why) = lvl(p, k);
                         if (o - t) * p.dir <= 0.0 { p.out[k] = Some((i, o, why)); ev.push(Ev { k: 2 + k as u8, px: o, up: p.dir < 0.0 }); }
                     }
-                    if p.live() == 0 { s.done = s.pos.take(); s.closed = true; return ev; }
-                    while p.live() == p.legs.len() && p.legs.len() < b.units && (o - p.next_add) * p.dir >= 0.0 {
+                    if b.reenter { p.sweep(); let ex = exl(p.dir); if p.live() == 0 && ex.is_finite() && (o - ex) * p.dir <= 0.0 { p.wait.clear(); } }
+                    if p.live() == 0 && p.wait.is_empty() { s.done = s.pos.take(); s.closed = true; return ev; }
+                    if b.reenter { // waiting units whose original entry price the open is already through re-enter at the open
+                        let mut k = 0;
+                        while k < p.wait.len() {
+                            let (px, bar) = p.wait[k];
+                            if bar < i && (o - px) * p.dir >= 0.0 { let w = size(p.n, o, exl(p.dir)); p.push_unit(b, Leg { i, px: o, w }, px); p.reent += 1; p.wait.remove(k); ev.push(Ev { k: 1, px: o, up: p.dir > 0.0 }); } else { k += 1; }
+                        }
+                    }
+                    while p.can_add(b) && (o - p.next_add) * p.dir >= 0.0 {
                         add_unit(p, o); ev.push(Ev { k: 1, px: o, up: p.dir > 0.0 });
                     }
                 } else if !s.closed {
@@ -424,13 +475,28 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
                         continue;
                     };
                     if sg.up() == (p.dir > 0.0) {
-                        if p.live() != p.legs.len() || p.legs.len() >= b.units || !sg.inside(p.next_add) { break; }
+                        if b.reenter && !p.wait.is_empty() { // the nearest waiting original entry price on the way: the unit re-enters there
+                            let cand = p.wait.iter().enumerate().filter(|(_, w)| sg.inside(w.0)).min_by(|u, v| ((u.1).0 * p.dir).total_cmp(&((v.1).0 * p.dir))).map(|(k, w)| (k, w.0));
+                            let Some((kk, px)) = cand else { break };
+                            let f = sg.fill(px);
+                            let w = size(p.n, f, exl(p.dir));
+                            p.push_unit(b, Leg { i, px: f, w }, px); p.reent += 1; p.wait.remove(kk);
+                            ev.push(Ev { k: 1, px: f, up: sg.up() });
+                            a = if g.gap { g.b } else { px };
+                            continue;
+                        }
+                        if !p.can_add(b) || !sg.inside(p.next_add) { break; }
                         let lv = p.next_add; let f = sg.fill(lv);
                         add_unit(p, f); ev.push(Ev { k: 1, px: f, up: sg.up() });
                         a = if g.gap { g.b } else { lv };
                         continue;
                     }
                     // against the position: the live unit level reached first (nearest the segment's start)
+                    if b.reenter && p.live() == 0 { // no unit held: only the 10/20-day exit price matters (it drops the waiting units)
+                        let ex = exl(p.dir);
+                        if ex.is_finite() && sg.inside(ex) { p.wait.clear(); s.done = s.pos.take(); s.closed = true; }
+                        break;
+                    }
                     let hit = (0..p.legs.len()).filter(|&k| p.out[k].is_none()).map(|k| (k, lvl(p, k))).filter(|(_, (t, _))| sg.inside(*t))
                         .max_by(|u, v| ((u.1).0 * p.dir).total_cmp(&((v.1).0 * p.dir)));
                     let Some((_, (t, _))) = hit else { break };
@@ -438,7 +504,8 @@ fn breakout_ep6(x: &Ctx, n: &[f64], b: &Bo, from: usize, to: usize, levels: &dyn
                     for k in 0..p.legs.len() {
                         if p.out[k].is_none() { let (tk, why) = lvl(p, k); if tk == t { p.out[k] = Some((i, f, why)); ev.push(Ev { k: 2 + k as u8, px: f, up: sg.up() }); } }
                     }
-                    if p.live() == 0 { s.done = s.pos.take(); s.closed = true; break; }
+                    if b.reenter { p.sweep(); }
+                    if p.live() == 0 && p.wait.is_empty() { s.done = s.pos.take(); s.closed = true; break; }
                     // lane K79 (#290 (1)): keep scanning the rest of a gap too (the units whose levels lie further inside it fill at the
                     // gap end via Seg::fill); jumping to the gap end skipped them
                     a = t;
@@ -544,17 +611,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let n = || atr(x.r, u("n_len"));
     let per_n = |n: Vec<f64>, risk: f64| move |i: usize, fill: f64| risk / 100.0 * fill / n[i];
     Some(match id {
-        "cov_turtle_s1" | "cov_turtle_s2" => {
+        "cov_turtle_s1" | "cov_turtle_s2" | "cov_turtle_whipsaw" => {
             // lane K74 (#243 (c)): with the minute order on, only the minute window of the 1-minute tickers is published
             let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) };
             let (nv, tick, e) = (n(), g("ticks") * x.market_tick(), u("entry"));
-            let b = Bo { entry: e, exit: u("exit"), hold: 0, stop: g("stop_n"), add: g("add_n"), units: u("units"), tick };
+            let b = Bo { entry: e, exit: u("exit"), hold: 0, stop: g("stop_n"), add: g("add_n"), units: u("units"), tick, reenter: id == "cov_turtle_whipsaw" };
             let size = |nn: f64, fill: f64, _| g("risk") / 100.0 * fill / nn;
             // lane K74 (#240/#243): the same-day order on real 1-minute bars (p.order = 1, the default; 0 = the daily convention)
             let ep6 = crate::intraday_ep6::on(id, p);
             let bo = |b: &Bo, from: usize, levels: &dyn Fn(usize) -> Option<(f64, f64)>, size: &dyn Fn(f64, f64, f64) -> f64|
                 if ep6 { breakout_ep6(x, &nv, b, from, to, levels, size) } else { breakout(x, &nv, b, from, to, levels, size) };
-            if id == "cov_turtle_s2" || g("filter") == 0.0 {
+            if id != "cov_turtle_s1" || g("filter") == 0.0 {
                 return Some(bo(&b, from, &|i| Some((hh(x, i, e) + tick, ll(x, i, e) - tick)), &size));
             }
             // Shadow System 1: every 20-day breakout as a single unit, 2N stop, 10-day exit, all signals taken, from the first bar.
@@ -577,7 +644,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (nv, tick, e) = (n(), g("tick"), u("entry"));
             let (f, s) = (ema(&x.c, u("fast")), ema(&x.c, u("slow")));
             let trend = id.ends_with("trend");
-            let b = Bo { entry: e, exit: if trend { u("exit") } else { 0 }, hold: if trend { 0 } else { u("hold") }, stop: if trend { g("stop_n") } else { 0.0 }, add: 0.0, units: 1, tick };
+            let b = Bo { entry: e, exit: if trend { u("exit") } else { 0 }, hold: if trend { 0 } else { u("hold") }, stop: if trend { g("stop_n") } else { 0.0 }, add: 0.0, units: 1, tick, reenter: false };
             let levels = |i: usize| {
                 let (a, z) = (f[i - 1], s[i - 1]);
                 (a.is_finite() && z.is_finite() && a != z).then(|| if a > z { (hh(x, i, e) + tick, f64::NEG_INFINITY) } else { (f64::INFINITY, ll(x, i, e) - tick) })
@@ -589,7 +656,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let tick = g("tick");
             let a = sma(&true_range(x.r), u("atr"));
             let e = u("entry");
-            let b = Bo { entry: e, exit: u("exit"), hold: 0, stop: 0.0, add: 0.0, units: 1, tick };
+            let b = Bo { entry: e, exit: u("exit"), hold: 0, stop: 0.0, add: 0.0, units: 1, tick, reenter: false };
             let risk = g("risk") / 100.0;
             let size = |atr: f64, fill: f64, stop: f64| risk * fill / (fill - stop).abs().max(2.0 * atr);
             breakout(x, &a, &b, from, to, &|i| Some((hh(x, i, e) + tick, ll(x, i, e) - tick)), &size)
@@ -693,6 +760,21 @@ mod tests {
         }
         r
     }
+    /// Whipsaw alternative (OTR p.24) on the crude example: the 1/2 N stop (27.70) takes the unit out, a later bar reaching the original entry 28.30 re-enters it.
+    #[test]
+    fn whipsaw_stopped_unit_reenters_at_its_original_entry() {
+        let mut r = crude(false); r.truncate(60);
+        r.push(row(28.0, 28.4, 27.9, 28.3)); // entry 28.30
+        r.push(row(28.2, 28.3, 27.5, 27.6)); // 1/2 N stop 27.70
+        r.push(row(27.6, 28.5, 27.5, 28.4)); // reaches 28.30 again: re-entry
+        r.push(row(28.4, 28.45, 28.0, 28.2));
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("cov_turtle_whipsaw", &x, 55, r.len() - 1, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].legs.len(), 2);
+        assert!(t[0].legs.iter().all(|l| (l.px - 28.30).abs() < 1e-9) && t[0].legs[0].i == 60 && t[0].legs[1].i == 62);
+        assert!(t[0].open && t[0].exits[0].0 == 61 && (t[0].exits[0].1 - 27.70).abs() < 1e-9);
+    }
     #[test]
     fn crude_oil_units_and_stops() {
         let p = Params::new(); // lane K74: 1 tick of a non-NSE instrument = 0.01 (was the explicit tick 0.01)
@@ -795,7 +877,7 @@ mod tests {
     #[test]
     fn statuses() {
         let c = catalogue();
-        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 16);
+        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 17);
         for d in &c { assert!(family_of(d.id).is_some()); assert_eq!(d.status == Status::Live, params(d.id).is_some()); }
     }
 }
@@ -829,7 +911,7 @@ pub const ADMISSION_WILCOX: crate::instrument_policy::Admission = crate::instrum
 
 // Lane K74 (11 Nov 2026, R4 #277 / #266 / #240 / #243): the Original Turtle Rules Systems 1 and 2 on the multi-unit account
 // (books::units), the same-day order of the entry, the adds and the unit exits taken from real 1-minute bars (breakout_ep6).
-pub const REVIEWED_TURTLE: &[&str] = &["cov_turtle_s1", "cov_turtle_s2"];
+pub const REVIEWED_TURTLE: &[&str] = &["cov_turtle_s1", "cov_turtle_s2", "cov_turtle_whipsaw"];
 pub const ADMISSION_TURTLE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book=="covel" && REVIEWED_TURTLE.contains(&def.id),
     label: "The Turtles traded these rules on a portfolio of US futures on margin (1983-1988); runs on one index, ETF or stock (US and India) are a declared application. Positions hold up to 4 units of 1% of the account per N each (multi-unit account), so a position can be larger than the account, and an account that reaches 0 is wiped out.",
