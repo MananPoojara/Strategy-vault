@@ -721,6 +721,22 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     None
 }
 
+/// Q32b (lane K4, 24 Nov 2026): cards that add to a position or overlap trades are refused by trade_validation only when the run
+/// executes, so readiness said 'ready' and the run then answered calculation_unavailable. For these 28 ids admission now runs the same
+/// structural check on the same trades over the FINAL window (after auto-start/auto-end, so no start or end date moves and a context
+/// that has a result is unchanged). The status changes, never the calculation.
+pub fn structural_issue(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->Option<Issue> {
+    if !STRUCTURAL_PROBE.contains(&def.id) {return None;}
+    let t=crate::connors::run(def.id,ctx,from,to,p)?;
+    let e=crate::trade_validation::check_structure(&t,from,to).err()?;
+    issue("calculation_unavailable",e.trim_start_matches("calculation_unavailable: ").to_string())
+}
+
+/// Cards whose trades can exceed one unit of exposure (pyramiding) or overlap on a one-position account (Q32b ready_but_no_stats).
+const STRUCTURAL_PROBE:&[&str]=&["atm03_cmo_srsi","cov_tf_mechanica_89_13","cov_wott_donchian_trend","kpss_jusb","kpss_lopl","kpss_uecs","kpss_uhts","kpss_ujbs","kpss_utcm","kpss_uumds","lkqts_cb_pyr","stad2_addiv",
+    "tcdt_2bnr_m160_h2","tcdt_2bnr_m160_h5","tcdt_2bnr_m80_h2","tcdt_2bnr_m80_h5","tcdt_2bnr_p180_h2","tcdt_2bnr_p180_h5","tcdt_2bnr_p80_h2","tcdt_2bnr_p80_h5",
+    "tcdt_3bnr_m160_h2","tcdt_3bnr_m160_h5","tcdt_3bnr_m80_h2","tcdt_3bnr_m80_h5","tcdt_3bnr_p160_h2","tcdt_3bnr_p160_h5","tcdt_3bnr_p80_h2","tcdt_3bnr_p80_h5"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
