@@ -6,13 +6,13 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["cpsit_situational", "cpsit_trend2"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "A|[Declared readings, lane K2, 4] (1) The printed code buys 5 S&P points above the signal close; on Indian prices this is the same fraction of price: 0.4% of the signal close (5 points on an S&P near 1,200), a parameter. (2) The printed SetStopLoss(7000) is $7,000 per S&P contract = 28 points at $250 a point, about 2.5% of an S&P near 1,100: read as a 2.5% stop from the entry price (a parameter), checked from the bar after entry and filled at the stop or at a gap open beyond it. (3) The page prints the short side only as 'mirror'; the mirror of the long conditions is used (two up bars, close in the top 20% of its range, open in the bottom 30%). (4) A stop order that the next open gaps through fills at that open. The page text says 'close in the lower 80%' but the code (C < H - .8 x Range, the lowest 20%) controls.";
+const NOTE: &str = "A|[Declared readings, lane K2, 4] (1) The printed code buys 5 S&P points above the signal close; on Indian prices this is the same fraction of price: 0.4% of the signal close (5 points on an S&P near 1,200), a parameter. (2) The printed SetStopLoss(7000) is USD 7,000 per S&P contract = 28 points at USD 250 a point, about 2.5% of an S&P near 1,100: read as a 2.5% stop from the entry price (a parameter), checked from the bar after entry and filled at the stop or at a gap open beyond it. (3) The prose says the short side is the long rules 'reversed', but the printed code differs (two up bars, open below H - .8 x Range, close above L + .7 x Range, on both bars); the printed code is coded, not the mirror. (4) A stop order that the next open gaps through fills at that open (the page: 'if tomorrow's open is greater than today's close + 5 then it is a market order'). The page text says 'close in the lower 80%' but the code (C < H - .8 x Range, the lowest 20%) controls.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "cpsit_situational", name: "Capstone Situational System: two down closes in the low 20% of range with opens in the top 30%, buy stop; exit at the first profitable close", group: "Capstone situational system (EasyLanguage on the page)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "cpsit", rules: &[
-            "E|Long: C < O and C[1] < O[1] and C < H - .8 x Range and O > L + .7 x Range and the same on the previous bar (C[1] < H[1] - .8 x Range[1], O[1] > L[1] + .7 x Range[1]): Buy next bar at C + 5 Stop. Short: the mirror, Sell Short next bar at C - 5 Stop",
-            "X|If MarketPosition = 1 and PositionProfit > 0 then Sell this bar on close (short: cover on the first profitable close, including the entry bar); the page also sets a $7,000 stop (read as 2.5%, reading 2)",
+            "E|Long: C < O and C[1] < O[1] and C < H - .8 x Range and O > L + .7 x Range and the same on the previous bar (C[1] < H[1] - .8 x Range[1], O[1] > L[1] + .7 x Range[1]): Buy next bar at C + 5 Stop. Short (printed code): C > O and C[1] > O[1], O < H - .8 x Range and C > L + .7 x Range on both bars, Sell Short next bar at C - 5 Stop",
+            "X|If MarketPosition = 1 and PositionProfit > 0 then Sell this bar on close (short: cover on the first profitable close, including the entry bar); the page also sets a USD 7,000 stop (read as 2.5%, reading 2)",
             NOTE], notes: NOTE, claim: None },
     StrategyDef { id: "cpsit_trend2", name: "Capstone Trend Swing 2: strong-close bar, buy next open, 10 x 12-bar average range stop, exit at a later close whose open is beyond the entry", group: "Capstone situational system (EasyLanguage on the page)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "cpsit", rules: &[
@@ -20,10 +20,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Initial stop 10 x Average(Range, 12) points from the entry; exit on a later bar at its close if that bar's open is beyond the entry price (above for longs, below for shorts) and the bar is not again a signal bar of the same side",
             NOTE2], notes: NOTE2, claim: None }]
 }
-const NOTE2: &str = "A|[Declared readings, lane K2, 4] (1) The next-bar market order is filled at the next open. (2) The close exit is evaluated from the bar after the entry bar. (3) The short side is the exact mirror of the long conditions as printed in the code. (4) The stop fills at the stop price, or at the open when a bar gaps through it. Signals while a position is open are ignored.";
+const NOTE2: &str = "A|[Declared readings, lane K2, 4] (1) The next-bar market order is filled at the next open. (2) The close exit is evaluated from the bar after the entry bar. (3) The short side is coded as printed in the same file (it is the mirror of the long bar). (4) The stop fills at the stop price, or at the open when a bar gaps through it. Signals while a position is open are ignored.";
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("cpsit", "Capstone situational system", "Buy stop after two weak closes")) }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    (id == "cpsit_situational").then(|| vec![ParamDef { key: "stop_pct", label: "Protective stop, % of entry ($7,000 / $250 per point = 28 points, about 2.5% of an S&P near 1,100; 0 = none)", def: 2.5, min: 0., max: 10., step: 0.25 }, ParamDef { key: "off_pct", label: "Stop offset above/below the signal close, % (5 S&P points on about 1,200 = 0.4)", def: 0.4, min: 0., max: 2., step: 0.05 }])
+    (id == "cpsit_situational").then(|| vec![ParamDef { key: "stop_pct", label: "Protective stop, % of entry (USD 7,000 / USD 250 per point = 28 points, about 2.5% of an S&P near 1,100; 0 = none)", def: 2.5, min: 0., max: 10., step: 0.25 }, ParamDef { key: "off_pct", label: "Stop offset above/below the signal close, % (5 S&P points on about 1,200 = 0.4)", def: 0.4, min: 0., max: 2., step: 0.05 }])
 }
 
 /// +1 long signal, -1 short signal, 0 none, on bar i (needs bar i-1).
@@ -33,7 +33,7 @@ pub fn signal(x: &Ctx, i: usize) -> i8 {
     let (o1, c1, h1, l1, r1) = f(i - 1);
     let (o0, c0, h0, l0, r0) = f(i);
     let lo = |o: f64, c: f64, h: f64, l: f64, r: f64| c < o && c < h - 0.8 * r && o > l + 0.7 * r;
-    let hi = |o: f64, c: f64, h: f64, l: f64, r: f64| c > o && c > l + 0.8 * r && o < h - 0.7 * r;
+    let hi = |o: f64, c: f64, h: f64, l: f64, r: f64| c > o && o < h - 0.8 * r && c > l + 0.7 * r;
     if lo(o0, c0, h0, l0, r0) && lo(o1, c1, h1, l1, r1) { 1 } else if hi(o0, c0, h0, l0, r0) && hi(o1, c1, h1, l1, r1) { -1 } else { 0 }
 }
 
