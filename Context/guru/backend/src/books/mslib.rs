@@ -127,7 +127,7 @@ fn leak(s: String) -> &'static str { Box::leak(s.into_boxed_str()) }
 /// Lane R2B (R4 #297): the vault's reading of each printed optimisation variable (opt1, opt2, ...; case as printed), per system.
 const OPT_READING: &[(&str, &[f64])] = &[("mslib_gumbert", &[10., 4., 19., 23.]), ("mslib_kowalsky", &[12., 21.]), ("mslib_rt2", &[12., 21.]),
     ("mslib_rt3", &[12., 21.]), ("mslib_rt4", &[12., 21.]), ("mslib_mo_ros", &[13.]),
-    ("mslib_carayooo", &[20.]), ("mslib_carayo2", &[20.]), ("mslib_carayo3", &[20.]), ("mslib_carayo4", &[20.]), ("mslib_macd_adx", &[12.]), ("mslib_cci_ma", &[23., 23.]), ("mslib_mome5", &[55., 145., 24.]), ("mslib_ema_opt", &[19., 76., 19., 76.]), ("mslib_vila", &[4., 1., 1., 1., 1.05, 1., 1., 1., 1., 1.04]), ("mslib_psar", &[0.025, 0.06])];
+    ("mslib_carayooo", &[20.]), ("mslib_carayo2", &[20.]), ("mslib_carayo3", &[20.]), ("mslib_carayo4", &[20.]), ("mslib_macd_adx", &[12.]), ("mslib_cci_ma", &[23., 23.]), ("mslib_mome5", &[55., 145., 24.]), ("mslib_ema_opt", &[19., 76., 19., 76.]), ("mslib_vila", &[4., 1., 1., 1., 1.05, 1., 1., 1., 1., 1.04]), ("mslib_psar", &[0.035, 0.275])];
 /// Replace the words opt1..optN (any case) by the system's reading; other text unchanged.
 fn fill_opt(id: &str, f: &str) -> String {
     let Some((_, v)) = OPT_READING.iter().find(|(k, _)| *k == id) else { return f.to_string() };
