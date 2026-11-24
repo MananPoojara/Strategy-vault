@@ -66,10 +66,10 @@ pub const MODEL: &str = "spread_two_leg_v1";
 pub const BASIS: &str = "Two-leg spread account (lane P1, R4 #293, #297). Each position is long one leg and short the other in the rule's stated quantities; both legs are filled at the same bar's close and closed together. The two price series are joined by exact date: a date either leg lacks gives no signal and no fill, and no price is carried forward. Trade return = the sum of the two legs' money P&L divided by the gross exposure at entry (long notional + short notional at the unadjusted entry prices). Positions are valued every day; a day on which a leg has no bar keeps the last joint value (a mark, never a fill). Costs: the vault fee and slippage setting per side on each leg's notional (0 by default); no borrow fee or margin interest is modelled.";
 
 /// Every rule that runs on this account (books::vanvliet, books::ecqt).
-pub fn is_rule(id: &str) -> bool { crate::books::vanvliet::is_spread(id) || id == crate::books::ecqt::PAIR }
+pub fn is_rule(id: &str) -> bool { crate::books::vanvliet::is_spread(id) || id == crate::books::ecqt::PAIR || crate::books::rbhetf::is_spread(id) }
 /// The account of a spread rule (None = not a spread rule; Err = not on this context or data missing).
 pub fn run(id: &str, x: &crate::connors::Ctx, from: usize, to: usize, cost: f64, p: &crate::connors::Params) -> Option<Result<Account, String>> {
-    let pos = crate::books::vanvliet::positions(id, x, from, to, p).or_else(|| crate::books::ecqt::positions(id, x, from, to, p))?;
+    let pos = crate::books::vanvliet::positions(id, x, from, to, p).or_else(|| crate::books::ecqt::positions(id, x, from, to, p)).or_else(|| crate::books::rbhetf::positions(id, x, from, to, p))?;
     Some(pos.map(|pos| account(pos, from, to, cost)))
 }
 /// The run's account: options::account with this model's name and basis.
