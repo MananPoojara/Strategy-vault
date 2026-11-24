@@ -27,6 +27,7 @@ export default {
     "jr_manual": {"type":"book","people":["Joe Ross"]},
     "jr_hook": {"type":"book","people":["Joe Ross"]},
     "jr_loc": {"type":"article","people":["Joe Ross"]},
+    "jross40": {"type":"course_manual","people":["Joe Ross"]},
     "jr_tte": {"type":"course_manual","people":["Joe Ross"]},
     "jr_zulu": {"type":"course_manual","people":["Joe Ross"]},
     "jr_ambush": {"type":"course_manual","people":["Joe Ross"]},
