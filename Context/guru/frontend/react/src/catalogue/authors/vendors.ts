@@ -21,6 +21,7 @@ export default {
     "confidence": "low"
   },
   sourceReview: {
+    "utz": {"type":"course_manual","people":[]},
     "capttm": {"type":"book","people":["Curtis M. Arnold"]},
     "elmts4": {"type":"code_package","people":[]},
     "mjthir": {"type":"code_package","people":["Mark Johnson"]},
