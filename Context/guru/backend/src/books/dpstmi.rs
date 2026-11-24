@@ -159,6 +159,6 @@ mod tests {
 // Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application); dpstmi_kleinman_trio is gated to the five NSE indices.
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book=="dpstmi" && crate::books::dpstmi::reviewed(def.id),
-    label: "David Penn shows BOSO on S&P 500, currency pair and futures daily charts; runs on indices, ETFs and US/India stocks are a declared application, not the author's test.",
-    basis: "David Penn, The Three Secrets to Trading Momentum Indicators (2009), Ch.6 Stochastics: BOSO",
+    label: "David Penn shows BOSO on S&P 500, currency pair and futures daily charts; dpstmi_boso: runs on indices, ETFs and US/India stocks are a declared application, not the author's test. dpstmi_kleinman_trio (Ch.9, quoting Kleinman): the five NSE index series its independent reference covers only (the gate row allows only those, R4 #378).",
+    basis: "David Penn, The Three Secrets to Trading Momentum Indicators (2009), Ch.6 Stochastics: BOSO; Ch.9 Moving Average Trios: Kleinman 2/9/30",
 };
