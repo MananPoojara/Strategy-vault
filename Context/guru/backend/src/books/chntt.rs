@@ -214,7 +214,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let m = u("months");
             let entry = |i: usize, _: f64| [sig[i].then_some((1., Kind::NextClose)), None];
             let ex = |i: usize, q: &Pos| (x.r[i].date >= add_months(&x.r[q.i].date, m)).then(|| format!("{m} calendar months after entry · close"));
-            run_sys(x, from, to, &Sys { entry: &entry, exit_close: &ex, exit_open: &none_exit, trail: &no_trail, stop_pts: 0., oneway: false })
+            run_sys(x, from, to, &Sys { entry: &entry, exit_close: &ex, exit_open: &none_exit, trail: &no_trail, stop_pts: 0., stop_ref: 0., oneway: false })
         }
         "ch_ntt_qstick_zero" | "ch_ntt_cmo_zero" | "ch_ntt_cmo_ma" => {
             let n = x.r.len();

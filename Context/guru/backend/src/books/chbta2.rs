@@ -49,6 +49,8 @@ pub(crate) struct Sys<'a> {
     pub trail: OnPos<'a, f64>,
     /// Initial stop distance in price points from the fill (0 = off).
     pub stop_pts: f64,
+    /// R4 #380 (lane K2): when > 0 the stop distance is `stop_pts x fill / stop_ref` (the printed S&P points as the same percentage of the price); 0 = the points as printed.
+    pub stop_ref: f64,
     /// Book's "one-way" test model: no two consecutive trades in the same direction.
     pub oneway: bool,
 }
@@ -75,7 +77,7 @@ pub(crate) fn run_sys_path(x: &Ctx, from: usize, to: usize, s: &Sys, minute: boo
     let (mut pos, mut last): (Option<Pos>, f64) = (None, 0.);
     let mut pend: [Option<(f64, Kind)>; 2] = [None, None];
     let (mut pend_exit, mut trail): (Option<String>, f64) = (None, f64::NAN);
-    let init = |p: &Pos| if s.stop_pts > 0. { p.px - p.dir * s.stop_pts } else { f64::NAN };
+    let init = |p: &Pos| if s.stop_pts > 0. { p.px - p.dir * if s.stop_ref > 0. { s.stop_pts * p.px / s.stop_ref } else { s.stop_pts } } else { f64::NAN };
     for i in from..=to {
         if i > from {
             if let Some(why) = pend_exit.take() {
@@ -430,7 +432,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("count", "Number of consecutive short SMAs", 2., 2., 5., 1.), p("slow", "Long SMA length", 65., 10., 200., 1.)],
         "ch_bta2_65sma_ravi" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(1.0)],
         "ch_bta2_65sma_ravi_x14" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(0.5),
-            p("exit_n", "Exit: close beyond N-day extreme", 14., 5., 30., 1.), stop(0.)],
+            p("exit_n", "Exit: close beyond N-day extreme", 14., 5., 30., 1.), stop(0.),
+            p("ref", "NSE indices only (#380): the printed $1,000 stop = 2.0 S&P points is scaled by the fill / this S&P 500 level (312 = the vault SPX mean close over the book's 1983-1995 window, a labelled reading)", 312., 50., 2000., 1.)],
         "ch_bta2_tat" => vec![p("n", "Breakout days", 25., 10., 40., 5.), p("adx", "ADX length", 18., 10., 30., 2.),
             p("adx_avg", "ADX average length", 18., 10., 30., 2.), stop(10.)],
         "ch_bta2_ma1011_trend" | "ch_bta2_ma1011_anti" => vec![p("fast", "Short SMA", 10., 5., 20., 1.), p("slow", "Long SMA", 11., 6., 30., 1.), stop(4.)],
@@ -488,6 +491,10 @@ pub fn validate_reviewed(id: &str, p: &Params) -> Option<String> {
     None
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+pub fn nse_x14(id: &str) -> bool { id == "ch_bta2_65sma_ravi_x14" }
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() || validate_reviewed(id, p).is_some() { return None; }
@@ -508,6 +515,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         (Some(_), None) if fut_stop > 0. => crate::futures::usd_points(x, from, fut_stop).unwrap_or(0.),
         _ => g("stop_pts").max(0.),
     };
+    // R4 #380 (lane K2): the 65sma-3cc + RAVI 0.5 + 14-day exit model of Table 4.6 on the NSE indices: its $1,000 stop is 2.0 S&P points at $500 a point (p.100, p.134)
+    // scaled by the fill / 312, and entries before the series' real-open start are not traded (the entry and the exit are next opens).
+    let nse = nse_x14(id) && x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY"));
+    let (stop_pts, stop_ref) = if nse { (if p.get("stop_pts").is_some() { stop_pts } else { 2.0 }, g("ref")) } else { (stop_pts, 0.) };
+    let from = if nse { x.r.first().and_then(|r| real_open_from(&r.ticker)).map_or(from, |c| from.max(x.r.partition_point(|r| r.date.as_str() < c))) } else { from };
+    if from > to { return Some(vec![]); }
     let minute = MINUTE_PATH.contains(&id) && g("path") >= 0.5; // K58 / #240
     let tick = if !schema.iter().any(|d| d.key == "tick") { 0. }
         // lane F1B (#57): on a futures contract the printed "1 point" is one tick of that contract unless tick is given
@@ -517,7 +530,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let n = x.r.len();
     macro_rules! sys {
         ($e:expr, $c:expr, $o:expr, $t:expr, $w:expr) => {
-            run_sys_path(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, oneway: $w }, minute)
+            run_sys_path(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, stop_ref, oneway: $w }, minute)
         };
     }
     let hold_exit = |h: usize| move |i: usize, q: &Pos| (i >= q.i + h).then(|| format!("Close of day {h} in the trade"));
@@ -917,3 +930,29 @@ pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument
     label: "Chande tested these rules on S&P-500 futures (continuous contract, 1982-95) with dollar stops per contract; the stops are converted exactly at the named contract's $500 per full S&P index point (p.134) and run on the S&P 500 index (SPX) only, the points literal, as a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
     basis: "Tushar Chande, Beyond Technical Analysis (Wiley 1997) Ch 4, printed pp.116-144 (T-AT p.116-123, 10/11 crossovers p.133, bottom-fishing p.134-139, extraordinary opportunities p.140-144; $500 a point p.134); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_ch_ref.py, #179 two-window check K58w/m3_ch.txt.",
 };
+
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nse_x14(def.id),
+    label: "Chande tested the 65sma-3cc reversal with a 0.5 percent RAVI filter, a 14-day extreme exit and a $1,000 initial stop on S&P-500 futures (1982-95, Table 4.6). The stop is 2.0 S&P index points at $500 per point (p. 134); run on the NSE index series only, the stop scaled by the fill / 312 (the vault SPX mean close over the book's window, a labelled reading), a declared adaptation (R4 #340 / #380); entries before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Tushar Chande, Beyond Technical Analysis (Wiley 1997) Ch 4, 65sma-3cc model with RAVI and a 14-day exit p. 100 and Table 4.6, $500 a point p. 134; independent check authors/conv-1123/k2w/chx14_ref.py",
+};
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: CHX14_CSV=<idx_data.csv> CHX14_OUT=<file> cargo test --release chx14_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn chx14_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("CHX14_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("CHX14_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("ch_bta2_65sma_ravi_x14", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "ch_bta2_65sma_ravi_x14,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
+}

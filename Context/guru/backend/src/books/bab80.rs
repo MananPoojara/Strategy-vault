@@ -77,15 +77,16 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    let refp = || p("ref", "NSE indices only (#380): the point stop is scaled by the entry level / this S&P 500 level (362 = the vault SPX mean close over the book's 1983-1997 test window, a labelled reading); US series keep the book's points", 362.0, 50.0, 2000.0, 1.0);
     let pt = || p("pt_usd", "Dollars per index point (book: S&P $500)", 500.0, 50.0, 1000.0, 50.0);
     Some(match id {
         "bab80_daytrade" | "bab80_shortterm" => vec![
             p("mom", "Momentum length (book 11; tables p.7-8 test 10-35)", 11.0, 2.0, 40.0, 1.0),
             p("stop_usd", "Money-management stop, $ (book 3,000; p.8 tests 1,000-10,000)", 3000.0, 0.0, 10000.0, 500.0), pt()]
-            .into_iter().chain((id == "bab80_daytrade").then(|| p("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0))).collect(), // intraday wave 2b
+            .into_iter().chain((id == "bab80_shortterm").then(refp)).chain((id == "bab80_daytrade").then(|| p("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0))).collect(), // intraday wave 2b
         "bab80_novapr" => vec![p("stop_usd", "Stop, $ (0 = none; book pages: none, 10,000, 5,000)", 0.0, 0.0, 20000.0, 1000.0), pt()],
-        "bab80_novapr_stop10k" => vec![p("stop_usd", "Stop, $ (book 10,000)", 10000.0, 0.0, 20000.0, 1000.0), pt()],
-        "bab80_novapr_stop5k" => vec![p("stop_usd", "Stop, $ (book 5,000)", 5000.0, 0.0, 20000.0, 1000.0), pt()],
+        "bab80_novapr_stop10k" => vec![p("stop_usd", "Stop, $ (book 10,000)", 10000.0, 0.0, 20000.0, 1000.0), pt(), refp()],
+        "bab80_novapr_stop5k" => vec![p("stop_usd", "Stop, $ (book 5,000)", 5000.0, 0.0, 20000.0, 1000.0), pt(), refp()],
         _ => return None,
     })
 }
@@ -96,7 +97,7 @@ fn trade(entry_i: usize, px: f64, exit_i: usize, exit_px: f64, why: &str, kind: 
 }
 
 /// Day-trade / short-term momentum breakout (long only).
-fn momentum(x: &Ctx, from: usize, to: usize, n: usize, stop_pts: f64, daytrade: bool) -> Vec<Trade> {
+fn momentum(x: &Ctx, from: usize, to: usize, n: usize, stop_pts: f64, daytrade: bool, refp: f64, cut: Option<&str>) -> Vec<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = vec![];
     let mut pos: Option<(usize, f64, f64)> = None; // entry bar, fill, stop level
@@ -108,13 +109,15 @@ fn momentum(x: &Ctx, from: usize, to: usize, n: usize, stop_pts: f64, daytrade: 
             else if l[i] <= st { out.push(trade(ei, px, i, st, "stop", "stop")); pos = None; continue; }
             else { continue; }
         }
+        if cut.is_some_and(|d| x.r[i].date.as_str() < d) { continue; }
         let tr = h[i - 1].max(c[i - 2]) - l[i - 1].min(c[i - 2]);
         let setup = c[i - 1] - c[i - 1 - n] > c[i - 2] - c[i - 2 - n] && o[i] > (h[i - 1] + l[i - 1] + c[i - 1]) / 3.0;
         let lv = c[i - 1] + tr;
         if !setup || h[i] < lv { continue; }
         let gap = o[i] >= lv;
         let px = if gap { o[i] } else { lv };
-        let st = if stop_pts > 0.0 { lv - stop_pts } else { f64::NEG_INFINITY };
+        let sp = if refp > 0.0 { stop_pts * lv / refp } else { stop_pts }; // #380 on the NSE indices
+        let st = if stop_pts > 0.0 { lv - sp } else { f64::NEG_INFINITY };
         // entry bar: TradeStation path. Gap fill or O->H->L->C: the low comes after the entry; O->L->H->C: only the close does.
         let after = if gap || h[i] - o[i] <= o[i] - l[i] { l[i] } else { c[i] };
         if after <= st { out.push(trade(i, px, i, st, "stop (entry day)", if gap { "open" } else { "stop" })); continue; }
@@ -167,7 +170,7 @@ fn last_friday_apr(y: i64) -> i64 {
 }
 
 /// November-April calendar system (long only).
-fn calendar(x: &Ctx, from: usize, to: usize, stop_pts: f64) -> Vec<Trade> {
+fn calendar(x: &Ctx, from: usize, to: usize, stop_pts: f64, refp: f64, cut: Option<&str>) -> Vec<Trade> {
     let (o, l, c) = (&x.o, &x.l, &x.c);
     let mut out = vec![];
     let mut i = from.max(1);
@@ -177,10 +180,10 @@ fn calendar(x: &Ctx, from: usize, to: usize, stop_pts: f64) -> Vec<Trade> {
         let fm = first_monday_nov(y);
         // first bar on or after the first Monday of November (previous bar before it)
         let is_entry = m == 11 && d >= fm && !(py == y && pm == 11 && pd >= fm);
-        if !is_entry { i += 1; continue; }
+        if !is_entry || cut.is_some_and(|d| x.r[i].date.as_str() < d) { i += 1; continue; }
         let (ey, lf) = (y + 1, last_friday_apr(y + 1));
         let px = o[i];
-        let st = if stop_pts > 0.0 { px - stop_pts } else { f64::NEG_INFINITY };
+        let st = if stop_pts > 0.0 { px - if refp > 0.0 { stop_pts * px / refp } else { stop_pts } } else { f64::NEG_INFINITY };
         let mut j = i;
         let mut done = None;
         loop {
@@ -203,15 +206,22 @@ fn calendar(x: &Ctx, from: usize, to: usize, stop_pts: f64) -> Vec<Trade> {
     out
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+pub fn nse_scaled(id: &str) -> bool { matches!(id, "bab80_novapr_stop10k" | "bab80_novapr_stop5k" | "bab80_shortterm") }
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let stop_pts = { let v = g("stop_usd") / g("pt_usd"); if v.is_finite() && v > 0.0 { v } else { 0.0 } };
+    // #380: the point stops of the three NSE-scaled ids (calendar $10,000 / $5,000 stops, short-term 6.00 points) become a percentage of the entry level on the NSE indices
+    let nse = x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY")) && nse_scaled(id);
+    let (refp, cut) = if nse { (g("ref"), x.r.first().and_then(|r| real_open_from(&r.ticker))) } else { (0.0, None) };
     Some(match id {
         "bab80_daytrade" if g("path") >= 0.5 => daytrade_minutes(x, from, to, g("mom").round().max(1.0) as usize, stop_pts), // intraday wave 2b
-        "bab80_daytrade" | "bab80_shortterm" => momentum(x, from, to, g("mom").round().max(1.0) as usize, stop_pts, id == "bab80_daytrade"),
-        _ => calendar(x, from, to, stop_pts),
+        "bab80_daytrade" | "bab80_shortterm" => momentum(x, from, to, g("mom").round().max(1.0) as usize, stop_pts, id == "bab80_daytrade", refp, cut),
+        _ => calendar(x, from, to, stop_pts, refp, cut),
     })
 }
 
@@ -260,3 +270,29 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Babcock tested the November-April calendar rule on S&P 500 futures (weekly bars, Nov 1982-Apr 1997); runs on indices, ETFs and stocks (US and India) are a declared application, one unit per trade, entry at the open and exit at the close as the book's weekly test implies.",
     basis: "Bruce Babcock, The 80% Solution: S&P Systems (1997), p.16-19",
 };
+
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nse_scaled(def.id),
+    label: "Babcock's 80% Solution stops are printed in S&P futures dollars and points ($10,000 = 20.00, $5,000 = 10.00 and the short-term 6.00 index points at $500 per point, p. 3). Run on the NSE index series only, each point stop scaled by the entry level / 362 (the vault SPX mean close over the book's 1983-1997 window, a labelled reading), a declared adaptation (R4 #340 / #380); opens before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Babcock, The 80% Solution, calendar system pp. 16-19 and short-term system pp. 4-8; independent check authors/conv-1123/k2w/bab80_ref.py",
+};
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: BAB80_CSV=<idx_data.csv> BAB80_OUT=<file> cargo test --release bab80_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn bab80_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("BAB80_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("BAB80_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["bab80_novapr_stop10k", "bab80_novapr_stop5k", "bab80_shortterm"] { for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            } }
+        }
+    }
+}

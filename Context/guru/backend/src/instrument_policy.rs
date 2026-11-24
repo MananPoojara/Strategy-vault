@@ -1600,7 +1600,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // rwtlc_rsix: admitted on SPX only, $7,500 / $50 = 150 E-mini points (lane K74, R4 #277; rwtlc::ADMISSION_SPX)
         // ---- end Richard L. Weissman held
         // ---- Bruce Babcock block (26 Oct 2026, lane B): held Live rules
-        "bab80_novapr_stop10k"|"bab80_novapr_stop5k"=>"Held: fixed dollar stop on the S&P futures contract. These pages of the calendar test add a $10,000 or $5,000 stop per S&P contract, 20 or 10 S&P points at $500 a point (p.16-19); a fixed point amount has no equivalent on other indices, ETFs or stocks. The rule without a stop is live; running the stops on SPX with the book's points is a decision for the user.",
         // ---- end Bruce Babcock held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
@@ -1782,7 +1781,7 @@ mod tests {
             // chbta2: the Chande block admits ch_bta2_ma_stack / ch_bta2_65sma_ravi; ADMISSION_SPX admits the S&P-point rules (lane K58, #202).
             // stkch: the intraday block admits the three first-hour gap cards (intraday_ep::K75, lane K75, 11 Nov 2026).
             // kets, phbt: ADMISSION_I1 admits the Indian applications on NSE F&O data (lane I1, 13 Nov 2026) with their own label.
-            const SHARED:&[&str]=&["kets","phbt","stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge","scachobs","scarmx"]; // scachobs, scarmx: ADMISSION_NSE admits the NSE-breadth twin with its own label (lane C7, R4 #347); radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            const SHARED:&[&str]=&["baboops","kets","phbt","stkch","atm03","as51ts","acbff","chbta2","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm","mlhpt","rwmts","rwtlc","hcta","radge","scachobs","scarmx"]; // scachobs, scarmx: ADMISSION_NSE admits the NSE-breadth twin with its own label (lane C7, R4 #347); radge: ADMISSION_MA220 admits radge_ma220 (lane K74, #277 (2)), the radge_oc_long special line the open-to-close rule; hcta: ADMISSION_GLD admits the April-gold seasonal on GLD (lane K74, #277 (5)), jperson's entry the S&P trades; rwtlc: ADMISSION_SPX admits rwtlc_rsix, SPX only (lane K74, R4 #277), rwmts::ADMISSION the rest; as51ts: Singhal's four minute rules (intraday EP block, lane K70, 8 Nov 2026), the five daily rules by its ADMISSION; mlhpt, rwmts: mlhpt_ma3 and the Weissman ch.5 Nasdaq-100 tables on minute bars (intraday EP block, lane K53, 5 Nov 2026); fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             // R4 #309 (6): ids admitted by a second, newer entry in a book that already had other routes (lanes R2B/R2E, R4 #297):
             // the newer entry must admit only these ids, and the book's other routes must not admit them.
             const NEW_IDS:&[&str]=&["sbma_p73_rsi34","sbma_p73_rsi51_short","sbma_p73_200_rsi65","fejmma_barnes_5pct","kfsc_stoch","ch_ntt_qstick_zero","ch_ntt_cmo_zero","ch_ntt_cmo_ma",crate::books::nkms2::CHAIKIN_ID];
@@ -2238,9 +2237,10 @@ mod tests {
     fn babcock_held_rules_have_plain_card_reasons() {
         use crate::books::{bab80};
         let all:Vec<StrategyDef>=bab80::catalogue().into_iter().collect();
-        for id in ["bab80_novapr_stop10k", "bab80_novapr_stop5k"] {
+        // R4 #380 (lane K2, 24 Nov 2026): the two stop pages and the short-term system are re-opened on the NSE indices (bab80::ADMISSION_NSE)
+        for id in ["bab80_novapr_stop10k", "bab80_novapr_stop5k", "bab80_shortterm"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && held_reason(id).is_none() && bab80::nse_scaled(id) && check(d,"NIFTY 50",false).is_none() && check(d,"NIFTYBANK",false).is_none(),"{id}");
         }
     }
     // ---- end Bruce Babcock held ----
@@ -3612,7 +3612,7 @@ mod tests {
             assert!(!reviewed_cash_rule(&def(id,"chntt")));
             assert!(policy(&d).source_basis.contains("Chande"));
         }
-        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),/* ch_bta2_bottom_fish: admitted SPX only, K58 #202 */("ch_ntt_vidya_cmo","chntt")] {
+        for (id,book) in [/* ch_bta2_65sma_ravi_x14: admitted on the NSE indices (chbta2::ADMISSION_NSE, lane K2, R4 #380) */("ch_ntt_vidya_cmo","chntt")] {
             let d=def(id,book);
             assert!(!reviewed_cash_rule(&d));
             assert!(check(&d,"NIFTY 50",false).is_some());
