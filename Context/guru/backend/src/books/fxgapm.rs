@@ -8,7 +8,7 @@ pub const BOOK: &str = "fxgapm";
 pub const INTRA: &[&str] = &["fxgap_m"];
 pub fn reviewed(id: &str) -> bool { INTRA.contains(&id) }
 
-const NOTE: &str = "[Declared adaptation, R4 #340/#380] The guide trades the EUR/USD weekend gap (pp.8-19; p.13 claims 'accurate almost 90% of the time', no trade list). Run on 1-minute bars of SPX / NIFTY 50 / NIFTYBANK (SPY via the standard minute route), same rule and scaling as fxgap_weekly. Four labelled readings: (1) 1 pip = 0.01 percent of price: the 15-pip gap = 0.15 percent of the previous close, the 150-pip stop = 1.5 percent of the entry; (2) the entry is the open of the week's first minute, the gap is measured against the previous session's daily close, lot 1 exits at that close (a limit: at the level, or at the minute's open when it opens through it) and lot 2 at the last minute's close of the week's last session; (3) the breakeven stop of lot 2 (at the entry) is live from the minute after the retrace minute; (4) a stop and a retrace inside one minute: the stop counts first. Two equal lots, one position; a week with a session lacking cleaned 1-minute bars makes no trade. 'The guide's claim of about 90 percent is not reproduced' (see the gate row).";
+const NOTE: &str = "[Declared adaptation, R4 #340/#380] The guide trades the EUR/USD weekend gap (pp.8-19; p.13 claims 'accurate almost 90% of the time', no trade list). Run on 1-minute bars of SPX / NIFTY 50 / NIFTYBANK (SPY via the standard minute route), same rule and scaling as fxgap_weekly. Four labelled readings: (1) 1 pip = 0.01 percent of price: the 15-pip gap = 0.15 percent of the previous close, the 150-pip stop = 1.5 percent of the entry; (2) the entry is the open of the week's first minute, the gap is measured against the previous session's daily close, lot 1 exits at that close (a limit: at the level, or at the minute's open when it opens through it) and lot 2 at the last minute's close of the week's last session; (3) the breakeven stop of lot 2 (at the entry) is live from the minute after the retrace minute; (4) inside one minute the breakeven level (nearer the open) is tested before the 150-pip stop, and a minute that reaches both the stop and the retrace level (levels on both sides of its open, a range of about 1.65 percent) counts the stop first; the share of such minutes is stated on the gate row. Two equal lots, one position; a week with a session lacking cleaned 1-minute bars makes no trade. The guide's claim of about 90 percent is not reproduced (see the gate row).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "fxgap_m", name: "Forex Gap Play on the 1-minute path: fade a weekly open gap of 15 pips or more, 2 lots, stop 150 pips, lot 1 at the previous close, lot 2 at the week's end (indices)",
@@ -70,14 +70,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     let mins = day.as_ref().unwrap();
                     for (j, b) in mins.iter().enumerate() {
                         if retr_pending { be_on = true; retr_pending = false; }
-                        let stop_hit = if dir > 0.0 { b.l <= st } else { b.h >= st };
-                        let sp = if dir > 0.0 { b.o.min(st) } else { b.o.max(st) };
-                        if stop_hit {
-                            for z in ex.iter_mut().filter(|z| z.is_none()) { *z = Some((d, sp, "150-pip stop")); }
-                            break 'w;
-                        }
+                        // lot 2's breakeven stop sits between the price and the 150-pip stop: a minute that reaches both crosses the breakeven level first
+                        // (nearer the open), so it is tested before the stop; before the retrace only the stop and the retrace level exist (levels on both sides of the open
+                        // in one minute needs a range of about 1.65 percent: the stop is then counted first, the declared convention)
                         if ex[1].is_none() && be_on && (if dir > 0.0 { b.l <= ep } else { b.h >= ep }) {
                             ex[1] = Some((d, if dir > 0.0 { b.o.min(ep) } else { b.o.max(ep) }, "breakeven stop"));
+                        }
+                        let stop_hit = if dir > 0.0 { b.l <= st } else { b.h >= st };
+                        let sp = if dir > 0.0 { b.o.min(st) } else { b.o.max(st) };
+                        if stop_hit && (ex[0].is_none() || ex[1].is_none()) {
+                            for z in ex.iter_mut().filter(|z| z.is_none()) { *z = Some((d, sp, "150-pip stop")); }
+                            break 'w;
                         }
                         if ex[0].is_none() && (if dir > 0.0 { b.h >= pc } else { b.l <= pc }) {
                             ex[0] = Some((d, if dir > 0.0 { b.o.max(pc) } else { b.o.min(pc) }, "previous week's close"));
