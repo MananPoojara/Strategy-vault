@@ -574,8 +574,8 @@ function ShareBody({ d }: { d: ShareInventory }) {
         </Check>}
       </div>
 
-      <h2 className="rp-section">Can it be backtested?</h2>
-      <BacktestPie />
+      <h2 className="rp-section">Where the reading stands</h2>
+      <BacktestPie strategies={c.strategies} backtested={c.backtested} />
 
       {L.top_folders.length > 0 && <>
         <h2 className="rp-section">By folder</h2>
@@ -617,63 +617,64 @@ function ShareBody({ d }: { d: ShareInventory }) {
 interface BtSlice { group: "possible" | "not" | "pending"; key: string; label: string; why: string; count: number; kinds: Record<string, number>; examples: string[]; items_file?: string }
 interface BtData { generated_at: string; total: number; ledger_rows: number; skipped: Record<string, number>; slices: BtSlice[]; method: string }
 const BT_GROUPS = { possible: "Rules and backtest possible", not: "Backtest not possible", pending: "Still to decide" } as const;
-function BacktestPie() {
+/* Done-so-far view (user 24 Nov 2026: "show what we have done till now, no projections, good layout"). Four factual stages, each a
+   group of the ledger's reason slices; nothing here is an estimate. Data and slice lists are unchanged (pie_data.py). */
+const BT_STAGES = [
+  { id: "conv", label: "Converted and backtested", note: "Rules coded in the vault and run; open the strategy pages for results.", keys: ["converted"], tone: "ok" },
+  { id: "norule", label: "Read: no testable rule", note: "Read and decided: no complete entry + exit that can be coded.", keys: ["education", "not_trading", "vendor", "column", "idea", "discretionary", "research", "incomplete"], tone: "bad" },
+  { id: "nodata", label: "Read: needs data we do not hold", note: "Rules exist, but the market data they need is not in the Indian or US data sets.", keys: ["fx", "commodity", "fundamental", "cot", "tick", "other"], tone: "held" },
+  { id: "open", label: "In progress", note: "Being coded, queued to run on Indian data, or still being read. These move into the stages above as lanes finish them.", keys: ["to_code", "india", "shallow", "unread"], tone: "todo" },
+] as const;
+const BT_RELABEL: Record<string, string> = { to_code: "Rules found, being coded", india: "Rules read, queued to run on Indian data", shallow: "Partly read, full read queued", unread: "Not read yet" };
+type Stage = { id: string; label: string; note: string; tone: string; count: number; slices: BtSlice[] };
+function BacktestPie({ strategies, backtested }: { strategies?: number | null; backtested?: number | null }) {
   const pie = useLoad<BtData>(async () => { const r = await fetch("data/research-backtest-pie.json", { cache: "no-store" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }, []);
-  const [hover, setHover] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   if (pie.error) return <Problem error={pie.error} retry={pie.reload} />;
   if (!pie.data) return <p className="rp-loading">Counting…</p>;
   const d = pie.data, total = d.total;
-  const groups = (Object.keys(BT_GROUPS) as BtSlice["group"][]).map(g => {
-    const sl = d.slices.filter(s => s.group === g);
-    return { g, label: BT_GROUPS[g], count: sl.reduce((a, s) => a + s.count, 0), slices: sl };
-  }).filter(x => x.count > 0);
-  let a = 0;
-  const inner = groups.map(x => { const a0 = a; a += (2 * Math.PI * x.count) / Math.max(1, total); return { ...x, a0, a1: a }; });
-  a = 0;
-  const outer = groups.flatMap(x => x.slices.map((s, i) => {
-    const a0 = a; a += (2 * Math.PI * s.count) / Math.max(1, total);
-    return { ...s, a0, a1: a, shade: Math.max(0.3, 1 - i * (0.7 / Math.max(1, x.slices.length - 1))) };
-  }));
-  const hs = outer.find(s => s.key === hover), hg = inner.find(x => x.g === hover);
+  const placed = new Set<string>();
+  const stages: Stage[] = BT_STAGES.map(st => {
+    const sl = d.slices.filter(s => (st.keys as readonly string[]).includes(s.key)).map(s => ({ ...s, label: BT_RELABEL[s.key] ?? s.label })).sort((x, y) => y.count - x.count);
+    sl.forEach(s => placed.add(s.key));
+    return { id: st.id, label: st.label, note: st.note, tone: st.tone, count: sl.reduce((a, s) => a + s.count, 0), slices: sl };
+  });
+  const rest = d.slices.filter(s => !placed.has(s.key));  // a new reason key from the generator lands in "In progress" until it is mapped
+  if (rest.length) { const o = stages[stages.length - 1]; o.slices.push(...rest); o.count += rest.reduce((a, s) => a + s.count, 0); }
+  const done = total - stages[stages.length - 1].count;
   const skipped = Object.entries(d.skipped).map(([k, n]) => `${num(n)} ${k}`).join(", ");
   return (
-    <div className="rp-panel rp-bt">
-      <div className="rp-pie rp-bt-pie">
-        <svg viewBox="0 0 200 200" role="img" aria-label={groups.map(x => `${x.label} ${x.count}`).join(", ")}>
-          {inner.map(x => <path key={x.g} d={arc(100, 100, 36, 58, x.a0, x.a1)} className={`rp-slice bt-${x.g}${hover === x.g ? " on" : ""}`}
-            tabIndex={0} onMouseEnter={() => setHover(x.g)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(x.g)} onBlur={() => setHover(null)}>
-            <title>{`${x.label}: ${num(x.count)} (${pct(x.count, total)})`}</title></path>)}
-          {outer.map(s => <path key={s.key} d={arc(100, 100, 61, 97, s.a0, s.a1)} className={`rp-slice bt-${s.group}${hover === s.key || hover === s.group || open === s.key ? " on" : ""}`}
-            style={{ fillOpacity: s.shade, cursor: "pointer" }} tabIndex={0} onClick={() => setOpen(s.key)} onKeyDown={e => { if (e.key === "Enter") setOpen(s.key); }} onMouseEnter={() => setHover(s.key)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(s.key)} onBlur={() => setHover(null)}>
-            <title>{`${s.label}: ${num(s.count)} (${pct(s.count, total)}). ${s.why}`}</title></path>)}
-          <text x={100} y={97} className="rp-pie-n">{num(hs ? hs.count : hg ? hg.count : total)}</text>
-          <text x={100} y={112} className="rp-pie-l">{hs || hg ? pct((hs ?? hg)!.count, total) : "resources"}</text>
-        </svg>
-        <div className="rp-bt-side">
-          {groups.map(x => (
-            <div key={x.g} className="rp-bt-group">
-              <p className={`rp-bt-h bt-${x.g}`} onMouseEnter={() => setHover(x.g)} onMouseLeave={() => setHover(null)}><i className="rp-swatch" /><b>{x.label}</b> <span>{num(x.count)} · {pct(x.count, total)}</span></p>
-              <ul className="rp-pie-legend">{x.slices.map((s, i) => (
-                <li key={s.key} className={`bt-${s.group}${hover === s.key || open === s.key ? " on" : ""}`} onMouseEnter={() => setHover(s.key)} onMouseLeave={() => setHover(null)}
-                  onClick={() => setOpen(s.key)} role="button" tabIndex={0} onKeyDown={e => { if (e.key === "Enter") setOpen(s.key); }} style={{ cursor: "pointer" }}>
-                  <i style={{ opacity: Math.max(0.3, 1 - i * (0.7 / Math.max(1, x.slices.length - 1))) }} /><span>{s.label}</span><b>{num(s.count)}</b><span className="rp-muted">{pct(s.count, total)}</span>
-                </li>))}</ul>
-            </div>))}
-          <div className={`rp-bt-why ${hs ? `bt-${hs.group}` : "bt-pending"}`} aria-live="polite">
-            {hs ? <>
-              <p className={`rp-bt-k bt-${hs.group}`}>{BT_GROUPS[hs.group]} · {num(hs.count)} ({pct(hs.count, total)})</p>
-              <h3>{hs.label}</h3>
-              <p>{hs.why}</p>
-              <p className="rp-small rp-muted">{Object.entries(hs.kinds).map(([k, n]) => `${num(n)} ${k}`).join(", ")}</p>
-              {hs.examples.length > 0 && <ul className="rp-bt-ex">{hs.examples.map(t => <li key={t}>{t}</li>)}</ul>}
-              <p className="rp-small"><b>Click to list all {num(hs.count)}.</b></p>
-            </> : <p className="rp-muted">Hover a slice or a row to see why and which books; click to list them all.</p>}
-          </div>
-        </div>
+    <div className="rp-panel rp-st">
+      <p className="rp-st-lead"><b>{num(done)}</b> of <b>{num(total)}</b> share resources are read and decided ({pct(done, total)}); <b>{num(total - done)}</b> are still in progress.</p>
+      <div className="rp-st-bar" role="img" aria-label={stages.map(s => `${s.label} ${s.count}`).join(", ")}>
+        {stages.filter(s => s.count > 0).map(s => <span key={s.id} className={`t-${s.tone}`} style={{ flexGrow: s.count }} title={`${s.label}: ${num(s.count)} (${pct(s.count, total)})`} />)}
       </div>
-      {open && (() => { const sl = d.slices.find(x => x.key === open); return sl ? <BtItems key={sl.key} slice={sl} close={() => setOpen(null)} /> : null; })()}
-      <p className="rp-small rp-muted">{num(total)} unique resources (books, papers, articles, magazine issues, courses, code; no videos) from the {num(d.ledger_rows)}-row share ledger; left out: {skipped}. The reasons are a keyword reading of each reviewer's note. Generated {fmtStamp(d.generated_at)}.</p>
+      <div className="rp-st-tiles">
+        {stages.map(s => (
+          <div key={s.id} className={`rp-st-tile t-${s.tone}`}>
+            <p className="rp-st-k"><i />{s.label}</p>
+            <p className="rp-st-n">{num(s.count)} <span>{pct(s.count, total)}</span></p>
+            {s.id === "conv" && strategies != null && <p className="rp-small">{num(strategies)} strategies found in them, {num(backtested ?? 0)} backtested.</p>}
+            <p className="rp-small rp-muted">{s.note}</p>
+          </div>))}
+      </div>
+      <div className="rp-st-groups">
+        {stages.filter(s => s.slices.length > 1 || s.id !== "conv").map(s => (
+          <div key={s.id} className={`rp-st-group t-${s.tone}`}>
+            <h3>{s.label} <span>{num(s.count)}</span></h3>
+            <table className="rp-st-table"><tbody>
+              {s.slices.map(sl => (
+                <tr key={sl.key} className={open === sl.key ? "on" : ""} onClick={() => setOpen(sl.key)} onKeyDown={e => { if (e.key === "Enter") setOpen(sl.key); }} tabIndex={0} title={sl.why}>
+                  <td>{sl.label}</td>
+                  <td className="rp-st-bars"><span style={{ width: `${Math.max(2, (100 * sl.count) / Math.max(1, s.count))}%` }} /></td>
+                  <td className="rp-num">{num(sl.count)}</td>
+                  <td className="rp-num rp-muted">{pct(sl.count, total)}</td>
+                </tr>))}
+            </tbody></table>
+          </div>))}
+      </div>
+      <p className="rp-small rp-muted">Click a row to list every resource in it. Counts are unique resources (books, papers, articles, magazine issues, courses, code; no videos), not strategies: one book can hold many strategies. From the {num(d.ledger_rows)}-row share ledger; left out: {skipped}. Generated {fmtStamp(d.generated_at)}.</p>
+      {open && (() => { const sl = d.slices.find(x => x.key === open); return sl ? <BtItems key={sl.key} slice={{ ...sl, label: BT_RELABEL[sl.key] ?? sl.label }} close={() => setOpen(null)} /> : null; })()}
     </div>
   );
 }
