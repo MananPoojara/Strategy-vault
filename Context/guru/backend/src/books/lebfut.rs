@@ -415,7 +415,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let u = |k: &str| g(k).round().max(1.) as usize;
-    // Strategic's / First Sword's money stop and tick are in the manual's franc points (1 point = 0.01 of the book's price = $1,250); the Norgate &6S quote is 100x smaller (I2, R4 #392)
+    // Strategic's (franc) / First Sword's (yen) money stop and tick are in the manual's points (1 point = 0.01 of the book's price = $1,250; Norgate's quote is 100x smaller, scaling rests on the manual's $1,250 per point and 0.01 tick, not on the vendor file's prices); the Norgate &6S quote is 100x smaller (I2, R4 #392)
     let qs = if matches!((id, crate::futures::ctx_market(x).map(|m| m.sym)), ("lebfut_strategic", Some("&6S")) | ("lebfut_firstsword", Some("&6J"))) { 0.01 } else { 1. };
     let (tick, start) = (g("tick") * qs, from.max(g("mbb").round().max(0.) as usize));
     let mm = schema.iter().any(|d| d.key == "mm").then(|| g("mm") * qs).filter(|m| *m > 0.); // 0 = no money stop (Big Dipper default)
