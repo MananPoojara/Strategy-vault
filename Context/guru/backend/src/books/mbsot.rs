@@ -109,7 +109,7 @@ const IN_DN: &[&str] = &[
     "E|\"Sell short two units on a stop one tick below the outside day low with an ops one point above the outside day's high.\" (p.3-62)",
     "X|\"Take 1/2 profits when SD:5 falls below 30 on the close. Use GTI trailing ops technique to exit other 1/2 of position\" (p.3-62)",
 ];
-const GTI_NOTE: &str = "GTI (revised two-day Gann Trend Indicator, p.4-1..4-18), as coded: two closes in a row against the trend start a counter-move; in an up trend the counter-move's lowest low is registered as a GTI bottom once the price makes a new high above the leg's high by \"one point (2%)\" (p.4-18; p.gti_pct), and the trend turns down when the last GTI bottom is penetrated by the same amount (mirror for down trends; a trend change registers the old leg's extreme). The first two-day move starts the GTI. Stops: \"one point\" = 1 price unit (p.pt), one tick = 0.01 (0.05 for NSE indices). Same-bar entry and stop: stop assumed hit. The book's statistics count patterns reaching an objective / 3x risk, not this exact exit, so there is no trade list to reproduce. Book: stocks and futures; run on the indices (vault convention).";
+const GTI_NOTE: &str = "GTI (revised two-day Gann Trend Indicator, p.4-1..4-18), as coded: two closes in a row against the trend start a counter-move; in an up trend the counter-move's lowest low is registered as a GTI bottom once the price makes a new high above the leg's high by \"one point (2%)\" (p.4-18; p.gti_pct), and the trend turns down when the last GTI bottom is penetrated by the same amount (mirror for down trends; a trend change registers the old leg's extreme). The first two-day move starts the GTI. Stops: \"one point\" = pt_pct = 2% of the level it is applied to (\"one point (2%)\", p.4-18; R4 #380, unscaled: 1 price unit at a price of 50), rounded to the tick, one tick = 0.01 (0.05 for NSE indices). Same-bar entry and stop: stop assumed hit. The book's statistics count patterns reaching an objective / 3x risk, not this exact exit, so there is no trade list to reproduce. Book: stocks and futures; run on the indices (vault convention).";
 
 // ------------------------------------------------------------------ catalogue
 
@@ -329,7 +329,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let pat = |hi: f64, lo: f64| vec![
         p("gti_pct", "GTI: new high / low needed to register a swing or turn the trend, % (\"one point (2%)\")", 2.0, 0.5, 5.0, 0.25),
-        p("pt", "\"One point\" for stop offsets, price units", 1.0, 0.0, 50.0, 0.5),
+        p("pt_pct", "\"One point\" for stop offsets, % of the level it is applied to (\"one point (2%)\", p.4-18, R4 #380; unscaled: 1 price unit at a price of 50), rounded to the tick", 2.0, 0.0, 10.0, 0.25),
         p("sd_hi", "SD:5 overbought level", hi, 60.0, 90.0, 1.0),
         p("sd_lo", "SD:5 oversold level", lo, 10.0, 40.0, 1.0),
     ];
@@ -482,7 +482,7 @@ struct Plan {
 
 /// One position: entry on bar sig+1, initial ops, optional half exit on an SD:5 reading, break-even, GTI trailing ops
 /// (\"as soon as a GTI bottom is registered that is higher than our ops we move our stop to one point below\", p.4-18).
-fn sim(x: &Ctx, sd: &[f64], g: &Gti, pl: &Plan, hi: f64, lo: f64, pt: f64, to: usize) -> Option<Trade> {
+fn sim(x: &Ctx, sd: &[f64], g: &Gti, pl: &Plan, hi: f64, lo: f64, pt: f64, tick: f64, to: usize) -> Option<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let e = pl.sig + 1;
     if e > to { return None }
@@ -500,7 +500,7 @@ fn sim(x: &Ctx, sd: &[f64], g: &Gti, pl: &Plan, hi: f64, lo: f64, pt: f64, to: u
     let hit = |v: f64, lvl: f64| if d > 0.0 { v <= lvl } else { v >= lvl };
     let tighter = |cand: f64, cur: f64| if d > 0.0 { cand > cur } else { cand < cur };
     let reg = |k: usize| if d > 0.0 { g.bot[k] } else { g.top[k] };
-    let off = |v: f64| if d > 0.0 { v - pt } else { v + pt };
+    let off = |v: f64| if d > 0.0 { v - pto(v, pt, tick) } else { v + pto(v, pt, tick) };
     for j in e..=to {
         let first = j == e;
         // a gap through the ops at the open fills at the open (the entry bar's open is the entry itself)
@@ -569,6 +569,9 @@ fn lowest(v: &[f64]) -> f64 { v.iter().cloned().fold(f64::INFINITY, f64::min) }
 fn highest(v: &[f64]) -> f64 { v.iter().cloned().fold(f64::NEG_INFINITY, f64::max) }
 
 /// Pattern on bar i (the completion bar) -> trade plan, or None.
+/// "One point" = pt_pct % of the level it is applied to (the book's "one point (2%)"), rounded to the tick.
+fn pto(level: f64, pt_pct: f64, tick: f64) -> f64 { (level * pt_pct / 100.0 / tick).round() * tick }
+
 fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &[f64], tick: f64, pt: f64, hi: f64, lo: f64) -> Option<Plan> {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     if i < 12 { return None }
@@ -615,19 +618,19 @@ fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &
                 let od = h[i] > h[i - 1] && l[i] < l[i - 1];
                 if up {
                     f(od && c[i] > c[i - 1] && div_lo && g.trend[i] == 1)?;
-                    Some(plan(1.0, Ent::Stop(h[i] + tick), l[i] - pt, Half::Close, false, false, true))
+                    Some(plan(1.0, Ent::Stop(h[i] + tick), l[i] - pto(l[i], pt, tick), Half::Close, false, false, true))
                 } else {
                     f(od && c[i] < c[i - 1] && div_hi && g.trend[i] == -1)?;
-                    Some(plan(-1.0, Ent::Stop(l[i] - tick), h[i] + pt, Half::Close, false, false, true))
+                    Some(plan(-1.0, Ent::Stop(l[i] - tick), h[i] + pto(h[i], pt, tick), Half::Close, false, false, true))
                 }
             } else {
                 let id_ = h[i] < h[i - 1] && l[i] > l[i - 1];
                 if up {
                     f(id_ && div_lo)?;
-                    Some(plan(1.0, Ent::Stop(h[i - 1] + tick), l[i - 1] - pt, Half::Close, false, false, true))
+                    Some(plan(1.0, Ent::Stop(h[i - 1] + tick), l[i - 1] - pto(l[i - 1], pt, tick), Half::Close, false, false, true))
                 } else {
                     f(id_ && div_hi)?;
-                    Some(plan(-1.0, Ent::Stop(l[i - 1] - tick), h[i - 1] + pt, Half::Close, false, false, true))
+                    Some(plan(-1.0, Ent::Stop(l[i - 1] - tick), h[i - 1] + pto(h[i - 1], pt, tick), Half::Close, false, false, true))
                 }
             }
         }
@@ -635,18 +638,23 @@ fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &
     }
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+
 fn run_patterns(id: &str, x: &Ctx, from: usize, to: usize, g_: &dyn Fn(&str) -> f64) -> Vec<Trade> {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     let sd = sd5(h, l, c);
     let g = gti(h, l, c, g_("gti_pct"));
     let (plo, phi) = pivots(h, l);
     let tick = if x.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 };
-    let (pt, hi, lo) = (g_("pt"), g_("sd_hi"), g_("sd_lo"));
+    let (pt, hi, lo) = (g_("pt_pct"), g_("sd_hi"), g_("sd_lo"));
+    let cut = x.r.first().and_then(|r| real_open_from(&r.ticker)); // R4 #380: entries are next opens or stops read against the open; none before the series' real-open start
     let mut out = vec![];
     let mut i = from.max(12);
     while i < to {
+        if cut.is_some_and(|c| x.r[i + 1].date.as_str() < c) { i += 1; continue; }
         if let Some(pl) = pattern(id, x, i, &sd, &g, &plo, &phi, tick, pt, hi, lo) {
-            if let Some(t) = sim(x, &sd, &g, &pl, hi, lo, pt, to) {
+            if let Some(t) = sim(x, &sd, &g, &pl, hi, lo, pt, tick, to) {
                 i = t.exit_i + 1;
                 out.push(t);
                 continue;
@@ -934,9 +942,52 @@ mod tests {
         let sd = vec![50.0, 75.0, 60.0, 50.0];
         let g = Gti { trend: vec![1; 4], bot: vec![f64::NAN; 4], top: vec![f64::NAN; 4] };
         let pl = Plan { dir: 1.0, sig: 0, ent: Ent::Open, stop: 95.0, half: Half::NextOpen, half_ge: true, be: true, trail_now: false };
-        let t = sim(&x, &sd, &g, &pl, 70.0, 30.0, 1.0, 3).unwrap();
+        let t = sim(&x, &sd, &g, &pl, 70.0, 30.0, 1.0, 0.01, 3).unwrap(); // pt = 1 % of the level (R4 #380); this case has no GTI trailing, so the offset is unused
         assert_eq!(t.legs[0].px, 100.0);
         assert_eq!(t.exits, vec![(2, 104.0, 0.5), (3, 100.0, 0.5)]);
         assert!((t.exit_px - 102.0).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: MBSOT_CSV=<idx_data.csv> MBSOT_OUT=<file> cargo test --release mbsot_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn mbsot_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("MBSOT_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("MBSOT_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["mbsot_cgc_sd_gti_up", "mbsot_cgc_sd_gti_dn", "mbsot_rgp_sd_up", "mbsot_rgp_sd_dn", "mbsot_rgp_sd_gti_up", "mbsot_rgp_sd_gti_dn", "mbsot_outside_sd_gti_up", "mbsot_outside_sd_gti_dn", "mbsot_inside_sd_up", "mbsot_inside_sd_dn"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
+    }
+}
+
+/// The ten SD:5 / GTI pattern ids re-opened on the NSE indices (lane K2, R4 #383 / #380): the stop offset "one point" is the printed "(2%)".
+pub fn nse_pattern(id: &str) -> bool { matches!(id, "mbsot_cgc_sd_gti_up" | "mbsot_cgc_sd_gti_dn" | "mbsot_rgp_sd_up" | "mbsot_rgp_sd_dn" | "mbsot_rgp_sd_gti_up" | "mbsot_rgp_sd_gti_dn" | "mbsot_outside_sd_gti_up" | "mbsot_outside_sd_gti_dn" | "mbsot_inside_sd_up" | "mbsot_inside_sd_dn") }
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nse_pattern(def.id),
+    label: "The SD:5 / GTI pattern trades are written for futures and stocks with stop offsets of 'one point', which the book itself prints as 2 percent ('one point (2%)', p. 4-18). Run on the NSE index series only, one point = 2 percent of the level it is applied to rounded to the 0.05 tick, a declared adaptation (R4 #340 / #380); entries before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Mastering the Trade-style system book coded in books/mbsot.rs, patterns pp. 3-20, 3-39 to 3-62, GTI pp. 4-1 to 4-18, SD:5 pp. 1-22; independent check authors/conv-1123/k2w/mbsot_ref.py",
+};
+
+#[cfg(test)]
+mod nse_admission {
+    /// R4 #380 / lead review: ADMISSION_NSE admits exactly the ten SD:5 / GTI pattern ids and no other mbsot id.
+    #[test]
+    fn nse_entry_admits_exactly_the_ten_pattern_ids() {
+        let all = super::catalogue();
+        let n: Vec<&str> = all.iter().filter(|d| (super::ADMISSION_NSE.reviewed)(d)).map(|d| d.id).collect();
+        assert_eq!(n.len(), 10, "{n:?}");
+        assert!(n.iter().all(|i| super::nse_pattern(i)));
+        assert!(all.iter().filter(|d| !super::nse_pattern(d.id)).all(|d| !(super::ADMISSION_NSE.reviewed)(d)));
     }
 }
