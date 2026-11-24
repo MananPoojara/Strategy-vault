@@ -8,7 +8,7 @@ use super::apwms::{a_minus_d, ema_a, moving_total, run_ls, sma, wma, NSE_AD, NYS
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["apsmts_pen", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apsmts_channel",
+pub const REVIEWED: &[&str] = &["apsmts_pen", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apsmts_channel", "apsmts_filter5",
     "apsmts_cats_dogs" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate $COMP / $NYA, independent reference titles-1030/F3w */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
@@ -89,7 +89,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nt("apsmts_swing10wk", "10-week moving average swing system", "Ch 8 · 10-week swing", "discretionary: buy/sell codes rely on \"spikes\", \"shortly following\" and \"a bit of subjectivity\"; \"the 10-week moving average swing system does involve both some judgment\" (p.82). Tables 8-1/8-2 list NYSE trades 1966-79."),
         nt("apsmts_ma_cross", "Basic multiple moving average crossing system (3/10, 3/30, 3/50, 10/30, 10/50)", "Ch 4 · Multiple moving averages", "duplicate of kftsm_hh_cross (shorter simple average crosses the longer, long and short, p.28-30); results only for NYSE, Honeywell and IBM (Tables 4-2, 4-3) - run kftsm_hh_cross with p.fast/p.slow"),
         nt("apsmts_direction", "Change of direction of a moving average (10- and 34-day)", "Ch 6 · Change of direction", "duplicate of kftsm_ma (buy when the simple average turns up, sell when it turns down, p.50-51; run kftsm_ma with p.period=10 or 34); Table 6-1 is NYSE only"),
-        nt("apsmts_filter5", "Five percent filter (quoted from Merrill)", "Ch 9 · Channel reversal", "quoted, not tested by the authors, and \"latest low point\" is not defined (p.99)"),
+        d("apsmts_filter5", "Five percent filter (Merrill, quoted)", "Ch 9 · Channel reversal", "Long/Short", Live, &[],
+            &["E|\"(In the five percent filter system, you buy whenever the market has risen five percent from its most recent low point.\" (p.99)",
+              "X|\"You sell whenever the market has declined by five percent from its most recent high point.)\" (p.99)",
+              "F|Declared readings, 3: (1) the market average is read on closing levels; (2) the most recent low / high point is the lowest / highest close since the previous signal (or since the first bar); (3) the sell reverses to short (a reversal system, as in the channel system on p.100); p.side=1 long only."],
+            "The authors quote Merrill's five percent filter and do not test it (p.99). Declared readings listed on the card. Not source-reproduced: no printed trade table.",
+        ),
         nt("apsmts_excess", "Stock excess bands (+-6 points from the 150-day average), % of stocks above 30-week average, specialist short sales", "Ch 7 · Market excesses", "per-stock levels chosen by eye; % above 30-week: \"simple and effective buy and sell signals could [not] be developed\" (p.69-71)"),
         nt("apsmts_roc", "5-, 12- and 25-day rate-of-change oscillators", "Ch 10 · Market momentum", "\"too sensitive to generate valid buy and sell signals on its own\" (p.114); 12-day rules are expectations (\"expect only ...\", p.120)"),
         nt("apsmts_cycles", "Time cycles and phases", "Ch 11 · Time cycles", "cycle lows and phases are judged on charts (p.125-136)"),
@@ -107,6 +112,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "apsmts_ad_obos" => ("apsmts_ad", "A-D overbought-oversold", "NYSE"),
         "apsmts_ad_obos_nse" => ("apsmts_ad", "A-D overbought-oversold", "NSE"),
         "apsmts_channel" => ("apsmts_channel", "Channel reversal", "Closing levels"),
+        "apsmts_filter5" => ("apsmts_channel", "Channel reversal", "Five percent filter"),
         s if s.starts_with("apsmts_") => ("apsmts_other", "Other Stock Market Trading Systems material", ""),
         _ => return None,
     })
@@ -126,6 +132,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "apsmts_chord" => vec![p("n", "Moving average weeks", 15., 3., 30., 1.), p("chord", "Chord weeks", 3., 1., 20., 1.), p("wd", "Weekly close: 0 Wednesday (book), 1 Friday", 0., 0., 1., 1.), side(1.)],
         "apsmts_ad_obos" | "apsmts_ad_obos_nse" => vec![p("n", "Moving total days", 10., 5., 20., 1.), p("level", "Overbought/oversold line", 2000., 500., 5000., 100.)],
         "apsmts_channel" => vec![p("n", "Reversal period (trading days)", 25., 2., 60., 1.), side(0.)],
+        "apsmts_filter5" => vec![p("pct", "Filter (% from the most recent low / high)", 5., 1., 20., 0.5), side(0.)],
         "apsmts_cats_dogs" => vec![p("a", "Exponential constant", 0.2, 0.05, 0.5, 0.01), p("round", "Round ratio and average to two decimals (p.182, on the book's NYSE Index scale): 1 yes, 0 no", 0., 0., 1., 1.), side(1.)],
         _ => return None,
     })
@@ -335,6 +342,30 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
                     out = Some((0, "A-D total fell back below the overbought line".into()));
                 }
                 out
+            })
+        }
+        "apsmts_filter5" => {
+            let (up, dn) = (1.0 + g("pct") / 100.0, 1.0 - g("pct") / 100.0);
+            let (mut st, mut lo_c, mut hi_c) = (0i8, f64::NAN, f64::NAN);
+            run_ls(x, &daily, from, to, lo, |_, i| {
+                if !fin(c[i]) {
+                    return None;
+                }
+                if lo_c.is_nan() {
+                    (lo_c, hi_c) = (c[i], c[i]);
+                    return None;
+                }
+                if st <= 0 && c[i] >= lo_c * up {
+                    (st, hi_c) = (1, c[i]);
+                    Some((1, "close 5% above the lowest close since the last signal".into()))
+                } else if st >= 0 && c[i] <= hi_c * dn {
+                    (st, lo_c) = (-1, c[i]);
+                    Some((-1, "close 5% below the highest close since the last signal".into()))
+                } else {
+                    lo_c = lo_c.min(c[i]);
+                    hi_c = hi_c.max(c[i]);
+                    None
+                }
             })
         }
         "apsmts_channel" => {
