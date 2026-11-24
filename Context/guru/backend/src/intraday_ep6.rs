@@ -171,7 +171,7 @@ pub const IDS: &[&str] = &[
     // Pierce's NR4 stop entries (books::sprfs nr4_trades_ep6: the entry bar's two stops and the protective stop)
     "sprfs_nr4ib", "sprfs_hvr_nr4ib", "sprfs_hvr_nr4",
     // Chong's pyramid (books::rcmm day_walk), Lien's CCI trade (books::kllien cci_walk)
-    "rcmm_20", "rcmm_55", "klhpt_cci_right",
+    "rcmm_20", "rcmm_55", "klhpt_cci_right", "klhpt_rsi_coaster",
     // part B (lane K63): Lindsay's Trident (stop_target), Dorfman's 3-EMA turn (books::vrsdd manage_ep6)
     "lcttr_minor", "rdhft_ema3_turn",
     // Stridsman's Meander (books::strmm sim_ep6: the stop and the target on one bar)
@@ -285,12 +285,17 @@ const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane
 pub const TICKER308_OK: &[(&str, &[&str])] = &[("tbpk_first_prize", &["SPY", "SPX", "NIFTY 50", "NIFTYBANK", "NIFTY BANK", "QQQ", "NDX",
     "NIFTYIT", "NIFTY IT", "NIFTYMIDCAP100", "NIFTY MIDCAP 100", "NIFTYMIDCAPSELECT", "NIFTY MIDCAP SELECT",
     "AGG", "EEM", "EPP", "EWA", "EWC", "EWD", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWN", "EWO", "EWQ", "EWS", "EWT", "EWU", "EWW",
-    "EWY", "EWZ", "EZA", "EZU", "FXI", "GLD", "IEF", "IEI", "LQD", "SHY", "SMH", "TLH", "VNQ", "XLB", "XLP", "XLU", "XLY"])];
+    "EWY", "EWZ", "EZA", "EZU", "FXI", "GLD", "IEF", "IEI", "LQD", "SHY", "SMH", "TLH", "VNQ", "XLB", "XLP", "XLU", "XLY"]),
+    // lane I2 (R4 #392): Lien's RSI rollercoaster; unresolved (convention or ambiguous) share <= 5% of trades, authors/conv-1123/I2w/share.out
+    ("klhpt_rsi_coaster", &["AGG", "DJI", "EEM", "EFA", "EWA", "EWC", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWO", "EWP", "EWQ", "EWU", "EWW", "EZA", "FXI",
+    "GLD", "IEI", "SPX", "SPY", "TLT", "VNQ", "XLB", "XLF", "XLP", "XLU", "XLV", "NIFTY 50", "NIFTYBANK", "NIFTY BANK", "NIFTYIT", "NIFTYMIDCAP100", "NIFTYMIDCAPSELECT",
+    "NIFTY MIDCAP 100", "NIFTY MIDCAP SELECT", "NIFTY IT"])];
+const RSIC308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane I2): the half target and the stop can both trade on the entry or a held day, which a daily bar cannot order. It is published only on the indices and ETFs where at most 5% of its trades are left to the daily convention (the order-dependent days that real 1-minute files do not settle, measured over the default history). On this ticker more than 5% are (DIA, EPP, EWD, EWG, EWN, EWS, EWT, EWY, EWZ, EZU, IEF, IWM, LQD, MDY, NDX, QQQ, SHY, SMH, TLH, XLE, XLI, XLK, XLY), or it is a single stock: no stock has 1-minute files and the share is not measured per stock, so stocks are refused.";
 const TICKER308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane X2): this rule enters at a stop and its initial stop can trade the same day, which a daily bar cannot order. It is published only on the indices and ETFs where at most 5% of its trades depend on that order (measured over the default history) or where 1-minute files settle it. On this ticker more than 5% do (DIA 3 of 21, DJI 2 of 12, IWM 4 of 29, XLF 4 of 26, XLE 3 of 35, MDY, EFA, EWG, EWP, TLT, XLI, XLK, XLV), or it is a single stock: no stock has 1-minute files and the share is not measured per stock, so stocks are refused.";
 
 /// The hold or minute-window refusal for (id, ticker), if any (instrument_policy::tradable_check_issue).
 pub fn held_note(id: &str, ticker: &str) -> Option<&'static str> {
-    if TICKER308_OK.iter().any(|z| z.0 == id && !z.1.contains(&ticker)) { return Some(TICKER308_NOTE); }
+    if TICKER308_OK.iter().any(|z| z.0 == id && !z.1.contains(&ticker)) { return Some(if id == "klhpt_rsi_coaster" { RSIC308_NOTE } else { TICKER308_NOTE }); }
     if let Some(&(_, n)) = HELD.iter().find(|h| h.0 == id) { return Some(n); }
     let nse = if ticker == "NIFTY BANK" { "NIFTYBANK" } else { ticker };
     if INDIA231.contains(&(id, nse)) { return Some(INDIA231_NOTE); }

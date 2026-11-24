@@ -8,7 +8,7 @@ use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 
 const BOOK: &str = "capttm";
 /// Admitted ids (authors/carnold/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["capttm_ma14_50", "capttm_ma_price_both", "capttm_price_ma"];
+pub const REVIEWED: &[&str] = &["capttm_ma14_50", "capttm_ma_price_both", "capttm_price_ma", "capttm_djua_15w"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -78,11 +78,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "monthly NYSE free credit balances; not in the vault", &[
             "E|\"A buy signal is generated when the current series crosses above the 12-month moving average; a sell signal occurs when the current series crosses below\" (p.128)"],
             "Not coded until the series exists."),
-        nd("capttm_djua_15w", "Dow Jones Utility Average vs its 15-week moving average", "Ch 18 · Sentiment",
-            "weekly Dow Jones Utility Average closes; not in the vault", &[
-            "F|\"When the current readings are above the 15-week moving average, the utility stocks can be classified as being in an uptrend and the stock market also should continue higher.\" (p.129)",
+        StrategyDef { id: "capttm_djua_15w", name: "Dow Jones Utility Average vs its 15-week moving average (trade the S&P 500)", group: "Ch 18 · Sentiment", session: 0, dir: "Long", status: Live,
+            needs_volume: false, needs_vix: false, needs_series: &["DJ_UTILITY"], book: BOOK, claim: None, rules: &[
+            "E|\"When the current readings are above the 15-week moving average, the utility stocks can be classified as being in an uptrend and the stock market also should continue higher.\" (p.129)",
             "X|\"When current readings drop below the 15-week moving average, a sell signal is in order.\" (p.129)"],
-            "No explicit buy wording ('should continue higher'); to settle when the data exists."),
+            notes: "[Adapted: 3 labelled readings, lane K3 24 Nov 2026; unverified] (1) Weekly bars: the last session of each Monday-Friday week on the traded index's calendar; the weekly close of the Dow Jones Utility Average (Norgate $DJU, 1929-2020-09-04) is read on that session, and a week whose last session has no utility close is dropped (not moved to the day before). (2) The 15-week simple average includes the current week. (3) The book gives no buy order ('the stock market also should continue higher') and says 'a sell signal is in order': above the average = long the traded index at that week's close, below = close the long (p.short=1 [non-default] sells short instead of going flat). Convention, not a reading: a close exactly equal to the average holds the current position. Window: the S&P 500 run starts on 1991-05-28 (the first date the engine finds the utility series fully covered; earlier weeks only warm the average) and ends 2020-09-04, where the utility series ends. No results printed." },
         nt("capttm_trin10", "10-day TRIN overbought/oversold", "Ch 20 · Short-term indicators",
             "describes conditions ('an immediate correction can be expected'), no trade or exit rule (p.136)", &[]),
         nt("capttm_monetary", "Net free reserves, money supply, discount rate, fed funds", "Ch 19 · Monetary",
@@ -113,6 +113,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "capttm_ma14_50" => vec![fast, slow, p("short", "Also sell short on the cross below (stop-and-reverse; not the default reading)", 0., 0., 1., 1.)],
         "capttm_ma_price_both" => vec![fast, slow],
         "capttm_price_ma" => vec![p("len", "Moving-average length (days; the book's example 200, shorter-term 10 or 20)", 200., 2., 400., 1.), p("short", "Also sell short on the cross below (stop-and-reverse; not the default reading)", 0., 0., 1., 1.)],
+        "capttm_djua_15w" => vec![p("len", "Moving-average length (weeks; the book says 15)", 15., 2., 60., 1.), p("short", "Sell short below the average instead of going flat (not the default reading)", 0., 0., 1., 1.)],
         _ => vec![],
     })
 }
@@ -125,10 +126,27 @@ fn close(out: &mut Vec<Trade>, cur: &mut Option<Trade>, i: usize, px: f64, why: 
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if id != "capttm_ma14_50" && id != "capttm_ma_price_both" && id != "capttm_price_ma" { return None; }
+    if !reviewed(id) { return None; }
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
+    if id == "capttm_djua_15w" { // lane K3 (24 Nov 2026): weekly Dow Jones Utility Average vs its 15-week average, traded on the index
+        let Some(ut) = x.series("DJ_UTILITY") else { return Some(vec![]) };
+        let to = (0..=to).rev().find(|&i| ut[i].is_finite()).unwrap_or(0); // the utility series ends 2020-09-04: no signal beyond it
+        let wk: Vec<usize> = super::apta::bars(x, 1).into_iter().filter(|&i| i <= to && ut[i].is_finite()).collect();
+        let (len, short) = (g("len").round().max(1.) as usize, g("short") >= 0.5);
+        let mut tgt = vec![0i8; to + 1];
+        let mut pos = 0i8;
+        for k in 0..wk.len() {
+            if k + 1 >= len {
+                let m = wk[k + 1 - len..=k].iter().map(|&i| ut[i]).sum::<f64>() / len as f64;
+                if ut[wk[k]] > m { pos = 1; } else if ut[wk[k]] < m { pos = if short { -1 } else { 0 }; }
+            }
+            let end = wk.get(k + 1).map_or(to, |&j| j - 1);
+            for t in &mut tgt[wk[k]..=end] { *t = pos; }
+        }
+        return Some(super::rbtie::target_trades(x, &tgt, from, to, false, "Utility average vs its 15-week average"));
+    }
     if id == "capttm_price_ma" { // lane H1c (19 Nov 2026): close crossing its simple average, long (optionally stop-and-reverse)
         let m = sma(&x.c, g("len").round().max(1.) as usize);
         let (mut out, mut cur) = (vec![], None::<Trade>);

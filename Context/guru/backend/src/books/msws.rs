@@ -370,8 +370,16 @@ impl<'a> Eng<'a> {
                 argc(2)?;
                 let k = self.k(&a[1])?;
                 let back_by = if name == "ref" { -k } else { k };
-                if back_by < 0.0 { return Err(format!("{name}() with offset {k} reads a future bar")); }
                 if (back_by - back_by.round()).abs() > 1e-9 { return Err("fractional offset".into()); }
+                if back_by < 0.0 {
+                    // Lane K3 (24 Nov 2026, Q399 (b)): a positive offset is causal only inside an enclosing Ref(.,-j) with j >= the offset (net offset
+                    // >= 0), as mslib_ponte_mp prints Ref(Cross(...) AND Ref(C,+1) > C, -1); anywhere else it still reads a future bar and is refused.
+                    let kf = (-back_by).round() as usize;
+                    if self.ref_shift < kf { return Err(format!("{name}() with offset {k} reads a future bar")); }
+                    self.ref_shift -= kf; let s = self.ev(&a[0]); self.ref_shift += kf;
+                    let s = s?; let n = s.len();
+                    return Ok(Rc::new((0..n).map(|i| if i + kf < n { s[i + kf] } else { NAN }).collect()));
+                }
                 let kk = back_by.round() as usize; self.ref_shift += kk; let s = self.ev(&a[0]); self.ref_shift -= kk; back(&s?, kk)
             }
             "mov" => {
@@ -1114,6 +1122,19 @@ mod tests {
             assert_eq!(res.is_some(), s.status == Status::Live, "{}", s.id);
             for t in res.unwrap_or_default() { assert!(t.legs[0].i >= 300 && t.exit_i <= 1499 && t.exit_i >= t.legs[0].i, "{}", s.id); }
         }
+    }
+    /// Q399 (b) net-offset rule: a positive offset is causal only inside an enclosing Ref(.,-j) with j >= the offset.
+    #[test]
+    fn positive_ref_offset_needs_an_enclosing_negative_one() {
+        let r = rows(200);
+        let x = Ctx::new(&r, &r, &[]);
+        let fl = |_: &str| None;
+        let mut ev = |src: &str| Eng::new(&x, &fl).eval_src(src);
+        let v = ev("Ref(Ref(C,+1),-1)").unwrap();
+        assert!((1..200).all(|i| v[i] == x.c[i]));
+        assert!(ev("Ref(C,+1)").is_err());
+        assert!(ev("Ref(Ref(C,+2),-1)").is_err()); // net +1: reads the future
+        assert!(ev("Ref(L,+1)").is_err()); // the mslib_fractal formula stays refused
     }
     #[test]
     fn rsi_crossover_trades_on_closes() {
