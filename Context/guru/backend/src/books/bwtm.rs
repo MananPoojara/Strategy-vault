@@ -28,26 +28,28 @@ pub fn catalogue() -> Vec<StrategyDef> {
         status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules,
         notes: "Close-only channel model; no market, test period or results are given. Would run on daily (weekly = Friday close) index closes if the signal rules were complete.", claim: None };
     vec![
-        d("bwtm_daily", "Black or White · daily close model (Pg 1-2)", DAILY, Status::Live),
+        d("bwtm_daily", "Black or White · daily close model (Pg 1-2)", DAILY, Status::NotTestable(AMB)),
         d("bwtm_weekly", "Black or White · weekly (Friday close) model (pg 3)", WEEKLY, Status::NotTestable(AMB)),
     ]
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     match id {
-        "bwtm_daily" => Some(("bwtm_black_white", "Black or White Trading Model", "Daily closes")),
+        "bwtm_daily" => Some(("bwtm_black_white", "Black or White Trading Model", "Daily · held, 6 readings")),
         "bwtm_weekly" => Some(("bwtm_black_white", "Black or White Trading Model", "Weekly · not testable")),
         _ => None,
     }
 }
-pub const REVIEWED: &[&str] = &["bwtm_daily"];
+/// Held (lead review 24 Nov): after the Pg2 example forced the support/resistance reading, six substantive readings remain (> 4, R4 #339/#343): the code below is kept
+/// for the reference but the id is not admitted. Pg2 prints the exit ("SELL on the Second consecutive lower black close ...").
+pub const REVIEWED: &[&str] = &[];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     reviewed(id).then(|| vec![ParamDef { key: "n", label: "Support / resistance window, closes (document 5)", def: 5., min: 2., max: 20., step: 1. }])
 }
 
 /// Black or White daily close model (Pg 1-2). Readings (lane I2, R4 #339/#343/#348): (1) the most recent support (resistance) of the last
-/// five days = the lowest (highest) of the previous five closes; (2) the change day is day one (printed on Pg1), so the SELL (BUY) is the first
+/// five days = the most recent counter-trend close within five closes (reproduces the Pg2 example 80.90, 80.50, 80.00, 80.30, 80.70); (2) the change day is day one (printed on Pg1), so the SELL (BUY) is the first
 /// close that is the second lower (higher) close of a run counted from the change day, once per colour phase; (3) a SELL reverses into a
 /// short, a BUY into a long (the model is symmetric); (4) signals are traded at the signal close.
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -59,14 +61,19 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut white: Option<bool> = None;
     let (mut run_dn, mut run_up, mut done) = (0usize, 0usize, true);
     let mk = |dir: f64, e: usize, ep: f64, xi: usize, xp: f64, open: bool| Trade { dir, legs: vec![crate::connors::Leg { i: e, px: ep, w: 1.0 }], exit_i: xi, exit_px: xp, reason: if open { "open".into() } else { "reversed on the opposite signal".into() }, entry_kind: "close", signal_i: xi, open, exits: Vec::new() };
-    for t in n.max(from + 1)..=to {
-        let w = &c[t - n..t];
-        let (lo, hi) = (w.iter().copied().fold(f64::INFINITY, f64::min), w.iter().copied().fold(f64::NEG_INFINITY, f64::max));
+    for t in (from + 1).max(2)..=to {
+        // support (in a white channel) = the most recent lower close within the last n closes; resistance (in a black channel) = the most recent higher close
+        let recent = |lower: bool| (t - n.min(t - 1)..t).rev().find(|&j| j >= 1 && if lower { c[j] < c[j - 1] } else { c[j] > c[j - 1] }).map(|j| c[j]);
         let prev = white;
-        if c[t] < lo { white = Some(false); } else if c[t] > hi { white = Some(true); }
-        let changed = white != prev && prev.is_some() || (prev.is_none() && white.is_some());
-        if c[t] < c[t - 1] { run_dn += 1; } else { run_dn = 0; }
-        if c[t] > c[t - 1] { run_up += 1; } else { run_up = 0; }
+        match white {
+            None => { if c[t] > c[t - 1] { white = Some(true); } else if c[t] < c[t - 1] { white = Some(false); } }
+            Some(true) => { if recent(true).is_some_and(|sup| c[t] < sup) { white = Some(false); } }
+            Some(false) => { if recent(false).is_some_and(|res| c[t] > res) { white = Some(true); } }
+        }
+        let changed = white != prev && white.is_some();
+        // an unchanged close takes the colour of the day before and extends that colour's run (Pg2 #4)
+        if c[t] < c[t - 1] { run_dn += 1; run_up = 0; } else if c[t] > c[t - 1] { run_up += 1; run_dn = 0; }
+        else if white == Some(true) { run_up += 1; } else if white == Some(false) { run_dn += 1; }
         if changed { done = false; run_dn = if c[t] < c[t - 1] { 1 } else { 0 }; run_up = if c[t] > c[t - 1] { 1 } else { 0 }; }
         let sig = match white { Some(false) if !done && run_dn >= 2 => -1.0, Some(true) if !done && run_up >= 2 => 1.0, _ => 0.0 };
         if sig != 0.0 {
@@ -83,14 +90,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 mod tests {
     use super::*;
     #[test]
-    fn daily_is_live_weekly_is_not() {
-        let cat = catalogue();
-        assert!(matches!(cat[0].status, Status::Live) && matches!(cat[1].status, Status::NotTestable(_)));
-        let r = super::super::sctraub::tests::bars(1500);
-        let x = Ctx::new(&r, &r, &[]);
-        let t = run("bwtm_daily", &x, 0, r.len() - 1, &Params::new()).unwrap();
-        assert!(t.len() > 5);
-        for w in t.windows(2) { assert_eq!(w[0].exit_i, w[1].legs[0].i); assert!(w[0].dir == -w[1].dir); }
+    fn both_models_held() {
+        assert!(catalogue().iter().all(|d| matches!(d.status, Status::NotTestable(_))));
+        assert!(run("bwtm_daily", &Ctx::new(&[], &[], &[]), 0, 1, &Params::new()).is_none());
     }
     /// hand-run dump for the pandas reference: Q385_CSV=<idx_data.csv> Q385_OUT8=<file> cargo test --release bwtm_dump -- --ignored
     #[test]
@@ -108,9 +110,3 @@ mod tests {
         }
     }
 }
-
-pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
-    reviewed: |def: &crate::connors::StrategyDef| def.book == "bwtm" && reviewed(def.id),
-    label: "The Black or White model gives no market, test period or results; the vault runs the printed daily close rule on the five NSE index series (NIFTY 50, NIFTYBANK, NIFTYIT, NIFTYMIDCAP100, NIFTYMIDCAPSELECT), a declared adaptation, indices only.",
-    basis: "Black or White Trading Model Word documents Pg1-Pg3 (research share USB HDD 2/tRADING KNO-2/Black or White Trading Model/); independent check authors/conv-1123/i2w/bwtm_ref.py",
-};
