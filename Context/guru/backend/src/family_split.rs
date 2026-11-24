@@ -28,6 +28,10 @@ const SPLIT: &[(&str, Mode)] = &[
     ("pbwts_examples", Mode::Each), ("ehmd_indicators", Mode::Each), ("tdnsta_other", Mode::Each), ("mzwws_seasonal", Mode::Each),
     ("wbmdd_other", Mode::Each), ("jbcaf_nt", Mode::Each), ("dgnl_methods", Mode::Each), ("atm00_tsl", Mode::Each), ("gg_nt", Mode::Each),
     ("bstacm_nt", Mode::Each), ("mmft_boucher", Mode::Each), ("lwdg2_tools", Mode::Each),
+    // Q390 re-check batch 1 (R4 #387, lane K4; authors/code-1123/Q390-recheck-1.tsv)
+    ("atm04_counter", Mode::Each), ("atm10", Mode::Each), ("fotol", Mode::Each), ("jb30d_rev", Mode::Each),
+    ("hsta_holiday", Mode::Each), ("lwrsr_other", Mode::Each), ("kfst_other", Mode::Each), ("mkits_fx", Mode::Each),
+    ("mkits_other", Mode::Each), ("rwmts_bands", Mode::Each), ("dmst2_breakout", Mode::Each),
 ];
 
 /// R4 #387 variant check on the 'Each' families: ids that differ only by a number, parameter or version suffix are ONE method.
@@ -38,6 +42,14 @@ const MERGE: &[(&[&str], &str)] = &[
     (&["mstt_tezel_maavpb", "mstt_tezel_regavpb"], "Asymmetric Volatility Price Bands (Tezel)"),
     (&["tdperl_tdma1", "tdperl_tdma2"], "TD Moving Average"),
     (&["tdperl_demarker1", "tdperl_demarker2"], "TD DeMarker"),
+    // Q390 re-check batch 1
+    (&["atm04_vomund", "atm04_fut_vomund"], "Volume-spike screen"),
+    (&["atm10_one_pct", "atm10_fut_one_pct"], "1-percent strategy"),
+    (&["jb30d_rev_buy_fpo", "jb30d_rev_sell_fpo", "jb30d_rev_buy_stop", "jb30d_rev_buy_3pc"], "Reversal-up with trigger"),
+    (&["mkits_euro_ma", "mkits_euro_ma_im"], "Euro classic MA system"),
+    (&["mkits_yen_vol", "mkits_yen_fut_vol"], "Yen"),
+    (&["rwmts_bb_fade", "rwmts_bb200", "rwmts_bb_adx"], "Bollinger band fade with 20-day MA exit"),
+    (&["dmst2_noisechannel", "dmst2_noisechannel2"], "Noise Channel Breakout"),
 ];
 fn merged(id: &str) -> Option<(&'static str, &'static str)> {
     MERGE.iter().find(|(ids, _)| ids.contains(&id)).map(|(ids, name)| (ids[0], *name))
@@ -94,7 +106,7 @@ pub fn apply(id: &str, f: (&'static str, &'static str, &'static str)) -> (&'stat
 mod tests {
     use super::*;
     /// (family, ids in the family, methods after the split) at 24 Nov 2026: update when ids are added to these families.
-    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4)];
+    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4), ("atm04_counter", 6, 5), ("atm10", 6, 5), ("fotol", 6, 6), ("jb30d_rev", 5, 2), ("hsta_holiday", 5, 5), ("lwrsr_other", 5, 5), ("kfst_other", 5, 5), ("mkits_fx", 5, 3), ("mkits_other", 5, 5), ("rwmts_bands", 5, 3), ("dmst2_breakout", 5, 4)];
     #[test]
     fn stems_group_variants() {
         assert_eq!(stem("200 dma violated by 100%"), stem("200 dma violated by 50%"));
@@ -123,11 +135,13 @@ mod tests {
     #[test]
     fn per_family_method_counts() {
         let cat = crate::books::catalogue();
+        let mut bad = vec![];
         for (fam, ids, methods) in PINS {
             let keys: std::collections::HashSet<&str> = cat.iter().filter(|d| crate::books::family_of(d.id).map_or(false, |f| f.0 == *fam)).map(|d| crate::connors::family_of(d.id).0).collect();
             let n = cat.iter().filter(|d| crate::books::family_of(d.id).map_or(false, |f| f.0 == *fam)).count();
-            assert_eq!((n, keys.len()), (*ids, *methods), "family {fam}");
+            if (n, keys.len()) != (*ids, *methods) { bad.push(format!("{fam}: pinned ({ids}, {methods}), found ({n}, {})", keys.len())); }
         }
+        assert!(bad.is_empty(), "family counts drifted: {bad:?}");
     }
     /// Variants that differ only by a number / parameter / version suffix are ONE method (R4 #387 audit: Regress Slope 1-4 etc.).
     #[test]
