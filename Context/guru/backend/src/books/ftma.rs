@@ -6,13 +6,13 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["ftma_ma200_ob"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "A|[Declared readings, lane K2, 3] (1) 'Go flat at the 200 day moving average' is read as an exit at the close of the first day whose close is at or below its 200-day simple moving average of closes (the article does not say close or touch, nor same bar or next open). (2) The moving average and the percentage are on the instrument's own closes (the article's S&P 500 futures run does not say cash or spliced). (3) After an exit, a new entry needs a fresh day that closed the chosen percentage above the average. The percentage is a parameter (the article prints 0, 5, 10 and 15; 10 is the default).";
+const NOTE: &str = "A|[Declared readings, lane K2, 3 counted] The source says: buy on today's open if yesterday closed a chosen percentage above the 200-day moving average, and go flat at the 200-day moving average (read literally: a stop-type exit at the average price, so the exit fills when the day's low touches the average). Unstated, numbered: (1) the 200-day moving average is the simple average of closes, and the level of the exit is the average as of the previous close (the order rests during the day); it fills at that price, or at the open when a bar opens below it; (2) a new entry needs a fresh day that closed the chosen percentage above the average (and the entry test is at or above); (3) the average and the percentage are on the instrument's own closes (the article's S&P 500 futures run does not say cash or spliced; labelled adaptation on SPY and the NSE indices). The percentage is a parameter (the article prints 0, 5, 10 and 15; 10 is the default). Live 200-day near-twins with different rules: capttm_price_ma, apta_ma200_dji, sglr_dow_ma200_band, lydpes_ma200_8pct.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "ftma_ma200_ob", name: "Hill: buy at the open after a close 10% above the 200-day average, go flat at the average", group: "Futures Truth: the 200-day average as an overbought indicator (Stafford Hill)", session: 0, dir: "Long", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "ftma", rules: &[
             "E|\"Buy on today's open if yesterday closed a certain percentage above the 200 day moving average\" (0, 5, 10 and 15 percent tested; S&P 500 futures 1983 to 31 Oct 2009)",
-            "X|\"Liquidating (go flat) at the 200 day moving average\"; commission and slippage 100 USD per trade in the article",
+            "X|\"Liquidating (go flat) at the 200 day moving average\" (read as a stop-type exit at the average, filled when the low touches it); commission and slippage 100 USD per trade in the article",
             NOTE], notes: NOTE, claim: None }]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("ftma", "Hill 200-day overbought", "Close above the 200-day average, flat at it")) }
@@ -27,7 +27,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut pos = Book::new();
     for t in from.max(1)..=to {
         if pos.side() == 0. && ma[t - 1].is_finite() && x.c[t - 1] >= k * ma[t - 1] { pos.enter(1., t, x.o[t], "open"); }
-        if pos.side() != 0. && ma[t].is_finite() && x.c[t] <= ma[t] { pos.exit(t, x.c[t], "close at or below the 200-day average"); }
+        if pos.side() != 0. && ma[t - 1].is_finite() && x.l[t] <= ma[t - 1] { pos.exit(t, x.o[t].min(ma[t - 1]), "touch of the 200-day average"); }
     }
     Some(pos.done(to, x.c[to]))
 }
@@ -59,12 +59,13 @@ mod tests {
         use crate::Row;
         let mut r: Vec<Row> = (0..230).map(|i| { let c = 100.; Row { ticker: "T".into(), date: format!("{i:04}"), open: c, high: c + 1., low: c - 1., close: c, volume: None } }).collect();
         r[220].close = 112.; r[220].high = 113.; // 12% above the 200-day average (about 100.06)
-        r[221].open = 111.; r[221].close = 111.; r[222].close = 90.; r[222].low = 89.;
+        r[221].open = 111.; r[221].close = 111.; r[221].low = 110.; r[221].high = 112.; r[222].high = 111.; r[222].close = 95.; r[222].low = 94.; r[222].open = 110.;
         let x = Ctx::new(&r, &r, &[]);
         let t = run("ftma_ma200_ob", &x, 0, 229, &Params::new()).unwrap();
         assert_eq!(t[0].legs[0].i, 221);
         assert_eq!(t[0].legs[0].px, 111.);
         assert_eq!(t[0].exit_i, 222);
+        assert!((t[0].exit_px - 100.).abs() < 1.0); // filled at the average, not at the close
     }
 }
 
