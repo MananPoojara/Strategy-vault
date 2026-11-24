@@ -338,7 +338,16 @@ pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { 
 /// Analysis (2005) p.59-61 trades the Nasdaq Composite (Triple Momentum, 15-day ROC). Close is real throughout; Norgate's open/high/low
 /// equal the close in the early years, so only these close-only cards are admitted (instrument_policy::check).
 pub const COMP_TICKER: &str = "Nasdaq Composite (Norgate $COMP)";
-pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom"];
+pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom",
+    // lane I2 (R4 #394): Masonson's Nasdaq Composite 1971-2002 moving-average SAR tests (All About Market Timing p.143-145), fills at the close
+    "masmt_ma20_sar", "masmt_ma25w_sar"];
+/// Lane I2 (R4 #394): the S&P 500 index back to 1928 as its own context, from Norgate $SPX (same directory and loader as $NYA / $COMP).
+/// Masonson's All About Market Timing (2004) tests its seasonal and presidential-cycle rules on the S&P 500 1950-1995 (p.100-126); the vault's
+/// own SPX starts in 1983. Norgate's $SPX is the price index (no dividends); its open/high/low equal the close in the early years, so only these
+/// close-fill cards are admitted (instrument_policy::check).
+pub const SPX_TICKER: &str = "S&P 500 Index (Norgate $SPX)";
+pub const SPX_CARDS: &[&str] = &["masmt_ndr_oct1_may3", "masmt_pres_best2", "masmt_pres_worst2", "masmt_vakkur_switch"];
+pub fn load_spx(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$SPX", SPX_TICKER, data) }
 pub fn load_comp(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$COMP", COMP_TICKER, data) }
 fn load_index_ctx(dir: &std::path::Path, file: &str, ticker: &str, data: &mut BTreeMap<String, Vec<Row>>) {
     let Some(rows) = read(&dir.join(format!("{file}.csv"))).filter(|r| !r.is_empty()) else { eprintln!("warning: index {file} context not loaded from {}", dir.display()); return };
