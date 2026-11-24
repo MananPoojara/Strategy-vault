@@ -364,7 +364,7 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
 /// Option rules run on the real monthly-option chain of the underlying (src/options.rs): NSE index options from the
 /// F&O bhavcopy (NIFTY 2001-2026, BANKNIFTY 2005-2026) and SPY/QQQ/IWM options (2008/2011-2025). Each id runs only where
 /// its rule can be priced. Evidence: data-survey/PHASE2-REPORT.md.
-pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol"|"hfm"|"as51ts")}
+pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol"|"hfm"|"as51ts"|"elm98")}
 pub fn options_tickers(id:&str)->&'static [&'static str] {
     match id {
         "otvt_cvr1_sell_puts"=>&["SPY"],
@@ -3263,7 +3263,7 @@ mod tests {
     }
     #[test]
     fn options_p2_admits_option_tickers_only() {
-        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs","foto"=>"fotol","hfm_"=>"hfm","as51"=>"as51ts",_=>"spmt"};
+        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs","foto"=>"fotol","hfm_"=>"hfm","as51"=>"as51ts","elm9"=>"elm98",_=>"spmt"};
         for &id in crate::options::RULES {
             let d=def(id,book(id));
             assert!(options_p2(&d)&&reviewed_cash_rule(&d)&&held_reason(id).is_none(),"{id}");
