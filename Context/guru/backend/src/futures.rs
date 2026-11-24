@@ -339,6 +339,12 @@ pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { 
 pub const COMP_TICKER: &str = "Nasdaq Composite (Norgate $COMP)";
 pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom"];
 pub fn load_comp(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$COMP", COMP_TICKER, data) }
+/// Lane K2 (24 Nov 2026, R4 #394): the long Dow history as its own context, from Norgate $DJI (1896-05-26..2020-09-04, same directory and
+/// loader as $NYA / $COMP). Kirkpatrick's seasonal-pattern book (kpss) prints Dow results from 1900-1938; the vault's own DJI starts
+/// 1970. Closes are real; open/high/low equal the close in the early years, so only the close-to-close kpss cards are admitted.
+pub const DOW_TICKER: &str = "Dow Jones Industrial Average (Norgate $DJI 1896-2020)";
+pub fn dow_card(id: &str) -> bool { id.starts_with("kpss_") && !id.starts_with("kpss_ndx") }
+pub fn load_dow(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$DJI", DOW_TICKER, data) }
 fn load_index_ctx(dir: &std::path::Path, file: &str, ticker: &str, data: &mut BTreeMap<String, Vec<Row>>) {
     let Some(rows) = read(&dir.join(format!("{file}.csv"))).filter(|r| !r.is_empty()) else { eprintln!("warning: index {file} context not loaded from {}", dir.display()); return };
     println!("context {ticker}: {} bars {} -> {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
@@ -982,6 +988,7 @@ mod tests {
         for id in ["apta_breadth_impulse", "apta_breadth_macd"] { assert!(crate::instrument_policy::check(get(id), NYA_TICKER, false).is_none(), "{id}"); assert!(crate::instrument_policy::check(get(id), COMP_TICKER, false).is_some(), "{id}"); }
         for id in ["apta_roc15", "apta_triple_mom"] { assert!(crate::instrument_policy::check(get(id), COMP_TICKER, false).is_none(), "{id}"); assert!(crate::instrument_policy::check(get(id), NYA_TICKER, false).is_some(), "{id}"); }
         assert!(crate::instrument_policy::check(get("apta_ma200_dji"), COMP_TICKER, false).is_some_and(|i| i.note.contains("Nasdaq Composite")));
+        assert!(crate::instrument_policy::check(get("kpss_santa"), DOW_TICKER, false).is_none() && crate::instrument_policy::check(get("apta_roc15"), DOW_TICKER, false).is_some() && crate::instrument_policy::check(get("kpss_ndx_nov_jun"), DOW_TICKER, false).is_some()); // lane K2 (R4 #394)
         assert!(crate::instrument_policy::check(get("apta_roc15"), "SPY", false).is_none()); // existing route unchanged
     }
     #[test]
