@@ -6,7 +6,7 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade, Leg};
 pub const REVIEWED: &[&str] = &["sczon_hotzone"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "A|[Declared readings, lane K2, 3] (1) ATR(10) is the simple mean of the true range over the 10 bars ending at the previous bar (TradeStation AvgTrueRange). (2) Both stops can trade in one day and the article does not give the order inside a daily bar: the stop nearer the open is taken first and only one trade is made per day. (3) The open lies strictly between the two stop levels, so both fill at their levels (no gap-through); no tick rounding. The sell stop is read as a short entry (the code sells at the previous high), and the exit is the day's close.";
+const NOTE: &str = "A|[Declared readings, lane K2, 4] (1) ATR(10) is the simple mean of the true range over the 10 bars ending at the previous bar (TradeStation AvgTrueRange). (2) Both stops can be touched in one day and the article does not give the order inside a daily bar: the stop nearer the open is taken first and the day's other order is cancelled (one trade per day). (3) The sell stop is read as a short entry (the printed code sells at the previous high). (4) No tick rounding of the stop levels. The open lies strictly between the two levels, so both fill at their levels; the exit is the day's close.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "sczon_hotzone", name: "Scorpio Hot Zones: after a key reversal up day, an open between the previous high and +30% of ATR(10): buy stop above, sell stop at the previous high, exit at the close", group: "S&C: Developing Hot Zones (Scorpio, V.20:12)", session: 0, dir: "Long/Short", status: Status::Live,
