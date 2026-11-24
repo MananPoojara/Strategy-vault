@@ -16,14 +16,14 @@ pub fn day(x: &Ctx, i: usize) -> Option<Vec<Bar1>> {
 
 /// Rules converted to the minute path in this wave that run on all four minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK).
 pub const IDS: &[&str] = &["hfm_news", "hfm_news_long", "hfm_news_short", "lgvp_volpat", "mhp_ftse_12_20041015",
-    "mhp_ftse_3_20040804", "putg_inside_day", "utz_zones", "jross40_bars", "outsider_ema9"];
+    "mhp_ftse_3_20040804", "putg_inside_day", "utz_zones", "jross40_bars", "outsider_ema9", "fcarrot_scalper"];
 /// Rules whose levels are the book's fixed S&P points: SPX only (the same SPX-literal reading as wave 1).
 pub const SPX: &[&str] = &["bab80_daytrade", "jbcdt_gap_go", "jkbwts_saidenberg30", "upg18_traders_dream"];
 /// Rules that exist only on the minute path (no daily-bar fallback), so they carry no `path` parameter.
-pub const MINUTE_ONLY: &[&str] = &["utz_zones", "jross40_bars", "outsider_ema9"];
+pub const MINUTE_ONLY: &[&str] = &["utz_zones", "jross40_bars", "outsider_ema9", "fcarrot_scalper"];
 pub fn id(id: &str) -> bool { IDS.contains(&id) || SPX.contains(&id) }
 pub fn spx_id(id: &str) -> bool { SPX.contains(&id) }
-pub fn book(b: &str) -> bool { matches!(b, "hfm" | "lgvp" | "mhpst" | "putg" | "bab80" | "jbcdt" | "jkbwts" | "upg18" | "utz" | "jross40" | "outsider") }
+pub fn book(b: &str) -> bool { matches!(b, "hfm" | "lgvp" | "mhpst" | "putg" | "bab80" | "jbcdt" | "jkbwts" | "upg18" | "utz" | "jross40" | "outsider" | "fcarrot") }
 
 /// Position exits on the minutes from `from`: the first of `levels` touched (stop or limit), at the level or the minute's
 /// open when it opened through it. Two levels in one minute without opening through exactly one [convention]: the level
