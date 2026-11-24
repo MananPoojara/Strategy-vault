@@ -32,6 +32,12 @@ const SPLIT: &[(&str, Mode)] = &[
     ("atm04_counter", Mode::Each), ("atm10", Mode::Each), ("fotol", Mode::Each), ("jb30d_rev", Mode::Each),
     ("hsta_holiday", Mode::Each), ("lwrsr_other", Mode::Each), ("kfst_other", Mode::Each), ("mkits_fx", Mode::Each),
     ("mkits_other", Mode::Each), ("rwmts_bands", Mode::Each), ("dmst2_breakout", Mode::Each),
+    // Q390 re-check batch 2 (R4 #387, lane K4; authors/code-1123/Q390-recheck-2.tsv)
+    ("lwppt", Mode::Each), ("lwmil", Mode::Each), ("lwcot_cot", Mode::Each), ("rwtlc_disc", Mode::Each),
+    ("mahrs_income", Mode::Each), ("lkcpt_barnes", Mode::Each), ("ndbrm_tape", Mode::Each), ("lwad", Mode::Each),
+    ("dvetf_style", Mode::Each), ("jbeft_intraday", Mode::Each), ("jbeft_other", Mode::Each), ("kfgei_weekly", Mode::Each),
+    ("prpr", Mode::Each), ("hkcgdt_nt", Mode::Each), ("atm03_counter", Mode::Each), ("atm04_trend", Mode::Each),
+    ("ftm_km", Mode::Each), ("atmrc", Mode::Each), ("lwnl_patterns", Mode::Each),
 ];
 
 /// R4 #387 variant check on the 'Each' families: ids that differ only by a number, parameter or version suffix are ONE method.
@@ -50,6 +56,20 @@ const MERGE: &[(&[&str], &str)] = &[
     (&["mkits_yen_vol", "mkits_yen_fut_vol"], "Yen"),
     (&["rwmts_bb_fade", "rwmts_bb200", "rwmts_bb_adx"], "Bollinger band fade with 20-day MA exit"),
     (&["dmst2_noisechannel", "dmst2_noisechannel2"], "Noise Channel Breakout"),
+    // Q390 re-check batch 2
+    (&["mahrs_hy_stops", "mahrs_muni_stop"], "High-yield bond fund 3% monthly buy and sell stops"),
+    (&["lkcpt_box10", "lkcpt_box40"], "Box size breakout contra method"),
+    (&["lkcpt_osc", "lkcpt_osc_adx"], "Oscillator method"),
+    (&["ndbrm_trin40", "ndbrm_trin40_nse"], "40-day TRIN"),
+    (&["ndbrm_nasdaq_ad", "ndbrm_ad_line_nse"], "NASDAQ A/D line vs its 25-day moving average"),
+    (&["dvetf_style_index", "dvetf_style_weekly", "dvetf_style_bond", "dvetf_style_intl"], "Style Index rotation"),
+    (&["jbeft_mom_ma", "jbeft_mom_rise_fall"], "MOM/MA system"),
+    (&["kfgei_sys_a", "kfgei_sys_b", "kfgei_world_b"], "System A"),
+    (&["hkcgdt_exits", "hkcgdt_300_200"], "Stop-loss, profit-target, trailing and time-stop menu"),
+    (&["atm03_pullback6", "atm03_pullback_fut"], "Basic pullback buyer"),
+    (&["atm04_monthly_bo", "atm04_55_trail", "atm04_55_simple"], "Monthly breakout"),
+    (&["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit"], "Close-only breakout"),
+    (&["atmrc_swing_stop", "atmrc_swing_trail"], "Stridsman swing pattern"),
 ];
 fn merged(id: &str) -> Option<(&'static str, &'static str)> {
     MERGE.iter().find(|(ids, _)| ids.contains(&id)).map(|(ids, name)| (ids[0], *name))
@@ -106,7 +126,7 @@ pub fn apply(id: &str, f: (&'static str, &'static str, &'static str)) -> (&'stat
 mod tests {
     use super::*;
     /// (family, ids in the family, methods after the split) at 24 Nov 2026: update when ids are added to these families.
-    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4), ("atm04_counter", 6, 5), ("atm10", 6, 5), ("fotol", 6, 6), ("jb30d_rev", 5, 2), ("hsta_holiday", 5, 5), ("lwrsr_other", 5, 5), ("kfst_other", 5, 5), ("mkits_fx", 5, 3), ("mkits_other", 5, 5), ("rwmts_bands", 5, 3), ("dmst2_breakout", 5, 4)];
+    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4), ("atm04_counter", 6, 5), ("atm10", 6, 5), ("fotol", 6, 6), ("jb30d_rev", 5, 2), ("hsta_holiday", 5, 5), ("lwrsr_other", 5, 5), ("kfst_other", 5, 5), ("mkits_fx", 5, 3), ("mkits_other", 5, 5), ("rwmts_bands", 5, 3), ("dmst2_breakout", 5, 4), ("lwppt", 5, 5), ("lwmil", 5, 5), ("lwcot_cot", 5, 5), ("rwtlc_disc", 5, 5), ("mahrs_income", 5, 4), ("lkcpt_barnes", 5, 3), ("ndbrm_tape", 5, 3), ("lwad", 5, 5), ("dvetf_style", 5, 2), ("jbeft_intraday", 5, 4), ("jbeft_other", 5, 5), ("kfgei_weekly", 5, 3), ("prpr", 5, 5), ("hkcgdt_nt", 5, 4), ("atm03_counter", 5, 4), ("atm04_trend", 5, 3), ("ftm_km", 5, 2), ("atmrc", 5, 4), ("lwnl_patterns", 5, 5)];
     #[test]
     fn stems_group_variants() {
         assert_eq!(stem("200 dma violated by 100%"), stem("200 dma violated by 50%"));
