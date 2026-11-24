@@ -1265,7 +1265,9 @@ fn summary_until(st: &State, q: &BTreeMap<String, String>, stop: &AtomicBool) ->
         let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
-        let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
+        // Q32b S1: step_by never reaches the last bar; chain it so the preview ends on the final equity (total_return = last equity - 1)
+        let last = run.equity.len().saturating_sub(1);
+        let spark: Vec<String> = run.equity.iter().enumerate().filter(|(i, _)| i % step == 0 || *i == last).map(|(_, v)| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
         rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, if run.unit_exposure_report.is_some(){unit_exposure_report::stats_json(&financial_stats(ctx,&run,costs))}else{stats_json(&financial_stats(ctx, &run, costs))}, spark.join(","),if run.unit_exposure_report.is_some(){unit_exposure_report::costs_json(costs)}else if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
