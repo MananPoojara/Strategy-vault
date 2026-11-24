@@ -318,6 +318,9 @@ pub struct Ctx<'a> {
 pub struct VixAligned {
     pub first: Option<usize>, // first bar index with VIX data
     pub rsi2: Vec<f64>,
+    pub high: Vec<f64>,  // VIX high on this instrument's bar (NaN when none)
+    pub low: Vec<f64>,   // VIX low on this instrument's bar (NaN when none)
+    pub close: Vec<f64>, // VIX close on this instrument's bar (NaN when the VIX has no bar that day)
     pub up: Vec<usize>,     // consecutive higher VIX closes
     stretch: Vec<f64>,      // VIX close / its 10-day SMA - 1, on the VIX's own bars
     at: Vec<Option<usize>>, // this instrument's bar -> VIX bar on the same date
@@ -348,6 +351,9 @@ impl VixAligned {
         VixAligned {
             first: at.iter().position(Option::is_some).filter(|_| n > 0),
             rsi2: f(&vr),
+            close: f(&c),
+            high: f(&vix.iter().map(|x| x.high).collect::<Vec<f64>>()),
+            low: f(&vix.iter().map(|x| x.low).collect::<Vec<f64>>()),
             up: u(&vu),
             gap_over_close: b(&|k| vix[k].open > vix[k - 1].close),
             gap_over_high: b(&|k| vix[k].open > vix[k - 1].high),
