@@ -3,8 +3,9 @@ import type {AuthorFile} from '../author-files';
 export default {
   order: 2704,
   author: { id: "foreximpact", name: "Forex Impact (Sharptrade Partners)", tagline: "Forex Gap Play · the weekly gap fade runs here on index daily bars as a declared adaptation", books: [
-    { id: "fxgap", sourceIds: [], readerPaths: ["Trading Knowledge I/Jason Fielder - Forex Profit Formula System (forexprofitformula.com)/Gap Trading the Forex/Gap Trading the Forex.pdf"], title: "Forex Gap Play (Forex Impact)", year: 2008, blurb: "Forex Impact · fade a weekly open gap of 15 pips or more with two lots, stop 150 pips, lot 1 out at the previous week's close, lot 2 at the week's end with a breakeven stop after the retrace; runs on NIFTY 50 / NIFTY BANK daily bars (1 pip = 0.01 percent) as a declared adaptation, no trade list printed; results withheld: the stop, the retrace and the breakeven stop fall in the same daily bar too often (needs minute data)" } ,
-    { id: "fxfs", sourceIds: [], readerPaths: ["Trading Knowledge I/Joel Risnick -  First Strike Plus, First Strike Plus & One Night Stand (infiniteyield.com)"], title: "FirstStrike (Joel Rensink)", year: 2008, blurb: "Rensink / Forex Impact folder · weekly OCO: Monday open +/- 50 pips buy/sell stop, 60-pip stop, exit at the Friday close; runs on SPX / NIFTY 50 / NIFTY BANK 1-minute bars (1 pip = 0.01 percent) as a declared adaptation; the file's GBP/USD figures (1,275 trades, 45% winners) are not reproduced on indices" }] },
+    { id: "fxgap", sourceIds: [], readerPaths: ["Trading Knowledge I/Jason Fielder - Forex Profit Formula System (forexprofitformula.com)/Gap Trading the Forex/Gap Trading the Forex.pdf"], title: "Forex Gap Play (Forex Impact)", year: 2008, blurb: "Forex Impact · fade a weekly open gap of 15 pips or more with two lots, stop 150 pips, lot 1 out at the previous week's close, lot 2 at the week's end with a breakeven stop after the retrace; runs on NIFTY 50 / NIFTY BANK daily bars (1 pip = 0.01 percent) as a declared adaptation, no trade list printed; results withheld: the stop, the retrace and the breakeven stop fall in the same daily bar too often (resolved on 1-minute bars by the separate fxgapm card below)" } ,
+    { id: "fxfs", sourceIds: [], readerPaths: ["Trading Knowledge I/Joel Risnick -  First Strike Plus, First Strike Plus & One Night Stand (infiniteyield.com)"], title: "FirstStrike (Joel Rensink)", year: 2008, blurb: "Rensink / Forex Impact folder · weekly OCO: Monday open +/- 50 pips buy/sell stop, 60-pip stop, exit at the Friday close; runs on SPX / NIFTY 50 / NIFTY BANK 1-minute bars (1 pip = 0.01 percent) as a declared adaptation; the file's GBP/USD figures (1,275 trades, 45% winners) are not reproduced on indices" } ,
+    { id: "fxgapm", sourceIds: [], readerPaths: ["Trading Knowledge I/Jason Fielder - Forex Profit Formula System (forexprofitformula.com)/Gap Trading the Forex/Gap Trading the Forex.pdf"], title: "Forex Gap Play on the 1-minute path (Forex Impact)", year: 2008, blurb: "Forex Impact · the Forex Gap Play rule (fade a weekly open gap of 15 pips or more with two lots, stop 150 pips, lot 1 at the previous close, lot 2 at the week's end with a breakeven stop after the retrace) resolved on real 1-minute bars of SPX / NIFTY 50 / NIFTY BANK (1 pip = 0.01 percent) as a declared adaptation; the guide's 'almost 90 percent' claim is not reproduced; unverified" }] },
   identities: ["Forex Impact"],
   profile: {
     "kind": "collection",
@@ -17,5 +18,6 @@ export default {
   sourceReview: {
     "fxgap": {"type":"course_manual","people":["Forex Impact"]},
     "fxfs": {"type":"course_manual","people":["Joel Rensink"]},
+    "fxgapm": {"type":"course_manual","people":["Forex Impact"]},
   },
 } satisfies AuthorFile;
