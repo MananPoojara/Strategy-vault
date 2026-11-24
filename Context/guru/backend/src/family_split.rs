@@ -27,6 +27,9 @@ const SPLIT: &[(&str, Mode)] = &[
     ("rwmts_intraday", Mode::Each), ("hbqts_entries", Mode::Each), ("acbff_extremes", Mode::Each), ("jhbct_charting", Mode::Each), ("tdwb_other", Mode::Each),
     ("vsbrw_other", Mode::Each), ("mslib_misc", Mode::Each), ("mslib_hr", Mode::Each), ("cov_tfm", Mode::Each), ("lwdg2_daytrade", Mode::Each),
     ("putg_studies", Mode::Each), ("jbcdt_intraday", Mode::Each), ("hsta_stats", Mode::Each), ("tdnmtt_other", Mode::Each),
+    // batch 4 (24 Nov 2026)
+    ("mbsot_appel", Mode::Stem), ("strtw_gd", Mode::Stem), ("lkqts_monthly", Mode::Stem), ("sfo_sector", Mode::Stem),
+    ("maetf_alloc", Mode::Each), ("acbff_potpourri", Mode::Each), ("cbpst_acme", Mode::Each), ("svtv2_rules", Mode::Each), ("ramtm_models", Mode::Each), ("jswct_campaign", Mode::Each), ("mslib_combined", Mode::Each), ("jsgsta", Mode::Each), ("ch_ntt_ideas", Mode::Each), ("wdnbp_other", Mode::Each), ("ecqt", Mode::Each), ("lkcpt_krut", Mode::Each), ("acbff_other", Mode::Each), ("mzwws_models", Mode::Each), ("lebws", Mode::Each), ("masmt_ma", Mode::Each), ("mpmm_interp", Mode::Each), ("cgift_nt", Mode::Each), ("dgnl_spi", Mode::Each), ("atm01_tsl", Mode::Each), ("wmny_breadth", Mode::Each), ("kllien_nt", Mode::Each), ("ws5_momentum_windows", Mode::Each), ("msadd_rsi", Mode::Each),
 ];
 
 /// System stem of a strategy name (same normalisation as the audit: authors/conv-1123/Q390-families.tsv).
