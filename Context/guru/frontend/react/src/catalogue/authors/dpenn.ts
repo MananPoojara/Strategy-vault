@@ -3,7 +3,7 @@ import type {AuthorFile} from '../author-files';
 export default {
   order: 1130,
   author: { id: "dpenn", name: "David Penn", tagline: "Technical analyst and trading writer · the BOSO stochastic strategy runs here", books: [
-    { id: "dpstmi", sourceIds: [], readerPaths: ["Trading Knowledge I/David Penn - The Three Secrets to Trading Momentum Indicators/STMI.pdf"], title: "The Three Secrets to Trading Momentum Indicators", year: 2009, blurb: "Penn · BOSO: when the 20-day stochastic breaks above 80 (below 20), buy (sell) on a follow-through close beyond that day's high (low); get out after it slips back out of the zone and a close follows through" }] },
+    { id: "dpstmi", sourceIds: [], readerPaths: ["Trading Knowledge I/David Penn - The Three Secrets to Trading Momentum Indicators/STMI.pdf"], title: "The Three Secrets to Trading Momentum Indicators", year: 2009, blurb: "Penn · BOSO: when the 20-day stochastic breaks above 80 (below 20), buy (sell) on a follow-through close beyond that day's high (low); get out after it slips back out of the zone and a close follows through; Kleinman 2/9/30 EMA trio (Ch.9), five NSE indices" }] },
   identities: ["David Penn"],
   profile: {
     "kind": "person",
