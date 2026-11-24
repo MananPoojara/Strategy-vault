@@ -4,18 +4,14 @@
 //! library/rbhetf/README.md). Page refs are the manual's printed pages.
 //! Lane K3 (24 Nov 2026, Q399 (a), R4 #392): the four scenarios run on the two-leg spread account (crate::spread) on the five NSE indices
 //! the vault holds, with India VIX as the VXO: a declared India adaptation of the book's eight US indices. Gate allowed = NIFTY 50.
-//! The four scenarios are spread trades between eight indices chosen by their ReIS rank each day, scaled in over up to
-//! three VXO triggers. The VXO exists in extra_data (VXO_OHLC), but the system also needs the PHLX Semiconductor,
-//! AMEX Pharmaceutical, AMEX Biotechnology, Russell 2000 and S&P 400 index histories from 1995 and a multi-instrument
-//! spread engine that picks the instrument by cross-sectional rank; the vault runs one instrument at a time.
+//! The four scenarios are spread trades between indices chosen by their ReIS rank each day, scaled in over up to three VXO triggers.
+//! The book trades ETFs but its own tested series are indices (p.4, 47-50), so indices are the book's own series, not a substitute.
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use crate::options::Pos;
 use crate::spread::{self, Leg};
 
 pub const BOOK: &str = "rbhetf";
 
-#[allow(dead_code)]
-const GAP: &str = "needs daily closes of all eight indices of p.14 (S&P 500, Russell 2000, Nasdaq 100, DJIA, PHLX Semiconductor SOX, AMEX Pharmaceutical DRG, AMEX Biotechnology BTK, S&P 400 Midcap; 1995-) to rank ReIS each day, plus a multi-leg long/short engine; the vault has SPX/NDX/DJI only (IWM/SMH/MDY ETFs start 1993-2000; SOX, DRG and BTK are not in the vault) and runs one instrument at a time. VXO OHLC itself is available (extra_data/us/VXO_OHLC, 1986-2021)";
 const NOTE: &str = "[Adapted: India, R4 #340; 4 labelled readings; unverified] The book tested eight US indices (S&P 500, Russell 2000, Nasdaq 100, DJIA, SOX, DRG, BTK, S&P 400) with the VXO; the vault holds five NSE indices and India VIX, so the run is on NIFTY 50 (the S&P 500: 200-day average, the Measured Period and the SPY leg), ranking NIFTY 50, NIFTY BANK, NIFTY IT, NIFTY MIDCAP 100 and NIFTY MIDCAP SELECT, with India VIX as the VXO. Readings: (1) the 10-day average of the VIX closes includes today; the low-VIX test is close <= 0.90 x average or intraday low <= 0.88 x average (the high test mirrored); (2) one third of the portfolio per valid trigger: every later trigger day while the position is open and fewer than three tranches are held adds a tranche, each tranche ranks ReIS afresh on its own day, all tranches exit together; (3) a 3-day look-back that is exactly zero continues the current leg, and a tranche whose lowest-ReIS index is NIFTY 50 itself nets to zero; (4) signals are taken and filled at the close. Conventions: only dates where all five indices and India VIX have a bar count; ties in ReIS go to the first index in the list; a trade's return is the portfolio return, each tranche on its own gross exposure times 1/3. Book method: ReIS (p.16-17): Measured Period starts at 3 on the day the S&P 500's close vs its close 3 days earlier changes sign (upleg/downleg) and grows by 1 each day the leg continues; ReIS = % change of each index over the Measured Period. Scale-in: 1/3 of the portfolio per valid VXO trigger, up to three (p.24-25). Book test: indices (not ETFs), 1/1/1996-6/14/2004: 349 triggers, 65.9% profitable, average +1.24%, max drawdown -8.9%, 17.8% compound annual gain 1/1/95-6/14/04 (p.4, 47-50).";
 
 macro_rules! nd {
@@ -116,7 +112,7 @@ fn episodes(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Result<Vec
         let mut pnl = vec![0.; x_i - e0 + 1];
         for (e, lg) in legs_of.iter() {
             let legs: Vec<Leg> = lg.iter().map(|&(u, q)| Leg { qty: q, px: cl[u], base: cl[u], mult: 1. }).collect();
-            let Some(ps) = spread::position(&legs, 1., *e, x_i, String::new(), false) else { legs_of.clear(); return; };
+            let Some(ps) = spread::position(&legs, 1., *e, x_i, String::new(), false) else { eprintln!("rbhetf: episode entered at bar {e0} dropped, a leg price is missing"); legs_of.clear(); return; };
             for k in *e..=x_i { pnl[k - e0] += ps.pnl[k - *e] / ps.s0 / tiers as f64; }
         }
         out.push(Pos { dir: 1., s0: 1., entry_i: e0, exit_i: x_i, pnl, reason, open });
