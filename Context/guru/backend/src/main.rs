@@ -10,6 +10,7 @@ mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod spread; // lane P1: two-leg spread positions
 mod jobs;
 mod connors;
+mod family_split; // R4 #386 / Q390: family grouping split for families of distinct printed systems
 mod readiness;
 mod gate;
 mod accounting;

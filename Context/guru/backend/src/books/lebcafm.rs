@@ -8,7 +8,7 @@
 use super::apwms::sma;
 use crate::connors::{rsi, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 // Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
-pub const REVIEWED: &[&str] = &["lebcafm_adx_parabolic", "lebcafm_vol_breakout", "lebcafm_babcock_dmi28", "lebcafm_cci_lambert", "lebcafm_et_ma918", "lebcafm_et_channel10", "lebcafm_et_rsi14", "lebcafm_et_cci10", "lebcafm_et_mom10", "lebcafm_et_vol", "lebcafm_xt_benchmark", "lebcafm_xt_rsi_trail", "lebcafm_xt_key_reversal", "lebcafm_xt_hl", "lebcafm_xt_volatility", "lebcafm_st_noprofit"];
+pub const REVIEWED: &[&str] = &["lebcafm_adx_parabolic", "lebcafm_vol_breakout", "lebcafm_babcock_dmi28", "lebcafm_cci_lambert", "lebcafm_et_ma918", "lebcafm_et_channel10", "lebcafm_et_rsi14", "lebcafm_et_cci10", "lebcafm_et_mom10", "lebcafm_et_vol", "lebcafm_xt_benchmark", "lebcafm_xt_rsi_trail", "lebcafm_xt_key_reversal", "lebcafm_xt_hl", "lebcafm_xt_volatility", "lebcafm_st_noprofit", "lebcafm_et_stoch_pop", "lebcafm_xt_stochastic"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "lebcafm";
@@ -21,6 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     };
     let et_note = "Ch. 3 'Testing Entries' p.170-178: \"Set up your trading system and then delete your normal exits. Replace them with a method that automatically exits the market a given number of days after each trade has been entered\" (p.171); \"January 1986 to December 1990 ... Entries were intraday in the case of channel breakout and volatility entries, the next day's open in the case of the others. No stops were used. ... Exits were on the close of days 5, 10, 15, and 20 after entry.\" (p.173). Book results are % winners on D-mark, gold, soybeans, T-bonds and crude oil futures (Tables 1-10), not reproducible on an index. One position at a time; signals during a trade are ignored [book silent]. p.hold = 5 (first of the book's 5/10/15/20).";
     let xt_note = "Ch. 3 'Testing Exits' p.179-185: benchmark = dual moving average reversal (5/10, 5/20, 5/30, 5/40); \"On the opening of the day after the moving averages cross, we will close out one trade and immediately initiate another in the opposite direction ... we will trade only at the crossovers\" (p.179). \"If an exit isn't triggered, the trade will be closed out by the moving average crossover and a new trade initiated on the same date and at the same opening price\" (p.180). Jan 1986-Dec 1990, no stops, no costs. Results (Exhibit 3-14) are futures win% and $ P/L per market. p.slow = 10 (first pair); 20/30/40 are the book's other pairs. Crossover = fast SMA closes above (below) the slow SMA after being at or below (above) it the day before.";
+    let st_note = "Q391 re-open (lane K3, 24 Nov 2026): the stochastic is the book's own Ch.2 'Slow Stochastics' (p.131): fast %K = 100 x (close - lowest low of n days) / (highest high - lowest low), slow %K = its 3-day simple average, %D = the 3-day simple average of slow %K; n = 14 as printed for these two tests (p.174-175, p.184). Readings (labelled, 3): (1) the 3-day smoothing of Ch.2 stands for the slowing the test leaves unstated; (2) in the pop test the advancing / declining line is slow %K, 'advancing through 75' = slow %K at or below 75 the day before and above it on the signal day (declining through 25 mirrored); (3) a cross of %K below %D = %K at or above %D the day before and below it on the signal day (mirrored), the exit then at the next open as in the other armed exit tests. The test protocol is the card family's (entry at the next open and close of day N after entry for the entry tests; dual-SMA reversal benchmark for the exit tests).";
     let mut v = vec![
         make("lebcafm_adx_parabolic", "ADX + Parabolic system ('Another Parabolic Trading System')", "Ch. 2 · Parabolic p.113-114", "Long/Short", Status::Live,
             &["F|\"Use an 18-day ADX and DMI. Do not initiate any trades when the direction of the ADX is downward.\" (rule 1, p.113) ADX rising = ADX today > ADX yesterday.",
@@ -88,14 +89,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v.extend([
         nt("lebcafm_et_stoch_cross", "Entry test · stochastic crossover with boundaries", "Ch. 3 · Testing Entries p.174", "the stochastic length and smoothing are not stated",
             &["E|\"Buy when %K crosses above %D after the oscillator has been below 25. Sell short when %K crosses below %D after having been above 75. Crossovers between 26 and 74 are ignored.\" (p.174)"]),
-        nt("lebcafm_et_stoch_pop", "Entry test · stochastic pop", "Ch. 3 · Testing Entries p.174-175", "which stochastic line and the slowing period are not stated",
-            &["E|\"trend in the direction of a 14-bar slow stochastic that is advancing through the 75 level or declining through the 25 level\" (p.174-175)"]),
+        make("lebcafm_et_stoch_pop", "Entry test · stochastic pop (14-bar slow stochastic through 75 / 25)", "Ch. 3 · Testing Entries p.174-175", "Long/Short", Status::Live,
+            &["E|\"trend in the direction of a 14-bar slow stochastic that is advancing through the 75 level or declining through the 25 level\" (p.174-175). Entry at the next open.",
+              "X|Close of day N after entry (p.173)."], st_note),
         nt("lebcafm_et_random", "Entry test · random entries", "Ch. 3 · Testing Entries p.178", "random generator not specified",
             &["E|Random entries on the open the day after the previous exit (p.178, Table 11)"]),
         nt("lebcafm_xt_parabolic", "Exit test · 5/10-day Parabolic (System Writer)", "Ch. 3 · Testing Exits p.181", "the System Writer Plus Parabolic variant (n-day starting point) is not given as a formula",
             &["X|\"The Parabolic we tested is not calculated exactly according to Wilder's original formula ... allows the user to select the number of days back to scan for the extreme high or low starting point\" (p.181)"]),
-        nt("lebcafm_xt_stochastic", "Exit test · 14-day slow stochastic cross", "Ch. 3 · Testing Exits p.184", "slow-stochastic smoothing periods are not stated",
-            &["X|\"We exit a long when %K crosses below %D, and exit a short when %K crosses above %D. We used a 14-day slow stochastic.\" (p.184)"]),
+        make("lebcafm_xt_stochastic", "Exit test · 14-day slow stochastic cross", "Ch. 3 · Testing Exits p.184", "Long/Short", Status::Live,
+            &["E|Benchmark dual SMA crossover reversal at the next open (p.179).",
+              "X|\"We exit a long when %K crosses below %D, and exit a short when %K crosses above %D. We used a 14-day slow stochastic.\" (p.184). Exit at the next open."], st_note),
         nt("lebcafm_xt_random", "Exit test · random exits", "Ch. 3 · Testing Exits p.184-185", "random number generator not specified",
             &["X|\"a number between 5 and 20 is randomly selected to determine the minimum number of days ... the first close against the direction of the trend will result in the trade being exited on the next day's open\" (p.184-185)"]),
         nd("lebcafm_xt_dollar", "Exit/stop tests · dollar trailing stops, targets, initial and break-even stops", "Ch. 3 · Testing Exits/Stops p.181-188", FUT,
@@ -185,9 +188,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lebcafm_et_channel10" => vec![p("n", "Channel days", 10., 2., 60., 1.), hold],
         "lebcafm_et_rsi14" => vec![p("n", "RSI days", 14., 2., 30., 1.), p("ob", "Overbought (sell above)", 75., 50., 95., 1.), p("os", "Oversold (buy below)", 25., 5., 50., 1.), hold],
         "lebcafm_et_cci10" => vec![p("n", "CCI days", 10., 3., 40., 1.), hold],
+        "lebcafm_et_stoch_pop" => vec![p("n", "Stochastic days (book 14)", 14., 5., 40., 1.), p("sm", "Slow %K smoothing (book Ch.2: 3)", 3., 1., 10., 1.), p("hi", "Advancing through (book 75)", 75., 50., 95., 1.), p("lo", "Declining through (book 25)", 25., 5., 50., 1.), hold],
         "lebcafm_et_mom10" => vec![p("n", "Momentum days", 10., 2., 40., 1.), hold],
         "lebcafm_et_vol" => vec![p("pct", "Percent of ATR (book: 150, 100)", 150., 25., 300., 5.), p("n", "ATR days (book: 10, 5)", 10., 2., 30., 1.), hold],
         "lebcafm_xt_benchmark" | "lebcafm_xt_key_reversal" | "lebcafm_xt_volatility" => { let mut v = vec![]; ma(&mut v); v }
+        "lebcafm_xt_stochastic" => { let mut v = vec![]; ma(&mut v); v.push(p("n", "Stochastic days (book 14)", 14., 5., 40., 1.)); v.push(p("sm", "Slow %K smoothing (book Ch.2: 3)", 3., 1., 10., 1.)); v }
         "lebcafm_xt_rsi_trail" => { let mut v = vec![]; ma(&mut v); v.push(p("rsi_n", "RSI days", 9., 2., 30., 1.)); v }
         "lebcafm_xt_hl" => { let mut v = vec![]; ma(&mut v); v.push(p("n", "Trailing stop days (book: 3, 10)", 3., 1., 30., 1.)); v }
         "lebcafm_st_noprofit" => { let mut v = vec![]; ma(&mut v); v.push(p("days", "Days after entry (book: 1, 5, 10)", 1., 1., 20., 1.)); v }
@@ -206,6 +211,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 // ---------------------------------------------------------------- indicators (local, book definitions)
 
 fn mean_tr(x: &Ctx, n: usize) -> Vec<f64> { sma(&true_range(x.r), n) }
+/// Slow stochastic of Ch.2 p.131: fast %K over n days of highs and lows, slow %K = sm-day SMA of it, %D = 3-day SMA of slow %K.
+fn slow_stoch(x: &Ctx, n: usize, sm: usize) -> (Vec<f64>, Vec<f64>) {
+    let len = x.c.len();
+    let fk: Vec<f64> = (0..len).map(|i| if i + 1 >= n { let a = x.l[i + 1 - n..=i].iter().copied().fold(f64::INFINITY, f64::min); let b = x.h[i + 1 - n..=i].iter().copied().fold(f64::NEG_INFINITY, f64::max); if b > a { 100. * (x.c[i] - a) / (b - a) } else { f64::NAN } } else { f64::NAN }).collect();
+    let sk = sma(&fk, sm);
+    let sd = sma(&sk, 3);
+    (sk, sd)
+}
 
 /// Lambert CCI: (TP - SMA(TP)) / (0.015 x mean |TP - SMA(TP)|) over the same n bars.
 fn cci(x: &Ctx, n: usize) -> Vec<f64> {
@@ -373,6 +386,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mn = if id == "lebcafm_et_mom10" { u("n") } else { 1 };
             let mom: Vec<f64> = (0..x.c.len()).map(|i| if i >= mn { x.c[i] - x.c[i - mn] } else { f64::NAN }).collect();
             let a = if id == "lebcafm_et_vol" { mean_tr(x, u("n")) } else { zero.clone() };
+            let psk = if id == "lebcafm_et_stoch_pop" { slow_stoch(x, u("n"), u("sm")).0 } else { vec![] };
             for i in from.max(1)..=to {
                 let k = i - 1;
                 if let Some(t) = cur.as_ref() {
@@ -403,6 +417,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                             "lebcafm_et_ma918" => cross(&f, &s, k),
                             "lebcafm_et_rsi14" => if r[k] < g("os") { 1 } else if r[k] > g("ob") { -1 } else { 0 },
                             "lebcafm_et_cci10" => cross(&cc, &zero, k),
+                            "lebcafm_et_stoch_pop" => { if k >= 1 && psk[k - 1] <= g("hi") && psk[k] > g("hi") { 1 } else if k >= 1 && psk[k - 1] >= g("lo") && psk[k] < g("lo") { -1 } else { 0 } }
                             _ => cross(&mom, &zero, k),
                         };
                         if d != 0 { cur = Some(open_trade(d as f64, i, x.o[i], k, "open")); }
@@ -415,6 +430,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (f, s) = (sma(&x.c, u("fast")), sma(&x.c, u("slow")));
             let r9 = rsi(&x.c, if id == "lebcafm_xt_rsi_trail" { u("rsi_n") } else { 9 });
             let a5 = mean_tr(x, 5);
+            let (sk, sd) = if id == "lebcafm_xt_stochastic" { slow_stoch(x, u("n"), u("sm")) } else { (vec![], vec![]) };
             let mut armed = false;
             for i in from.max(1)..=to {
                 let k = i - 1;
@@ -424,7 +440,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     cur = Some(open_trade(xo as f64, i, x.o[i], k, "open"));
                     armed = false;
                 } else if armed {
-                    let why = match id { "lebcafm_xt_rsi_trail" => "RSI trail · next open", "lebcafm_xt_key_reversal" => "Key reversal · next open", _ => "No profit after N days · next open" };
+                    let why = match id { "lebcafm_xt_rsi_trail" => "RSI trail · next open", "lebcafm_xt_key_reversal" => "Key reversal · next open", "lebcafm_xt_stochastic" => "Slow stochastic %K crossed %D · next open", _ => "No profit after N days · next open" };
                     if let Some(t) = cur.take() { out.push(close(t, i, x.o[i], k, why)); }
                     armed = false;
                 }
@@ -448,6 +464,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     "lebcafm_xt_key_reversal" => i >= 10 && ((d > 0. && x.h[i] > x.h[i - 10..i].iter().copied().fold(f64::NEG_INFINITY, f64::max) && x.c[i] < x.c[i - 1])
                         || (d < 0. && x.l[i] < x.l[i - 10..i].iter().copied().fold(f64::INFINITY, f64::min) && x.c[i] > x.c[i - 1])),
                     "lebcafm_st_noprofit" => i == ei + u("days") && d * (x.c[i] - epx) <= 0.,
+                    "lebcafm_xt_stochastic" => i >= 1 && ((d > 0. && sk[i - 1] >= sd[i - 1] && sk[i] < sd[i]) || (d < 0. && sk[i - 1] <= sd[i - 1] && sk[i] > sd[i])),
                     _ => false,
                 };
             }
@@ -697,6 +714,24 @@ mod tests {
         assert!(sar[20] < x.l[20]);
         assert_eq!(d[59], -1);
         assert!(sar[59] > x.h[58].min(x.h[59]) - 1e-9);
+    }
+
+    /// hand-run dump for the pandas reference: LC_IDX=<idx_data.csv> LC_OUT=<file> cargo test --release lebcafm_stoch_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn lebcafm_stoch_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("LC_IDX").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("LC_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (tk, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["lebcafm_et_stoch_pop", "lebcafm_xt_stochastic"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{tk},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
     }
 }
 
