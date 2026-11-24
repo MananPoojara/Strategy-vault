@@ -340,7 +340,9 @@ pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { 
 pub const COMP_TICKER: &str = "Nasdaq Composite (Norgate $COMP)";
 pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom",
     // lane I2 (R4 #394): Masonson's Nasdaq Composite 1971-2002 moving-average SAR tests (All About Market Timing p.143-145), fills at the close
-    "masmt_ma20_sar", "masmt_ma25w_sar"];
+    "masmt_ma20_sar", "masmt_ma25w_sar",
+    // lane I2 (R4 #394): Glen Larson, Nasdaq Composite 200-day band (p.294) and Mulloy, MACD-DEMA1 on the weekly Nasdaq Composite (S&C V.12:1 Figure 2)
+    "sglr_nasdaq_ma200_band", "scpmdm_macd"];
 /// Lane I2 (R4 #394): the S&P 500 index back to 1928 as its own context, from Norgate $SPX (same directory and loader as $NYA / $COMP).
 /// Masonson's All About Market Timing (2004) tests its seasonal and presidential-cycle rules on the S&P 500 1950-1995 (p.100-126); the vault's
 /// own SPX starts in 1983. Norgate's $SPX is the price index (no dividends); its open/high/low equal the close in the early years, so only these
