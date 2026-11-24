@@ -651,6 +651,7 @@ function BacktestPie() {
           <text x={100} y={112} className="rp-pie-l">{hs || hg ? pct((hs ?? hg)!.count, total) : "resources"}</text>
         </svg>
         <div className="rp-bt-side">
+          <p className="rp-bt-note">This chart counts source resources (books, articles, courses, code); the strategy counts elsewhere count strategies - one resource can hold many.</p>
           {groups.map(x => (
             <div key={x.g} className="rp-bt-group">
               <p className={`rp-bt-h bt-${x.g}`} onMouseEnter={() => setHover(x.g)} onMouseLeave={() => setHover(null)}><i className="rp-swatch" /><b>{x.label}</b> <span>{num(x.count)} · {pct(x.count, total)}</span></p>
