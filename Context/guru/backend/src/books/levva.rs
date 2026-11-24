@@ -6,7 +6,7 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use std::collections::HashMap;
 
 const ID: &str = "levva_value_area_80";
-const NOTE: &str = "[Declared adaptation, R4 #340 / #380] Larry Levin's Value Area 80% Rule (Secrets of Floor Traders, Rules.pdf pp.11-31, e-mini S&P): the Value Area is the price range holding 70% of yesterday's volume; when the market is outside it (opened outside, or left it during the day) and then is inside it for two consecutive 30-minute brackets it has an 80% chance of filling the whole Value Area: go long as near the bottom of the area as possible (short near the top), with a sell stop a few ticks below the area (printed example: area 68500-68720, stop 68480, 20 index units) and cover at the other side of the area; reversal only with other indicators (not coded). Run on the NIFTY 50 / NIFTYBANK futures 1-minute bars with volume. Labelled readings (4): (1) the Value Area is built from the previous session's 1-minute volume placed at each minute's close price on a 0.05 grid, by the Market Profile rule the book cites (Dalton, Mind Over Markets, not printed in the course): start at the highest-volume price (ties: the lower), repeatedly add the two grid prices above or the two below, whichever pair holds more volume (ties: above), until 70% of the volume is inside; (2) 'in the Value Area for two consecutive brackets' = two consecutive 30-minute bars (from the session open) that close inside the area, after a bar of the same session reached beyond it (the market need not open outside, p.27); the earlier excursion's side (the latest bar closing beyond, else the side its extreme reached) decides long (below) or short (above); the signal is read at the close of the second bar (the book reads it when the next bar opens, not testable on bar data without look-ahead); (3) the order is a limit at the area edge (bottom for a long, top for a short), re-issued each bar while no trade is open, dropped for the day once the other edge has traded; the stop is 20/68,500 of the edge price beyond the area (the book's 20 units on its 68,500 level, ONE scaling rule #380), the target is the other edge; one trade per session; (4) the position is closed at the session's last bar. Previous session = the previous futures day in the file; no signal on a day without one. No profit figure is printed: 'about 8 out of 10'.";
+const NOTE: &str = "[Declared adaptation, R4 #340 / #380 / #339] Larry Levin's Value Area 80% Rule (Secrets of Floor Traders, Rules.pdf pp.11-31, e-mini S&P). FROM THE BOOK: the Value Area is the range of prices where 70% of yesterday's volume took place; when the market is outside it (opened outside, or left it during the day, p.27) and then is inside it for two consecutive 30-minute brackets it has an 80% chance of filling the area; go long as near the bottom of the area as possible (short near the top) with a stop a few ticks beyond it (printed example: area 68500-68720, stop 68480, i.e. 20 index units) and cover at the other edge; reversal only with other indicators (not coded). Run on the NIFTY 50 / NIFTYBANK futures 1-minute bars with volume. The stop uses ONE scaling rule (#380): 20/68,500 of the edge price. UNSTATED DETAILS, four, each a separate choice: (1) the Value Area, which the course does not compute (it defers to Market Profile software), is the central 70% of the previous session's volume: each 1-minute bar's volume is put at its close on the 0.05 price grid and the area runs from the 15th to the 85th cumulative-volume percentile; (2) the two consecutive 30-minute brackets are read on bar closes (two consecutive 30-minute bars from the session open that close inside the area, after an earlier bar of the session reached beyond it) and the signal is acted on at the second bar's close, the book's wording (the next bar opens inside) not being testable on bar data without look-ahead; (3) the entry is a limit at the edge re-issued each bar until it fills or the other edge (the target) has traded, the side being that of the most recent bar to reach beyond the area (a bar reaching both sides gives no signal), and after an exit a fresh two-bracket signal is needed; (4) the position is closed at the last bar of the session. No profit figure is printed: 'about 8 out of 10'.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
@@ -26,27 +26,21 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     (id == ID).then(|| vec![p("va", "Value Area share of volume (percent)", 70., 50., 90., 5.), p("brackets", "Consecutive brackets inside", 2., 1., 4., 1.), p("stop", "Stop beyond the area (units of 68,500)", 20., 5., 100., 5.)])
 }
 
-/// Value Area (low, high) of one session: 1-minute volume at each close on a 0.05 grid, Market Profile expansion from the highest-volume price.
+/// Value Area (low, high) of one session: 1-minute volume at each close on a 0.05 grid; the range holding the central `pct` percent of the volume
+/// (from the (100-pct)/2 to the 100-(100-pct)/2 cumulative-volume percentile).
 pub fn value_area(close: &[f64], vol: &[f64], pct: f64) -> Option<(f64, f64)> {
-    let key: Vec<i64> = close.iter().map(|c| (c * 20.0).round() as i64).collect();
-    let (lo0, hi0) = (*key.iter().min()?, *key.iter().max()?);
-    let mut v = vec![0.0f64; (hi0 - lo0 + 1) as usize];
-    for (k, x) in key.iter().zip(vol) { v[(k - lo0) as usize] += x; }
-    let total: f64 = v.iter().sum();
+    let mut m: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
+    for (c, v) in close.iter().zip(vol) { *m.entry((c * 20.0).round() as i64).or_insert(0.0) += v; }
+    let total: f64 = m.values().sum();
     if total <= 0.0 { return None; }
-    let poc = v.iter().enumerate().fold((0usize, -1.0f64), |b, (i, &x)| if x > b.1 { (i, x) } else { b }).0;
-    let (mut lo, mut hi, mut acc) = (poc, poc, v[poc]);
-    let at = |i: isize| if i >= 0 && (i as usize) < v.len() { v[i as usize] } else { 0.0 };
-    while acc < total * pct / 100.0 && (lo > 0 || hi + 1 < v.len()) {
-        let up = at(hi as isize + 1) + at(hi as isize + 2);
-        let dn = at(lo as isize - 1) + at(lo as isize - 2);
-        if (up >= dn && hi + 1 < v.len()) || lo == 0 {
-            for _ in 0..2 { if hi + 1 < v.len() { hi += 1; acc += v[hi]; } }
-        } else {
-            for _ in 0..2 { if lo > 0 { lo -= 1; acc += v[lo]; } }
-        }
+    let tail = (100.0 - pct) / 200.0 * total;
+    let (mut cum, mut lo, mut hi) = (0.0, None, None);
+    for (&k, &v) in m.iter() {
+        cum += v;
+        if lo.is_none() && cum >= tail - 1e-9 { lo = Some(k); }
+        if hi.is_none() && cum >= total - tail - 1e-9 { hi = Some(k); }
     }
-    Some(((lo0 + lo as i64) as f64 / 20.0, (lo0 + hi as i64) as f64 / 20.0))
+    Some((lo? as f64 / 20.0, hi? as f64 / 20.0))
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -77,11 +71,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         let Some(&(val, vah)) = va.get(&fb.day[k]) else { return };
         let (h, l, c) = (fb.h[k], fb.l[k], fb.c[k]);
-        let entered_today = st.last_entry.map_or(false, |e| fb.date[e] == fb.date[k]);
-        if st.pos == 0 && !entered_today {
-            if l < val || h > vah {
-                last_out = if c < val { -1 } else if c > vah { 1 } else if l < val && h <= vah { -1 } else if h > vah && l >= val { 1 } else if c < (val + vah) / 2.0 { -1 } else { 1 };
-            }
+        if st.pos != 0 { armed = 0; run_in = 0; } // a new trade needs a fresh two-bracket signal
+        if st.pos == 0 {
+            if l < val || h > vah { last_out = if l < val && h > vah { 0 } else if l < val { -1 } else { 1 }; } // a bar reaching both sides is no signal
             run_in = if c >= val && c <= vah { run_in + 1 } else { 0 };
             if armed == 0 && last_out != 0 && run_in >= need { armed = -last_out; } // beyond below -> long (+1)
             // the other edge (the target) already traded: the setup is gone
@@ -100,10 +92,10 @@ mod tests {
     use super::*;
     #[test]
     fn value_area_expands_from_the_busiest_price() {
-        // volume 1 at 10.00, 5 at 10.05, 3 at 10.10, 1 at 10.15: total 10; 70% = 7 -> POC 10.05 (5), the pair above (3+1) beats the pair below (1+0): 9 >= 7
+        // volume 1, 5, 3, 1 at 10.00..10.15: total 10, 15% tail = 1.5: cumulative 1, 6, 9, 10 -> low 10.05 (6 >= 1.5), high 10.10 (9 >= 8.5)
         let c = [10.0, 10.05, 10.1, 10.15];
         let (lo, hi) = value_area(&c, &[1.0, 5.0, 3.0, 1.0], 70.0).unwrap();
-        assert_eq!((lo, hi), (10.05, 10.15));
+        assert_eq!((lo, hi), (10.05, 10.10));
         assert!(value_area(&[], &[], 70.0).is_none());
         assert_eq!(params(ID).unwrap().iter().map(|p| p.def).collect::<Vec<_>>(), vec![70., 2., 20.]);
     }
