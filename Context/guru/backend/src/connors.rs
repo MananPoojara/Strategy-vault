@@ -957,7 +957,7 @@ pub fn family_of(id: &str) -> (&'static str, &'static str, &'static str) {
         "price" => ("price", "Price Strategy", ""),
         "lev_calls" => ("lev_calls", "Leveraged ETF Call Options", ""),
         "busted" => ("busted", "Busted Options Program", ""),
-        _ => crate::books::family_of(id).unwrap_or(("other", "Other", "")),
+        _ => crate::family_split::apply(id, crate::books::family_of(id).unwrap_or(("other", "Other", ""))),
     }
 }
 
