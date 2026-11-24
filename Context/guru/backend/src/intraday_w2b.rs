@@ -19,6 +19,8 @@ pub const IDS: &[&str] = &["hfm_news", "hfm_news_long", "hfm_news_short", "lgvp_
     "mhp_ftse_3_20040804", "putg_inside_day", "utz_zones", "jross40_bars"];
 /// Rules whose levels are the book's fixed S&P points: SPX only (the same SPX-literal reading as wave 1).
 pub const SPX: &[&str] = &["bab80_daytrade", "jbcdt_gap_go", "jkbwts_saidenberg30", "upg18_traders_dream"];
+/// Rules that exist only on the minute path (no daily-bar fallback), so they carry no `path` parameter.
+pub const MINUTE_ONLY: &[&str] = &["utz_zones", "jross40_bars"];
 pub fn id(id: &str) -> bool { IDS.contains(&id) || SPX.contains(&id) }
 pub fn spx_id(id: &str) -> bool { SPX.contains(&id) }
 pub fn book(b: &str) -> bool { matches!(b, "hfm" | "lgvp" | "mhpst" | "putg" | "bab80" | "jbcdt" | "jkbwts" | "upg18" | "utz" | "jross40") }
@@ -112,7 +114,7 @@ mod tests {
             for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), (!spx_id(id) || *t == "SPX") && ip::intraday_tickers(id).contains(t), "{id} {t}"); } // #177
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             assert_eq!(crate::gate::get(id).unwrap().verdict, if crate::intraday_w3::spx_held(id) { "withheld" } else { "unverified" }, "{id}"); // #177b
-            assert!(crate::books::params(id).unwrap().iter().any(|p| p.key == "path" && p.def == 1.0), "{id}");
+            assert!(MINUTE_ONLY.contains(id) || crate::books::params(id).unwrap().iter().any(|p| p.key == "path" && p.def == 1.0), "{id}");
         }
         for id in ["acbff_c40", "acbff_six_q66_v2", "rgc_dow_oc", "ftm2_dm_skew", "tdperl_clop_short", "dgmf_vbo_taylor", "jk36k_jk1_buy_monday"] {
             let d = cat.iter().find(|d| d.id == id).unwrap();

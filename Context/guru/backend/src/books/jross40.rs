@@ -27,8 +27,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     if id != "jross40_bars" { return None; }
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    Some(vec![p("path", "1 = real 1-minute bars (the only path; days without minutes make no trade)", 1., 1., 1., 1.),
-              p("minrange", "Minimum trigger bar range in S&P points at the 1460 reference (printed: 10 ticks = 2.5)", 2.5, 0.5, 6., 0.25),
+    Some(vec![p("minrange", "Minimum trigger bar range in S&P points at the 1460 reference (printed: 10 ticks = 2.5)", 2.5, 0.5, 6., 0.25),
               p("target", "Target distance inside the opposite extreme, S&P points (printed: 8 ticks = 2)", 2., 0.5, 6., 0.25),
               p("stop", "Stop distance from the entry, S&P points (printed: 20 ticks = 5)", 5., 1., 12., 0.25)])
 }
