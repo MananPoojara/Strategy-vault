@@ -149,7 +149,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ctm_sma12" => ("CT twelve-SMA alignment", "SMAs 3-60 in order"),
         _ => return None,
     };
-    let id = REVIEWED.iter().find(|r| **r == id)?;
+    // family names also cover the not-yet-admitted ichimoku card (the catalogue lists it; `reviewed` still gates running it)
+    let id = REVIEWED.iter().chain(["ctm_ichimoku_tk"].iter()).find(|r| **r == id)?;
     Some((*id, f.0, f.1))
 }
 
