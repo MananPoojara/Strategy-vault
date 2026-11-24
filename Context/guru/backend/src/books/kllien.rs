@@ -7,11 +7,13 @@
 use crate::connors::{dmi, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "klhpt";
-pub const REVIEWED: &[&str] = &["klhpt_cci_right", "kldst_perfect_order"];
+pub const REVIEWED: &[&str] = &["klhpt_cci_right", "kldst_perfect_order", "klhpt_rsi_coaster"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const CCI_NOTE: &str = "[Declared readings] CCI(20) = (typical price - its 20-day average) / (0.015 x mean absolute deviation), typical price = (high + low + close) / 3. An excursion is a run of closes with CCI above +100 (short: below -100); the prior peak is the highest (lowest) CCI of the last finished excursion. In a later excursion the first close whose CCI is beyond that peak enters at the close; one entry per excursion. Stop = the signal candle's low (high); risk R = entry - stop (no trade if R = 0). Half is sold at entry + R, the stop on the rest then moves to the entry price from the next bar, and the rest is sold at entry + 2R. Limits fill at the level or a better open; stops at the level or a worse open; when a bar touches both the stop and a target the stop is taken first (the order inside the bar is unknown). Daily bars (the book: daily or hourly).";
 const PO_NOTE: &str = "[Declared readings] Perfect order up = 10-day > 20-day > 50-day > 100-day > 200-day simple averages of closes (down: the reverse). The formation day is the first close in perfect order. If the order holds on that close and the next four, and the 14-day ADX rose on the fourth (\"ADX pointing upward\"; the 'ideally greater than 20' wish is not applied), buy (sell) at the open of the fifth candle after the formation. Stop = the formation day's low (high), from the entry bar. Exit at the next open after the first close when the perfect order no longer holds (the book's examples exit 'when prices open'). One position at a time; a new trade needs a new formation.";
+
+const RSIC_NOTE: &str = "[Declared readings] (1) RSI = Wilder's RSI of the close, length 14 (the text gives only the 70/30 levels). (2) The signal bar is the first close back through the level on a candle of the signal's colour: RSI of the previous close below 30 and RSI of this close above 30 on an up candle (close above open); short mirrored at 70. (3) The swing low (high) for the stop is the lowest low (highest high) from the first bar of the run of RSI readings beyond the level through the signal bar. (4) Entry at the next bar's open (Rule 3; the worked example's same-price re-entry is not used); a trade whose open is already at or beyond the stop has no risk and is not taken. The half target (50% of the entry-to-stop distance) and the stop are walked on the daily bar by the module's convention, the stop first when one bar holds both, resolved on real 1-minute bars where they exist (EP6); the breakeven stop works from the bar after the first target. The rest closes at the close of the bar on which RSI, having been beyond the opposite level since entry, comes back inside it, and a signal on that same bar enters at the next open. Wilder RSI; a signal while a position is open is not taken; a position open at the end is marked open. Book: currency pairs (daily and 4-hour charts); no result table is printed. ";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -30,7 +32,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"4. The initial stop is the low on the day of the initial crossover for longs and the high for shorts. 5. Exit the position when the perfect order no longer holds\" (p.139); same rule in Day Trading the Currency Market (2005) Ch.8"], PO_NOTE),
         nt("klhpt_momo", "Five-minute momo trade", "Part 2 Setup 1 (p.20-26)", "klhpt", pips, &["E|\"Go long 10 pips above the 20-period EMA\" on 5-minute charts with the MACD histogram turning positive"]),
         nt("klhpt_ma_macd", "Moving average MACD combo (50/100 SMA)", "Part 2 Setup 3 (p.34-40)", "klhpt", "pip buffers (10 pips) with no index equivalent; lane D1 pass 2 coded it on the Norgate AUD/GBP/CHF daily futures (0 mismatches against a reference, #240 0%) but the honest count of unstated choices is 5-6 (MACD definition and what 'crosses to positive' means, bar timing: signal at the close and fill at the next open, which price the 10 pips are measured from, whether the five-bar window includes the signal bar, one entry per MACD signal, how the SMA exit fills), over the R4 #339 limit of 4, so it is held (review 9029ba2f)", &["E|\"Once the price has broken above the closest SMA by 10 pips or more, enter long if MACD crosses to positive within the last five bars\""]),
-        nt("klhpt_rsi_coaster", "RSI rollercoaster", "Part 2 Setup 4 (p.41-48)", "klhpt", "the stop is 'the swing low' with no definition of the swing, and the first target is half of that risk", &["E|\"RSI reading must be less than 30. Wait for an up candle to form and close with an RSI reading greater than 30. Go long at market on the open of the next candle\""]),
+        d("klhpt_rsi_coaster", "RSI rollercoaster (RSI 30/70 turn on a reversal candle, half off at 50% of the risk)", "Part 2 Setup 4 (p.41-44)", "klhpt", Live,
+          &["F|\"RSI reading must be less than 30. Wait for an up candle to form and close with an RSI reading greater than 30.\" (Rules for a Long Trade 1-2, p.42); short: RSI greater than 70, then a down candle closing with RSI less than 70",
+            "E|\"Go long at market on the open of the next candle.\" (Rule 3)",
+            "X|\"Place your stop at the swing low. Exit half of the position at 50% of the risk and immediately move the stop on the rest to breakeven. Exit the rest ... stopped at breakeven, or trade first moves into overbought territory marked by RSI readings of greater than 70 and then eventually drops from that zone. As soon as RSI declines below 70, sell at market on the close of that candle.\" (Rules 4-6)"], RSIC_NOTE),
         nt("klhpt_pure_fade", "Pure fade (3/2/1 SD Bollinger bands)", "Part 2 Setup 5 (p.49-55)", "klhpt", "hourly charts only, and the stop is the swing low minus 10 pips", &["E|\"After one candle closes fully within the 2SD-1SD BB zone, buy at market\""]),
         nt("klhpt_memory", "The memory of price", "Part 2 Setup 6 (p.56-67)", "klhpt", "the up-move, its retrace and the swing points are picked on the chart; the position is added to at a loss", &["E|\"Enter short half the position when price rallies to the swing high\""]),
         nt("klhpt_seven_day", "Seven-day extension fade", "Part 2 Setup 7 (p.68-75)", "klhpt", "the stop is the seventh bar's low minus 10 pips; with the 1R/3R targets the risk depends on that pip buffer (user may choose a buffer for stocks and indices)", &["E|\"Look for seven consecutive bars of weakness (where each bar's close is below the prior). Buy at the open of the next bar. Place stop at the low of the seventh bar minus 10 pips\""]),
@@ -62,6 +67,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "klhpt_cci_right" => vec![p("len", "CCI length", 20., 5., 50., 1.), p("level", "CCI zone level", 100., 50., 200., 10.)],
+        "klhpt_rsi_coaster" => vec![p("len", "RSI length", 14., 2., 50., 1.), p("level", "Overbought level (oversold = 100 minus this)", 70., 55., 90., 1.), p("target", "First target as a fraction of the entry-to-stop risk", 0.5, 0.25, 2., 0.25)],
         "kldst_perfect_order" => vec![p("wait", "Candles after the formation before entry", 5., 1., 20., 1.)],
         _ if id.starts_with("klhpt_") || id.starts_with("kldst_") || id.starts_with("kldtc_") => vec![],
         _ => return None,
@@ -188,6 +194,67 @@ fn run_cci_ep6(x: &Ctx, from: usize, to: usize, n: usize, lv: f64, on: bool) -> 
     out
 }
 
+/// Lien's RSI rollercoaster (see RSIC_NOTE). One position; `pend` is a signal of the previous close waiting for the open.
+fn run_rsic(x: &Ctx, from: usize, to: usize, n: usize, hi: f64, tf: f64, on: bool) -> Vec<Trade> {
+    use crate::intraday_ep6::{mark, stop_target, Day};
+    struct P { t: Trade, stop: f64, e: f64, risk: f64, done: bool, ob: bool, ex: Vec<(usize, f64, f64)>, od: Day }
+    let (lo, r) = (100. - hi, crate::connors::rsi(&x.c, n));
+    let (mut out, mut cur, mut pend) = (vec![], None::<P>, None::<(f64, f64, usize)>);
+    let close = |mut p: P, i: usize, px: f64, why: &str, open: bool, out: &mut Vec<Trade>| {
+        let w = if p.done { 0.5 } else { 1. };
+        if p.ex.is_empty() { p.t.exit_px = px; } else { p.ex.push((i, px, w)); p.t.exit_px = p.ex.iter().map(|e| e.1 * e.2).sum::<f64>(); p.t.exits = p.ex; }
+        p.t.exit_i = i; p.t.signal_i = i; p.t.reason = why.into(); p.t.open = open; mark(&mut p.t, p.od); out.push(p.t);
+    };
+    for i in 1..=to {
+        if let Some((d, stop, sig)) = pend.take() {
+            let e = x.o[i];
+            if cur.is_none() && i >= from && (e - stop) * d > 0. {
+                let t = Trade { dir: d, legs: vec![Leg { i, px: e, w: 1. }], exit_i: i, exit_px: e, reason: String::new(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] };
+                cur = Some(P { t, stop, e, risk: (e - stop) * d, done: false, ob: false, ex: vec![], od: Day::Plain });
+            }
+        }
+        if let Some(mut p) = cur.take() {
+            let d = p.t.dir;
+            let (s, tgt) = (if p.done { p.e } else { p.stop }, if p.done { f64::NAN } else { p.e + d * tf * p.risk });
+            let (o, h, l) = (x.o[i], x.h[i], x.l[i]);
+            let conv = || -> Option<(f64, &'static str)> {
+                let why = if p.done { "breakeven stop after the first target" } else { "stop: swing" };
+                if (d > 0. && o <= s) || (d < 0. && o >= s) { return Some((o, why)); }
+                if (d > 0. && l <= s) || (d < 0. && h >= s) { return Some((s, why)); }
+                if tgt.is_finite() && ((d > 0. && o >= tgt) || (d < 0. && o <= tgt)) { return Some((o, "target")); }
+                if tgt.is_finite() && ((d > 0. && h >= tgt) || (d < 0. && l <= tgt)) { return Some((tgt, "target")); }
+                None
+            };
+            let (res, day) = stop_target(x, i, d, s, tgt, on, (if p.done { "breakeven stop after the first target" } else { "stop: swing" }, "target"), conv);
+            p.od = p.od.worst(day);
+            let mut dead = None;
+            match res {
+                Some((px, "target")) => { p.ex.push((i, px, 0.5)); p.done = true; }
+                Some((px, why)) => dead = Some((px, why)),
+                None => {}
+            }
+            if let Some((px, why)) = dead { close(p, i, px, if why.starts_with("stop") { "stop: swing" } else { "breakeven stop after the first target" }, false, &mut out); }
+            else {
+                // close of bar i: RSI back inside the opposite level after having been beyond it
+                let beyond = if d > 0. { r[i] > hi } else { r[i] < lo };
+                let back = r[i].is_finite() && p.ob && if d > 0. { r[i] < hi } else { r[i] > lo };
+                if back { close(p, i, x.c[i], "RSI back inside the opposite level: exit at the close", false, &mut out); }
+                else { if beyond { p.ob = true; } if i == to { close(p, i, x.c[i], "open", true, &mut out); } else { cur = Some(p); } }
+            }
+        }
+        if cur.is_none() && i >= from && i < to && r[i].is_finite() && r[i - 1].is_finite() {
+            let (up, dn) = (r[i - 1] < lo && r[i] > lo && x.c[i] > x.o[i], r[i - 1] > hi && r[i] < hi && x.c[i] < x.o[i]);
+            if up || dn {
+                let mut j = i - 1;
+                while j > 0 && r[j - 1].is_finite() && (if up { r[j - 1] < lo } else { r[j - 1] > hi }) { j -= 1; }
+                let stop = if up { x.l[j..=i].iter().cloned().fold(f64::INFINITY, f64::min) } else { x.h[j..=i].iter().cloned().fold(f64::NEG_INFINITY, f64::max) };
+                pend = Some((if up { 1. } else { -1. }, stop, i));
+            }
+        }
+    }
+    out
+}
+
 fn run_po(x: &Ctx, from: usize, to: usize, wait: usize) -> Vec<Trade> {
     let c = &x.c;
     let m: Vec<Vec<f64>> = [10, 20, 50, 100, 200].iter().map(|&n| sma_exact(c, n)).collect();
@@ -235,6 +302,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
             run_cci_ep6(x, from, to, g("len").round().max(2.) as usize, g("level"), crate::intraday_ep6::on(id, p)) // EP6 (#243, lane K63)
         }
+        "klhpt_rsi_coaster" => {
+            let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) };
+            run_rsic(x, from, to, g("len").round().max(2.) as usize, g("level"), g("target"), crate::intraday_ep6::on(id, p))
+        }
         "kldst_perfect_order" => run_po(x, from, to, g("wait").round().max(1.) as usize),
         _ => return None,
     })
@@ -248,3 +319,36 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Kathy Lien and Boris Schlossberg wrote these setups for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test. Cash-index shorts are hypothetical exposure.",
     basis: "Kathy Lien and Boris Schlossberg, High Probability Trading Setups for the Currency Market (Investopedia 2006), Setup 2 Do the Right Thing (p.27-33); Kathy Lien, Day Trading and Swing Trading the Currency Market (Wiley 2008) Ch.9 Perfect Order (p.138-140), same rule in Day Trading the Currency Market (Wiley 2005) Ch.8. Reviewed in authors/lien/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
 };
+
+#[cfg(test)]
+mod rsic_tests {
+    use super::*;
+    use crate::Row;
+    fn rows(b: &[(f64, f64, f64, f64)]) -> Vec<Row> {
+        b.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2020-{:02}-{:02}", 1 + i / 28, 1 + i % 28), open: o, high: h, low: l, close: c, volume: None }).collect()
+    }
+    #[test]
+    fn rsi_coaster_long_half_off_then_rsi_exit() {
+        // 20 falling bars (RSI far below 30), an up candle that closes back above 30, then a rise to a half target and an overbought turn
+        let mut b = vec![];
+        let mut px = 120.0;
+        for _ in 0..20 { b.push((px, px + 0.2, px - 1.2, px - 1.0)); px -= 1.0; }
+        b.push((px, px + 9.0, px - 0.5, px + 8.0)); px += 8.0; // signal bar, close 108 -> wait: close above its open
+        let sig = b.len() - 1;
+        b.push((px + 0.5, px + 6.0, px + 0.2, px + 5.0)); px += 5.0; // entry bar: opens above the signal close, runs up through the 50% target
+        for _ in 0..12 { b.push((px, px + 3.0, px - 0.2, px + 2.5)); px += 2.5; } // keeps rising: RSI beyond 70
+        b.push((px, px + 0.2, px - 26.0, px - 25.0)); // RSI falls back below 70 on a long down bar (the 15-point stop is not reached)
+        b.push((px - 25.0, px - 24.0, px - 26.0, px - 25.0));
+        let r = rows(&b);
+        let x = Ctx::new(&r, &[], &[]);
+        let t = run_rsic(&x, 1, r.len() - 1, 14, 70.0, 0.5, false);
+        assert!(!t.is_empty(), "a trade");
+        let t0 = &t[0];
+        assert_eq!(t0.dir, 1.0);
+        assert_eq!(t0.legs[0].i, sig + 1);
+        assert_eq!(t0.legs[0].px, b[sig + 1].0, "entry at the next open");
+        assert_eq!(t0.exits.len(), 2, "half at the target, the rest at the RSI exit: {:?} {}", t0.exits, t0.reason);
+        assert!((t0.exits[0].2 - 0.5).abs() < 1e-12 && (t0.exits[1].2 - 0.5).abs() < 1e-12);
+        assert!(t0.reason.starts_with("RSI back inside"), "{}", t0.reason);
+    }
+}
