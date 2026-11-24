@@ -3,7 +3,7 @@
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::tselhs::Book;
 
-pub const REVIEWED: &[&str] = &["cpsit_situational"];
+pub const REVIEWED: &[&str] = &["cpsit_situational", "cpsit_trend2"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "A|[Declared readings, lane K2, 4] (1) The printed code buys 5 S&P points above the signal close; on Indian prices this is the same fraction of price: 0.4% of the signal close (5 points on an S&P near 1,200), a parameter. (2) The printed SetStopLoss(7000) is $7,000 per S&P contract = 28 points at $250 a point, about 2.5% of an S&P near 1,100: read as a 2.5% stop from the entry price (a parameter), checked from the bar after entry and filled at the stop or at a gap open beyond it. (3) The page prints the short side only as 'mirror'; the mirror of the long conditions is used (two up bars, close in the top 20% of its range, open in the bottom 30%). (4) A stop order that the next open gaps through fills at that open. The page text says 'close in the lower 80%' but the code (C < H - .8 x Range, the lowest 20%) controls.";
@@ -13,11 +13,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_volume: false, needs_vix: false, needs_series: &[], book: "cpsit", rules: &[
             "E|Long: C < O and C[1] < O[1] and C < H - .8 x Range and O > L + .7 x Range and the same on the previous bar (C[1] < H[1] - .8 x Range[1], O[1] > L[1] + .7 x Range[1]): Buy next bar at C + 5 Stop. Short: the mirror, Sell Short next bar at C - 5 Stop",
             "X|If MarketPosition = 1 and PositionProfit > 0 then Sell this bar on close (short: cover on the first profitable close, including the entry bar); the page also sets a $7,000 stop (read as 2.5%, reading 2)",
-            NOTE], notes: NOTE, claim: None }]
+            NOTE], notes: NOTE, claim: None },
+    StrategyDef { id: "cpsit_trend2", name: "Capstone Trend Swing 2: strong-close bar, buy next open, 10 x 12-bar average range stop, exit at a later close whose open is beyond the entry", group: "Capstone situational system (EasyLanguage on the page)", session: 0, dir: "Long/Short", status: Status::Live,
+        needs_volume: false, needs_vix: false, needs_series: &[], book: "cpsit", rules: &[
+            "E|Long signal bar: (C - O) >= 0.3 x (H - L) and (H - C) <= 0.3 x (H - L) and (O - L) <= 0.3 x (H - L); buy at the next bar. Short: (O - C) >= 0.3R, (H - O) <= 0.3R, (C - L) <= 0.3R (Trend2.txt in Code.rar)",
+            "X|Initial stop 10 x Average(Range, 12) points from the entry; exit on a later bar at its close if that bar's open is beyond the entry price (above for longs, below for shorts) and the bar is not again a signal bar of the same side",
+            NOTE2], notes: NOTE2, claim: None }]
 }
+const NOTE2: &str = "A|[Declared readings, lane K2, 4] (1) The next-bar market order is filled at the next open. (2) The close exit is evaluated from the bar after the entry bar. (3) The short side is the exact mirror of the long conditions as printed in the code. (4) The stop fills at the stop price, or at the open when a bar gaps through it. Signals while a position is open are ignored.";
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("cpsit", "Capstone situational system", "Buy stop after two weak closes")) }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    reviewed(id).then(|| vec![ParamDef { key: "stop_pct", label: "Protective stop, % of entry ($7,000 / $250 per point = 28 points, about 2.5% of an S&P near 1,100; 0 = none)", def: 2.5, min: 0., max: 10., step: 0.25 }, ParamDef { key: "off_pct", label: "Stop offset above/below the signal close, % (5 S&P points on about 1,200 = 0.4)", def: 0.4, min: 0., max: 2., step: 0.05 }])
+    (id == "cpsit_situational").then(|| vec![ParamDef { key: "stop_pct", label: "Protective stop, % of entry ($7,000 / $250 per point = 28 points, about 2.5% of an S&P near 1,100; 0 = none)", def: 2.5, min: 0., max: 10., step: 0.25 }, ParamDef { key: "off_pct", label: "Stop offset above/below the signal close, % (5 S&P points on about 1,200 = 0.4)", def: 0.4, min: 0., max: 2., step: 0.05 }])
 }
 
 /// +1 long signal, -1 short signal, 0 none, on bar i (needs bar i-1).
@@ -31,8 +37,36 @@ pub fn signal(x: &Ctx, i: usize) -> i8 {
     if lo(o0, c0, h0, l0, r0) && lo(o1, c1, h1, l1, r1) { 1 } else if hi(o0, c0, h0, l0, r0) && hi(o1, c1, h1, l1, r1) { -1 } else { 0 }
 }
 
+/// Trend Swing 2 signal on bar i: +1 / -1 / 0.
+pub fn t2_signal(x: &Ctx, i: usize) -> i8 {
+    let r = x.h[i] - x.l[i];
+    if (x.c[i] - x.o[i]) >= 0.3 * r && (x.h[i] - x.c[i]) <= 0.3 * r && (x.o[i] - x.l[i]) <= 0.3 * r && r > 0. { 1 }
+    else if (x.o[i] - x.c[i]) >= 0.3 * r && (x.h[i] - x.o[i]) <= 0.3 * r && (x.c[i] - x.l[i]) <= 0.3 * r && r > 0. { -1 } else { 0 }
+}
+
+fn run_t2(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    let mut pos = Book::new();
+    let mut stop_pts = 0.0;
+    for t in from..=to {
+        if pos.side() == 0. && t > from + 12 {
+            let s = t2_signal(x, t - 1);
+            if s != 0 {
+                pos.enter(s as f64, t, x.o[t], "open");
+                stop_pts = 10. * (t - 12..t).map(|k| x.h[k] - x.l[k]).sum::<f64>() / 12.;
+            }
+        }
+        if pos.side() != 0. && pos.entry_bar().is_some_and(|e| e < t) {
+            let d = pos.side(); let lvl = pos.entry_px() - d * stop_pts;
+            if (d > 0. && x.l[t] <= lvl) || (d < 0. && x.h[t] >= lvl) { pos.exit(t, if d > 0. { x.o[t].min(lvl) } else { x.o[t].max(lvl) }, "stop"); }
+            else if (x.o[t] - pos.entry_px()) * d > 0. && t2_signal(x, t) as f64 != d { pos.exit(t, x.c[t], "close beyond entry"); }
+        }
+    }
+    pos.done(to, x.c[to])
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    if id == "cpsit_trend2" { return Some(run_t2(x, from, to)); }
     let off = p.get("off_pct").copied().unwrap_or(0.4) / 100.;
     let stop = p.get("stop_pct").copied().unwrap_or(2.5) / 100.;
     let mut pos = Book::new();
@@ -69,9 +103,9 @@ mod tests {
         writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
         for (t, rows) in data.iter() {
             let x = Ctx::new(rows, rows, &[]);
-            for z in run("cpsit_situational", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
-                writeln!(f, "cpsit_situational,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
-            }
+            for id in REVIEWED { for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            } }
         }
     }
     #[test]
