@@ -7,14 +7,14 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["tacsp_squeeze1"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "A|[Declared readings, lane K2, 4] (1) The book runs the sentiment series (the VIX) against the S&P 500; here India VIX against NIFTY 50. (2) The price trigger must fire on the day of the oscillator cross (the text does not say whether a later day also counts). (3) The EMAs start from the first VIX close and signals begin after 50 VIX closes (the seeding is not printed). (4) The short side is the mirror of the long (the printed MetaStock close-short line is garbled, p.179); the oscillator is 100 x (EMA a - EMA b) / EMA b of the VIX close, known at the close, and orders fill at the next open.";
+const NOTE: &str = "A|[Declared readings, lane K2, 3 unstated details + the labelled adaptation] Adaptation (R4 #340): the book runs the sentiment series (the VIX) against the S&P 500; here India VIX against NIFTY 50. Unstated, counted separately: (1) the EMAs are seeded at the first VIX close; (2) signals begin once 50 VIX closes exist (the EMA 50 needs that history; the book does not say); (3) the printed TradeStation exit reads the High / Low of the VIX (Data2) for the EMA21-50 cross while Table 7.1 and the MetaStock code say closing basis (and the two codes disagree on the exit direction): the closing basis and the Table 7.1 direction are used. Followed as printed: the oscillator is 100 x (EMA a - EMA b) / EMA b of the VIX close; the signal uses the oscillator of the previous two bars (Ref 1 and 2), so the price trigger is tested on the day after the cross; a long is also closed by the opposite entry signal without its price trigger; orders fill at the next open.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "tacsp_squeeze1", name: "Summa Squeeze Play I on India VIX: EMA5-21 oscillator cross plus price trigger, exit on EMA21-50 cross", group: "Summa: Trading Against the Crowd (Squeeze Play)", session: 0, dir: "Long/Short", status: Status::Live,
         needs_volume: false, needs_vix: true, needs_series: &[], book: "tacsp", rules: &[
             "F|Oscillator EMAa-b = 100 x (EMA(a) - EMA(b)) / EMA(b) of the sentiment series (the VIX close), App. A p.182, App. B p.183",
-            "E|Long when EMA5-21 of the VIX crosses from above zero to below zero on a close and the instrument closes above the prior day's high; short when it crosses from below to above zero and the close is below the prior day's low; buy / sell short at the next open (Table 8.1 p.64, code pp.179, 184-185)",
-            "X|Exit at the next open when EMA21-50 of the VIX crosses zero against the position (long: upward, short: downward); an opposite entry reverses; no stops (pp.117-120)",
+            "E|Long when EMA5-21 of the VIX closed below zero yesterday after being above zero the day before (a cross on a closing basis) and today's close is above yesterday's high; short on the cross from below to above with today's close below yesterday's low; buy / sell short at the next open (Table 8.1 p.64, EasyLanguage pp.184-185)",
+            "X|Exit at the next open when EMA21-50 of the VIX crosses from above to below zero (long) or from below to above zero (short), or on the opposite cross signal without its price trigger; an opposite entry reverses; no stops (Table 7.1 p.57, EasyLanguage pp.184-185)",
             NOTE], notes: NOTE, claim: None }]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some(("tacsp", "Summa Squeeze Play (VIX)", "EMA5-21 cross + price trigger")) }
@@ -40,18 +40,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
     let (o1, o2) = (osc(&x.vix.close, 5, 21), osc(&x.vix.close, 21, 50));
     let mut seen = 0usize;
     let mut pos = Book::new();
-    let mut pend = 0.0;
+    let mut pend = f64::NAN; // +1 / -1 enter, 0 exit
     for t in 0..=to {
         if x.vix.close[t].is_finite() { seen += 1; }
         if t < from { continue; }
-        if pend != 0.0 {
-            if pend == 2. { pos.exit(t, x.o[t], "EMA21-50 cross"); } else { pos.enter(pend, t, x.o[t], "open"); }
-            pend = 0.0;
+        if pend.is_finite() {
+            if pend == 0. { pos.exit(t, x.o[t], "EMA21-50 cross"); } else { pos.enter(pend, t, x.o[t], "open"); }
+            pend = f64::NAN;
         }
-        if t >= to || t == 0 || seen < 50 || !o1[t].is_finite() || !o1[t - 1].is_finite() || !o2[t - 1].is_finite() { continue; }
-        if o1[t - 1] > 0. && o1[t] <= 0. && x.c[t] > x.h[t - 1] { pend = 1.; }
-        else if o1[t - 1] < 0. && o1[t] >= 0. && x.c[t] < x.l[t - 1] { pend = -1.; }
-        else if (pos.side() > 0. && o2[t - 1] <= 0. && o2[t] > 0.) || (pos.side() < 0. && o2[t - 1] >= 0. && o2[t] < 0.) { pend = 2.; }
+        if t >= to || t < 2 || seen < 50 || ![o1[t - 1], o1[t - 2], o2[t - 1], o2[t - 2]].iter().all(|v| v.is_finite()) { continue; }
+        let (bull, bear) = (o1[t - 1] < 0. && o1[t - 2] > 0., o1[t - 1] > 0. && o1[t - 2] < 0.);
+        let (bull_exit, bear_exit) = (o2[t - 1] < 0. && o2[t - 2] > 0., o2[t - 1] > 0. && o2[t - 2] < 0.);
+        if bull && x.c[t] > x.h[t - 1] { pend = 1.; }
+        else if bear && x.c[t] < x.l[t - 1] { pend = -1.; }
+        else if (pos.side() > 0. && (bear || bull_exit)) || (pos.side() < 0. && (bull || bear_exit)) { pend = 0.; }
     }
     Some(pos.done(to, x.c[to]))
 }
