@@ -18,7 +18,7 @@
 //! the protective stop and target as soon as the entry fills.
 use crate::books::bwntd::tick_of;
 /// Admitted ids (authors/bierovic/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["tbabc_ma_cross" /* lane K60, #244 (4) */, "tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool"];
+pub const REVIEWED: &[&str] = &["tbabc_ma_cross" /* lane K60, #244 (4) */, "tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool", "tbabc_stampede_short" /* lane K1, Q388, #339/#343 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 use crate::connors::{true_range, sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
@@ -80,7 +80,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|LX5: \"If MaxTradeClose >= EntryPrice + BPS * ATR Then ExitLong at Lowest(Low, BPB) Stop\", BPS 8, BPB 2 (p.88)"],
           "AvgTrueRange = TradeStation simple average of True Range. MaxTradeClose = highest close since entry, entry bar included (chart #100: \"A is the highest close since entry\"). Book test: SUNW, 1,500 daily bars to 08/31/00, $10,000 of stock per trade, no costs (p.89-90); SUNW is not in our data, so no reproduction. Related but different: stad8_stampede (STAD Vol 8 pyramiding version, other defaults).",
           Some(Claim { trades: "21", win: "71.43%", avg: "$1,151.45 per $10,000 trade", hold: "49 bars winners / 19 losers", period: "SUNW, 1,500 bars to 08/31/2000 (p.90)" })),
-        d("tbabc_stampede_short", "STAMPEDE (Short)", "STAMPEDE Strategy", "Short", NotTestable("no code or exit is printed for the short side; borrowing POWERTOOL's short exits would be a rule the handout does not give for STAMPEDE"),
+        d("tbabc_stampede_short", "STAMPEDE (Short)", "STAMPEDE Strategy", "Short", Live,
           &["E|\"Sell short at the lowest low of the last 30 bars minus one point\" (p.82)",
             "X|\"Exit at the initial protective stop, breakeven stop, trailing stop, volatility stop, big profit stop, or basic short exit\" (p.82)",
             "X|Formulas mirror the long code; short-side forms as printed in the POWERTOOL short code (p.100): EntryPrice + IPS*ATR; MinTradeClose <= EntryPrice - BES*ATR then EntryPrice; MinTradeClose + TS*ATR; Close + VS*ATR; MinTradeClose <= EntryPrice - BPS*ATR then Highest(High,BPB); basic = Highest(High,ChanLen) + 1 point"],
