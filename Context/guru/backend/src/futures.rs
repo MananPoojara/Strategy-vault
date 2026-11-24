@@ -337,12 +337,17 @@ pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { 
 /// Analysis (2005) p.59-61 trades the Nasdaq Composite (Triple Momentum, 15-day ROC). Close is real throughout; Norgate's open/high/low
 /// equal the close in the early years, so only these close-only cards are admitted (instrument_policy::check).
 pub const COMP_TICKER: &str = "Nasdaq Composite (Norgate $COMP)";
-pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom"];
+pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom", "kpss_ndx_nov_jun" /* lane K2, R4 #394: Kirkpatrick Table 8.4 OTC/NDX 1971-2007, close-to-close */];
 pub fn load_comp(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$COMP", COMP_TICKER, data) }
 /// Lane K2 (24 Nov 2026, R4 #394): the long Dow history as its own context, from Norgate $DJI (1896-05-26..2020-09-04, same directory and
 /// loader as $NYA / $COMP). Kirkpatrick's seasonal-pattern book (kpss) prints Dow results from 1900-1938; the vault's own DJI starts
 /// 1970. Closes are real; open/high/low equal the close in the early years, so only the close-to-close kpss cards are admitted.
 pub const DOW_TICKER: &str = "Dow Jones Industrial Average (Norgate $DJI 1896-2020)";
+/// Lane K2 (R4 #394): the long S&P 500 cash history (Norgate $SPX from 1928, close-only in the early years) for Ruggiero's
+/// 1962-2001 Santa rules (Futures Magazine Feb 2002 pp.51-52), which fill at closes.
+pub const SPXL_TICKER: &str = "S&P 500 (Norgate $SPX 1928-2020)";
+pub const SPXL_CARDS: &[&str] = &["ftm2_rg_santa", "ftm2_rg_santa_up"];
+pub fn load_spxl(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$SPX", SPXL_TICKER, data) }
 pub fn dow_card(id: &str) -> bool { id.starts_with("kpss_") && !id.starts_with("kpss_ndx") }
 pub fn load_dow(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$DJI", DOW_TICKER, data) }
 fn load_index_ctx(dir: &std::path::Path, file: &str, ticker: &str, data: &mut BTreeMap<String, Vec<Row>>) {
