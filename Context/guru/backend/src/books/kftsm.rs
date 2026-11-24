@@ -8,7 +8,7 @@
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["kftsm_parabolic", "kftsm_donchian_4wk", "kftsm_moon", "kftsm_multi_tf"];
+pub const REVIEWED: &[&str] = &["kftsm_parabolic", "kftsm_donchian_4wk", "kftsm_moon", "kftsm_multi_tf", "kftsm_weekly_channel"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "kftsm";
@@ -204,7 +204,11 @@ d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", 
             "E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)",
             "X|\"a sell signal followed a two-day decline in the trendline\" (p.273)",
         ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) the smoothing period and the seed, 'less than a 20-day equivalent when 2/(n + 1) is used': vault reading n = 10 (p.period; alpha = 2/(n+1)) and all three averages start at the first log close (a warm-up convention, the book gives none); (2) the order and fill: vault reading = at the close of the second consecutive rise (fall); (3) whether the sell signal exits or reverses: vault reading = stop-and-reverse (always in the market after the first signal, as the chapter's other trend systems); (4) a day that is neither a second rise nor a second fall (one up one down, or an exact tie): vault reading = hold the position. Declared application on index, ETF and stock daily closes. The book prints no result for it."),
-        d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", NotTestable("N weeks not given"), &["E|\"Buy if the closing price on Friday exceeds the highest closing price of the past N weeks\" (p.178)"], ""),
+        d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", Live, &[
+            "E|\"Buy (and close out shorts) if the closing price on Friday exceeds the highest closing price of the past N weeks.\" (p.178)",
+            "E|\"Sell short (and close out longs) if the close on Friday is below the lowest closing price of the past N weeks.\" (p.178)",
+            "X|\"Because this model is always in the market\" (p.178): a position is closed only by the opposite signal, which reverses it; \"even if penetrated, the position is not liquidated until the close of Friday\"",
+        ], "Q391 re-open (lane K3, 24 Nov 2026): the book leaves N open (Hochheimer tested several); labelled readings (3): (1) N = 4 weeks by default (the book's four-week rule of the same section; p.weeks changes it); (2) 'Friday' = the last session of each calendar week in the data (the book: 'a number of weeks end on Thursday due to holidays'), the 'closing price of the past N weeks' = the closes of the last sessions of the N weeks before the current one; (3) the signal is taken at that close, a fill at the close of the week-ending session. Book-printed results are for Hochheimer's 1982 futures study (no figure given)."),
         d("kftsm_4wk_final3m", "Four-Week Rule, final three months", "Ch 5 · N-day breakout", "Long/Short", NeedsData("individual futures contracts with delivery months"), &["E|Plot the four-week high/low from 3 months before delivery, 2.5% stop, exit the last day of the month before delivery (p.177)"], ""),
         d("kftsm_dunnigan", "Dunnigan thrust / one-way formula", "Ch 4 · Dunnigan", "Long/Short", NotTestable("'predetermined percentage' and thrust size per market not given"), &["E|Two of four patterns followed by a thrust (p.121-122)"], ""),
         d("kftsm_nofri", "Nofri congestion-phase system", "Ch 4 · Nofri", "Long/Short", NotTestable("congestion area needs judgement ('almost unchanged', 'adequate time has elapsed')"), &["E|In a congestion range after two closes in the same direction take the opposite position on the close; exit the next close (p.124)"], ""),
@@ -324,6 +328,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_parabolic" => vec![p("afmin", "Starting AF", 0.02, 0.01, 0.1, 0.01), p("afinc", "AF increment", 0.02, 0.01, 0.1, 0.01), p("afmax", "Maximum AF", 0.2, 0.05, 0.5, 0.01)],
         "kftsm_outside_day" => vec![p("length", "Prior range (days)", 1., 1., 5., 1.), p("hold", "Exit on the close N days after entry", 3., 1., 10., 1.), p("stop_ref", "Stop: 0 outside day's extreme (text), 1 prior range (CD code)", 0., 0., 1., 1.)],
         "kftsm_donchian_4wk" => vec![p("weeks", "Calendar weeks", 4., 1., 12., 1.)],
+        "kftsm_weekly_channel" => vec![p("weeks", "Weeks in the channel (book: N, not given; labelled 4)", 4., 1., 26., 1.)],
         "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_adapt_r2" | "kftsm_adapt_rsi" => adapt(vec![]),
         "kftsm_vidya" => adapt(vec![p("per2", "VIDYA history period", 50., 10., 200., 1.)]),
         "kftsm_hh_ma" => vec![p("period", "MA period", 35., 2., 200., 1.)],
@@ -751,6 +756,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kftsm_parabolic" => parabolic(x, from, to, g("afmin"), g("afinc"), g("afmax")),
         "kftsm_outside_day" => outside_day(x, from, to, u("length").max(1), u("hold").max(1), u("stop_ref") == 1),
         "kftsm_donchian_4wk" => donchian_weeks(x, from, to, u("weeks").max(1) as i64),
+        "kftsm_weekly_channel" => weekly_channel(x, from, to, u("weeks").max(1)),
         "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_vidya" | "kftsm_adapt_r2" | "kftsm_adapt_rsi" => {
             let pn = u("period").max(1);
             let tr = match id {
@@ -1006,6 +1012,26 @@ fn donchian_weeks(x: &Ctx, from: usize, to: usize, nw: i64) -> Vec<Trade> {
             -1 => if up { b.go(i, 1, o[i].max(hh), "stop", "four-week high broken"); },
             _ => if up && !dn { b.go(i, 1, o[i].max(hh), "stop", "four-week high broken"); } else if dn && !up { b.go(i, -1, o[i].min(ll), "stop", "four-week low broken"); },
         }
+    }
+    b.done()
+}
+
+/// Hochheimer's weekly price channel (Kaufman p.178): on the last session of each calendar week, a close above the highest (below the lowest)
+/// of the last sessions' closes of the previous nw weeks goes long (short) at that close; always in the market.
+fn weekly_channel(x: &Ctx, from: usize, to: usize, nw: usize) -> Vec<Trade> {
+    let (c, n) = (&x.c, x.c.len());
+    let wk: Vec<i64> = x.r.iter().map(|r| week(&r.date)).collect();
+    let mut b = Bk::new(x, from, to);
+    let mut ends: Vec<usize> = vec![]; // last session index of each finished week before the current one
+    for i in 0..=to {
+        let last = i + 1 >= n || wk[i + 1] != wk[i];
+        if !last { continue; }
+        if i >= from && ends.len() >= nw {
+            let w = &ends[ends.len() - nw..];
+            let (hh, ll) = (w.iter().map(|&k| c[k]).fold(f64::NEG_INFINITY, f64::max), w.iter().map(|&k| c[k]).fold(f64::INFINITY, f64::min));
+            if c[i] > hh { b.at_close(i, 1, "Friday close above the highest weekly close"); } else if c[i] < ll { b.at_close(i, -1, "Friday close below the lowest weekly close"); }
+        }
+        ends.push(i);
     }
     b.done()
 }
@@ -1451,6 +1477,24 @@ mod tests {
         assert_eq!(trend[31],131.);
         let r=rows(50);let x=Ctx::new(&r,&r,&[]);
         assert!(run("kftsm_adapt_rsi",&x,0,49,&Params::new()).unwrap().is_empty());
+    }
+    /// hand-run dump for the pandas reference: KW_IDX=<idx_data.csv> KW_OUT=<file> cargo test --release kftsm_weekly_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn kftsm_weekly_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("KW_IDX").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("KW_OUT").unwrap()).unwrap());
+        writeln!(f, "ticker,weeks,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (tk, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for w in [4., 2., 13.] {
+                let mut pr = Params::new(); pr.insert("weeks".into(), w);
+                for z in run("kftsm_weekly_channel", &x, 0, rows.len() - 1, &pr).unwrap() {
+                    writeln!(f, "{tk},{w},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
     }
 }
 
