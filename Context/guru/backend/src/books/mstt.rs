@@ -28,13 +28,52 @@ pub const REVIEWED_LANEA: &[&str] = &["mstt_4_d_reversal_ob_os", "mstt_ob_os", "
     "mstt_sandii_w_dmi_sto", "mstt_sandii_w_dmi_trix", "mstt_sandii_w_dmi_ultosc", "mstt_sandii_w_dmi_will_spctr",
     "mstt_sandusky_ii_cciw_macdconfirm", "mstt_short_tsf", "mstt_slope_o_the_slope", "mstt_sto_cci_adx_christopher_smith",
     "mstt_sto_cci_di_chris_smith", "mstt_sto_90_10", "mstt_sto_of_rsi_14", "mstt_sto_of_rsi_8_5", "mstt_td_range_expansion_index",
-    "mstt_variable_macd"];
+    "mstt_variable_macd",
+    // lane K1 (24 Nov 2026, Q387, R4 #297/#339/#343): opt1 = opt2 = 23, the middle of the printed ranges 5-40; independent check authors/conv-1123/K1/mstt2_ref.py
+    "mstt_cci_ma_cross", "mstt_konstenius"];
 pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const CONV: &str = "One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. Indicators: MetaStock definitions (library/msws/README.md). India: runs on NIFTY 50 / indices instead of the stocks and futures it was written for (instrument swap only); price-point, price-level and volume-unit constants are applied literally. Window on WallStreet syntax, read as the formulas intend: prev(x,k) = x k bars ago (Ref(x,-k)), not MetaStock's own argument-less recursive PREV; Std(x,n,k) = k x the n-bar standard deviation (MetaStock's Stdev takes 2 arguments); Sqr = square root.";
 pub static MSTT: Book = Book { id: BOOK, sys: SYS, fml: FML, conv: CONV, cat: OnceLock::new(), par: OnceLock::new() };
 pub fn catalogue() -> Vec<StrategyDef> { MSTT.catalogue() }
 pub fn params(id: &str) -> Option<Vec<ParamDef>> { MSTT.params(id) }
-pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> { MSTT.run(id, x, from, to, p) }
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "mstt_konstenius" { return run_weekly(id, x, from, to, p); }
+    MSTT.run(id, x, from, to, p)
+}
+
+fn wk_key(d: &str) -> i64 {
+    let v: Vec<i64> = d.split('-').filter_map(|s| s.parse().ok()).collect();
+    if v.len() != 3 { return -1; }
+    let (mut y, m, dd) = (v[0], v[1], v[2]);
+    if m <= 2 { y -= 1; }
+    let era = y.div_euclid(400); let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + dd - 1;
+    (era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468 + 3).div_euclid(7)
+}
+
+/// Lane K1 (Q387): the system the source tests on weekly data. Weekly bars from the daily rows (Monday-based weeks; a week counts once a later
+/// week has started), the formulas run on them, and every trade is mapped back to the first daily session of its entry / exit week.
+fn run_weekly(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if from >= to || to >= x.r.len() { return None; }
+    let (mut w, mut fi, mut li): (Vec<crate::Row>, Vec<usize>, Vec<usize>) = (vec![], vec![], vec![]);
+    let mut key = i64::MIN;
+    for (i, r) in x.r.iter().enumerate().take(to + 1) {
+        let k = wk_key(&r.date);
+        if k != key { key = k; w.push(r.clone()); fi.push(i); li.push(i); }
+        else { let b = w.last_mut().unwrap(); b.high = b.high.max(r.high); b.low = b.low.min(r.low); b.close = r.close; *li.last_mut().unwrap() = i; }
+    }
+    if x.r.get(to + 1).map_or(true, |r| wk_key(&r.date) == key) { w.pop(); fi.pop(); li.pop(); } // the last week is not complete
+    let wf = fi.iter().position(|&i| i >= from)?;
+    if w.len() < 2 || wf + 1 >= w.len() { return None; }
+    let wc = Ctx::new(&w, &w, &[]);
+    let t = MSTT.run(id, &wc, wf, w.len() - 1, p)?;
+    Some(t.into_iter().map(|mut z| {
+        for l in z.legs.iter_mut() { l.i = fi[l.i]; }
+        if z.open { z.exit_i = to; z.exit_px = x.c[to]; z.signal_i = li[z.signal_i.min(li.len() - 1)]; }
+        else { z.exit_i = fi[z.exit_i]; z.signal_i = li[z.signal_i.min(li.len() - 1)]; }
+        z
+    }).collect())
+}
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { MSTT.family_of(id) }
 #[allow(dead_code)]
 fn _exec_type_check(e: Exec) -> Exec { e }
@@ -228,8 +267,8 @@ const SYS: &[Sys] = &[
     Sys { id: "mstt_rainbow_chart_system", name: r##"Rainbow Chart System (Mel Widner)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "40", status: Live, f: [Some(r##"Cross( Fml( "Rainbow Uptrend Binary Wave" ),.5)"##), Some(r##"(Fml( "Rainbow Oscillator" ) < 0 AND Sum(ROC(Fml( "Rainbow Oscillator" ),1,$) < 0,2) =2 AND Fml( "Upper Rainbow Band" ) < 38) OR 200 * (C - Ref(C,-7))/(C + Ref(C,-7)) < -7"##), None, None], exec: EXEC_DEFAULT, notes: r##"opt1 (Ubro) is printed as an optimisation range 30-60, but the text says "you can also replace the opt1 with 38 as mentioned in Widner's article"; 38 is the default. Long only. MetaStock defaults (close fills)."## },
     Sys { id: "mstt_ipi", name: r##"Investor Preference Index system (Cyril Smith, TASC Dec 1997)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "1", status: NotTestable("duplicate of vault strategy dgmf_ipi (NeedsData: the NYSE Composite as \"P\")"), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
     Sys { id: "mstt_keltner", name: r##"Keltner Channels always-in system"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "1", status: NotTestable("duplicate of vault strategy kftsm_keltner (same 10-day typical-price MA +/- 10-day range bands, always long or short)"), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
-    Sys { id: "mstt_cci_ma_cross", name: r##"CCI Moving Average Crossover System Test"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "21", status: NotTestable("periods are given only as optimisation ranges (Opt1 5-40, Opt2 5-40)"), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
-    Sys { id: "mstt_konstenius", name: r##""Combining Trend and Oscillator Signals" (Konstenius, TASC Dec 1996)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "22", status: NotTestable("every period is given only as an optimisation range (OPT1-OPT3 5-50); weekly data"), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
+    Sys { id: "mstt_cci_ma_cross", name: r##"CCI Moving Average Crossover System Test (opt1 = opt2 = 23)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "21", status: Live, f: [Some(r##"CCI(23) < Mov(CCI(23),23,E) AND Ref(CCI(23),-1) >= Ref(Mov(CCI(23),23,E),-1)"##), None, Some(r##"CCI(23) > Mov(CCI(23),23,E) AND Ref(CCI(23),-1) <= Ref(Mov(CCI(23),23,E),-1)"##), None], exec: EXEC_DEFAULT, notes: r##"Lane K1 (24 Nov 2026, queue Q387, R4 #297/#339/#343): the source (PDF p.21) prints the formulas with opt1 (CCI period) and opt2 (moving-average period) as optimisation ranges 5-40 (step 1) and no single value; read as the middle of each range, 23 (22.5 rounded up), stated on the card; the two printed formulas are used with 23 for opt1 and opt2 and each When(a,<,b) written as the comparison a < b (the engine's operator form; same meaning). No stop or separate close formula is printed: the opposite entry reverses (always long or short, as the explanation 'buy when the moving average crosses up through the CCI and sell on the reverse condition' says). (3) Trade price is not stated: signals fill at the close of the signal bar (EXEC_DEFAULT, the Equis sibling systems' MetaStock default: trade price close, delay 0)."## },
+    Sys { id: "mstt_konstenius", name: r##""Combining Trend and Oscillator Signals" (Konstenius, TASC Dec 1996; OPT1 = OPT2 = OPT3 = 28, weekly bars)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "22", status: Live, f: [Some(r##"C>Mov(C,28,S) AND LinRegSlope(C,28)>LinearReg(LinRegSlope(C,28),50)"##), Some(r##"C<Mov(C,28,S) OR LinRegSlope(C,28)<LinearReg(LinRegSlope(C,28),50)"##), Some(r##"C<Mov(C,28,S) AND LinRegSlope(C,28)<LinearReg(LinRegSlope(C,28),50)"##), Some(r##"C>Mov(C,28,S) OR LinRegSlope(C,28)>LinearReg(LinRegSlope(C,28),50)"##)], exec: EXEC_NEXT_OPEN, notes: r##"Lane K1 (24 Nov 2026, queue Q387, R4 #297/#339/#343): the source (PDF pp.21-22, Konstenius, TASC Dec 1996) prints the four formulas with OPT1 (moving average), OPT2 (regression slope) and OPT3 (slope of the slope) as optimisation ranges 5-50 (step 5) and no single value, and says 'The author uses weekly data'. Read as the middle of each range, 28 (27.5 rounded up) for all three: 28 is NOT a value on the printed step-5 grid (25 and 30 are), it is the range middle of the Libanes precedent, stated on the card. Weekly bars are built from the daily bars of the instrument (Monday-based calendar weeks: open of the first session, high/low extremes, close of the last session; the current week is used only once a later week has started); the source's Trade Price Open / Trade delay 0 is read as the no-look-ahead fill at the open of the next weekly bar (the first session of the next week); the commission of 50 dollars is not applied. Positions long and short, always reversed on an opposite entry. Trades are mapped back to the daily bars (entry and exit on the first session of a week)."## },
     Sys { id: "mstt_cci_250", name: r##"Commodity Channel Index Buy & Sell Signals (CCI 14, -250/250)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "22", status: NotTestable("no exit: \"Close Long: When( enter your criteria here )\""), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
     Sys { id: "mstt_meyers_xau", name: r##"Bond fund / XAU system (Meyers)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "26", status: NotTestable("needs the XAU index as \"P\" and every threshold is an optimisation range (Opt1-Opt5); also uses Trough()/Peak() (zig-zag look-ahead)"), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
     Sys { id: "mstt_hv_example", name: r##"Historical Volatility Indicator example system (daily and weekly)"##, group: "Equis Traders' Tips (MetaStock)", family: ("mstt_equis", "Equis Traders' Tips systems"), page: "27", status: NotTestable("Enter Long / Enter Short only, no exit; printed as \"just provides a basic example\""), f: [None, None, None, None], exec: EXEC_DEFAULT, notes: r##""## },
