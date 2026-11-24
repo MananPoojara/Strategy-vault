@@ -329,7 +329,7 @@ fn compact_date(d: &str) -> Option<String> { (d.len() == 8 && d.bytes().all(|b| 
 pub const NYA_TICKER: &str = "NYSE Composite (Norgate $NYA)";
 pub const NYA_CARDS: &[&str] = &["scholt_obvdi", "scholt_nvdi",
     // lane PF: Appel & Hitschler's close-only NYSE Index systems (Stock Market Trading Systems, Tables 4-5, 4-6, 5-1, 6-2, 9-1)
-    "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_channel",
+    "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_channel", "apsmts_filter5",
     // lane U4 (Q30): Appel, Technical Analysis (2005) trades the NYSE Index for the breadth cards (p.144-145 trade list, Table 8.1 p.197-198)
     "apta_breadth_impulse", "apta_breadth_macd"];
 pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$NYA", NYA_TICKER, data) }
