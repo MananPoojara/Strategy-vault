@@ -978,3 +978,16 @@ pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument
     label: "The SD:5 / GTI pattern trades are written for futures and stocks with stop offsets of 'one point', which the book itself prints as 2 percent ('one point (2%)', p. 4-18). Run on the NSE index series only, one point = 2 percent of the level it is applied to rounded to the 0.05 tick, a declared adaptation (R4 #340 / #380); entries before the series' real-open start are not traded. UNVERIFIED.",
     basis: "Mastering the Trade-style system book coded in books/mbsot.rs, patterns pp. 3-20, 3-39 to 3-62, GTI pp. 4-1 to 4-18, SD:5 pp. 1-22; independent check authors/conv-1123/k2w/mbsot_ref.py",
 };
+
+#[cfg(test)]
+mod nse_admission {
+    /// R4 #380 / lead review: ADMISSION_NSE admits exactly the ten SD:5 / GTI pattern ids and no other mbsot id.
+    #[test]
+    fn nse_entry_admits_exactly_the_ten_pattern_ids() {
+        let all = super::catalogue();
+        let n: Vec<&str> = all.iter().filter(|d| (super::ADMISSION_NSE.reviewed)(d)).map(|d| d.id).collect();
+        assert_eq!(n.len(), 10, "{n:?}");
+        assert!(n.iter().all(|i| super::nse_pattern(i)));
+        assert!(all.iter().filter(|d| !super::nse_pattern(d.id)).all(|d| !(super::ADMISSION_NSE.reviewed)(d)));
+    }
+}
