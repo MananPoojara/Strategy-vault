@@ -8,6 +8,7 @@ use super::apwms::{a_minus_d, ema_a, moving_total, run_ls, sma, wma, NSE_AD, NYS
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+/// `apsmts_filter5` was added 2026-11-24 (lane K4): checked against a pandas re-implementation of the same declared readings, 0 mismatches (see its gate row), not a separate source ledger.
 pub const REVIEWED: &[&str] = &["apsmts_pen", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apsmts_channel", "apsmts_filter5",
     "apsmts_cats_dogs" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate $COMP / $NYA, independent reference titles-1030/F3w */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
