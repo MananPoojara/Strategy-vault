@@ -698,7 +698,7 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
         let admitted=admit(ctx,d,from,to,&p,&selected,st,q);
         // Q32b (lane K4): readiness only (the run path is untouched): the structural check the run will make, over the window the run will use
-        let admitted=admitted.and_then(|(s,e,a)|match window_start(ctx,d,s).and_then(|w|readiness::structural_issue(ctx,d,w,e,&p)){Some(i)=>Err(i),None=>Ok((s,e,a))});
+        let admitted=admitted.and_then(|(s,e,a)|match window_start(ctx,d,s).filter(|&w|w<e).and_then(|w|readiness::structural_issue(ctx,d,w,e,&p)){Some(i)=>Err(i),None=>Ok((s,e,a))});
         let (start,end,auto)=admitted.as_ref().map_or((from,to,Auto::default()),|(s,e,n)|(*s,*e,n.clone()));
         let issue=admitted.err();
         let ready=format!("{}Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results.",auto.text());
