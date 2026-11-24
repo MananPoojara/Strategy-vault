@@ -132,6 +132,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("atr_n", "ATR length", 30., 5., 60., 1.), p("k", "Entry: close + x ATR", 0.25, 0., 2., 0.05),
             p("lock_at", "Lock after highest close this many points up", 6., 0., 50., 1.), p("lock", "Lock: points below the highest close (LXProfit)", 6., 0., 50., 1.),
             p("loss", "Loss stop: points below the close (LXMM)", 17., 1., 60., 1.),
+            p("ref", "NSE indices only (#380): the 6 / 6 / 17 S&P points are scaled by the close of the order bar / this S&P 500 level (1146.17 = the vault SPX close on 2002-01-15, the date of the 2002 code, a labelled reading); US series keep the points", 1146.17, 100., 5000., 1.),
         ],
         "lebsp_mack" => vec![
             p("atr_n", "ATR length (rules)", 12., 3., 40., 1.), p("atr_e", "ATR length (entry triggers)", 7., 2., 30., 1.),
@@ -313,6 +314,9 @@ impl Ext {
     }
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() {
@@ -457,16 +461,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let adx = dmi3(x, 14).2;
             let (n, rhi, rlo, amin, kk, la, lk, ls) = (u("lkbk"), g("rsi_hi"), g("rsi_lo"), g("adx_min"), g("k"), g("lock_at"), g("lock"), g("loss"));
             let mut e = Ext::new();
-            sim(x, from.max(50), to, None, tick, |k, pos| {
+            // R4 #380 (lane K2): on the NSE indices the 6 / 6 / 17 S&P points are the same percentage of the order bar's close (x close / 1146.17); signals and
+            // orders before the series' real-open start are not traded (the stop entry fills at the open when the day gaps through it)
+            let nse = x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY"));
+            let sref = g("ref");
+            let start = if nse { x.r.first().and_then(|r| real_open_from(&r.ticker)).map_or(0, |c0| x.r.partition_point(|r| r.date.as_str() < c0)) } else { 0 };
+            sim(x, from.max(50).max(start), to, None, tick, |k, pos| {
                 let prev = e;
                 e = e.step(pos.mp, h[k], l[k], c[k]);
+                let sc = if nse { c[k] / sref } else { 1.0 };
                 let mut v = vec![];
                 if pos.mp != 1 && k >= n && lt(r[k], rhi) && c[k] > c[k - n] && gt(adx[k], amin) && gt(r[k], rlo) {
                     v.push(o(K::Buy, Ty::Stop, c[k] + kk * a[k], "L Entry"));
                 }
                 if pos.mp == 1 {
-                    if e.mtc > pos.ep + la { v.push(o(K::Xl, Ty::Stop, prev.mtc - lk, "L Lock")); }
-                    if c[k] < pos.ep { v.push(o(K::Xl, Ty::Stop, c[k] - ls, "L Loss")); }
+                    if e.mtc > pos.ep + la * sc { v.push(o(K::Xl, Ty::Stop, prev.mtc - lk * sc, "L Lock")); }
+                    if c[k] < pos.ep { v.push(o(K::Xl, Ty::Stop, c[k] - ls * sc, "L Loss")); }
                 }
                 v
             })
@@ -660,3 +670,29 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "LeBeau & Elden's NYSE Composite futures system ($2,500 money stop held); runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
     basis: "Mack the NYFE Trading System v1.0 manual + TradeStation code (USB HDD 1/TradeStation Systems & Indicators/_Misc/_196/.../Mack.txt); independent check authors/titles-1030/K20w/k20_ref.py",
 };
+
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "lebsp_piranha2",
+    label: "The 2002 Modified Piranha S&P code carries fixed S&P points (6, 6 and 17). Run on the NSE index series only, each point amount scaled by the order bar's close / 1146.17 (the vault SPX close on 2002-01-15, the code's date, a labelled reading), a declared adaptation (R4 #340 / #380); orders before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "LeBeau, Elden, Arnheim, Piranha New (15 Jan 2002) (Piranha New.rtf and PIRANHA020115.ela, no page numbers); independent check authors/conv-1123/k2w/pir2_ref.py",
+};
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: PIR2_CSV=<idx_data.csv> PIR2_OUT=<file> cargo test --release pir2_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn pir2_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("PIR2_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("PIR2_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("lebsp_piranha2", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "lebsp_piranha2,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
+}
