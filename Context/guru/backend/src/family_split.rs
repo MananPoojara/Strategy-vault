@@ -21,6 +21,12 @@ const SPLIT: &[(&str, Mode)] = &[
     ("acbff_eitheror", Mode::Each), ("acbff_calendar", Mode::Each), ("cktwo", Mode::Each), ("msadd_misc", Mode::Each), ("tdperl_other", Mode::Each),
     ("apsmts_other", Mode::Each), ("apoi_other", Mode::Each), ("mbsot_patterns_nt", Mode::Each), ("lbi12_twelve", Mode::Each), ("atm02_tsl", Mode::Each),
     ("lebcafm_daytrading", Mode::Each), ("mbsot_macro", Mode::Each), ("masmt_cal", Mode::Each), ("tkttl_setups", Mode::Each), ("jscgf", Mode::Each), ("atmcsa", Mode::Each),
+    // batch 3 (24 Nov 2026)
+    ("msadd_trix", Mode::Stem),
+    ("jchr1_other", Mode::Each), ("hbqts_filters", Mode::Each), ("lebfut_futures", Mode::Each), ("cwin_windows", Mode::Each), ("wdgig_other", Mode::Each),
+    ("rwmts_intraday", Mode::Each), ("hbqts_entries", Mode::Each), ("acbff_extremes", Mode::Each), ("jhbct_charting", Mode::Each), ("tdwb_other", Mode::Each),
+    ("vsbrw_other", Mode::Each), ("mslib_misc", Mode::Each), ("mslib_hr", Mode::Each), ("cov_tfm", Mode::Each), ("lwdg2_daytrade", Mode::Each),
+    ("putg_studies", Mode::Each), ("jbcdt_intraday", Mode::Each), ("hsta_stats", Mode::Each), ("tdnmtt_other", Mode::Each),
 ];
 
 /// System stem of a strategy name (same normalisation as the audit: authors/conv-1123/Q390-families.tsv).
