@@ -1038,7 +1038,7 @@ mod tests {
         // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
         for &id in crate::options::RULES {
             let mut r=rows();
-            if id=="fotol_calendar_spread" {for x in r.iter_mut(){x.ticker="NIFTY 50".into();}} // lane K2: gate-allowed on NIFTY 50 / NIFTYBANK only
+            if id=="fotol_calendar_spread" || id.starts_with("elm98_") {for x in r.iter_mut(){x.ticker="NIFTY 50".into();}} // lane K2: gate-allowed on NIFTY 50 / NIFTYBANK only
             if id.starts_with("as51_opt") {let t=if crate::books::as51ts::BNF_IDS.contains(&id) {"NIFTYBANK"} else {"NIFTY 50"}; for x in r.iter_mut(){x.ticker=t.into();}} // lanes F2 / F4: gate-allowed on NIFTY 50 / NIFTYBANK only; no weekly store loaded here
             let mut ctx=Ctx::new(&r,&r,&[]);
             ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
