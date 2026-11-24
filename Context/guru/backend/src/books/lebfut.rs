@@ -29,14 +29,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
         id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim,
     };
     vec![
-        make("lebfut_strategic", "Strategic Swiss Franc System v1.0", "Strategic Swiss manual (LeBeau, Tan & Elden, 1999)", "Long/Short", Status::NeedsData(SF),
+        make("lebfut_strategic", "Strategic Swiss Franc System v1.0", "Strategic Swiss manual (LeBeau, Tan & Elden, 1999)", "Long/Short", Status::Live,
             &["E|Long: \"If the CCI crosses above 170 today then buy tomorrow on the open.\" (code: if MarketPosition=0 and CCI(20) crosses above 170 then Buy Open)",
               "E|Short: \"If the CCI crosses below 170 today then sell short tomorrow on the open.\" (code: CCI(20) crosses below -170; flat only)",
               "X|Long: \"Exit on a stop at the lowest low of the last twenty-four days\"; close > entry + 3 ATR(25): stop at the 10-day low; trade high >= entry + 4 ATR: stop at entry + 2 ATR; close > entry + 6 ATR: stop at the 4-day low",
               "X|Long ADX divergence (code): MaxTradeClose > entry + 1 ATR and MaxTradeClose > MaxTradeClose[3] and ADX(14) < ADX(14)[3]: stop at today's low (prose: \"the highest close occurred within the last 3 days\")",
               "X|Short mirror: 24-day high; 10-day high after a close 3 ATR in profit; entry - 2 ATR once the trade low reaches entry - 4 ATR; 4-day high after 6 ATR; divergence (MinTradeClose < entry - 1 ATR, < MinTradeClose[5], ADX < ADX[5]): stop at the 5-day high",
               "X|\"Use a $3,500 money management stop for both long and short trades.\" (= 2.80 points). The code enters only when flat, so an opposite signal does not reverse."],
-            "Manual 'Strategic Swiss Franc Trading System v1.0' (strategic.txt/.doc) + its TradeStation code; code wins where it differs from the prose (short CCI level -170; MaxTradeClose[3] test). Test 10/17/88-9/30/99, MaxBarsBack 50, $100 per trade. Reproduces all 54 printed trades on the shipped SF.LNG.",
+            "[Declared readings] Norgate continuous futures (&6S), ends 2020-09-11; roll method not stated by the vendor (R4 #293 (5)): signals, indicators and point levels on the back-adjusted series, % per trade on the unadjusted entry price. The manual's franc points are 0.01 of its price series = 0.0001 of the Norgate quote (tick 0.0001, the $3,500 money stop = 0.028 at $125,000 per unit). Same-bar order of the exit stops and the money stop is the module's TradeStation path (#240). Manual 'Strategic Swiss Franc Trading System v1.0' (strategic.txt/.doc) + its TradeStation code; code wins where it differs from the prose (short CCI level -170; MaxTradeClose[3] test). Test 10/17/88-9/30/99, MaxBarsBack 50, $100 per trade. Reproduces all 54 printed trades on the shipped SF.LNG.",
             Some(Claim { trades: "54 (28 long, 26 short)", win: "78%", avg: "$2,320.37 (net of $100)", hold: "34 bars winners / 16 bars losers", period: "10/17/88-9/30/99, Swiss franc futures, $1,250/pt" })),
         make("lebfut_roughneck", "Roughneck Crude Oil System", "Roughneck Crude Oil manual (LeBeau & Elden, 1999)", "Long/Short", Status::Live,
             &["F|Long: \"The 10 day average of the lows must be higher than the 20 day average of the lows\"; 20-day average of the lows at least .25 above its value 10 days ago; close >= lowest low of 8 days + 1.5 ATR(45)",
@@ -415,8 +415,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let u = |k: &str| g(k).round().max(1.) as usize;
-    let (tick, start) = (g("tick"), from.max(g("mbb").round().max(0.) as usize));
-    let mm = schema.iter().any(|d| d.key == "mm").then(|| g("mm")).filter(|m| *m > 0.); // 0 = no money stop (Big Dipper default)
+    // Strategic's money stop and tick are in the manual's franc points (1 point = 0.01 of the book's price = $1,250); the Norgate &6S quote is 100x smaller (I2, R4 #392)
+    let qs = if id == "lebfut_strategic" && crate::futures::ctx_market(x).map_or(false, |m| m.sym == "&6S") { 0.01 } else { 1. };
+    let (tick, start) = (g("tick") * qs, from.max(g("mbb").round().max(0.) as usize));
+    let mm = schema.iter().any(|d| d.key == "mm").then(|| g("mm") * qs).filter(|m| *m > 0.); // 0 = no money stop (Big Dipper default)
     let (h, l, c, op) = (&x.h, &x.l, &x.c, &x.o);
     if start > to { return Some(vec![]); }
     Some(match id {
