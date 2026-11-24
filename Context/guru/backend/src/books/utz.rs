@@ -28,8 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     if id != "utz_zones" { return None; }
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    Some(vec![p("path", "1 = real 1-minute bars (the only path: the zones need minute data; days without minutes make no trade)", 1., 1., 1., 1.),
-              p("target", "Target in S&P points at the 1460 reference level (printed: 1-2 points for the E-mini)", 1., 0.5, 3., 0.5),
+    Some(vec![p("target", "Target in S&P points at the 1460 reference level (printed: 1-2 points for the E-mini)", 1., 0.5, 3., 0.5),
               p("stop", "Stop in S&P points at the 1460 reference level (printed: the same as the target, 1:1)", 1., 0.5, 3., 0.5)])
 }
 
