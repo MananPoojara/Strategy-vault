@@ -1123,6 +1123,19 @@ mod tests {
             for t in res.unwrap_or_default() { assert!(t.legs[0].i >= 300 && t.exit_i <= 1499 && t.exit_i >= t.legs[0].i, "{}", s.id); }
         }
     }
+    /// Q399 (b) net-offset rule: a positive offset is causal only inside an enclosing Ref(.,-j) with j >= the offset.
+    #[test]
+    fn positive_ref_offset_needs_an_enclosing_negative_one() {
+        let r = rows(200);
+        let x = Ctx::new(&r, &r, &[]);
+        let fl = |_: &str| None;
+        let mut ev = |src: &str| Eng::new(&x, &fl).eval_src(src);
+        let v = ev("Ref(Ref(C,+1),-1)").unwrap();
+        assert!((1..200).all(|i| v[i] == x.c[i]));
+        assert!(ev("Ref(C,+1)").is_err());
+        assert!(ev("Ref(Ref(C,+2),-1)").is_err()); // net +1: reads the future
+        assert!(ev("Ref(L,+1)").is_err()); // the mslib_fractal formula stays refused
+    }
     #[test]
     fn rsi_crossover_trades_on_closes() {
         // RSI(14) 30/70 crossover: long entry on the bar RSI crosses up through 30, filled at that close

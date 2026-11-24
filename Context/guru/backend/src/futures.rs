@@ -250,6 +250,7 @@ pub const ZB_OPEN_CARDS: &[(&str, usize, &str)] = &[
     ("scpee_tcf_zb", 4, ""), ("scpee_tii_zb", 4, ""), // lane PA1 (enabled at integration int-1114a)
     ("jcurt_jk20_usb", 18, " Its time exits fill at the next open and its stop entries at the open when gapped; 18 of its fills are at the open's price in those months."), // lane PH
     ("ltwr_waverider", 6, " They are held through those months (a stop that the open gaps through fills at the open); none of their fills is at an open there."), // lane PH
+    ("lebfut_phoenix", 2, ""), ("lebfut_serendipity", 12, " Its entry stops are set from the day's open (open + 22/32, open - 16/32) and its profit exits fill at the next open."), ("lebfut_sidewinder", 6, ""), // lane I2 (R4 #392); counts = trades with an entry or exit in those months
     ("lwicw_bond_month_day1", 11, ""), ("lwicw_bond_month_day1_gold", 7, ""), // lane F1D m6 (R4 #331), added at integration int-1114i2
 ];
 /// Lane PF (F1C item 4): the same 1999-12..2000-10 open episode on Norgate &ZN (10-year T-note), measured the ZB-OPEN.md way
@@ -337,7 +338,16 @@ pub fn load_nya(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { 
 /// Analysis (2005) p.59-61 trades the Nasdaq Composite (Triple Momentum, 15-day ROC). Close is real throughout; Norgate's open/high/low
 /// equal the close in the early years, so only these close-only cards are admitted (instrument_policy::check).
 pub const COMP_TICKER: &str = "Nasdaq Composite (Norgate $COMP)";
-pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom"];
+pub const COMP_CARDS: &[&str] = &["apta_roc15", "apta_triple_mom",
+    // lane I2 (R4 #394): Masonson's Nasdaq Composite 1971-2002 moving-average SAR tests (All About Market Timing p.143-145), fills at the close
+    "masmt_ma20_sar", "masmt_ma25w_sar"];
+/// Lane I2 (R4 #394): the S&P 500 index back to 1928 as its own context, from Norgate $SPX (same directory and loader as $NYA / $COMP).
+/// Masonson's All About Market Timing (2004) tests its seasonal and presidential-cycle rules on the S&P 500 1950-1995 (p.100-126); the vault's
+/// own SPX starts in 1983. Norgate's $SPX is the price index (no dividends); its open/high/low equal the close in the early years, so only these
+/// close-fill cards are admitted (instrument_policy::check).
+pub const SPX_TICKER: &str = "S&P 500 Index (Norgate $SPX)";
+pub const SPX_CARDS: &[&str] = &["masmt_ndr_oct1_may3", "masmt_pres_best2", "masmt_pres_worst2", "masmt_vakkur_switch"];
+pub fn load_spx(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$SPX", SPX_TICKER, data) }
 pub fn load_comp(dir: &std::path::Path, data: &mut BTreeMap<String, Vec<Row>>) { load_index_ctx(dir, "$COMP", COMP_TICKER, data) }
 fn load_index_ctx(dir: &std::path::Path, file: &str, ticker: &str, data: &mut BTreeMap<String, Vec<Row>>) {
     let Some(rows) = read(&dir.join(format!("{file}.csv"))).filter(|r| !r.is_empty()) else { eprintln!("warning: index {file} context not loaded from {}", dir.display()); return };
@@ -435,6 +445,11 @@ pub const CARDS: &[(&str, &str, &str)] = &[
     ("jkbwts_stuckey19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.28-29 Stuckey19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
     ("jkbwts_williams19", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.34-35 Williams 19, Japanese Yen CME daily: the printed TradeStation code / Quick System sheet run on the Norgate continuous contract of the tested market (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
     ("lebfut_roughneck", "&CL", "LeBeau & Elden, Roughneck Crude Oil Trading System manual (System Traders Club, 1999) and its TradeStation code: run on the Norgate crude oil continuous contract (R4 #293 (1), R4 #392); stops and offsets in the quote's own points (0.01 = one point), the $1,000 money stop = 1.00 at $1,000 per point; the manual's printed 59-trade list is reproduced on the vendor's own data file by the module test, not on Norgate."),
+    ("lebfut_phoenix", "&ZB", "Tan & LeBeau, Phoenix Bond Trading System (1998) (System Traders Club) and its TradeStation code: run on the Norgate T-bond continuous contract (R4 #293 (1), R4 #392); points are bond price points at $1,000 a point, tick 1/32; the $1,500 money stop = 1.5 points; the manual's printed list (made on the vendor's own bond file) is reproduced by the module test, not on Norgate."),
+    ("lebfut_serendipity", "&ZB", "LeBeau & Elden, Serendipity 1.1 Bond Trading System (1999) (System Traders Club) and its TradeStation code: run on the Norgate T-bond continuous contract (R4 #293 (1), R4 #392); points are bond price points at $1,000 a point, tick 1/32; the $1,250 money stop = 1.25 points; the manual's printed list (made on the vendor's own bond file) is reproduced by the module test, not on Norgate."),
+    ("lebfut_sidewinder", "&ZB", "LeBeau & Elden, Sidewinder Bond Trading System (1998) (System Traders Club) and its TradeStation code: run on the Norgate T-bond continuous contract (R4 #293 (1), R4 #392); points are bond price points at $1,000 a point, tick 1/32; the $2,500 money stop = 2.5 points; the manual's printed list (made on the vendor's own bond file) is reproduced by the module test, not on Norgate."),
+    ("lebfut_firstsword", "&6J", "LeBeau & Elden, First Sword Yen Trading System v2.0 manual (System Traders Club, 1998) and its TradeStation code: run on the Norgate Japanese yen continuous contract (R4 #293 (1), R4 #392); the manual's yen points are 0.01 of its price series = 0.0001 of the Norgate quote, so the $2,000 money stop = 0.016 and the tick = 0.0001 at $125,000 per unit; the manual's printed 85-trade list (made on the vendor's JY.LNG) is reproduced 83/85 by the module test, not on Norgate."),
+    ("lebfut_strategic", "&6S", "LeBeau, Tan & Elden, Strategic Swiss Franc Trading System v1.0 manual (System Traders Club, 1999) and its TradeStation code: run on the Norgate Swiss franc continuous contract (R4 #293 (1), R4 #392); the manual's franc points are 0.01 of its price series = 0.0001 of the Norgate quote, so the $3,500 money stop = 0.028 and the tick = 0.0001 at $125,000 per unit; the manual's printed 54-trade list (made on the vendor's SF.LNG) is reproduced by the module test, not on Norgate."),
     ("lebfut_wildcat", "&CL", "LeBeau, Lucas & Elden, Wildcat Crude Oil Trading System v1.1 manual (System Traders Club, 1998) and its TradeStation code: run on the Norgate crude oil continuous contract (R4 #293 (1), R4 #392); the $900 money stop = 0.90 at $1,000 per point, ATR and channel offsets in the quote's own points; the manual's printed list (made on the vendor's Cl.txt) is reproduced by the module test, not on Norgate."),
 ];
 /// Lane F3 (R4 #294): Harris's single-market patterns (books::mhstp), each on the contract its Pattern Library page names.
