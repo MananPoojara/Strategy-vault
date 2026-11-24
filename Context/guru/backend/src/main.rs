@@ -2213,6 +2213,7 @@ fn main() {
     // lane PE (R4 #319): the NYSE Composite context (Norgate $NYA close + volume), Holt's cards only
     if data.contains_key("SPX") { futures::load_nya(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); }
     if data.contains_key("SPX") { futures::load_comp(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); } // lane U4 (Q30): Nasdaq Composite context
+    if data.contains_key("SPX") { futures::load_dow(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); } // lane K2 (R4 #394): Norgate $DJI 1896-2020 for the kpss cards
     if data.contains_key("SPX") { futures::load_spx(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); } // lane I2 (R4 #394): S&P 500 back to 1928 (Masonson 1950-95 windows)
     let futures_raw = if data.contains_key("SPX") { futures::load(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908"), &mut data) } else { BTreeMap::new() };
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
