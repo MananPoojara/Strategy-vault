@@ -73,6 +73,6 @@ mod tests {
 // Instrument admission: S&C Hartle ADX system 2026-11-24 (lane K2, Q396).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "schdadx" && reviewed(def.id),
-    label: "Hartle's figures show Microsoft and Apple and the text speaks of markets in general; the article prints no results. Runs on indices, ETFs and stocks, US and India, are a declared application.",
+    label: "Hartle's figures show Microsoft and Apple and the text speaks of markets in general; the article prints no results. Run on the five NSE index series the independent reference covers (the gate row allows only those, R4 #378); other instruments are not admitted.",
     basis: "Technical Analysis of Stocks & Commodities V.9:3 pp.101-102 (The Average Directional Movement Index); independent check authors/conv-1123/k2w/q396/schdadx_ref.py",
 };

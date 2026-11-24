@@ -107,6 +107,6 @@ mod tests {
 // Instrument admission: S&C Raftopoulos zigzag trend 2026-11-24 (lane K2, Q396).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scrzzt" && reviewed(def.id),
-    label: "Raftopoulos shows the indicator on the Nasdaq index and Boeing; the article prints no trade results. Runs on indices, ETFs and stocks, US and India, are a declared application.",
+    label: "Raftopoulos shows the indicator on the Nasdaq index and Boeing; the article prints no trade results. Run on the five NSE index series the independent reference covers (the gate row allows only those, R4 #378); other instruments are not admitted.",
     basis: "Technical Analysis of Stocks & Commodities V.21:11 pp.26-32 (The Zigzag Trend Indicator); independent check authors/conv-1123/k2w/q396/scrzzt_ref.py",
 };
