@@ -10,7 +10,7 @@ use super::lc3::{hi, high_first, lo};
 use super::tselhs::Book;
 
 /// Admitted ids (authors/titles-1030/K15w/k15_ref.py (header)).
-pub const REVIEWED: &[&str] = &["ctm_hh2", "ctm_invmart", "ctm_trend_str", "ctm_ts_cross", "ctm_mid_cross", "ctm_hlr40", "ctm_outside",
+pub const REVIEWED: &[&str] = &["ctm_hh2", "ctm_invmart", "ctm_trend_str", "ctm_ts_cross", "ctm_mid_cross", "ctm_ichimoku_tk", "ctm_hlr40", "ctm_outside",
     "ctm_euro_mom", "ctm_inside", "ctm_bo_timing", "ctm_mom20", "ctm_sma12"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
@@ -77,6 +77,7 @@ const HH2: &str = concat!("[Declared readings] CT Jan 2006 p.36-38, 'Narrowing b
 const INV: &str = concat!("[Declared readings] CT Feb 2006 p.38-40, 'Inverse Martingale rule': flat -> a buy stop 3 x ATR(10) (Wilder) above the close and a sell-short stop 3 x ATR(10) below it. After a fill, a profit target (limit) and a stop each 3 x ATR(10) from the entry price, with the ATR of the close before the fill, fixed until the next event; one event per bar, checked from the bar after it. Stop hit -> close everything at the stop and reverse with one unit at the same price. Target hit -> double the position at the target price (1 -> 2 -> 4 -> 8 units: legs of 1/8, 1/8, 2/8 and 4/8 of a full position, so a full streak holds the whole allocation and a first-unit trade one eighth) and set both 3 x ATR(10) from that newest entry; after the third doubling both are 2 x ATR(10) from it and either one closes everything (flat, no reversal).", wl!());
 const TSI: &str = concat!("[Declared readings] CT Mar 2006 p.28-30, 'Trend Strength indicator': TS = (number of the six SMAs 10, 20 ... 60 below the close - number above) / 6 x 100. Flat: TS reaches +100 (now 100, below 100 the day before) -> buy at the next open; reaches -100 -> short at the next open. Exit at the next open when TS crosses zero against the position (long: below zero today, at or above yesterday). Stop-loss as a stop order at an SMA value of the signal day: the printed rule says 'a move above the highest SMA value at the time of entry' for both sides, which cannot be a loss level for a long (every SMA is below the price); the default (lead decision 89) reads it as the outer SMA: long stop at the lowest SMA, short stop at the highest. p.stop = 1: the printed 'highest SMA' for the long side too.", wl!());
 const TSC: &str = concat!("[Declared readings] CT Apr 2006 p.36-38, 'Trend Strength Crossover': ten SMAs 10, 20 ... 100. Daily value = +1 for every pair (shorter, longer) where the shorter SMA crosses above the longer that day, -1 where it crosses below (all 45 pairs: 'adding 1 when a shorter-term moving average crosses above a longer-term moving average'); the system uses its 20-day sum. The sum rises above zero -> buy at the next open (covering a short); falls below zero -> short at the next open. Stop-loss: a stop order 3 x ATR(10) (Wilder, the signal day's) against the entry price (printed 'a move above' for both sides, read as an adverse move); a stopped trade waits for the next crossing.", wl!());
+const ICHI: &str = concat!("[Declared readings] CT March 2006 p.18-23, 'Ichimoku': Tenkan-sen = (highest high + lowest low of the last 9 bars)/2, Kijun-sen = the same over 26 bars. Tenkan crosses above Kijun -> long (reversing a short); crosses below -> short; always in the market after the first cross. The article does not state the fill: here the next open, as the other Currency Trader columns in this module (one labelled detail); a cross needs the previous bar's Tenkan <= (>=) Kijun. Article test: daily Euro FX Feb 2004 - Feb 2006, 21 trades, 23.81% winners; run here on the NSE index series as a #340 adaptation.", wl!());
 const MID: &str = concat!("[Declared readings] CT May 2006 p.30-32, 'Channel Midpoint': midpoint(n) = (highest high + lowest low of the last n days)/2. The 150-day midpoint crosses above the 250-day midpoint -> long at the next open (reversing a short); crosses below -> short at the next open.", wl!());
 const HLR: &str = concat!("[Declared readings] CT Aug 2006 p.28-30, 'HLR breakout': HLR = (close - lowest low of 40 days)/(highest high - lowest low of 40 days), today included ('price's relative location within the high-low range of the past x bars'). Not long and HLR above 0.8 -> long at the next open; not short and HLR below 0.2 -> short at the next open (stop and reverse).", wl!());
 const OUT: &str = concat!("[Declared readings] CT Oct 2006 p.28-30, 'Outside-bar opportunity' (euro futures): today an outside day (high above and low below yesterday's) that closed above its open, above yesterday's close, with a high above the highs of the three days before -> buy at the next open. Exit at the close of the 10th day after the outside day, or at a close below the outside day's low. TARGET HELD: the 0.0250 profit limit is in euro price points (lead decisions 19, 88).", ts!());
@@ -106,6 +107,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"2. Stop-loss: Exit with a loss on a move above three times the 10-day average true range (ATR).\" (p.37)"], TSC),
         d("ctm_mid_cross", "Channel Midpoint crossover: the 150-day high/low midpoint crosses the 250-day one, stop and reverse", "Long/Short", &[
             "E|\"1. Go long and exit short the next day at the market if the 150-day Channel Midpoint indicator crosses above the 250-day Channel Midpoint indicator. 2. Go short and exit long ... if [it] crosses below\" (CT May 2006 p.31)", "X|Stop and reverse: the opposite crossing closes the trade and opens the other side (p.31)"], MID),
+        d("ctm_ichimoku_tk", "Ichimoku Tenkan/Kijun crossover: the 9-bar high/low midpoint crosses the 26-bar one, stop and reverse", "Long/Short", &[
+            "E|\"Tenkan-sen ... crosses above Kijun-sen: buy; crosses below: sell short\" (CT March 2006 p.18-23); Tenkan = 9-bar and Kijun = 26-bar midpoint of the high/low range", "X|Stop and reverse: the opposite crossing closes the trade and opens the other side"], ICHI),
         d("ctm_hlr40", "HLR breakout: long when the close is in the top 20% of the 40-day range, short in the bottom 20%", "Long/Short", &[
             "F|HighestLowestRange (HLR): \"shows price's relative location within the high-low range of the past x bars\" (CT Aug 2006 p.28), 40 days",
             "E|\"1. Go long the next day at the market when the HLR indicator rises above 0.8. 2. Exit long and go short the next day at the market when the HLR indicator drops below 0.2.\" (p.29)", "X|Stop and reverse: the opposite HLR signal (p.29)"], HLR),
@@ -136,6 +139,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ctm_trend_str" => ("CT Trend Strength", "six SMAs 10-60, +/-100 entries"),
         "ctm_ts_cross" => ("CT Trend Strength Crossover", "20-day sum of SMA crossovers"),
         "ctm_mid_cross" => ("CT Channel Midpoint", "150 vs 250-day midpoint"),
+        "ctm_ichimoku_tk" => ("CT Ichimoku", "Tenkan 9 / Kijun 26 crossover"),
         "ctm_hlr40" => ("CT HLR breakout", "40-day HLR 0.8 / 0.2"),
         "ctm_outside" => ("CT outside bar", "strong outside day, 10-day exit"),
         "ctm_euro_mom" => ("CT Euro momentum", "30/5 and 60/10-day momentum"),
@@ -288,6 +292,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (m1, m2) = (mid(150), mid(250));
             orders(x, from, to, |t, pos| {
                 if t < 250 { return vec![]; }
+                if m1[t] > m2[t] && m1[t - 1] <= m2[t - 1] && pos.side() != 1. { return vec![ent(1., K::Mkt, f64::NAN)]; }
+                if m1[t] < m2[t] && m1[t - 1] >= m2[t - 1] && pos.side() != -1. { return vec![ent(-1., K::Mkt, f64::NAN)]; }
+                vec![]
+            })
+        }
+        "ctm_ichimoku_tk" => {
+            let mid = |m: usize| -> Vec<f64> { (0..n).map(|i| if i + 1 < m { f64::NAN } else { (hi(h, i + 1 - m, i) + lo(l, i + 1 - m, i)) / 2. }).collect() };
+            let (m1, m2) = (mid(9), mid(26));
+            orders(x, from, to, |t, pos| {
+                if t < 26 { return vec![]; }
                 if m1[t] > m2[t] && m1[t - 1] <= m2[t - 1] && pos.side() != 1. { return vec![ent(1., K::Mkt, f64::NAN)]; }
                 if m1[t] < m2[t] && m1[t - 1] >= m2[t - 1] && pos.side() != -1. { return vec![ent(-1., K::Mkt, f64::NAN)]; }
                 vec![]
