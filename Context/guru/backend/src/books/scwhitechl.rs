@@ -9,7 +9,7 @@ const ID: &str = "scwhitechl_long";
 pub const REVIEWED: &[&str] = &[ID];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "A|Declared readings (lane I2, 4; R4 #340/#348/#382): (1) the 'standard 10-bar breakout based on closes' = the close exceeds the highest close of the previous 10 bars (strictly); (2) long side only, as tested (the article illustrates and tests only long positions); (3) the exit is tested at every close from the entry bar on, both conditions on the same bar as the printed MetaStock formula (HHV(L,5) = HHV(L,19) and L - Ref(L,-1) equal to its lowest value of the last 17 bars, ties count), and both entry and exit are filled at the next open as the article does; (4) one position at a time, no stop. The article tests 1,000 daily bars of Treasury bond futures (14 wins, 5 losses, optimised 5/19/17); the vault applies the printed rule to the NSE index series, declared adaptation, no costs.";
+const NOTE: &str = "A|Declared readings (lane I2; R4 #340/#348/#382). Card-specific unstated choices, one per number: (1) breakout = the close exceeds the highest close of the previous 10 bars (strictly); (2) long side only, as tested (the article illustrates and tests only long positions); (3) the exit is tested at every close from the entry bar on, both conditions on the same bar; (4) ties count: HHV(L,5) = HHV(L,19) and L - Ref(L,-1) equal to its lowest value of the last 17 bars both test equality, as in the printed MetaStock formula; (5) one position at a time; (6) no stop. Honest total: 6 card-specific choices. Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): entry and exit are filled at the next open, as the article does; the NSE index series substituted for the Treasury bond futures test; no costs. The article tests 1,000 daily bars of Treasury bond futures (14 wins, 5 losses, optimised 5/19/17); the vault applies the printed rule to the NSE index series, declared adaptation, no costs.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: ID, name: "CHL/LLF exit (White): 10-bar close breakout entry, exit when the 5/19-bar concurrent highest lows filter and the 17-bar low-to-low fall trigger agree", group: "S&C: A New Exit Strategy (White, V.11:11)", session: 0, dir: "Long", status: Status::Live,
@@ -19,7 +19,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"The filter is positive whenever the highest low of the last five bars is also the highest low of the last 19 bars.\" (PDF p.2); \"we look for the largest low to low fall of the last x bars of the oscillator ... I used 17 bars\" (PDF p.2); \"Both the filter and trigger must concur\" (PDF p.2)",
             "F|\"when(hhv(L,opt1),=,(hhv(L,opt2))) and when(fm1(#1),=,llv(fm1(#1),opt3)) fm1(#1) is L-ref(L,-1) I used opt1 as 5, opt2 as 19, and opt3 as 17.\" (PDF p.3)",
             NOTE],
-        notes: "White, S&C V.11:11 pp.462-466: CHL/LLF exit. Declared adaptation (R4 #340): the Treasury-bond test is run on the NSE index series; four labelled readings, long only.",
+        notes: "White, S&C V.11:11 pp.462-466: CHL/LLF exit. Declared adaptation (R4 #340): the Treasury-bond test is run on the NSE index series; six card-specific choices listed in the card note, long only.",
         claim: None }]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { reviewed(id).then_some((ID, "CHL/LLF exit (White, S&C)", "10 / 5-19 / 17")) }
