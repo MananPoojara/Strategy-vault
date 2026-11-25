@@ -636,8 +636,8 @@ mod short_course_policy_tests {
 /// method to a familiar book cannot inherit admission without a source review.
 pub fn policy(def:&StrategyDef)->Policy {
     let mut p=base_policy(def);
-    if crate::futures::DUAL.contains(&def.id) {p.source_basis=crate::futures::dual_basis(def.id,p.source_basis);}
-    if crate::fut1::REOPEN.contains(&def.id) {p.source_basis=crate::fut1::basis(def.id,p.source_basis);} // R4 #416 // R4 #367 (2): the futures-contract adaptation label shows on the card
+    if crate::futures::DUAL.contains(&def.id) {p.source_basis=crate::futures::dual_basis(def.id,p.source_basis);} // R4 #367 (2): the futures-contract adaptation label shows on the card
+    if crate::fut1::REOPEN.contains(&def.id) {p.source_basis=crate::fut1::basis(def.id,p.source_basis);} // R4 #416: the FUT1 adaptation label (roll, window, reference) shows on the card
     // Never reopens a rule that base_policy holds for source review.
     if open_instrument_label(def).is_some() && p.requirement!="source_review_required" {
         p.requirement="index_etf_or_stock";p.allowed_types=&["index","etf","individual_stock"];
