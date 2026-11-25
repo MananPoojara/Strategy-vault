@@ -341,6 +341,34 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
 
 /// Shared ordinary percentage account finalization, also exercised with frozen
 /// event fixtures. Source-account and fixed-unit report models remain separate.
+/// Strategy-settings trade filters (user request 25 Nov 2026), off by default (no key = the run unchanged).
+/// `penny` > 0: a trade whose signal-bar close (the entry bar for a close fill, else the bar before) is at or below it is
+/// dropped from the rule's own trade list; the rule is not re-run, so no later entry replaces it. `dead_stock=1`: no entry on
+/// the last bar, and a position still open there is sold at that bar's close (its existing mark, both sides' costs).
+fn trade_filters(q:&BTreeMap<String,String>)->Result<(f64,bool),String>{
+    let penny=match q.get("penny").map(|s|s.trim()).filter(|s|!s.is_empty()) {
+        None=>0.,
+        Some(s)=>s.parse::<f64>().ok().filter(|n|n.is_finite()&&*n>=0.&&*n<=1e6).ok_or("penny must be a price from 0 to 1000000")?,
+    };
+    let dead=match q.get("dead_stock").map(|s|s.trim()) {None|Some("")|Some("0")=>false,Some("1")=>true,_=>return Err("dead_stock must be 0 or 1".into())};
+    Ok((penny,dead))
+}
+fn apply_trade_filters(ctx:&Ctx,run:Run,(penny,dead):(f64,bool),cost:f64)->Result<Run,String>{
+    if penny<=0.&&!dead {return Ok(run);}
+    // option_account is set by every multi-position account backtest() returns: option chains, spreads (spread::run),
+    // ETF rotation and basket ranking (books::rotation::account / basket_account) and pyramids or overlapping units
+    // (books::units::run). Their equity is their own account's, so they are refused here and never rebuilt below.
+    if run.source_account.is_some()||run.bandy_account.is_some()||run.unit_exposure_report.is_some()||run.option_account.is_some()||futures::ctx_market(ctx).is_some() {
+        return Err("calculation_unavailable: Dead stock and penny stock settings apply to single-instrument stock, ETF and index runs; this strategy's reviewed account model does not take them.".into());
+    }
+    let (from,to)=(run.from,run.to);
+    let trades=run.trades.into_iter().filter(|t|{
+        let e=t.legs[0].i;
+        !(dead&&e>=to) && !(penny>0.&&ctx.c[if t.entry_kind=="close"{e}else{e.saturating_sub(1)}]<=penny)
+    }).map(|mut t|{if dead&&t.open {t.open=false;t.reason="dead stock: sold at the last close".into();}t}).collect();
+    normalized_run(ctx,trades,from,to,cost)
+}
+
 fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f64) -> Result<Run,String> {
     // lane F1 (R4 #293 (2)): on a futures context each trade is priced in the contract held at entry (unadjusted)
     let (trades,futures_close)=if futures::ctx_market(ctx).is_some() {let (t,c)=futures::raw_basis(ctx,trades)?;(t,Some(c))} else {(trades,None)};
@@ -1518,6 +1546,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
+    let run = apply_trade_filters(ctx,run,trade_filters(q)?,costs.side_rate())?;
     let to=run.to; // earlier than requested only when the account was wiped out (ruin_json)
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto.json());return Ok(output);
@@ -2842,6 +2871,27 @@ mod tests {
         // a run that is never wiped out is unchanged and has no flag
         let safe=normalized_run(&ctx,vec![raw[0].clone(),raw[2].clone()],0,29,0.001).unwrap();
         assert_eq!(safe.to,29);assert!(ruin_json(&ctx,&safe).is_empty());
+    }
+    #[test]
+    fn dead_stock_and_penny_settings() {
+        // closes 5 on bars 0-9, then 20: a trade signalled at 5 is a penny trade at a 10 limit
+        let rows:Vec<Row>=(0..30).map(|i|{let c=if i<10{5.+i as f64*0.01}else{20.+i as f64*0.1};Row{ticker:"X".into(),date:format!("2020-01-{:02}",i+1),open:c,high:c,low:c,close:c,volume:None}}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        let t=|a:usize,b:usize,open:bool|Trade{dir:1.,legs:vec![connors::Leg{i:a,px:ctx.c[a],w:1.}],exit_i:b,exit_px:ctx.c[b],reason:if open{"open".into()}else{"close".into()},entry_kind:"close",signal_i:b,open,exits:vec![]};
+        let raw=vec![t(2,6,false),t(12,20,false),t(25,29,true)];
+        let base=normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap();
+        let q=|k:&str,v:&str|BTreeMap::from([(k.to_string(),v.to_string())]);
+        assert_eq!(trade_filters(&BTreeMap::new()).unwrap(),(0.,false));
+        assert!(trade_filters(&q("dead_stock","2")).is_err() && trade_filters(&q("penny","-1")).is_err());
+        let off=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),(0.,false),0.001).unwrap();
+        assert_eq!((off.trades,off.equity),(base.trades.clone(),base.equity.clone()),"off = the run unchanged");
+        let penny=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),trade_filters(&q("penny","10")).unwrap(),0.001).unwrap();
+        assert_eq!(penny.trades,raw[1..].to_vec(),"the trade signalled at a close of 5 is dropped");
+        let dead=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),(0.,true),0.001).unwrap();
+        assert!(!dead.trades[2].open && dead.trades[2].reason=="dead stock: sold at the last close" && dead.trades[2].exit_i==29);
+        assert_eq!(dead.equity,base.equity,"selling at the last close is the open mark");
+        let last=apply_trade_filters(&ctx,normalized_run(&ctx,vec![raw[0].clone(),t(29,29,true)],0,29,0.001).unwrap(),(0.,true),0.001).unwrap();
+        assert_eq!(last.trades.len(),1,"no entry on the last bar");
     }
     #[test]
     fn equity_equals_compounded_trade_returns() {

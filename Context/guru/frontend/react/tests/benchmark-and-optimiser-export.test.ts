@@ -54,7 +54,7 @@ it('optimiser trades export carries the Net Profit display and report link of th
   const deps = {
     STRAT: {v: {id: 'cr2'}, tk: 'NIFTY 50', display: defaultDisplay},
     S: {tk: 'NIFTY 50', from: '2010-01-01', to: '', cost: '5', report_mode: 'fixed', p: ''},
-    runData: async () => d, decodeP: () => ({len: 3}), bookDefaults: () => ({len: 2}), returnDisplay,
+    runData: async () => d, decodeP: () => ({len: 3}), bookDefaults: () => ({len: 2}), returnDisplay, sizingOf: () => ({weight: 1}),
     settingsTag: new Function(`${part('const settingsTag', '\n')};return settingsTag;`)(),
     VaultUI: {costState: () => ({slippage: '0', rollover: '0'}), exportRunTrades},
     href: (path: string, st: Record<string, string>) => '#' + path + '?' + new URLSearchParams(st),

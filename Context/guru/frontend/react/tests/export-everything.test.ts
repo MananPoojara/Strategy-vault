@@ -33,7 +33,9 @@ it('bug #3: the Parameters sheet gets one row per setting and the file name carr
 
 it('page buttons and Export everything build each workbook with the same table code', () => {
   const handler = part("document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot]", '\n');
-  expect(handler).toContain("if(b.id==='trades-xlsx')return await xlsx(...await reportTable('trades',st));");
+  // the Tradelist button builds the desk-layout tradesheet (services/tradesheet-workbook.ts); audited accounts fall back to the table
+  expect(handler).toContain("if(b.id==='trades-xlsx')return await tradesheetXlsx(st);");
+  expect(part(' async function tradesheetXlsx(', ' async function pristineExport(')).toContain("return xlsx(...await reportTable('trades',st));");
   expect(handler).toContain('if(REPORT_KINDS.includes(kind))return await xlsx(...await reportTable(kind,st));');
   expect(line(' const REPORT_KINDS=')).toContain(EXPORT_KINDS.map(k => `'${k}'`).join(','));
   expect(part(' async function exportAll(', ' document.addEventListener(')).toContain('await reportTable(kind,st);const book=await xlsx(k,rows,pc,st,types,false)');
