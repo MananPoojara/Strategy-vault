@@ -9,7 +9,7 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 pub const BOOK: &str = "maetf";
 
 
-const RATES_NOTE: &str = "[Adapted: 3 unstated details + 1 declared adaptation, R4 #400/#414] Lane K3 (25 Nov 2026): the Treasury yields the card needed are now held (FRED DTB3 3-month bill 1954-, DGS10 10-year 1962-, daily). The rule as printed: Ch.11 monthly checks on the Federal Reserve monthly average yields; out of stocks when the 10-year yield is higher than six months earlier (p.197), when the 90-day bill yield exceeds the 10-year yield by any amount (p.200), or either one (composite, p.203); otherwise hold the S&P 500. Unstated, one per item: (1) a month's yield = the mean of the daily values published in that calendar month, i.e. of the yield days that exist (bond-market holidays are not filled; the H.15 monthly average); (2) the month's reading is acted on at the first open of the next month (the book: 'at the start of each month'; no same-day look-ahead); (3) 'higher than six months previously' = strictly above the monthly average six calendar months earlier. Declared adaptation: out of stocks = flat, the Treasury-bill interest is not credited (price return only, no costs). The book's S&P 500 total-return results (Table 11.3: 11.5%/yr vs 10.4% buy and hold, drawdown 23% vs 45%, 1/1965-3/2006) use total returns and T-bill returns, so they are not compared here.";
+const RATES_NOTE: &str = "[Adapted: 3 unstated details + 1 declared adaptation, R4 #400/#414] Lane K3 (25 Nov 2026): the Treasury yields the card needed are now held (FRED DTB3 3-month bill 1954-, DGS10 10-year 1962-, daily). The rule as printed: Ch.11 monthly checks on the Federal Reserve monthly average yields; out of stocks when the 10-year yield is higher than six months earlier (p.197), when the 90-day bill yield exceeds the 10-year yield by any amount (p.200), or either one (composite, p.203); otherwise hold the S&P 500. Unstated, one per item: (1) a month's yield = the mean of the daily values published in that calendar month, i.e. of the yield days that exist (bond-market holidays are not filled; the H.15 monthly average); (2) the month's reading is acted on at the open of the second trading day of the next month: the Federal Reserve H.15 print of the month's last business day is published on the afternoon of the first trading day of the next month (publication lag, R4 #372), so the book's 'at the start of each month' cannot be the first open; (3) 'higher than six months previously' = strictly above the monthly average six calendar months earlier. Declared adaptation: out of stocks = flat, the Treasury-bill interest is not credited (price return only, no costs). The book's S&P 500 total-return results (Table 11.3: 11.5%/yr vs 10.4% buy and hold, drawdown 23% vs 45%, 1/1965-3/2006) use total returns and T-bill returns, so they are not compared here.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, why, rules, notes| StrategyDef {
@@ -109,12 +109,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
         let ris = (m >= 6 && a10[m].is_finite() && a10[m - 6].is_finite()).then(|| a10[m] > a10[m - 6]);
         match id { "maetf_rising_rates" => ris, "maetf_yield_curve" => inv, _ => ris.zip(inv).map(|(r, i)| r || i) }
     }).collect();
-    // position held during month m = verdict of month m-1 (no verdict = flat); orders fill at the first open of the month
+    // position held from the open of each bar. The H.15 print of month m-1's last business day is published on the afternoon of the first
+    // trading day of month m, so month m-1's verdict is only known after that day's close (R4 #372): bar 0 of month m still holds the
+    // position decided by month m-2's verdict, and the new position starts at the open of the SECOND trading day of month m.
     let mut pos = vec![0i8; to + 1];
-    let mut m = 0usize;
+    let (mut m, mut k) = (0usize, 0usize);
     for i in 0..=to {
-        while keys[m] != dates[i][..7] { m += 1; }
-        pos[i] = if m >= 1 && verdict[m - 1] == Some(false) { 1 } else { 0 };
+        if i > 0 && dates[i][..7] != dates[i - 1][..7] { m += 1; k = 0; } else if i > 0 { k += 1; }
+        while keys[m] != dates[i][..7] { m += 1; k = 0; }
+        let v = if k == 0 { m.checked_sub(2) } else { m.checked_sub(1) };
+        pos[i] = if v.is_some_and(|v| verdict[v] == Some(false)) { 1 } else { 0 };
     }
     // target_trades(next_open = true) executes tgt[i] at the open of bar i+1: shift the by-bar positions left by one
     let tgt: Vec<i8> = (0..=to).map(|i| if i < to { pos[i + 1] } else { pos[i] }).collect();
