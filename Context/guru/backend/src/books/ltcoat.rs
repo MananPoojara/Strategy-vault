@@ -20,7 +20,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "X|Long: on the entry bar \"lxPTarget = High[0]; lxPStop = Low[1]\"; \"If Open next bar > Entryprice then Sell tomorrow at market\"; \"Sell Next Bar at lxPTarget Limit\"; \"Sell Next Bar at lxPStop Stop\"",
         "X|Short: \"sxPTarget = Low[0]; sxPStop = High[1]\"; \"If Open next bar < Entryprice then Buy to Cover tomorrow at market\"; cover limit at sxPTarget, cover stop at sxPStop"],
         notes: "The TT30 'Kris-Kross' idea (cf. lgtt30_tt30) as sold by longtermtrading.com, with differences that make it a separate system: the short stop uses the smaller of the two 3-day ranges, there is no 'goodgap' exit and no price rounding, and only the entry in the direction already held is blocked. \
-'Open next bar' is known when the stop is placed at the open. No bar size or market named: run on daily cash indices (instrument swap). Fills: vault TradeStation daily-bar convention (ajmisc.rs header). India: instrument swap; index shorts hypothetical.",
+'Open next bar' is known when the stop is placed at the open. No bar size or market named: run on daily cash indices (instrument swap). Fills: vault TradeStation daily-bar convention (ajmisc.rs header). India: instrument swap; index shorts hypothetical. [Unstated choices, honest count 4 (R4 #400/#408)] (1) the bar size is daily; (2) fills follow the vault's TradeStation daily-bar convention; (3) when the limit and the stop are both reachable on one bar, the vault's convention decides which fills; (4) the exit check 'open next bar versus the entry price' is made from the day after the entry, with gap fills .",
         claim: None }]
 }
 

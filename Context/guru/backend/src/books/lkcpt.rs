@@ -345,7 +345,7 @@ const DEFS: &[D] = &[
     D { id: "lkcpt_kurt10", name: "Kurtosis (alpha 0.10)", author: "Ulf Jensen - How I Tripled My Money in the Futures Market", pages: "pp.155-159, code pp.237-238",
         rules: &["F|Kurtosis = 0.10 Acceleration + 0.90 Kurtosis[1]", "E|Kurtosis > 0: Buy; < 0: Sell (next bar at market)", "X|Always in"], sp: "1089 / 39% / 5 / 2", notes: "" },
     D { id: "lkcpt_fsrs", name: "FSRS", author: "Ulf Jensen - How I Tripled My Money in the Futures Market", pages: "pp.160-164, code p.238",
-        rules: &["F|FSRS = 10000 WAverage(Kurtosis(0.03), 6) + RSI(Close, 9)", "E|FSRS > WAverage(FSRS, 6): Buy next bar at market; < : Sell", "X|Always in"], sp: "755 / 44% / 6 / 4", notes: "" },
+        rules: &["F|FSRS = 10000 WAverage(Kurtosis(0.03), 6) + RSI(Close, 9)", "E|FSRS > WAverage(FSRS, 6): Buy next bar at market; < : Sell", "X|Always in"], sp: "755 / 44% / 6 / 4", notes: "[Unstated choices, honest count 2 (R4 #400/#408)] (1) the Kurtosis seed; (2) the WAverage definition." },
     D { id: "lkcpt_123", name: "1-2-3 reversal system with profit target", author: "Ulf Jensen - How I Tripled My Money in the Futures Market", pages: "pp.165-169, code pp.238-239",
         rules: &["E|C > C[1], C[1] < C[2], C[2] < C[3], SlowK(9) > SlowK(9)[1], SlowD(9) < 50: Buy next bar at market", "E|Mirror: Sell next bar at market", "X|Exit #1"], sp: "285 / 56% / 10 / 10", notes: "" },
     D { id: "lkcpt_ons", name: "One Night Stand", author: "Joe Krutsinger - The Trading Systems Toolkit", pages: "pp.170-174, code p.239",

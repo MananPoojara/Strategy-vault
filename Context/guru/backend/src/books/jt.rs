@@ -51,7 +51,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"if CurrentBar > 1 and Low crosses over LowerBand then Buy next bar at LowerBand stop\" (pdf p.129)",
             "X|\"Place an initial stop loss x % below entry price (Opt value: x = 1.9)\" (pdf p.129); short: above",
             "X|\"Place a profit target z % above entry price (Opt value: 4.8)\" (pdf p.129); short: below",
-        ], "Book's example of an over-fitted 6-parameter system on GBP/USD daily 2002-2008 (training 69 trades, $78,000; test $379, Table 5.1). Run on the index instead of GBP/USD. Cross = today below, yesterday at/above."),
+        ], "Book's example of an over-fitted 6-parameter system on GBP/USD daily 2002-2008 (training 69 trades, $78,000; test $379, Table 5.1). Run on the index instead of GBP/USD. Cross = today below, yesterday at/above. [Unstated choices, honest count 3 (R4 #400/#408)] (1) 'crosses over' / 'crosses under' = today beyond the band, yesterday at or on the other side; (2) a stop order gapping through its level fills at the open; (3) how a stop and a target both reachable in one bar are ordered is not stated."),
         d("jt_bom", "Beginning of Month (BOM)", "Ch 5.6 · A simple, robust trading system", "Long", Live, &[
             "E|\"Buy a stock market index every last trading day of each month on close.\" (pdf p.159; AmiBroker isLastOfMonth, pdf p.391)",
             "F|\"do not enter when the market (on the month end) closes below the 40-day moving average\" (pdf p.159); code: C > Average(Close,40)",

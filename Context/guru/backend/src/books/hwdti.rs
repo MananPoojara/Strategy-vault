@@ -21,7 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
                 "E|\"(Sell Signal) If waverage (close, 20) crosses below average (close, 56), then sell one contract at the close.\" (Figure 6.4)",
                 "X|\"This trading system is a stop-and-reverse system. In other words, if the trading system is long the Treasury bonds market and generates a sell signal, it will exit the long position and initiate a short position.\" (p.130-131)",
             ],
-            notes: "Cross = WMA20 above SMA56 today and not above yesterday (mirror for below); the first trade is the first cross after both averages exist. WMA = linear weights 1..20. Book test: continuous back-adjusted T-bond futures 22 Aug 1977-31 Dec 1999, Table 6.1 (p.137): 105 trades, 38.1% profitable, net $63,407.40, average trade $603.88 - a bond-futures result, not comparable with an index. India: instrument swap; index shorts are hypothetical.",
+            notes: "Cross = WMA20 above SMA56 today and not above yesterday (mirror for below); the first trade is the first cross after both averages exist. WMA = linear weights 1..20. Book test: continuous back-adjusted T-bond futures 22 Aug 1977-31 Dec 1999, Table 6.1 (p.137): 105 trades, 38.1% profitable, net $63,407.40, average trade $603.88 - a bond-futures result, not comparable with an index. India: instrument swap; index shorts are hypothetical. [Unstated choices, honest count 2 (R4 #400/#408)] (1) a cross is WMA20 above SMA56 today and not above yesterday; (2) the first trade is the first cross after both averages exist.",
             claim: None,
         },
         StrategyDef {

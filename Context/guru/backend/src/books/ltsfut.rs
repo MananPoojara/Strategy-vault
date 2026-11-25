@@ -28,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "Code inputs are the defaults (lslen 30, pctup 1.425, pctdn 1.425, pctjup 0.35, pctjdn 0.50, prc close). The first two bars with 30 closes run the initialisation block (h_ep = l_ep = xplus). \
 The swing state bopos changes inside the order blocks, which run only for the stated market position, so the state depends on the position (as in the code). \
 Timeframe and market are not stated (Open Code.rar, LTS STINGRAY.ELA only); the rules are in percent with no intraday construct, so it is run on daily bars [Assumption]. \
-Two orders on one bar fill in code order at the same open. India: instrument swap; index shorts hypothetical."),
+Two orders on one bar fill in code order at the same open. India: instrument swap; index shorts hypothetical. [Unstated choices, honest count 4 (R4 #400/#408)] (1) daily bars (timeframe not stated) [Assumption]; (2) the initialisation block runs on the first bar with 30 closes; (3) the swing state bopos changes only inside the position-gated blocks; (4) two orders on one bar fill in code order at the same open."),
         def("ltsfut_breakout", "LTS Breakout (intraday)", Status::NeedsData("intraday bars: orders only between strtTime 9:35 and endTime 13:20, thrust stops from the session open, MOC exit at SessionEndTime 16:15 (LapisTs.dll session functions)"),
             &["E|\"stb = Round2Fraction(OPEN + thrust1)\" at the first bar of the session (TIME = SESS1STARTTIME + BARINTERVAL)"], "TS 7 code with LapisTs.dll licence calls; intraday only."),
         def("ltsfut_optimum", "LTS Optimum (intraday)", Status::NeedsData("intraday bars: entries only between strtTime 11:00 and endTime 11:45, MOC alert/exit at 16:15, IntelliStop from LapisTs.dll from 2009"),
