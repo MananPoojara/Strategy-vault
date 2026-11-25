@@ -7,10 +7,10 @@
 use crate::connors::{Ctx, Params, Trade};
 use std::cell::Cell;
 
-/// Pilot (Q416, 25 Nov 2026): one id per family; the batch follows the lead's review.
-pub const REOPEN: &[&str] = &["as51_ema_scalp", "tdperl_rebo", "bfmm_esl", "stad2_adxdiff", "rwmts_15m_5m_rsi", "sdtcp_donchian", "jkbk_safe", "tcdt_idp1", "jmls_bar_breakout", "msadd_n_can_ha"];
+/// Pilot (Q416, 25 Nov 2026): ids with an independent reference at 0 mismatches on the FUT1 bars (K1/fut1/fut1_ref.py); dropped after the lead's 18:05 decision: tdperl_rebo (no minute-order reference), stad2_adxdiff (registered reference cannot be imported, rule too long to rebuild), rwmts_15m_5m_rsi (the registered K53 reference does not reproduce the engine even on SPY cash minutes), jmls_bar_breakout (both pairs held by the India-better test, overnight carry across futures rolls).
+pub const REOPEN: &[&str] = &["as51_ema_scalp", "bfmm_esl", "sdtcp_donchian", "jkbk_safe", "tcdt_idp1", "msadd_n_can_ha"];
 /// (id, ticker) pairs flagged by the #231/#234 India-better test against the tradable SPY result: not published (filled in by the pilot report).
-pub const FLAGGED: &[(&str, &str)] = &[("tdperl_rebo", "NIFTY 50"), ("bfmm_esl", "NIFTYBANK"), ("stad2_adxdiff", "NIFTYBANK"), ("rwmts_15m_5m_rsi", "NIFTYBANK"), ("sdtcp_donchian", "NIFTYBANK"), ("jkbk_safe", "NIFTY 50"), ("tcdt_idp1", "NIFTY 50"), ("jmls_bar_breakout", "NIFTY 50"), ("jmls_bar_breakout", "NIFTYBANK")]; // pilot test 25 Nov: India sum return opposite in sign to, or > 10x, the SPY sum over the same dates (K1/fut1/india-better.json)
+pub const FLAGGED: &[(&str, &str)] = &[("bfmm_esl", "NIFTYBANK"), ("sdtcp_donchian", "NIFTYBANK"), ("jkbk_safe", "NIFTY 50"), ("tcdt_idp1", "NIFTY 50")]; 
 thread_local! { static ACTIVE: Cell<bool> = const { Cell::new(false) }; }
 pub fn applies(id: &str, ticker: &str) -> bool { REOPEN.contains(&id) && matches!(ticker, "NIFTY 50" | "NIFTYBANK") && !FLAGGED.contains(&(id, ticker)) }
 pub const NOTE: &str = "FUT1 ADAPTATION (R4 #416, #340, UNVERIFIED): on NIFTY 50 / NIFTYBANK this rule runs on the first-month futures 1-minute series (lane DI) and futures daily bars built from it (open = first minute, close = last minute before 15:30), never on cash-index minutes; the window is the days the futures file holds (NIFTY 50 from 2018-12-28, NIFTYBANK from 2023-09-06); the series is nearest-expiry continuous and not back-adjusted, so a roll appears as a gap between two days (trades never span one). The book's market is not NSE index futures: no printed result is comparable.";
