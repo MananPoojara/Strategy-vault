@@ -1781,9 +1781,11 @@ const BOOK_BLURB = { stc9: 'TradingMarkets Swing Trading College IX (2010) · 14
 // ---------------------------------------------------------------- 4. one strategy (the main app's strategy panel, nothing else)
 const RUNS = {}, OHLC = {}, FULL_OHLC={},PRISTINE_READY={};
 const fullOhlc=(tk,api=API)=>{const key=api+'|'+tk;return FULL_OHLC[key]||(FULL_OHLC[key]=fetch(api+'/ohlc?'+new URLSearchParams({ticker:tk}),{signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error('Full chart history unavailable');return r.json();}).catch(error=>{delete FULL_OHLC[key];throw error;}));};
-const ohlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohlc-${tk.replace(/\s/g, '')}${tf === 'D' ? '' : '-' + tf}.json`).then(r => r.ok ? r.json() : null).catch(() => null));
+const staticOhlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohlc-${tk.replace(/\s/g, '')}${tf === 'D' ? '' : '-' + tf}.json`).then(r => r.ok ? r.json() : null).catch(() => null));
+// Q410: the static data/ohlc-*.json files are an Oct snapshot (India ends 2026-10-09); the engine's series is current, so read it first and aggregate for W/M; the snapshot is only the fallback when the engine call fails.
+const ohlc = async (tk, tf = 'D') => { const full = await fullOhlc(tk).catch(() => null); return (full && (tf === 'D' ? full : VaultReport.aggregate(full, tf))) || staticOhlc(tk, tf); };
 // Benchmark buy & hold reads the engine's own series (static data/ohlc-*.json files are a snapshot that can end before the run).
-const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => ohlc(tk));
+const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => staticOhlc(tk));
 let TF = 'D';
 const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
   return RUNS[k] || (RUNS[k] = (async () => { const t0 = performance.now();
@@ -1938,7 +1940,7 @@ async function viewStrategy() {
   const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(check=>check?.available), pass = chk.filter(x => x.ok).length;
   // Tile names and order as the desk's Signals page (user 20 Nov 2026); values are the engine's, no subtitles.
   const tiles = [[account||unit?display.label:'Net P&L',display.value,x=>pct(x,2,true),'',cls(display.value)],['Avg P&L',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'',cls(s.avg_trade)],['Trades',s.trades,x=>fx(x,0),''],['Win %',s.win_rate,x=>pct(x,1),''],['Expectancy',s.expectancy_ratio,x=>fx(x),'',cls(s.expectancy_ratio)],['Monthly Thickness',s.monthly_thickness,x=>pct(x,1),'',cls(s.monthly_thickness)],['Max DD %',s.max_dd,x=>pct(x,1),'','neg'],['CAR/MDD',s.car_mdd??s.mar,x=>fx(x),'']];
-  const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);
+  const px=optimization?null:(await chartRequest)||d.ohlc||await staticOhlc(tk); // the engine call already failed (30 s timeout): go straight to the static snapshot, no second engine wait
   if(generation!==busy)return '';
   STRAT = { d, v, tk,region:selection.region, tiles, px, display, account,unit, sourceView:account?sourceAccountView(account):null, indicatorParameters:parameters };
   STRAT.settings=settingsModel(v,d,selection,{reportMode:(selection.report_mode==='compound'?'Compounding':'Fixed quantity')+' · '+display.reportMode,fixedNote:account||unit?'Only this reviewed configuration is admitted; other settings need their own review, so they cannot be changed here.':''});

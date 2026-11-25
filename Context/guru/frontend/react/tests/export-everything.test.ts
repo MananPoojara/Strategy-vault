@@ -44,10 +44,10 @@ it('page buttons and Export everything build each workbook with the same table c
 
 it('static price files are read only as a fallback after the engine series', () => {
   const reads = runtime.split('\n').filter(l => /[^\w.]ohlc\(/.test(l) && !l.startsWith('const ohlc'));
-  expect(reads).toHaveLength(3);
-  expect(reads[0]).toContain('const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => ohlc(tk));');
-  expect(reads[1]).toContain('const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);');
-  expect(reads[2]).toContain("STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf)");
+  expect(reads).toHaveLength(1);
+  expect(runtime).toContain('const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => staticOhlc(tk));');
+  expect(runtime).toContain('const px=optimization?null:(await chartRequest)||d.ohlc||await staticOhlc(tk);');
+  expect(reads[0]).toContain("STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf)");
 });
 
 type Run = ExportRun & {tk: string; from: string; p: string};

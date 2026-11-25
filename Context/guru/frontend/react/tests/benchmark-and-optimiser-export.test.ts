@@ -15,7 +15,7 @@ const prices = (d: string[]) => ({d, c: d.map((_, i) => 100 + i)});
 it('benchmark prices come from the engine series, the static file only as a fallback', async () => {
   const line = part('const benchmarkOhlc', '\n');
   const engine = prices(dates), stale = prices(dates.slice(0, 3));
-  const make = (full: () => Promise<unknown>) => new Function('fullOhlc', 'ohlc', 'API', `${line};return benchmarkOhlc;`)(full, async () => stale, '/api/in');
+  const make = (full: () => Promise<unknown>) => new Function('fullOhlc', 'staticOhlc', 'API', `${line};return benchmarkOhlc;`)(full, async () => stale, '/api/in');
   expect(await make(async () => engine)('NIFTY 50')).toBe(engine);
   expect(await make(async () => {throw Error('down');})('NIFTY 50')).toBe(stale);
   // the strategy page, the basket page and the export all read it; none reads the static snapshot directly
@@ -69,4 +69,20 @@ it('optimiser trades export carries the Net Profit display and report link of th
   expect(sent.url).toBe('http://vault/app/#/s/cr2?tk=NIFTY+50&from=2010-01-01&to=&cost=5&report_mode=fixed&p=len%3D3&slippage=2&rollover=0');
   // snapshotContext writes the run's own link into the Metadata sheet
   expect(part('function snapshotContext(', ' const filePart=')).toContain('url:run.url||location.href');
+});
+
+it('ohlc(): the engine series first (daily, and weekly aggregation), the static snapshot only when the engine fails or cannot aggregate', async () => {
+  const line = part('const ohlc = async', '\n');
+  // 2026-11-16 and 2026-11-23 are Mondays: two weeks of three bars
+  const d = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-23', '2026-11-24', '2026-11-25'];
+  const engine = {d, o: [10, 11, 12, 20, 21, 22], h: [15, 16, 17, 25, 26, 27], l: [9, 8, 10, 19, 18, 20], c: [11, 12, 13, 21, 22, 23]};
+  const stale = {d: ['2026-10-09'], o: [1], h: [2], l: [0], c: [1]};
+  const make = (full: () => Promise<unknown>) => new Function('fullOhlc', 'staticOhlc', 'VaultReport', `${line};return ohlc;`)(full, async () => stale, VaultReport);
+  expect(await make(async () => engine)('NIFTY 50')).toBe(engine);
+  const w = await make(async () => engine)('NIFTY 50', 'W');
+  expect(w.d).toHaveLength(2);
+  expect([w.o[0], w.h[0], w.l[0], w.c[0]]).toEqual([10, 17, 8, 13]);
+  expect([w.o[1], w.h[1], w.l[1], w.c[1]]).toEqual([20, 27, 18, 23]);
+  expect(await make(async () => {throw Error('down');})('NIFTY 50')).toBe(stale);
+  expect(await make(async () => ({d, c: engine.c}))('NIFTY 50', 'W')).toBe(stale);
 });
