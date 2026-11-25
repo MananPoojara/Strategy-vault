@@ -11,11 +11,11 @@ pub const BOOK: &str = "hcta";
 /// stocks (US and India) as a declared application; independent ledgers, 0 mismatches. Futures trades stay NeedsData.
 pub const REVIEWED: &[&str] = &["hcta_sp_jan_long", "hcta_sp_apr_long", "hcta_sp_jul_short", "hcta_sp_oct_long"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
-/// Lane K74 (R4 #277 (5)): the April-gold seasonal on GLD as a labelled application (the vault's only gold series, as
-/// scblack_gold, #207(2)); published on GLD only (home()).
+/// Lane K74 (R4 #277 (5)): the April-gold seasonal on GLD as a labelled application (a gold series, as
+/// scblack_gold, #207(2)); R4 #414: published on GLD and on Gold (Norgate &GC) (home() + futures::DUAL).
 pub const GOLD_GLD: &[&str] = &["hcta_gold_jan_short", "hcta_gold_aug_long", "hcta_gold_oct_short", "hcta_gold_nov_long"]; // + R4 #278 (3)
 pub const GLD: &str = "GLD";
-/// The GLD-only card is not published on any other instrument.
+/// These cards are published on GLD and Gold (Norgate &GC) only (R4 #414), no other instrument.
 pub fn home(id: &str, ticker: &str) -> Option<String> {
     (GOLD_GLD.contains(&id) && ticker != GLD && !crate::futures::is_futures(ticker)).then(|| format!("Not published on {ticker}: this seasonal trade is for gold; the vault's gold series are GLD and the Norgate Gold futures contract (open the card on GLD or on Gold (Norgate &GC)). A gold season on another instrument would change the asset class."))
 }
@@ -60,7 +60,7 @@ fn catalogue_raw() -> Vec<StrategyDef> {
         d("hcta_gold_jan_short", "January short Gold (J), TD 14 hold 38", "CTA 2010 p.126-127 · Gold seasonal trades", "Short", Live,
             &["E|Sell short the April (J) contract at the close of the 14th trading day of January (Top Percentage Plays table, p.126-127: \"Trading Day 14\")",
               "X|Exit at the close 38 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decision #277 (5)): a labelled application. The book traded the COMEX April gold futures contract (1975-2009); GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the April contract (no basis, roll or contract expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades: sell short at the close of January's 14th trading day on GLD's own calendar, cover at the close 38 trading days later. Shorting GLD is hypothetical exposure (no borrow cost).",
+            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decision #277 (5)): a labelled application. The book traded the COMEX April gold futures contract (1975-2009); GLD (the vault also holds the Norgate gold futures &GC from 1978, R4 #414) (from November 2004), holds gold bullion, so its price follows spot gold, not the April contract (no basis, roll or contract expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades: sell short at the close of January's 14th trading day on GLD's own calendar, cover at the close 38 trading days later. Shorting GLD is hypothetical exposure (no borrow cost).",
             claim("35", "65.7% (23 gains / 12 losses)", "total $53,750 (best $33,100, worst -$10,680)", "38 trading days", "1975-2009, April contract, one contract")),
         d("hcta_30_year_bond_feb_short", "February short 30-Year Bond (M), TD 3 hold 44", "CTA 2010 p.126-127 · 30-Year Bond seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the June (M) contract at the close of the 3rd trading day of February (Top Percentage Plays table, p.126-127: \"Trading Day 3\")",
@@ -215,7 +215,7 @@ fn catalogue_raw() -> Vec<StrategyDef> {
         d("hcta_gold_aug_long", "August long Gold (Z), TD 18 hold 25", "CTA 2010 p.126-127 · Gold seasonal trades", "Long", Live,
             &["E|Buy the December (Z) contract at the close of the 18th trading day of August (Top Percentage Plays table, p.126-127: \"Trading Day 18\")",
               "X|Exit at the close 25 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX December (Z) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar.",
+            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX December (Z) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD (the vault also holds the Norgate gold futures &GC from 1978, R4 #414) (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar.",
             claim("34", "58.8% (20 gains / 14 losses)", "total $35,670 (best $10,380, worst -$4,280)", "25 trading days", "1975-2008, December contract, one contract")),
         d("hcta_euro_sep_long", "September long Euro (Z), TD 5 hold 16", "CTA 2010 p.126-127 · Euro seasonal trades", "Long", NeedsData(FUT),
             &["E|Buy the December (Z) contract at the close of the 5th trading day of September (Top Percentage Plays table, p.126-127: \"Trading Day 5\")",
@@ -240,7 +240,7 @@ fn catalogue_raw() -> Vec<StrategyDef> {
         d("hcta_gold_oct_short", "October short Gold (Z), TD 2 hold 25", "CTA 2010 p.126-127 · Gold seasonal trades", "Short", Live,
             &["E|Sell short the December (Z) contract at the close of the 2nd trading day of October (Top Percentage Plays table, p.126-127: \"Trading Day 2\")",
               "X|Exit at the close 25 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX December (Z) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar. Shorting GLD is hypothetical exposure (no borrow cost).",
+            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX December (Z) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD (the vault also holds the Norgate gold futures &GC from 1978, R4 #414) (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar. Shorting GLD is hypothetical exposure (no borrow cost).",
             claim("34", "64.7% (22 gains / 12 losses)", "total $15,710 (best $11,210, worst -$8,710)", "25 trading days", "1975-2008, December contract, one contract")),
         d("hcta_silver_oct_short", "October short Silver (Z), TD 4 hold 17", "CTA 2010 p.126-127 · Silver seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the December (Z) contract at the close of the 4th trading day of October (Top Percentage Plays table, p.126-127: \"Trading Day 4\")",
@@ -280,7 +280,7 @@ fn catalogue_raw() -> Vec<StrategyDef> {
         d("hcta_gold_nov_long", "November long Gold (G), TD 13 hold 10", "CTA 2010 p.126-127 · Gold seasonal trades", "Long", Live,
             &["E|Buy the February (G) contract at the close of the 13th trading day of November (Top Percentage Plays table, p.126-127: \"Trading Day 13\")",
               "X|Exit at the close 10 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX February (G) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD, the vault's only gold series (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar.",
+            "Published on GLD and, from R4 #414, on the Norgate Gold futures contract (&GC) (lane K74, decisions #277 (5), #278 (3)): a labelled application. The book traded the COMEX February (G) gold futures contract (1975-2008); the contract month only names which future is held over the calendar window. GLD (the vault also holds the Norgate gold futures &GC from 1978, R4 #414) (from November 2004), holds gold bullion, so its price follows spot gold, not the contract (no basis, roll or expiry), and the book's trades are not reproduced. Same calendar rule as the S&P trades, on GLD's own trading-day calendar.",
             claim("34", "52.9% (18 gains / 16 losses)", "total $16,060 (best $3,950, worst -$2,710)", "10 trading days", "1975-2008, February contract, one contract")),
         d("hcta_30_year_bond_nov_short", "November short 30-Year Bond (M), TD 14 hold 107", "CTA 2010 p.126-127 · 30-Year Bond seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the June (M) contract at the close of the 14th trading day of November (Top Percentage Plays table, p.126-127: \"Trading Day 14\")",
@@ -578,13 +578,13 @@ mod tests {
         let t = run("hcta_sp_jan_long", &x, 0, r.len() - 1, &Params::new()).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((x.r[t[0].legs[0].i].date.as_str(), x.r[t[0].exit_i].date.as_str()), ("1983-01-21", "1983-02-01"));
-        // lane K74: the gold trade is published on GLD only
+        // lane K74 / R4 #414: the gold trade is published on GLD and Gold (Norgate &GC)
         for id in GOLD_GLD { assert!(home(id, "SPY").is_some() && home(id, "GLD").is_none(), "{id}"); }
         assert!(home("hcta_sp_jan_long", "SPY").is_none());
     }
 }
 
-// Lane K74 (11 Nov 2026, R4 #277 (5)): the April-gold seasonal on GLD only (home()).
+// Lane K74 (11 Nov 2026, R4 #277 (5)): the gold seasonals on GLD (home()); R4 #414: and on Gold (Norgate &GC) (futures::DUAL).
 pub const ADMISSION_GLD: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && GOLD_GLD.contains(&def.id),
     label: "The Commodity Trader's Almanac trades these seasonals on COMEX gold futures (April, December and February contracts, 1975-2009). They run on GLD (bullion, so it follows spot gold, not the April contract) and, from R4 #414, on the Norgate Gold continuous futures contract (&GC), declared adaptations; other instruments are not published.",
