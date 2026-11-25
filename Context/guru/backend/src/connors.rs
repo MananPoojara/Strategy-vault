@@ -361,6 +361,8 @@ impl VixAligned {
             at,
         }
     }
+    /// VIX close / its 10-day SMA - 1 on this instrument's bar i (NaN without a VIX bar or before the SMA exists).
+    pub fn stretch_at(&self, i: usize) -> f64 { self.at.get(i).copied().flatten().map_or(f64::NAN, |k| self.stretch[k]) }
     /// Consecutive days the VIX closed >= pct% above its 10-day SMA (pct < 0: <= |pct|% below),
     /// counted on the VIX's own bars, then aligned.
     pub fn stretched(&self, pct: f64) -> Vec<usize> {
