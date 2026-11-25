@@ -15,7 +15,7 @@ const prices = (d: string[]) => ({d, c: d.map((_, i) => 100 + i)});
 it('benchmark prices come from the engine series, the static file only as a fallback', async () => {
   const line = part('const benchmarkOhlc', '\n');
   const engine = prices(dates), stale = prices(dates.slice(0, 3));
-  const make = (full: () => Promise<unknown>) => new Function('fullOhlc', 'ohlc', 'API', `${line};return benchmarkOhlc;`)(full, async () => stale, '/api/in');
+  const make = (full: () => Promise<unknown>) => new Function('fullOhlc', 'staticOhlc', 'API', `${line};return benchmarkOhlc;`)(full, async () => stale, '/api/in');
   expect(await make(async () => engine)('NIFTY 50')).toBe(engine);
   expect(await make(async () => {throw Error('down');})('NIFTY 50')).toBe(stale);
   // the strategy page, the basket page and the export all read it; none reads the static snapshot directly
