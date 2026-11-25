@@ -54,7 +54,7 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
         : undefined}
       settings={snapshot.strategySettings}
       hideParameters
-      onApply={(report_mode, p) => window.VaultRuntime.patch(p === undefined ? {report_mode} : basket ? {p} : {report_mode, p})}
+      onApply={(report_mode, p, settings) => window.VaultRuntime.patch({...(basket ? {} : {report_mode}), ...(p === undefined ? {} : {p}), ...settings})}
     />,
     "strategy-params": <StrategyParameters settings={snapshot.strategySettings} onApply={p => window.VaultRuntime.patch({p})} />,
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,

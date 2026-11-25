@@ -14,9 +14,15 @@ export interface ReturnDisplay {
   unavailableReason: string | null;
 }
 
+/** Strategy-settings position size (user request 25 Nov 2026): the share of the account each trade uses.
+ * Compounding: `weight` = % of equity / 100, each closed trade multiplies equity by 1 + weight × return (the rest is idle cash).
+ * Fixed amount: `weight` = amount per trade / initial equity, each closed trade adds weight × return. 1 = the full account. */
+export interface PositionSizing {weight: number}
+
 /** Read the existing net, position-weighted trade returns without changing
- * execution, sizing, other statistics or open-position equity marks. */
-export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", account: SourceAccount | null = null, unit: UnitExposureView | null = null): ReturnDisplay {
+ * execution, other statistics or open-position equity marks. The value is a fraction of the initial equity. */
+export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", account: SourceAccount | null = null, unit: UnitExposureView | null = null, sizing: PositionSizing | null = null): ReturnDisplay {
+  const w = sizing && !account && !unit && Number.isFinite(sizing.weight) && sizing.weight > 0 ? sizing.weight : 1;
   if (unit) return unitExposureDisplay(data,mode,unit);
   const result: ReturnDisplay = {
     mode,
@@ -49,7 +55,7 @@ export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", 
     if (mode === "compound") return unavailable("This run's trades load page by page; the compounded closed-trade view needs every trade at once.");
     if (typeof stats?.net_profit !== "number" || !Number.isFinite(stats.net_profit) || typeof stats.trades !== "number")
       return unavailable("Closed-trade returns are unavailable.");
-    return {...result, value: stats.net_profit, closedTrades: stats.trades, description: result.description + " Summed by the engine over every closed trade (six decimals)."};
+    return {...result, value: w * stats.net_profit, closedTrades: stats.trades, description: result.description + " Summed by the engine over every closed trade (six decimals)."};
   }
   if (!data || typeof data !== "object" || !Array.isArray((data as {trades?: unknown}).trades)) {
     return unavailable("Closed-trade returns are unavailable.");
@@ -73,14 +79,14 @@ export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", 
       return unavailable("A closed trade has no finite net return; the display cannot be calculated.");
     }
     if (mode === "compound") {
-      const factor = 1 + ret;
+      const factor = 1 + w * ret;
       if (factor <= 0) return unavailable("Compounding requires a positive return factor for every closed trade.");
       value *= factor;
       if (!Number.isFinite(value) || value <= 0) {
         return unavailable("The compounded return is outside finite positive arithmetic bounds.");
       }
     } else {
-      value += ret;
+      value += w * ret;
       if (!Number.isFinite(value)) return unavailable("The additive return is outside finite arithmetic bounds.");
     }
   }

@@ -11,6 +11,7 @@ import {createPaint,NOT_READY} from '../services/first-paint';
 import {routeData} from '../services/route-data';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
+import {tradesheetSheet} from '../services/tradesheet-workbook';
 import {exportEverything,EXPORT_INDICES,EXPORT_PERIODS} from '../services/export-everything';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
 import {BANDY_SIMPLE_METHOD,simpleInstrumentContext} from '../services/bandy-source-account';
@@ -81,7 +82,7 @@ function pristineCurrent(data,view){
 /* Report controls use recorded engine results; unavailable inputs stay empty. */
 window.VaultUI=(()=>{
  const escText=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
- const costState=st=>({slippage:st.slippage||'0',rollover:st.rollover||'0'});
+ const costState=st=>({slippage:st.slippage||'0',rollover:st.rollover||'0',...(+st.penny>0?{penny:String(st.penny)}:{}),...(st.dead_stock==='1'?{dead_stock:'1'}:{})});
  const label=(n,type)=>typeof n!=='number'||!Number.isFinite(n)?'—':type==='percent'?(n*100).toFixed(2)+'%':n.toFixed(type==='count'?0:type==='days'?1:2);
  let currentBenchmark=null;
  const tradeHeadersFor=d=>d.source_account?sourceTradeHeaders(VaultReport.tradeHeaders):VaultReport.tradeHeaders;
@@ -138,7 +139,7 @@ window.VaultUI=(()=>{
  function tradePager(d){const p=d.trades_page;if(!p)return '';const n=d.trades.length,newer=p.offset+n<p.total,older=p.offset>0;
   return `${n?`<button type="button" class="dbtn sm" data-trade-page="${Math.min(p.offset+TRADE_PAGE,Math.max(0,p.total-TRADE_PAGE))}" ${newer?'':'disabled'}>Newer</button><button type="button" class="dbtn sm" data-trade-page="${Math.max(0,p.offset-TRADE_PAGE)}" ${older?'':'disabled'}>Older</button>`:''}`;}
  function tradePageNote(d){const p=d.trades_page;return p?`<p class="rnote" data-trade-page-note>This run has ${p.total.toLocaleString('en-US')} trades, more than the ${p.cap.toLocaleString('en-US')} one response carries, so the trade list loads ${TRADE_PAGE.toLocaleString('en-US')} at a time. Statistics, equity, drawdown and calendar returns use every trade; this table and its Excel/CSV downloads cover only the loaded page, and the price chart draws no trade markers.</p>`:'';}
- function tradeHTML(d){const p=d.trades_page,n=(d.trades||[]).length;return `<section class="box" data-tradesheet><div class="box-h">Tradelist <span class="legend"><small>${p?`${p.total} trades · ${n?`showing ${p.offset+1}–${p.offset+n}`:'loading the newest page'}`:`${n} trades`} · newest first</small>${tradePager(d)}<button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div>${tradePageNote(d)}<div class="tlog" data-tradesheet-table></div></section>`;}
+ function tradeHTML(d){const p=d.trades_page,n=(d.trades||[]).length;return `<section class="box" data-tradesheet><div class="box-h">Tradelist <span class="legend"><small>${p?`${p.total} trades · ${n?`showing ${p.offset+1}–${p.offset+n}`:'loading the newest page'}`:`${n} trades`} · newest first</small>${tradePager(d)}<button class="dbtn sm" id="trades-xlsx">Download Excel</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div>${tradePageNote(d)}<div class="tlog" data-tradesheet-table></div></section>`;}
  // The rows are built when the Tradelist tab opens, or for a PDF or print. Exports read the run data, never this table.
  function tradeTableHTML(d,tk){const rows=tradeRowsFor(d,tk),us=typeof isUS==='function'&&isUS(),fin=v=>typeof v==='number'&&Number.isFinite(v);
   // Columns as the desk's tradesheet (user 20 Nov 2026): a cost column only while that cost is on, money columns only when
@@ -230,6 +231,24 @@ window.VaultUI=(()=>{
   XLSX.utils.book_append_sheet(book,styledSheet([['Parameter','Value'],...Object.entries(st.params)]),'Parameters');
   const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});if(!save)return {name:reportName(st,kind,'xlsx'),bytes:new Uint8Array(bytes)};downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),reportName(st,kind,'xlsx'));msg('Excel downloaded.');
  }
+ // The tradesheet download (user request 25 Nov 2026): one Excel file in the desk's Spot tradesheet layout (services/tradesheet-workbook.ts).
+ // Reviewed accounts, unit reports, paged and basket runs keep their audited workbook.
+ async function tradesheetXlsx(st){
+  if(st.d.source_account||st.d.unit_exposure_report||st.d.trades_page||st.d.kind==='basket')return xlsx(...await reportTable('trades',st));
+  msg('Preparing Excel…');await (typeof loadXlsx==='function'?loadXlsx():loadScript('vendor/xlsx-js-style-1.2.0.min.js'));
+  if(!window.XLSX?.utils)throw Error('The Excel library did not load.');
+  const sec={F:[],E:[],A:[],X:[]};(st.v.rules||[]).forEach(x=>{const [t,...r]=x.split('|');(sec[t]||sec.E).push(r.join('|'));});
+  const costs=st.d.costs||{},sh=tradesheetSheet({strategy:familyDisplayName(st.v)||st.v.name||st.v.id,book:BOOK[st.v.book]?.title,symbol:LABEL[st.tk]||st.tk,currency:S.region==='us'?'$':'₹',
+   rules:{setup:sec.F,entry:sec.E,scaleIn:sec.A,exit:sec.X},period:{from:st.d.dates?.[0]||'',to:st.d.dates?.at(-1)||''},
+   costs:{brokerageBps:+(costs.fees_bps??S.cost)||0,slippageBps:+(costs.slippage_bps??S.slippage)||0},filters:{deadStock:S.dead_stock==='1',penny:+S.penny||0},
+   account:{equity:+S.equity||1e6,compound:S.report_mode==='compound',weight:sizingOf(S).weight},trades:st.d.trades||[]});
+  const ws={};sh.rows.forEach((row,r)=>row?.forEach((cell,c)=>{if(cell)ws[XLSX.utils.encode_cell({r,c})]=cell;}));
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(0,sh.rows.length-1),c:sh.cols.length-1}});ws['!merges']=sh.merges;ws['!cols']=sh.cols;
+  ws['!rows']=Array.from({length:sh.rows.length},(_,r)=>sh.heights[r]?{hpt:sh.heights[r]}:null);if(sh.autofilter)ws['!autofilter']={ref:sh.autofilter};
+  const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,ws,'Tradesheet');
+  const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});
+  downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),reportName(st,'trades','xlsx'));msg('Excel downloaded.');
+ }
  async function pristineExport(data,view,kind){
   if(!pristineCurrent(data,view))throw Error('The Pristine response or current controls changed.');
   const safe=value=>typeof value==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(value)?"'"+value:value;
@@ -312,7 +331,7 @@ window.VaultUI=(()=>{
  document.addEventListener('click',e=>{const s=e.target.closest('[data-share]');if(s){share(s.dataset.share);return;}const m=document.querySelector('.share-menu');if(m&&!m.hidden&&!e.target.closest('.share-menu,[data-action="share-menu"]'))m.hidden=true;});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=document.querySelector('.share-menu');if(m)m.hidden=true;}});
  async function init(){iconize();}
- document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot],[data-report-export],#trades-xlsx,#csv');if(!b)return;try{if(b.dataset.action)return await action(b.dataset.action);if(b.dataset.chartSnapshot)return await snapshot(b.dataset.chartSnapshot);if(!STRAT)return;const st=snapshotContext();if(b.id==='csv')return downloadBlob(new Blob([VaultReport.csv(csvSafeRows(tradeExportRows(st)))],{type:'text/csv;charset=utf-8'}),reportName(st,'trades','csv'));if(b.id==='trades-xlsx')return await xlsx(...await reportTable('trades',st));const kind=b.dataset.reportExport;if(kind==='unit-audit'||kind==='unit-daily'){const unit=unitFor(st);if(!unit)throw Error('No validated unit-exposure report is available.');const table=unitExposureTables(unit)[kind==='unit-audit'?'audit':'daily'];return await xlsx(kind,[table.headers,...table.rows],table.percentColumns,st);}if(kind==='account-audit'){const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region));if(!account)throw Error('No protected source account is available.');const table=sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)).audit;return await xlsx('account-audit',[table.headers,...table.rows],table.percentColumns,st);}if(REPORT_KINDS.includes(kind))return await xlsx(...await reportTable(kind,st));}catch(e){msg('Export failed: '+e.message);}});
+ document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot],[data-report-export],#trades-xlsx');if(!b)return;try{if(b.dataset.action)return await action(b.dataset.action);if(b.dataset.chartSnapshot)return await snapshot(b.dataset.chartSnapshot);if(!STRAT)return;const st=snapshotContext();if(b.id==='trades-xlsx')return await tradesheetXlsx(st);const kind=b.dataset.reportExport;if(kind==='unit-audit'||kind==='unit-daily'){const unit=unitFor(st);if(!unit)throw Error('No validated unit-exposure report is available.');const table=unitExposureTables(unit)[kind==='unit-audit'?'audit':'daily'];return await xlsx(kind,[table.headers,...table.rows],table.percentColumns,st);}if(kind==='account-audit'){const account=sourceAccount(st.d,st.v.id,st.v.book,st.tk,sourceAdmission(st.v,st.tk,st.params,st.region));if(!account)throw Error('No protected source account is available.');const table=sourceAccountTables(account,st.d.trades.map(t=>t.ret_full_precision)).audit;return await xlsx('account-audit',[table.headers,...table.rows],table.percentColumns,st);}if(REPORT_KINDS.includes(kind))return await xlsx(...await reportTable(kind,st));}catch(e){msg('Export failed: '+e.message);}});
  const refreshHeat=()=>{const el=document.getElementById('heatbox');if(el&&STRAT?.d)el.innerHTML=heatTable(STRAT.d);};
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
@@ -437,8 +456,18 @@ function settingsModel(v, d, sel, { basket = false, fixedNote = '', reportMode =
     ['Period', `Requested ${sel.from || 'first available bar'} to ${sel.to || 'latest available bar'}${dates.length ? `; calculated ${dates[0]} to ${dates.at(-1)}` : ''}.${d?.auto_start ? ' ' + d.auto_start : ''}${d?.auto_end ? ' ' + d.auto_end : ''}`],
     ['Net profit', reportMode || (sel.report_mode === 'compound' ? 'Compounding' : 'Fixed quantity')],
     ['Statistics', `Closed trades only; open-position marks are excluded. Sharpe on ${basket ? 'portfolio ' : ''}daily returns, risk-free rate 0.`]];
-  return { params, assumptions, fixedNote };
+  // Backtest settings (user request 25 Nov 2026): money and sizing are worked out on the page from the closed trades; brokerage,
+  // slippage, dead stock and penny stock go to the engine and re-run the backtest. A reviewed account keeps its fixed configuration.
+  const backtest = fixedNote ? null : { currency: sel.region === 'us' ? '$' : '₹', equity: +sel.equity, sizeMode: sel.report_mode === 'compound' ? 'compound' : 'fixed',
+    sizePct: +sel.size_pct, alloc: sel.alloc === '' ? +sel.equity : +sel.alloc, brokerage: (+sel.cost || 0) / 100, slippage: +sel.slippage || 0,
+    deadStock: sel.dead_stock === '1', penny: +sel.penny || 0, maxPositions: basket ? +sel.max_positions || 10 : 1, basket };
+  return { params, assumptions, fixedNote, backtest };
 }
+/** Share of the account each trade uses: % of equity (compounding) or amount per trade / initial equity (fixed amount). */
+function sizingOf(sel) { const equity = +sel.equity || 1e6; return { weight: sel.report_mode === 'compound' ? (+sel.size_pct || 100) / 100 : (sel.alloc === '' ? equity : +sel.alloc) / equity }; }
+/** A fraction of the initial equity as money in the market's currency. */
+function moneyOf(x, sel) { if (x == null || !isFinite(x)) return '–'; const v = x * (+sel.equity || 1e6), us = sel.region === 'us';
+  return (v < 0 ? '−' : '') + (us ? '$' : '₹') + Math.round(Math.abs(v)).toLocaleString(us ? 'en-US' : 'en-IN'); }
 
 // ---------------------------------------------------------------- loader: a book flipping its pages
 const bookLoader = (t = 'Loading…') => `<div class="bload" role="status" aria-live="polite"><div class="bflip" aria-hidden="true"><i class="bcv l"></i><i class="bcv r"></i><i class="bpg"></i><i class="bpg"></i><i class="bpg"></i></div><p>${esc(t)}</p></div>`;
@@ -1476,7 +1505,7 @@ function exitCheck(t) { return tradeExitCheck(t); }
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1';DEF.list_page='1'; DEF.source_page='1'; DEF.book_progress=''; Object.assign(DEF,CLEAR_ALL); // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.equity='1000000'; DEF.size_pct='100'; DEF.alloc=''; DEF.dead_stock='0'; DEF.penny='0'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1';DEF.list_page='1'; DEF.source_page='1'; DEF.book_progress=''; Object.assign(DEF,CLEAR_ALL); // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1498,7 +1527,12 @@ function readRoute() {
   S.membership=S.membership==='past'?'past':'current';
   S.max_positions=String(positionLimit(S.max_positions)||10);
   S.position_choice=['10','20','custom'].includes(S.position_choice)?S.position_choice:'10';
-  if(!pristineMethod(R.id,PRISTINE_BOOK))S.cost='0'; // Legacy interface retains its existing fee setting.
+  if(!pristineMethod(R.id,PRISTINE_BOOK)&&!(+S.cost>=0&&+S.cost<=500))S.cost='0'; // Brokerage, bps per side (Strategy settings, 0 to 5%)
+  if(!(+S.equity>0&&+S.equity<=1e12))S.equity=DEF.equity;
+  if(!(+S.size_pct>0&&+S.size_pct<=100))S.size_pct=DEF.size_pct;
+  if(S.alloc!==''&&!(+S.alloc>0&&+S.alloc<=+S.equity))S.alloc='';
+  S.dead_stock=S.dead_stock==='1'?'1':'0';
+  if(!(+S.penny>=0&&+S.penny<=1e6))S.penny='0';
   if (R.name === 'guru') S.guru = R.id;
   // a Ross book without backtested rules opens on its held references; books with measured results behave like any other book
   if (S.book?.startsWith('jr_') && !rossBookLive(S.book) && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
@@ -1787,7 +1821,7 @@ const ohlc = async (tk, tf = 'D') => { const full = await fullOhlc(tk).catch(() 
 // Benchmark buy & hold reads the engine's own series (static data/ohlc-*.json files are a snapshot that can end before the run).
 const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => staticOhlc(tk));
 let TF = 'D';
-const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
+const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,execution.penny||'',execution.dead_stock||'',...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
   return RUNS[k] || (RUNS[k] = (async () => { const t0 = performance.now();
     try { const answer = await ENGINE.run('run:' + k, async signal => { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) }), { signal }); return r.ok ? { body: await r.json() } : { error: await r.text() }; }); if ('error' in answer) { delete RUNS[k]; return { error: answer.error }; }
       const j = answer.body; if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; if(j.trades_page)j._run_url=enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) }); return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
@@ -1911,7 +1945,7 @@ async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,opti
 }
 
 // The page's reading of one engine run: its full settings, admitted unit/account report and Net Profit display ("Export everything" reads its runs the same way).
-function runModel(v,tk,d,selection){const parameters={...bookDefaults(v.id),...decodeP(selection.p)},unit=unitExposureMethod(v.id,v.book)||Object.hasOwn(d,'unit_exposure_report')?validatedUnitExposureReport(d,unitAdmission(v,tk,parameters,selection.region,selection)):null,account=sourceAccount(d,v.id,v.book,tk,sourceAdmission(v,tk,parameters,selection.region));return {parameters,unit,account,display:returnDisplay(d,selection.report_mode,account,unit)};}
+function runModel(v,tk,d,selection){const parameters={...bookDefaults(v.id),...decodeP(selection.p)},unit=unitExposureMethod(v.id,v.book)||Object.hasOwn(d,'unit_exposure_report')?validatedUnitExposureReport(d,unitAdmission(v,tk,parameters,selection.region,selection)):null,account=sourceAccount(d,v.id,v.book,tk,sourceAdmission(v,tk,parameters,selection.region));return {parameters,unit,account,display:returnDisplay(d,selection.report_mode,account,unit,sizingOf(selection))};}
 async function viewStrategy() {
   const generation=busy,selection={...S},runApi=API,optimization=R.optim;
   let v = CAT.find(x => x.id === R.id);
@@ -1939,7 +1973,7 @@ async function viewStrategy() {
   let account,unit,parameters,display;try{({parameters,unit,account,display}=runModel(v,tk,d,selection));}catch(error){return withheldStrategy(v,tk,crumbs,switches,{status:'calculation_unavailable',note:error.message});}
   const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(check=>check?.available), pass = chk.filter(x => x.ok).length;
   // Tile names and order as the desk's Signals page (user 20 Nov 2026); values are the engine's, no subtitles.
-  const tiles = [[account||unit?display.label:'Net P&L',display.value,x=>pct(x,2,true),'',cls(display.value)],['Avg P&L',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'',cls(s.avg_trade)],['Trades',s.trades,x=>fx(x,0),''],['Win %',s.win_rate,x=>pct(x,1),''],['Expectancy',s.expectancy_ratio,x=>fx(x),'',cls(s.expectancy_ratio)],['Monthly Thickness',s.monthly_thickness,x=>pct(x,1),'',cls(s.monthly_thickness)],['Max DD %',s.max_dd,x=>pct(x,1),'','neg'],['CAR/MDD',s.car_mdd??s.mar,x=>fx(x),'']];
+  const tiles = [account||unit?[display.label,display.value,x=>pct(x,2,true),'',cls(display.value)]:['Net P&L',display.value,x=>moneyOf(x,selection),display.value==null?'':pct(display.value,2,true)+' of '+moneyOf(1,selection),cls(display.value)],['Avg P&L',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'',cls(s.avg_trade)],['Trades',s.trades,x=>fx(x,0),''],['Win %',s.win_rate,x=>pct(x,1),''],['Expectancy',s.expectancy_ratio,x=>fx(x),'',cls(s.expectancy_ratio)],['Monthly Thickness',s.monthly_thickness,x=>pct(x,1),'',cls(s.monthly_thickness)],['Max DD %',s.max_dd,x=>pct(x,1),'','neg'],['CAR/MDD',s.car_mdd??s.mar,x=>fx(x),'']];
   const px=optimization?null:(await chartRequest)||d.ohlc||await staticOhlc(tk); // the engine call already failed (30 s timeout): go straight to the static snapshot, no second engine wait
   if(generation!==busy)return '';
   STRAT = { d, v, tk,region:selection.region, tiles, px, display, account,unit, sourceView:account?sourceAccountView(account):null, indicatorParameters:parameters };
