@@ -72,11 +72,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         def!("hbiab_trend_following", "TrendFollowing.afl: 50/30 MA crossover with 3.75 x ATR(14) chandelier stop", G10, Live,
             &["F|SetTradeDelays(1,1,1,1); BuyPrice = SellPrice = Open (p.542)", "E|MA1 = MA(C,50), MA2 = MA(C,30) (Optimize defaults); Buy = Cross(MA1, MA2) (p.542)",
               "X|Sell = Cross(MA2, MA1) (p.542)", "X|ApplyStop(stopTypeTrailing, stopModePoint, 3.75*ATR(14), True, True) - trailing stop 3.75 x ATR(14) below the highest high, exit at the stop (p.542)"],
-            "\"This is just an example. Do Not trade this system\" (code comment). Trailing amount varies daily (volatile = True). Stops active from the entry bar (p.397 scenario 1: next-open trading). Book holds up to 2 positions of a sector-ETF watch list; one position here."),
+            "\"This is just an example. Do Not trade this system\" (code comment). Trailing amount varies daily (volatile = True). Stops active from the entry bar (p.397 scenario 1: next-open trading). Book holds up to 2 positions of a sector-ETF watch list; one position here. [Unstated choices, honest count 3 (R4 #400/#408)] (1) stops are active from the entry bar; (2) the trailing amount varies daily; (3) one position is held instead of the book's two."),
         def!("hbiab_mean_reversion", "MeanReversion.afl: z-score(34) below -2, exit at 0, 9-bar and 3% profit stops", G10, Live,
             &["F|zs = (C - MA(C,34)) / StDev(C,34) (p.543)", "E|Buy = Cross(-2.0, zs) at the close (SetTradeDelays 0, prices Close) (p.543)", "X|Sell = Cross(zs, 0) (p.543)",
               "X|ApplyStop(stopTypeNBar, stopModeBars, 9) (p.543)", "X|ApplyStop(stopTypeProfit, stopModePercent, 3) - exit at entry + 3% (p.543)"],
-            "\"This is just an example. Do Not trade this system.\" N-bar exit at the close 9 bars after entry; profit target intraday at the level (gap = open); stops from the bar after entry (close trading)."),
+            "\"This is just an example. Do Not trade this system.\" N-bar exit at the close 9 bars after entry; profit target intraday at the level (gap = open); stops from the bar after entry (close trading). [Unstated choices, honest count 3 (R4 #400/#408)] (1) the 9-bar exit is at the close; (2) the profit target is intraday at the level, a gap filling at the open; (3) stops are active from the bar after entry."),
         def!("hbiab_zscore_weakness", "ZScoreBuyWeaknessTradingSystem.afl (walk-forward example)", G10, NotTestable("only the file name and its equity curves are shown (p.522-523); the code is not printed"),
             &["E|Code not printed (p.522-523)"], ""),
     ]
