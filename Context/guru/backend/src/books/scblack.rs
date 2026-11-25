@@ -32,7 +32,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 /// The card is published on GLD only.
 pub fn home(id: &str, ticker: &str) -> Option<String> {
-    (reviewed(id) && ticker != HOME).then(|| format!("Not published on {ticker}: the article's season is for gold; the vault's only gold series is GLD (open the card on GLD). A gold season on another instrument would change the asset class."))
+    (reviewed(id) && ticker != HOME && !crate::futures::is_futures(ticker)).then(|| format!("Not published on {ticker}: the article's season is for gold; the vault's gold series are GLD and the Norgate Gold futures contract (open the card on GLD or on Gold (Norgate &GC)). A gold season on another instrument would change the asset class."))
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -67,6 +67,6 @@ mod tests {
 // Instrument admission: S&C Blackman gold seasonal 2026-11-04 (titles lane K40, decision #207). Published on GLD only (home()).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scblack" && reviewed(def.id),
-    label: "Matt Blackman tested the gold season on weekly Engelhard gold prices (1995-2005). It runs on GLD, the vault's only gold series, a declared adaptation; other instruments are not published.",
+    label: "Matt Blackman tested the gold season on weekly Engelhard gold prices (1995-2005). It runs on GLD and, from R4 #414, on the Norgate Gold continuous futures contract (&GC), declared adaptations; other instruments are not published.",
     basis: "Technical Analysis of Stocks & Commodities V.25:2 pp.40-42 (Mining For Maximum Shine), formula text and Figure 4; independent check authors/titles-1030/K40w/k40_ref.py",
 };
