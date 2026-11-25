@@ -414,7 +414,7 @@ pub fn impulse_ema(a: &[f64], d: &[f64], n: usize) -> Vec<f64> {
 pub fn nhnl_input_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<&'static str> {
     if from < 9 || from > to || to >= x.r.len() { return Some("Requires nine actual consecutive count observations before the selected start."); }
     let ns=nhnl_series(id);
-    let (Some(h),Some(l))=(x.series(ns[0]),x.series(ns[1])) else {return Some(if id.ends_with("_nse") {"Requires the NSE new-high and new-low count series (extra_data/india/NSE_NHNL.csv)."} else {"Requires NYSE new-high and new-low count series."})};
+    let (Some(h),Some(l))=(x.series(ns[0]),x.series(ns[1])) else {return Some(if id.ends_with("_nse") {"Requires the NSE new-high and new-low count series (extra_data/india/NSE_NHNL.csv)."} else {"Requires NYSE new-high and new-low count series (US indices). The NSE twin apta_nhnl_nse runs the same rule on the NSE's own daily 52-week high / low counts (2019-10 onward; R4 #340, declared adaptation, UNVERIFIED)."})};
     if (from-9..=to).any(|i| !h.get(i).zip(l.get(i)).is_some_and(|(&a,&b)| a.is_finite() && b.is_finite() && a>=0. && b>=0. && a.fract()==0. && b.fract()==0. && (a+b).is_finite() && a+b>0.)) {
         return Some("Missing or invalid new-high/new-low counts in the selected interval or its nine-bar warm-up; no values are filled.");
     }
