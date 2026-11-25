@@ -28,6 +28,57 @@ const SPLIT: &[(&str, Mode)] = &[
     ("pbwts_examples", Mode::Each), ("ehmd_indicators", Mode::Each), ("tdnsta_other", Mode::Each), ("mzwws_seasonal", Mode::Each),
     ("wbmdd_other", Mode::Each), ("jbcaf_nt", Mode::Each), ("dgnl_methods", Mode::Each), ("atm00_tsl", Mode::Each), ("gg_nt", Mode::Each),
     ("bstacm_nt", Mode::Each), ("mmft_boucher", Mode::Each), ("lwdg2_tools", Mode::Each),
+    // Q390 re-check batch 1 (R4 #387, lane K4; authors/code-1123/Q390-recheck-1.tsv)
+    ("atm04_counter", Mode::Each), ("atm10", Mode::Each), ("fotol", Mode::Each), ("jb30d_rev", Mode::Each),
+    ("hsta_holiday", Mode::Each), ("lwrsr_other", Mode::Each), ("kfst_other", Mode::Each), ("mkits_fx", Mode::Each),
+    ("mkits_other", Mode::Each), ("rwmts_bands", Mode::Each), ("dmst2_breakout", Mode::Each),
+    // Q390 re-check batch 2 (R4 #387, lane K4; authors/code-1123/Q390-recheck-2.tsv)
+    ("lwppt", Mode::Each), ("lwmil", Mode::Each), ("lwcot_cot", Mode::Each), ("rwtlc_disc", Mode::Each),
+    ("mahrs_income", Mode::Each), ("lkcpt_barnes", Mode::Each), ("ndbrm_tape", Mode::Each), ("lwad", Mode::Each),
+    ("dvetf_style", Mode::Each), ("jbeft_intraday", Mode::Each), ("jbeft_other", Mode::Each), ("kfgei_weekly", Mode::Each),
+    ("prpr", Mode::Each), ("hkcgdt_nt", Mode::Each), ("atm03_counter", Mode::Each), ("atm04_trend", Mode::Each),
+    ("ftm_km", Mode::Each), ("atmrc", Mode::Each), ("lwnl_patterns", Mode::Each),
+    // Q390 re-check batch 3 (R4 #387, lane K4; authors/code-1123/Q390-recheck-3.tsv)
+    ("lwnl_od", Mode::Each), ("wmny_timing", Mode::Each), ("ftm2_nd", Mode::Each), ("ftm2_nt", Mode::Each),
+    ("mbbb2_bigblue2", Mode::Each), ("mslib_carayo", Mode::Each), ("csmlt_nt", Mode::Each), ("djhta_nt", Mode::Each),
+    ("pvelez_nt", Mode::Each), ("epfpp_nt", Mode::Each), ("jfeot_tests", Mode::Each), ("otvt_hv", Mode::Each),
+    ("cov_turtle", Mode::Each), ("hpetf_mdd", Mode::Each), ("tharp_common", Mode::Each), ("lwlts_tdw", Mode::Each),
+    ("tcdt_other", Mode::Each),
+    // Q390 re-check batch 4 (R4 #387, lane K4; authors/code-1123/Q390-recheck-4.tsv)
+    ("jt_bollinger", Mode::Each), ("lebcafm_adx", Mode::Each), ("ehrs_indicators", Mode::Each), ("ehmtc", Mode::Each),
+    ("hsta_forecast", Mode::Each), ("rgs_toolbox", Mode::Each), ("kfbpm_2sys", Mode::Each), ("dlost_pullbacks", Mode::Each),
+    ("mbhfe_breadth", Mode::Each), ("mbhfe_stocks", Mode::Each), ("mbsot_timing_nt", Mode::Each), ("mkits_dax", Mode::Each),
+    ("rwmts_ma", Mode::Each), ("hbqts_osc", Mode::Each),
+    // Q390 re-check batch 5 (R4 #387, lane K4; authors/code-1123/Q390-recheck-5.tsv)
+    ("hbiab_misc", Mode::Each), ("dmast_poly", Mode::Each), ("eltfl_tools", Mode::Each), ("lwsss", Mode::Each),
+    ("gb10_or", Mode::Each), ("rwtlc_rsix", Mode::Each), ("lkcpt_bernstein", Mode::Each), ("lkcpt_jensen", Mode::Each),
+    ("jsdow_composite", Mode::Each), ("mzwws_thrust", Mode::Each), ("rjmil_systems", Mode::Each), ("dvetf_sector", Mode::Each),
+    ("dl10b_resumption", Mode::Each), ("kfgei_alloc", Mode::Each), ("dgdwb_darvas", Mode::Each), ("sglr_cal", Mode::Each),
+    // Q390 re-check batch 6 (R4 #387, lane K4; authors/code-1123/Q390-recheck-6.tsv)
+    ("cgtdd_judgement", Mode::Each), ("palets_dv", Mode::Each), ("zsms", Mode::Each), ("sbcft_filters", Mode::Each),
+    ("ckbtm_lists", Mode::Each), ("phbt_surveys", Mode::Each), ("mpasi_nt", Mode::Each), ("mjzz", Mode::Each),
+    ("mlhpt_bo", Mode::Each), ("cpgap_gap_fill", Mode::Each), ("atm03_trend", Mode::Each), ("atmmisc", Mode::Each),
+    ("lwicw_holidays", Mode::Each), ("ltsfut", Mode::Each), ("ccl08_options", Mode::Each), ("bfmm_mm1", Mode::Each),
+    ("rinadz_osc", Mode::Each), ("mslib_ma", Mode::Each), ("rrlft", Mode::Each), ("mptae_ma", Mode::Each),
+    // Q390 re-check batch 7 (R4 #387, lane K4; authors/code-1123/Q390-recheck-7.tsv)
+    ("fzhci_nt", Mode::Each), ("mm_nt", Mode::Each), ("onc_nt", Mode::Each), ("jjm_nt", Mode::Each),
+    ("rwarms_nt", Mode::Each), ("jkennedy_nt", Mode::Each), ("gmaclean_nt", Mode::Each), ("dmpub", Mode::Each),
+    ("scevkc", Mode::Each), ("mscvl_systems", Mode::Each), ("msadd_candle", Mode::Each), ("acbff_eitheror", Mode::Each),
+    // Q390 re-check batch 8 (R4 #387, lane K4; authors/code-1123/Q390-recheck-8.tsv)
+    ("mkits_gold", Mode::Each), ("acbff_calendar", Mode::Each), ("msadd_misc", Mode::Each), ("atm02_tsl", Mode::Each),
+    ("msadd_stoch", Mode::Each), ("acbff_extremes", Mode::Each), ("masmt_cal", Mode::Each), ("jscgf", Mode::Each),
+    ("atmcsa", Mode::Each), ("lwlts_oops", Mode::Each), ("msadd_trix", Mode::Each), ("mbsot_patterns_nt", Mode::Each),
+    ("cwin_windows", Mode::Each), ("wdgig_other", Mode::Each), ("rwmts_intraday", Mode::Each), ("hbqts_entries", Mode::Each),
+    ("acbff_potpourri", Mode::Each),
+    // Q390 re-check batch 9 (R4 #387, lane K4; authors/code-1123/Q390-recheck-9.tsv)
+    ("svtv2_rules", Mode::Each), ("jswct_campaign", Mode::Each), ("mslib_combined", Mode::Each), ("msadd_rsi", Mode::Each),
+    ("ws5_momentum_windows", Mode::Each), ("jsgsta", Mode::Each), ("ch_ntt_ideas", Mode::Each), ("wdnbp_other", Mode::Each),
+    ("ecqt", Mode::Each), ("lkcpt_krut", Mode::Each), ("lebws", Mode::Each), ("masmt_ma", Mode::Each),
+    ("wmny_breadth", Mode::Each), ("cov_wott", Mode::Each), ("lwlts_vb", Mode::Each), ("mhp_other", Mode::Each),
+    // Q390 re-check batch 10 (R4 #387, lane K4; authors/code-1123/Q390-recheck-10.tsv)
+    ("lkcpt_chande", Mode::Each), ("lkcpt_demark", Mode::Each), ("acbff_patterns", Mode::Each), ("fejmma_mma", Mode::Each),
+    ("sbma_single", Mode::Each), ("mapsl", Mode::Each), ("msws_gm1", Mode::Each), ("jcurt_other", Mode::Each),
+    ("strmm_rs", Mode::Each), ("lebtc_exits", Mode::Each),
 ];
 
 /// R4 #387 variant check on the 'Each' families: ids that differ only by a number, parameter or version suffix are ONE method.
@@ -38,6 +89,160 @@ const MERGE: &[(&[&str], &str)] = &[
     (&["mstt_tezel_maavpb", "mstt_tezel_regavpb"], "Asymmetric Volatility Price Bands (Tezel)"),
     (&["tdperl_tdma1", "tdperl_tdma2"], "TD Moving Average"),
     (&["tdperl_demarker1", "tdperl_demarker2"], "TD DeMarker"),
+    // Q390 re-check batch 1
+    (&["atm04_vomund", "atm04_fut_vomund"], "Volume-spike screen"),
+    (&["atm10_one_pct", "atm10_fut_one_pct"], "1-percent strategy"),
+    (&["jb30d_rev_buy_fpo", "jb30d_rev_sell_fpo", "jb30d_rev_buy_stop", "jb30d_rev_buy_3pc"], "Reversal-up with trigger"),
+    (&["mkits_euro_ma", "mkits_euro_ma_im"], "Euro classic MA system"),
+    (&["mkits_yen_vol", "mkits_yen_fut_vol"], "Yen"),
+    (&["rwmts_bb_fade", "rwmts_bb200", "rwmts_bb_adx"], "Bollinger band fade with 20-day MA exit"),
+    (&["dmst2_noisechannel", "dmst2_noisechannel2"], "Noise Channel Breakout"),
+    // Q390 re-check batch 2
+    (&["mahrs_hy_stops", "mahrs_muni_stop"], "High-yield bond fund 3% monthly buy and sell stops"),
+    (&["lkcpt_box10", "lkcpt_box40"], "Box size breakout contra method"),
+    (&["lkcpt_osc", "lkcpt_osc_adx"], "Oscillator method"),
+    (&["ndbrm_trin40", "ndbrm_trin40_nse"], "40-day TRIN"),
+    (&["ndbrm_nasdaq_ad", "ndbrm_ad_line_nse"], "NASDAQ A/D line vs its 25-day moving average"),
+    (&["dvetf_style_index", "dvetf_style_weekly", "dvetf_style_bond", "dvetf_style_intl"], "Style Index rotation"),
+    (&["jbeft_mom_ma", "jbeft_mom_rise_fall"], "MOM/MA system"),
+    (&["kfgei_sys_a", "kfgei_sys_b", "kfgei_world_b"], "System A"),
+    (&["hkcgdt_exits", "hkcgdt_300_200"], "Stop-loss, profit-target, trailing and time-stop menu"),
+    (&["atm03_pullback6", "atm03_pullback_fut"], "Basic pullback buyer"),
+    (&["atm04_monthly_bo", "atm04_55_trail", "atm04_55_simple"], "Monthly breakout"),
+    (&["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit"], "Close-only breakout"),
+    (&["atmrc_swing_stop", "atmrc_swing_trail"], "Stridsman swing pattern"),
+    // Q390 re-check batch 3
+    (&["lwnl_od_buy", "lwnl_od_buy3", "lwnl_od_sell"], "Down-close outside day: buy at the high of the day before, exit next day"),
+    (&["lwnl_od_fade_buy", "lwnl_od_fade_sell"], "Open below a down-close outside day: buy at its low, exit on the close"),
+    (&["mslib_manda_carayo", "mslib_carayooo"], "Estrategia manda carayo"),
+    (&["otvt_hv_ratio_under_50", "otvt_hv_ratio_combined", "otvt_hv_ratio_combined_40min"], "HV 6/100 or 10/100 under 50%"),
+    (&["cov_turtle_s2", "cov_turtle_whipsaw"], "Turtle System 2"),
+    (&["hpetf_mdd_long", "hpetf_mdd_long_aggr"], "Multiple Days Down"),
+    (&["hpetf_mdu_short", "hpetf_mdu_short_aggr"], "Multiple Days Up"),
+    (&["lwlts_mon_oc", "lwlts_mon_3day"], "Monday open-to-close"),
+    (&["lwlts_mon_vb", "lwlts_tdw_bonds"], "Monday open + 5% of Friday's range, exit close"),
+    (&["tcdt_orb_stretch", "tcdt_orbp"], "ORB I"),
+    // Q390 re-check batch 4
+    (&["jt_bb_futures", "jt_bb_stocks", "jt_bb_stocks_portfolio"], "Bollinger Band breakout, 60 days / 2 SD, MA stop exit"),
+    (&["kfbpm_2sys", "kfbpm_2sys_overview"], "2-Systems combined trend"),
+    (&["mbhfe_upvol77", "mbhfe_upvol77_nse"], "Up volume > 77% of total volume"),
+    (&["mbhfe_ad11", "mbhfe_ad11_nse"], "11-day advance/decline ratio > 1.9"),
+    (&["mkits_dax_ma", "mkits_dax_ma_im"], "DAX MA Crossover System"),
+    (&["mkits_dax_disparity", "mkits_dax_stocks"], "DAX Daily Disparity System"),
+    (&["rwmts_sma200_sar", "rwmts_sma26_sar", "rwmts_sma26_wait3"], "200-day moving average stop-and-reverse"),
+    // Q390 re-check batch 5
+    (&["dmast_fixmempoly", "dmast_fixmempoly2_ibm5m"], "Fixed Memory Polynomial"),
+    (&["rwtlc_rsix", "rwtlc_rsix_vol", "rwtlc_rsix_fx"], "RSI Extremes with 200-day MA, $7,500 stop"),
+    (&["lkcpt_spop", "lkcpt_spop_rev"], "Stochastic pop"),
+    (&["lkcpt_kurt03", "lkcpt_kurt10"], "Kurtosis"),
+    (&["mzwws_ad_2to1", "mzwws_ad_2to1_nse"], "Ten-day Advance/Decline ratio >= 2-to-1"),
+    (&["mzwws_double_91", "mzwws_double_91_nse"], "Double 9-to-1 up-volume days"),
+    (&["dvetf_fidelity_sectors", "dvetf_ishares_sectors_rs"], "Style Index model on 41 Fidelity sector funds"),
+    (&["dvetf_lookback_research", "dvetf_sector_1y"], "Look-back study: rotate to best 2 every 22 days"),
+    (&["dgdwb_classic", "dgdwb_modern", "dgdwb_entry_tactics"], "Classic Darvas box"),
+    // Q390 re-check batch 6
+    (&["palets_dvpullback", "palets_dvpullback_full", "palets_dvpullback_5x20"], "DVpullback"),
+    (&["zsms_zzf_zoomers", "zsms_zzf_risers"], "ZZF Zoomers"),
+    (&["sbcft_tt2a", "sbcft_tt2b"], "Trading Technique 2 Plan A: z% filter with the market, trailing z% stop"),
+    (&["phbt_ii_bb", "phbt_consensus_bb", "phbt_surveys_other"], "Investors Intelligence bulls, 21-week Bollinger"),
+    (&["mpasi_six_stages_ma12", "mpasi_conservative_aggressive"], "Six-stage allocation from 12-month MA crossovers of bonds, stocks, commodities"),
+    (&["cpgap_gap_fill_1", "cpgap_gap_fill_rank"], "Gap Fill I"),
+    (&["bfmm_s_es", "bfmm_s_nq"], "MiniMax S short"),
+    // Q390 re-check batch 7
+    (&["dmpub_epfft5", "dmpub_epfft1"], "End Point FFT System"),
+    (&["scevkc_a", "scevkc_c"], "Keltner method A: long on a close above the upper channel, short on a close below the lower"),
+    (&["scevkc_b", "scevkc_d"], "Keltner method B: long on a close below the lower channel, short on a close above the upper"),
+    (&["mscvl_gap1", "mscvl_gap2", "mscvl_gap3", "mscvl_gapup_5d"], "Gap1 System"),
+    (&["mscvl_fosc", "mscvl_fosc_alt"], "Forecast Oscillator System"),
+    (&["mscvl_tezel_ma", "mscvl_tezel_reg"], "MovAvg Asymmetric Volatility Price Bands"),
+    (&["mscvl_greening_r2_1", "mscvl_greening_r2_2", "mscvl_greening_r2_3", "mscvl_greening_r2_4"], "01_R2/Regress Slope/MFI/TSF"),
+    (&["msadd_n_can_9p", "msadd_o_can_9p"], "N-CAN-9P  CANDLE PATTERNS"),
+    (&["msadd_n_can_bh", "msadd_o_can_bh"], "N-CAN-BH  CANDLE BELT HOLD PATTERN"),
+    (&["msadd_n_can_ca", "msadd_o_can_ca"], "N-CAN-CA  CANDLE COUNTER-ATTACK PATTERN"),
+    (&["msadd_n_can_ds", "msadd_o_can_ds"], "N-CAN-DS  CANDLE DOJI STAR PATTERN"),
+    (&["msadd_n_can_el", "msadd_o_can_el"], "N-CAN-EL  CANDLE ENGULFING PATTERN"),
+    (&["msadd_n_can_ha", "msadd_o_can_ha"], "N-CAN-HA  CANDLE HAMMER PATTERN"),
+    (&["msadd_n_can_hi", "msadd_o_can_hi"], "N-CAN-HI  CANDLE HARAMI PATTERN"),
+    (&["msadd_n_can_pl", "msadd_o_can_pl"], "N-CAN-PL  CANDLE PIERCING LINE PATTERN"),
+    (&["msadd_n_can_ss", "msadd_o_can_ss"], "N-CAN-SS  CANDLE SHOOTING STAR PATTERN"),
+    (&["msadd_n_can_st", "msadd_o_can_st"], "N-CAN-ST  CANDLE MORN/EVEN STAR PATTERN"),
+    (&["acbff_three", "acbff_five", "acbff_five_4of5", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345"], "First three either-or indicators combined"),
+    // Q390 re-check batch 8
+    (&["mkits_gold_rsdiv", "mkits_gold_rs_dxy"], "Gold: Relative Strength divergence"),
+    (&["mkits_gold_dis_xau", "mkits_gold_dis_dxy"], "Gold: Disparity"),
+    (&["mkits_gold_lrs_xau", "mkits_gold_lrs_dxy"], "Gold: LRS divergence"),
+    (&["mkits_gold_z_xau", "mkits_gold_z_dxy"], "Gold: Z-Score divergence"),
+    (&["mkits_gold_lrs2_slv", "mkits_gold_lrs2_xau"], "Gold: Double LRS divergence"),
+    (&["acbff_monday", "acbff_tuesday", "acbff_wed_fri", "acbff_dow"], "Monday rule"),
+    (&["acbff_short_dom", "acbff_dom", "acbff_dom_day", "acbff_dom_day_cc"], "Perennially short S&P"),
+    (&["acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight"], "Index month of year"),
+    (&["msadd_my_system", "msadd_my_system1", "msadd_n_sar_c", "msadd_o_sar_c"], "My System"),
+    (&["msadd_n_bnd_cs", "msadd_o_bnd_cs"], "N-BND-CS  TRADING BAND XOVER W/ STOPS"),
+    (&["msadd_n_bol_c", "msadd_o_bol_c"], "N-BOL-C   BOLLINGER BAND SWING TRADER"),
+    (&["msadd_n_cha_ps", "msadd_o_cha_ps"], "N-CHA-PS  CHAIKIN +1000/-1000 PEAKS W/ST"),
+    (&["msadd_n_dmi_c", "msadd_o_dmi_c"], "N-DMI-C   DMI +DI/-DI XOVER"),
+    (&["atm02_pair_rank", "atm02_pair_ema", "atm02_pair_trend"], "Pair-trade system: long weakest / short strongest of 10 semis"),
+    (&["atm02_vol_bench_stock", "atm02_vol_bench_fut"], "Volatility benchmark system, stocks"),
+    (&["msadd_n_sto_c", "msadd_n_sto_cs", "msadd_o_sto_c", "msadd_o_sto_cs"], "N-STO-C   STOCH +80/+20 XOVER"),
+    (&["msadd_n_sto_5t", "msadd_n_sto_8t", "msadd_o_sto_5t", "msadd_o_sto_8t"], "N-STO-5T  STOCH +80/+20 W/ 5% TREND"),
+    (&["msadd_n_sto_ps", "msadd_o_sto_ps"], "N-STO-PS  STOCH +80/+20 PEAKS W/ STOPS"),
+    (&["msadd_n_sto_fps", "msadd_o_sto_fps"], "N-STO-FPS STOCH FIB COMP PEAKS W/ STOPS"),
+    (&["acbff_fut_rx_filter", "acbff_rx_filter"], "Range expansion with two-same-way filter on NIFTY futures daily bars"),
+    (&["acbff_5c_day", "acbff_5c_perp", "acbff_fut_5c_perp", "acbff_5c1_perp", "acbff_fut_5c1_perp", "acbff_5c1_day"], "First contrary close after five same-way closes"),
+    (&["masmt_bsm", "masmt_ndr_oct1_may3", "masmt_harding_bsm", "masmt_vakkur_may_oct"], "Hirsch Best Six Months"),
+    (&["masmt_sept_avoid", "masmt_colby_sept_short"], "Avoid September entirely"),
+    (&["masmt_vakkur_switch", "masmt_vakkur_lev_seasonal", "masmt_vakkur_lev_all"], "Vakkur switching strategy"),
+    (&["jscgf_ma", "jscgf_ma_x"], "Simple moving-average system"),
+    (&["jscgf_ma_turn", "jscgf_ma6"], "Moving-average turn system"),
+    (&["jscgf_bo", "jscgf_wk4", "jscgf_generic"], "Breakout system"),
+    (&["atmcsa_bo20", "atmcsa_bo20_mod"], "Basic currency trend system"),
+    (&["atmcsa_tct_trend", "atmcsa_tct_counter"], "Trend/countertrend system"),
+    (&["lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9", "lwlts_oops_buy_bonds", "lwlts_oops_sell_bonds_wed", "lwlts_oops_buy_bonds_ma9", "lwlts_oops_sell_bonds_ma9", "lwlts_oops_tdm18"], "Oops! buy"),
+    (&["msadd_n_trx_m", "msadd_o_trx_m"], "N-TRX-M   TRIX MOVING AVERAGE"),
+    (&["msadd_n_txm_5t", "msadd_n_txm_8t", "msadd_o_txm_5t", "msadd_o_txm_8t"], "N-TXM-5T  TRIX MOMENTUM W/ 5% TREND"),
+    (&["msadd_n_txm_p", "msadd_o_txm_p"], "N-TXM-P   TRIX MOMENTUM PEAKS"),
+    (&["msadd_n_txm_fp", "msadd_o_txm_fp"], "N-TXM-FP  TRIX MOMENTUM FIB COMP PEAKS"),
+    (&["cwin_single_window", "cwin_aggressive_window", "cwin_first_window", "cwin_weekly_window", "cwin_window_two_rule_exit_test"], "SingleWindows"),
+    (&["cwin_gap_window_intraday", "cwin_gap_window_close"], "GapWindows"),
+    (&["wdgig_double", "wdgig_db_rise", "wdgig_plan8"], "Double Top/Bottom by-products"),
+    (&["wdgig_thrust", "wdgig_plan9", "wdgig_sr", "wdgig_cotton"], "The Thrust Method"),
+    (&["rwmts_2h_rsi400", "rwmts_60m_rsi200h", "rwmts_30m_rsi100h", "rwmts_15m_5m_rsi"], "RSI extremes with 400-hour MA filter, 2-hour bars"),
+    (&["rwmts_60m_rsi_cross", "rwmts_30m_rsi_cross"], "RSI(14) 25/75 crossover, 3% target / 1% stop, 60-minute bars"),
+    (&["hbqts_chandelier", "hbqts_chandelier_1line"], "Chandelier stop 3 x ATR(10) below the highest high"),
+    (&["acbff_5v15", "acbff_3v30"], "5 vs 15-day closing averages"),
+    (&["acbff_bean_march", "acbff_bean_july"], "Soybean seasonal"),
+    // Q390 re-check batch 9
+    (&["mslib_combi", "mslib_combi_opt"], "Estrategia COMBI"),
+    (&["msadd_n_rsi_c", "msadd_n_rsi_cs", "msadd_o_rsi_c", "msadd_o_rsi_cs"], "N-RSI-C   RSI +70/+30 XOVER"),
+    (&["msadd_n_rsi_ps", "msadd_o_rsi_ps"], "N-RSI-PS  RSI +70/+30 PEAKS W/ STOPS"),
+    (&["msadd_n_rsi_fps", "msadd_o_rsi_fps"], "N-RSI-FPS RSI FIB COMP PEAKS W/ STOPS"),
+    (&["ws5_gap_window_eod", "ws5_gap_window_intraday"], "End-of-day Gap Window"),
+    (&["wdnbp_table31", "wdnbp_quick_profits", "wdnbp_fast_movers"], "Table 3.1 experiment"),
+    (&["ecqt_kl_mr_close", "ecqt_kl_mr_open"], "Khandani-Lo daily mean reversion, close to close"),
+    (&["lkcpt_tts3", "lkcpt_tts10"], "Joe's Texas Two Step"),
+    (&["lebws_atr_abc", "lebws_atr_breakouts"], "Simple ATR system"),
+    (&["lebws_adx15", "lebws_wilder_adx25"], "ADX crosses above 15 entry"),
+    (&["masmt_ma20_sar", "masmt_ma25w_sar", "masmt_colby_ma", "masmt_merriman_100", "masmt_murphy_50", "masmt_mcdonald"], "Nasdaq Composite 20-dma strategy"),
+    (&["wmny_nhnl_ratio", "wmny_nhnl_ratio_nse"], "Nasdaq new-high/new-low ratio MACD system"),
+    (&["wmny_nhnl_cci", "wmny_nhnl_cci_nse"], "NH/NL ratio + CCI(6) system"),
+    (&["wmny_pct_nh", "wmny_pct_nh_nse"], "% new highs: 10-day SMA of NH/(NH+NL) crosses 30 up / 70 down"),
+    (&["cov_wott_donchian_trend", "cov_wott_donchian_time"], "Donchian Trend"),
+    (&["lwlts_vb_sp_tdw", "lwlts_vb_sp_40_200", "lwlts_vb_bonds", "lwlts_vb_bonds_tdw"], "S&P volatility breakout"),
+    (&["lwlts_talon_sp", "lwlts_talon_bondfilter"], "S&P swing-value breakout"),
+    (&["mhp_qqq_2002", "mhp_qqqq_2007", "mhp_msft_system", "mhp_spy_trend_system"], "QQQ patterns found in 2002"),
+    // Q390 re-check batch 10
+    (&["lkcpt_pctf", "lkcpt_pctf20"], "%F with 3-day moving average"),
+    (&["lkcpt_qstick8", "lkcpt_qstick20"], "QStick 8 with 8-day average"),
+    (&["lkcpt_tdline1", "lkcpt_tdline3"], "TD Line penetration, strength 1"),
+    (&["acbff_fade_oc", "acbff_fade2oc"], "Fade yesterday's open-to-close"),
+    (&["acbff_cup_day", "acbff_cup_overnight", "acbff_cup_3day"], "Cups and caps"),
+    (&["fejmma_sma7", "fejmma_barnes_5pct"], "7-month unweighted moving average, +-2%"),
+    (&["fejmma_es10_ls", "fejmma_es10_long", "fejmma_es30_long", "fejmma_es40_long"], "Exponential smoothing a=.1, +-5%, long and short"),
+    (&["sbma_ema10_trend", "sbma_ema10_sma50"], "10-day EMA with the 200-day SMA filter"),
+    (&["msws_generic_oscillator_w_ma_gm1", "msws_generic_oscillator_w_threshold_and_ma_gm1"], "Generic Oscillator"),
+    (&["strmm_rsbands", "strmm_rsbands_orig"], "Relative Strength Bands"),
+    (&["strmm_rotation", "strmm_rotation_orig"], "Rotation"),
+    (&["lebtc_chandelier", "lebtc_random_chandelier"], "Chandelier Exit"),
 ];
 fn merged(id: &str) -> Option<(&'static str, &'static str)> {
     MERGE.iter().find(|(ids, _)| ids.contains(&id)).map(|(ids, name)| (ids[0], *name))
@@ -94,7 +299,7 @@ pub fn apply(id: &str, f: (&'static str, &'static str, &'static str)) -> (&'stat
 mod tests {
     use super::*;
     /// (family, ids in the family, methods after the split) at 24 Nov 2026: update when ids are added to these families.
-    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4)];
+    const PINS: &[(&str, usize, usize)] = &[("mssta_systems", 38, 34), ("jchr2", 15, 15), ("msws_gm8", 15, 15), ("mstt_equis", 17, 16), ("khtwg", 18, 18), ("apwms_other", 24, 24), ("mbhfe_macro", 20, 20), ("kdta_other", 18, 18), ("capttm_other", 17, 17), ("cktwo", 13, 13), ("tdperl_other", 12, 10), ("apsmts_other", 11, 11), ("apoi_other", 12, 12), ("lbi12_twelve", 12, 12), ("lebcafm_daytrading", 11, 11), ("mbsot_macro", 11, 11), ("tkttl_setups", 11, 11), ("jchr1_other", 10, 10), ("hbqts_filters", 10, 10), ("lebfut_futures", 10, 10), ("jhbct_charting", 9, 9), ("tdwb_other", 9, 9), ("vsbrw_other", 9, 9), ("mslib_misc", 9, 9), ("mslib_hr", 9, 9), ("cov_tfm", 8, 8), ("lwdg2_daytrade", 8, 8), ("putg_studies", 8, 8), ("jbcdt_intraday", 8, 8), ("hsta_stats", 8, 8), ("tdnmtt_other", 8, 8), ("maetf_alloc", 8, 8), ("cbpst_acme", 8, 8), ("ramtm_models", 8, 8), ("acbff_other", 7, 7), ("mzwws_models", 7, 7), ("mpmm_interp", 7, 7), ("cgift_nt", 7, 7), ("dgnl_spi", 7, 7), ("atm01_tsl", 7, 7), ("kllien_nt", 12, 12), ("pbwts_examples", 6, 6), ("ehmd_indicators", 6, 6), ("tdnsta_other", 6, 6), ("mzwws_seasonal", 6, 6), ("wbmdd_other", 6, 6), ("jbcaf_nt", 6, 6), ("dgnl_methods", 6, 6), ("atm00_tsl", 6, 6), ("gg_nt", 9, 9), ("bstacm_nt", 6, 6), ("mmft_boucher", 5, 5), ("lwdg2_tools", 5, 5), ("mstt_wow", 147, 107), ("kets_ma", 52, 20), ("kdta_breadth", 16, 8), ("mbsot_appel", 8, 4), ("atm04_counter", 6, 5), ("atm10", 6, 5), ("fotol", 6, 6), ("jb30d_rev", 5, 2), ("hsta_holiday", 5, 5), ("lwrsr_other", 5, 5), ("kfst_other", 5, 5), ("mkits_fx", 5, 3), ("mkits_other", 5, 5), ("rwmts_bands", 5, 3), ("dmst2_breakout", 5, 4), ("lwppt", 5, 5), ("lwmil", 5, 5), ("lwcot_cot", 5, 5), ("rwtlc_disc", 5, 5), ("mahrs_income", 5, 4), ("lkcpt_barnes", 5, 3), ("ndbrm_tape", 5, 3), ("lwad", 5, 5), ("dvetf_style", 5, 2), ("jbeft_intraday", 5, 4), ("jbeft_other", 5, 5), ("kfgei_weekly", 5, 3), ("prpr", 5, 5), ("hkcgdt_nt", 5, 4), ("atm03_counter", 5, 4), ("atm04_trend", 5, 3), ("ftm_km", 5, 2), ("atmrc", 5, 4), ("lwnl_patterns", 5, 5), ("lwnl_od", 5, 2), ("wmny_timing", 5, 5), ("ftm2_nd", 5, 5), ("ftm2_nt", 5, 5), ("mbbb2_bigblue2", 5, 5), ("mslib_carayo", 5, 4), ("csmlt_nt", 7, 7), ("djhta_nt", 5, 5), ("pvelez_nt", 5, 5), ("epfpp_nt", 5, 5), ("jfeot_tests", 5, 5), ("otvt_hv", 4, 2), ("cov_turtle", 4, 3), ("hpetf_mdd", 4, 2), ("tharp_common", 5, 5), ("lwlts_tdw", 4, 2), ("tcdt_other", 4, 3), ("jt_bollinger", 4, 2), ("lebcafm_adx", 4, 4), ("ehrs_indicators", 4, 4), ("ehmtc", 4, 4), ("hsta_forecast", 4, 4), ("rgs_toolbox", 4, 4), ("kfbpm_2sys", 4, 3), ("dlost_pullbacks", 4, 4), ("mbhfe_breadth", 4, 2), ("mbhfe_stocks", 4, 4), ("mbsot_timing_nt", 4, 4), ("mkits_dax", 4, 2), ("rwmts_ma", 4, 2), ("hbqts_osc", 4, 4), ("hbiab_misc", 4, 4), ("dmast_poly", 4, 3), ("eltfl_tools", 4, 4), ("lwsss", 4, 4), ("gb10_or", 4, 4), ("rwtlc_rsix", 4, 2), ("lkcpt_bernstein", 4, 3), ("lkcpt_jensen", 4, 3), ("jsdow_composite", 4, 4), ("mzwws_thrust", 4, 2), ("rjmil_systems", 4, 4), ("dvetf_sector", 4, 2), ("dl10b_resumption", 4, 4), ("kfgei_alloc", 4, 4), ("dgdwb_darvas", 4, 2), ("sglr_cal", 4, 4), ("cgtdd_judgement", 4, 4), ("palets_dv", 4, 2), ("zsms", 4, 3), ("sbcft_filters", 4, 3), ("ckbtm_lists", 4, 4), ("phbt_surveys", 4, 2), ("mpasi_nt", 4, 3), ("mjzz", 4, 4), ("mlhpt_bo", 4, 4), ("cpgap_gap_fill", 4, 3), ("atm03_trend", 4, 4), ("atmmisc", 4, 4), ("lwicw_holidays", 7, 7), ("ltsfut", 4, 4), ("ccl08_options", 4, 4), ("bfmm_mm1", 4, 3), ("rinadz_osc", 4, 4), ("mslib_ma", 4, 4), ("rrlft", 4, 4), ("mptae_ma", 4, 4), ("fzhci_nt", 4, 4), ("mm_nt", 6, 6), ("onc_nt", 4, 4), ("jjm_nt", 6, 6), ("rwarms_nt", 7, 7), ("jkennedy_nt", 6, 6), ("gmaclean_nt", 4, 4), ("dmpub", 4, 3), ("scevkc", 4, 2), ("mscvl_systems", 29, 21), ("msadd_candle", 20, 10), ("acbff_eitheror", 18, 7), ("mkits_gold", 15, 10), ("acbff_calendar", 14, 3), ("msadd_misc", 13, 6), ("atm02_tsl", 12, 9), ("msadd_stoch", 12, 4), ("acbff_extremes", 12, 6), ("masmt_cal", 11, 5), ("jscgf", 11, 7), ("atmcsa", 11, 9), ("lwlts_oops", 10, 2), ("msadd_trix", 10, 4), ("mbsot_patterns_nt", 9, 9), ("cwin_windows", 9, 4), ("wdgig_other", 9, 4), ("rwmts_intraday", 9, 5), ("hbqts_entries", 9, 8), ("acbff_potpourri", 8, 6), ("svtv2_rules", 8, 8), ("jswct_campaign", 8, 8), ("mslib_combined", 8, 7), ("msadd_rsi", 8, 3), ("ws5_momentum_windows", 7, 6), ("jsgsta", 7, 7), ("ch_ntt_ideas", 7, 7), ("wdnbp_other", 7, 5), ("ecqt", 7, 6), ("lkcpt_krut", 7, 6), ("lebws", 7, 5), ("masmt_ma", 7, 2), ("wmny_breadth", 7, 4), ("cov_wott", 6, 5), ("lwlts_vb", 6, 2), ("mhp_other", 6, 3), ("lkcpt_chande", 6, 4), ("lkcpt_demark", 6, 5), ("acbff_patterns", 6, 3), ("fejmma_mma", 6, 2), ("sbma_single", 6, 5), ("mapsl", 6, 6), ("msws_gm1", 6, 5), ("jcurt_other", 6, 6), ("strmm_rs", 5, 3), ("lebtc_exits", 5, 4)];
     #[test]
     fn stems_group_variants() {
         assert_eq!(stem("200 dma violated by 100%"), stem("200 dma violated by 50%"));
@@ -119,15 +324,34 @@ mod tests {
             }
         }
     }
+    /// R4 #387(b): the grouping never changes an id or a rule. The catalogue (ids in order, each id's name, rule text and notes) is identical
+    /// before and after every id has been put through `family_split::apply`, and every id is still a catalogue id exactly once.
+    #[test]
+    fn grouping_never_changes_ids_or_rules() {
+        let snap = || crate::connors::catalogue().iter().map(|d| (d.id, d.name, d.rules.to_vec(), d.notes)).collect::<Vec<_>>();
+        let before = snap();
+        let ids: std::collections::HashSet<&str> = before.iter().map(|b| b.0).collect();
+        for d in crate::books::catalogue() { assert!(ids.contains(d.id), "book card {} missing from the catalogue", d.id); }
+        for (id, ..) in &before {
+            let orig = crate::books::family_of(id).unwrap_or(("other", "Other", ""));
+            let now = apply(id, orig);
+            assert!(!now.0.is_empty() && !now.1.is_empty(), "{id} lost its method key or name");
+        }
+        assert!(before == snap(), "ids, names, rules and notes must be identical after the grouping");
+        let mut seen = std::collections::HashSet::new();
+        assert!(before.iter().all(|b| seen.insert(b.0)), "duplicate id");
+    }
     /// Per-family method counts, so a split cannot drift silently (R4 #387).
     #[test]
     fn per_family_method_counts() {
         let cat = crate::books::catalogue();
+        let mut bad = vec![];
         for (fam, ids, methods) in PINS {
             let keys: std::collections::HashSet<&str> = cat.iter().filter(|d| crate::books::family_of(d.id).map_or(false, |f| f.0 == *fam)).map(|d| crate::connors::family_of(d.id).0).collect();
             let n = cat.iter().filter(|d| crate::books::family_of(d.id).map_or(false, |f| f.0 == *fam)).count();
-            assert_eq!((n, keys.len()), (*ids, *methods), "family {fam}");
+            if (n, keys.len()) != (*ids, *methods) { bad.push(format!("{fam}: pinned ({ids}, {methods}), found ({n}, {})", keys.len())); }
         }
+        assert!(bad.is_empty(), "family counts drifted: {bad:?}");
     }
     /// Variants that differ only by a number / parameter / version suffix are ONE method (R4 #387 audit: Regress Slope 1-4 etc.).
     #[test]
