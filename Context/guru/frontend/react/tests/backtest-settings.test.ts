@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {readFileSync} from "node:fs";
 import {draftErrors, draftPatch} from "../src/components/StrategySettings";
 import {returnDisplay} from "../src/services/return-display";
 
@@ -19,4 +20,13 @@ describe("backtest settings", () => {
     expect(draftErrors(draft as never)).toEqual({});
     expect(Object.keys(draftErrors({...draft, sizeMode: "fixed", alloc: "2000000", brokerage: "6", sizePct: "0"} as never))).toEqual(["alloc", "brokerage"]);
   });
+  it("the period bar changes only the dates; costs, filters and sizing stay as set in the popup", () => {
+    const runtime = readFileSync("src/compat/runtime.js", "utf8");
+    const submit = runtime.slice(runtime.indexOf("if (e.target.id !== 'period') return;"), runtime.indexOf("document.addEventListener('click', e => { const b = e.target.closest('[data-period]')"));
+    expect(submit).toContain("go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to }); });");
+    expect(submit).not.toMatch(/cost\s*=|slippage\s*=|rollover\s*=|penny|dead_stock/);
+    expect(runtime).not.toContain('name="slippage" value="${esc(S.slippage)}"');
+    expect(runtime).not.toContain('data-react-slot="strategy-params"');
+  });
 });
+

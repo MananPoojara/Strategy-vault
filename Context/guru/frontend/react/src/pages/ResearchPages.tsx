@@ -1,7 +1,7 @@
 import {PristineStrategyReport} from '../components/PristineStrategyReport';
 import type { ViewSnapshot } from "../state/store";
 import { ResearchMarkup } from "../components/ResearchMarkup";
-import { StrategyParameters, StrategySettings } from "../components/StrategySettings";
+import { StrategySettings } from "../components/StrategySettings";
 import {SourceAccountNotice} from "../components/SourceAccountNotice";
 import {UnitExposureNotice} from '../components/UnitExposureNotice';
 import {RulesVisualGuide} from "../components/RulesVisualGuide";
@@ -55,7 +55,6 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
       settings={snapshot.strategySettings}
       onApply={(report_mode, p, settings) => window.VaultRuntime.patch({...(basket ? {} : {report_mode}), ...(p === undefined ? {} : {p}), ...settings})}
     />,
-    "strategy-params": <StrategyParameters settings={snapshot.strategySettings} onApply={p => window.VaultRuntime.patch({p})} />,
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
     "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,
   }} />;
