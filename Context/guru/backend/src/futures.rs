@@ -470,6 +470,8 @@ pub const CARDS: &[(&str, &str, &str)] = &[
     ("lwdtfo_vb_hilo_bonds", "&ZB", "Larry Williams, Day Trade Futures Online (2000) Table 4.2 p.76-77, T-bonds row: the always-in volatility breakout run on the Norgate t-bonds continuous contract (&ZB, back-adjusted daily bars; R4 #293 (1), #414); stops fill at the stop or at a gapped open, no costs, no amounts."),
     ("lwdtfo_vb_open_bonds", "&ZB", "Larry Williams, Day Trade Futures Online (2000) Table 4.3 p.76-77, T-bonds row: the always-in volatility breakout run on the Norgate t-bonds continuous contract (&ZB, back-adjusted daily bars; R4 #293 (1), #414); stops fill at the stop or at a gapped open, no costs, no amounts."),
     ("acbff_bean_dual", "&ZS", "Collins, Beating the Financial Futures Market (2006) Ch.4 p.11-12, Fading Closes - Dual Entries, daily soybeans: run on the Norgate soybean continuous contract (&ZS, back-adjusted daily bars; R4 #293 (1), #414): entry stops at the previous close or high/low, one-night hold, Day-2 objective/stop at the Day-1 extremes, five unstated details labelled on the card, no costs"),
+    ("stad13_cbi", "&6S", "Omega Research, STAD Vol 13 (2000) ch.8 p.87-98, Currency/Bonds/Dollar Index (CBI): the printed TradeStation code run on the Norgate Swiss franc continuous contract with the Norgate T-bond (Data2) and Dollar Index (Data3) contracts, each XAverage on its own bars carried to the currency's dates (R4 #293 (1), #414); book test 1/2/95-4/4/00 on Swiss franc (optimised inputs), no slippage or commission; $ amounts at the contract's $ per point (futures::MARKETS)."),
+    ("stad13_cbi", "&6J", "Omega Research, STAD Vol 13 (2000) ch.8 p.87-98, Currency/Bonds/Dollar Index (CBI): the printed TradeStation code run on the Norgate Japanese yen continuous contract with the Norgate T-bond (Data2) and Dollar Index (Data3) contracts, each XAverage on its own bars carried to the currency's dates (R4 #293 (1), #414); book test 1/2/95-4/4/00 on Japanese yen (optimised inputs), no slippage or commission; $ amounts at the contract's $ per point (futures::MARKETS)."),
     ("rgc_corn_counterseasonal", "&ZC", "Ruggiero, Cybernetic Trading Strategies (1997) Ch.2 p.57, corn seasonal short and counterseasonal long: run on the Norgate corn continuous contract (&ZC, back-adjusted daily bars; R4 #293 (1), #414): calendar orders at the open of the dated bar, four unstated details labelled on the card, no costs"),
     ("ataa_moon", "&6A", "ATAA Journal Dec 1990 p.11-12 (Krastins, Sheer Lunacy): the moon-phase stop and reverse tested on AUD/USD IMM futures, run on the Norgate Australian dollar continuous contract (R4 #293 (1)); close fills, no amounts."),
     ("jkbwts_neeley31", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.22-23 Neeley31, Japanese Yen CME weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
@@ -559,6 +561,8 @@ const BOOK_WINDOW: &[(&str, &str, &str, &str)] = &[
     ("ch_bta2_long_bomb", "&ZB", "1982-01-01", "1995-07-10"), ("ch_bta2_long_bomb", "&HO", "1982-01-01", "1995-07-10"),
     // STAD Vol 5 p.16 "from June, 1993, to May, 1998": 4.5% of trades touch a bar with fills on both legs of its path (7.0% 1979-2020)
     ("stad5_curbond", "&6S", "1993-06-01", "1998-05-31"),
+    // STAD Vol 13 p.95 "1/2/95 to 4/4/00" (Swiss franc, Japanese yen)
+    ("stad13_cbi", "&6S", "1995-01-02", "2000-04-04"), ("stad13_cbi", "&6J", "1995-01-02", "2000-04-04"),
     // lane F1D: Commodity Timing Vol. 32 No. 5 "1988 to date" (May 1996): 4.1% order-dependent (10.3% 1978-2020)
     ("lwnl_bond_dowm_buy", "&ZB", "1988-01-01", "1996-04-30"),
     // lane PH: WaveRider manual Sec. VI "04/10/1970-6/30/2002": inside it 0.0-4.4% of trades give different fills in the two path orders
@@ -601,7 +605,7 @@ pub fn rows(sym: &str) -> Option<&'static [Row]> {
 thread_local! { pub static TEST_ROWS: std::cell::RefCell<BTreeMap<&'static str, &'static [Row]>> = Default::default(); }
 /// Cards that read a second Norgate contract (Data2) and the contracts they read (lane F1C, review REV-F1B M3).
 const DATA2: &[(&str, &[&str])] = &[("ftm2_rg_yen_tbill", &["&GE"]), ("mpasi_cp_sp_ma12", &["&GE"]), ("ch_bta2_goldbond_ma", &["&GC"]), ("ch_bta2_goldbond_adx", &["&GC"]), ("ch_bta2_intermarket_trio", &["&GC", "&ZS", "&HG"]),
-    ("nfgu_pathfinder", &["&ZB"]), ("nfgu_r2_metals", &["&6S"]), ("stad5_curbond", &["&ZB"]), ("stad11_miser", &["&ZB"]),
+    ("nfgu_pathfinder", &["&ZB"]), ("nfgu_r2_metals", &["&6S"]), ("stad5_curbond", &["&ZB"]), ("stad13_cbi", &["&ZB", "&DX"]), ("stad11_miser", &["&ZB"]),
     ("lwlts_talon_bondfilter", &["&ZB"]), ("lwlts_gsv_sp", &["&ZB"]), ("lwlts_gsv_sp_monday", &["&ZB"]), ("lwlts_month_day1_sp_bonds", &["&ZB"]),
     ("lwlts_bonds_channel_bstop", &["&ZB"]), ("lwlts_bonds_channel_sstop", &["&ZB"]),
     ("lwmdc_bond_gold30", &["&GC"]), ("lwmdc_bond_gold30_vb", &["&GC"]), ("lwmdc_bond_gold30_vb_nr", &["&GC"]),
