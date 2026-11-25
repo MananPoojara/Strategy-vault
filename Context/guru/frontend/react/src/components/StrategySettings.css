@@ -97,3 +97,5 @@
 .strategy-settings-link { margin-right: auto; padding: 8px 0 !important; border: 0 !important; background: none !important; color: var(--blue) !important; }
 .strategy-settings-status { align-self: center; color: var(--ink2); font-size: 12px; }
 @media (max-width: 520px) { .bt-row { grid-template-columns: 1fr; row-gap: 6px; } .bt-row > small { grid-column: 1; } .bt-row input { width: 120px; } .strategy-settings-actions { flex-wrap: wrap; } .strategy-settings-status { flex-basis: 100%; order: -1; } }
+.bt-params { margin-bottom: 18px; }
+.bt-row.changed > label { color: var(--blue); }

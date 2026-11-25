@@ -53,7 +53,6 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
         ? "Basket returns use the equal-slot portfolio calculation. Closed-trade compounding applies only to one instrument."
         : undefined}
       settings={snapshot.strategySettings}
-      hideParameters
       onApply={(report_mode, p, settings) => window.VaultRuntime.patch({...(basket ? {} : {report_mode}), ...(p === undefined ? {} : {p}), ...settings})}
     />,
     "strategy-params": <StrategyParameters settings={snapshot.strategySettings} onApply={p => window.VaultRuntime.patch({p})} />,

@@ -18,13 +18,13 @@ export interface StrategySettingsModel {
 }
 export interface BacktestSettings {
   currency: string; equity: number; sizeMode: ReturnDisplayMode; sizePct: number; alloc: number;
-  /** % per side */ brokerage: number; /** bps per side */ slippage: number; deadStock: boolean; penny: number;
+  /** % per side */ brokerage: number; /** bps per side */ slippage: number; /** bps per actual futures roll */ rollover: number; deadStock: boolean; penny: number;
   maxPositions: number; basket: boolean;
 }
-type Draft = Record<"equity" | "sizeMode" | "sizePct" | "alloc" | "brokerage" | "slippage" | "deadStock" | "penny", string>;
+type Draft = Record<"equity" | "sizeMode" | "sizePct" | "alloc" | "brokerage" | "slippage" | "rollover" | "deadStock" | "penny", string>;
 const draftOf = (b: BacktestSettings): Draft => ({equity: String(b.equity), sizeMode: b.sizeMode, sizePct: String(b.sizePct), alloc: String(b.alloc),
-  brokerage: String(b.brokerage), slippage: String(b.slippage), deadStock: b.deadStock ? "1" : "0", penny: String(b.penny)});
-const BOOK_DRAFT = (b: BacktestSettings): Draft => ({...draftOf(b), sizeMode: "fixed", sizePct: "100", alloc: String(b.equity), brokerage: "0", slippage: "0", deadStock: "0", penny: "0"});
+  brokerage: String(b.brokerage), slippage: String(b.slippage), rollover: "0", deadStock: b.deadStock ? "1" : "0", penny: String(b.penny)});
+const BOOK_DRAFT = (b: BacktestSettings): Draft => ({...draftOf(b), sizeMode: "fixed", sizePct: "100", alloc: String(b.equity), brokerage: "0", slippage: "0", rollover: "0", deadStock: "0", penny: "0"});
 const num = (raw: string, lo: number, hi: number, open = false) => raw.trim() !== "" && Number.isFinite(+raw) && (open ? +raw > lo : +raw >= lo) && +raw <= hi;
 /** The first problem in a draft, by field; empty when every value can be run. */
 export function draftErrors(d: Draft): Partial<Record<keyof Draft, string>> {
@@ -35,15 +35,16 @@ export function draftErrors(d: Draft): Partial<Record<keyof Draft, string>> {
   else if (d.sizeMode === "fixed" && !e.equity && +d.alloc > +d.equity) e.alloc = "At most the initial equity (no borrowing).";
   if (!num(d.brokerage, 0, 5)) e.brokerage = "Enter 0 to 5%.";
   if (!num(d.slippage, 0, 500)) e.slippage = "Enter 0 to 500 bps.";
+  if (!num(d.rollover, 0, 500)) e.rollover = "Enter 0 to 500 bps.";
   if (!num(d.penny, 0, 1e6)) e.penny = "Enter a price of 0 or more.";
   return e;
 }
 /** URL-state keys of a draft. Brokerage is stored as the engine's fee in bps per side. */
 export function draftPatch(d: Draft): Record<string, string> {
   return {report_mode: d.sizeMode, equity: String(+d.equity), size_pct: String(+d.sizePct), alloc: String(+d.alloc),
-    cost: String(+(+d.brokerage * 100).toFixed(6)), slippage: String(+d.slippage), dead_stock: d.deadStock, penny: String(+d.penny)};
+    cost: String(+(+d.brokerage * 100).toFixed(6)), slippage: String(+d.slippage), rollover: "0", dead_stock: d.deadStock, penny: String(+d.penny)};
 }
-const RERUN: (keyof Draft)[] = ["brokerage", "slippage", "deadStock", "penny"];
+const RERUN: (keyof Draft)[] = ["brokerage", "slippage", "rollover", "deadStock", "penny"];
 const valid = (p: StrategyParameter, raw: string) => raw.trim() !== "" && Number.isFinite(+raw)
   && (p.min === undefined || +raw >= p.min) && (p.max === undefined || +raw <= p.max);
 /** One arrow click: the schema's step, else the precision of the book default (0.02 steps by 0.01), kept inside the limits. */
@@ -187,7 +188,7 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
             </button>
           </header>
           <p id={`${id}-description`} className="strategy-settings-intro">{bt ? "Set the account, costs and filters for this backtest. Costs and filters re-run it on the same instrument and period." : settings && !hideParameters ? "The settings and assumptions this backtest used. Change a setting and Apply to re-run it on the same instrument and period." : settings ? "How this backtest calculates Net Profit, and the assumptions it used." : "Choose how closed-trade returns are displayed."}</p>
-          {settings && !hideParameters && <section className="strategy-settings-group" data-settings-group="parameters" aria-labelledby={`${id}-params`}>
+          {settings && !hideParameters && !bt && <section className="strategy-settings-group" data-settings-group="parameters" aria-labelledby={`${id}-params`}>
             <h3 id={`${id}-params`} className="strategy-settings-legend">Strategy settings used in this backtest</h3>
             {params.length ? <>
               <table className="strategy-settings-params">
@@ -209,6 +210,19 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
                 : <button type="button" className="strategy-settings-reset" onClick={() => setValues(Object.fromEntries(params.map(p => [p.key, String(p.def)])))}>Reset to book defaults</button>}
             </> : <p className="strategy-settings-note">This rule has no adjustable settings; it runs exactly as written in the book.</p>}
           </section>}
+          {bt && draftBt && !hideParameters && params.length > 0 && <fieldset className="bt-section bt-params" data-settings-group="parameters">
+            <legend>Parameters <em>re-runs the backtest</em></legend>
+            {params.map(p => {
+              const raw = values[p.key] ?? "", ok = valid(p, raw), changed = ok && +raw !== p.def;
+              return <div key={p.key} data-param={p.key} className={`bt-row${ok ? "" : " bad"}${changed ? " changed" : ""}`}>
+                <label htmlFor={`${id}-p-${p.key}`}>{p.label}</label>
+                <span className="bt-input"><input id={`${id}-p-${p.key}`} type="number" value={raw} min={p.min} max={p.max} step={p.step || "any"}
+                  aria-invalid={!ok || undefined} onChange={event => setValues(v => ({...v, [p.key]: event.target.value}))} /></span>
+                <small>{!ok ? <span role="alert">Enter a number{p.min !== undefined && p.max !== undefined ? ` from ${p.min} to ${p.max}` : ""}</span>
+                  : changed ? <><b>Changed</b> · book default {p.def}</> : `Book default ${p.def}`}</small>
+              </div>;
+            })}
+          </fieldset>}
           {bt && draftBt ? <BacktestForm id={id} bt={bt} draft={draftBt} errors={errors} set={(k, v) => setDraftBt(d => d && {...d, [k]: v})} /> : <>
           <fieldset className="strategy-settings-group" data-settings-group="return-display" disabled={Boolean(disabledReason)}>
             <legend>{pristine ? 'Closed Pristine-return display' : unitExposure ? 'Closed unit-return display' : sourceAccount ? "Closed weighted-return display" : "Net Profit calculation"}</legend>
@@ -239,7 +253,7 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
           </>}
           <footer className="strategy-settings-actions">
             {bt && draftBt && <>
-              <button type="button" className="strategy-settings-link" onClick={() => setDraftBt(BOOK_DRAFT(bt))}>Reset to defaults</button>
+              <button type="button" className="strategy-settings-link" onClick={() => {setDraftBt(BOOK_DRAFT(bt)); setValues(Object.fromEntries(params.map(p => [p.key, String(p.def)])));}}>Reset to defaults</button>
               <span className="strategy-settings-status" role="status">{Object.keys(errors).length ? "Fix the marked setting." : rerun || paramsChanged ? "Apply re-runs the backtest." : btChanged ? "Apply recalculates Net P&L." : ""}</span>
             </>}
             <button type="button" onClick={close}>Cancel</button>
@@ -285,6 +299,7 @@ function BacktestForm({id, bt, draft, errors, set}: {id: string; bt: BacktestSet
       <legend>Costs <em>re-runs the backtest</em></legend>
       {row("brokerage", "Brokerage", "Charged on the value traded, at entry and again at exit.", input("brokerage", {min: 0, max: 5, step: 0.01, unit: "% per side"}))}
       {row("slippage", "Slippage", "Fills this much worse than the rule's price, on both sides. 100 bps = 1%.", input("slippage", {min: 0, max: 500, step: 0.1, unit: "bps per side"}))}
+      {row("rollover", "Rollover", "Not available: no futures roll dates are loaded, so the engine does not charge rolls (it refuses any value above 0).", input("rollover", {unit: "bps per roll", disabled: true}))}
     </fieldset>
     <fieldset className="bt-section" disabled={Boolean(filters)}>
       <legend>Trade filters <em>re-runs the backtest</em></legend>

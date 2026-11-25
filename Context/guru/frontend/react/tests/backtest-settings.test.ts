@@ -3,7 +3,7 @@ import {draftErrors, draftPatch} from "../src/components/StrategySettings";
 import {returnDisplay} from "../src/services/return-display";
 
 const run = {trades: [{open: false, ret: 0.1}, {open: false, ret: -0.05}, {open: true, ret: 0.2}]};
-const draft = {equity: "1000000", sizeMode: "compound", sizePct: "50", alloc: "1000000", brokerage: "0.03", slippage: "2", deadStock: "1", penny: "10"};
+const draft = {equity: "1000000", sizeMode: "compound", sizePct: "50", alloc: "1000000", brokerage: "0.03", slippage: "2", rollover: "0", deadStock: "1", penny: "10"};
 
 describe("backtest settings", () => {
   it("full account = today's numbers", () => {

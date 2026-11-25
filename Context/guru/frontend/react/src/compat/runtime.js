@@ -459,7 +459,7 @@ function settingsModel(v, d, sel, { basket = false, fixedNote = '', reportMode =
   // Backtest settings (user request 25 Nov 2026): money and sizing are worked out on the page from the closed trades; brokerage,
   // slippage, dead stock and penny stock go to the engine and re-run the backtest. A reviewed account keeps its fixed configuration.
   const backtest = fixedNote ? null : { currency: sel.region === 'us' ? '$' : '₹', equity: +sel.equity, sizeMode: sel.report_mode === 'compound' ? 'compound' : 'fixed',
-    sizePct: +sel.size_pct, alloc: sel.alloc === '' ? +sel.equity : +sel.alloc, brokerage: (+sel.cost || 0) / 100, slippage: +sel.slippage || 0,
+    sizePct: +sel.size_pct, alloc: sel.alloc === '' ? +sel.equity : +sel.alloc, brokerage: (+sel.cost || 0) / 100, slippage: +sel.slippage || 0, rollover: +sel.rollover || 0,
     deadStock: sel.dead_stock === '1', penny: +sel.penny || 0, maxPositions: basket ? +sel.max_positions || 10 : 1, basket };
   return { params, assumptions, fixedNote, backtest };
 }
@@ -1862,7 +1862,6 @@ function periodPanel(tk, d, issue = null) {
     <div class="join sm ptog" role="group" aria-label="Period">${tog.map(x => `<button type="button" class="join-item ${on(x) ? 'active' : ''} ${x[4] ? 'off' : ''}" data-period="${x[1]}|${x[2]}" aria-pressed="${on(x)}" ${x[4] ? 'disabled title="No data before the book was published"' : ''}>${x[0]}<small>${x[3]}</small></button>`).join('')}</div>
     <label class="dfield">From <input type="date" name="from" value="${f}" min="${first}" max="${last}" required></label>
     <label class="dfield">To <input type="date" name="to" value="${to}" min="${first}" max="${last}" required></label>
-    <label class="dfield">Slippage <input type="number" name="slippage" value="${esc(S.slippage)}" min="0" max="500" step="0.1"> bps a side</label><label class="dfield">Rollover <input type="number" name="rollover" value="${esc(S.rollover)}" min="0" max="500" step="0.1"> bps per roll</label>
     <span class="perr" id="perr"></span></form>${d?.auto_start?`<p class="rnote" data-auto-start>${esc(d.auto_start)}</p>`:''}${d?.auto_end?`<p class="rnote" data-auto-end>${esc(d.auto_end)}</p>`:''}${d?.ruin?`<p class="rnote gate ruin" data-ruin><b>${esc(d.ruin.note)}</b></p>`:''}${STRAT?varyingControls(STRAT.v,tk):R.id&&CAT.find(v=>v.id===R.id)?varyingControls(CAT.find(v=>v.id===R.id),tk):''}`;
 }
 const apiError = (e, tk) => `${e} (${LABEL[tk]})`;
@@ -2301,9 +2300,9 @@ document.addEventListener('click', e => {
   if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 });
 document.addEventListener('submit', e => { if(e.target.id==='position-limit'){e.preventDefault();const count=positionLimit(String(new FormData(e.target).get('max_positions')));if(!count){document.getElementById('position-error').textContent='Use a whole number from 1 to 100.';return;}return setState({max_positions:String(count),position_choice:'custom'});} if(e.target.id==='library-search-form'){e.preventDefault();return setState({library_q:document.getElementById('library-query').value.trim(),library_limit:'24',library_page:'1',source_page:'1'});}if (e.target.id !== 'period') return; e.preventDefault();
-  const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
+  const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'); // costs are set in Strategy settings, not here
   if (!from || !to || from >= to) { $('#perr').textContent = 'From must be before To.'; return; }
-  go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to, cost,slippage,rollover }); });
+  go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to }); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-period]'); if (!b) return; const [from, to] = b.dataset.period.split('|'); go(R.path, { ...S, from, to }); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('.bookcard[data-book]')) e.target.click(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
