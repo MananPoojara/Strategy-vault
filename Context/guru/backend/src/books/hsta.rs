@@ -231,7 +231,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"and now shows significant bullishness during the middle three trading days, 9 to 11\" (p.86): buy at the close of the 8th trading day",
               "X|Sell at the close of the 11th trading day",
               "F|\"Super 8 Days = Last 3 + First 2 + Middle 3\" (p.86 table footnote)"],
-            "Book index: DJIA 1999-Apr 2007 monthly Super-8 % changes printed on p.86 (100 months: net +68.31% vs -23.49% rest of month).",
+            "Book index: DJIA 1999-Apr 2007 monthly Super-8 % changes printed on p.86 (100 months: net +68.31% vs -23.49% rest of month). [Unstated choices, honest count 2 (R4 #400/#408)] (1) the middle-window entry at the close of the 8th trading day is a reading of 'days 9 to 11'; (2) trading days are counted per calendar month on the series, and the overlap of the two windows is not addressed .",
             claim("100 months", "", "+0.68% per month (Super-8)", "8 days/month", "DJIA Jan 1999 - Apr 2007")),
         d("hsta_yk_passover", "Buy Yom Kippur, sell Passover", "STA 2008 p.88 · Sell Rosh Hashanah, Buy Yom Kippur, Sell Passover", "Long", Live,
             &["E|\"buying instead of selling Yom Kippur\"; \"being long Yom Kippur to Passover has produced more than twice as many advances, averaging gains of 7.1%\" (p.88): buy at the Dow close on Yom Kippur",
