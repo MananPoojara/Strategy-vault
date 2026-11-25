@@ -21,7 +21,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "F|\"If MarketPosition = 1 then HighChannel = 0; LCounter = 0\"",
         "X|\"If MarketPosition = 1 then ExitLong next bar at Lowest(Low,StopBars) stop\" (StopBars 12)"],
         notes: "Long only: neither file has a short entry (the ExitShort / Buy to Cover lines can never act). Intervest-ES is the same code under another vendor name (inputs 48/2/12), so it is one strategy here. \
-Neither file names a bar size; Intervest-ES names the E-mini S&P. Run on daily cash indices (instrument swap). Fills: vault TradeStation daily-bar convention (ajmisc.rs header).",
+Neither file names a bar size; Intervest-ES names the E-mini S&P. Run on daily cash indices (instrument swap). Fills: vault TradeStation daily-bar convention (ajmisc.rs header). Card-specific unstated choices (R4 #408): (1) daily bars (neither file names a bar size); (2) an order lives one bar; (3) the market position is read after the bar fills, and the breakout counters are updated before the MarketPosition = 1 reset; (4) the breakout counters restart at the window start (the vendor reference carries them: 3 of 470 trades differ); (5) both exit stops are live and the higher one triggers; Honest total: 5 card-specific choices (audit count 6; the audit item stop fill at the level or at the open on a gap is an engine default per #404). Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): stop fill at the level or at the open on a gap, the TradeStation daily-bar convention, instrument swap to daily cash indices, no costs, the data window.",
         claim: None }]
 }
 
