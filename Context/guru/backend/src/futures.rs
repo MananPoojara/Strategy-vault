@@ -442,6 +442,7 @@ pub fn first_nonpositive(id: &str, x: &Ctx) -> Option<usize> {
 
 /// Cards that run on one named continuous contract (#293 (1)): (strategy id, market symbol, instrument_policy basis).
 pub const CARDS: &[(&str, &str, &str)] = &[
+    ("rgc_corn_counterseasonal", "&ZC", "Ruggiero, Cybernetic Trading Strategies (1997) Ch.2 p.57, corn seasonal short and counterseasonal long: run on the Norgate corn continuous contract (&ZC, back-adjusted daily bars; R4 #293 (1), #414): calendar orders at the open of the dated bar, four unstated details labelled on the card, no costs"),
     ("ataa_moon", "&6A", "ATAA Journal Dec 1990 p.11-12 (Krastins, Sheer Lunacy): the moon-phase stop and reverse tested on AUD/USD IMM futures, run on the Norgate Australian dollar continuous contract (R4 #293 (1)); close fills, no amounts."),
     ("jkbwts_neeley31", "&6J", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.22-23 Neeley31, Japanese Yen CME weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),
     ("jkbwts_wagner31", "&GC", "Krutsinger, Building Winning Trading Systems (seminar manual, Dec 1997) p.30-31 Wagner31, COMEX gold weekly: the printed Quick System sheet on weekly bars built from the Norgate continuous contract's daily bars (R4 #293 (1)); $ amounts at the contract's $ per point (futures::MARKETS)."),

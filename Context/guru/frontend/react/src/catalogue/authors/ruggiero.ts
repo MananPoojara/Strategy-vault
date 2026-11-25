@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 260,
-  author: { id: 'ruggiero', name: 'Murray Ruggiero', tagline: 'Cybernetic trading · calendar, gap and breakout studies; intermarket systems need data', books: [{ id: 'rgcts', title: 'Cybernetic Trading Strategies', year: 1997, blurb: 'Ruggiero, 1997 · day-of-week, trading-day-of-month, runaway gaps, channel and volatility breakouts' }, { id: 'rgtsec', title: 'Traders’ Secrets (with Toghraie)', year: 1999, blurb: 'Ruggiero’s analysis sections' }, { id: 'rgstt', title: 'Stock Traders Toolbox', year: 2001, blurb: 'Manual leaves out the parameters; code is encoded' }, { id: 'rgsh', title: 'SimpleHarmony (Futures Truth review)', year: 2011, blurb: 'Review discloses no rules' }] },
+  author: { id: 'ruggiero', name: 'Murray Ruggiero', tagline: 'Cybernetic trading · calendar, gap and breakout studies; intermarket systems need data', books: [{ id: 'rgcts', title: 'Cybernetic Trading Strategies', year: 1997, blurb: 'Ruggiero, 1997 · day-of-week, trading-day-of-month, runaway gaps, channel and volatility breakouts' }, { id: 'rgcsea', readerPaths: [], title: 'Cybernetic Trading Strategies: corn seasonal and counterseasonal long (Ch.2 p.57)', year: 1997, blurb: 'Ruggiero, 1997 · sell corn after June 20 and exit November 1, going long after July 21 when the short is not profitable; runs on the Norgate corn continuous contract with four unstated details labelled; the book window is not on the card, so no figure is compared; unverified' }, { id: 'rgtsec', title: 'Traders’ Secrets (with Toghraie)', year: 1999, blurb: 'Ruggiero’s analysis sections' }, { id: 'rgstt', title: 'Stock Traders Toolbox', year: 2001, blurb: 'Manual leaves out the parameters; code is encoded' }, { id: 'rgsh', title: 'SimpleHarmony (Futures Truth review)', year: 2011, blurb: 'Review discloses no rules' }] },
   identities: ["Murray Ruggiero"],
   profile: {
     "kind": "person",
@@ -25,6 +25,7 @@ export default {
   },
   sourceReview: {
     "rgcts": {"type":"book","people":["Murray Ruggiero"]},
+    "rgcsea": {"type":"book","sameWorkAs":"rgcts","people":["Murray Ruggiero"]},
     "rgtsec": {"type":"book","people":["Adrienne Laris Toghraie","Murray Ruggiero"]},
     "rgstt": {"type":"code_package","people":[]},
     "rgsh": {"type":"article","people":["George Pruitt","Murray Ruggiero"]},
