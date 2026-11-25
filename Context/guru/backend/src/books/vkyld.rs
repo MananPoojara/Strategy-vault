@@ -7,7 +7,7 @@ pub const BOOK: &str = "vkyld";
 pub const REVIEWED: &[&str] = &["vkyld_cash"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Adapted: 4 unstated details + 1 declared adaptation, R4 #400/#414] Vakkur's 'Rising Yield Cash System based on last month's yield' (Figure 4, p.366): be 100% in cash when last month's closing 30-year Treasury yield was 0.1% (a tenth of a percentage point) or more above its six-month arithmetic moving average, otherwise 100% in the S&P 500; the moving average uses the yield on the last day of each of the prior six months (p.364-365). The article tests monthly closes 1950-1995, dividends ignored, cash earning the 90-day bill. Unstated, one per item: (1) a month's closing yield = the last published daily FRED DGS30 value of that calendar month (bond-market holidays are not filled); (2) the six-month average is the mean of the six month-end yields BEFORE last month's (the 'past six months' compared with the 'current yield'), so the test is y[m-1] - mean(y[m-7..m-2]) >= 0.1; (3) the switch is made at the open of the first trading day of the new month (the month-end yield is known at that close; no look-ahead), and a run that starts in stocks enters at the open of the window's second bar; (4) a month with no usable yield (the FRED 30-year series has a hole from Feb 2002 to Feb 2006 and starts in Feb 1977) gives no cash signal: the card stays in stocks. Declared adaptation: cash = flat, the Treasury-bill interest is not credited, price only, no costs. Figures 2-5 (e.g. $10,000 -> $1,323,359 for Figure 4, 1950-1995) use monthly S&P 500 closes from 1950 and cannot be reproduced on the vault's S&P data (1983-), so nothing is compared.";
+const NOTE: &str = "[Adapted: 4 unstated details + 1 declared adaptation, R4 #400/#414] Vakkur's 'Rising Yield Cash System based on last month's yield' (Figure 4, p.366): be 100% in cash when last month's closing 30-year Treasury yield was 0.1% (a tenth of a percentage point) or more above its six-month arithmetic moving average, otherwise 100% in the S&P 500; the moving average uses the yield on the last day of each of the prior six months (p.364-365). The article tests monthly closes 1950-1995, dividends ignored, cash earning the 90-day bill. Unstated, one per item: (1) a month's closing yield = the last published daily FRED DGS30 value of that calendar month (bond-market holidays are not filled); (2) the six-month average is the mean of the six month-end yields BEFORE last month's (the 'past six months' compared with the 'current yield'), so the test is y[m-1] - mean(y[m-7..m-2]) >= 0.1; (3) the switch is made at the open of the SECOND trading day of the new month: the Federal Reserve H.15 print of the month's last business day is published on the afternoon of the first trading day (publication lag, R4 #372), and a run that starts in stocks enters at the open of the window's second bar; (4) a month with no usable yield (the FRED 30-year series has a hole from Feb 2002 to Feb 2006 and starts in Feb 1977) gives no cash signal: the card stays in stocks. Declared adaptation: cash = flat, the Treasury-bill interest is not credited, price only, no costs. Figures 2-5 (e.g. $10,000 -> $1,323,359 for Figure 4, 1950-1995) use monthly S&P 500 closes from 1950 and cannot be reproduced on the vault's S&P data (1983-), so nothing is compared.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "vkyld_cash", name: "Vakkur rising-yield cash system: out of stocks when last month's 30-year yield is 0.1 above its six-month average", group: "S&C: Treasury Bond Yields and the S&P 500 (Vakkur, V14:8)", session: 0, dir: "Long",
@@ -38,14 +38,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
         if w.iter().any(|v| !v.is_finite()) { return false; }
         me[m] - w.iter().sum::<f64>() / 6.0 >= 0.1 - 1e-12
     }).collect();
-    // position held during month m: out of stocks when the previous month's verdict is cash; fills at the open of the month's first bar
-    let mut pos = vec![0i8; to + 1];
-    let mut m = 0usize;
+    // position held from the open of each bar. The H.15 DGS30 print of last month's last business day is published on the afternoon of the
+    // first trading day of the new month (R4 #372), so it is known only after that day's close: bar 0 of month m still holds the position
+    // decided by month m-2's verdict and the new position starts at the open of the SECOND trading day of month m.
+    let mut pos = vec![1i8; to + 1];
+    let (mut m, mut k) = (0usize, 0usize);
     for i in 0..=to {
-        while keys[m] != &dates[i][..7] { m += 1; }
-        pos[i] = if m >= 1 && cash[m - 1] { 0 } else { 1 };
+        if i > 0 && dates[i][..7] == dates[i - 1][..7] { k += 1; } else if i > 0 { m += 1; k = 0; }
+        while keys[m] != &dates[i][..7] { m += 1; k = 0; }
+        let v = if k == 0 { m.checked_sub(2) } else { m.checked_sub(1) };
+        pos[i] = if v.is_some_and(|v| cash[v]) { 0 } else { 1 };
     }
-    // the first bars before any verdict are stocks too; target_trades(next_open = true) executes tgt[i] at the open of bar i+1: shift left by one
     // bars before the run window are flat, so a run that starts in stocks enters at the open of the window's second bar (the first bar's close is the first order time)
     let tgt: Vec<i8> = (0..=to).map(|i| if i < from { 0 } else if i < to { pos[i + 1] } else { pos[i] }).collect();
     Some(super::rbtie::target_trades(x, &tgt, from, to, true, "monthly yield signal"))
