@@ -630,7 +630,7 @@ const WTC: &str = "Market Analytics, William Tell Coffee Trading System (WT Coff
 const SARF: &str = "Alex Saitta, 'Reversal Formations: Predictive Power?', Technical Analysis of Stocks & Commodities V.16:11 (1998) p.513-517 (Figures 4 and 7: continuous T-bond contract 1977-1998, one contract, no costs): run on the Norgate T-bond continuous contract only (R4 #293 (1))";
 /// Every lane's card list (R4 #329): card(), card_markets() and home() read only this, and the refresh builds its futures contexts
 /// from these tuples, so a new lane list is added here once.
-fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_K3H).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH).chain(CARDS_D2).chain(CARDS_R1).chain(CARDS_D3).chain(CARDS_S1).chain(CARDS_M3).chain(CARDS_C6).chain(CARDS_CV3).chain(CARDS_V5).chain(CARDS_H2C).chain(CARDS_F2).chain(CARDS_C1).chain(CARDS_K1T6).chain(CARDS_K1KM) }
+fn cards() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { CARDS.iter().chain(CARDS_F3).chain(CARDS_P1).chain(CARDS_F1B).chain(CARDS_PB).chain(CARDS_PA1).chain(CARDS_PA2).chain(CARDS_K3H).chain(CARDS_PF).chain(CARDS_PG).chain(CARDS_F1D).chain(CARDS_PH).chain(CARDS_D2).chain(CARDS_R1).chain(CARDS_D3).chain(CARDS_S1).chain(CARDS_M3).chain(CARDS_C6).chain(CARDS_CV3).chain(CARDS_V5).chain(CARDS_H2C).chain(CARDS_F2).chain(CARDS_C1).chain(CARDS_K1T6).chain(CARDS_K1KM).chain(CARDS_K1G) }
 fn card(id: &str) -> Option<&'static (&'static str, &'static str, &'static str)> { cards().find(|c| c.0 == id) }
 /// The continuous contracts a futures card runs on (one for most cards; every tested market for CARDS_F1B).
 pub fn card_markets(id: &str) -> Vec<&'static str> { cards().filter(|c| c.0 == id).map(|c| c.1).collect() }
@@ -643,6 +643,10 @@ const LWSPB: &str = "Larry Williams, Long-Term Secrets to Short-Term Trading (Wi
 const KL: &str = "George Kleinman, The Most Valuable Technical Tool (TMVTT), Commodity Futures and Options (2004) ch.10 pp.193-206 and Trading Commodities and Financial Futures 3rd ed. (2005) ch.10 pp.187-196 (scans, RapidOCR text in authors/conv-1123/K1/rc): run on the Norgate continuous contract of the market the book's examples use (R4 #398, #340 labelled adaptation: back-adjusted series in points against the books' per-delivery-contract dollar results); signals at a close, fills at the next close, no opens used.";
 const CARDS_K1T6: &[(&str, &str, &str)] = &[("kltmv_wma", "&LE", KL), ("kltmv_wma", "&ZW", KL), ("kltmv_ema_band", "&CL", KL), ("kltmv_ema_band", "&ZS", KL), ("kltmv_ema_band", "&6E", KL)];
 const KMCD: &str = "Darren Kimoto, Currency Trader Online (InvesTools 2006 Mega Event manual) pp.71-77, the MACD system (21-EMA, 8-17-9 MACD) whose printed backtest is a pound-dollar series: run on the Norgate British pound continuous contract (R4 #398, #340 labelled adaptation: futures against the manual's spot series); signals at a close, fills at the next close, no opens used.";
+/// Q414a (K1, R4 #414, 25 Nov 2026): the four Almanac gold seasonals and the Blackman gold season ALSO run on the Norgate Gold continuous contract (&GC); their GLD admission is unchanged (DUAL).
+const HCTAG: &str = "Jeffrey A. Hirsch & John L. Person, Commodity Trader's Almanac 2010 p.126-127 (Top Percentage Plays, gold: enter at the close of the Nth trading day of the month, exit at the close a fixed number of trading days later): declared adaptation (R4 #340, #414) on the Norgate Gold continuous contract (&GC, COMEX gold futures, the vault holds it from 1978 to 2020-09-11) instead of the named contract month (R4 #293 (1)); the card also keeps its GLD run (R4 #277 (5), #278 (3))";
+const BLKG: &str = "Matt Blackman, 'Mining For Maximum Shine', Technical Analysis of Stocks & Commodities V.25:2 (2007) p.41-42 (buy gold on or after July 23, sell on or after December 23; Figure 4 uses weekly Engelhard spot gold 1995-2005): declared adaptation (R4 #340, #414) on the Norgate Gold continuous contract (&GC, daily COMEX futures) in place of weekly spot gold; the card also keeps its GLD run (#207 (2))";
+const CARDS_K1G: &[(&str, &str, &str)] = &[("hcta_gold_jan_short", "&GC", HCTAG), ("hcta_gold_aug_long", "&GC", HCTAG), ("hcta_gold_oct_short", "&GC", HCTAG), ("hcta_gold_nov_long", "&GC", HCTAG), ("scblack_gold", "&GC", BLKG)];
 const CARDS_K1KM: &[(&str, &str, &str)] = &[("kmcd_macd_ema21", "&6B", KMCD)];
 const CARDS_F1D: &[(&str, &str, &str)] = &[
     ("lwnl_cattle_jul_td18", "&LE", "Larry Williams, Commodity Timing newsletters 1995-1997 (Vol. 29 No. 7 p.3 live cattle): run on the Norgate continuous contract of the market the letter traded, as a labelled #340 adaptation (back-adjusted series vs the CSI contract file; R4 #367 (2)), the letter's dollar stops at the market's own US$ per point, lane O2."),
@@ -890,7 +894,7 @@ const V5_FPS: &str = "Omega Research, STAD Vol 6 (1998) ch.4 p.70-79, First Pull
 const V5_SPI: &str = "Michael Johnson, Sign Post Trading, in Stephen Pierce (ed.), Amazing Trading Plans (2004) PDF p.60-69: the 3-day moving-average changeover on SPI 200 futures, 30 Mar-28 Apr 2004; run on the Norgate ASX SPI 200 continuous contract (&YAP, SPI points, no USD value). The printed +25 / -20 SPI-point target and stop are in the market's own points but the card does not model them (held), so the printed T1..T6 points (+25, +25, -20, +1, -4, +25) cannot be reproduced by the stop-and-reverse reading. DECLARED ADAPTATION (R4 #340, #367 (2)), UNVERIFIED.";
 const V5_PIT_WHY: &str = "from August 1995 Norgate's &SP open is not the pit open (R4 #330) and this card enters at the next open, so only the 1982-04-21..1995-07-31 part of the book's 4/82-7/95 test is published";
 /// R4 #367 (2): these cards keep every admission they already had (indices, ETFs, stocks, US and India) and ALSO run on their one futures contract; no existing run is refused.
-pub const DUAL: &[&str] = &["fot08_tnote", "ch_bta2_65sma_ravi", "stad6_fps", "mjspt_3dma"];
+pub const DUAL: &[&str] = &["fot08_tnote", "ch_bta2_65sma_ravi", "stad6_fps", "mjspt_3dma", "hcta_gold_jan_short", "hcta_gold_aug_long", "hcta_gold_oct_short", "hcta_gold_nov_long", "scblack_gold"];
 /// The policy source_basis of a DUAL card with the futures-contract adaptation label appended (cached: policy() returns &'static str).
 pub fn dual_basis(id: &str, old: &'static str) -> &'static str {
     static C: std::sync::Mutex<BTreeMap<String, &'static str>> = std::sync::Mutex::new(BTreeMap::new());
@@ -991,6 +995,16 @@ mod tests {
             let def = crate::books::catalogue().into_iter().find(|d| d.id == id).unwrap();
             assert!(crate::instrument_policy::check(&def, own, false).is_none() && crate::instrument_policy::check(&def, "SPY", false).is_none(), "{id}");
             assert!(crate::instrument_policy::policy(&def).source_basis.contains("FUTURES CONTRACT") && crate::instrument_policy::policy(&def).source_basis.contains("#367 (2)"), "{id}");
+        }
+    }
+    #[test] fn k1_gold_dual_cards_run_on_gold_futures_and_keep_gld() { // R4 #414 (Q414a)
+        for id in ["hcta_gold_jan_short", "hcta_gold_aug_long", "hcta_gold_oct_short", "hcta_gold_nov_long", "scblack_gold"] {
+            let def = crate::books::catalogue().into_iter().find(|d| d.id == id).unwrap();
+            assert!(super::home(id, "Gold (Norgate &GC)").is_none() && super::home(id, "Silver (Norgate &SI)").is_some(), "{id}");
+            assert!(crate::books::hcta::home(id, "Gold (Norgate &GC)").is_none() && crate::books::scblack::home(id, "Gold (Norgate &GC)").is_none(), "{id}");
+            assert!(crate::books::hcta::home(id, "GLD").is_none() && crate::books::scblack::home(id, "GLD").is_none(), "{id}");
+            assert!(crate::instrument_policy::check(&def, "Gold (Norgate &GC)", false).is_none() && crate::instrument_policy::check(&def, "GLD", false).is_none(), "{id}");
+            assert!(crate::books::hcta::home(id, "SPY").is_some() || crate::books::scblack::home(id, "SPY").is_some(), "{id}: other ETFs stay refused (readiness home)");
         }
     }
     #[test] fn market_symbols_unique() { let mut v: Vec<&str> = super::MARKETS.iter().map(|m| m.sym).collect(); let n = v.len(); v.sort(); v.dedup(); assert_eq!(v.len(), n, "duplicate MARKETS symbol (lane merge)"); } // lane PF (review PF2 M4)
