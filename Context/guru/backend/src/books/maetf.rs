@@ -8,6 +8,9 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "maetf";
 
+
+const RATES_NOTE: &str = "[Adapted: 3 unstated details + 1 declared adaptation, R4 #400/#414] Lane K3 (25 Nov 2026): the Treasury yields the card needed are now held (FRED DTB3 3-month bill 1954-, DGS10 10-year 1962-, daily). The rule as printed: Ch.11 monthly checks on the Federal Reserve monthly average yields; out of stocks when the 10-year yield is higher than six months earlier (p.197), when the 90-day bill yield exceeds the 10-year yield by any amount (p.200), or either one (composite, p.203); otherwise hold the S&P 500. Unstated, one per item: (1) a month's yield = the mean of the daily values published in that calendar month, i.e. of the yield days that exist (bond-market holidays are not filled; the H.15 monthly average); (2) the month's reading is acted on at the first open of the next month (the book: 'at the start of each month'; no same-day look-ahead); (3) 'higher than six months previously' = strictly above the monthly average six calendar months earlier. Declared adaptation: out of stocks = flat, the Treasury-bill interest is not credited (price return only, no costs). The book's S&P 500 total-return results (Table 11.3: 11.5%/yr vs 10.4% buy and hold, drawdown 23% vs 45%, 1/1965-3/2006) use total returns and T-bill returns, so they are not compared here.";
+
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, why, rules, notes| StrategyDef {
         id, name, group, session: 0, dir, status: Status::NeedsData(why), needs_volume: false, needs_vix: false, needs_series: &[],
@@ -64,6 +67,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         match x.id {
             "maetf_small_large" => { x.status = Status::Live; x.notes = "Declared adaptation (R4 #339/#340/#343, lane D1), always UNVERIFIED: the book switches between the Russell 2000 and Russell 1000 total-return indexes (1980-2006); here IWM (the Russell 2000 tracker, from May 2000) against SPY, and price returns replace total returns (the held series carry no dividends); both are substitutions, not counted. Engine conventions, labelled: the switch is filled at the year's last close; the first decision is the first year-end with a full calendar year of both ETFs behind it (end 2001). Counted card-specific readings (2 of 4): (1) the year's return is measured from the previous year's last close to this year's last close; (2) a tie goes to SPY. Small sample: 25 yearly decisions, 9 switches of holding on one pair."; }
             "maetf_eafe_sp" => { x.status = Status::Live; x.notes = "Declared adaptation (R4 #339/#340/#343, lane D1), always UNVERIFIED: the book uses the MSCI EAFE and S&P 500 indexes from 1970; here EFA (the EAFE ETF the book itself names, from Aug 2001) and SPY; the substitution is not counted. Engine conventions, labelled: the ratio EFA/SPY is checked at each month's last close (the book: once each month) and the switch is filled at that close. Counted card-specific readings (3 of 4): (1) '15 percent' is multiplicative on the ratio from its latest extreme (more than 1.15 x its trough to move to EFA, 0.85 x its peak or less to move back); (2) after a switch the extreme restarts from that month's ratio; (3) the run starts in the S&P 500 with its first extreme taken from the first month-end both ETFs exist. Small sample: 5 switches in 25 years. Start state: the book is in the S&P 500 from 6/30/2001 (Point B, reached from a peak in 2/2000 that our data does not cover); EFA starts 27 Aug 2001, so our run starts in the S&P 500 at the 31 Aug 2001 month-end. In the book's printed overlap (Table 10.2a, p.184) EAFE is favored from 6/30/2002 and no switch back is printed to the end of the book data in 2005/06; ours switches to EFA on 31 May 2002 (a month earlier: EFA instead of the index and our own trough) and also holds it until Oct 2008."; }
+            "maetf_rising_rates" | "maetf_yield_curve" | "maetf_composite_rates" => { x.status = Status::Live; x.needs_series = &["DGS10", "DTB3"]; x.notes = RATES_NOTE; }
             _ => {}
         }
     }
@@ -78,6 +82,47 @@ pub fn params(_id: &str) -> Option<Vec<ParamDef>> {
     None
 }
 
-pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> {
-    None
+fn month_avgs(dates: &[&str], v: &[f64]) -> (Vec<String>, Vec<f64>) {
+    let (mut keys, mut avg): (Vec<String>, Vec<f64>) = (vec![], vec![]);
+    let (mut sum, mut n) = (0.0, 0usize);
+    for i in 0..dates.len() {
+        let k = &dates[i][..7];
+        if keys.last().map_or(true, |l| l != k) {
+            if let Some(a) = avg.last_mut() { *a = if n > 0 { sum / n as f64 } else { f64::NAN }; }
+            keys.push(k.to_string()); avg.push(f64::NAN); sum = 0.0; n = 0;
+        }
+        if v[i].is_finite() { sum += v[i]; n += 1; }
+    }
+    if let Some(a) = avg.last_mut() { *a = if n > 0 { sum / n as f64 } else { f64::NAN }; }
+    (keys, avg)
 }
+
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec<Trade>> {
+    if !matches!(id, "maetf_rising_rates" | "maetf_yield_curve" | "maetf_composite_rates") || from > to || to >= x.c.len() { return None; }
+    let (y10, y3) = (x.series("DGS10")?, x.series("DTB3")?);
+    let dates: Vec<&str> = (0..=to).map(|i| x.r[i].date.as_str()).collect();
+    let (keys, a10) = month_avgs(&dates, &y10[..=to]);
+    let (_, a3) = month_avgs(&dates, &y3[..=to]);
+    // verdict[m]: Some(true) = out of stocks on the complete month m; None = not enough data (stay flat)
+    let verdict: Vec<Option<bool>> = (0..keys.len()).map(|m| {
+        let inv = (a3[m].is_finite() && a10[m].is_finite()).then(|| a3[m] > a10[m]);
+        let ris = (m >= 6 && a10[m].is_finite() && a10[m - 6].is_finite()).then(|| a10[m] > a10[m - 6]);
+        match id { "maetf_rising_rates" => ris, "maetf_yield_curve" => inv, _ => ris.zip(inv).map(|(r, i)| r || i) }
+    }).collect();
+    // position held during month m = verdict of month m-1 (no verdict = flat); orders fill at the first open of the month
+    let mut pos = vec![0i8; to + 1];
+    let mut m = 0usize;
+    for i in 0..=to {
+        while keys[m] != dates[i][..7] { m += 1; }
+        pos[i] = if m >= 1 && verdict[m - 1] == Some(false) { 1 } else { 0 };
+    }
+    // target_trades(next_open = true) executes tgt[i] at the open of bar i+1: shift the by-bar positions left by one
+    let tgt: Vec<i8> = (0..=to).map(|i| if i < to { pos[i + 1] } else { pos[i] }).collect();
+    Some(super::rbtie::target_trades(x, &tgt, from, to, true, "monthly rates signal"))
+}
+
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "maetf_rising_rates" | "maetf_yield_curve" | "maetf_composite_rates"),
+    label: "Marvin Appel's yield-based S&P 500 switches (Investing with Exchange Traded Funds Made Easy, Ch.11) run on the S&P 500 and SPY (and, as a declared application, the Dow DJI and DIA) with the FRED 3-month bill and 10-year yields; there is no Indian yield series, so they are US-only (R4 #414).",
+    basis: "Marvin Appel, Investing with Exchange Traded Funds Made Easy (2007), Ch.11 pp.196-204; FRED DTB3 and DGS10 (extra_data/us)",
+};
