@@ -49,7 +49,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|types 1-5: if vx < maxdn and |dvg| > maxdvg then exitlong and exitshort at market",
             "X|types 6-7: also exit when Kvol <= average(Kvol,period) - npsd*stddev(Kvol,period) (npsd .5); type 8: when average(volume,ddays) <= average(volume,period)*npsd",
             "F|Kopt 1: types 1-5 add volume only when |close - close[1]| > npsd*stddev(|change|,period)"],
-          "'at market' = next open. Only the exit harness is coded (positive ttype); the code's entry-filter mode (negative ttype) is not exposed. Volume = the index's daily volume."),
+          "'at market' = next open. Only the exit harness is coded (positive ttype); the code's entry-filter mode (negative ttype) is not exposed. Volume = the index's daily volume. [Unstated choices, honest count 6 (R4 #400/#408)] (1) ttype 1 (On-Balance Volume) is the default; (2) 'at market' = the next open; (3) the entry-filter mode (negative ttype) is not exposed; (4) Herrick type 9 is not coded; (5) volume = the index's daily volume; (6) maxdn, maxdvg and Kopt default to 0."),
         d("kfcd_martingales", "TSM Martingales (contracts doubled after a loss)", "CD Ch22 · Betting strategies", NotTestable(SIZING), false,
           &["E|average(close,5) > average(close,20): buy ncontr contracts at close; < : sell", "A|after a loss ncontr = intportion(ncontr*factor) (factor 2); after a profit ncontr = size (2)"], SIZING),
         d("kfcd_antimartingales1", "TSM Anti-Martingales 1 (reinvest profits by margin)", "CD Ch22 · Betting strategies", NotTestable(SIZING), false,

@@ -27,7 +27,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "A|Detail 1 (R4 #343): the page names no average type; simple averages, the only average the chapter defines (4-day SMA, p.5)",
             "A|Detail 2: a cross needs the averages to change sides; equal averages change nothing; the first position opens at the first cross after both averages exist, never from the starting state",
             "A|Option, not the default: p.rev = 1 also goes short on the sale (the book says only \"sale\"; long and flat is the literal reading). Orders fill at the next open [engine convention]; the 4/12 lengths are Fig.1.1's, counted as printed"],
-          "Book gives a figure and no statistics (UNVERIFIED). Futures in the book; run on indices, ETFs and stocks (declared application)."),
+          "Book gives a figure and no statistics (UNVERIFIED). Futures in the book; run on indices, ETFs and stocks (declared application). [Unstated choices, honest count 4 (R4 #400/#408)] (1) the averages are simple (the page names no type); (2) equal averages change nothing; (3) the first position opens at the first cross after both averages exist, never from the starting state; (4) long and flat is the default (p.rev = 0)."),
         d("jkofc_discretionary", "Oscillators, chart patterns and futures-options examples", "Long/Short",
           Status::NotTestable("rules not fully defined: teaching material - indicator descriptions (ROC, PPO, stochastics, RSI), chart reading and strategy examples on futures, with no entry or exit rules (Futures & Commodity Course, Ch.1-4 of Home Study Course 2 and the Quick Start Guide)"),
           &["F|Ch.1-4 of Home Study Course 2 and Home Study Course 1 / Quick Start Guide"], "Teaching material."),
