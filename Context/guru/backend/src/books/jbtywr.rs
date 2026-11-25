@@ -36,12 +36,6 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"Buy: C03\" = buy on the close of day 3",
               "X|\"Sell: C60  Stop: 6.00 (Percent, Closing)\" = sell on the close of day 60 (day 1 = the first pattern day, so 57 bars after the entry), earlier if a close is 6% below the entry price"],
             "Book test: NYMEX light crude futures (June and December contracts, 1985-1994), with overlapping positions closed at contract expiry. Here: one position at a time, any month, held 57 bars after the entry close; the stop exits on a close below entry x 0.94 [closing-basis stop read as strictly below]. Index, ETF and stock runs (US and India) are a declared application, not the author's test. The Word copy of the figure says the third day \"closes higher than the close of the 2nd day\"; the printed program header (close above the 2nd day's high) is used.") },
-        def!("jbtywr_wheat_0901", "December wheat key date · long Sep 1 to Oct 24, 5% stop", "Seasonals Part II · Key Date Seasonals", "Long", NeedsData("December wheat futures contract histories (the seasonal belongs to that market; the vault has no grain futures)"),
-            &["F|Figure 4-5 \"Key Date Seasonal in Wheat\": ENTRY 9/1, EXIT 10/24, SL 5%, BUY, CLOSE; 45 trades 1950-94, 75.56%"], ""),
-        def!("jbtywr_tbond_0418", "June T-bond key date · short Apr 18 to Apr 26, 1% stop", "Seasonals Part II · Key Date Seasonals", "Short", NeedsData("June Treasury-bond futures contract histories (the vault has no bond futures)"),
-            &["F|Figure 4-6 \"Key Date Seasonal in TBond Futures\": ENTRY 4/18, EXIT 4/26, SL 1%, SELL, CLOSE; 16 trades 1978-93, 87.50% (the caption's \"April 10th\" contradicts the table's 4/18)"], ""),
-        def!("jbtywr_hogs_1030", "December live hogs key date · long Oct 30 to Nov 27, 6% stop", "Seasonals Part II · Key Date Seasonals", "Long", NeedsData("December live hog futures contract histories (the vault has no livestock futures)"),
-            &["F|Figure 4-8 \"Key Date Seasonal Live Hogs\": ENTRY 10/30, EXIT 11/27, SL 6%, BUY, CLOSE; 27 trades 1967-93, 81.48%"], ""),
         def!("jbtywr_lumber", "January lumber key date", "Seasonals Part II · Key Date Seasonals", "Long", NotTestable("Figure 4-1 lists trades (entries about Nov 21, exits about Dec 1) but prints no entry date, exit date or stop header"),
             &["F|Figure 4-1 \"Lumber Key Date Seasonal\" (Seasonals Part II p.36)"], ""),
     ]
@@ -57,7 +51,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "jbtywr_dj_1215" => ("jbtywr_kd", "Key-date seasonals (Trade Your Way to Riches Now!)", "Dow Dec 15-Dec 30"),
         "jbtywr_dj_0406" => ("jbtywr_kd", "Key-date seasonals (Trade Your Way to Riches Now!)", "Dow Apr 6-Apr 16"),
-        "jbtywr_wheat_0901" | "jbtywr_tbond_0418" | "jbtywr_hogs_1030" | "jbtywr_lumber" => ("jbtywr_kd", "Key-date seasonals (Trade Your Way to Riches Now!)", "Futures (needs data)"),
+        "jbtywr_lumber" => ("jbtywr_kd", "Key-date seasonals (Trade Your Way to Riches Now!)", "Futures (needs data)"),
         "jbtywr_crude_outside" => ("jbtywr_outside", "Outside day pattern (crude oil track record)", "Day-60 exit, 6% closing stop"),
         _ => return None,
     })

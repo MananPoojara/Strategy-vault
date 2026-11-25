@@ -3259,7 +3259,7 @@ mod tests {
         }
         // Held: not a complete rule, needs data we do not have, or a duplicate of another module.
         for id in ["jbsmsw_add","jbsmsw_3610_parabolic","jbsmsw_dca_mom42","jbsmsw_dca_biq","jbhsms_sp_1027","jbhsms_stk_sunw",/* jbhsms_stk_nem: admitted by K58 (D1-33, short as printed) */"jbhsms_fri_mon","jbhsms_mac","jbhsms_ma200",
-            "jbtywr_wheat_0901","jbtywr_tbond_0418","jbtywr_hogs_1030","jbtywr_lumber","jbtifm_jb_gap","jbtifm_dual_orbit","jbtifm_add","jbeft_dow_fm82","jbeft_gold_kd","jbeft_parabolic","jbeft_mom_ma","jbeft_mom_rise_fall","jbeft_channel_break","jbeft_range_breakout","jbeft_3_3_channel","jbeft_dsi","jbeft_add"] {
+            "jbtywr_lumber","jbtifm_jb_gap","jbtifm_dual_orbit","jbtifm_add","jbeft_dow_fm82","jbeft_gold_kd","jbeft_parabolic","jbeft_mom_ma","jbeft_mom_rise_fall","jbeft_channel_break","jbeft_range_breakout","jbeft_3_3_channel","jbeft_dsi","jbeft_add"] {
             let d=cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
             assert!(!reviewed_cash_rule(d),"{id}");assert!(d.status!=Status::Live,"{id}");
         }
