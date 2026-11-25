@@ -109,7 +109,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|\"We will use 120% of one day's actual range for T-Bonds, and 50% of a two day average actual range for the S&P 500. These parameters were arrived at via optimization\" (p.16)",
             "E|\"a volatility reversal system that is always in the market, positioned either long or short\" (p.16); points displaced from the open, rounded up (p.5-10)",
             "X|Stop and reverse"],
-          "Book trade list p.19: June 1991 S&P 500 futures (SPM), 3/11-6/7/1991, 25 reversals + exit, 3215 points = $16,075. Run on SPX/SPY/NIFTY (instrument swap). SPX daily opens before ~1999 often equal the prior close in the vault data, so a cash-index 1991 replication is approximate.",
+          "Book trade list p.19: June 1991 S&P 500 futures (SPM), 3/11-6/7/1991, 25 reversals + exit, 3215 points = $16,075. Run on SPX/SPY/NIFTY (instrument swap). SPX daily opens before ~1999 often equal the prior close in the vault data, so a cash-index 1991 replication is approximate. [Unstated choices, honest count 3 (R4 #400/#408)] (1) the tick used to round the displacement up on an index; (2) the first position is taken at the start of the data; (3) the definition of the two-day average range is not stated.",
           claim("26 (list)", "", "3215 pts total", "", "June 1991 S&P futures 3/11-6/7/1991 (p.19)")),
         d("lg3k_tb_rev", "Volatility reversal · T-Bonds, 120% of one day's range", "Recent examples (p.16-21)", "Long/Short",
           NeedsData("T-Bond futures daily data (parameter optimised for T-Bonds; the vault has no bond futures)"),
