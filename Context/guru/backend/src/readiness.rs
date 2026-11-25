@@ -641,6 +641,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                     return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
                 }
                 if let Some(h)=crate::futures::held(def.id,&row.ticker) {return issue("not_testable",format!("Not published on {}: {h}. {}",row.ticker,g.reason));} // lane F1C (#240): a held market says why
+                if def.id=="ch_ntt_to_buy" { // the NYSE-breadth parent: say that the published NSE twin exists (R4 #306/#340)
+                    return issue("not_testable", format!("Not published on {}: Chande & Kroll's thrust-oscillator buy reads NYSE breadth and runs on the US indices and ETFs {} (R4 #306). The NSE-breadth twin card ch_ntt_to_buy_nse runs the same rule on the real NSE breadth held in the vault and is published (R4 #340, labelled declared adaptation, UNVERIFIED).", row.ticker, allowed.join(", ")));
+                }
                 return issue("not_testable", format!("Not published on {}: this rule uses fixed point or dollar amounts set for {}; on this instrument they would not mean what the book meant. {}", row.ticker, if allowed.is_empty() { "an instrument this vault does not hold".to_string() } else { allowed.join(", ") }, g.reason));
             }
         }
