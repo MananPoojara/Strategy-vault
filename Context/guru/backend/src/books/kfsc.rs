@@ -539,7 +539,7 @@ mod tests {
             }
         }
         let stoch=catalogue().into_iter().find(|d|d.id=="kfsc_stoch").unwrap();
-        assert!(stoch.status==Status::Live && stoch.notes.contains("adapted: 2 unstated details")); // R2E, R4 #297
+        assert!(stoch.status==Status::Live && stoch.notes.contains("adapted: 5 unstated details")); // R2E, R4 #297
         assert!(!reviewed_momentum_rule(stoch.id));assert!(!reviewed_stock_rule(stoch.id));
     }
     #[test]
