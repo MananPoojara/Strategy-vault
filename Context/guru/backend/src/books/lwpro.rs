@@ -40,7 +40,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"If we buy only on days that opened higher than the prior day\" (p.57); Read: open above the prior close", "E|Buy that open", X], N,
             claim("1,016", "77%", "-$9.43 (-$9,585)", "", "1982-2002")),
         sd!("lwpro_open_down", "Buy the open when it is below the prior close", "S&P short-term set-ups", "Long", Live,
-            &["F|\"If we limit our buying to just days the SP opens lower\" (p.57)", "E|Buy that open", X], N,
+            &["F|\"If we limit our buying to just days the SP opens lower\" (p.57) [Unstated choices, honest count 3 (R4 #400/#408)] (1) 'opens lower' is read as an open below the prior close (not flagged as a reading); (2) the first profitable opening is measured against the entry price; (3) the stop is armed from the day after entry.", "E|Buy that open", X], N,
             claim("1,073", "77%", "$104.53 ($112,165)", "", "1982-2002")),
         sd!("lwpro_bond_opens", "S&P buys by S&P and bond opening direction; Protege S&P patterns; Protege program", "S&P · Bond relationships", "Long/Short",
             NeedsData("Needs daily T-Bond futures opens and closes (and CRB for one rule); the vault has neither."),
