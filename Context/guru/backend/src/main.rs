@@ -2920,6 +2920,14 @@ mod tests {
                 other_path += 1;
                 continue;
             }
+            if matches!(d.id, "maetf_rising_rates" | "maetf_yield_curve" | "maetf_composite_rates" | "vkyld_cash") {
+                // lane K3: read FRED DGS10/DTB3/DGS30 (published series, R4 #372), which the NIFTY test price file does not hold:
+                // with no series there is no run, and the instrument policy admits SPX/SPY/DJI/DIA only, so readiness refuses NIFTY (not_testable).
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none(),"{}",d.id);
+                assert_eq!(readiness::check(&ctx,d,20,rows.len()-1,&Params::new()).unwrap().status,"not_testable","{}",d.id);
+                other_path += 1;
+                continue;
+            }
             if d.id == "apta_nhnl" {
                 // This source-specific NYSE breadth method is admitted only on SPX,
                 // not on this Nifty context without count inputs. Its SPX ledger
