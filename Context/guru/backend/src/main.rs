@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod fut1; // R4 #416: India day-trade cards on the NIFTY / NIFTYBANK FUT1 minutes
 mod nse_firing; // R4 #347 / Q20: NSE vs NYSE firing-rate line on every NSE twin card
 mod nse_holidays; // R4 #364: NSE closures derived from the NIFTY 50 bars
 mod nse_expiry; // lane CV6 (R4 #340): NSE monthly option expiry derived from the held NIFTY chain
