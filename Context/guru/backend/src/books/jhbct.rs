@@ -13,7 +13,7 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "Book market: futures (Sept 82 Corn fig 51, July 82 Coffee fig 52; daily charts with weekly high/low blocks). \
 'Two weeks' = the two previous full calendar weeks (Monday-Sunday) before the current week, the book's 'double charting' weekly blocks (p.119-121, 'two weeks, or ten trading days' p.121); \
-the window needs data from before its first week. A close exactly at the range boundary is not beyond it. Fills at the close of the signal day (book: 'on close only', 'go in on a close'). Runs on the indices (instrument swap).";
+the window needs data from before its first week. A close exactly at the range boundary is not beyond it. Fills at the close of the signal day (book: 'on close only', 'go in on a close'). Runs on the indices (instrument swap). [Unstated choices, honest count 4 on each of jhbct_weekly_close and jhbct_weekly_close4 (R4 #400/#408)] jhbct_weekly_close: (1) two weeks = the two previous full calendar weeks versus ten trading days; (2) a close at the boundary is not beyond; (3) fill at the close of the signal day; (4) the close-only variant used instead of the original intraday-high/low rule. jhbct_weekly_close4: (1) two weeks = calendar definition; (2) a close equal to the boundary is not beyond; (3) fill at the close; (4) a new entry may be on the same bar as the exit.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes| StrategyDef {
