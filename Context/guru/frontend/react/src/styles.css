@@ -837,7 +837,7 @@ h1, h2, h3, h4, .section-h, .box-h, .ghero h1, .ahero h1, .lhero h1, .brand, .ls
 /* ---- Strategy report in the desk's Signals layout (user 20 Nov 2026) ---- */
 /* Normal mode = backtest only; Deep research shows the book-period presets, optimisation, parameters, export and conclusions. */
 html[data-mode="normal"] .ptog, html[data-mode="normal"] #open-optimization, html[data-mode="normal"] .control-settings,
-html[data-mode="normal"] [data-react-slot="strategy-params"], html[data-mode="normal"] [data-export-all-box],
+html[data-mode="normal"] [data-export-all-box],
 html[data-mode="normal"] #claude-c, html[data-mode="normal"] #gpt-c {display:none !important;}
 .st-tools {display:flex;align-items:flex-start;justify-content:flex-end;gap:12px;flex-wrap:wrap;}
 .mode-toggle {margin-top:7px;}
