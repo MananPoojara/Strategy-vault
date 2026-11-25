@@ -44,6 +44,10 @@ pub fn back_adjust(rows: &[crate::Row], exp: &[String]) -> (Vec<crate::Row>, Vec
 /// Runs the card on the futures daily bars (+ futures minutes for the same-day rules) of an India context; None when the pair is not re-opened.
 pub fn reopen(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if ACTIVE.with(|a| a.get()) || !applies(id, &x.r.first()?.ticker) { return None; }
+    reopen_with(id, x, from, to, &|y| crate::connors::run(id, y, 0, y.r.len() - 1, p))
+}
+/// The roll-aware wrapper; `run` is the card's own run on the prepared futures context (a closure so the wrapper can be tested on its own).
+pub fn reopen_with(id: &str, x: &Ctx, from: usize, to: usize, run: &dyn Fn(&Ctx) -> Option<Vec<Trade>>) -> Option<Vec<Trade>> {
     let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
     if rows.len() < 2 { return Some(vec![]); }
     let same_day = SAME_DAY.contains(&id);
@@ -56,30 +60,59 @@ pub fn reopen(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<V
     if same_day { y.minutes = x.fut.map(|f| f.cut_at(15 * 60 + 30)); }
     y.fut = x.fut;
     ACTIVE.with(|a| a.set(true));
-    let r = crate::connors::run(id, &y, 0, rows.len() - 1, p);
+    let r = run(&y);
     ACTIVE.with(|a| a.set(false));
     // same-day rules keep EMA state across days: no entry on a roll day (the first day of a new contract), where the state still holds the old contract's closes
     let r = r.map(|t| if same_day { t.into_iter().filter(|z| !roll_day[z.legs[0].i]).collect() } else { t });
-    r.map(|mut t| { for z in &mut t { let o = off[z.legs[0].i]; for l in &mut z.legs { l.px -= o; } z.exit_px -= o; for e in &mut z.exits { e.1 -= o; } } crate::books::sprfs::remap(t, &map) })
+    // prices on the contract held at entry: adjusted price - the entry bar's offset. Single-leg, no scale-out: the cards in REOPEN open one position per trade
+    // (a leg added after a roll would need its own entry-bar offset), so anything else is a bug here, not a silent price.
+    r.map(|mut t| { for z in &mut t { debug_assert!(z.legs.len() == 1 && z.exits.is_empty(), "fut1: {id} produced a multi-leg or scale-out trade"); let o = off[z.legs[0].i]; for l in &mut z.legs { l.px -= o; } z.exit_px -= o; for e in &mut z.exits { e.1 -= o; } } crate::books::sprfs::remap(t, &map) })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn row(d: &str, o: f64, h: f64, l: f64, c: f64) -> crate::Row { crate::Row { ticker: "T".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None } }
+    use crate::connors::Leg;
+    fn row(d: &str, o: f64, h: f64, l: f64, c: f64) -> crate::Row { crate::Row { ticker: "NIFTY 50".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None } }
     #[test]
-    fn a_trade_across_a_roll_earns_no_gap() {
-        // two contracts: the second opens 30 points above the first one's last close (a roll gap); the real move around it is flat
+    fn back_adjust_removes_the_gap() {
         let rows = vec![row("2020-01-01", 100., 101., 99., 100.), row("2020-01-02", 100., 101., 99., 100.), row("2020-01-03", 130., 131., 129., 130.), row("2020-01-06", 130., 131., 129., 130.)];
         let exp: Vec<String> = ["A", "A", "B", "B"].iter().map(|s| s.to_string()).collect();
         let (adj, off, rolls) = back_adjust(&rows, &exp);
-        assert_eq!(rolls, 1);
-        assert_eq!(off, vec![30., 30., 0., 0.]);
+        assert_eq!((rolls, off), (1, vec![30., 30., 0., 0.]));
         assert!(adj.windows(2).all(|w| (w[1].open - w[0].close).abs() < 1e-9), "no gap left in the adjusted series");
-        // a long entered at the close of day 2 and left at the close of day 4: adjusted points 0, shown prices on the entry contract
-        let (ep, xp) = (adj[1].close - off[1], adj[3].close - off[1]);
-        assert_eq!((ep, xp), (100., 100.));
-        // the raw rows would have paid +30 points
-        assert_eq!(rows[3].close - rows[1].close, 30.);
+    }
+    /// Drives reopen_with on a real FUT1 minute file + FUT1.days.csv (written to a temp dir): expiry parsing, the daily bars built from the minutes,
+    /// the roll day, the roll filter of the same-day rule and the price shift of a trade that spans the roll.
+    #[test]
+    fn reopen_on_a_real_fut1_roll_pays_no_gap_and_filters_roll_day_entries() {
+        let dir = std::env::temp_dir().join(format!("fut1-roll-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // four days, two minutes each (09:15, 09:16), volume > 0; contract A on days 1-2, contract B from day 3 opening 30 points higher (the roll gap)
+        let days = [("2020-01-01", 100.), ("2020-01-02", 100.), ("2020-01-03", 130.), ("2020-01-06", 130.)];
+        let mut m = String::from("Date,Time,Open,High,Low,Close,Volume,OI\n");
+        let mut d = String::from("Date,expiry,source,bars,first,last,volume_verified,vol_over_bhav_contracts,flag\n");
+        for (i, (date, p)) in days.iter().enumerate() {
+            m += &format!("{date},09:15,{p},{},{},{p},10,1\n{date},09:16,{p},{},{},{p},10,1\n", p + 1., p - 1., p + 1., p - 1.);
+            d += &format!("{date},{},store,2,09:15,09:16,1,75.0,\n", if i < 2 { "2020-01-30" } else { "2020-02-27" });
+        }
+        std::fs::write(dir.join("NIFTY_50.FUT1.m1.csv"), m).unwrap();
+        std::fs::write(dir.join("NIFTY_50.FUT1.days.csv"), d).unwrap();
+        let cash: Vec<crate::Row> = days.iter().map(|(date, p)| row(date, *p, p + 1., p - 1., *p)).collect();
+        let mut x = Ctx::new(&cash, &cash, &[]);
+        x.fut = crate::intraday::Minutes::scan_fut(dir.join("NIFTY_50.FUT1.m1.csv").to_str().unwrap()).map(|m| &*Box::leak(Box::new(m)));
+        assert!(x.fut.is_some());
+        let trade = |dir: f64, e: usize, xi: usize, epx: f64, xpx: f64| Trade { dir, legs: vec![Leg { i: e, px: epx, w: 1. }], exit_i: xi, exit_px: xpx, reason: "stub".into(), entry_kind: "close", signal_i: xi, open: false, exits: vec![] };
+        // multi-day rule: a long from day 2 (index 1) to day 4 (index 3) across the roll; on the ADJUSTED rows both closes are 130 (no gap), so the trade earns 0
+        let t = reopen_with("sdtcp_donchian", &x, 0, 3, &|y| { assert!((y.r[1].close - 130.).abs() < 1e-9 && (y.r[3].close - 130.).abs() < 1e-9, "the card sees the adjusted series: {:?}", y.r.iter().map(|r| r.close).collect::<Vec<_>>()); Some(vec![trade(1., 1, 3, y.r[1].close, y.r[3].close)]) }).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].legs[0].px, t[0].exit_px), (100., 100.), "prices are shown on the contract held at entry (the old one: 100)");
+        assert_eq!(t[0].ret(0.), 0.0, "no roll gap as profit");
+        // the raw rows would have paid +30 on the same trade
+        assert_eq!((cash[3].close - cash[1].close) / cash[1].close, 0.3);
+        // same-day rule: raw rows; an entry on the roll day (index 2) is dropped, the others stay
+        let s = reopen_with("as51_ema_scalp", &x, 0, 3, &|y| { assert!((y.r[2].open - 130.).abs() < 1e-9 && (y.r[1].close - 100.).abs() < 1e-9, "raw rows for the same-day rule"); Some(vec![trade(1., 1, 1, 100., 101.), trade(1., 2, 2, 130., 131.), trade(1., 3, 3, 130., 131.)]) }).unwrap();
+        assert_eq!(s.iter().map(|z| z.legs[0].i).collect::<Vec<_>>(), vec![1, 3], "the roll-day entry is dropped");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
