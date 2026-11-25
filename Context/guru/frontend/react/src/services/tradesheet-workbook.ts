@@ -58,6 +58,7 @@ const num = (v: number | null | undefined, z = PCT, s: Record<string, unknown> =
 /** The figures of one basis (a list of closed-trade returns, oldest exit first) as the site computes them. */
 export function basisStats(rets: number[], days: number[], years: number) {
   const n = rets.length, wins = rets.filter(r => r > 0), losses = rets.filter(r => r <= 0);
+  days = days.map(d => Math.max(1, d));
   const avgWin = mean(wins), avgLoss = mean(losses), wr = n ? wins.length / n : null, al = avgLoss == null ? null : -avgLoss;
   let cum = 0, peak = 0, dd = 0, eq = 1;
   for (const r of rets) { cum += r; peak = Math.max(peak, cum); dd = Math.min(dd, cum - peak); eq *= 1 + r; }
@@ -83,7 +84,7 @@ export function tradesheetSheet(input: SheetInput): TradesheetSheet {
     const a = t.accounting || {}, net = fin(t.ret_full_precision) ? t.ret_full_precision : fin(a.net_ret) ? a.net_ret : fin(t.ret) ? t.ret : NaN;
     const fee = fin(a.fee_ret) ? a.fee_ret : 0, slip = fin(a.slippage_ret) ? a.slippage_ret : 0;
     const gross = fin(a.gross_ret) ? a.gross_ret : net + fee + slip;
-    const days = fin(a.days_held) ? a.days_held : Math.max(1, dayNo(t.exit) - dayNo(t.entry));
+    const days = fin(a.days_held) ? a.days_held : dayNo(t.exit) - dayNo(t.entry);
     return {t, net, fee, slip, gross, days, mae: a.mae_ret_observed ?? null, mfe: a.mfe_ret_observed ?? null, symbol: a.symbol || input.symbol};
   });
   const closed = all.filter(x => !x.t.open && Number.isFinite(x.net));
@@ -96,7 +97,7 @@ export function tradesheetSheet(input: SheetInput): TradesheetSheet {
     ["Entry:", [...input.rules.entry, ...input.rules.scaleIn.map(s => "Scale-in: " + s)]],
     ["Exit:", input.rules.exit],
     ["Filter:", [`${input.symbol}, ${input.period.from} to ${input.period.to}`,
-      input.filters.penny > 0 ? `Penny stock price: no trade when the signal-day close is at or below ${input.currency}${input.filters.penny}` : "",
+      input.filters.penny > 0 ? `Penny stock price: a trade is skipped when the close of the bar before its entry (the entry bar for a close fill) is at or below ${input.currency}${input.filters.penny}; the rule is not re-run` : "",
       input.filters.deadStock ? "Dead stock backtest: no entry on the last bar; an open trade is sold at the last close" : ""].filter(Boolean)],
     ["Costs:", [`Slippage ${input.costs.slippageBps} bps per side · Brokerage ${+(input.costs.brokerageBps / 100).toFixed(4)}% per side`]],
     ["Account:", [`Initial equity ${money(input.account.equity)} · ` + (input.account.compound
@@ -169,7 +170,7 @@ export function tradesheetSheet(input: SheetInput): TradesheetSheet {
     c("Entry Date", {v: serial(t.entry), t: "n", z: DATE, s: S.body}); c("Entry Price", num(t.avg_px, NUM, S.body));
     c("Exit Date", t.open ? text("OPEN") : {v: serial(t.exit), t: "n", z: DATE, s: S.body}); c("Exit Price", num(t.exit_px, NUM, S.body));
     c(anyCost ? "Gross P&L %" : "P&L %", num(anyCost ? x.gross : x.net, PCT, S.body, true));
-    c("Days Held", t.open ? num(x.days, INT, S.body) : {v: x.days, t: "n", z: INT, s: S.body, f: `MAX(1,E${n}-C${n})`});
+    c("Days Held", t.open ? num(x.days, INT, S.body) : {v: x.days, t: "n", z: INT, s: S.body, f: `E${n}-C${n}`});
     if (charged.slip) c("Slippage %", num(x.slip, PCT, S.body));
     if (charged.fee) c("Brokerage %", num(x.fee, PCT, S.body));
     if (anyCost) c("Net P&L %", {...num(x.net, PCT, S.body, true), f: `${gross}${n}${charged.slip ? `-${colName(at("Slippage %"))}${n}` : ""}${charged.fee ? `-${colName(at("Brokerage %"))}${n}` : ""}`});
@@ -196,7 +197,7 @@ export function tradesheetSheet(input: SheetInput): TradesheetSheet {
     rows[r] = row;
   });
   const last = H0 + all.length;
-  put(last + 2, 0, text("Statistics use closed trades only; an open trade is listed but not counted. Returns are fractions of each position; Net P&L and Equity apply the account settings. CAGR compounds the closed returns over the first entry to the last exit; DD is the booked drawdown of the added returns.", S.note));
+  put(last + 2, 0, text("Statistics use closed trades only; an open trade is listed but not counted. Days Held are calendar days (a same-day trade counts 1 in Monthly Thickness). Returns are fractions of each position; Net P&L and Equity apply the account settings. CAGR compounds the closed returns over the first entry to the last exit; DD is the booked drawdown of the added returns.", S.note));
   merges.push({s: {r: last + 2, c: 0}, e: {r: last + 2, c: 12}}); heights[last + 2] = 30;
   const cols = Array.from({length: helper + helpers.length}, (_, c) => ({wch: c < head.length ? head[c][1] : c === head.length ? 3 : 12}));
   cols[0] = {wch: 20};

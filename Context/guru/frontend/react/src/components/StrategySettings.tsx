@@ -290,7 +290,7 @@ function BacktestForm({id, bt, draft, errors, set}: {id: string; bt: BacktestSet
       <legend>Trade filters <em>re-runs the backtest</em></legend>
       {row("deadStock", "Dead stock backtest", draft.deadStock === "1" ? "No entry on the last bar; a trade still open there is sold at that day's close and counted." : "A trade still open at the end stays open and is left out of the results.",
         <select id={`${id}-bt-deadStock`} value={draft.deadStock} onChange={e => set("deadStock", e.target.value)}><option value="0">No</option><option value="1">Yes</option></select>)}
-      {row("penny", "Penny stock price", "Skips a trade when the close on its signal day is at or below this price. 0 = off. A skipped trade is not replaced by a later signal.", input("penny", {min: 0, unit: "cur"}))}
+      {row("penny", "Penny stock price", "Skips a trade when the close of the bar before its entry (the entry bar for a close fill) is at or below this price. 0 = off. A skipped trade is not replaced by a later signal.", input("penny", {min: 0, unit: "cur"}))}
       {filters && <p className="bt-locked">{filters}</p>}
     </fieldset>
   </div>;

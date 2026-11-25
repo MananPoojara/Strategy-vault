@@ -355,6 +355,9 @@ fn trade_filters(q:&BTreeMap<String,String>)->Result<(f64,bool),String>{
 }
 fn apply_trade_filters(ctx:&Ctx,run:Run,(penny,dead):(f64,bool),cost:f64)->Result<Run,String>{
     if penny<=0.&&!dead {return Ok(run);}
+    // option_account is set by every multi-position account backtest() returns: option chains, spreads (spread::run),
+    // ETF rotation and basket ranking (books::rotation::account / basket_account) and pyramids or overlapping units
+    // (books::units::run). Their equity is their own account's, so they are refused here and never rebuilt below.
     if run.source_account.is_some()||run.bandy_account.is_some()||run.unit_exposure_report.is_some()||run.option_account.is_some()||futures::ctx_market(ctx).is_some() {
         return Err("calculation_unavailable: Dead stock and penny stock settings apply to single-instrument stock, ETF and index runs; this strategy's reviewed account model does not take them.".into());
     }
@@ -362,7 +365,7 @@ fn apply_trade_filters(ctx:&Ctx,run:Run,(penny,dead):(f64,bool),cost:f64)->Resul
     let trades=run.trades.into_iter().filter(|t|{
         let e=t.legs[0].i;
         !(dead&&e>=to) && !(penny>0.&&ctx.c[if t.entry_kind=="close"{e}else{e.saturating_sub(1)}]<=penny)
-    }).map(|mut t|{if dead&&t.open {t.open=false;t.reason="dead stock: sold at the last bar".into();}t}).collect();
+    }).map(|mut t|{if dead&&t.open {t.open=false;t.reason="dead stock: sold at the last close".into();}t}).collect();
     normalized_run(ctx,trades,from,to,cost)
 }
 
@@ -2885,7 +2888,7 @@ mod tests {
         let penny=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),trade_filters(&q("penny","10")).unwrap(),0.001).unwrap();
         assert_eq!(penny.trades,raw[1..].to_vec(),"the trade signalled at a close of 5 is dropped");
         let dead=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),(0.,true),0.001).unwrap();
-        assert!(!dead.trades[2].open && dead.trades[2].reason.starts_with("dead stock") && dead.trades[2].exit_i==29);
+        assert!(!dead.trades[2].open && dead.trades[2].reason=="dead stock: sold at the last close" && dead.trades[2].exit_i==29);
         assert_eq!(dead.equity,base.equity,"selling at the last close is the open mark");
         let last=apply_trade_filters(&ctx,normalized_run(&ctx,vec![raw[0].clone(),t(29,29,true)],0,29,0.001).unwrap(),(0.,true),0.001).unwrap();
         assert_eq!(last.trades.len(),1,"no entry on the last bar");
