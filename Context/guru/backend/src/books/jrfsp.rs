@@ -25,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|[Book silent] One position at a time: this week's same-direction entry stop is not used while that position is held. Each weekly entry order fills at most once per week (a filled order is used up); both sides can fill in one week (\"at times both the week's long trade and short trade were taken, with one or both stopped out for a loss\", p.2).",
             "F|[Book silent] Same-day order of fills: open -> nearer extreme -> other extreme -> close; gaps fill at the open. The book rounds pip amounts up to whole pips (FX); index levels are used unrounded.",
         ],
-        notes: "Written for spot FX on weekly bars (book example EUR/USD week of Oct 6-10 2008; the equity curve is GBP/USD, 6 years, 30%, $10/pip, no numbers printed). Unit-free rule, run on the index (instrument swap). Homework variants 60%, 75%, 100% (p.1) are the entry multiplier parameter. No published statistics, so no book-vs-ours comparison is possible.",
+        notes: "Written for spot FX on weekly bars (book example EUR/USD week of Oct 6-10 2008; the equity curve is GBP/USD, 6 years, 30%, $10/pip, no numbers printed). Unit-free rule, run on the index (instrument swap). Homework variants 60%, 75%, 100% (p.1) are the entry multiplier parameter. No published statistics, so no book-vs-ours comparison is possible. [Unstated choices, honest count 5 (R4 #400/#408)] (1) one position at a time; (2) entry fills once per week; (3) same-day fill order; (4) pips unrounded; (5) weekly bars from daily.",
         claim: None,
     }]
 }
