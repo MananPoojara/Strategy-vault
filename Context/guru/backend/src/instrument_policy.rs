@@ -332,14 +332,17 @@ pub fn m3_reason(id:&str,ticker:&str)->String {
         _=>format!("{ticker} daily open/high/low come from stale component prints"),
     }
 }
-/// Q420 (R4 #420, 26 Nov 2026, lane K3; authors/conv-1123/k3w/q420_results2.tsv, review REV-1126-K3-179): the #179 two-window check re-run on each index's CLEAN
+/// Q420 (R4 #420, 26 Nov 2026, lane K3; authors/conv-1123/k3w/q420_results3.tsv, reviews REV-1126-K3-179 / -179b): the #179 two-window check re-run on each index's CLEAN
 /// window up to the end of the data (2026-11-24), the window split at its midpoint, against the tradable ETF (SPX 2014-01-02..2020-06-30 / 2020-07-01..2026-11-24 vs SPY;
-/// NDX 2001-01-02..2013-12-31 / 2014-01-02..2026-11-24 vs QQQ; DJI 2016-01-04..2021-06-30 / 2021-07-01..2026-11-24 vs DIA). A pair is released only if both windows
-/// have >= 30 trades on both sides (#179 thin-sample rule) and the index is not better in BOTH windows; it is published from the clean date only (m3_clean_from,
-/// 'index data clean from YYYY'). India (NIFTY 50 / NIFTYBANK) stays withdrawn: no tradable India series is served to test it against (#231).
-pub const M3_REL_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx4day", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "atm03_twobar", "bfmm_esl", "bfmm_mm2_es", "bfmm_mm2_nq", "bfmm_nql", "bllstr_fma_1_50_1", "dbnotp_abc_index", "fgosc_crossover", "hbqts_cgo", "hbqts_parabolic_stop", "jbssf_mom_ma", "jkbk_safe", "jkbk_starting_point", "jr_zulu", "kets_stoch_sig_stop", "kftsm_parabolic", "lg3k_tr_day", "lkcpt_rsimild", "lwdtfo_vb_open", "lwmdc_open_up_oc", "rinadz_rsi9", "rpdt_range_bo", "scuhnn_nnp", "sdtcp_donchian", "sdtcp_nr7id", "slct_ct_formula", "sprfs_nr4ib", "stad13_luxor", "stad2_ccibb", "stad3_bdsr", "stad7_masr", "stad9_nohurry", "stkch_k39", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tscom_imaster", "upg18_safer2005", "wwnc_dmi"];
-pub const M3_REL_NDX:&[&str]=&["adrsi5_rsi5", "ajmisc_vol_rev", "ftm_rg_oops", "jt_example_20d_breakout", "kets_stoch_div_stop", "lwnl_engulf_bull_1", "nkms_3_day_range_switch"];
-pub const M3_REL_DJI:&[&str]=&["acbff_rx15", "bfmm_mm2_es", "elcim_ts_fi", "epfpp_fxed_trend", "fot07_kama_range", "ftm_kf_sd", "jcurt_jk31_pattern", "lebtcb_adavol", "mqma_moving_average", "nkms_bull_power_bear_power_2", "scuhnn_nnp", "stad9_redrover", "strtw_gd_bj", "tselhs_rb_avg", "wbmdd_erg_tsi_s2", "wtdtt_moc_contraction"];
+/// NDX 2001-01-02..2013-12-31 / 2014-01-02..2026-11-24 vs QQQ; DJI 2016-01-04..2021-06-30 / 2021-07-01..2026-11-24 vs DIA). 'Index better' is symmetric: a positive
+/// index against a negative ETF, 3x / 10x better, OR both averages negative with the index LESS negative (a losing rule the index flatters, e.g. rinadz_rsi9). A pair is
+/// released only if both windows have >= 30 trades on both sides (#179 thin-sample rule) and the index is not better in BOTH windows; it is published from the clean date
+/// only (m3_clean_from, 'index data clean from YYYY'). Not released although the numbers pass: scuhnn_nnp (its #179 reason, weekly closes amplified by the nearest-neighbour
+/// search, is not cured by a clean-open window) and lkqts_tiar DJI (refused for another reason: it needs the server-qualified stock identity). The released set is sensitive to
+/// the window cut (DJI went 1 -> 16 pairs when the 2016-2020 windows were extended to 2026; with the symmetric test 11). India (NIFTY 50 / NIFTYBANK) stays withdrawn: no tradable India series is served (#231).
+pub const M3_REL_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx4day", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "atm03_twobar", "bfmm_esl", "bfmm_mm2_es", "bfmm_mm2_nq", "bfmm_nql", "bllstr_fma_1_50_1", "dbnotp_abc_index", "fgosc_crossover", "hbqts_cgo", "hbqts_parabolic_stop", "jbssf_mom_ma", "jkbk_safe", "jkbk_starting_point", "jr_zulu", "kets_stoch_sig_stop", "kftsm_parabolic", "lg3k_tr_day", "lkcpt_rsimild", "lwdtfo_vb_open", "lwmdc_open_up_oc", "sdtcp_donchian", "sdtcp_nr7id", "slct_ct_formula", "sprfs_nr4ib", "stad3_bdsr", "stad7_masr", "stkch_k39", "tdperl_clop_long", "tdperl_clop_short", "tscom_imaster", "upg18_safer2005", "wwnc_dmi"];
+pub const M3_REL_NDX:&[&str]=&["adrsi5_rsi5", "ftm_rg_oops", "jt_example_20d_breakout", "kets_stoch_div_stop", "lwnl_engulf_bull_1", "nkms_3_day_range_switch"];
+pub const M3_REL_DJI:&[&str]=&["bfmm_mm2_es", "elcim_ts_fi", "epfpp_fxed_trend", "ftm_kf_sd", "jcurt_jk31_pattern", "lebtcb_adavol", "mqma_moving_average", "nkms_bull_power_bear_power_2", "stad9_redrover", "strtw_gd_bj", "wtdtt_moc_contraction"];
 pub fn m3_released(id:&str,ticker:&str)->bool {
     match ticker {"SPX"=>M3_REL_SPX,"NDX"=>M3_REL_NDX,"DJI"=>M3_REL_DJI,_=>&[]}.contains(&id) // India: no tradable India series in the served contexts, so a US pass does not release it (#231, REV-1126-K3-179)
 }
@@ -4150,7 +4153,7 @@ mod decision_179_tests {
             }
         }
         // Q420: the released pairs are subsets of the flagged lists, published only from their clean dates
-        assert_eq!((M3_REL_SPX.len(),M3_REL_NDX.len(),M3_REL_DJI.len()),(45,7,16));
+        assert_eq!((M3_REL_SPX.len(),M3_REL_NDX.len(),M3_REL_DJI.len()),(38,6,11));
         assert!(M3_REL_SPX.iter().all(|i|M3_SPX.contains(i)) && M3_REL_NDX.iter().all(|i|M3_NDX.contains(i)) && M3_REL_DJI.iter().all(|i|M3_DJI.contains(i)));
         assert_eq!((m3_clean_from(M3_REL_SPX[0],"SPX"),m3_clean_from(M3_REL_SPX[0],"NIFTY 50"),m3_clean_from(M3_REL_SPX[0],"NIFTYBANK"),m3_clean_from(M3_REL_NDX[0],"NDX"),m3_clean_from(M3_REL_DJI[0],"DJI")),
             (Some("2014-01-01"),None,None,Some("2001-01-01"),Some("2016-01-01")));
