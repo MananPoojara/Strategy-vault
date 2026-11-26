@@ -108,7 +108,10 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwdtfo_vb_hilo" => f("From the high / low"),
         "lwdtfo_vb_open" => f("From the open"),
         "lwdtfo_vb_commodities" => f("Pork bellies (needs data)"),
-        _ => CM.iter().find(|r| r.0 == id).map(|r| f(["From the close, commodities", "From the high / low, commodities", "From the open, commodities"][r.3])).flatten(),
+        // the switcher button text carries the market, so the 27 variants differ (REV-1126)
+        _ => { let i = CM.iter().position(|r| r.0 == id)?; static LAB: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+            let l = LAB.get_or_init(|| CM.iter().map(|r| &*Box::leak(format!("{} · {}", r.1, ["from the close", "from the high / low", "from the open"][r.3]).into_boxed_str())).collect());
+            f(l[i]) }
     }
 }
 
