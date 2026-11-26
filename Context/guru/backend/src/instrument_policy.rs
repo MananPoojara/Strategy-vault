@@ -318,7 +318,7 @@ pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
         }
     }
     let etf=match ticker {"SPX"=>"SPY","NDX"=>"QQQ","DJI"=>"DIA",_=>""};
-    if !m3_withdrawn(def.id,ticker) {return None;}
+    if !m3_withdrawn(def.id,ticker) || m3_released(def.id,ticker) {return None;} // Q420: released on the clean window
     if !etf.is_empty() {
         return Some(Issue{status:"not_testable",note:format!("The {ticker} daily result is withdrawn (decision #179, 3 Nov 2026): {}; on the tradable {etf} over the same dates this rule fails the check (M3). The daily result is published on {etf}.",m3_reason(def.id,ticker))});
     }
@@ -331,6 +331,21 @@ pub fn m3_reason(id:&str,ticker:&str)->String {
         "scuhnn_nnp"=>format!("{ticker} and its ETF differ slightly in their weekly closes, and this rule's nearest-neighbour search on weekly closes amplifies small differences"),
         _=>format!("{ticker} daily open/high/low come from stale component prints"),
     }
+}
+/// Q420 (R4 #420, 26 Nov 2026, lane K3; authors/conv-1123/k3w/q420_results.tsv): the #179 two-window check re-run on each index's CLEAN window against
+/// the tradable ETF (SPX 2014-01-02..2020-09-11 as C1 2014-01..2017-06 / C2 2017-07..2020-09 vs SPY; NDX 2001-2020 as 2001-2010 / 2011-2020-09 vs QQQ;
+/// DJI 2016-2020 as 2016-01..2018-05 / 2018-05..2020-09 vs DIA). Pairs NOT flagged (index not better in BOTH windows, both windows evaluated) are
+/// released, and published only from the clean date (m3_clean_from, labelled 'index data clean from YYYY'). The NIFTY 50 / NIFTYBANK pairs of the SPX
+/// flags follow the SPX re-test (no tradable India series) and are cut at 2012 / 2010 (stale-open share 0.0-0.4% from then: k3w/q420_india_stale.txt).
+pub const M3_REL_SPX:&[&str]=&["as51_donchian_pb", "as51_fractal_sma", "bllstr_fma_1_50_1", "fgosc_crossover", "jbssf_mom_ma", "kets_stoch_sig_stop", "kftsm_parabolic", "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "qsfund_trendline", "rpdt_range_bo", "slct_ct_formula", "stad12_ntw", "stad13_luxor", "stad1_maco", "stad3_bdsr", "stad5_dsdb", "stad7_masr", "stad9_dyf", "stad9_luxor", "stad9_nohurry", "stad9_redrover", "stkch_k39", "tbabc_powertool", "upg18_safer2005", "wwnc_dmi"];
+pub const M3_REL_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ftm_rg_oops", "jt_example_20d_breakout", "kets_seas_inv_stop", "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_rsi", "nkms_3_day_range_switch", "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3"];
+pub const M3_REL_DJI:&[&str]=&["scuhnn_nnp"];
+pub fn m3_released(id:&str,ticker:&str)->bool {
+    match ticker {"SPX"|"NIFTY 50"|"NIFTYBANK"|"NIFTY BANK"=>M3_REL_SPX,"NDX"=>M3_REL_NDX,"DJI"=>M3_REL_DJI,_=>&[]}.contains(&id)
+}
+/// First date of the clean window of a released pair (None: not released).
+pub fn m3_clean_from(id:&str,ticker:&str)->Option<&'static str> {
+    m3_released(id,ticker).then(||match ticker {"SPX"=>"2014-01-01","NDX"=>"2001-01-01","DJI"=>"2016-01-01","NIFTY 50"=>"2012-01-01",_=>"2010-01-01"})
 }
 /// Decision #179: is this (rule, ticker) daily result withdrawn? Cash index flagged by M3, or NIFTY 50/NIFTYBANK for an SPX flag.
 pub fn m3_withdrawn(id:&str,ticker:&str)->bool {
@@ -4127,13 +4142,20 @@ mod decision_179_tests {
             for id in list {
                 let d=find(id);
                 if d.status!=crate::connors::Status::Live {continue;} // held since (K37: rarsys_trend_weaver, lead decision 199)
+                if m3_released(id,x) {continue;} // Q420: re-tested on the clean window, published from m3_clean_from
                 assert!(check(d,x,false).unwrap().note.contains(&format!("{}; on the tradable {y} over the same dates this rule fails the check (M3)",m3_reason(id,x))),"{id} {x}");
                 assert!(tradable_check_issue(d,y,false).is_none(),"{id} {y}");
                 assert!(tradable_check_issue(d,"AAPL",true).is_none() || crate::intraday_ep6::WINDOW_ONLY.contains(id),"{id}"); // K62 #243 (c)
                 if let Some(g)=crate::gate::get(id) {assert!(g.ours.contains("M3 tradable-vs-cash daily check (#179, flagged)")&&g.reason.contains("Decision #179"),"{id}");}
             }
         }
-        for id in M3_SPX {for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(find(id),t,false).unwrap().note.contains("the US tradable check failed; the vault has no tradable India series"),"{id} {t}");}}
+        // Q420: the released pairs are subsets of the flagged lists, published only from their clean dates
+        assert_eq!((M3_REL_SPX.len(),M3_REL_NDX.len(),M3_REL_DJI.len()),(26,14,1));
+        assert!(M3_REL_SPX.iter().all(|i|M3_SPX.contains(i)) && M3_REL_NDX.iter().all(|i|M3_NDX.contains(i)) && M3_REL_DJI.iter().all(|i|M3_DJI.contains(i)));
+        assert_eq!((m3_clean_from(M3_REL_SPX[0],"SPX"),m3_clean_from(M3_REL_SPX[0],"NIFTY 50"),m3_clean_from(M3_REL_SPX[0],"NIFTYBANK"),m3_clean_from(M3_REL_NDX[0],"NDX"),m3_clean_from(M3_REL_DJI[0],"DJI")),
+            (Some("2014-01-01"),Some("2012-01-01"),Some("2010-01-01"),Some("2001-01-01"),Some("2016-01-01")));
+        assert!(m3_clean_from(M3_REL_SPX[0],"NDX").is_none() && m3_clean_from("rarsys_trend_weaver","SPX").is_none());
+        for id in M3_SPX.iter().filter(|id|!M3_REL_SPX.contains(id)) {for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(find(id),t,false).unwrap().note.contains("the US tradable check failed; the vault has no tradable India series"),"{id} {t}");}}
         for id in M3_NDX.iter().chain(M3_DJI).filter(|id|!M3_SPX.contains(id)) {assert!(tradable_check_issue(find(id),"NIFTY 50",false).is_none(),"{id}");}
         // reason order (K26 live check): the ticker-policy refusal wins over any coverage message, here no minute bars at all
         let rows=|t:&str|->Vec<crate::Row>{(0..300).map(|i|crate::Row{ticker:t.into(),date:format!("{}-{:02}-{:02}",2000+i/250,i%12+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1.)}).collect()};

@@ -325,6 +325,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
     // decisions #177/#179: a withdrawn (rule, ticker) pair shows its tradable-vs-cash reason, never a coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::tradable_check_issue(def,&r.ticker,ctx.native_market.is_some())) {return Some(i);}
+    // Q420 (R4 #420): a pair released by the #179 re-test is published on its clean window only; an earlier start is refused (auto_start moves it, with this note)
+    if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::instrument_policy::m3_clean_from(def.id,&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+        return issue("needs_data",format!("The {} daily result of this rule is published from {cut} only (index data clean from {}; the #179 tradable-vs-cash check was re-run on that window, R4 #420): earlier opens, highs and lows come from stale component prints. Choose a start on or after {cut}.",r.ticker,&cut[..4]));
+    }
     // connors-final: the optional p.43 universe filter has a $5 price test; on Indian prices it is not the book's filter
     if def.book==books::ststw::BOOK && books::ststw::stock_study(def.id) && p.get("universe").is_some_and(|v|*v>=0.5) && india(ctx) {
         return issue("not_testable","The p.43 universe filter keeps stocks priced above $5; on Indian (INR) prices that is not the book's filter. Use universe 0 (the test's own rules name no filter) on Indian instruments.");
@@ -852,7 +856,7 @@ mod tests {
         for (t,y,refused) in [("SPX","2013",true),("SPX","2014",false),("NDX","2000",true),("DJI","2015",true),("NIFTY 50","1995",false),("SPY","1994",false)] {
             for id in books::joe_ross_rules::REVIEWED { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
                 let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::instrument_policy::m3_withdrawn(id,t),"{id} {t} {y}"); // #179
+                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||(crate::instrument_policy::m3_withdrawn(id,t)&&!crate::instrument_policy::m3_released(id,t)),"{id} {t} {y}"); // #179, Q420
             }
         }
     }
