@@ -12,7 +12,9 @@ pub const REOPEN: &[&str] = &["as51_ema_scalp", "bfmm_esl", "sdtcp_donchian", "j
     // batch chunk 1 (Q416 batch, 25 Nov 2026): daily-bar rules, roll-aware references at 0 mismatches
     "bfmm_nql", "dgmf_gap3", "fgosc_crossover", "hbqts_parabolic_stop", "jkbk_starting_point", "krftj_pro", "lkcpt_rsimild", "msadd_n_can_pl", "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "rgc_runaway_gap_f5", "rinadz_rsi9",
     // batch chunk 2 (Q416 batch, 26 Nov 2026): daily-bar rules, roll-aware references at 0 mismatches
-    "rpdt_range_bo", "scjleq_vol", "sdtcp_nr7id", "slct_ct_formula", "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wwnc_dmi"];
+    "rpdt_range_bo", "scjleq_vol", "sdtcp_nr7id", "slct_ct_formula", "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wwnc_dmi",
+    // batch chunk 3 (Q416 batch, 26 Nov 2026): K72 DAILY as51 rules, roll-aware references at 0 mismatches
+    "as51_donchian_pb", "as51_fractal_sma"];
 /// (id, ticker) pairs withheld by the #231/#234 India-better test against the tradable SPY result (average trade > 3x and > 0.003 pp, AND compounded > 10x): none after the re-run of 25 Nov with the real definition (K1/fut1/india-better-real.json) .
 pub const FLAGGED: &[(&str, &str)] = &[];
 thread_local! { static ACTIVE: Cell<bool> = const { Cell::new(false) }; static REFUSAL: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) }; }
