@@ -14,6 +14,8 @@ pub struct Bar1 { pub m: u16, pub o: f64, pub h: f64, pub l: f64, pub c: f64 }
 pub struct Minutes { idx: BTreeMap<String, (u64, usize)>, path: std::path::PathBuf, cut: u16 } // cut: 0 = every minute; else `day()` drops the minutes from this minute of the day on (lane I2)
 
 impl Minutes {
+    /// The minute file this series was read from (R4 #416: the FUT1.days.csv expiry table sits next to it).
+    pub fn file(&self) -> &std::path::Path { &self.path }
     /// None when the ticker has no minute files (every current result then stays exactly as before).
     pub fn load(dir: &str, ticker: &str) -> Option<Minutes> {
         let t = ticker.replace(' ', "_");

@@ -1104,6 +1104,7 @@ pub fn params(id: &str) -> Vec<ParamDef> {
 }
 
 pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if let Some(r) = crate::fut1::reopen(id, ctx, from, to, p) { return Some(r); } // R4 #416: India FUT1 re-opening
     let x = ctx;
     let c = &x.c;
     let schema = params(id);
