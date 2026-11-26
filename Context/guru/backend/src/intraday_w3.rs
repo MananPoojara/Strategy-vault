@@ -195,7 +195,7 @@ mod tests {
             let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             assert!(ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
-            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), *t == "SPY", "{id} {t}"); } // #177a: SPY only
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), *t == "SPY" || crate::fut1::applies(id, t), "{id} {t}"); } // #177a: SPY only (R4 #416: plus the FUT1 pairs)
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             assert_eq!(crate::gate::get(id).unwrap().verdict, "unverified", "{id}");
             assert!(crate::books::params(id).unwrap().iter().any(|p| p.key == "path" && p.def == 1.0), "{id}");
@@ -232,7 +232,7 @@ mod tests {
                 for t in ["SPX", "NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("cash-index minutes are stale and distort this rule (here the index understates it); only the tradable SPY result is published"), "{id} {t}"); }
             } else {
             assert!(ip::check(d, "SPX", false).unwrap().note.contains("cash-index minutes are stale; on the tradable SPY this rule loses"), "{id}");
-            for t in ["NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
+            for t in ["NIFTY 50", "NIFTYBANK"] { if crate::fut1::applies(id, t) { continue; } /* R4 #416 */ assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
             }
             let g = crate::gate::get(id).unwrap();
             // verified only on a #168 pass of the book's own table inside the minute history (rwmts_15m_5m_rsi, K61 #248 (3))

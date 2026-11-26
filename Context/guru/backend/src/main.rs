@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod fut1; // R4 #416: India day-trade cards on the NIFTY / NIFTYBANK FUT1 minutes
 mod nse_firing; // R4 #347 / Q20: NSE vs NYSE firing-rate line on every NSE twin card
 mod nse_holidays; // R4 #364: NSE closures derived from the NIFTY 50 bars
 mod nse_expiry; // lane CV6 (R4 #340): NSE monthly option expiry derived from the held NIFTY chain
@@ -336,6 +337,7 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
         return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None,unit_exposure_report:None,option_account:None});
     }
     let trades = connors::run(id, ctx, from, to, p).ok_or("Strategy implementation unavailable")?;
+    if let Some(r) = fut1::take_refusal() { return Err(r); } // R4 #419: the FUT1 wrapper refuses a trade it cannot price (multi-leg / scale-out)
     normalized_run(ctx,trades,from,to,cost)
 }
 

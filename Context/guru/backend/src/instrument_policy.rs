@@ -300,6 +300,7 @@ pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "
 /// The tradable-vs-cash refusals (#177 minutes, #179 daily). check() and readiness::check() decide this first, before any
 /// data-coverage check, so a withdrawn (rule, ticker) pair always shows this reason. Ticker routing only; no calculation.
 pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    if crate::fut1::applies(def.id,ticker) {return None;} // R4 #416: the India minute withdrawal is lifted for these pairs; they run on the FUT1 minutes (fut1::reopen)
     if let Some(note)=crate::intraday_ep6::held_note(def.id,ticker) {return Some(Issue{status:"not_testable",note:note.into()});} // EP6 (K59, #243)
     if let Some(n)=crate::intraday_w3::p175_withheld(def.id,ticker) {return Some(Issue{status:"not_testable",note:n.into()});} // lane I1: R4 #175 per ticker
     if native_stock {return None;}
@@ -337,7 +338,7 @@ pub fn m3_withdrawn(id:&str,ticker:&str)->bool {
     match ticker {"SPX"=>M3_SPX,"NDX"=>M3_NDX,"DJI"=>M3_DJI,"NIFTY 50"|"NIFTYBANK"|"NIFTY BANK"=>M3_SPX,_=>&[]}.contains(&id)
 }
 fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
-    if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
+    if !intraday_p1(def) || (!native_stock && (intraday_tickers(def.id).contains(&ticker) || crate::fut1::applies(def.id,ticker))) {return None;} // R4 #416: FUT1 re-opening
     if crate::intraday_ep::m1(def.id) { // lane M1
         if def.book=="dmpub" || def.book=="tmem" || def.book=="pvbs" {return Some(Issue{status:"needs_data",note:format!("This rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI; bars or daily bars built from it) as a declared adaptation of a US e-mini S&P rule (lane K2); {ticker} has no futures minute series, so no result is published.")});}
         if (matches!(def.id,"aanto_trend_one"|"tdscal_scalper"|"sprfs_fut_nr4ib"|"sprfs_fut_hvr_nr4ib"|"sprfs_fut_hvr_nr4"|"atm04_fut_vomund"|"atm03_fut_or_rev"|"acbff_fut_5c_perp"|"acbff_fut_5c1_perp"|"acbff_fut_2hl_3"|"atm10_fut_one_pct"|"acbff_fut_2hl_2"|"acbff_fut_rx_filter") || crate::books::k4x::k4(def.id)) {return Some(Issue{status:"needs_data",note:format!("This intraday-bar rule runs on the NIFTY 50 and NIFTYBANK futures 1-minute series (lane DI) as a declared adaptation of a US e-mini S&P rule (lane I2); {ticker} has no futures minute series, so no result is published.")});}
@@ -636,6 +637,7 @@ mod short_course_policy_tests {
 pub fn policy(def:&StrategyDef)->Policy {
     let mut p=base_policy(def);
     if crate::futures::DUAL.contains(&def.id) {p.source_basis=crate::futures::dual_basis(def.id,p.source_basis);} // R4 #367 (2): the futures-contract adaptation label shows on the card
+    if crate::fut1::REOPEN.contains(&def.id) {p.source_basis=crate::fut1::basis(def.id,p.source_basis);} // R4 #416: the FUT1 adaptation label (roll, window, reference) shows on the card
     // Never reopens a rule that base_policy holds for source review.
     if open_instrument_label(def).is_some() && p.requirement!="source_review_required" {
         p.requirement="index_etf_or_stock";p.allowed_types=&["index","etf","individual_stock"];
@@ -4133,7 +4135,7 @@ mod decision_179_tests {
                 if let Some(g)=crate::gate::get(id) {assert!(g.ours.contains("M3 tradable-vs-cash daily check (#179, flagged)")&&g.reason.contains("Decision #179"),"{id}");}
             }
         }
-        for id in M3_SPX {for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(find(id),t,false).unwrap().note.contains("the US tradable check failed; the vault has no tradable India series"),"{id} {t}");}}
+        for id in M3_SPX {for t in ["NIFTY 50","NIFTYBANK"] {if crate::fut1::applies(id,t) {continue;} /* R4 #416 */ assert!(check(find(id),t,false).unwrap().note.contains("the US tradable check failed; the vault has no tradable India series"),"{id} {t}");}}
         for id in M3_NDX.iter().chain(M3_DJI).filter(|id|!M3_SPX.contains(id)) {assert!(tradable_check_issue(find(id),"NIFTY 50",false).is_none(),"{id}");}
         // reason order (K26 live check): the ticker-policy refusal wins over any coverage message, here no minute bars at all
         let rows=|t:&str|->Vec<crate::Row>{(0..300).map(|i|crate::Row{ticker:t.into(),date:format!("{}-{:02}-{:02}",2000+i/250,i%12+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1.)}).collect()};
