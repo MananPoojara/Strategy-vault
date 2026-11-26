@@ -18,9 +18,43 @@ pub const BOOK: &str = "lwdtfo";
 /// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
 /// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = stops in S&P points: actual SPX only.
 pub const REVIEWED: &[&str] = &["lwdtfo_vb_close", "lwdtfo_vb_hilo", "lwdtfo_vb_open"];
+
+/// Tables 4.1-4.3 commodity rows (p.76-77), one card per market and table: (id, market name, Norgate symbol, table 0/1/2 = close/high-low/open,
+/// buy %, sell %). Lane K3 (25 Nov 2026, R4 #414/#418). Pork bellies (&PB) is not held.
+const CM: &[(&str, &str, &str, usize, f64, f64)] = &[
+    ("lwdtfo_vb_close_cattle", "Live cattle", "&LE", 0, 0.7, 0.5),
+    ("lwdtfo_vb_hilo_cattle", "Live cattle", "&LE", 1, 0.7, 0.7),
+    ("lwdtfo_vb_open_cattle", "Live cattle", "&LE", 2, 1.4, 1.4),
+    ("lwdtfo_vb_close_cotton", "Cotton", "&CT", 0, 0.5, 1.5),
+    ("lwdtfo_vb_hilo_cotton", "Cotton", "&CT", 1, 0.9, 0.9),
+    ("lwdtfo_vb_open_cotton", "Cotton", "&CT", 2, 0.6, 0.6),
+    ("lwdtfo_vb_close_coffee", "Coffee", "&KC", 0, 0.7, 0.5),
+    ("lwdtfo_vb_hilo_coffee", "Coffee", "&KC", 1, 0.6, 0.6),
+    ("lwdtfo_vb_open_coffee", "Coffee", "&KC", 2, 1.3, 1.3),
+    ("lwdtfo_vb_close_oj", "Orange juice", "&OJ", 0, 0.7, 0.5),
+    ("lwdtfo_vb_hilo_oj", "Orange juice", "&OJ", 1, 1.1, 1.1),
+    ("lwdtfo_vb_open_oj", "Orange juice", "&OJ", 2, 0.5, 0.5),
+    ("lwdtfo_vb_close_soy", "Soybeans", "&ZS", 0, 0.7, 0.5),
+    ("lwdtfo_vb_hilo_soy", "Soybeans", "&ZS", 1, 0.8, 0.8),
+    ("lwdtfo_vb_open_soy", "Soybeans", "&ZS", 2, 1.0, 1.0),
+    ("lwdtfo_vb_close_gbp", "British pound", "&6B", 0, 0.7, 0.5),
+    ("lwdtfo_vb_hilo_gbp", "British pound", "&6B", 1, 1.2, 1.2),
+    ("lwdtfo_vb_open_gbp", "British pound", "&6B", 2, 1.3, 1.3),
+    ("lwdtfo_vb_close_gold", "Gold", "&GC", 0, 1.9, 0.7),
+    ("lwdtfo_vb_hilo_gold", "Gold", "&GC", 1, 1.3, 1.3),
+    ("lwdtfo_vb_open_gold", "Gold", "&GC", 2, 1.3, 1.3),
+    ("lwdtfo_vb_close_ho", "Heating oil", "&HO", 0, 0.5, 1.3),
+    ("lwdtfo_vb_hilo_ho", "Heating oil", "&HO", 1, 0.6, 0.6),
+    ("lwdtfo_vb_open_ho", "Heating oil", "&HO", 2, 1.4, 1.4),
+    ("lwdtfo_vb_close_bonds", "T-bonds", "&ZB", 0, 1.1, 1.1),
+    ("lwdtfo_vb_hilo_bonds", "T-bonds", "&ZB", 1, 0.9, 0.9),
+    ("lwdtfo_vb_open_bonds", "T-bonds", "&ZB", 2, 1.0, 1.0),
+];
+
 pub const SPX_POINTS: &[&str] = &[];
 
 const NOTE: &str = "Book: S&P 500 futures, row of a multi-commodity table; the test window is not printed (the S&P printouts in the same chapter run 07/02/82-08/25/98). The percentages are the book's 'best-fit' values for the S&P. Always in the market: each fill of the opposite stop exits and reverses; no protective stop, no other exit. India: same rule on NIFTY 50 (instrument swap only). Bars with zero range give no orders [Not from the book: needed so buy and sell stops do not coincide].";
+const CM_NOTE: &str = "Book: one commodity row of Tables 4.1-4.3 (p.76-77), the book's 'best-fit' percentages for that market; the test window is not printed. Run on the Norgate continuous contract (back-adjusted daily bars), no costs. Always in the market: each fill of the opposite stop exits and reverses; no protective stop. Bars with zero range give no orders [Not from the book: needed so buy and sell stops do not coincide]. Daily bars cannot order the high and the low of a day: see the card's gate text for the share of trades affected (#240).";
 const ALWAYS: &str = "X|\"In this, and all data shown, no stop was used and we were always long/short\" (p.76): exit only by reversal on the opposite stop";
 
 macro_rules! live {
@@ -31,7 +65,7 @@ macro_rules! live {
 }
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![
+    let mut v = vec![
         live!("lwdtfo_vb_close", "S&P breakout from the close · buy 100% / sell 190% (Table 4.1)",
             &["E|\"buying tomorrow at a percentage of today's range added to today's close\" (p.75): buy stop = Close + 100% x (High - Low) (S&P row: 100/190)",
               "E|\"and to subtract for a sell\" (p.76): sell stop = Close - 190% x (High - Low)", ALWAYS],
@@ -44,11 +78,27 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"adds a percentage of today's range to tomorrow's open and buys there for a long entry\" (p.77): buy stop = Open + 50% x yesterday's (High - Low)",
               "E|\"or subtracts a percentage of today's range from the opening for a sell\" (p.77): sell stop = Open - 50% x yesterday's (High - Low)", ALWAYS],
             claim("1,727", "44%", "$143", "", "Table 4.3 (p.77), $247,850, window not printed")),
-        StrategyDef { id: "lwdtfo_vb_commodities", name: "Tables 4.1-4.3: the other ten commodity rows", group: "Ch 4 · Volatility breakouts (Tables 4.1-4.3)",
-            session: 0, dir: "Long/Short", status: Status::NeedsData("Needs daily futures prices for cattle, pork bellies, cotton, coffee, orange juice, soybeans, British pound, gold, heating oil and T-bonds; the vault has none."),
+        StrategyDef { id: "lwdtfo_vb_commodities", name: "Tables 4.1-4.3: pork bellies row", group: "Ch 4 · Volatility breakouts (Tables 4.1-4.3)",
+            session: 0, dir: "Long/Short", status: Status::NeedsData("Pork bellies (no Norgate &PB series is held). The other nine commodity rows are the cards lwdtfo_vb_{close,hilo,open}_{cattle,cotton,coffee,oj,soy,gbp,gold,ho,bonds}."),
             needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
             rules: &["E|Same three rules with each commodity's own best-fit percentages (p.76-77)", ALWAYS], notes: "", claim: None },
-    ]
+    ];
+    // ponytail: leaked once per call for the 27 formatted names/rules; catalogue() is called at start-up only.
+    let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
+    for &(id, mkt, sym, k, b, s) in CM {
+        let (tn, tt) = [("4.1", "close"), ("4.2", "high/low"), ("4.3", "open")][k];
+        let (bp, sp) = ((b * 100.0).round(), (s * 100.0).round());
+        let e = match k {
+            0 => [format!("E|\"buying tomorrow at a percentage of today's range added to today's close\" (p.75): buy stop = Close + {bp}% x (High - Low) ({mkt} row of Table 4.1: {bp}/{sp})"), format!("E|\"and to subtract for a sell\" (p.76): sell stop = Close - {sp}% x (High - Low)")],
+            1 => [format!("E|\"buying tomorrow at a percentage of yesterday's range added to yesterday's high\" (p.76): buy stop = High + {bp}% x (High - Low) ({mkt} row of Table 4.2)"), format!("E|\"or subtracting that same amount from yesterday's low for a sell signal\" (p.76): sell stop = Low - {sp}% x (High - Low)")],
+            _ => [format!("E|\"adds a percentage of today's range to tomorrow's open and buys there for a long entry\" (p.77): buy stop = Open + {bp}% x yesterday's (High - Low) ({mkt} row of Table 4.3)"), format!("E|\"or subtracts a percentage of today's range from the opening for a sell\" (p.77): sell stop = Open - {sp}% x yesterday's (High - Low)")],
+        };
+        let rules: &'static [&'static str] = Box::leak(vec![leak(e[0].clone()), leak(e[1].clone()), ALWAYS].into_boxed_slice());
+        v.push(StrategyDef { id, name: leak(format!("{mkt} breakout from the {tt} · buy {bp}% / sell {sp}% (Table {tn})")), group: "Ch 4 · Volatility breakouts (Tables 4.1-4.3)", session: 0, dir: "Long/Short",
+            status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes: CM_NOTE, claim: None });
+        let _ = sym;
+    }
+    v
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -57,8 +107,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwdtfo_vb_close" => f("From the close"),
         "lwdtfo_vb_hilo" => f("From the high / low"),
         "lwdtfo_vb_open" => f("From the open"),
-        "lwdtfo_vb_commodities" => f("Commodities (needs data)"),
-        _ => None,
+        "lwdtfo_vb_commodities" => f("Pork bellies (needs data)"),
+        // the switcher button text carries the market, so the 27 variants differ (REV-1126)
+        _ => { let i = CM.iter().position(|r| r.0 == id)?; static LAB: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+            let l = LAB.get_or_init(|| CM.iter().map(|r| &*Box::leak(format!("{} · {}", r.1, ["from the close", "from the high / low", "from the open"][r.3]).into_boxed_str())).collect());
+            f(l[i]) }
     }
 }
 
@@ -74,7 +127,7 @@ fn params_base(id: &str) -> Option<Vec<ParamDef>> {
         "lwdtfo_vb_close" => (1.0, 1.9),
         "lwdtfo_vb_hilo" => (1.0, 1.0),
         "lwdtfo_vb_open" => (0.5, 0.5),
-        _ => return None,
+        _ => { let r = CM.iter().find(|r| r.0 == id)?; (r.4, r.5) }
     };
     Some(vec![p("buy_mult", "Buy stop: x previous day's range (book S&P value)", b, 0.1, 3.0, 0.1),
               p("sell_mult", "Sell stop: x previous day's range (book S&P value)", s, 0.1, 3.0, 0.1)])
@@ -92,9 +145,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let s = i - 1;
         let r = h[s] - l[s];
         if !(r > 0.0) { return (None, None); }
-        let (bb, sb) = match id {
-            "lwdtfo_vb_close" => (c[s], c[s]),
-            "lwdtfo_vb_hilo" => (h[s], l[s]),
+        let k = CM.iter().find(|r| r.0 == id).map_or(match id { "lwdtfo_vb_close" => 0, "lwdtfo_vb_hilo" => 1, _ => 2 }, |r| r.3);
+        let (bb, sb) = match k {
+            0 => (c[s], c[s]),
+            1 => (h[s], l[s]),
             _ => (o[i], o[i]),
         };
         (Some(Ent::Stop(bb + bm * r)), Some(Ent::Stop(sb - sm * r)))

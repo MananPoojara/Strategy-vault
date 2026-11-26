@@ -23,8 +23,15 @@ macro_rules! books {
         pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
             None$(.or_else(|| $m::run(id, x, from, to, p)))*
         }
+        /// Q39 (W2): each book's family_of rebuilds that book's catalogue() (many Box::leak their notes), and the strategies endpoint asks
+        /// every id of every earlier book in the chain: one /connors/strategies call retained ~190 MB that was never freed. The answer
+        /// for an id never changes, so a found family is remembered (bounded by the catalogue size; unknown ids are not stored).
         pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-            None$(.or_else(|| $m::family_of(id)))*
+            static MEMO: std::sync::Mutex<Option<std::collections::HashMap<String, (&'static str, &'static str, &'static str)>>> = std::sync::Mutex::new(None);
+            if let Some(hit) = MEMO.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(id)) { return Some(*hit); }
+            let found = None$(.or_else(|| $m::family_of(id)))*;
+            if let Some(f) = found { MEMO.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(id.to_string(), f); }
+            found
         }
     };
 }

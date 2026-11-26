@@ -47,7 +47,7 @@ Chart 4-3 note 'An 8.4% Rise From 4/14/2000 Low of 1356.56 = 1470.51' confirms t
             "X|Out while it is below (exit at the close it crosses below); equal = no change.",
         ], "India mapping of chart 2-30 (book: NASDAQ breadth on the NASDAQ Composite): NSE advances/declines on NIFTY 50.", None),
         // ---- need data the vault does not have
-        d("ndbrm_new_highs_lows", "Weekly new highs/lows and net new highs (NYSE)", "Ch 4 · Nine-indicator model (tape)", "Long", NeedsData("weekly NYSE new 52-week highs and lows and issues traded"), &[], &[
+        d("ndbrm_new_highs_lows", "Weekly new highs/lows and net new highs (NYSE)", "Ch 4 · Nine-indicator model (tape)", "Long", NeedsData("data is held (#NYSEHI/#NYSELO to 2020-09-04, NYSE_ADV_DEC issues traded to 2020-02-10); the real block is that these are zone indicators, neutral in between, with no stand-alone entry/exit pair (p.85-86)"), &[], &[
             "E|\"Weekly new lows divided by issues traded ... bullish below 1.95%, bearish above 7.2%\" (p.85); \"Weekly net new highs ... bullish above 8.8%, bearish below -3.6%\" (p.86); chart 4-1 'New Highs/Issues Traded exceeds 30% for the first time in a year'"],
             "Zone indicators (neutral in between); no stand-alone trade list.", None),
         d("ndbrm_member_short", "NYSE member short ratio", "Ch 4 · Nine-indicator model (sentiment)", "Long", NeedsData("NYSE member short-sale ratio (13/52-week)"), &[], &[

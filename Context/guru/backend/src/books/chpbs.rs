@@ -83,7 +83,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let entry = |i: usize, _: f64| [cbpb(x, i, n, w, m).then_some((1., Kind::Open)), None];
     let trail = |i: usize, q: &Pos| if last_nh[i] != usize::MAX && last_nh[i] >= q.i { ll(x, i, tn) } else { f64::NAN };
     Some(run_sys(x, from, to, &Sys { entry: &entry, exit_close: &none_exit, exit_open: &none_exit, trail: &trail,
-        stop_pts: g("stop_pts").max(0.), oneway: false }))
+        stop_pts: g("stop_pts").max(0.), stop_ref: 0., oneway: false }))
 }
 
 #[cfg(test)]

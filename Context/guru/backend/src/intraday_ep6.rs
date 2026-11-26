@@ -85,6 +85,21 @@ pub fn resolve_conv<S: Clone>(x: &crate::connors::Ctx, i: usize, on: bool, st: &
     if amb { Day::Ambiguous } else { Day::Minutes }
 }
 
+/// V10 (20-23 Nov 2026, tracker cov_turtle_s2 23-05-2019 and the same shortcut in btp / atm00 / dbnotp): `resolve_conv` settles a day on which the two extreme bar orders give the SAME
+/// fills with the module's own daily rule `conv`. That rule can contradict the path (an exit/stop that every path to the close must have crossed, taken a bar late). Here such a day
+/// takes the path outcome; a day whose orders differ goes to the real minutes as before, and with no minutes keeps `conv`. Returns (the day's mark, whether the state is the path
+/// outcome - true for equal-probe days and for minute-resolved days - so a caller that runs a close-of-bar step after minute days runs it after these days too).
+pub fn resolve_path<S: Clone>(x: &crate::connors::Ctx, i: usize, on: bool, st: &mut S, conv: impl Fn(&mut S),
+    probe: impl Fn(&mut S, bool) -> Vec<Ev>, walk: impl Fn(&mut S, &[Seg]) -> Vec<Ev>) -> (Day, bool) {
+    if !on { conv(st); return (Day::Plain, false); }
+    let (mut a, mut b) = (st.clone(), st.clone());
+    if probe(&mut a, true) == probe(&mut b, false) { *st = a; return (Day::Plain, true); }
+    let Some(m) = crate::intraday_w2b::day(x, i).filter(|m| !m.is_empty()) else { conv(st); return (Day::Convention, false) };
+    let (amb, s) = walk_minutes(&m, x.o[i], st.clone(), &walk);
+    *st = s;
+    (if amb { Day::Ambiguous } else { Day::Minutes }, true)
+}
+
 /// One fill of a bar walk: what happened (module code), at which price, and whether the path was moving up (the level is
 /// touched from below: a buy stop, a sell limit, a short's stop) or down.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -156,7 +171,7 @@ pub const IDS: &[&str] = &[
     // Pierce's NR4 stop entries (books::sprfs nr4_trades_ep6: the entry bar's two stops and the protective stop)
     "sprfs_nr4ib", "sprfs_hvr_nr4ib", "sprfs_hvr_nr4",
     // Chong's pyramid (books::rcmm day_walk), Lien's CCI trade (books::kllien cci_walk)
-    "rcmm_20", "rcmm_55", "klhpt_cci_right",
+    "rcmm_20", "rcmm_55", "klhpt_cci_right", "klhpt_rsi_coaster",
     // part B (lane K63): Lindsay's Trident (stop_target), Dorfman's 3-EMA turn (books::vrsdd manage_ep6)
     "lcttr_minor", "rdhft_ema3_turn",
     // Stridsman's Meander (books::strmm sim_ep6: the stop and the target on one bar)
@@ -191,7 +206,7 @@ pub const IDS: &[&str] = &[
     // lane K74 (R4 #277): Harris's S&P patterns (books::mhstp simulate_ep6: the 10-point target and stop via stop_target), SPX only
     "mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1",
     // lane K74 (R4 #277 wave 3): the Original Turtle Rules (books::covel breakout_ep6: entry, adds and unit exits along the path)
-    "cov_turtle_s1", "cov_turtle_s2",
+    "cov_turtle_s1", "cov_turtle_s2", "cov_turtle_whipsaw",
     // lane K75 (R4 #281 (3)): StockCharts full-gap-down long (books::stkch same_day: a trailing-stop exit and a new gap entry on one bar)
     "stkch_gap_fgd_long",
     // lane R2D (R4 #304): Gettess SS-TDA with the first-profitable-open exit (books::lgsc fpo: both stops and the reversal on one day)
@@ -218,7 +233,7 @@ pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_r
     "cwin_single_window", "cwin_double_window", "cwin_first_window", "ss_three_day_unfilled_gap", "ss_holy_grail",
     "ss_hist_vol_crabel", "ats_8day_hl_reversal", "strtw_meander1_long", "strtw_meander1_short",
     // lane K74 (R4 #277): the Turtle systems (S1 flags the sign test on SPX, S2 the 3x average test on NIFTYBANK; K74w/t243.tsv)
-    "cov_turtle_s1", "cov_turtle_s2",
+    "cov_turtle_s1", "cov_turtle_s2", "cov_turtle_whipsaw",
     // lane K75 (R4 #281 (3)): SPY 2000-2025 compounded +84.9% resolved vs +5.9% convention (test c; K75w/t243.out)
     "stkch_gap_fgd_long",
     // lane R2D (R4 #304): SPY 2000-2025 resolved avg +0.016% vs convention -0.012% (test a, sign; R2Dw/lgsc_eval.out)
@@ -270,12 +285,17 @@ const WINDOW_NOTE: &str = "Not published on this ticker (decision #243 (c), lane
 pub const TICKER308_OK: &[(&str, &[&str])] = &[("tbpk_first_prize", &["SPY", "SPX", "NIFTY 50", "NIFTYBANK", "NIFTY BANK", "QQQ", "NDX",
     "NIFTYIT", "NIFTY IT", "NIFTYMIDCAP100", "NIFTY MIDCAP 100", "NIFTYMIDCAPSELECT", "NIFTY MIDCAP SELECT",
     "AGG", "EEM", "EPP", "EWA", "EWC", "EWD", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWN", "EWO", "EWQ", "EWS", "EWT", "EWU", "EWW",
-    "EWY", "EWZ", "EZA", "EZU", "FXI", "GLD", "IEF", "IEI", "LQD", "SHY", "SMH", "TLH", "VNQ", "XLB", "XLP", "XLU", "XLY"])];
+    "EWY", "EWZ", "EZA", "EZU", "FXI", "GLD", "IEF", "IEI", "LQD", "SHY", "SMH", "TLH", "VNQ", "XLB", "XLP", "XLU", "XLY"]),
+    // lane I2 (R4 #392): Lien's RSI rollercoaster; unresolved (convention or ambiguous) share <= 5% of trades, authors/conv-1123/I2w/share.out
+    ("klhpt_rsi_coaster", &["AGG", "DJI", "EEM", "EFA", "EWA", "EWC", "EWH", "EWI", "EWJ", "EWK", "EWL", "EWM", "EWO", "EWP", "EWQ", "EWU", "EWW", "EZA", "FXI",
+    "GLD", "IEI", "SPX", "SPY", "TLT", "VNQ", "XLB", "XLF", "XLP", "XLU", "XLV", "NIFTY 50", "NIFTYBANK", "NIFTY BANK", "NIFTYIT", "NIFTYMIDCAP100", "NIFTYMIDCAPSELECT",
+    "NIFTY MIDCAP 100", "NIFTY MIDCAP SELECT", "NIFTY IT"])];
+const RSIC308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane I2): the half target and the stop can both trade on the entry or a held day, which a daily bar cannot order. It is published only on the indices and ETFs where at most 5% of its trades are left to the daily convention (the order-dependent days that real 1-minute files do not settle, measured over the default history). On this ticker more than 5% are (DIA, EPP, EWD, EWG, EWN, EWS, EWT, EWY, EWZ, EZU, IEF, IWM, LQD, MDY, NDX, QQQ, SHY, SMH, TLH, XLE, XLI, XLK, XLY), or it is a single stock: no stock has 1-minute files and the share is not measured per stock, so stocks are refused.";
 const TICKER308_NOTE: &str = "Not published on this ticker (decisions #175, #240, #308, lane X2): this rule enters at a stop and its initial stop can trade the same day, which a daily bar cannot order. It is published only on the indices and ETFs where at most 5% of its trades depend on that order (measured over the default history) or where 1-minute files settle it. On this ticker more than 5% do (DIA 3 of 21, DJI 2 of 12, IWM 4 of 29, XLF 4 of 26, XLE 3 of 35, MDY, EFA, EWG, EWP, TLT, XLI, XLK, XLV), or it is a single stock: no stock has 1-minute files and the share is not measured per stock, so stocks are refused.";
 
 /// The hold or minute-window refusal for (id, ticker), if any (instrument_policy::tradable_check_issue).
 pub fn held_note(id: &str, ticker: &str) -> Option<&'static str> {
-    if TICKER308_OK.iter().any(|z| z.0 == id && !z.1.contains(&ticker)) { return Some(TICKER308_NOTE); }
+    if TICKER308_OK.iter().any(|z| z.0 == id && !z.1.contains(&ticker)) { return Some(if id == "klhpt_rsi_coaster" { RSIC308_NOTE } else { TICKER308_NOTE }); }
     if let Some(&(_, n)) = HELD.iter().find(|h| h.0 == id) { return Some(n); }
     let nse = if ticker == "NIFTY BANK" { "NIFTYBANK" } else { ticker };
     if INDIA231.contains(&(id, nse)) { return Some(INDIA231_NOTE); }

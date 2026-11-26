@@ -74,10 +74,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"buying no-load funds just prior to the last trading day of the month, and selling them after the fourth trading day of the next month\" (p.170)"],
             "Fosback 1928-4/1975 S&P: $10,000 -> $569,135, .71%/period; Zweig 4/1975-6/1985 S&P: $13,322, .24%/period (p.169-170).", None),
         // ---- data the vault does not have
-        d("mzwws_prime_rate", "Prime Rate Indicator", "Ch 4 · Monetary indicators", "Long", NeedsData("US bank prime rate change history (dates and levels, 1954-)"), &[], &[
-            "E|\"Any initial cut in the prime rate if the prime's peak was less than 8%\"; \"If the prime's peak is 8% or higher, a buy signal comes on either the second of two cuts or on a full 1% cut in the rate\" (p.45)",
-            "X|\"Any initial hike in the prime rate if the prime's low is 8% or greater\"; \"If the prime's low is less than 8%, a sell signal comes on the second of two hikes or on a full 1% jump\" (p.45)"],
-            "Tables 1-2 print every signal 1954-1993 (21 buys, 19 sells; S&P 500 buys +17.1%/yr). Codable once a dated prime-rate series exists.", None),
+        d("mzwws_prime_rate", "Prime Rate Indicator", "Ch 4 · Monetary indicators", "Long", Live, &["DPRIME"], &[
+            "E|\"Any initial cut in the prime rate if the prime's peak was less than 8%\"; \"If the prime's peak is 8% or higher, a buy signal comes on either the second of two cuts or on a full 1% cut in the rate\" (p.46 of the scan; printed in the 1994 edition as p.45)",
+            "X|\"Any initial hike in the prime rate if the prime's low is 8% or greater\"; \"If the prime's low is less than 8%, a sell signal comes on the second of two hikes or on a full 1% jump\" (p.47). Zweig's own long/cash test (p.48): buy-and-hold on the buy signals, money market (7%) on the sell signals; here long on a buy signal and flat from a sell signal (one position; hold-until-the-opposite-signal is the printed reverse rule, R4 #344).",
+            "A|[Declared reading 1, lane Z1 20 Nov 2026, R4 #339/#343] the prime's 'peak' (for a cut) / 'low' (for a hike) = the rate just before the current run of same-direction changes began; a change in the opposite direction ends the run, so 'the second of two cuts' (hikes) = the second consecutive cut (hike) of one run (the book's examples: 'has risen several times ... finally cut', 'later cut again')",
+            "A|[Declared reading 2] 'a full 1% cut / jump' = one change of 1.0 point or more at a time (p.46: 'A full-point change at one time is much rarer'); a signal in the same direction as the current mode changes nothing; no mode before the first signal (flat), and the run state starts at the first held print (FRED DPRIME from 1955-08-04: Zweig's first buy 3/17/54 and the 10/14/55 sell are not reproducible, the pre-1955 prime and the hike before 10/14/55 are not held)",
+            "A|[Declared reading 3, R4 #372/#374 lag; engine-wide, not counted] the held prime series is the FRED daily series (effective dates); a change dated t is acted on only from the close of t+1 and fills at the open of t+2 (default); option fill = 1 fills at the open of t+1, fill = 2 at the close of the change date as the printed tables do (both look ahead)"],
+            "Tables 1-2 (pp.49 and 51 of the scan, 1954-1996; the 1994 edition prints 1954-1993: 21 buys, 19 sells) list every signal: 22 buys and 21 sells to 3/20/96, S&P 500 buys +15.5%/yr vs buy-and-hold 7.9%. Lane Z1 compared the signal dates with the held FRED DPRIME (authors/held-1119/Z1/): 26 of 43 printed dates reproduce exactly and 7 more within 6 days; 10 do not (2 predate the series; 8 are differences between FRED's prime and the series Zweig used, e.g. 6/16/81, 3/8/82 and 7/14/89). The default is not changed to fit the table (R4 #348). Runs on SPX (from 1983) only.", 
+            claim("", "", "S&P buys +15.5%/yr (to 1996)", "", "Tables 1-2, 1954-1996 (pp.49, 51 of the scan)")),
         d("mzwws_fed_indicator", "Fed Indicator (discount rate + reserve requirements)", "Ch 4 · Monetary indicators", "Long", NeedsData("Federal Reserve discount-rate and reserve-requirement change dates"), &[], &[
             "F|Negative points: a hike in either tool = -1 for six months (wipes positives); positive points: an initial cut = +2 (one point lost after six months, the other after a year), further cuts +1 for six months (p.52-54)",
             "E|\"Extremely Bullish = +2 or more points\" (p.55; table 5 lists the extremely bullish periods)"], "", None),
@@ -131,6 +135,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
+        "mzwws_prime_rate" => Some(vec![
+            p("level", "High/low prime-rate dividing line % (book: 8)", 8.0, 4.0, 12.0, 0.5),
+            p("full", "A full-point change at one time, in points (book: 1)", 1.0, 0.5, 2.0, 0.25),
+            p("fill", "[Options, not the default] 1 = fill at the open after the change date (looks one day ahead, R4 #372); 2 = fill at the change date's close as the printed tables do (looks ahead)", 0.0, 0.0, 2.0, 1.0),
+        ]),
         "mzwws_ad_2to1" | "mzwws_ad_2to1_nse" => Some(vec![
             p("days", "A/D ratio span (days)", 10.0, 5.0, 20.0, 1.0),
             p("ratio", "Advances/declines ratio threshold", 2.0, 1.5, 3.0, 0.1),
@@ -219,11 +228,40 @@ fn hold_months(x: &Ctx, from: usize, to: usize, sig: &[bool], months: i64, why: 
     out
 }
 
+/// Zweig's Prime Rate Indicator: 1 = long (after a buy signal), 0 = flat (before the first signal / after a sell signal).
+/// Runs of same-direction changes; `peak` = the rate before the run began. State starts at the first held print.
+pub fn prime_mode(px: &[f64], level: f64, full: f64) -> Vec<i8> {
+    let (mut out, mut mode, mut last) = (vec![0i8; px.len()], 0i8, f64::NAN);
+    let (mut dir, mut n_run, mut base) = (0i8, 0u32, f64::NAN);
+    for (i, &v) in px.iter().enumerate() {
+        if v.is_finite() {
+            if last.is_finite() && v != last {
+                let d = if v < last { -1i8 } else { 1 };
+                if d != dir { dir = d; n_run = 0; base = last; }
+                n_run += 1;
+                let big = (v - last).abs() >= full - 1e-9;
+                if d < 0 { if (base < level && n_run == 1) || (base >= level && (n_run == 2 || big)) { mode = 1; } }
+                else if (base >= level && n_run == 1) || (base < level && (n_run == 2 || big)) { mode = 0; }
+            }
+            last = v;
+        }
+        out[i] = mode;
+    }
+    out
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let n = x.c.len();
     if n == 0 || to >= n || from > to { return Some(vec![]); }
+    if id == "mzwws_prime_rate" {
+        let Some(px) = x.extra.get("DPRIME") else { return Some(vec![]) };
+        let mut tgt = prime_mode(px, g("level"), g("full"));
+        let f = g("fill").round() as i32;
+        if f == 0 { tgt = std::iter::once(0).chain(tgt.iter().cloned()).take(n).collect(); } // R4 #372: usable from the close of t+1
+        return Some(crate::books::rbtie::target_trades(x, &tgt, from, to, f < 2, "prime-rate sell signal"));
+    }
     let out = match id {
         "mzwws_ad_2to1" | "mzwws_ad_2to1_nse" => {
             let s = if id.ends_with("_nse") { NSE_AD } else { NYSE_AD };
@@ -351,3 +389,32 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Zweig measured these rules on his Zweig Unweighted Price Index (1952-1985 calendar, breadth signals since the 1960s), which the vault does not have; runs on indices, ETFs and stocks (US with NYSE breadth, India with NSE breadth and US holiday dates) are a declared application, one unit per trade.",
     basis: "Martin Zweig, Winning on Wall Street (updated ed. 1994), Ch 6 and 9",
 };
+
+#[cfg(test)]
+mod z1_tests {
+    use super::*;
+    #[test]
+    fn prime_mode_runs() { // peak < 8: the first cut buys; peak >= 8: the second consecutive cut or a 1-point cut; hikes mirror
+        let m = prime_mode(&[5., 6., 7., 6.5, 6.5, 7., 7.5, 9.0, 9.0, 8.5, 8.0, 7.0, 7.5, 8.0], 8.0, 1.0);
+        assert_eq!(m, vec![0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]); // hike 7->7.5 (low 7.0, run of 1) keeps the buy; 8.0 is the second hike: sell
+    }
+    /// Lane Z1 reference feed: `Z1_DUMP=out Z1_TICKER=SPX Z1_CSV=us_data.csv Z1_DIR=extra_data/us [Z1_FILL=2] cargo test --release z1_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn z1_dump() {
+        let (Ok(out), Ok(tk), Ok(csv), Ok(dir)) = (std::env::var("Z1_DUMP"), std::env::var("Z1_TICKER"), std::env::var("Z1_CSV"), std::env::var("Z1_DIR")) else { return };
+        let iso = |d: &str| format!("{}-{}-{}", &d[6..10], &d[3..5], &d[0..2]);
+        let rows: Vec<crate::Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != tk { return None; }
+            Some(crate::Row { ticker: tk.clone(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let m: std::collections::BTreeMap<String, f64> = std::fs::read_to_string(format!("{dir}/DPRIME.csv")).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect(); Some((f[0].to_string(), f[1].parse().ok()?)) }).collect();
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.extra.insert("DPRIME".into(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+        let mut p = Params::new();
+        if let Ok(v) = std::env::var("Z1_FILL") { p.insert("fill".into(), v.parse().unwrap()); }
+        let t = run("mzwws_prime_rate", &x, 0, rows.len() - 1, &p).unwrap();
+        let mut o = String::new();
+        for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open); }
+        std::fs::write(out, o).unwrap();
+    }
+}

@@ -1,11 +1,97 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { SnapEvent, SnapItem, SnapStats } from "../services/research";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { claudeWorkDaily, type DailyWork, type DailyWorkRow, type SnapEvent, type SnapItem, type SnapStats } from "../services/research";
 
 /* Popup for a "Live snapshot" row on the Research timeline: the numbers, then names in collapsible lists. Real data only:
    anything the generator did not record shows "not recorded". */
 
 const num = (n: number | undefined | null) => (n ?? 0).toLocaleString("en-IN");
 const SEARCH_ABOVE = 30;
+
+export const DAILY_HEADERS = ["Date", "New strategies added", "Strategies backtested (day)", "Time taken - backtesting", "Tokens used - backtesting", "Strategy errors solved", "Time taken - error fixing", "Tokens used - error fixing",
+  "Newly held (with reason)", "Held balance (end of day)", "Backtested total (end of day)", "Books added", "Deploys", "Worked by", "Avg tokens per strategy", "Proof"];
+const NUMERIC = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
+export const fmtDate = (iso: string) => iso.split("-").reverse().join("/");
+export const fmtTokens = (n: number | null) => n == null ? "—" : (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+export const fmtTime = (min: number | null) => min == null ? "—" : `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+
+/** The daily table: one row per IST day, newest first; "Newly held" opens the list of strategies with their reasons. */
+export function DailyWorkTable({ data }: { data: DailyWork }) {
+  const [openDay, setOpenDay] = useState<string | null>(null);
+  const cells = (r: DailyWorkRow): ReactNode[] => [fmtDate(r.date), num(r.new), num(r.backtested_day), fmtTime(r.bt_minutes), fmtTokens(r.bt_tokens), num(r.errors_solved), fmtTime(r.fix_minutes), fmtTokens(r.fix_tokens),
+    r.newly_held == null ? <span className="rp-muted" title="The run file for this day is not kept">n/a</span>
+      : r.newly_held_list.length ? <button type="button" className="rp-linkbtn" aria-expanded={openDay === r.date} onClick={() => setOpenDay(openDay === r.date ? null : r.date)}>{num(r.newly_held)}</button> : num(r.newly_held),
+    num(r.held), num(r.backtested_total), num(r.books_added), num(r.deploys), r.worked_by, r.avg_tokens_per_strategy == null ? "" : fmtTokens(r.avg_tokens_per_strategy), r.proof];
+  return (
+    <div className="rp-daily">
+      <div className="rp-daily-scroll">
+        <table>
+          <thead><tr>{DAILY_HEADERS.map((h, i) => <th key={h} className={NUMERIC.has(i) ? "n" : undefined}>{h}</th>)}</tr></thead>
+          <tbody>{data.rows.map(r => (
+            <Fragment key={r.date}><tr>{cells(r).map((c, i) => <td key={i} className={NUMERIC.has(i) ? "n" : undefined}>{c}</td>)}</tr>
+              {openDay === r.date && <tr className="rp-daily-held"><td colSpan={DAILY_HEADERS.length}>
+                <ul className="rp-snap-list">{r.newly_held_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span> · {x.reason}</li>)}</ul></td></tr>}</Fragment>
+          ))}</tbody>
+        </table>
+      </div>
+      <p className="rp-small rp-muted">Time is active minutes in Claude Code sessions (gaps of 10 minutes or less between messages, IST days); tokens are input + output + cache-creation tokens of those sessions, sorted into backtesting and error-fixing lanes by project folder; a dash means no session of that kind that day (Codex-led work on 14-16 Nov is not in Claude's logs). Strategy errors solved = verifier tracker rows answered FIXED/Live. Other work (lead, frontend, covers) is in the data file only.</p>
+    </div>
+  );
+}
+const dur = (min: number | null | undefined) => min == null ? "—" : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`;
+const longDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+/** One card per IST day: what was added, what it cost, where the totals ended; lists open on demand. */
+export function DailyWorkCards({ data }: { data: DailyWork }) {
+  return (
+    <div className="cw-days">
+      {data.rows.map(r => {
+        const quiet = !r.new && !r.backtested_day && !r.deploys && r.bt_minutes == null && r.fix_minutes == null;
+        return (
+          <article key={r.date} className={`cw-day${quiet ? " quiet" : ""}`}>
+            <header className="cw-head"><h4>{longDate(r.date)}</h4><span className="cw-who">{r.worked_by === "-" ? "No work recorded" : r.worked_by}</span>{r.deploys > 0 && <span className="cw-tag">{r.deploys} deploy{r.deploys === 1 ? "" : "s"}</span>}</header>
+            {quiet ? <>
+              <p className="cw-quiet"><b>Why nothing ran:</b> {r.note ?? "No releases and no recorded sessions this day, and no recorded reason."}</p>
+              {r.health && <p className="cw-health rp-small rp-muted">{r.health}</p>}
+            </> : <>
+              <div className="cw-kpis">
+                <div><b>{num(r.new)}</b><span>new strategies</span></div>
+                <div className="ok"><b>{num(r.backtested_day)}</b><span>backtested</span></div>
+                <div><b>{r.newly_held == null ? "n/a" : num(r.newly_held)}</b><span>newly held</span></div>
+                <div><b>{num(r.errors_solved)}</b><span>tracker errors solved</span></div>
+                <div><b>{num(r.books_added)}</b><span>books added</span></div>
+              </div>
+              <div className="cw-work">
+                <div><h5>Backtesting new strategies</h5><p><b>{dur(r.bt_minutes)}</b> active · <b>{fmtTokens(r.bt_tokens)}</b> tokens</p>{r.avg_tokens_per_strategy != null && <p className="cw-sub">≈ {fmtTokens(r.avg_tokens_per_strategy)} tokens per strategy backtested</p>}</div>
+                <div><h5>Fixing errors</h5><p><b>{dur(r.fix_minutes)}</b> active · <b>{fmtTokens(r.fix_tokens)}</b> tokens</p></div>
+                {(r.other_minutes ?? 0) > 0 && <div><h5>Lead, reviews and UI</h5><p><b>{dur(r.other_minutes)}</b> active · <b>{fmtTokens(r.other_tokens ?? null)}</b> tokens</p></div>}
+              </div>
+              {r.added_list && r.added_list.length > 0 && <div className="cw-names"><h5>Backtested this day ({r.added_list.length})</h5>
+                <ul>{r.added_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">· {x.book}</span></li>)}</ul></div>}
+              {r.new_list && r.new_list.some(x => !x.backtested) && <div className="cw-names"><h5>New this day, not yet backtested ({r.new_list.filter(x => !x.backtested).length})</h5>
+                <ul>{r.new_list.filter(x => !x.backtested).map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">· {x.book}</span></li>)}</ul></div>}
+              {r.added_list == null && (r.backtested_day > 0 || r.new > 0) && <p className="rp-small rp-muted">Strategy names for this day are not available: the run files it would be compared against were not kept.</p>}
+              {r.note && <p className="cw-quiet"><b>Note:</b> {r.note}</p>}
+              {r.health && <p className="cw-health rp-small rp-muted">{r.health}</p>}
+              <p className="cw-eod">End of day: <b>{num(r.backtested_total)}</b> backtested · <b>{num(r.held)}</b> held</p>
+              <div className="cw-more">
+
+                {r.newly_held_list.length > 0 && <details><summary>Newly held ({r.newly_held_list.length})</summary><ul>{r.newly_held_list.map((x, i) => <li key={i}><b>{x.strategy}</b> <span className="rp-muted">{x.book}</span> · {x.reason}</li>)}</ul></details>}
+                <details><summary>Proof</summary><p className="rp-small">{r.proof}</p></details>
+              </div>
+            </>}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+export function DailyWorkSection() {
+  const [d, setD] = useState<DailyWork | null | undefined>(undefined);
+  const [table, setTable] = useState(false);
+  useEffect(() => { let on = true; claudeWorkDaily().then(x => on && setD(x)); return () => { on = false; }; }, []);
+  return <section className="rp-snap-sec"><div className="cw-bar"><h3>Daily work</h3>{d && <button type="button" className="rp-linkbtn" onClick={() => setTable(!table)}>{table ? "Show as cards" : "Show as table"}</button>}</div>
+    {d === undefined ? <p className="rp-small rp-muted">Loading...</p> : d ? (table ? <DailyWorkTable data={d} /> : <><DailyWorkCards data={d} /><p className="rp-small rp-muted">Time is active minutes in Claude Code sessions (gaps of 10 minutes or less); tokens are input + output + cache-creation tokens. Sessions are sorted by lane: new-strategy lanes count as backtesting, audit and fix lanes as fixing errors. A dash means no such session that day; Codex-led work (14-16 Nov) is not in Claude's logs.</p></>) : <p className="rp-small rp-muted">Daily work is not available (claude-work-daily.json missing).</p>}</section>;
+}
 export const STEPS = [
   "Read the rule as printed, at its page in the book",
   "Code the strategy card",

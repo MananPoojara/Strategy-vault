@@ -49,6 +49,8 @@ pub(crate) struct Sys<'a> {
     pub trail: OnPos<'a, f64>,
     /// Initial stop distance in price points from the fill (0 = off).
     pub stop_pts: f64,
+    /// R4 #380 (lane K2): when > 0 the stop distance is `stop_pts x fill / stop_ref` (the printed S&P points as the same percentage of the price); 0 = the points as printed.
+    pub stop_ref: f64,
     /// Book's "one-way" test model: no two consecutive trades in the same direction.
     pub oneway: bool,
 }
@@ -75,7 +77,7 @@ pub(crate) fn run_sys_path(x: &Ctx, from: usize, to: usize, s: &Sys, minute: boo
     let (mut pos, mut last): (Option<Pos>, f64) = (None, 0.);
     let mut pend: [Option<(f64, Kind)>; 2] = [None, None];
     let (mut pend_exit, mut trail): (Option<String>, f64) = (None, f64::NAN);
-    let init = |p: &Pos| if s.stop_pts > 0. { p.px - p.dir * s.stop_pts } else { f64::NAN };
+    let init = |p: &Pos| if s.stop_pts > 0. { p.px - p.dir * if s.stop_ref > 0. { s.stop_pts * p.px / s.stop_ref } else { s.stop_pts } } else { f64::NAN };
     for i in from..=to {
         if i > from {
             if let Some(why) = pend_exit.take() {
@@ -214,8 +216,7 @@ pub(crate) fn getp(schema: &[ParamDef], p: &Params, k: &str) -> f64 {
 
 const STOP_GAP: &str = "Book tests use a per-contract dollar initial stop on futures continuous contracts; converting it needs the contract's point value and futures data. Exposed as stop_pts (index points), off by default.";
 const ND_INTERMARKET: &str = "Needs daily futures for two or three different markets (gold, T-bond, soybeans, copper, deutsche mark, corn, crude oil, Eurodollar, yen, live hogs). The vault has equity indices only; running bond rules on an equity index would be an asset-class swap.";
-const ND_TICKS: &str = "The barrier is a number of futures ticks (20 or 10 ticks of each contract). An index has no contract tick; needs futures contract tick size and data.";
-const ND_SIZE: &str = "Position size = $10,000 / (5-day high-low range in contract dollars), max 10 contracts. Needs contract point values; the vault reports one-unit percentage returns.";
+const ND_SIZE: &str = "Position size = $10,000 / (5-day high-low range in contract dollars), max 10 contracts. This is a position-sizing study (1-10 contracts); contract values are held (futures.rs MARKETS) but the engine books one unit per trade, so varying contract counts are not modelled.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes| StrategyDef { id, name, group, session: 0, dir, status,
@@ -351,9 +352,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "A|Unstated in the book: when the signal fires; vault reading: on the first day both markets agree (the joint state begins), as the two-market crossover",
             "F|p.mkt2 = 0 soybeans (Table 4.17 first column, default), 1 = copper (second column, 7/28/88-7/10/95)"],
             "Table 4.17 ($5,000 stop, $100 costs): gold-soybeans-bond 01/02/75-07/10/95 77 trades, 47%, avg $905; gold-copper-bond 07/28/88-07/10/95 27 trades, 56%, avg $1,563. Runs on the Norgate T-bond continuous contract only, the signal market's Norgate contract read on the bond's dates (its indicators on its own bars, the last value carried to a bond date it has no bar for; TradeStation Data2) (lane F1B, R4 #293): signals on the back-adjusted series, % per trade on the unadjusted entry price, the $5,000 = 5.00 bond points. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
-        d("ch_bta2_cbo_20tick", "20-bar breakout with 20-tick barrier", "Ch 5 · Channel breakout variations", "Long/Short", NeedsData(ND_TICKS), &[
-            "E|Close must exceed the 20-day high/low by 20 ticks instead of 1 tick (p.155)", "X|Volatility exit (Table 5.4) or no exit (Table 5.5); $1,500 stop"],
-            "Tables 5.4-5.5. Ch.7 uses the same breakout with a 10-tick barrier (CHBOC)."),
+        d("ch_bta2_cbo_20tick", "20-bar breakout with 20-tick barrier", "Ch 5 · Channel breakout variations", "Long/Short", Live, &[
+            "E|\"So far our channel breakout on the close stipulated that the close be one tick above the high or low of the previous 20 days ... Figure 5.6 uses a 20-tick barrier, instead of the 1-tick barrier\" (p.155): buy on a close above the 20-day high plus 20 ticks, sell on a close below the 20-day low minus 20 ticks",
+            "X|Table 5.4: \"the volatility exit discussed in the previous section\" (p.156) = the highest 20-day high minus three times the 10-day SMA of the daily range (long; mirrored short). Table 5.5: no exit; the opposite 20-tick signal reverses (p.156-157, R4 #344) [p.mult = 0]",
+            "X|$1,500 initial stop and $100 for slippage and commissions (p.156) [on the futures contract of each tested market: $1,500 / the contract's $ per point (lane F1B, R4 #293 (3)); stop_pts overrides]",
+            "A|Unstated (1 of 4): the close must be strictly beyond the barrier (> high + 20 ticks), as the 1-tick siblings read \"above\"",
+            "A|Unstated (2 of 4): the 20-day high/low is of the 20 bars before the signal bar (the sibling convention; today excluded)",
+            "A|Unstated (3 of 4): the Table 5.4 volatility exit is the sibling's (p.152) and carries no barrier",
+            "A|Unstated (4 of 4): one tick = the contract's minimum price move in futures::MARKETS (book-era ticks; p.ticks = 20 of them)"],
+            "Printed pp.155-158, Table 5.4 (volatility exit; 10 markets, avg 141 trades, 37% won, PF 1.29, avg profit $33,278) and Table 5.5 (no exit; avg 89 trades, 32% won, PF 1.42, $49,989). Four unstated details (R4 #339), so UNVERIFIED whatever the comparison. Runs on the Norgate continuous contracts of the book's tested markets only (lane Z2, R4 #367 (2) as the siblings; no Deutsche mark series): signals and points on the back-adjusted series, % per trade on the unadjusted entry price, the $1,500 at each contract's $ per point. Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
         d("ch_bta2_pullback_10c", "Pullback system, up to ten contracts", "Ch 5 · Pullback system", "Long/Short", NeedsData(ND_SIZE), &[
             "E|Pullback entries (p.172)", "A|\"trade up to a maximum of ten contracts using the 5-day high-low range as the measure of volatility\" for $10,000 risk (p.172)"],
             "Table 5.14. Same signals as ch_bta2_pullback; only sizing differs."),
@@ -396,7 +403,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ch_bta2_cbo_volexit" => ("ch_cbo", "20-day channel breakout on close", "Volatility exit"),
         "ch_bta2_cbo_inside" => ("ch_cbo", "20-day channel breakout on close", "Inside volatility barrier"),
         "ch_bta2_cbo_ref" => ("ch_cbo", "20-day channel breakout on close", "No exits (reference)"),
-        "ch_bta2_cbo_20tick" => ("ch_cbo", "20-day channel breakout on close", "Tick barrier · Data missing"),
+        "ch_bta2_cbo_20tick" => ("ch_cbo", "20-day channel breakout on close", "20-tick barrier"),
         "ch_bta2_cbo_dmi50" => ("ch_cbo", "20-day channel breakout on close", "DMI filter · Not testable"),
         "ch_bta2_adx30" => ("ch_adx", "ADX systems", "ADX crosses 30"),
         "ch_bta2_adx_rising" => ("ch_adx", "ADX systems", "ADX rising (28 days)"),
@@ -425,7 +432,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("count", "Number of consecutive short SMAs", 2., 2., 5., 1.), p("slow", "Long SMA length", 65., 10., 200., 1.)],
         "ch_bta2_65sma_ravi" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(1.0)],
         "ch_bta2_65sma_ravi_x14" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(0.5),
-            p("exit_n", "Exit: close beyond N-day extreme", 14., 5., 30., 1.), stop(0.)],
+            p("exit_n", "Exit: close beyond N-day extreme", 14., 5., 30., 1.), stop(0.),
+            p("ref", "NSE indices only (#380): the printed $1,000 stop = 2.0 S&P points is scaled by the fill / this S&P 500 level (312 = the vault SPX mean close over the book's 1983-1995 window, a labelled reading)", 312., 50., 2000., 1.)],
         "ch_bta2_tat" => vec![p("n", "Breakout days", 25., 10., 40., 5.), p("adx", "ADX length", 18., 10., 30., 2.),
             p("adx_avg", "ADX average length", 18., 10., 30., 2.), stop(10.)],
         "ch_bta2_ma1011_trend" | "ch_bta2_ma1011_anti" => vec![p("fast", "Short SMA", 10., 5., 20., 1.), p("slow", "Long SMA", 11., 6., 30., 1.), stop(4.)],
@@ -442,6 +450,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ch_bta2_cbo_volexit" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Range multiple", 3., 1., 5., 0.5), stop(0.)],
         "ch_bta2_cbo_inside" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Exit range multiple", 3., 1., 5., 0.5), stop(0.)],
         "ch_bta2_cbo_ref" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), stop(0.)],
+        "ch_bta2_cbo_20tick" => vec![p("chan", "Breakout days", 20., 10., 40., 5.), p("ticks", "Barrier, ticks beyond the 20-day high/low", 20., 1., 40., 1.),
+            p("tick", "Tick size. On a Norgate futures contract, leave it unset: the contract's tick applies; a value sent here replaces it", 0.01, 0., 5., 0.01),
+            p("vol_n", "Range SMA days", 10., 5., 20., 1.), p("mult", "Range multiple of the volatility exit (0 = no exit, Table 5.5)", 3., 0., 5., 0.5), stop(0.)],
         "ch_bta2_adx30" => vec![p("adx", "ADX length", 14., 7., 28., 1.), p("level", "ADX level", 30., 15., 45., 5.), p("fast", "Close SMA", 3., 2., 10., 1.),
             p("ema", "Close EMA", 20., 10., 50., 5.), p("trail_n", "Trailing stop days", 20., 5., 40., 5.), stop(0.)],
         "ch_bta2_adx_rising" => vec![p("adx", "ADX length", 14., 7., 28., 1.), p("lookback", "Rising vs N days ago", 28., 5., 40., 1.), p("fast", "Close SMA", 3., 2., 10., 1.),
@@ -480,6 +491,10 @@ pub fn validate_reviewed(id: &str, p: &Params) -> Option<String> {
     None
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+pub fn nse_x14(id: &str) -> bool { id == "ch_bta2_65sma_ravi_x14" }
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() || validate_reviewed(id, p).is_some() { return None; }
@@ -492,7 +507,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let fut_stop = match id {
         "ch_bta2_vol2x" => 3000.,
         "ch_bta2_goldbond_ma" | "ch_bta2_goldbond_adx" | "ch_bta2_intermarket_trio" => 5000.,
-        "ch_bta2_cbo_trail5" | "ch_bta2_cbo_volexit" | "ch_bta2_cbo_inside" | "ch_bta2_cbo_ref" | "ch_bta2_adx30" | "ch_bta2_adx_rising"
+        "ch_bta2_cbo_trail5" | "ch_bta2_cbo_volexit" | "ch_bta2_cbo_inside" | "ch_bta2_cbo_ref" | "ch_bta2_cbo_20tick" | "ch_bta2_adx30" | "ch_bta2_adx_rising"
         | "ch_bta2_pullback" | "ch_bta2_long_bomb" => 1500.,
         _ => 0.,
     };
@@ -500,6 +515,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         (Some(_), None) if fut_stop > 0. => crate::futures::usd_points(x, from, fut_stop).unwrap_or(0.),
         _ => g("stop_pts").max(0.),
     };
+    // R4 #380 (lane K2): the 65sma-3cc + RAVI 0.5 + 14-day exit model of Table 4.6 on the NSE indices: its $1,000 stop is 2.0 S&P points at $500 a point (p.100, p.134)
+    // scaled by the fill / 312, and entries before the series' real-open start are not traded (the entry and the exit are next opens).
+    let nse = nse_x14(id) && x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY"));
+    let (stop_pts, stop_ref) = if nse { (if p.get("stop_pts").is_some() { stop_pts } else { 2.0 }, g("ref")) } else { (stop_pts, 0.) };
+    let from = if nse { x.r.first().and_then(|r| real_open_from(&r.ticker)).map_or(from, |c| from.max(x.r.partition_point(|r| r.date.as_str() < c))) } else { from };
+    if from > to { return Some(vec![]); }
     let minute = MINUTE_PATH.contains(&id) && g("path") >= 0.5; // K58 / #240
     let tick = if !schema.iter().any(|d| d.key == "tick") { 0. }
         // lane F1B (#57): on a futures contract the printed "1 point" is one tick of that contract unless tick is given
@@ -509,7 +530,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let n = x.r.len();
     macro_rules! sys {
         ($e:expr, $c:expr, $o:expr, $t:expr, $w:expr) => {
-            run_sys_path(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, oneway: $w }, minute)
+            run_sys_path(x, from, to, &Sys { entry: $e, exit_close: $c, exit_open: $o, trail: $t, stop_pts, stop_ref, oneway: $w }, minute)
         };
     }
     let hold_exit = |h: usize| move |i: usize, q: &Pos| (i >= q.i + h).then(|| format!("Close of day {h} in the trade"));
@@ -623,13 +644,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if h > 0 { sys!(&entry, &he, &none_exit, &tr, false) } else { sys!(&entry, &none_exit, &none_exit, &tr, false) }
             }
         }
-        "ch_bta2_cbo_trail5" | "ch_bta2_cbo_volexit" | "ch_bta2_cbo_ref" | "ch_bta2_cbo_inside" => {
+        "ch_bta2_cbo_trail5" | "ch_bta2_cbo_volexit" | "ch_bta2_cbo_ref" | "ch_bta2_cbo_inside" | "ch_bta2_cbo_20tick" => {
             let ch = u("chan");
+            let bar = if id == "ch_bta2_cbo_20tick" { g("ticks") * tick } else { 0. }; // p.155: the close beyond the 20-day high/low by N ticks
             let has = |k: &str| schema.iter().any(|d| d.key == k);
             let vol = if has("vol_n") { sma(&rng, u("vol_n")) } else { vec![nan; n] };
             let inside = id == "ch_bta2_cbo_inside";
             let entry = |i: usize, _: f64| {
-                let (up, dn) = if inside { (hh1(x, i, ch) - vol[i], ll1(x, i, ch) + vol[i]) } else { (hh1(x, i, ch), ll1(x, i, ch)) };
+                let (up, dn) = if inside { (hh1(x, i, ch) - vol[i], ll1(x, i, ch) + vol[i]) } else { (hh1(x, i, ch) + bar, ll1(x, i, ch) - bar) };
                 let (l, s) = (x.c[i] > up, x.c[i] < dn);
                 one(if l && !s { Some((1., Kind::Close)) } else if s && !l { Some((-1., Kind::Close)) } else { None })
             };
@@ -759,6 +781,30 @@ mod tests {
     }
     use super::*;
     use crate::Row;
+    /// Z2 reference comparison (run by hand): Z2_FUT=<data>/futures/norgate-20200908 Z2_OUT=<tsv> cargo test --release z2_dump -- --ignored
+    /// (authors/held-1119/Z2/ref.py reads the same Norgate CSVs). One line per trade: market, variant (volexit = Table 5.4, noexit = 5.5), ...
+    #[test]
+    #[ignore]
+    fn z2_dump() {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("Z2_OUT").unwrap()).unwrap());
+        let mut data = std::collections::BTreeMap::new();
+        let extra = crate::futures::load(std::path::Path::new(&std::env::var("Z2_FUT").unwrap()), &mut data);
+        for m in crate::futures::MARKETS {
+            let t = crate::futures::ticker(m);
+            let Some(r) = data.get(&t) else { continue };
+            let mut x = Ctx::new(r, r, &[]);
+            for k in ["Open", "High", "Low", "Close"] { let c = &extra[&(t.clone(), format!("RAW.{k}"))]; x.extra.insert(format!("RAW.{k}"), r.iter().map(|b| c[&b.date]).collect()); }
+            let from = (0..r.len()).find(|&i| crate::futures::usd_points(&x, i, 1500.).is_some()).unwrap_or(0);
+            let to = std::env::var("Z2_END").ok().and_then(|e| (0..r.len()).rev().find(|&i| r[i].date <= e)).unwrap_or(r.len() - 1); // optional last date
+            writeln!(f, "#{}\t{}\t{}\t{}", m.sym, r[from].date, crate::futures::usd_points(&x, from, 1500.).unwrap_or(0.), m.tick).unwrap();
+            for (v, p) in [("volexit", Params::new()), ("noexit", Params::from([("mult".to_string(), 0.)]))] {
+                for z in run(&std::env::var("Z2_ID").unwrap_or("ch_bta2_cbo_20tick".into()), &x, from, to, &p).unwrap() {
+                    writeln!(f, "{}\t{v}\t{}\t{}\t{}\t{}\t{}\t{}", m.sym, z.dir, r[z.legs[0].i].date, z.legs[0].px, r[z.exit_i].date, z.exit_px, z.reason).unwrap();
+                }
+            }
+        }
+    }
     fn rows(c: &[f64]) -> Vec<Row> {
         c.iter().enumerate().map(|(i, &v)| Row { ticker: "T".into(), date: format!("2000-01-{:02}", i % 28 + 1), open: v, high: v + 1., low: v - 1., close: v, volume: None }).collect()
     }
@@ -884,3 +930,29 @@ pub const ADMISSION_SPX: crate::instrument_policy::Admission = crate::instrument
     label: "Chande tested these rules on S&P-500 futures (continuous contract, 1982-95) with dollar stops per contract; the stops are converted exactly at the named contract's $500 per full S&P index point (p.134) and run on the S&P 500 index (SPX) only, the points literal, as a declared application of the futures rule to the cash index. Other instruments would need a conversion the book does not give.",
     basis: "Tushar Chande, Beyond Technical Analysis (Wiley 1997) Ch 4, printed pp.116-144 (T-AT p.116-123, 10/11 crossovers p.133, bottom-fishing p.134-139, extraordinary opportunities p.140-144; $500 a point p.134); decisions #196(2), #202; independent check authors/titles-1030/K58w/k58_ch_ref.py, #179 two-window check K58w/m3_ch.txt.",
 };
+
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nse_x14(def.id),
+    label: "Chande tested the 65sma-3cc reversal with a 0.5 percent RAVI filter, a 14-day extreme exit and a $1,000 initial stop on S&P-500 futures (1982-95, Table 4.6). The stop is 2.0 S&P index points at $500 per point (p. 134); run on the NSE index series only, the stop scaled by the fill / 312 (the vault SPX mean close over the book's window, a labelled reading), a declared adaptation (R4 #340 / #380); entries before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Tushar Chande, Beyond Technical Analysis (Wiley 1997) Ch 4, 65sma-3cc model with RAVI and a 14-day exit p. 100 and Table 4.6, $500 a point p. 134; independent check authors/conv-1123/k2w/chx14_ref.py",
+};
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: CHX14_CSV=<idx_data.csv> CHX14_OUT=<file> cargo test --release chx14_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn chx14_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("CHX14_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("CHX14_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("ch_bta2_65sma_ravi_x14", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "ch_bta2_65sma_ravi_x14,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
+}

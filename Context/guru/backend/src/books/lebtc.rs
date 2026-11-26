@@ -46,7 +46,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Short: \"If the lowest close since entry is less than the entry price minus 2 Average True Ranges then we will exit on a stop at 1 ATR above the lowest close\"",
               "X|\"Use a $2,500 money management stop for both long and short trades.\" \"the system will also exit if there is a trade signaled in the opposite direction\" (stop-and-reverse).",
               "X|Stop prices round to the tick (buy stops up, sell stops down); same-bar fills are taken in order of distance from the open (TradeStation bar-path assumption)."],
-            "Reproduced exactly on the manual's own SF.LNG (10/17/88-9/30/99, MaxBarsBack 50, $100 per trade): 67/67 trades identical, net $101,300, 52 winners (78%), profit factor 4.53, largest win $10,337.50. See tests and library/lebtc/verify."),
+            "Reproduced exactly on the manual's own SF.LNG (10/17/88-9/30/99, MaxBarsBack 50, $100 per trade): 67/67 trades identical, net $101,300, 52 winners (78%), profit factor 4.53, largest win $10,337.50. See tests and library/lebtc/verify. [Unstated choices, honest count 2 (R4 #400/#408)] (1) stop prices round to the tick; (2) same-bar fills are taken in order of distance from the open."),
         make("lebtc_rsi_adx", "Combining RSI and ADX", "Bulletin · Combining RSI and ADX", "Long",
             Status::NotTestable("the article leaves the loss exit to the reader (\"Use your favorite loss-limiting exit or you might want to exit when the price goes below the 20-day moving average or when the 20-day moving average turns down\") and the open-profit threshold open (\"pick some amount - maybe 4 ATRs\")"),
             &["F|\"The 20-bar moving average must be rising.\"",

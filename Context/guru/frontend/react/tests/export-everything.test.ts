@@ -33,7 +33,9 @@ it('bug #3: the Parameters sheet gets one row per setting and the file name carr
 
 it('page buttons and Export everything build each workbook with the same table code', () => {
   const handler = part("document.addEventListener('click',async event=>{const b=event.target.closest('[data-action],[data-chart-snapshot]", '\n');
-  expect(handler).toContain("if(b.id==='trades-xlsx')return await xlsx(...await reportTable('trades',st));");
+  // the Tradelist button builds the desk-layout tradesheet (services/tradesheet-workbook.ts); audited accounts fall back to the table
+  expect(handler).toContain("if(b.id==='trades-xlsx')return await tradesheetXlsx(st);");
+  expect(part(' async function tradesheetXlsx(', ' async function pristineExport(')).toContain("return xlsx(...await reportTable('trades',st));");
   expect(handler).toContain('if(REPORT_KINDS.includes(kind))return await xlsx(...await reportTable(kind,st));');
   expect(line(' const REPORT_KINDS=')).toContain(EXPORT_KINDS.map(k => `'${k}'`).join(','));
   expect(part(' async function exportAll(', ' document.addEventListener(')).toContain('await reportTable(kind,st);const book=await xlsx(k,rows,pc,st,types,false)');
@@ -44,10 +46,10 @@ it('page buttons and Export everything build each workbook with the same table c
 
 it('static price files are read only as a fallback after the engine series', () => {
   const reads = runtime.split('\n').filter(l => /[^\w.]ohlc\(/.test(l) && !l.startsWith('const ohlc'));
-  expect(reads).toHaveLength(3);
-  expect(reads[0]).toContain('const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => ohlc(tk));');
-  expect(reads[1]).toContain('const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);');
-  expect(reads[2]).toContain("STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf)");
+  expect(reads).toHaveLength(1);
+  expect(runtime).toContain('const benchmarkOhlc = (tk, api = API) => fullOhlc(tk, api).catch(() => staticOhlc(tk));');
+  expect(runtime).toContain('const px=optimization?null:(await chartRequest)||d.ohlc||await staticOhlc(tk);');
+  expect(reads[0]).toContain("STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf)");
 });
 
 type Run = ExportRun & {tk: string; from: string; p: string};

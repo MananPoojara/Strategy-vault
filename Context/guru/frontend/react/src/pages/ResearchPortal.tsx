@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import "./ResearchPortal.css";
 import { VerificationView } from "./VerificationView";
-import { SnapshotModal } from "./SnapshotModal";
+import { DailyWorkSection, SnapshotModal } from "./SnapshotModal";
 import {
   research, snapshotDetail, VERDICTS, NOTE_TYPES, SITE, fmtDate, fmtStamp, fmtBytes, fmtBytesBoth, csvCell, ago, dayKey, readHashParams, hashWith,
   type Card, type Employee, type Me, type Note, type NoteType, type Page, type ShareFolder, type ShareInventory, type ShareSource, type Site, type Strategy,
@@ -461,6 +461,7 @@ function ClaudeView() {
     <section>
       <h1>Claude's work</h1>
       <p className="rp-muted">What Claude, Codex and the author loop built, deploy by deploy, newest first. The number is how many strategies were backtested on the site after that step.</p>
+      <DailyWorkSection />
       <Problem error={list.error} retry={list.reload} />
       {!list.data ? <p className="rp-loading">Loading…</p> : (
         <>
@@ -573,6 +574,9 @@ function ShareBody({ d }: { d: ShareInventory }) {
         </Check>}
       </div>
 
+      <h2 className="rp-section">Where the reading stands</h2>
+      <BacktestPie strategies={c.strategies} backtested={c.backtested} />
+
       {L.top_folders.length > 0 && <>
         <h2 className="rp-section">By folder</h2>
         <FolderView d={d} />
@@ -604,6 +608,105 @@ function ShareBody({ d }: { d: ShareInventory }) {
         <p className="rp-small rp-muted">Listing {listed}; page data generated {fmtStamp(d.generated_at)}{c.as_of ? `; site counts as of ${fmtStamp(c.as_of)} (run ${c.run})` : ""}.</p>
       </div>
     </section>
+  );
+}
+
+/* Backtest possibility of every unique share resource (user 23 Nov 2026): books, papers, articles, magazines, courses and code,
+   no videos and no duplicate copies. Data: data/research-backtest-pie.json, generated from lane C1's ledger by
+   authors/cover-1123/pie_data.py. Inner ring = possible / not possible / still to decide; outer ring = the reason (hover for why). */
+interface BtSlice { group: "possible" | "not" | "pending"; key: string; label: string; why: string; count: number; kinds: Record<string, number>; examples: string[]; items_file?: string }
+interface BtData { generated_at: string; total: number; ledger_rows: number; skipped: Record<string, number>; slices: BtSlice[]; method: string }
+const BT_GROUPS = { possible: "Rules and backtest possible", not: "Backtest not possible", pending: "Still to decide" } as const;
+/* Done-so-far view (user 24 Nov 2026: "show what we have done till now, no projections, good layout"). Four factual stages, each a
+   group of the ledger's reason slices; nothing here is an estimate. Data and slice lists are unchanged (pie_data.py). */
+const BT_STAGES = [
+  { id: "conv", label: "Converted and backtested", note: "Rules coded in the vault and run; open the strategy pages for results.", keys: ["converted"], tone: "ok" },
+  { id: "norule", label: "Read: no testable rule", note: "Read and decided: no complete entry + exit that can be coded.", keys: ["education", "not_trading", "vendor", "column", "idea", "discretionary", "research", "incomplete"], tone: "bad" },
+  { id: "nodata", label: "Read: needs data we do not hold", note: "Rules exist, but the market data they need is not in the Indian or US data sets.", keys: ["fx", "commodity", "fundamental", "cot", "tick", "other"], tone: "held" },
+  { id: "open", label: "In progress", note: "Being coded, queued to run on Indian data, or still being read. These move into the stages above as lanes finish them.", keys: ["to_code", "india", "shallow", "unread"], tone: "todo" },
+] as const;
+const BT_RELABEL: Record<string, string> = { to_code: "Rules found, being coded", india: "Rules read, queued to run on Indian data", shallow: "Partly read, full read queued", unread: "Not read yet" };
+type Stage = { id: string; label: string; note: string; tone: string; count: number; slices: BtSlice[] };
+function BacktestPie({ strategies, backtested }: { strategies?: number | null; backtested?: number | null }) {
+  const pie = useLoad<BtData>(async () => { const r = await fetch("data/research-backtest-pie.json", { cache: "no-store" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }, []);
+  const [open, setOpen] = useState<string | null>(null);
+  if (pie.error) return <Problem error={pie.error} retry={pie.reload} />;
+  if (!pie.data) return <p className="rp-loading">Counting…</p>;
+  const d = pie.data, total = d.total;
+  const placed = new Set<string>();
+  const stages: Stage[] = BT_STAGES.map(st => {
+    const sl = d.slices.filter(s => (st.keys as readonly string[]).includes(s.key)).map(s => ({ ...s, label: BT_RELABEL[s.key] ?? s.label })).sort((x, y) => y.count - x.count);
+    sl.forEach(s => placed.add(s.key));
+    return { id: st.id, label: st.label, note: st.note, tone: st.tone, count: sl.reduce((a, s) => a + s.count, 0), slices: sl };
+  });
+  const rest = d.slices.filter(s => !placed.has(s.key));  // a new reason key from the generator lands in "In progress" until it is mapped
+  if (rest.length) { const o = stages[stages.length - 1]; o.slices.push(...rest); o.count += rest.reduce((a, s) => a + s.count, 0); }
+  const done = total - stages[stages.length - 1].count;
+  const skipped = Object.entries(d.skipped).map(([k, n]) => `${num(n)} ${k}`).join(", ");
+  return (
+    <div className="rp-panel rp-st">
+      <p className="rp-st-lead"><b>{num(done)}</b> of <b>{num(total)}</b> share resources are read and decided ({pct(done, total)}); <b>{num(total - done)}</b> are still in progress.</p>
+      <div className="rp-st-bar" role="img" aria-label={stages.map(s => `${s.label} ${s.count}`).join(", ")}>
+        {stages.filter(s => s.count > 0).map(s => <span key={s.id} className={`t-${s.tone}`} style={{ flexGrow: s.count }} title={`${s.label}: ${num(s.count)} (${pct(s.count, total)})`} />)}
+      </div>
+      <div className="rp-st-tiles">
+        {stages.map(s => (
+          <div key={s.id} className={`rp-st-tile t-${s.tone}`}>
+            <p className="rp-st-k"><i />{s.label}</p>
+            <p className="rp-st-n">{num(s.count)} <span>{pct(s.count, total)}</span></p>
+            {s.id === "conv" && strategies != null && <p className="rp-small">{num(strategies)} strategies found in them, {num(backtested ?? 0)} backtested.</p>}
+            <p className="rp-small rp-muted">{s.note}</p>
+          </div>))}
+      </div>
+      <div className="rp-st-groups">
+        {stages.filter(s => s.slices.length > 1 || s.id !== "conv").map(s => (
+          <div key={s.id} className={`rp-st-group t-${s.tone}`}>
+            <h3>{s.label} <span>{num(s.count)}</span></h3>
+            <table className="rp-st-table"><tbody>
+              {s.slices.map(sl => (
+                <tr key={sl.key} className={open === sl.key ? "on" : ""} onClick={() => setOpen(sl.key)} onKeyDown={e => { if (e.key === "Enter") setOpen(sl.key); }} tabIndex={0} title={sl.why}>
+                  <td>{sl.label}</td>
+                  <td className="rp-st-bars"><span style={{ width: `${Math.max(2, (100 * sl.count) / Math.max(1, s.count))}%` }} /></td>
+                  <td className="rp-num">{num(sl.count)}</td>
+                  <td className="rp-num rp-muted">{pct(sl.count, total)}</td>
+                </tr>))}
+            </tbody></table>
+          </div>))}
+      </div>
+      <p className="rp-small rp-muted">Click a row to list every resource in it. Counts are unique resources (books, papers, articles, magazine issues, courses, code; no videos), not strategies: one book can hold many strategies. From the {num(d.ledger_rows)}-row share ledger; left out: {skipped}. Generated {fmtStamp(d.generated_at)}.</p>
+      {open && (() => { const sl = d.slices.find(x => x.key === open); return sl ? <BtItems key={sl.key} slice={{ ...sl, label: BT_RELABEL[sl.key] ?? sl.label }} close={() => setOpen(null)} /> : null; })()}
+    </div>
+  );
+}
+
+const BT_PER = 50;
+function BtItems({ slice, close }: { slice: BtSlice; close: () => void }) {
+  const list = useLoad<{ items: string[][] }>(async () => {
+    const r = await fetch(`data/${slice.items_file ?? `research-backtest/${slice.key}.json`}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json();
+  }, [slice.key]);
+  const [q, setQ] = useState(""), [page, setPage] = useState(1);
+  const rows = useMemo(() => {
+    const all = list.data?.items ?? [], t = q.trim().toLowerCase();
+    return t ? all.filter(r => r.some(c => c.toLowerCase().includes(t))) : all;
+  }, [list.data, q]);
+  const pages = Math.max(1, Math.ceil(rows.length / BT_PER)), p = Math.min(page, pages);
+  return (
+    <div className={`rp-bt-list bt-${slice.group}`} data-bt-list={slice.key}>
+      <div className="rp-bt-list-h">
+        <div><p className="rp-bt-k">{BT_GROUPS[slice.group]}</p><h3>{slice.label} <span className="rp-muted">· {num(slice.count)}</span></h3><p className="rp-small">{slice.why}</p></div>
+        <button type="button" onClick={close}>Close</button>
+      </div>
+      <input type="search" placeholder="Search title, author, folder or note" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} aria-label="Search this list" />
+      {list.error ? <Problem error={list.error} retry={list.reload} /> : !list.data ? <p className="rp-loading">Loading the list…</p> : <>
+        <p className="rp-small rp-muted">{q ? `${num(rows.length)} of ${num(list.data.items.length)} match` : `${num(rows.length)} resources, A to Z`}</p>
+        <div className="rp-scroll"><table className="rp-table rp-bt-table">
+          <thead><tr><th>Title</th><th>Author</th><th>Type</th><th>Where</th><th>Reviewer's note</th></tr></thead>
+          <tbody>{rows.slice((p - 1) * BT_PER, p * BT_PER).map((r, i) => <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td className="rp-small rp-muted">{r[3]}</td><td className="rp-small">{r[4]}</td></tr>)}</tbody>
+        </table></div>
+        <Pager page={{ page: p, pages }} set={setPage} />
+      </>}
+    </div>
   );
 }
 

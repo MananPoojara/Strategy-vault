@@ -173,6 +173,65 @@ static TABLE_CC: &[(&str, char, u32)] = &[
     ("++",'S',517), ("-+",'S',555), ("+-",'S',561), ("--",'B',564), ("+++",'S',239), ("++-",'S',272), ("+-+",'S',259), ("+--",'B',287), ("---",'B',267), ("--+",'S',288), ("-++",'S',262), ("-+-",'S',281), ("++++",'S',110), ("+++-",'S',127), ("++-+",'S',131), ("++--",'B',135), ("+-++",'B',123), ("+-+-",'S',131), ("+--+",'B',153), ("+---",'S',130), ("----",'B',131), ("---+",'S',131), ("--+-",'B',148), ("--++",'S',132), ("-+--",'S',146), ("-+-+",'B',126), ("-++-",'B',138), ("-+++",'S',122), ("+++++",'S',52), ("++++-",'S',58), ("+++-+",'S',59), ("+++--",'B',64), ("++-++",'B',62), ("++-+-",'S',64), ("++--+",'B',76), ("++---",'S',62), ("+-+++",'S',63), ("+-++-",'B',62), ("+-+-+",'S',53), ("+-+--",'B',77), ("+--++",'S',70), ("+--+-",'B',81), ("+---+",'S',55), ("+----",'B',71), ("-----",'B',57), ("----+",'S',73), ("---+-",'B',65), ("---++",'S',61), ("--+--",'S',67), ("--+-+",'B',72), ("--++-",'S',75), ("--+++",'S',53), ("-+---",'S',65), ("-+--+",'B',74), ("-+-+-",'S',66), ("-+-++",'B',60), ("-++--",'S',68), ("-++-+",'B',68), ("-+++-",'S',64), ("-++++",'B',55),
 ];
 /// Table E printed p.72: range condition on Day 2 (0 control, 1 NR, 2 NR4, 3 RE, 4 RE4) x two-day pattern.
+/// Printed T-bond 2-day pattern ORB tables E, G-L (printed pp.202-204): (range class, pattern, level sign, B/S, trades, win %, avg win $, avg loss $, gross $); read from the page images (R4 #363/#368: not a pass).
+static TABLE_TB2: &[(u8, &str, f64, char, u32, u32, u32, u32, i32)] = &[
+    (0, "--", 1.0, 'B', 330, 63, 469, 350, 55321),
+    (0, "--", -1.0, 'B', 278, 44, 487, 350, 3926),
+    (0, "-+", 1.0, 'B', 235, 50, 401, 361, 19632),
+    (0, "-+", -1.0, 'S', 238, 54, 473, 396, 17780),
+    (0, "+-", 1.0, 'S', 240, 48, 452, 361, 6749),
+    (0, "+-", -1.0, 'S', 227, 73, 385, 390, 40106),
+    (0, "++", 1.0, 'S', 318, 52, 487, 393, 19277),
+    (0, "++", -1.0, 'S', 359, 67, 439, 372, 61900),
+    (1, "--", 1.0, 'B', 151, 64, 459, 328, 26814),
+    (1, "--", -1.0, 'S', 130, 54, 401, 435, 1826),
+    (1, "-+", 1.0, 'B', 128, 59, 433, 346, 14938),
+    (1, "-+", -1.0, 'S', 113, 43, 457, 319, 1939),
+    (1, "+-", 1.0, 'S', 120, 43, 504, 294, 5434),
+    (1, "+-", -1.0, 'S', 117, 66, 465, 322, 22960),
+    (1, "++", 1.0, 'S', 155, 46, 449, 369, 1213),
+    (1, "++", -1.0, 'S', 194, 60, 455, 365, 25080),
+    (2, "--", 1.0, 'B', 85, 73, 468, 278, 22680),
+    (2, "--", -1.0, 'S', 82, 57, 379, 393, 4072),
+    (2, "-+", 1.0, 'B', 88, 58, 436, 324, 10248),
+    (2, "-+", -1.0, 'B', 74, 64, 407, 450, 1000),
+    (2, "+-", 1.0, 'S', 64, 39, 555, 279, 2964),
+    (2, "+-", -1.0, 'S', 74, 66, 400, 285, 16428),
+    (2, "++", 1.0, 'B', 97, 57, 362, 433, 1720),
+    (2, "++", -1.0, 'S', 124, 60, 450, 471, 12244),
+    (3, "--", 1.0, 'B', 35, 80, 619, 376, 15468),
+    (3, "--", -1.0, 'S', 36, 53, 376, 378, 724),
+    (3, "-+", 1.0, 'B', 36, 61, 518, 276, 7529),
+    (3, "-+", -1.0, 'B', 26, 54, 464, 265, 3332),
+    (3, "+-", 1.0, 'S', 21, 33, 1053, 276, 3500),
+    (3, "+-", -1.0, 'S', 24, 67, 566, 371, 5934),
+    (3, "++", 1.0, 'S', 41, 49, 512, 434, 1121),
+    (3, "++", -1.0, 'S', 60, 58, 432, 396, 6213),
+    (4, "--", 1.0, 'B', 173, 60, 452, 375, 20316),
+    (4, "--", -1.0, 'B', 134, 61, 446, 311, 10531),
+    (4, "-+", 1.0, 'B', 97, 59, 370, 374, 6164),
+    (4, "-+", -1.0, 'S', 117, 50, 566, 438, 7966),
+    (4, "+-", 1.0, 'S', 115, 53, 415, 446, 1783),
+    (4, "+-", -1.0, 'S', 106, 69, 305, 383, 9333),
+    (4, "++", 1.0, 'S', 155, 57, 518, 419, 17501),
+    (4, "++", -1.0, 'S', 157, 61, 452, 297, 25350),
+    (5, "--", 1.0, 'B', 80, 60, 509, 318, 14250),
+    (5, "--", -1.0, 'B', 71, 55, 503, 278, 10750),
+    (5, "-+", 1.0, 'B', 47, 62, 356, 352, 4000),
+    (5, "-+", -1.0, 'B', 56, 55, 487, 432, 4315),
+    (5, "+-", 1.0, 'S', 59, 51, 448, 447, 2251),
+    (5, "+-", -1.0, 'S', 46, 72, 308, 423, 4669),
+    (5, "++", 1.0, 'S', 94, 61, 464, 443, 10095),
+    (5, "++", -1.0, 'S', 90, 61, 407, 376, 9254),
+    (6, "--", 1.0, 'B', 50, 56, 607, 300, 10217),
+    (6, "--", -1.0, 'B', 44, 57, 492, 305, 6500),
+    (6, "-+", 1.0, 'B', 25, 64, 375, 413, 2218),
+    (6, "-+", -1.0, 'B', 33, 64, 506, 518, 4408),
+    (6, "+-", 1.0, 'S', 42, 55, 536, 470, 3253),
+    (6, "+-", -1.0, 'S', 28, 71, 335, 449, 3114),
+    (6, "++", 1.0, 'S', 59, 56, 442, 454, 2786),
+    (6, "++", -1.0, 'S', 47, 47, 369, 308, 402),
+];
 static TABLE_E: &[(u8, &str, char, u32, u32, u32, u32, i32)] = &[
     (2,"++",'B',114,48,1149,862,12354),(1,"++",'B',227,52,1023,871,25829),(0,"++",'S',427,53,842,894,12294),(3,"++",'S',193,59,803,721,34599),(4,"++",'S',95,61,818,793,15774),
     (2,"-+",'S',74,54,856,886,4124),(1,"-+",'B',186,53,689,691,8124),(0,"-+",'B',376,54,745,750,20024),(3,"-+",'B',185,55,808,742,19249),(4,"-+",'B',97,52,847,785,5425),
@@ -232,7 +291,7 @@ static QUAD: &[Seg] = &[
 const NOSTOP: &str = "X|\"Stops were not used and if the market traded both above and below the opening range the given amount, a buy and a sell could be registered.\" (printed p.123) Each level is its own test.";
 const ORB_E: &str = "E|ORB: \"A trade taken with entry at a predetermined level above or below the open\" (printed p.139). Buy (sell) on a stop/limit at today's open ± the level when the day's range reaches it; fill at the level. B/S as printed (\"determined by Gross Profits\").";
 const ORB_X: &str = "X|\"Exit on the close of the same day of entry\" (printed p.123); for the 2/3 Bar NR tables the close 1, 2 or 5 days after entry (\"No. of days in trade\", printed pp.173, 186).";
-const LVL: &str = "F|Levels are S&P 500 futures points as printed (80 points = 0.80 index points; printed p.17: open 271.00 to 272.90 = \"190 points\"). level_mode = 1 [labelled option, not the tested default]: use the book's Chapter 1 Stretch = average over the previous 10 days of |open − the extreme closest to the open| (printed p.1, p.286) × stretch_mult.";
+const LVL: &str = "F|Levels are S&P 500 futures points as printed (80 points = 0.80 index points; printed p.17: open 271.00 to 272.90 = \"190 points\"). level_mode = 1 [labelled option, not the tested default]: use the book's Chapter 1 Stretch = average over the previous 10 days of |open − the extreme closest to the open| (printed p.1, p.286) × stretch_mult. On the NSE indices (R4 #380) the multi-day 2 Bar NR / 3 Bar NR rows scale each level by the day's open / 271.00 (the S&P open printed on p. 17; param ref), and opens before the series' real-open start are not traded.";
 const R_CTL: &[&str] = &["F|Control group: any day (\"made no reference to range size\", printed pp.20, 105)", ORB_E, ORB_X, NOSTOP, LVL];
 const R_ID: &[&str] = &["F|Inside Day (Day 2): \"the Inside Day's high is less than the previous day's high and the Inside Day's low is greater than the previous day's low\" (printed p.123)", ORB_E, ORB_X, NOSTOP, LVL];
 const R_DOJI: &[&str] = &["F|Doji (Day 2): \"The difference between the open and close of yesterday is less than\" the doji value (\"50 Doji\" = 50 points = 0.50; printed p.132, p.139)", ORB_E, ORB_X, NOSTOP, LVL];
@@ -253,6 +312,8 @@ const R_OCRE: &[&str] = &["F|Table B (printed p.69): \"same as Table A except Da
     "E|Buy/sell on Day 1's open as printed (side = 0); side = ±1 overrides.", "X|Exit on the close of Day 1."];
 const R_CC: &[&str] = &["F|Figure 1 of Crabel, \"Trading close-to-close patterns\" (Stocks & Commodities V.7:10, 1989, p.372-374): all two- to five-day patterns of closes, + = a higher close and - = a lower close than the close before; row = the figure's pattern number (1-60).",
     "E|Enter on the close of the last day of the pattern as printed (B buy, S sell; side = ±1 overrides).", "X|Exit on the next day's close (\"exited on the next day's close. Stops were not used\")."];
+const R_TB2: &[&str] = &["F|Tables E, G-L (printed pp.202-204): yesterday's close direction and today's open direction (two-day pattern) with yesterday being control / NR / NR4 / NR7 / WS / WS4 / WS7 by daily range (printed pp.192, 197).",
+    "E|ORB: entry at the open +8 or -8 tics (1 tic = 1/32), B/S as printed for the row (side = 0); 'a trade is taken on both a move above and below the open'.", "X|Exit on today's close; no stops (printed pp.203, 123)."];
 const R_OCNR: &[&str] = &["F|Table E (printed p.72): yesterday's close direction and today's open direction, with yesterday being NR4 / NR (range below the day before) / control / RE (range above the day before) / RE4 (range above each of the previous three).",
     "E|Entry on today's open, B/S as printed (side = 0).", "X|Exit on today's close."];
 const R_GAP: &[&str] = &["F|S&P Gaps and ORB (printed pp.243-248): today's open at least `gap` points above (gap_dir +1) or below (−1) yesterday's close. Gaps of 20, 40, 60, 80, 100, 150, 200, 250, 300, 400 points. The tables' trade counts prove the gap classes are cumulative (\"at least\"), not buckets: the +80 rows sum to 2,147 trades, more than the ~1,700 days of 1982-88.",
@@ -351,8 +412,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         Status::NotTestable("the book gives only the chance of closing beyond Day 2's close (62/69/59/67%); entry is on a counter move \"observed for a loss of momentum\" - judgement"), &["F|Patterns 5-8 (printed p.116)"], "", None));
     v.push(d("tcdt_200pt_move", "200-point move off the open", "Ch 16 · Inside Days in the S&P", "Long/Short",
         Status::NotTestable("\"enter in the direction of the initial trend on any low momentum move back to the open\" - momentum judgement; only the 90%/88% statistic is printed"), &["F|S&P 1982-88: after a 200-point move above (below) the open the market closed above (below) the open 90% (88%) of the time (printed p.116)"], "", None));
+    v.push(d("tcdt_tb_orb2", "T-bond 2-day pattern + range class ORB (Tables E, G-L)", "Ch 26-28 · Two day patterns and ORB with Contraction/Expansion · T-bonds", "Long/Short", Status::Live, R_TB2,
+        "56 printed T-bond rows (7 range classes x 4 two-day patterns x open +8 / -8 tics); param row = 8 x class (0 control, 1 NR, 2 NR4, 3 NR7, 4 WS, 5 WS4, 6 WS7) + 2 x pattern (--, -+, +-, ++) + (0: +8, 1: -8) + 1; default row 1 = control, -- , open +8 tics, buy (330 trades, 63%). [Declared adaptation, R4 #340/#367 (2): the book's CBOT contract 1978-87 is run on the Norgate continuous T-bond from 1979-01-02 (1978 bars are flat/zero-volume), so trade counts are lower; UNVERIFIED.] Unstated details (4): a tic = 1/32 point; equal closes/opens match neither + nor -; range class windows use the printed NR/WS definitions with strict inequalities; an entry stop/limit is filled at the level when the day's range reaches it. Entry and exit need no intraday order: no stop, exit on the same close (0% order dependent, R4 #240).",
+        Some(Claim { trades: "330 (row 1)", win: "63%", avg: "avg win $469 / avg loss $350, gross $55,321 (row 1)", hold: "exit same-day close", period: "1978-87 (book)" })));
     v.push(d("tcdt_ce_patterns", "Two/three-day patterns with Contraction/Expansion & ORB; daily bias (Gold)", "Ch 26-28", "Long/Short",
-        Status::NotTestable("the book prints these only for T-Bonds, Yen, D-Mark, Gold and Beans with entry levels in tics/cents; no S&P/index level is given, so an index version would need an invented level. The building blocks (NR/NR4/NR7/WS/WS4/WS7 days, 2-day patterns, ORB) are coded in the S&P tests above"),
+        Status::NotTestable("the book prints these only for T-Bonds, Yen, D-Mark, Gold and Beans with entry levels in tics/cents; no S&P/index level is given, so an index version would need an invented level (Norgate &ZB, &6J, &GC and &ZS are held, so a futures card on those markets is a possible path, but D-Mark is not held and each market has its own printed level tables: page read needed). The building blocks (NR/NR4/NR7/WS/WS4/WS7 days, 2-day patterns, ORB) are coded in the S&P tests above"),
         &["F|NR7/NR4/NR/control/WS/WS4/WS7 on Day 2 × yesterday's close direction × today's open direction, ORB off the open (printed pp.191-218)"], "", None));
     v
 }
@@ -361,7 +425,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     if !id.starts_with("tcdt_") { return None; }
     let fam = |f: &'static str, n: &'static str| (f, n);
     let (f, n) = match id.split('_').nth(1)? {
-        "ctl" => fam("tcdt_ctl", "Crabel · Control ORB (any day)"), "id" => fam("tcdt_id", "Crabel · Inside Day ORB"),
+        "tb" => fam("tcdt_tb", "Crabel · T-bond 2-day ORB"), "ctl" => fam("tcdt_ctl", "Crabel · Control ORB (any day)"), "id" => fam("tcdt_id", "Crabel · Inside Day ORB"),
         "doji" => fam("tcdt_doji", "Crabel · Doji ORB"), "nr4" => fam("tcdt_nr4", "Crabel · NR4 ORB"),
         "dojinr4" => fam("tcdt_dojinr4", "Crabel · Doji & NR4 ORB"), "idnr4" => fam("tcdt_idnr4", "Crabel · ID/NR4 ORB"),
         "nr7" => fam("tcdt_nr7", "Crabel · NR7 ORB"), "ws4" => fam("tcdt_ws4", "Crabel · WS4 ORB"), "ws7" => fam("tcdt_ws7", "Crabel · WS7 ORB"),
@@ -377,7 +441,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 fn catalogue_name(id: &str) -> Option<&'static str> {
     Some(match id {
-        "tcdt_oc_pattern" => "Table A", "tcdt_cc_pattern" => "Close-to-close (S&C 1989)", "tcdt_oc_rangeexp" => "Table B (range expansion)", "tcdt_oc_nr_re" => "Table E (NR4/NR/RE/RE4)",
+        "tcdt_oc_pattern" => "Table A", "tcdt_cc_pattern" => "Close-to-close (S&C 1989)", "tcdt_oc_rangeexp" => "Table B (range expansion)", "tcdt_oc_nr_re" => "Table E (NR4/NR/RE/RE4)", "tcdt_tb_orb2" => "T-bond Tables E, G-L",
         "tcdt_gap_orb" => "Gaps", "tcdt_triseg_orb" => "Tri-segment", "tcdt_quad_orb" => "5-segment",
         "tcdt_idp1" => "Pattern 1", "tcdt_idp2" => "Pattern 2a/2b", "tcdt_idp3" => "Pattern 3", "tcdt_idp4" => "Pattern 4",
         "tcdt_ut1" => "Pivot Day 3", "tcdt_ut2" => "Pivot Day 4", "tcdt_ut3" => "Pivot Day 5", "tcdt_ut4" => "Pivot Day 6", "tcdt_ut5" => "Pivot Day 7",
@@ -406,6 +470,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         }
         if matches!(o.pat, Pat::DojiR1 | Pat::R1) { v.push(p("r1", "R1: yesterday's range below (points)", 2.00, 0., 200., 0.1)); }
         if matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) { v.push(p("look", "Narrowest within the previous N market days", 20., 10., 40., 1.)); }
+        if matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) && o.hold > 0.0 { v.push(p("ref", "NSE indices only (#380): the level is scaled by the day's open / this S&P 500 reference (printed open 271.00, p.17); US series keep the printed points", 271., 50., 2000., 1.)); }
         level_params(&mut v);
         if o.hold == 0.0 { v.push(p("path", "Same-day ORB fill: 1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bars (fill at the level)", 1., 0., 1., 1.)); } // intraday wave 1
         return Some(v);
@@ -414,6 +479,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "tcdt_oc_pattern" | "tcdt_oc_rangeexp" | "tcdt_cc_pattern" => rows(60.),
         "tcdt_oc_nr_re" => rows(20.),
+        "tcdt_tb_orb2" => { let mut v = rows(56.); v.push(p("tics", "Entry level off the open (T-bond tics of 1/32; book 8)", 8., 1., 64., 1.)); v }
         "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb" => {
             let mut v = rows(match id { "tcdt_gap_orb" => 80., "tcdt_triseg_orb" => 18., _ => 50. });
             level_params(&mut v);
@@ -500,6 +566,9 @@ fn orb_fill(x: &Ctx, i: usize, lvl: f64, mode: f64, mult: f64, sn: usize) -> Opt
     hit.then_some(px)
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+
 // ---- intraday wave 1
 /// The same-day ORB tests that fill on real 1-minute bars (admitted on SPX with the printed S&P points).
 pub fn same_day_orb(id: &str) -> bool { ORBS.iter().any(|o| o.id == id && o.hold == 0.0) || matches!(id, "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb") }
@@ -524,12 +593,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(o) = ORBS.iter().find(|o| o.id == id) {
         let (pts, side, hold) = (g("pts"), if g("side") >= 0.0 { 1.0 } else { -1.0 }, g("hold").max(0.0) as usize);
         let lvl = o.lvl.signum() * pts;
+        // #380: the N-bar NR multi-day rows run on the NSE indices with the printed S&P points scaled by the day's open / 271.00; opens before the series' real-open start are not traded
+        let nse_scaled = matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) && o.hold > 0.0 && x.r.first().is_some_and(|r| r.ticker.starts_with("NIFTY"));
+        let cut = if nse_scaled { x.r.first().and_then(|r| real_open_from(&r.ticker)) } else { None };
+        let sref = if g("ref") > 0.0 { g("ref") } else { 271.0 };
         let (doji, r1, look) = (g("doji"), g("r1"), g("look").max(1.0) as usize);
         let (mode, mult, sn) = (g("level_mode"), g("stretch_mult"), g("stretch_n").max(1.0) as usize);
         let minute = hold == 0 && o.hold == 0.0 && g("path") >= 0.5; // intraday wave 1: same-day rows only
         if minute && x.minutes.is_none() { return Some(out); }
         for i in start..=to {
+            if cut.is_some_and(|c| x.r[i].date.as_str() < c) { continue; }
             if !pat_ok(x, o.pat, i - 1, doji, r1, look) { continue; }
+            let lvl = if nse_scaled { lvl * x.o[i] / sref } else { lvl };
             if let Some(px) = if minute { orb_fill_m(x, i, lvl, mode, mult, sn) } else { orb_fill(x, i, lvl, mode, mult, sn) } {
                 let kind = if (lvl >= 0.0) == (side > 0.0) { "stop" } else { "limit" };
                 out.push(trade(x, side, i, px, hold, to, kind, o.name));
@@ -561,6 +636,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if i < n { continue; }
                 let ok = pat.chars().enumerate().all(|(k, ch)| { let j = i + 1 - n + k; sign(x.c[j], x.c[j - 1]) == Some(ch) });
                 if ok { let mut t = trade(x, side_of(bs), i, x.c[i], 1, to, "close", pat); t.signal_i = i; out.push(t); }
+            }
+        }
+        "tcdt_tb_orb2" => {
+            let (cond, pat, sg, bs, ..) = *TABLE_TB2.get(row)?;
+            let lvl = sg * g("tics") / 32.0;
+            for i in start..=to {
+                let j = i - 1;
+                let ok = match cond { 0 => true, 1 => narrower(x, j, 1), 2 => narrower(x, j, 3), 3 => narrower(x, j, 6), 4 => wider(x, j, 1), 5 => wider(x, j, 3), _ => wider(x, j, 6) };
+                if !(ok && pattern_ok(x, i, pat)) { continue; }
+                if let Some(px) = orb_fill(x, i, lvl, 0.0, 1.0, 10) { out.push(trade(x, side_of(bs), i, px, 0, to, if (lvl >= 0.0) == (side_of(bs) > 0.0) { "stop" } else { "limit" }, "T-bond ORB")); }
             }
         }
         "tcdt_oc_nr_re" => {
@@ -623,6 +708,31 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 
 #[cfg(test)]
 mod tests {
+    /// hand-run dump for the pandas reference (Q386 N-bar NR rows on the NSE indices): TCDT_CSV=<idx_data.csv> TCDT_OUT=<file> cargo test --release tcdt_nse_dump -- --ignored
+    #[test]
+    fn nbar_nr_rows_run_on_the_nse_indices() {
+        for o in super::ORBS.iter().filter(|o| matches!(o.pat, super::Pat::Bnr2 | super::Pat::Bnr3) && o.hold > 0.0) {
+            let d = super::catalogue().into_iter().find(|d| d.id == o.id).unwrap();
+            for t in ["NIFTY 50", "NIFTYBANK"] { let c = crate::instrument_policy::check(&d, t, false); assert!(c.is_none(), "{} {t}: {:?}", o.id, c.map(|i| i.note)); }
+        }
+    }
+    #[test]
+    #[ignore]
+    fn tcdt_nse_dump() {
+        use std::io::Write;
+        use crate::connors::{Ctx, Params};
+        let data = crate::load_csv(&std::env::var("TCDT_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("TCDT_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for o in super::ORBS.iter().filter(|o| matches!(o.pat, super::Pat::Bnr2 | super::Pat::Bnr3) && o.hold > 0.0) {
+                for z in super::run(o.id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{},{t},{},{},{},{},{},{}", o.id, z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
+    }
     use super::*;
     use crate::Row;
     fn bars(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
@@ -668,6 +778,28 @@ mod tests {
         assert_eq!(segment(0., 9., 3., 3), Some(2));
         assert_eq!(segment(0., 9., 0., 5), Some(1));
     }
+    /// Hand-run (ignored): dump every tcdt_tb_orb2 row's trades on the Norgate &ZB_CCB bars for the independent pandas reference (lane C1).
+    #[test]
+    #[ignore]
+    fn c1_dump_tb2() {
+        let dir = "/home/server/.cache/strategy-vault-webapp/data/futures/norgate-20200908/";
+        let rd = |f: &str| -> Vec<Row> { std::fs::read_to_string(format!("{dir}{f}")).unwrap().lines().skip(1).map(|l| {
+            let f: Vec<&str> = l.split(',').map(|s| s.trim_matches('"')).collect();
+            Row { ticker: "T".into(), date: f[0].into(), open: f[3].parse().unwrap(), high: f[4].parse().unwrap(), low: f[5].parse().unwrap(), close: f[6].parse().unwrap(), volume: None } }).collect() };
+        let raw: std::collections::BTreeSet<String> = rd("&ZB.csv").into_iter().map(|r| r.date).collect();
+        let r: Vec<Row> = rd("&ZB_CCB.csv").into_iter().filter(|r| raw.contains(&r.date)).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let from = r.iter().position(|b| b.date.as_str() >= "1979-01-02").unwrap();
+        let to = r.iter().rposition(|b| b.date.as_str() <= "1987-12-31").unwrap();
+        let mut out = String::from("row\tdate\tdir\tentry\texit\n");
+        for row in 1..=56 {
+            let p = Params::from([("row".to_string(), row as f64)]);
+            for t in run("tcdt_tb_orb2", &x, from, to, &p).unwrap() {
+                out += &format!("{row}\t{}\t{}\t{:.5}\t{:.5}\n", r[t.legs[0].i].date, t.dir, t.legs[0].px, t.exit_px);
+            }
+        }
+        std::fs::write(std::env::var("C1_OUT").unwrap(), out).unwrap();
+    }
     #[test]
     fn every_live_strategy_has_params_and_runs() {
         let r = bars(&(0..60).map(|i| { let b = 100. + (i as f64 * 0.7).sin() * 3.; (b, b + 1. + (i % 5) as f64 * 0.3, b - 1., b + 0.2) }).collect::<Vec<_>>());
@@ -685,4 +817,12 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     reviewed: |def: &crate::connors::StrategyDef| def.book=="tcdt" && crate::books::tcdt::reviewed(def.id),
     label: "Toby Crabel tested these patterns on S&P 500 futures (open-to-close tables, 1982-88) and T-Bond futures (upthrusts, 1978-87); runs on indices, ETFs and single stocks (US and India) are a declared application.",
     basis: "Day Trading with Short Term Price Patterns and Opening Range Breakout (Traders Press, 1990): Open to Close Bias Tables A and B printed p.67-69 (pattern convention p.51); Upthrust and Spring reversals printed p.261-265, pivot top p.284. Index/ETF/stock runs are a declared application.",
+};
+
+/// The 24 multi-day 2 Bar NR / 3 Bar NR open-range-breakout rows re-opened on the NSE indices (lane K2, R4 #383 / #380).
+pub fn nbar_nse(id: &str) -> bool { ORBS.iter().any(|o| o.id == id && matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) && o.hold > 0.0) }
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nbar_nse(def.id),
+    label: "Crabel's N-bar NR opening-range breakout was printed on S&P 500 futures index points (1982-88). Run on the NSE index series only, each printed point level scaled by the day's open / 271.00 (the S&P open printed on p. 17), a declared adaptation (R4 #340 / #380); opens before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Crabel, Day Trading with Short Term Price Patterns and Opening Range Breakout, 2 Bar NR pp. 166-173, 3 Bar NR pp. 180-186 (tables), p. 285, p. 17; independent check authors/conv-1123/k2w/tcdt_ref.py",
 };

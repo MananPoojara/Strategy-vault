@@ -370,6 +370,7 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
         });
         if let Some(od) = pick { enter(st, od, j, o[j]); ev.push(crate::intraday_ep6::Ev { k: 0, px: o[j], up: false }); }
     };
+    let daily_path = std::cell::Cell::new(false);
     let walk = |j: usize, st: &mut Bst, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
         let mut ev = vec![];
         if !st.started { open_phase(j, st, &mut ev); }
@@ -395,7 +396,8 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
                 let Some((lv, k, od)) = best else { arm(j, st, cur, end); break };
                 let px = g.fill(lv);
                 match k {
-                    0 => enter(st, &od.unwrap(), j, px),
+                    // V10: a stop entry on a DAILY-bar path segment (the equal-probe walk only: `daily_path`, never the minute walk, whose segments already carry the minutes) fills as the daily rule does (R4 #349 (1): the first minute that reaches the level, at its open when it opens beyond it); minute-gap segments already carry that open
+                    0 => { let o0 = od.unwrap(); let fill = if g.gap || !daily_path.get() { px } else { stop_fill(j, lv, o0.dir > 0.0) }; enter(st, &o0, j, fill) }
                     4 => { let p = st.pos.as_mut().unwrap(); if let Some((_, why)) = half_level(p) { p.half = Some((j, px)); p.why_half = why; } }
                     _ => {
                         let p = st.pos.take().unwrap();
@@ -432,9 +434,10 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
     for j in from..=to {
         let day = if ex.order {
             let mut ep = Bst { pos: st.pos.take(), exit_open: st.exit_open.take(), first: st.first, ..Default::default() };
-            let day = crate::intraday_ep6::resolve_conv(x, j, true, &mut ep, |s| bar_old(j, s),
-                |s, hf| walk(j, s, &crate::intraday_ep6::bar_segs(o[j], h[j], l[j], c[j], hf)), |s, segs| walk(j, s, segs));
-            if matches!(day, crate::intraday_ep6::Day::Minutes | crate::intraday_ep6::Day::Ambiguous) { close_phase(j, &mut ep); }
+            // V10: equal-probe days follow the path (resolve_path) and then run the close-of-bar step like minute days (gipsons: the diagnostic without it dropped the close exits)
+            let (day, via_path) = crate::intraday_ep6::resolve_path(x, j, true, &mut ep, |s| bar_old(j, s),
+                |s, hf| { daily_path.set(true); let r = walk(j, s, &crate::intraday_ep6::bar_segs(o[j], h[j], l[j], c[j], hf)); daily_path.set(false); r }, |s, segs| walk(j, s, segs));
+            if via_path { close_phase(j, &mut ep); }
             st = ep;
             day
         } else {
@@ -649,7 +652,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let tdp = "Book: 15 futures over 'this decade' (~1990-98), one row per market; the vault has no futures, so the reproduction runs SPY/QQQ/MDY. Both sides in one test, one position at a time. The streak must be exactly 3 on the entry day ('three consecutive down days'), so a 4th or 5th down close does not re-enter. Not in Advanced Trading Strategies. India: runs directly on the NSE indices.";
     vec![
         d("btp_cbp_short", "Crash, Burn, and Profit (CBP)", "Crash, Burn, and Profit (Vol. I)", "Short", Live, CBP,
-          "Weekly bars are built from the daily file (Monday-Friday weeks); weekly ADX = Wilder 14. Fires once per excursion above 60 (re-arms when ADX falls back under 60). The book screens single high-flying stocks (IBD RS 98-99); a weekly ADX above 60 is very rare on indices and ETFs, so expect few or no trades. Same article as ATS (ats_cbp), same wording. The half cover at 20% is the book's; the trail on the other half is not (it starts after the half cover; trail_whole 1 = the earlier reading, whole position). US data only: the $20 filter is in dollars (connors-final 26 Oct 2026).", None),
+          "Weekly bars are built from the daily file (Monday-Friday weeks); weekly ADX = Wilder 14. Fires once per excursion above 60 (re-arms when ADX falls back under 60). Card-specific unstated choices (5), each independent: (1) the weekly ADX period is 14 (the book states none); (2) the short is taken on the close of the downtick week; (3) weekly bars are built Monday-Friday from the daily file; (4) the trail on the other half = the highest high of the prior 20 days [not from the book]; (5) one signal per excursion above 60 (it re-arms when ADX falls back under 60). Honest total: 5 card-specific choices (audit count 5; the Wilder ADX definition itself is an engine default per #404, only its period is counted in (1)). Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): Wilder ADX definition; one position at a time; no costs; the data window; US data only for the $20 dollar filter. The book screens single high-flying stocks (IBD RS 98-99); a weekly ADX above 60 is very rare on indices and ETFs, so expect few or no trades. Same article as ATS (ats_cbp), same wording. The half cover at 20% is the book's; the trail on the other half is not (it starts after the half cover; trail_whole 1 = the earlier reading, whole position). US data only: the $20 filter is in dollars (connors-final 26 Oct 2026).", None),
         StrategyDef { needs_volume: true, ..d("btp_dvmtm_short", "Double-Volume Market Top (DVMTM)", "Double-Volume Market Top (Vol. I)", "Short", Live, DVMTM,
           "Book: single stocks. Needs volume (SPY/QQQ; NIFTY 50, BANK, MIDCAP 100). 'Three-month calendar-day high' = 63 trading days, tolerance parameter (book reading 0% = a new high, as in every example). Same article as ATS (ats_dvmtm), same wording. The exit after the initial stop is a labelled non-book set.", None) },
         d("btp_bottom_reversal_long", "Bottom Reversals", "Bottom Reversals (Vol. I)", "Long", Live, BOTREV,
@@ -1178,5 +1181,22 @@ mod tests {
         assert_eq!(days("1970-01-01"), 0);
         assert_eq!((days("2024-01-08") + 3).div_euclid(7), (days("2024-01-12") + 3).div_euclid(7)); // Mon..Fri
         assert_ne!((days("2024-01-12") + 3).div_euclid(7), (days("2024-01-15") + 3).div_euclid(7));
+    }
+}
+
+#[cfg(test)]
+mod v10_eq_path_tests {
+    /// V10 (tracker follow-up, 23 Nov 2026): a day whose two extreme bar orders agree follows the path, not the module's daily rule. NIFTY 50 (VAULT_IDX), no minutes, default parameters.
+    #[test]
+    fn btp2_momentum_ma_long_exits_on_the_path_bar() {
+        use crate::connors::{Ctx, Params};
+        let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
+        let data = crate::load_csv(&path).unwrap_or_else(|e| panic!("this test needs real data: set VAULT_IDX to idx_data.csv ({e})"));
+        let rows = &data["NIFTY 50"];
+        let x = Ctx::new(rows, rows, &[]);
+        let t = super::run("btp2_momentum_ma_long", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let z = t.iter().find(|z| rows[z.legs[0].i].date == "2016-05-18").expect("the trade");
+        assert_eq!(rows[z.exit_i].date, "2016-05-18", "{} {}", z.exit_px, z.reason);
+        assert!((z.exit_px - 7879.7).abs() < 0.06, "{}", z.exit_px);
     }
 }

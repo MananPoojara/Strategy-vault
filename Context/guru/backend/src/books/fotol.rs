@@ -18,7 +18,7 @@ const BB: &[&str] = &[
     "E|\"Go long (buy 10 ATM calls)\" on an upper-band close; \"Sell short (buy 10 ATM puts)\" when price closes below the lower band with the same two filters; \"go long at-the-money (ATM) calls or puts, depending upon the breakout's direction, before the market close\" (p.34): bought at the signal day's close",
     "X|\"Exit the position two days later at the close.\" (p.34; Table 1: 5/21/01 -> 5/23/01)",
 ];
-const BB_NOTE: &str = concat!("[Declared readings] Bollinger Bands = 20-day SMA +/- 2 population standard deviations of closes (the article: 'two standard deviations above and below a simple moving average', default settings); BandWidth = (upper - lower) / middle (printed). 'Lowest 10 percent of its 200-day range' = yesterday's BandWidth <= the lowest + 10% of (highest - lowest) of the 200 BandWidths ending yesterday. 10-day average volume includes today. ATM = the listed strike nearest the close (tie: lower); the article names no expiry, so the nearest monthly expiry whose last trading day is after the exit day is bought. One position at a time (the article's table never overlaps). Needs the underlying's volume: SPY, QQQ and IWM use their own; NIFTY 50 and NIFTYBANK (lane IN2, R4 #340: declared adaptation, UNVERIFIED) have no index volume (the NSE index files carry none), so the nearest-expiry NIFTY / BANKNIFTY futures daily volume (lane DI, bhavcopy-verified days only; a day without a verified figure is a gap, never filled) stands in for it, from 2018-12-28 (NIFTY) / 2023-09-06 (NIFTYBANK). Book: QQQQ options 5/2001-9/2005, 19 trades, 6 winners, -$2,400 (10 contracts, no commissions); our QQQ options begin in 2011, so the book's trades cannot be replayed. ", common!(), " [India contexts, UNVERIFIED: India futures volume caveat (IN1 review, 17 Nov 2026): the FUT1 daily volume (summed from StockMock minutes) equals the bhavcopy contracts x lot exactly through 2022, but from 2023 it is about 3% off on average, with 15-40% outliers on some days, so on the NIFTY / BANKNIFTY contexts the volume is approximate and every India result stays UNVERIFIED.]");
+const BB_NOTE: &str = concat!("[Declared readings] Bollinger Bands = 20-day SMA +/- 2 population standard deviations of closes (the article: 'two standard deviations above and below a simple moving average', default settings); BandWidth = (upper - lower) / middle (printed). 'Lowest 10 percent of its 200-day range' = yesterday's BandWidth <= the lowest + 10% of (highest - lowest) of the 200 BandWidths ending yesterday. 10-day average volume includes today. ATM = the listed strike nearest the close (tie: lower); the article names no expiry, so the nearest monthly expiry whose last trading day is after the exit day is bought. One position at a time (the article's table never overlaps). Card-specific unstated choices (5), each independent: (1) the Bollinger band uses the population standard deviation (divisor 20) of the 20-day closes, bands at 2 SDs; (2) 'lowest 10 percent of its 200-day range' = yesterday's BandWidth <= the lowest + 10% of (highest - lowest) of the 200 BandWidths ending yesterday; (3) the 10-day average volume includes today; (4) ATM = the listed strike nearest the close, a tie going to the lower strike; (5) the article names no expiry, so the nearest monthly expiry whose last trading day is after the exit day is bought. Honest total: 5 card-specific choices (audit count 6; its item 5 one position at a time is an engine default per #404, its item 6 the futures-volume stand-in is the declared adaptation of R4 #340 on the NIFTY / NIFTYBANK contexts, and the population-SD band reading, declared in the card text, is added as (1)). Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): one position at a time; fills at the real traded option price (16:00 mid on US chains, no bid/ask edge); a contract held to its last trading day settles at intrinsic value; one unit per position sized at the account equity; no costs; the NIFTY / BANKNIFTY futures volume as the index-volume stand-in on the India contexts (declared adaptation, R4 #340). Needs the underlying's volume: SPY, QQQ and IWM use their own; NIFTY 50 and NIFTYBANK (lane IN2, R4 #340: declared adaptation, UNVERIFIED) have no index volume (the NSE index files carry none), so the nearest-expiry NIFTY / BANKNIFTY futures daily volume (lane DI, bhavcopy-verified days only; a day without a verified figure is a gap, never filled) stands in for it, from 2018-12-28 (NIFTY) / 2023-09-06 (NIFTYBANK). Book: QQQQ options 5/2001-9/2005, 19 trades, 6 winners, -$2,400 (10 contracts, no commissions); our QQQ options begin in 2011, so the book's trades cannot be replayed. ", common!(), " [India contexts, UNVERIFIED: India futures volume caveat (IN1 review, 17 Nov 2026): the FUT1 daily volume (summed from StockMock minutes) equals the bhavcopy contracts x lot exactly through 2022, but from 2023 it is about 3% off on average, with 15-40% outliers on some days, so on the NIFTY / BANKNIFTY contexts the volume is approximate and every India result stays UNVERIFIED.]");
 const CC: &[&str] = &[
     "E|\"The traditional covered call purchased 100 shares of QQQQ on Jan. 2, 2001 and held those shares until the end of the test period.\" (Options Trader Jun 2006, Options Strategy Lab p.24): long the underlying from the first day of the run",
     "E|\"Sell the closest ATM call option available in the front month. ATM is defined as the call with the highest time premium.\" (p.24, Trade rules 2)",
@@ -31,7 +31,7 @@ const AC: &[&str] = &[
     "E|\"Adjusted covered calls: 1. If the underlying's price is above the 50- and 200-day SMAs, sell calls 5 percent OTM. 2. If the underlying's price is below the 50- and 200-day SMAs, sell calls 5 percent ITM. 3. If the underlying's price is between the 50- and 200-day SMAs, sell ATM calls.\" (p.23-24)",
     "F|\"ATM is defined as the call with the highest time premium. Each call is sold for at least $0.40 in time premium. If this is not available at the selected strike, the system moves back toward the underlying's price and sells the first strike to meet this requirement.\" (p.24, Test details)",
 ];
-const AC_NOTE: &str = concat!("[Declared readings] Time premium = the call's fill price minus its intrinsic value on the underlying close; a roll is decided only on a day the held call traded. 5 percent OTM / ITM = the listed strike nearest 1.05 / 0.95 x the close; 'moves back toward the underlying's price' = the next listed strikes toward the strike nearest the close, up to and including it; a strike that did not trade is skipped (no price). No call qualifies: the next day is tried. A call held to its last trading day settles at intrinsic value and the next call is sold at that close. SMAs of closes; equal to an SMA counts as between. Each call cycle is one trade: (underlying points + call premium kept) / underlying close at entry; no dividends. The $0.20 / $0.40 amounts are QQQ option prices, the book's own underlying, so the rule runs on QQQ only. Book: QQQQ Jan 2, 2007 - Dec 31, 2008: adjusted -$41 (-0.2%), ATM covered calls -14.1%, buy and hold -31.3% on $22,000; our QQQ options begin in 2011. ", common!());
+const AC_NOTE: &str = concat!("[Declared readings] Time premium = the call's fill price minus its intrinsic value on the underlying close; a roll is decided only on a day the held call traded. 5 percent OTM / ITM = the listed strike nearest 1.05 / 0.95 x the close; 'moves back toward the underlying's price' = the next listed strikes toward the strike nearest the close, up to and including it; a strike that did not trade is skipped (no price). No call qualifies: the next day is tried. A call held to its last trading day settles at intrinsic value and the next call is sold at that close. SMAs of closes; equal to an SMA counts as between. Each call cycle is one trade: (underlying points + call premium kept) / underlying close at entry; no dividends. The $0.20 / $0.40 amounts are QQQ option prices, the book's own underlying, so the rule runs on QQQ only. Card-specific unstated choices (7), each independent: (1) time premium = the call's fill price minus its intrinsic value on the underlying close; (2) a roll is decided only on a day the held call traded; (3) '5 percent OTM / ITM' = the listed strike nearest 1.05 / 0.95 x the close; (4) 'moves back toward the underlying's price' = the next listed strikes toward the strike nearest the close, up to and including it, and a strike that did not trade is skipped; (5) when no call qualifies the next day is tried; (6) a close equal to an SMA counts as between; (7) each call cycle is one trade, returned as (underlying points + call premium kept) / underlying close at entry. Honest total: 7 card-specific choices. Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): fills at the real traded option price (16:00 mid on US chains, no bid/ask edge); a contract held to its last trading day settles at intrinsic value; one unit per position sized at the account equity; no costs; one position at a time; no dividends; QQQ options (2011 on) instead of the book's QQQQ (declared adaptation). Book: QQQQ Jan 2, 2007 - Dec 31, 2008: adjusted -$41 (-0.2%), ATM covered calls -14.1%, buy and hold -31.3% on $22,000; our QQQ options begin in 2011. ", common!());
 const ME: &[&str] = &[
     "E|\"1. Buy one ATM, front-month call at the close on the last day of each month.\" (Futures & Options Trader Apr 2009, Options Trading System Lab p.22)",
     "X|\"2. Sell the call at the close on the fourth trading day of the next month.\" (p.22)",
@@ -43,7 +43,8 @@ const PB: &[&str] = &[
     "A|\"5. Take up to five consecutive signals.\" (p.30)",
     "X|\"6. Exit when the seven-day momentum calculation is 0.75 or higher. 7. Exit any remaining open positions after 10 days on the close.\" (p.30); \"Momentum signals appear when the current close is above the close seven days ago and is in the upper 25 percent of the high-low range of the past seven days: Seven-day momentum = (close today-lowest(low,7))/(highest(high,7)-lowest(low,7))\" (p.29)",
 ];
-const PB_NOTE: &str = concat!("[Declared readings] The contract is chosen at the signal day's close: the first monthly expiry with at least 10 calendar days from the entry day to its last trading day, and among its calls that traded on the signal day the one with the most time premium (price minus intrinsic value on the close; ties: strike nearest the close, then lower). It is bought at its own traded opening price on the next day; no traded open means no trade (the opening price of the underlying is not used). Each signal while fewer than five calls are open adds one call (one per signal day). Exits at the close: momentum >= 0.75 with the close above the close 7 days ago (as fot08_nerves), checked from the entry day, or 10 trading days after the entry day. India only: the US option snapshot has no opening price. Book: S&P 500 futures options Mar 23, 2001 - Mar 11, 2009: 53 trades, 29 winners (55%), +$36,608 (38.5%) on $95,000. Same signal as fot08_nerves (the futures version). ", common!());
+const CAL_NOTE: &str = concat!("[Declared readings] Source: Options Trader Aug 2006, Options Strategy Lab pp. 16-17 (OT2006/OptionsTrader0806.pdf), same OptionVue lab series; the lab ran SPX options 2001-2006, this runs on the NIFTY / BANKNIFTY monthly chain (R4 #340, lane K2). Card-specific unstated choices (9), each independent: (1) '7 days prior to expiration of the front month' = 7 calendar days before the front monthly expiry's last trading day (NSE Thursday, the lab's SPX second Friday); the roll day is the last trading day with at least 7 calendar days left; (2) the sold call is the ATM call of the second listed monthly expiry and the bought call is the same strike in the third listed expiry; (3) a roll with the third expiry not listed, or a leg untraded on the roll day, opens nothing; (4) always in: the first roll day in the run opens the first calendar and each roll day closes it and opens the next; (5) the NSE chain lists consecutive monthly expiries, so the spread is always one month wide (the lab's one to three months); (6) 'the ATM call (most time premium)' = the call with the most time premium, time premium being the traded fill price minus intrinsic value on the underlying close; (7) ties in time premium go to the strike nearest the close, then the lower; (8) both legs open and close at the roll-day close's traded price; (9) a leg that did not trade on the roll day leaves on its next traded close. Honest total: 9 card-specific choices. (Audit count 9; its items 2 and 3 are numbered separately here as (2) and (3), and its item 9 'one unit' is moved to engine defaults per #404.) Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): one unit per calendar; a leg reaching its last trading day settles at intrinsic value; no costs; real traded closes only; NIFTY / BANKNIFTY monthly chain instead of SPX options (R4 #340, lane K2).");
+const PB_NOTE: &str = concat!("[Declared readings] The contract is chosen at the signal day's close: the first monthly expiry with at least 10 calendar days from the entry day to its last trading day, and among its calls that traded on the signal day the one with the most time premium (price minus intrinsic value on the close; ties: strike nearest the close, then lower). It is bought at its own traded opening price on the next day; no traded open means no trade (the opening price of the underlying is not used). Each signal while fewer than five calls are open adds one call (one per signal day). Exits at the close: momentum >= 0.75 with the close above the close 7 days ago (as fot08_nerves), checked from the entry day, or 10 trading days after the entry day. Card-specific unstated choices (5), each independent: (1) the contract is the first monthly expiry with at least 10 calendar days from the entry day to its last trading day; (2) among that expiry's calls that traded on the signal day the one with the most time premium (price minus intrinsic value on the close) is taken, ties to the strike nearest the close, then the lower; (3) the call is bought at its own traded opening price on the next day and no traded open means no trade (the underlying's opening price is not used); (4) each signal while fewer than five calls are open adds one call, at most one per signal day; (5) the momentum exit (momentum >= 0.75 with the close above the close 7 days ago) is checked from the entry day, the time exit is 10 trading days after the entry day. Honest total: 5 card-specific choices. Engine-wide defaults / declared adaptations (labelled, not counted, R4 #404): fills at the real traded option price (traded open / close on NSE chains); a contract held to its last trading day settles at intrinsic value; one unit per position sized at the account equity; no costs; NIFTY 50 / NIFTY BANK options instead of the book's S&P 500 futures options (declared adaptation, R4 #340). India only: the US option snapshot has no opening price. Book: S&P 500 futures options Mar 23, 2001 - Mar 11, 2009: 53 trades, 29 winners (55%), +$36,608 (38.5%) on $95,000. Same signal as fot08_nerves (the futures version). ", common!());
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, needs_volume, rules, notes: &'static str, claim| StrategyDef {
@@ -59,6 +60,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
           CC_NOTE, claim("-", "-", "+7.58% total (1.44%/yr)", "1 month", "QQQQ Jan 2001 - Apr 2006")),
         d("fotol_monthend_call", "Month-end call: buy an ATM front-month call at the month's last close, sell on the 4th trading day", "Long", false, ME,
           ME_NOTE, claim("98", "48% (47 of 98)", "-$6.90", "4 days", "S&P 500 futures options Jan 2001 - Mar 2009")),
+        d("fotol_calendar_spread", "Calendar spread, always in: sell the ATM call of the second monthly expiry, buy the same strike of the third, roll 7 days before the front expiry", "Long", false,
+          &["E|\"1. The calendar spread is constructed by simultaneously selling the ATM call option in the second expiration month and buying the call option with the same strike price in the third available expiration month. The ATM call is defined as the one with the highest time premium.\" (Options Trader Aug 2006, Options Strategy Lab p. 16)",
+            "X|\"2. Seven days prior to expiration of the front month, close any existing position and open a new ATM calendar spread (the second Friday of every month).\" \"Strategy was always in, meaning the SPX calendar spread was always open and it rolled each month.\" (p. 17)"],
+          CAL_NOTE, claim("65", "66.2% (43 of 65)", "+$133 (one lot, +$8,677 total)", "1 month", "SPX options Jan 2001 - Jun 2006")),
         d("fotol_pullback_calls", "Pullback calls: three falling bars with a 2% drop, buy the ATM call next open, out on 7-day momentum or 10 days", "Long", false, PB,
           PB_NOTE, claim("53", "55% (29 of 53)", "+$690.72", "5 days (winners)", "S&P 500 futures options Mar 2001 - Mar 2009")),
     ]
@@ -71,6 +76,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "fotol_covered_call" => "Covered call",
         "fotol_monthend_call" => "Month-end call",
         "fotol_pullback_calls" => "Pullback calls",
+        "fotol_calendar_spread" => "Calendar spread",
         _ => return None,
     }))
 }
@@ -91,6 +97,7 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) 
         "fotol_covered_call" => covered_call(&mut w, x, from, to),
         "fotol_adjusted_cc" => adjusted_cc(&mut w, chain, x, from, to),
         "fotol_monthend_call" => monthend_call(&mut w, x, from, to),
+        "fotol_calendar_spread" => calendar_spread(&mut w, x, from, to),
         _ => pullback_calls(&mut w, x, from, to),
     }))
 }
@@ -235,6 +242,49 @@ fn adjusted_cc(w: &mut opt::Window, chain: &opt::Chain, x: &Ctx, from: usize, to
 
 struct Held { c: Contract, e: usize, px0: f64, pnl: Vec<f64>, last: f64, marks: opt::Marks, pending: Option<String> }
 
+/// Options Trader Aug 2006 calendar spread (see CAL_NOTE): sold ATM call of the second expiry, bought same strike of the third, rolled on
+/// the last trading day with at least 7 calendar days left before the front expiry's last trading day.
+fn calendar_spread(w: &mut opt::Window, x: &Ctx, from: usize, to: usize) -> Vec<opt::Pos> {
+    // roll days
+    let mut rolls: Vec<usize> = Vec::new();
+    for i in from..=to {
+        let day = w.at(i);
+        let today = opt::ymd(&x.r[i].date);
+        let Some(fe) = opt::expiries(day).into_iter().find(|&e| opt::ltd(x, e) >= today) else { continue };
+        let dte = |d: u32| opt::day_no(opt::ltd(x, fe)) - opt::day_no(d);
+        if dte(today) < 7 { continue; }
+        let next_inside = i + 1 <= to && dte(opt::ymd(&x.r[i + 1].date)) < 7;
+        if next_inside { rolls.push(i); }
+    }
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < rolls.len() {
+        let i = rolls[k];
+        let day = w.at(i).to_vec();
+        let exps = opt::expiries(&day);
+        let today = opt::ymd(&x.r[i].date);
+        let Some(pos0) = exps.iter().position(|&e| opt::ltd(x, e) >= today) else { k += 1; continue };
+        let (Some(&e2), Some(&e3)) = (exps.get(pos0 + 1), exps.get(pos0 + 2)) else { k += 1; continue };
+        let pick = most_time_premium(&day, e2, x.c[i]);
+        let Some((sc, sp)) = pick else { k += 1; continue };
+        let lc = Contract { expiry: e3, put: false, strike: sc.strike };
+        let Some(lp) = w.quote(i, lc).and_then(|q| q.fill_close()) else { k += 1; continue };
+        let exit = rolls.get(k + 1).copied();
+        let mut rule = |b: usize| (Some(b) == exit).then(|| (Exit::Close, "roll day: 7 calendar days before the front expiry".to_string()));
+        let rs = opt::follow(w, x, sc, -1.0, i, sp, to, &mut rule);
+        let rl = opt::follow(w, x, lc, 1.0, i, lp, to, &mut rule);
+        let j = rs.0.max(rl.0);
+        let pnl: Vec<f64> = (i..=j).map(|b| rs.1[(b - i).min(rs.1.len() - 1)] + rl.1[(b - i).min(rl.1.len() - 1)]).collect();
+        let open = rs.3 || rl.3;
+        out.push(opt::Pos { dir: 1.0, s0: x.c[i], entry_i: i, exit_i: j, pnl, open,
+            reason: format!("sold {} at {sp:.2}, bought {} at {lp:.2} on {} · short leg: {} ({}) · long leg: {} ({})", label(sc), label(lc), x.r[i].date, rs.2, rs.4.text(), rl.2, rl.4.text()) });
+        if open { break; }
+        // the next calendar opens on the roll day that closed this one (or the first roll day after a delayed exit)
+        k = match rolls.iter().position(|&r| r >= j) { Some(n) => n, None => break };
+    }
+    out
+}
+
 fn pullback_calls(w: &mut opt::Window, x: &Ctx, from: usize, to: usize) -> Vec<opt::Pos> {
     let (c, h, l) = (&x.c, &x.h, &x.l);
     let signal = |s: usize| s >= 3 && l[s] < l[s - 1] && l[s - 1] < l[s - 2] && h[s] < h[s - 1] && h[s - 1] < h[s - 2]
@@ -343,5 +393,23 @@ mod tests {
         let q = |k: f64, p: f64, v: f64| opt::Q { expiry: 1, put: false, strike: k, us: false, open: p, high: p, close: p, settle: p, bid: f64::NAN, ask: f64::NAN, volume: v };
         let day = [q(90.0, 10.5, 5.0), q(100.0, 3.0, 5.0), q(105.0, 1.0, 5.0), q(110.0, 9.0, 0.0)];
         assert_eq!(most_time_premium(&day, 1, 100.0).map(|(c, p)| (c.strike, p)), Some((100.0, 3.0)), "the untraded 110 call is never compared");
+    }
+    /// Lane K2 reference feed: `CAL_CSV=<idx_data.csv> CAL_OPT=<data>/options/india CAL_OUT=<file> cargo test --release cal_dump -- --ignored`
+    #[test]
+    #[ignore]
+    fn cal_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("CAL_CSV").unwrap()).unwrap();
+        let dir = std::env::var("CAL_OPT").unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("CAL_OUT").unwrap()).unwrap());
+        writeln!(f, "ticker,entry_date,exit_date,pnl,open,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.options = opt::Chain::load(&dir, &t.replace(' ', "_")).map(|c| &*Box::leak(Box::new(c)));
+            for p in option_positions("fotol_calendar_spread", &x, 0, rows.len() - 1, &Params::new()).unwrap().unwrap() {
+                writeln!(f, "{t},{},{},{},{},{}", rows[p.entry_i].date, rows[p.exit_i].date, p.pnl.last().unwrap(), p.open, p.reason.replace(',', ";")).unwrap();
+            }
+        }
     }
 }

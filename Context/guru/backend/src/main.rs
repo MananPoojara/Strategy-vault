@@ -2,6 +2,8 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod fut1; // R4 #416: India day-trade cards on the NIFTY / NIFTYBANK FUT1 minutes
+mod nse_firing; // R4 #347 / Q20: NSE vs NYSE firing-rate line on every NSE twin card
 mod nse_holidays; // R4 #364: NSE closures derived from the NIFTY 50 bars
 mod nse_expiry; // lane CV6 (R4 #340): NSE monthly option expiry derived from the held NIFTY chain
 mod release; // lane M3 (R4 #346): extra_data series keyed by their ReleaseDate
@@ -9,6 +11,7 @@ mod futures; // lane F1 (R4 #293): Norgate continuous futures
 mod spread; // lane P1: two-leg spread positions
 mod jobs;
 mod connors;
+mod family_split; // R4 #386 / Q390: family grouping split for families of distinct printed systems
 mod readiness;
 mod gate;
 mod accounting;
@@ -335,11 +338,40 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
         return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None,unit_exposure_report:None,option_account:None});
     }
     let trades = connors::run(id, ctx, from, to, p).ok_or("Strategy implementation unavailable")?;
+    if let Some(r) = fut1::take_refusal() { return Err(r); } // R4 #419: the FUT1 wrapper refuses a trade it cannot price (multi-leg / scale-out)
     normalized_run(ctx,trades,from,to,cost)
 }
 
 /// Shared ordinary percentage account finalization, also exercised with frozen
 /// event fixtures. Source-account and fixed-unit report models remain separate.
+/// Strategy-settings trade filters (user request 25 Nov 2026), off by default (no key = the run unchanged).
+/// `penny` > 0: a trade whose signal-bar close (the entry bar for a close fill, else the bar before) is at or below it is
+/// dropped from the rule's own trade list; the rule is not re-run, so no later entry replaces it. `dead_stock=1`: no entry on
+/// the last bar, and a position still open there is sold at that bar's close (its existing mark, both sides' costs).
+fn trade_filters(q:&BTreeMap<String,String>)->Result<(f64,bool),String>{
+    let penny=match q.get("penny").map(|s|s.trim()).filter(|s|!s.is_empty()) {
+        None=>0.,
+        Some(s)=>s.parse::<f64>().ok().filter(|n|n.is_finite()&&*n>=0.&&*n<=1e6).ok_or("penny must be a price from 0 to 1000000")?,
+    };
+    let dead=match q.get("dead_stock").map(|s|s.trim()) {None|Some("")|Some("0")=>false,Some("1")=>true,_=>return Err("dead_stock must be 0 or 1".into())};
+    Ok((penny,dead))
+}
+fn apply_trade_filters(ctx:&Ctx,run:Run,(penny,dead):(f64,bool),cost:f64)->Result<Run,String>{
+    if penny<=0.&&!dead {return Ok(run);}
+    // option_account is set by every multi-position account backtest() returns: option chains, spreads (spread::run),
+    // ETF rotation and basket ranking (books::rotation::account / basket_account) and pyramids or overlapping units
+    // (books::units::run). Their equity is their own account's, so they are refused here and never rebuilt below.
+    if run.source_account.is_some()||run.bandy_account.is_some()||run.unit_exposure_report.is_some()||run.option_account.is_some()||futures::ctx_market(ctx).is_some() {
+        return Err("calculation_unavailable: Dead stock and penny stock settings apply to single-instrument stock, ETF and index runs; this strategy's reviewed account model does not take them.".into());
+    }
+    let (from,to)=(run.from,run.to);
+    let trades=run.trades.into_iter().filter(|t|{
+        let e=t.legs[0].i;
+        !(dead&&e>=to) && !(penny>0.&&ctx.c[if t.entry_kind=="close"{e}else{e.saturating_sub(1)}]<=penny)
+    }).map(|mut t|{if dead&&t.open {t.open=false;t.reason="dead stock: sold at the last close".into();}t}).collect();
+    normalized_run(ctx,trades,from,to,cost)
+}
+
 fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f64) -> Result<Run,String> {
     // lane F1 (R4 #293 (2)): on a futures context each trade is priced in the contract held at entry (unadjusted)
     let (trades,futures_close)=if futures::ctx_market(ctx).is_some() {let (t,c)=futures::raw_basis(ctx,trades)?;(t,Some(c))} else {(trades,None)};
@@ -615,7 +647,20 @@ fn full_precision_trade_return(v:f64)->String{
     if v.is_finite(){v.to_string()}else{"null".into()}
 }
 fn esc(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    // 20 Nov 2026: escape control characters too (a card note with a newline made the strategies endpoint invalid JSON)
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => o.push_str("\\\\"),
+            '"' => o.push_str("\\\""),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            '\t' => o.push_str("\\t"),
+            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o
 }
 fn stats_json(s: &BTreeMap<&str, f64>) -> String {
     let body: Vec<String> = s.iter().map(|(k, v)| format!("\"{k}\":{}", num(*v))).collect();
@@ -648,7 +693,7 @@ fn catalogue_json(guru: &str) -> String {
         .map(|d| {
             let gated = gate::get(d.id);
             let (status, why) = match d.status {
-                Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !instrument_policy::reviewed_cash_rule(d) => ("not_testable", gated.map_or("", |g| g.reason)),
+                Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !instrument_policy::reviewed_cash_rule(d) && !gate::india_reopened(d.id) => ("not_testable", gated.map_or("", |g| g.reason)),
                 // a held rule's plain-language card reason (instrument_policy::held_reason) replaces the generic review note
                 Status::Live if instrument_policy::held_reason(d.id).is_some() => ("not_testable", instrument_policy::held_reason(d.id).unwrap_or("")),
                 Status::Live if instrument_policy::policy(d).requirement=="source_review_required" => ("not_testable", "Source-specific rules and required instrument have not completed admission review; no backtest is published."),
@@ -683,6 +728,8 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     if q.get("id").is_some_and(|id| !cat.iter().any(|d| d.id==id)) { return Err("unknown strategy".into()); }
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
         let admitted=admit(ctx,d,from,to,&p,&selected,st,q);
+        // Q32b (lane K4): readiness only (the run path is untouched): the structural check the run will make, over the window the run will use
+        let admitted=admitted.and_then(|(s,e,a)|match window_start(ctx,d,s).filter(|&w|w<e).and_then(|w|readiness::structural_issue(ctx,d,w,e,&p)){Some(i)=>Err(i),None=>Ok((s,e,a))});
         let (start,end,auto)=admitted.as_ref().map_or((from,to,Auto::default()),|(s,e,n)|(*s,*e,n.clone()));
         let issue=admitted.err();
         let ready=format!("{}Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results.",auto.text());
@@ -1251,7 +1298,9 @@ fn summary_until(st: &State, q: &BTreeMap<String, String>, stop: &AtomicBool) ->
         let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
-        let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
+        // Q32b S1: step_by never reaches the last bar; chain it so the preview ends on the final equity (total_return = last equity - 1)
+        let last = run.equity.len().saturating_sub(1);
+        let spark: Vec<String> = run.equity.iter().enumerate().filter(|(i, _)| i % step == 0 || *i == last).map(|(_, v)| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
         rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, if run.unit_exposure_report.is_some(){unit_exposure_report::stats_json(&financial_stats(ctx,&run,costs))}else{stats_json(&financial_stats(ctx, &run, costs))}, spark.join(","),if run.unit_exposure_report.is_some(){unit_exposure_report::costs_json(costs)}else if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
@@ -1500,6 +1549,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
+    let run = apply_trade_filters(ctx,run,trade_filters(q)?,costs.side_rate())?;
     let to=run.to; // earlier than requested only when the account was wiped out (ruin_json)
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto.json());return Ok(output);
@@ -2198,12 +2248,16 @@ fn main() {
     // lane F1 (R4 #293): the US engine also serves Norgate continuous futures from futures/norgate-20200908 next to its price file
     // lane PE (R4 #319): the NYSE Composite context (Norgate $NYA close + volume), Holt's cards only
     if data.contains_key("SPX") { futures::load_nya(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); }
+    if data.contains_key("SPX") { futures::load_comp(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); } // lane U4 (Q30): Nasdaq Composite context
+    if data.contains_key("SPX") { futures::load_dow(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); } // lane K2 (R4 #394): Norgate $DJI 1896-2020 for the kpss cards
+    if data.contains_key("SPX") { futures::load_spx(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908"), &mut data); } // lane I2 (R4 #394): S&P 500 back to 1928 (Masonson 1950-95 windows)
     let futures_raw = if data.contains_key("SPX") { futures::load(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908"), &mut data) } else { BTreeMap::new() };
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
     nse_holidays::set_from(data.get("NIFTY 50"));
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
+    let _ = books::kets::EXTRA_DIR.set(extra_dir.clone()); // lane H3c: the sunspot calendar series (kets_solar) reads extra_data/SUNSPOTS.csv
     let mut extra = load_extra(&extra_dir);
     // lane I1: NSE F&O bhavcopy series (index futures open interest, stock-option put/call) from futures/nse-fo-bhavcopy-20261113
     // next to the India price file; India engine only, a missing folder loads nothing, an extra_data file of the same name wins
@@ -2216,6 +2270,7 @@ fn main() {
     // lane PF: the T-bond back-adjusted close for Meyers' T-bond & breadth system (dmtbb)
     if data.contains_key("SPX") { if let Some(m) = futures::load_tbond(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-20200908")) { extra.entry(("*".to_string(), futures::TBOND_SERIES.to_string())).or_insert(m); } }
     if data.contains_key("SPX") { for (k, v) in futures::load_index_highs(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-indices-20200908")) { extra.entry(k).or_insert(v); } } // lane PG: Dow averages' highs (stad7_dow)
+    if data.contains_key("NIFTY 50") { for t in &books::rbhetf::UNIVERSE[1..] { if let Some(rows) = data.get(*t) { extra.insert(("NIFTY 50".to_string(), books::rbhetf::idx_key(t)), rows.iter().map(|r| (r.date.clone(), r.close)).collect()); } } } // lane K3 (rbhetf): the other NSE indices ranked by ReIS, on the NIFTY 50 calendar
     futures::leg2_series(data, &mut extra); // lane P1: the second leg of a two-contract spread (&NQ on the &ES context)
     // lane P1: Chan's GLD/GDX pair reads GDX (Norgate, futures/norgate-us-etfs-20200908 next to the US price file) on the GLD context
     if data.contains_key("GLD") { if let Some(m)=books::ecqt::gdx_series(&std::path::Path::new(&csv).parent().unwrap_or(std::path::Path::new(".")).join("futures/norgate-us-etfs-20200908/GDX.csv")) {extra.entry(("GLD".into(),books::ecqt::GDX.into())).or_insert(m);} }
@@ -2290,6 +2345,11 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn esc_escapes_quotes_backslashes_and_control_characters() { // 20 Nov 2026: newline in a card note broke the strategies JSON
+        assert_eq!(super::esc("a\"b\\c\nd\te\r\u{1}"), "a\\\"b\\\\c\\nd\\te\\r\\u0001");
+    }
     use super::*;
     #[test]
     fn hv_exit_diagnostic_uses_actual_open_date_without_future_close_indicators() {
@@ -2818,6 +2878,27 @@ mod tests {
         assert_eq!(safe.to,29);assert!(ruin_json(&ctx,&safe).is_empty());
     }
     #[test]
+    fn dead_stock_and_penny_settings() {
+        // closes 5 on bars 0-9, then 20: a trade signalled at 5 is a penny trade at a 10 limit
+        let rows:Vec<Row>=(0..30).map(|i|{let c=if i<10{5.+i as f64*0.01}else{20.+i as f64*0.1};Row{ticker:"X".into(),date:format!("2020-01-{:02}",i+1),open:c,high:c,low:c,close:c,volume:None}}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        let t=|a:usize,b:usize,open:bool|Trade{dir:1.,legs:vec![connors::Leg{i:a,px:ctx.c[a],w:1.}],exit_i:b,exit_px:ctx.c[b],reason:if open{"open".into()}else{"close".into()},entry_kind:"close",signal_i:b,open,exits:vec![]};
+        let raw=vec![t(2,6,false),t(12,20,false),t(25,29,true)];
+        let base=normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap();
+        let q=|k:&str,v:&str|BTreeMap::from([(k.to_string(),v.to_string())]);
+        assert_eq!(trade_filters(&BTreeMap::new()).unwrap(),(0.,false));
+        assert!(trade_filters(&q("dead_stock","2")).is_err() && trade_filters(&q("penny","-1")).is_err());
+        let off=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),(0.,false),0.001).unwrap();
+        assert_eq!((off.trades,off.equity),(base.trades.clone(),base.equity.clone()),"off = the run unchanged");
+        let penny=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),trade_filters(&q("penny","10")).unwrap(),0.001).unwrap();
+        assert_eq!(penny.trades,raw[1..].to_vec(),"the trade signalled at a close of 5 is dropped");
+        let dead=apply_trade_filters(&ctx,normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap(),(0.,true),0.001).unwrap();
+        assert!(!dead.trades[2].open && dead.trades[2].reason=="dead stock: sold at the last close" && dead.trades[2].exit_i==29);
+        assert_eq!(dead.equity,base.equity,"selling at the last close is the open mark");
+        let last=apply_trade_filters(&ctx,normalized_run(&ctx,vec![raw[0].clone(),t(29,29,true)],0,29,0.001).unwrap(),(0.,true),0.001).unwrap();
+        assert_eq!(last.trades.len(),1,"no entry on the last bar");
+    }
+    #[test]
     fn equity_equals_compounded_trade_returns() {
         // Every live strategy on real data: the final equity must
         // equal the product of (1 + trade return). Catches any drift between trade P&L and the curve.
@@ -2841,6 +2922,14 @@ mod tests {
                 assert!(instrument_policy::check(d,"NIFTY 50",false).is_none());
                 assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
                 assert_eq!(readiness::check(&ctx,d,20,rows.len()-1,&Params::new()).unwrap().status,"needs_data");
+                other_path += 1;
+                continue;
+            }
+            if matches!(d.id, "maetf_rising_rates" | "maetf_yield_curve" | "maetf_composite_rates" | "vkyld_cash" | "jbtywr_wheat_0901" | "jbtywr_tbond_0418" | "jbtywr_hogs_1030") {
+                // lane K3: read FRED DGS10/DTB3/DGS30 (published series, R4 #372) or the unadjusted futures series (RAW.Close), which the NIFTY test price file does not hold:
+                // with no series there is no run, and the instrument policy admits SPX/SPY/DJI/DIA only, so readiness refuses NIFTY (not_testable).
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none(),"{}",d.id);
+                assert_eq!(readiness::check(&ctx,d,20,rows.len()-1,&Params::new()).unwrap().status,"not_testable","{}",d.id);
                 other_path += 1;
                 continue;
             }

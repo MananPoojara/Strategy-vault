@@ -1,7 +1,7 @@
 import {afterEach, expect, it, vi} from 'vitest';
 import {act} from 'react';
 import {createRoot, type Root} from 'react-dom/client';
-import {StrategyParameters, StrategySettings, stepValue} from '../src/components/StrategySettings';
+import {StrategySettings} from '../src/components/StrategySettings';
 import type {ReturnDisplayMode} from '../src/services/return-display';
 
 let root: Root | undefined;
@@ -101,31 +101,23 @@ it('the header close button dismisses without committing the draft', async () =>
   expect(onApply).not.toHaveBeenCalled();
 });
 
-it('steps a setting with the arrows by its own precision and stays inside its limits', () => {
-  const p = (def: number, extra = {}) => ({key: 'k', label: 'K', def, value: def, ...extra});
-  expect(stepValue(p(200), '200', 1)).toBe('201');
-  expect(stepValue(p(200), '200', -1)).toBe('199');
-  expect(stepValue(p(0.02), '0.02', 1)).toBe('0.03');
-  expect(stepValue(p(2.5, {step: 0.5}), '2.5', 1)).toBe('3');
-  expect(stepValue(p(10, {min: 10}), '10', -1)).toBe('10');
-  expect(stepValue(p(10, {max: 10}), '10', 1)).toBe('10');
-  expect(stepValue(p(10), '', 1)).toBe('11');
-});
-
-it('shows only the parameters in the page strip, and applies a changed value', async () => {
+it('the popup lists the parameters first, marks a changed one and runs the backtest with it', async () => {
   Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT: true});
   const onApply = vi.fn();
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
-  const settings = {params: [{key: 'rsi', label: 'RSI under', def: 10, value: 10}], assumptions: [['Fills', 'Next open']] as [string, string][]};
-  await act(async () => root!.render(<StrategyParameters settings={settings} onApply={onApply} />));
-  expect(host.querySelector('[data-strategy-params]')).not.toBeNull();
-  expect(host.textContent).not.toMatch(/Fixed quantity|Compounding|Next open/);
-  const apply = host.querySelector<HTMLButtonElement>('.strategy-settings-apply')!;
-  expect(apply.disabled).toBe(true);
-  await act(async () => host!.querySelector<HTMLButtonElement>('[aria-label="Increase RSI under"]')!.click());
-  expect(host.querySelector<HTMLInputElement>('input')!.value).toBe('11');
-  await act(async () => apply.click());
-  expect(onApply).toHaveBeenCalledExactlyOnceWith('rsi:11');
+  const backtest = {currency: '₹', equity: 1e6, sizeMode: 'fixed' as const, sizePct: 100, alloc: 1e6, brokerage: 0, slippage: 0, rollover: 0, deadStock: false, penny: 0, maxPositions: 1, basket: false};
+  const settings = {params: [{key: 'rsi', label: 'RSI under', def: 10, value: 10}], assumptions: [] as [string, string][], backtest};
+  await act(async () => root!.render(<StrategySettings onApply={onApply} settings={settings} />));
+  await act(async () => host!.querySelector<HTMLButtonElement>('[aria-label="Strategy settings"]')!.click());
+  expect([...dialog().querySelectorAll('.bt-section legend')].map(l => l.firstChild?.textContent?.trim()))
+    .toEqual(['Parameters', 'Account and position size', 'Costs', 'Trade filters']);
+  const input = dialog().querySelector<HTMLInputElement>('[data-param="rsi"] input')!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '11'); input.dispatchEvent(new Event('input', {bubbles: true})); });
+  expect(dialog().querySelector('[data-param="rsi"]')!.className).toContain('changed');
+  expect(dialog().querySelector('[data-param="rsi"] small')!.textContent).toBe('Changed · book default 10');
+  const run = button('Run backtest');
+  await act(async () => run.click());
+  expect(onApply).toHaveBeenCalledExactlyOnceWith('fixed', 'rsi:11');
 });
 
 it('the popup leaves parameters to the page when asked, keeping the Net Profit mode and assumptions', async () => {

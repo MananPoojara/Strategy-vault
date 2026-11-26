@@ -8,7 +8,7 @@
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["kftsm_parabolic", "kftsm_donchian_4wk", "kftsm_moon", "kftsm_multi_tf"];
+pub const REVIEWED: &[&str] = &["kftsm_parabolic", "kftsm_donchian_4wk", "kftsm_moon", "kftsm_multi_tf", "kftsm_weekly_channel"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "kftsm";
@@ -30,7 +30,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"EXP=EXP[1]+s*(close-EXP[1]) ... BUY if EXPchange > 0, SELL if EXPchange < 0\" (Table 8.2, p.278)",
             "E|KEXP (printed p.287) / TSMExpSignal (CD): Exp = SmoothedAverage(close,period); change = (Exp - Exp[1])*100/close[1]; buy/sell at close when change[lag] > filter / < -filter",
             "X|Always in the market, reverse on the opposite signal, no stops (p.278)",
-        ], "The CD calls TradeStation SmoothedAverage; this research convention seeds its first full value with the n-bar mean, then uses (prev*(n-1)+close)/n. The supplied call does not specify platform MaxBarsBack or initialization history, so this convention is declared rather than certified platform parity. p.kind=1 uses s = 2/(n+1) (the Ch 7 conversion, p.278 'when 2/(n + 1) is used'), p.kind=2 uses s = 1/(n+1) (the CD spreadsheet code, TSM(E) Trend systems.txt). Period: the CD system input is 0 (must be set) and the book gives no single value; 20 is used, the companion MA/LRS/NDB CD default [book silent]."),
+        ], "The CD calls TradeStation SmoothedAverage; this research convention seeds its first full value with the n-bar mean, then uses (prev*(n-1)+close)/n. The supplied call does not specify platform MaxBarsBack or initialization history, so this convention is declared rather than certified platform parity. p.kind=1 uses s = 2/(n+1) (the Ch 7 conversion, p.278 'when 2/(n + 1) is used'), p.kind=2 uses s = 1/(n+1) (the CD spreadsheet code, TSM(E) Trend systems.txt). Period: the CD system input is 0 (must be set) and the book gives no single value; 20 is used, the companion MA/LRS/NDB CD default [book silent]. [Unstated choices, honest count 3 (R4 #400/#408)] (1) the SmoothedAverage is seeded with the n-bar mean; (2) period 20 is used, the book being silent; (3) the kind default alpha is taken when no kind is given."),
         d("kftsm_lrs", "Linear regression slope", "Ch 8 · Comparison of major trend systems", "Long/Short", Live, &[
             "E|\"LRS = (n*Sum(x*c) - Sum(x)*Sum(c)) / (n*Sum(x*x) - Sum(x)*Sum(x)) ... BUY if LRS > 0, SELL if LRS < 0\" (Table 8.2, p.278)",
             "E|TSMLRslope + TSMLRSsignal (CD Ch08; printed KLRS/KLRSignal p.287-288): buy/sell at close when slope[lag] > filter / < -filter. TSM LinReg slope inputs period(20), filter(0), lag(0)",
@@ -66,7 +66,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"IF CLOSE CROSSES ABOVE outupper THEN BUY 2 CONTRACTS NEXT BAR AT MARKET\" outupper = BollingerBand(close,21,2); short mirror (TSM FC Bollinger ABX, F. Cavasino, CD Ch08)",
             "X|\"IF CLOSE CROSSES BELOW inupper THEN EXITLONG 1 CONTRACT NEXT BAR AT MARKET\" inupper = BollingerBand(close,21,1)",
             "X|\"IF CLOSE CROSSES BELOW mavg THEN EXITLONG 1 CONTRACT NEXT BAR AT MARKET\" mavg = Average(close,21)",
-        ], "CD length21, outer2 SD, inner1 SD. Two contracts are represented by equal halves of a single research allocation; this is not contract-dollar accounting. No pyramiding. Inner and midpoint crossings each close one remaining half at the next open; simultaneous crossings close both. An opposite entry closes any remainder and starts two new halves at that open. A terminal remainder is marked, not liquidated; its final exit piece is a mark identified by open=true. A final-close signal has no next-open fill. Independent selected-baseline ledger scope: library/kaufman/REVIEW-2026-10-13-ADAPTIVE.md."),
+        ], "CD length21, outer2 SD, inner1 SD. Two contracts are represented by equal halves of a single research allocation; this is not contract-dollar accounting. No pyramiding. Inner and midpoint crossings each close one remaining half at the next open; simultaneous crossings close both. An opposite entry closes any remainder and starts two new halves at that open. A terminal remainder is marked, not liquidated; its final exit piece is a mark identified by open=true. A final-close signal has no next-open fill. Independent selected-baseline ledger scope: library/kaufman/REVIEW-2026-10-13-ADAPTIVE.md. [Unstated choices, honest count 5 (R4 #400/#408)] (1) two contracts are represented by equal halves; (2) the inner and midpoint crossings each close one half; (3) an opposite entry closes the remainder; (4) a terminal remainder is marked; (5) no pyramiding."),
         d("kftsm_ma_pct_band", "Moving average with percent bands", "Ch 8 · Bands and channels", "Long/Short", Live, &[
             "E|\"if close > ma + band then buy on close; if close < ma - band then sell on close\" band = ma*pcband/100 (TSM MA percent bands, CD Ch08, period(20), pcband(2.0)); p.267-268",
             "X|Reversal: always in once started",
@@ -88,12 +88,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|osc = MA(3) - MA(10), trend = MA(osc,16); after trend crosses above 0 (below 0) wait for the first pullback (TSM Raschke 1st Cross, CD Ch08; p.276)",
             "E|\"if owait = 0 and fastosc[1] > trend and fastosc <= trend then owait = -1; if owait = -1 and low > low[1] then buy on close\" (short mirror with high < high[1])",
             "X|\"X1. close t-1 > close t-2 close of bar turns up (confirms trend) X2. close t < close t-1 X3. exit long\" (p.276) = CD stage logic",
-        ], "CD defaults3/10/16, vfilter0; unused nvlty is omitted because its volatility test is commented out. The printed S1 typo is resolved by the CD >= comparison. Exit is Kaufman's suggested completion, not an exit supplied by Raschke. State comparisons use the position before today's close orders; a simultaneous opposite entry and old-position exit resolve as one reversal at that same close. Flat at the selected start; prior bars warm setup state. Only selected-baseline source-rule/ledger verification is claimed."),
+        ], "CD defaults3/10/16, vfilter0; unused nvlty is omitted because its volatility test is commented out. The printed S1 typo is resolved by the CD >= comparison. Exit is Kaufman's suggested completion, not an exit supplied by Raschke. State comparisons use the position before today's close orders; a simultaneous opposite entry and old-position exit resolve as one reversal at that same close. Flat at the selected start; prior bars warm setup state. Only selected-baseline source-rule/ledger verification is claimed. [Unstated choices, honest count 5 (R4 #400/#408)] (1) the exit is Kaufman's completion, not Raschke's; (2) the S1 typo is resolved as >=; (3) a simultaneous opposite entry and exit make one reversal; (4) the system is flat at the selected start with warm-up state; (5) nvlty is omitted."),
         d("kftsm_keltner", "Keltner 10-day moving average rule", "Ch 8 · Applications of single trends", "Long/Short", Live, &[
             "E|\"a 10-day moving average based on the average of the daily high, low, and closing prices, with a band on each side formed from the 10-day moving average of the high-low range. A buy signal occurs on penetration of the upper band and a sell signal when the lower band is broken; positions are always reversed.\" (p.273)",
             "F|Penetration = close: \"Buy (close out shorts and go long) when the price penetrates (closes above) the upper band\" (Rules for using bands, p.269)",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Bands from today's 10-day values, signal on the close, order at the close (book's convention for close-based rules, p.263)."),
+        ], "Bands from today's 10-day values, signal on the close, order at the close (book's convention for close-based rules, p.263). [Unstated choices, honest count 3 (R4 #400/#408)] (1) the band width is the 10-day MA of the range with multiplier 1; (2) the bands use today's 10-day values, today included; (3) the order is placed at the close."),
         d("kftsm_parabolic", "Parabolic Time/Price System (Wilder)", "Ch 8/17 · Parabolic", "Long/Short", Live, &[
             "E|\"always in the market; whenever a position is closed out, it is also reversed ... A reversal will occur on a new intraday low that penetrates the SAR\" (p.274-275)",
             "F|SAR = SAR[1] + AF*(extreme - SAR[1]); AF starts .02, +.02 on each new extreme, max .20; SAR never inside the last two bars' range (p.274-275; TSMParabolic, CD Ch17)",
@@ -104,7 +104,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. Buy on the close of an outside day if the close is above the prior high; sell if the close is below the prior low.\" (Arnold, p.125)",
             "X|\"2. If buying, place a stop-loss just below the low of the outside day; if selling, place the stop just above the high.\" (p.125)",
             "X|\"3. Close out the position on the close three days after entry.\" (p.125)",
-        ], "Reviewed baseline follows PDF125: length1, hold3, outside-day extreme stop. Entry is at the completed outside day's close; its stop first becomes active next day, so the entry day's earlier low/high cannot stop it. The omitted tick offset is explicitly adapted to strict penetration with boundary fill, or observed open if gapped. Stop precedes the later close/time orders. Same-direction signals do not pyramid or reset the holding clock/stop; opposite close signals reverse. length/hold/stop_ref variations are research variants: stop_ref1 changes the boundary to the prior range, but does not claim literal CD parity (CD2/2 also resets entrybar on repeated signals)."),
+        ], "Reviewed baseline follows PDF125: length1, hold3, outside-day extreme stop. Entry is at the completed outside day's close; its stop first becomes active next day, so the entry day's earlier low/high cannot stop it. The omitted tick offset is explicitly adapted to strict penetration with boundary fill, or observed open if gapped. Stop precedes the later close/time orders. Same-direction signals do not pyramid or reset the holding clock/stop; opposite close signals reverse. length/hold/stop_ref variations are research variants: stop_ref1 changes the boundary to the prior range, but does not claim literal CD parity (CD2/2 also resets entrybar on repeated signals). [Unstated choices, honest count 5 (R4 #400/#408)] (1) the omitted tick offset becomes strict penetration with a boundary fill; (2) the stop is active from the next day; (3) the stop precedes the later close/time orders; (4) same-direction signals do not pyramid or reset; (5) an opposite close signal reverses."),
         d("kftsm_donchian_4wk", "Donchian Four-Week Rule", "Ch 5 · N-day breakout", "Long/Short", Live, &[
             "E|\"1. Go long (and cover shorts) when the current price exceeds the highs of the previous four full calendar weeks.\" (p.177)",
             "E|\"2. Sell short (and liquidate longs) when the current price falls below the lows of the previous four full calendar weeks.\" (p.177)",
@@ -115,27 +115,27 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|KAMA = KAMA[1] + sc*(close - KAMA[1]); sc = [ER*(fastest - slowest) + slowest]^2, fastest = 2/(2+1), slowest = 2/(30+1), ER over 10 periods (p.603-605; TSMKAMA CD Ch17: fastend .666, slowend .0645)",
             "E|\"if currentbar > period+5 and absvalue(change) > sdfilter*SD and absvalue(trend - trend[1]) > mfilter then: if trend > trend[1] and signal <> 1 then buy on close; if trend < trend[1] and signal <> -1 then sell on close\" change = trend - trend[1], SD = stddev(change[1],20) (TSM Adaptive systems, CD Ch17, system(1), period(10), mfilter(0), sdfilter(.1))",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "CD driver defaults period10, sdfilter.1, mfilter0; CD function constants.666/.0645, not rounded prose replacements. First observed close seed; unavailable initial ER history uses ER1. The CD assumes platform prehistory/MaxBarsBack that is not supplied: this initial-history convention is declared. Zero noise retains the CD ER1. Filter SD is population SD of the previous20 trend changes, excluding today's change. Nonzero mfilter is an instrument-local point research threshold, not a converted USD amount. Selected baselines only, no original-study reproduction."),
+        ], "CD driver defaults period10, sdfilter.1, mfilter0; CD function constants.666/.0645, not rounded prose replacements. First observed close seed; unavailable initial ER history uses ER1. The CD assumes platform prehistory/MaxBarsBack that is not supplied: this initial-history convention is declared. Zero noise retains the CD ER1. Filter SD is population SD of the previous20 trend changes, excluding today's change. Nonzero mfilter is an instrument-local point research threshold, not a converted USD amount. Selected baselines only, no original-study reproduction. [Unstated choices, honest count 4 (R4 #400/#408)] (1) the seed is the first observed close; (2) unavailable initial ER history uses ER1; (3) zero noise retains ER1; (4) the filter SD is the population SD of the previous 20 trend changes, excluding today."),
         d("kftsm_adapt_exp", "Adaptive driver: exponential benchmark", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|\"system = 0, exponential smoothing benchmark\": trend = SmoothedAverage(close,period) (TSM Adaptive systems, CD Ch17)",
             "E|Same standard-deviation-filtered direction rules as kftsm_kama",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "CD driver period10, sdfilter.1, mfilter0. SmoothedAverage has no supplied platform initialization: first full-period mean and alpha1/period are the declared engine convention. Previous20 trend changes supply the population SD filter. This filtered driver is distinct from the unfiltered Chapter8 benchmark. Selected-baseline verification only."),
+        ], "CD driver period10, sdfilter.1, mfilter0. SmoothedAverage has no supplied platform initialization: first full-period mean and alpha1/period are the declared engine convention. Previous20 trend changes supply the population SD filter. This filtered driver is distinct from the unfiltered Chapter8 benchmark. Selected-baseline verification only. [Unstated choices, honest count 2 (R4 #400/#408)] (1) the SmoothedAverage seed is the first full-period mean with alpha 1/period; (2) the filter SD is the population SD of the previous 20 trend changes."),
         d("kftsm_vidya", "Adaptive driver: Chande VIDYA", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|VIDYA = k*sc*close + (1 - k*sc)*VIDYA[1], k = stddev(close,period)/stddev(close,histper), sc = 2/(period+1) (TSMVIDYA, CD Ch17; p.606)",
             "E|system = 3, TSMVIDYA(period, per2) with the kftsm_kama direction rules (TSM Adaptive systems, period(10), per2(50), sdfilter(.1))",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "CD driver period10, per2=50, sdfilter.1, mfilter0. Full historical volatility window is required; first complete window seeds with its observed close and earlier values stay unavailable. Later zero historical variance carries the prior trend without a signal (declared 0/0 convention). No volatility-ratio clipping. histper must exceed period. The CD has no MaxBarsBack settings, so initial-history parity with TradeStation is not certified. Selected-baseline verification only."),
+        ], "CD driver period10, per2=50, sdfilter.1, mfilter0. Full historical volatility window is required; first complete window seeds with its observed close and earlier values stay unavailable. Later zero historical variance carries the prior trend without a signal (declared 0/0 convention). No volatility-ratio clipping. histper must exceed period. The CD has no MaxBarsBack settings, so initial-history parity with TradeStation is not certified. Selected-baseline verification only. [Unstated choices, honest count 3 (R4 #400/#408)] (1) the first complete histper window seeds with the observed close; (2) zero historical variance carries the prior trend (0/0 convention); (3) no volatility-ratio clipping is applied."),
         d("kftsm_adapt_r2", "Adaptive driver: correlation R2 trend", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|AR2 = AR2[1] + R2*(close - AR2[1]), R2 = power(correlation(currentbar, close, period), 2) (TSMAdaptiveR2, CD Ch17)",
             "E|system = 2 with the kftsm_kama direction rules (TSM Adaptive systems, period(10), sdfilter(.1))",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "CD function uses squared Pearson price/time correlation, not the printed (r+1)/2 or residual-series variant on PDF608. Until a full correlation window exists, observed closes seed the trend; zero price variance uses R2=0 and carries the prior trend. These unavailable-history/degeneracy conventions are explicit; original MaxBarsBack parity is not certified. Driver defaults10/.1/0 and previous20-change population SD filter. Selected-baseline verification only."),
+        ], "CD function uses squared Pearson price/time correlation, not the printed (r+1)/2 or residual-series variant on PDF608. Until a full correlation window exists, observed closes seed the trend; zero price variance uses R2=0 and carries the prior trend. These unavailable-history/degeneracy conventions are explicit; original MaxBarsBack parity is not certified. Driver defaults10/.1/0 and previous20-change population SD filter. Selected-baseline verification only. [Unstated choices, honest count 5 (R4 #400/#408)] (1) the squared Pearson correlation is used instead of the printed variant; (2) observed closes seed the trend until a full window exists; (3) zero price variance gives R2 = 0 and carries the prior trend; (4) the driver defaults are 10 and .1; (5) the SD filter is the population SD of the previous 20 changes."),
         d("kftsm_adapt_rsi", "Adaptive driver extension: Wilder RSI trend", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|TSMAdaptiveRSI (CD Ch17): sc = absvalue(RSI(close,period)/100 - .5)*2; ARSI = ARSI[1] + sc*(close - ARSI[1]); first bar ARSI=close (PDF608-609)",
             "E|The CD Adaptive systems introduction explicitly describes adding Adaptive RSI by inserting its function call into the driver. Apply the same prior20-change SD filter and close direction orders as the supplied four systems.",
             "X|Close reversal on the next opposite eligible trend change; no added stop, target, sizing or portfolio rule.",
-        ], "Author-described driver extension, not a fifth selector supplied in the CD system. Configurable period10/sdfilter.1/mfilter0 inherit the driver defaults; the printed indicator uses20. Reuse engine Wilder RSI: first n actual changes seed gain/loss means; flat gain/loss gives RSI50. ARSI starts at the first close and carries until RSI exists. These absent-platform-history/zero-loss conventions are explicit, not TradeStation initialization parity. Selected-baseline verification only."),
+        ], "Author-described driver extension, not a fifth selector supplied in the CD system. Configurable period10/sdfilter.1/mfilter0 inherit the driver defaults; the printed indicator uses20. Reuse engine Wilder RSI: first n actual changes seed gain/loss means; flat gain/loss gives RSI50. ARSI starts at the first close and carries until RSI exists. These absent-platform-history/zero-loss conventions are explicit, not TradeStation initialization parity. Selected-baseline verification only. [Unstated choices, honest count 5 (R4 #400/#408)] (1) the driver extension is not in the CD selector; (2) the SD filter uses the prior 20 changes; (3) period 10 is used against the printed 20; (4) Wilder RSI seeding; (5) a flat RSI = 50 and ARSI starts at the first close."),
         // ------------------------------------------------ Ch 21 Hochheimer studies and CD crossovers
         d("kftsm_hh_ma", "Hochheimer single moving average (close penetration)", "Ch 21 · Comprehensive studies", "Long/Short", Live, &[
             "E|\"2. A buy signal occurred on an upwards penetration of the moving average by the closing price; a sell signal occurred on a downward penetration\" \"1. The trend calculation used the closing price only.\" (p.747)",
@@ -183,16 +183,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|After the first hour, while time of data2 < Sess1EndTime: \"if close[1] < Sess1FirstBarHigh then buy at Sess1FirstBarHigh + 20 point stop; if close[1] > Sess1FirstBarLow then sell at Sess1FirstBarLow - 20 point stop\" on 10-minute bars (CD); do not allow multiple entries in the same direction (stop and reverse)",
             "X|\"if low <= Sess1FirstBarHigh - avedayrange then exitshort at market; if high >= Sess1FirstBarLow[1] + avedayrange then exitlong at market\" (CD); positions are held from day to day (McNutt, S&C V.12:7 p.282)",
         ], concat!("[Declared reading] '20 point' = 0.20 S&P index points: McNutt's source article (Technical Analysis of Stocks & Commodities V.12:7, July 1994, p.282, the code's cited origin) prints \"20 points ($100 for the Standard & Poor's index)\" on the $500-a-point contract; run on SPX only (decision 196(2)), NOT the futures contract. ",
-            "[intraday EP, K42] Session-aligned 10-minute bars and the first 60-minute bar built from real 1-minute bars (09:30-16:00 ET), one continuous series across days (positions and the first-hour levels carry overnight); DATA3 = the vault's daily bars (the last completed day). Orders placed at a 10-minute close work in the next bar: market exits at its open, then the stops walked minute by minute (fill at the stop, or the minute's open when it opened through it), one entry per bar; a minute reaching both stops while flat: the one nearer its open first [convention, counted]. ",
-            "Kaufman's CD code is a simplified version of McNutt's rules (his anticipated-range reversals, 300/140-point stops and profit trail are not in the code); the code is run as printed. The book traded S&P futures; cash-index shorts are hypothetical. No costs.")),
+            "[intraday EP, K42] Session-aligned 10-minute bars and the first 60-minute bar built from real 1-minute bars (09:30-16:00 ET), one continuous series across days (positions and the first-hour levels carry overnight); DATA3 = the vault's daily bars (the last completed day). Orders placed at a 10-minute close work in the next bar: market exits at its open, then the stops walked minute by minute (fill at the stop, or the minute's open when it opened through it), one entry per bar; a minute reaching both stops while flat: the one nearer its open first [convention, counted in the last sentence of this note]. ",
+            "Kaufman's CD code is a simplified version of McNutt's rules (his anticipated-range reversals, 300/140-point stops and profit trail are not in the code); the code is run as printed. The book traded S&P futures; cash-index shorts are hypothetical. No costs. [Unstated choices, honest count 6 (R4 #400/#408)] (1) '20 point' is read as 0.20 S&P points on SPX; (2) session-aligned 10-minute bars and the first 60-minute bar are built from 1-minute bars as one continuous series; (3) DATA3 is the last completed daily bar; (4) orders at a 10-minute close work in the next bar, market exits at the open then stops minute by minute, one entry per bar; (5) a minute reaching both stops while flat takes the one nearer its open first; (6) the code is run as printed, the McNutt extras being omitted.")),
         d("kftsm_zones", "Jackson trading zones", "Ch 18 · Zones", "Long/Short", Live, &[ // intraday EP block (K48): run in books/n1intra2.rs
             "F|\"if date <> date[1] then begin avghlc = (high of data2 + low of data2 + close of data2) / 3.; avg = average(avghlc,length); top = highest(high of data2,length); bot = lowest(low of data2,length); high2 = avg[1] + top[1] - bot[1]; high1 = 2*avg[1] - bot[1]; low1 = 2*avg[1] - top[1]; low2 = avg[1] + bot[1] - top[1]; midpt = (high1 + low1) / 2.\" length 1, DATA1 10-minute, DATA2 daily (TSM(S) Zones.txt, CD Ch18, after J. T. Jackson 1994); \"six trading zones based entirely on yesterday's prices\" (the CD's text)",
             "E|\"if low <= low1 and low[1] > low1 then begin buy at close; exitlong at low2 stop; exitlong at midpt limit; end else if high >= high1 and high[1] < high1 then begin sell at close; exitshort at high2 stop; exitshort at midpt limit\"",
             "X|\"if marketposition = 1 then begin exitlong at low2 stop; exitlong at midpt limit\"; short mirror at high2 / midpt; no time exit in the code: a position stays open across days until a stop, the midpoint or an opposite entry (TradeStation 'buy'/'sell' reverse)",
             "A|Read: session-aligned 10-minute bars from the 1-minute file, one continuous series across days; DATA2 = the vault's daily bar of the previous trading day. The printed code builds the zones from avg[1]/top[1]/bot[1], variables held on the 10-minute DATA1 series, so at the day's first 10-minute bar TradeStation uses the values set at the previous session's first bar, i.e. the daily bar two sessions back. Decision 221 (code over prose, the platform's literal behaviour): that is the default (lag=1); option lag=0 builds them from yesterday's daily bar, as the CD text says ('based entirely on yesterday's prices') [labelled option]. Orders placed at a 10-minute close work in the next bar (the first bar of a day still uses the previous day's zones, as placed). No fixed amounts: SPY, SPX, NIFTY 50, NIFTYBANK as a declared application (Kaufman: futures). Decision #177a re-run on the lag=1 default (lane K50, 2014-01-02..2025-10-21): not flagged (average trade SPY -0.0257% vs SPX -0.0275%, compounded -42.5% vs -42.8%), so the minute result is published on all four tickers; NIFTY cash-index minutes; the same rule passed the tradable-vs-cash check on SPY/SPX.",
             crate::books::n1intra2::MIN,
-        ], "No published results for the code (Kaufman: 'Readers are encouraged to study this technique'). No costs in the vault's run. Cash-index shorts are hypothetical."),
-        d("kftsm_event_trading", "Economic event trading (Warwick)", "Ch 14 · Event trading", "Long/Short", NeedsData("dated economic releases (durable goods, CPI, PPI, NAPM, GDP, employment) with expectations"), &[
+        ], "No published results for the code (Kaufman: 'Readers are encouraged to study this technique'). No costs in the vault's run. Cash-index shorts are hypothetical. [Unstated choices, honest count 5 (R4 #400/#408)] (1) lag = 1 is the default (code over prose); (2) session-aligned 10-minute bars form one continuous series; (3) DATA2 is the previous trading day's daily bar; (4) orders at a 10-minute close work in the next bar; (5) the minute path ordering and its ambiguity convention."),
+        d("kftsm_event_trading", "Economic event trading (Warwick)", "Ch 14 · Event trading", "Long/Short", NeedsData("dated economic releases with expectations: CPI release dates are held, but durable goods, PPI, NAPM, GDP and employment dates and the consensus expectations are not; the holding period and stop are also left to the trader (p.483)"), &[
             "E|\"Buy on the close if the market closes in the upper 20% of the trading range on an event day, and if prices have shown an historic continuation pattern\" (p.483)",
             "X|\"Hold for a predetermined number of days\" \"Use a stop-loss\" (p.483)",
         ], "Holding period and stop are left to the trader as well: also not fully specified."),
@@ -203,8 +203,12 @@ d("kftsm_trix", "Hutson triple smoothing (TRIX)", "Ch 8/9 · Triple smoothing", 
             "F|\"Substituting the log of the price to account for growth, he applied an exponential smoothing three times using the same smoothing constant.\" (p.273)",
             "E|\"A buy signal was generated when the triple-smoothed trendline rose for two consecutive days\" (p.273)",
             "X|\"a sell signal followed a two-day decline in the trendline\" (p.273)",
-        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) the smoothing period and the seed, 'less than a 20-day equivalent when 2/(n + 1) is used': vault reading n = 10 (p.period; alpha = 2/(n+1)) and all three averages start at the first log close (a warm-up convention, the book gives none); (2) the order and fill: vault reading = at the close of the second consecutive rise (fall); (3) whether the sell signal exits or reverses: vault reading = stop-and-reverse (always in the market after the first signal, as the chapter's other trend systems); (4) a day that is neither a second rise nor a second fall (one up one down, or an exact tie): vault reading = hold the position. Declared application on index, ETF and stock daily closes. The book prints no result for it."),
-        d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", NotTestable("N weeks not given"), &["E|\"Buy if the closing price on Friday exceeds the highest closing price of the past N weeks\" (p.178)"], ""),
+        ], "[R1-1116, R4 #297/#339: adapted, 5 unstated details (honest count, R4 #400/#408), UNVERIFIED] Unstated in the book: (1) the smoothing period and the seed, 'less than a 20-day equivalent when 2/(n + 1) is used': vault reading n = 10 (p.period; alpha = 2/(n+1)) and all three averages start at the first log close (a warm-up convention, the book gives none); (2) the order and fill: vault reading = at the close of the second consecutive rise (fall); (3) whether the sell signal exits or reverses: vault reading = stop-and-reverse (always in the market after the first signal, as the chapter's other trend systems); (4) a day that is neither a second rise nor a second fall (one up one down, or an exact tie): vault reading = hold the position. Declared application on index, ETF and stock daily closes. The book prints no result for it. [Unstated choices, honest count 5 (R4 #400/#408)] (1) the period n = 10 and alpha = 2/(n+1); (2) all three averages are seeded with the first log close; (3) the fill is at the close of the second consecutive rise or fall; (4) a sell reverses the position (stop-and-reverse); (5) a day that is neither (a tie) holds the position."),
+        d("kftsm_weekly_channel", "Weekly price channel (Hochheimer)", "Ch 5 · N-day breakout", "Long/Short", Live, &[
+            "E|\"Buy (and close out shorts) if the closing price on Friday exceeds the highest closing price of the past N weeks.\" (p.178)",
+            "E|\"Sell short (and close out longs) if the close on Friday is below the lowest closing price of the past N weeks.\" (p.178)",
+            "X|\"Because this model is always in the market\" (p.178): a position is closed only by the opposite signal, which reverses it; \"even if penetrated, the position is not liquidated until the close of Friday\"",
+        ], "Q391 re-open (lane K3, 24 Nov 2026): the book leaves N open (Hochheimer tested several); labelled readings (3): (1) N = 4 weeks by default (the book's four-week rule of the same section; p.weeks changes it); (2) 'Friday' = the last session of each calendar week in the data (the book: 'a number of weeks end on Thursday due to holidays'), the 'closing price of the past N weeks' = the closes of the last sessions of the N weeks before the current one; (3) the signal is taken at that close, a fill at the close of the week-ending session. Book-printed results are for Hochheimer's 1982 futures study (no figure given)."),
         d("kftsm_4wk_final3m", "Four-Week Rule, final three months", "Ch 5 · N-day breakout", "Long/Short", NeedsData("individual futures contracts with delivery months"), &["E|Plot the four-week high/low from 3 months before delivery, 2.5% stop, exit the last day of the month before delivery (p.177)"], ""),
         d("kftsm_dunnigan", "Dunnigan thrust / one-way formula", "Ch 4 · Dunnigan", "Long/Short", NotTestable("'predetermined percentage' and thrust size per market not given"), &["E|Two of four patterns followed by a thrust (p.121-122)"], ""),
         d("kftsm_nofri", "Nofri congestion-phase system", "Ch 4 · Nofri", "Long/Short", NotTestable("congestion area needs judgement ('almost unchanged', 'adequate time has elapsed')"), &["E|In a congestion range after two closes in the same direction take the opposite position on the close; exit the next close (p.124)"], ""),
@@ -213,7 +217,7 @@ d("kftsm_moving_channel", "Moving channel (midpoint + range)", "Ch 4 · Moving c
             "F|\"the average of the high, low, and close to designate the center of the channel ... the upper and lower bands are constructed using the average daily range. The midpoint of the price move M and range R can be calculated over the past n days\" (p.135); the bands forecast for the next day: U(t+1) = M(t) + (M(t) - M(t-1)) + w R(t), L(t+1) = M(t) + (M(t) - M(t-1)) - w R(t)",
             "E|\"A long position is taken when the new price P(t+1) > U(t+1); a short is taken when P(t+1) < L(t+1).\" (p.135)",
             "X|The profit objective is optional (\"If a channel profit objective is needed\", 2wR beyond the band): not coded; the position is held until the opposite band is broken",
-        ], "[R1-1116, R4 #297/#339: adapted, 4 unstated details, UNVERIFIED] Unstated in the book: (1) n, the number of days: vault reading n = 20 (p.n); (2) the scaling factor w: vault reading w = 1.0 (p.w); (3) how a band break is traded: vault reading = a stop order at the band computed on the prior day's data, filled at the band, or at the open when the open is already beyond it, and when one bar breaks both bands the band nearer the open is taken (upper on a tie; the order within the bar is unknown, counted for #240 in the gate text); (4) the exit: vault reading = stop-and-reverse at the opposite band (always in the market after the first break; the optional profit objective is not coded). Stated and read literally: M = n-day average of (high + low + close)/3, R = n-day average of (high - low). Declared application on index, ETF and stock daily bars."),
+        ], "[R1-1116, R4 #297/#339: adapted, 5 unstated details (honest count, R4 #400/#408), UNVERIFIED] Unstated in the book: (1) n, the number of days: vault reading n = 20 (p.n); (2) the scaling factor w: vault reading w = 1.0 (p.w); (3) how a band break is traded: vault reading = a stop order at the band computed on the prior day's data, filled at the band, or at the open when the open is already beyond it, and when one bar breaks both bands the band nearer the open is taken (upper on a tie; the order within the bar is unknown, counted for #240 in the gate text); (4) the exit: vault reading = stop-and-reverse at the opposite band (always in the market after the first break; the optional profit objective is not coded). Stated and read literally: M = n-day average of (high + low + close)/3, R = n-day average of (high - low). Declared application on index, ETF and stock daily bars. [Unstated choices, honest count 5 (R4 #400/#408)] (1) n = 20; (2) w = 1.0; (3) a band-break stop fills at the band or at the open; (4) when both bands break in one bar the nearer to the open is taken; (5) the exit is stop-and-reverse, the profit objective not being coded."),
         d("kftsm_momentum_fade", "Momentum extremes fade", "Ch 9 · Momentum", "Long/Short", NotTestable("bands 'selected visually'; no span or threshold given"), &["E|Aggressive / minor / major confirmation entries; exit when momentum reaches zero (p.315-316)"], ""),
         d("kftsm_macd_threshold", "MACD crossover with thresholds", "Ch 9 · MACD", "Long/Short", NotTestable("thresholds 'based on observing the MACD movement for less than one year' on one chart"), &["E|Sell only after MACD above +2.00, buy only below -2.00 (p.318-319)"], ""),
         d("kftsm_holiday", "Pre-holiday strategy (Fosback)", "Ch 10 · Seasonality", "Long", NotTestable("'major holiday' list not defined"), &["E|\"bought two days prior to a major holiday and exited on the day prior to the holiday\" (p.374)"], ""),
@@ -324,6 +328,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_parabolic" => vec![p("afmin", "Starting AF", 0.02, 0.01, 0.1, 0.01), p("afinc", "AF increment", 0.02, 0.01, 0.1, 0.01), p("afmax", "Maximum AF", 0.2, 0.05, 0.5, 0.01)],
         "kftsm_outside_day" => vec![p("length", "Prior range (days)", 1., 1., 5., 1.), p("hold", "Exit on the close N days after entry", 3., 1., 10., 1.), p("stop_ref", "Stop: 0 outside day's extreme (text), 1 prior range (CD code)", 0., 0., 1., 1.)],
         "kftsm_donchian_4wk" => vec![p("weeks", "Calendar weeks", 4., 1., 12., 1.)],
+        "kftsm_weekly_channel" => vec![p("weeks", "Weeks in the channel (book: N, not given; labelled 4)", 4., 1., 26., 1.)],
         "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_adapt_r2" | "kftsm_adapt_rsi" => adapt(vec![]),
         "kftsm_vidya" => adapt(vec![p("per2", "VIDYA history period", 50., 10., 200., 1.)]),
         "kftsm_hh_ma" => vec![p("period", "MA period", 35., 2., 200., 1.)],
@@ -751,6 +756,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kftsm_parabolic" => parabolic(x, from, to, g("afmin"), g("afinc"), g("afmax")),
         "kftsm_outside_day" => outside_day(x, from, to, u("length").max(1), u("hold").max(1), u("stop_ref") == 1),
         "kftsm_donchian_4wk" => donchian_weeks(x, from, to, u("weeks").max(1) as i64),
+        "kftsm_weekly_channel" => weekly_channel(x, from, to, u("weeks").max(1)),
         "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_vidya" | "kftsm_adapt_r2" | "kftsm_adapt_rsi" => {
             let pn = u("period").max(1);
             let tr = match id {
@@ -1010,6 +1016,26 @@ fn donchian_weeks(x: &Ctx, from: usize, to: usize, nw: i64) -> Vec<Trade> {
     b.done()
 }
 
+/// Hochheimer's weekly price channel (Kaufman p.178): on the last session of each calendar week, a close above the highest (below the lowest)
+/// of the last sessions' closes of the previous nw weeks goes long (short) at that close; always in the market.
+fn weekly_channel(x: &Ctx, from: usize, to: usize, nw: usize) -> Vec<Trade> {
+    let (c, n) = (&x.c, x.c.len());
+    let wk: Vec<i64> = x.r.iter().map(|r| week(&r.date)).collect();
+    let mut b = Bk::new(x, from, to);
+    let mut ends: Vec<usize> = vec![]; // last session index of each finished week before the current one
+    for i in 0..=to {
+        let last = i + 1 >= n || wk[i + 1] != wk[i];
+        if !last { continue; }
+        if i >= from && ends.len() >= nw {
+            let w = &ends[ends.len() - nw..];
+            let (hh, ll) = (w.iter().map(|&k| c[k]).fold(f64::NEG_INFINITY, f64::max), w.iter().map(|&k| c[k]).fold(f64::INFINITY, f64::min));
+            if c[i] > hh { b.at_close(i, 1, "Friday close above the highest weekly close"); } else if c[i] < ll { b.at_close(i, -1, "Friday close below the lowest weekly close"); }
+        }
+        ends.push(i);
+    }
+    b.done()
+}
+
 fn kama(c: &[f64], pn: usize) -> Vec<f64> {
     let n = c.len();
     let mut a = vec![f64::NAN; n];
@@ -1213,6 +1239,26 @@ fn first_hour(x: &Ctx, from: usize, to: usize, len: usize, off: f64) -> Vec<Trad
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Lane I2 (R4 #376): hand-run dump of kftsm_4_9_18 on the Indian index files for the pandas reference
+    /// (I2_CSV=<idx_data.csv> I2_OUT=<file.csv> cargo test --release i2_kftsm_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_kftsm_dump() {
+        use std::io::Write;
+        let (csv, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
+            let Some(rows) = data.get(t) else { continue };
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["kftsm_4_9_18", "kftsm_hh_cross"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
+                }
+            }
+        }
+    }
     /// R4 #256 (K64): IWM closes 2003-02-19..03-27. The oscillator of the 26th equals the trend (16-day average of
     /// SMA3 - SMA10) of the 27th exactly (0.2198333...), so "fast[t-1] > trend[t]" is false and no pullback is armed.
     #[test]
@@ -1432,11 +1478,29 @@ mod tests {
         let r=rows(50);let x=Ctx::new(&r,&r,&[]);
         assert!(run("kftsm_adapt_rsi",&x,0,49,&Params::new()).unwrap().is_empty());
     }
+    /// hand-run dump for the pandas reference: KW_IDX=<idx_data.csv> KW_OUT=<file> cargo test --release kftsm_weekly_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn kftsm_weekly_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("KW_IDX").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("KW_OUT").unwrap()).unwrap());
+        writeln!(f, "ticker,weeks,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (tk, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for w in [4., 2., 13.] {
+                let mut pr = Params::new(); pr.insert("weeks".into(), w);
+                for z in run("kftsm_weekly_channel", &x, 0, rows.len() - 1, &pr).unwrap() {
+                    writeln!(f, "{tk},{w},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
+    }
 }
 
 // Instrument admission: lane R1-1116 (R4 #297/#339): Hutson triple smoothing and the Kaufman moving channel, each with 4 labelled unstated details.
 pub const ADMISSION_R1: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && matches!(def.id, "kftsm_trix" | "kftsm_moving_channel"),
-    label: "Kaufman describes both rules on futures and stocks without naming a market; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 4 unstated details each (n or w, the fill, the exit, the in-between day), labelled on the card.",
+    label: "Kaufman describes both rules on futures and stocks without naming a market; daily bars of indices, ETFs and stocks, US and India, are a declared application. Adapted: 5 unstated details each (honest count, R4 #400/#408), labelled on the card.",
     basis: "New Trading Systems and Methods 4th ed. p.273 (triple smoothing), p.135 (moving channel); R4 #297/#339; independent check authors/relax-339/R1/w/r1_ref.py",
 };

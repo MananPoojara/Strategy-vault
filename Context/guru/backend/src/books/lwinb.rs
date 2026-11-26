@@ -20,7 +20,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "X|\"If MP=1 and BarsSinceEntry > ExitWaitBars then exitlong all contracts at Average(low,5) - .1/100*close stop\" ExitWaitBars 30",
     ], "Complete code: long only, one contract, no other stop (the exit stop exists only after 30 bars in the trade). Daily bars assumed (Inner Circle seminar material). \
 LinearRegSlopeFC = least-squares slope of the last 80 closes per bar. TradeStation old-style 'buy ... at X stop' = next bar. Fills: stop at its level or at the open when gapped through (rrsim). \
-India: instrument swap (NIFTY 50 instead of the futures/stocks of the seminar).")]
+India: instrument swap (NIFTY 50 instead of the futures/stocks of the seminar). [Unstated choices, honest count 5 (R4 #400/#408)] (1) daily bars are assumed; (2) the stop order lives one bar; (3) a buy stop fills at max(open, level) and a sell stop at min(open, level); (4) BarsSinceEntry counts the entry bar as 0; (5) a buy order is ignored while long.")]
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {

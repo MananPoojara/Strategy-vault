@@ -46,13 +46,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"When the 28-day momentum indicator rises above the 28-day moving average ... a change in trend to the upside has likely started ... Buy and sell signals are generated accordingly\" (p.136); \"two consecutive closes by the momentum above its MA signals a buy, whereas two consecutive closes below its MA signals a sell\" (Figure 11.16, p.140)",
               "X|[Read, B] The opposite signal closes the position and reverses it; fills on the close of the second close",
               "X|No stop: the author: \"this approach is not a trading system but rather a timing method. In order to function as a complete trading system, the method needs additional features, such as a risk management stop loss\" (p.139); none is invented here"],
-            "Declared reading: the book's signals in both directions run as a stop-and-reverse with no stop (the author calls it a timing method). p.closes=1 uses the text's single cross (p.136) instead of the Figure 11.16 two-close rule. A long-only MOM/MA 28 with a single-cross exit is jbsmsw_mom_ma."),
+            "Declared reading: the book's signals in both directions run as a stop-and-reverse with no stop (the author calls it a timing method). p.closes=1 uses the text's single cross (p.136) instead of the Figure 11.16 two-close rule. A long-only MOM/MA 28 with a single-cross exit is jbsmsw_mom_ma. [Unstated choices, honest count 3 (R4 #400/#408)] (1) the opposite signal closes and reverses the position [Read, B]; (2) the fill is on the close of the second close; (3) the two-close rule (Figure 11.16) is the default instead of the single cross."),
         def!("jbssf_ma3", "Three moving averages 4/9/18, reversing", "Ch.8 · Moving Averages", "Long/Short", Live,
             &["F|\"the 4-day, 9-day, and 18-day moving averages seem to work best together\" (p.90); a moving average is the average of the last N closes (p.87)",
               "E|\"Buy when all three moving averages have crossed in an upward direction\" (p.92): [Read, B] the 4-day above the 9-day above the 18-day, filled on the close of the first bar with that order",
               "E|\"Sell and sell short when all three moving averages have crossed in a downward direction\" (p.92): 4-day below 9-day below 18-day",
               "X|\"Moving average systems are based on reversals. In other words, when a long position is closed out, a short position is entered\" (p.92)"],
-            "Simple moving averages of closes. Equal averages are not an order. No stop is given (the book: \"you don't know your stop loss before entering a trade\", p.93). Differs from kftsm_4_9_18 (Kaufman's own reading)."),
+            "Simple moving averages of closes. Equal averages are not an order. No stop is given (the book: \"you don't know your stop loss before entering a trade\", p.93). Differs from kftsm_4_9_18 (Kaufman's own reading). [Unstated choices, honest count 3 (R4 #400/#408)] (1) crossed is read as the 4 > 9 > 18 ordered state on the first bar with that order [Read, B]; (2) the fill is on the close of that bar; (3) equal averages are not an order."),
     ]
 }
 
@@ -127,5 +127,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             Some(machine(x, from, to, &sig, None, false, ["4 > 9 > 18-day MAs", "4 < 9 < 18-day MAs", ""]))
         }
         _ => Some(vec![]),
+    }
+}
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 (R4 #376): hand-run dump of jbssf_sp_jan on the Indian index files for the pandas reference
+    /// (I2_CSV=<idx_data.csv> I2_OUT=<file.csv> cargo test --release i2_jbssf_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_jbssf_dump() {
+        use std::io::Write;
+        let (csv, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK", "NIFTYMIDCAP100"] {
+            let Some(rows) = data.get(t) else { continue };
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("jbssf_sp_jan", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "jbssf_sp_jan,{t},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px).unwrap();
+            }
+        }
     }
 }

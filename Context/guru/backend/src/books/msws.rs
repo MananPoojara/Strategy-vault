@@ -177,6 +177,9 @@ pub fn parse(src: &str) -> Result<Prog, String> {
 /// Built-ins defined by formula text (MetaStock built-ins that the anthologies spell out long-hand).
 fn macro_text(name: &str, a: &[String]) -> Option<String> {
     Some(match (name, a.len()) {
+        // lane M2 (R4 #339(2)): MetaStock vol(MA PERIODS, ROC PERIODS) = Chaikin's Volatility (Pro 8.0 manual: function list "Volatility, Chaikin's", example vol(10,10); formula page
+        // "The Volatility formula ... roc( mov( high-low, 10, E), 12, %)"): ROC in percent of the exponential average of the high-low range.
+        ("vol", 2) => format!("ROC(Mov(H-L,{},E),{},%)", a[0], a[1]),
         // "OBV - Raw" (Wallstreet formulas, GM1): Granville OBV
         ("obv", 0) => "Cum(If(C>Ref(C,-1),VOLUME,If(C<Ref(C,-1),-VOLUME,0)))".into(),
         // "Chaikin Oscillator ... the long-hand version" (Wallstreet formulas, GM1)
@@ -264,12 +267,14 @@ pub struct Eng<'a> {
     fml: &'a dyn Fn(&str) -> Option<String>,
     vars: Vec<HashMap<String, V>>,
     depth: usize,
+    /// Sum of the Ref(.,-k) offsets around the expression being evaluated (guards dpo(), which reads the future; see "dpo").
+    ref_shift: usize,
 }
 
 impl<'a> Eng<'a> {
     pub fn new(x: &'a Ctx<'a>, fml: &'a dyn Fn(&str) -> Option<String>) -> Self {
         let vol = x.r.iter().map(|r| r.volume.unwrap_or(NAN)).collect();
-        Eng { x, n: x.c.len(), vol, cache: HashMap::new(), fml, vars: vec![], depth: 0 }
+        Eng { x, n: x.c.len(), vol, cache: HashMap::new(), fml, vars: vec![], depth: 0, ref_shift: 0 }
     }
     pub fn run(&mut self, p: &Prog) -> Result<V, String> {
         self.vars.push(HashMap::new());
@@ -335,7 +340,7 @@ impl<'a> Eng<'a> {
                 Ok(Rc::new(r))
             }
             E::Call(name, args) => {
-                let key = if self.uses_var(e) { None } else { Some(format!("{e:?}")) };
+                let key = if self.uses_var(e) { None } else { Some(format!("{}|{e:?}", self.ref_shift)) };  // the Ref shift is part of the key: dpo() is only valid inside Ref
                 if let Some(k) = &key { if let Some(v) = self.cache.get(k) { return Ok(v.clone()); } }
                 self.depth += 1;
                 if self.depth > 60 { return Err("formula nesting too deep".into()); }
@@ -353,7 +358,7 @@ impl<'a> Eng<'a> {
         let argc = |m: usize| -> Result<(), String> { if a.len() == m { Ok(()) } else { Err(format!("{name}() needs {m} arguments")) } };
         let arg_txt = |e: &E| -> Result<String, String> { Ok(format!("{}", self.k(e)?)) };
         // functions spelled out as formula text
-        let txt: Vec<String> = if matches!(name, "ult") { a.iter().map(arg_txt).collect::<Result<_, _>>()? } else { vec![] };
+        let txt: Vec<String> = if matches!(name, "ult" | "vol") { a.iter().map(arg_txt).collect::<Result<_, _>>()? } else { vec![] };
         if let Some(src) = macro_text(name, &txt) { return self.eval_src(&src); }
         let v: Vec<f64> = match name {
             "fml" => {
@@ -365,9 +370,17 @@ impl<'a> Eng<'a> {
                 argc(2)?;
                 let k = self.k(&a[1])?;
                 let back_by = if name == "ref" { -k } else { k };
-                if back_by < 0.0 { return Err(format!("{name}() with offset {k} reads a future bar")); }
                 if (back_by - back_by.round()).abs() > 1e-9 { return Err("fractional offset".into()); }
-                let s = self.ev(&a[0])?; back(&s, back_by.round() as usize)
+                if back_by < 0.0 {
+                    // Lane K3 (24 Nov 2026, Q399 (b)): a positive offset is causal only inside an enclosing Ref(.,-j) with j >= the offset (net offset
+                    // >= 0), as mslib_ponte_mp prints Ref(Cross(...) AND Ref(C,+1) > C, -1); anywhere else it still reads a future bar and is refused.
+                    let kf = (-back_by).round() as usize;
+                    if self.ref_shift < kf { return Err(format!("{name}() with offset {k} reads a future bar")); }
+                    self.ref_shift -= kf; let s = self.ev(&a[0]); self.ref_shift += kf;
+                    let s = s?; let n = s.len();
+                    return Ok(Rc::new((0..n).map(|i| if i + kf < n { s[i + kf] } else { NAN }).collect()));
+                }
+                let kk = back_by.round() as usize; self.ref_shift += kk; let s = self.ev(&a[0]); self.ref_shift -= kk; back(&s?, kk)
             }
             "mov" => {
                 argc(3)?;
@@ -422,6 +435,17 @@ impl<'a> Eng<'a> {
             }
             // lane Q14 (R4 #339): MetaStock mo(PERIODS) = the predefined Momentum indicator = 100 * Close / ref(Close, -PERIODS)
             // (MetaStock Pro 8.0 manual: function list "Momentum mo( PERIODS )", PDF p.281; "Momentum = Close / ref(Close,-10) x 100", printed p.482, PDF p.493; research share USB HDD 1/MetaStock/@Knowledge/Manual MetaStock Professional 8.0 (Original English Manual))
+            // lane H3d (R4 #339(2)): OscP(short, long, method, %) = MetaStock's Price Oscillator: the difference of two moving averages of the close; in percent the
+            // difference is divided by the SHORTER-term average (Achelis, Technical Analysis from A to Z, Price Oscillator, hosted by MetaStock
+            // https://www.metastock.com/customer/resources/taaz/?p=94 and quoted in the eSignal Technical Analysis Dictionary entry 'Price Oscillator'); points = short - long.
+            "oscp" => {
+                argc(4)?;
+                let (p1, p2) = (self.per(&a[0])?, self.per(&a[1])?);
+                let m = match &a[2] { E::Id(m) => m.to_lowercase(), _ => return Err("OscP() method".into()) };
+                let avg = |n: usize| -> Result<Vec<f64>, String> { Ok(match m.as_str() { "s" | "simple" | "simp" => sma(&x.c, n), "e" | "exponential" => ema(&x.c, n), "w" | "weighted" => wma(&x.c, n), _ => return Err(format!("OscP() method '{m}' is not supported")) }) };
+                let (f, l) = (avg(p1)?, avg(p2)?);
+                match &a[3] { E::Sym(o) if o == "%" => zip(&f, &l, |s, g| 100.0 * (s - g) / s), E::Sym(o) if o == "$" => zip(&f, &l, |s, g| s - g), E::Id(o) if o == "p" || o == "pts" => zip(&f, &l, |s, g| s - g), _ => return Err("OscP() needs % or pts".into()) }
+            }
             "mo" => { argc(1)?; let p = self.per(&a[0])?; let b = back(&x.c, p); zip(&x.c, &b, |c, r| 100.0 * c / r) }
             "rsi" => {
                 let (src, p) = match a.len() { 1 => (Rc::new(x.c.clone()), self.per(&a[0])?), 2 => (self.ev(&a[0])?, self.per(&a[1])?), _ => return Err("RSI() arguments".into()) };
@@ -438,6 +462,32 @@ impl<'a> Eng<'a> {
                 (0..n).map(|i| { let d = hh[i] - ll[i]; if fin(d) && d > 0.0 { -100.0 * (hh[i] - x.c[i]) / d } else { NAN } }).collect()
             }
             "trix" => { argc(1)?; let p = self.per(&a[0])?; let e3 = ema(&ema(&ema(&x.c, p), p), p); let b = back(&e3, 1); zip(&e3, &b, |x, y| 100.0 * (x - y) / y) }
+            // lane M2 (R4 #339(2)): MetaStock Pro 8.0 manual, formula-language syntax mfi(PERIODS), emv(PERIODS, METHOD), dpo(PERIODS); calculations as the manual's "Interpretation of Indicators" chapter
+            // (MFI p.483: money flow = volume x average price, positive/negative by the change of that price, MFI = 100 - 100/(1 + positive sum / negative sum); EMV p.465: midpoint move / box ratio, box ratio =
+            // volume (in 10,000s) / (high - low), smoothed by METHOD; DPO p.460: the x-period moving average shifted back x/2 + 1 periods and subtracted from the close, the last x/2 + 1 bars have no value).
+            // Declared readings: the average price of MFI is (H+L+C)/3; the DPO bar i = C[i] - SMA_x[i + x/2 + 1] (a future-shifted value; the source only uses it through Ref(.,-10)).
+            "mfi" => {
+                argc(1)?; let p = self.per(&a[0])?; let n = x.c.len();
+                let tp: Vec<f64> = (0..n).map(|i| (x.h[i] + x.l[i] + x.c[i]) / 3.0).collect();
+                let (mut pos, mut neg) = (vec![NAN; n], vec![NAN; n]);
+                for i in 1..n { let f = tp[i] * self.vol[i]; pos[i] = if tp[i] > tp[i - 1] { f } else { 0.0 }; neg[i] = if tp[i] < tp[i - 1] { f } else { 0.0 }; }
+                let (sp, sn) = (window(&pos, p, |w| w.iter().sum()), window(&neg, p, |w| w.iter().sum()));
+                zip(&sp, &sn, |a, b| if b > 0.0 { 100.0 - 100.0 / (1.0 + a / b) } else if a > 0.0 { 100.0 } else { NAN })
+            }
+            "emv" => {
+                argc(2)?; let p = self.per(&a[0])?; let n = x.c.len();
+                let m = match &a[1] { E::Id(m) => m.to_lowercase(), _ => return Err("EMV() method".into()) };
+                let raw: Vec<f64> = (0..n).map(|i| if i == 0 || x.h[i] <= x.l[i] || !(self.vol[i] > 0.0) { NAN } else {
+                    let mid = (x.h[i] + x.l[i]) / 2.0 - (x.h[i - 1] + x.l[i - 1]) / 2.0; mid / ((self.vol[i] / 10000.0) / (x.h[i] - x.l[i])) }).collect();
+                match m.as_str() { "s" | "simple" => sma(&raw, p), "e" | "exponential" => ema(&raw, p), "w" | "weighted" => wma(&raw, p), _ => return Err(format!("EMV() method '{m}' is not supported")) }
+            }
+            "dpo" => {
+                argc(1)?; let p = self.per(&a[0])?; let n = x.c.len(); let k = p / 2 + 1; let m = sma(&x.c, p);
+                // CAUSALITY GUARD: dpo(x)[i] reads SMA_x[i + k] (k = x/2 + 1 bars ahead). It is causal only when read through Ref(., -j) with j >= k
+                // (the InSync print uses Ref(.,-10) for DPO(18)); any direct use, or a smaller offset, is refused instead of silently using future bars.
+                if self.ref_shift < k { return Err(format!("dpo({p}) reads {k} bars ahead: use only inside Ref(...,-j) with j >= {k}")); }
+                (0..n).map(|i| if i + k < n { x.c[i] - m[i + k] } else { NAN }).collect()
+            }
             "macd" => {
                 argc(0)?;
                 let (f, s) = (ema_alpha(&x.c, 0.15, 1), ema_alpha(&x.c, 0.075, 1));
@@ -539,7 +589,7 @@ pub fn scan(src: &str, fml: &dyn Fn(&str) -> Option<String>) -> (bool, Vec<Strin
         match e {
             E::Id(k) if matches!(k.as_str(), "v" | "vol" | "volume") => *vol = true,
             E::Call(f, a) => {
-                if matches!(f.as_str(), "obv" | "co" | "pvt") { *vol = true; }
+                if matches!(f.as_str(), "obv" | "co" | "pvt" | "mfi" | "emv") { *vol = true; }
                 if f == "fml" { if let Some(E::S(n)) = a.first() { if !refs.contains(n) { refs.push(n.clone()); if d < 20 { if let Some(s) = fml(n) { if let Ok(p) = parse(&s) { for (_, e) in &p.defs { walk(e, vol, refs, fml, d + 1); } walk(&p.value, vol, refs, fml, d + 1); } } } } } }
                 for x in a { walk(x, vol, refs, fml, d); }
             }
@@ -1072,6 +1122,19 @@ mod tests {
             assert_eq!(res.is_some(), s.status == Status::Live, "{}", s.id);
             for t in res.unwrap_or_default() { assert!(t.legs[0].i >= 300 && t.exit_i <= 1499 && t.exit_i >= t.legs[0].i, "{}", s.id); }
         }
+    }
+    /// Q399 (b) net-offset rule: a positive offset is causal only inside an enclosing Ref(.,-j) with j >= the offset.
+    #[test]
+    fn positive_ref_offset_needs_an_enclosing_negative_one() {
+        let r = rows(200);
+        let x = Ctx::new(&r, &r, &[]);
+        let fl = |_: &str| None;
+        let mut ev = |src: &str| Eng::new(&x, &fl).eval_src(src);
+        let v = ev("Ref(Ref(C,+1),-1)").unwrap();
+        assert!((1..200).all(|i| v[i] == x.c[i]));
+        assert!(ev("Ref(C,+1)").is_err());
+        assert!(ev("Ref(Ref(C,+2),-1)").is_err()); // net +1: reads the future
+        assert!(ev("Ref(L,+1)").is_err()); // the mslib_fractal formula stays refused
     }
     #[test]
     fn rsi_crossover_trades_on_closes() {

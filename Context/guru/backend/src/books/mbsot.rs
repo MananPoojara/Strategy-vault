@@ -10,10 +10,12 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "mbsot";
 /// Admitted ids (authors/boucher/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["mbsot_zweig4", "mbsot_mcclellan", "mbsot_mcclellan_nse", "mbsot_renshaw_thrust", "mbsot_renshaw_thrust_nse", "mbsot_appel_impulse", "mbsot_appel_impulse_nse", "mbsot_appel_mcclellan", "mbsot_appel_mcclellan_nse", "mbsot_appel_combo", "mbsot_appel_combo_nse"];
+pub const REVIEWED: &[&str] = &["mbsot_zweig4", "mbsot_mcclellan", "mbsot_mcclellan_nse", "mbsot_renshaw_thrust", "mbsot_renshaw_thrust_nse", "mbsot_appel_impulse", "mbsot_appel_impulse_nse", "mbsot_appel_mcclellan", "mbsot_appel_mcclellan_nse", "mbsot_appel_combo", "mbsot_appel_combo_nse", "mbsot_appel_bottom_fisher", "mbsot_appel_bottom_fisher_nse" /* lane CV6 Q9, R4 #343 / #340 / #347 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+const NYSE_NL: &[&str] = &["NYSE_NEW_LOWS"];
+const NSE_NL: &[&str] = &["NSE_NHNL.NL"];
 const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 const NYSE_ADU: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.Unchanged"];
 const NSE_ADU: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.Unchanged"];
@@ -107,7 +109,22 @@ const IN_DN: &[&str] = &[
     "E|\"Sell short two units on a stop one tick below the outside day low with an ops one point above the outside day's high.\" (p.3-62)",
     "X|\"Take 1/2 profits when SD:5 falls below 30 on the close. Use GTI trailing ops technique to exit other 1/2 of position\" (p.3-62)",
 ];
-const GTI_NOTE: &str = "GTI (revised two-day Gann Trend Indicator, p.4-1..4-18), as coded: two closes in a row against the trend start a counter-move; in an up trend the counter-move's lowest low is registered as a GTI bottom once the price makes a new high above the leg's high by \"one point (2%)\" (p.4-18; p.gti_pct), and the trend turns down when the last GTI bottom is penetrated by the same amount (mirror for down trends; a trend change registers the old leg's extreme). The first two-day move starts the GTI. Stops: \"one point\" = 1 price unit (p.pt), one tick = 0.01 (0.05 for NSE indices). Same-bar entry and stop: stop assumed hit. The book's statistics count patterns reaching an objective / 3x risk, not this exact exit, so there is no trade list to reproduce. Book: stocks and futures; run on the indices (vault convention).";
+const CGC_BASIC: &[&str] = &[
+    "F|Close Gap CPR up (CGCUP, p.3-11, 3-13): LOW[-1] < LOW[-2]; LOW > CLOSE[-1]; CLOSE[-1] < CLOSE[-2]; CLOSE > HIGH[-1]. Down (p.3-12): HIGH[-1] > HIGH[-2]; HIGH < CLOSE[-1]; CLOSE < LOW[-1]; CLOSE[-1] > CLOSE[-2]. No SD:5 and no GTI filter (the \"basic\" pattern).",
+    "E|\"The basic strategy is to buy the next day's open and use an ops below the low of day 2.\" (p.3-11); \"sell short the next day's open and use an ops above the high of day 2\" (p.3-12). Stop one tick beyond day 2's extreme [Book silent on the offset; as the SD:5 / GTI cards].",
+    "X|[Declared adaptation, #339] The basic page prints no exit. Coded: the book's general GTI trailing ops on the whole position from entry (\"as soon as a GTI bottom is registered that is higher than our ops we move our stop to one point below the GTI bottom\", p.4-18), as the printed exits of the same patterns end in it. No profit target is invented.",
+];
+const RGP_BASIC: &[&str] = &[
+    "F|Reversal gap up (REVGAPUP, p.3-29, 3-30): CLOSE[-1] < CLOSE[-2]; LOW > HIGH[-1]; CLOSE > (HIGH+LOW)/2; CLOSE > CLOSE[-2]; CLOSE > CLOSE[-3]; mirror for the reversal gap down. \"This pattern does not have to occur off of a swing low to be valid.\" No SD:5 and no GTI filter.",
+    "E|\"BASIC STRATEGY: Normally we buy on the next day's open and use an ops below the last swing low.\" (p.3-29) Stop one tick below the last confirmed pivot low (mirror: above the last pivot high).",
+    "X|[Declared adaptation, #339] No exit printed on the basic page. Coded: the GTI trailing ops from entry on the whole position (p.4-18), as the printed RGP exit of p.3-39 (\"Exit on trailing stop technique\").",
+];
+const OUT_BASIC: &[&str] = &[
+    "F|Outside day up (p.3-42): HIGH > HIGH[-1]; LOW < LOW[-1]; CLOSE > CLOSE[-1]. Down (p.3-43): the same range test with CLOSE < CLOSE[-1]. No stochastic divergence and no GTI filter (the \"basic\" pattern).",
+    "E|\"Buy on a stop one tick above the high of the outside day, with an ops one point below the low of the outside day.\" (p.3-42); \"Sell short on a stop one tick below the low of the outside day, and use an ops one point above the high of the outside day\" (p.3-43). \"One point\" = 2% of the level (\"one point (2%)\", p.4-18; R4 #380), rounded to the tick.",
+    "X|[Declared adaptation, #339] No exit printed on the basic pages. Coded: the GTI trailing ops from entry on the whole position (p.4-18), as the printed exits of the outside-day cards end in it (p.3-50, 3-51); no SD half exit (that is the divergence card).",
+];
+const GTI_NOTE: &str = "GTI (revised two-day Gann Trend Indicator, p.4-1..4-18), as coded: two closes in a row against the trend start a counter-move; in an up trend the counter-move's lowest low is registered as a GTI bottom once the price makes a new high above the leg's high by \"one point (2%)\" (p.4-18; p.gti_pct), and the trend turns down when the last GTI bottom is penetrated by the same amount (mirror for down trends; a trend change registers the old leg's extreme). The first two-day move starts the GTI. Stops: \"one point\" = pt_pct = 2% of the level it is applied to (\"one point (2%)\", p.4-18; R4 #380, unscaled: 1 price unit at a price of 50), rounded to the tick, one tick = 0.01 (0.05 for NSE indices). Same-bar entry and stop: stop assumed hit. The book's statistics count patterns reaching an objective / 3x risk, not this exact exit, so there is no trade list to reproduce. Book: stocks and futures; run on the indices (vault convention).";
 
 // ------------------------------------------------------------------ catalogue
 
@@ -170,17 +187,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
            &["F|\"Day 2's high is < day 1's low and day 3's low. Pattern is completed on day 3.\" (p.3-4)",
              "E|\"Buy on open of day 4 with a stop loss one point below day 2's low.\" (p.3-4); mirror \"Sell on the open of day 4 with a stop-loss 1 point above day 2's high\" (p.3-6)"],
            "", claim("126 patterns", "82% profitable", "71% returned 3x risk", "", "Statistical results p.3-10")),
-        nt("mbsot_cgc_basic", "Close Gap CPR up / down (basic, with or without SD:5 on the swing day)", "Pattern recognition · Close Gap CPR", "Long/Short",
-           "no exit rule (\"buy the next day's open and use an ops below the low of day 2\" only); the statistics count patterns reaching an unstated objective",
-           &["E|\"The basic strategy is to buy the next day's open and use an ops below the low of day 2.\" (p.3-11); short mirror (p.3-12)"],
-           "", claim("4208 patterns", "", "63% reached objective", "", "CGC with SD overbought/oversold, p.3-19")),
-        nt("mbsot_rgp_basic", "Reversal gap up / down (basic)", "Pattern recognition · Reversal gaps", "Long/Short",
-           "no exit rule (\"buy on the next day's open and use an ops below the last swing low\" only)",
-           &["E|\"Normally we buy on the next day's open and use an ops below the last swing low.\" (p.3-29)"], "", None),
-        nt("mbsot_outside_basic", "Outside day up / down (basic and with stochastic divergence)", "Pattern recognition · Outside days", "Long/Short",
-           "no exit rule: only the stop entry one tick beyond the outside day and the ops are given (p.3-42, 3-43, 3-46, 3-47)",
-           &["E|\"Buy on a stop one tick above the high of the outside day, with an ops one point below the low of the outside day.\" (p.3-42)"],
-           "", claim("2705 patterns", "60% profitable", "", "", "Stochastic divergence outside days, p.3-49")),
+        d("mbsot_cgc_basic", "Close Gap CPR up / down (basic)", "Pattern recognition · Close Gap CPR", "Long/Short", Live, &[], CGC_BASIC, GTI_NOTE,
+          None),
+        d("mbsot_rgp_basic", "Reversal gap up / down (basic)", "Pattern recognition · Reversal gaps", "Long/Short", Live, &[], RGP_BASIC, GTI_NOTE,
+          None),
+        d("mbsot_outside_basic", "Outside day up / down (basic)", "Pattern recognition · Outside days", "Long/Short", Live, &[], OUT_BASIC, GTI_NOTE,
+          None),
         nt("mbsot_outside_sd_gti52", "Outside day + stochastic divergence + GTI trend + < 52% retracement of the previous stochastic rally", "Pattern recognition · Outside days", "Long/Short",
            "the 52% retracement is measured from the previous stochastic rally's A-B points chosen on the chart; the stochastic-cycle highs/lows depend on the previous cycle (p.1-5, 1-6) and no code is given",
            &["F|\"The reaction leading to the outside day up potential low must correct less than 52% of the previous up move.\" (p.3-53)", "E|\"Same as previous outside day strategy\" (p.3-54)"],
@@ -246,20 +258,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
            &["E|Sentiment adjusted for monetary conditions: 3/5-year T-note yield vs 26 weeks ago, Investors Intelligence bulls/(bulls+bears) bands, Value Line 4% weekly momentum; \"To buy wait for components 1 and 2 to occur and then buy if and when a momentum signal occurs; opposite to exit.\" (Timing Models - 17)"],
            "", claim("21 long entries", "20 of 21", "", "exposed 50%", "since 1968: 16.74% GPA vs 10.1% (Timing Models - 17)")),
         nd("mbsot_nhnl_tbill", "NH NL T-bill dividend ratio model", "Timing models · Breadth & momentum",
-           "NYSE new highs / new lows, 90-day T-bill yield and S&P dividend yield - not in the vault",
+           "the S&P dividend yield is not held (lane U2, 19 Nov 2026: NYSE new highs / lows #NYSEHI/#NYSELO and the 3-month T-bill DTB3 ARE held; T = T-bill yield / S&P dividend yield cannot be formed without it, and a dividend yield cannot be modelled from prices)",
            &["E|\"Buy when NH > ((T X A) - B) X SUM and P > M. Exit when NL > ((T X (-C)) + D) X SUM and P < M.\" with NH, NL, SUM = 8-day averages, T = T-bill yield / S&P dividend, A = 0.58, B = 0.79, C = 0.66, D = 2.13, M = 18-day MA of the close (Timing Models - 20)"],
            "", claim("", "", "", "", "16.1% GPA vs 10.6% BH")),
         nd("mbsot_trim_yield", "Arms Index (TRIM) 21/55 crossovers with T-bill / dividend yield spread filter", "Timing models · Breadth & momentum",
-           "90-day T-bill yield and S&P dividend yield (the TRIM part exists in extra_data, the yield filter does not)",
+           "the S&P dividend yield is not held (lane U2, 19 Nov 2026: the TRIM part and the 3-month T-bill DTB3 are held; the yield spread filter needs the dividend yield)",
            &["E|Arms index 21 and 55-day MA crossovers; \"Only take buy signals when the yield spread is 2 or <; and only take sell/exits when the yield spread is > 2.\" (Timing Models - 21)"],
            "", claim("", "81%", "$192,312 total", "", "S&P futures since 1982")),
-        nd("mbsot_appel_bottom_fisher", "Appel's bottom-fisher combo", "Timing models · Breadth & momentum",
-           "NYSE new lows - not in the vault (extra_data has advances/declines only)",
-           &["E|\"1) Buy any close by NYSE cash below 24 previous closes, where no new low close was made in the prior three days and New Lows are < 50; or 2) Buy any close by NYSE cash below 49 previous closes, where no new low close was made in the prior three days and New Lows are <= 100.\" (Timing Models - 22)",
+        d("mbsot_appel_bottom_fisher", "Appel's bottom-fisher combo · NYSE new lows", "Timing models · Breadth & momentum", "Long", Live, NYSE_NL, &["E|\"1) Buy any close by NYSE cash below 24 previous closes, where no new low close was made in the prior three days and New Lows are < 50; or 2) Buy any close by NYSE cash below 49 previous closes, where no new low close was made in the prior three days and New Lows are <= 100.\" (Timing Models - 22)",
              "X|\"Exit on any NYSE cash close that is 1.5% or > below the highest close since entry.\" (p.22)"],
-           "", claim("", "79%", "$174,000 total", "", "S&P futures since 1982, DD $3,600")),
+          "[R4 #343 unstated details, 4] (1) \"a new low close\" in the three-day clause is read as the same test as the branch's entry (a close below the previous 24, respectively 49, closes). (2) \"the prior three days\" are the three bars before the signal day. (3) The highest close since entry includes the entry close. (4) A day with no New Lows count is not an entry day (missing count blocks the entry). Fills at the close; one position at a time. New Lows = the day's count of issues at a new 52-week low (the levels 50 and 100 are issue counts, applied unchanged).  Book: NYSE cash since 1982 (S&P futures). Vault: Norgate #NYSELO (1932-2020-09-04) on US instruments. The book prints no per-trade statistics beyond the quoted summary. UNVERIFIED.",
+          claim("", "79%", "$174,000 total", "", "S&P futures since 1982, DD $3,600")),
+        d("mbsot_appel_bottom_fisher_nse", "Appel's bottom-fisher combo · NSE new lows (India)", "Timing models · Breadth & momentum", "Long", Live, NSE_NL, &["E|\"1) Buy any close by NYSE cash below 24 previous closes, where no new low close was made in the prior three days and New Lows are < 50; or 2) Buy any close by NYSE cash below 49 previous closes, where no new low close was made in the prior three days and New Lows are <= 100.\" (Timing Models - 22)",
+             "X|\"Exit on any NYSE cash close that is 1.5% or > below the highest close since entry.\" (p.22)"],
+          "[R4 #343 unstated details, 4] (1) \"a new low close\" in the three-day clause is read as the same test as the branch's entry (a close below the previous 24, respectively 49, closes). (2) \"the prior three days\" are the three bars before the signal day. (3) The highest close since entry includes the entry close. (4) A day with no New Lows count is not an entry day (missing count blocks the entry). Fills at the close; one position at a time. New Lows = the day's count of issues at a new 52-week low (the levels 50 and 100 are issue counts, applied unchanged).  [R4 #340 / #347 declared adaptation, UNVERIFIED] The twin counts the NSE stocks at a new adjusted 52-week low (extra_data/india NSE_NHNL.NL, 2019-10-16 on, with gaps: a run uses the longest stretch with no missing day) on Indian indices and stocks; the levels 50 and 100 are kept although the NSE universe is smaller than the NYSE. Measured firing rate, NSE vs NYSE: over the overlap (NSE run 2019-10-27..2020-09-04; NYSE 2019-10-16..2020-09-04) the NSE twin (NIFTY 50) makes 1 trade (1.2 a year, in the market 5.6% of days) and the NYSE original (SPX) none; the NYSE original over 1999-2020 makes 51 trades = 2.4 a year, in the market 11.4%; longest gap-free NSE stretch 2025-07-25..2026-11-17: 4 trades = 3.1 a year, in the market 11.7%. The rule fires rarely on both.", None),
         nd("mbsot_appel_total", "Appel Total Composite", "Timing models · Breadth & momentum",
-           "NYSE new highs and new lows and the bottom-fisher entry - not in the vault",
+           "held: the exit combination is unstated (R4 #343 count >= 5: which exit a bottom-fisher entry takes, precedence of simultaneous Impulse and bottom-fisher entries, the denominator of 2.5% of NYSE issues, whether the 1.5% trailing exit also covers Impulse entries, plus the three bottom-fisher details); the NYSE new highs / lows are held (Norgate #NYSEHI / #NYSELO)",
            &["E|\"Enter long on any Appel Impulse Signal or on any Appel bottom-fisher combo entry.\" (Timing Models - 22)",
              "X|McClellan exit if the osc went > +450 during the trade, else the Impulse exit, \"or 3) regardless of 1 and 2 prior, exit any time both NYSE New Highs and NYSE new lows exceed 2.5% of NYSE issues trades on the same day.\" (p.22)"],
            "", claim("", "65%", "", "invested < 45%", "since 1970: 17.2% GPA vs 11.2%, max DD 6.5%")),
@@ -297,6 +311,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "mbsot_mcclellan" => ("mbsot_mcc", "McClellan zero-cross", "NYSE breadth"),
         "mbsot_mcclellan_nse" => ("mbsot_mcc", "McClellan zero-cross", "NSE breadth"),
         "mbsot_appel_impulse" => ("mbsot_appel", "Appel breadth models (Boucher)", "Impulse · NYSE"),
+        "mbsot_appel_bottom_fisher" => ("mbsot_appel", "Appel breadth models (Boucher)", "Bottom fisher · NYSE"),
+        "mbsot_appel_bottom_fisher_nse" => ("mbsot_appel", "Appel breadth models (Boucher)", "Bottom fisher · NSE"),
         "mbsot_appel_impulse_nse" => ("mbsot_appel", "Appel breadth models (Boucher)", "Impulse · NSE"),
         "mbsot_appel_mcclellan" => ("mbsot_appel", "Appel breadth models (Boucher)", "McClellan +1000 · NYSE"),
         "mbsot_appel_mcclellan_nse" => ("mbsot_appel", "Appel breadth models (Boucher)", "McClellan +1000 · NSE"),
@@ -306,8 +322,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "mbsot_rgp_sd_up" | "mbsot_rgp_sd_dn" => ("mbsot_rgp", "Reversal gaps + SD:5", if id.ends_with("up") { "up" } else { "down" }),
         "mbsot_rgp_sd_gti_up" | "mbsot_rgp_sd_gti_dn" => ("mbsot_rgp", "Reversal gaps + SD:5", if id.ends_with("up") { "up + GTI trend" } else { "down + GTI trend" }),
         "mbsot_outside_sd_gti_up" | "mbsot_outside_sd_gti_dn" => ("mbsot_outside", "Outside day + SD divergence + GTI", if id.ends_with("up") { "up" } else { "down" }),
+        "mbsot_cgc_basic" => ("mbsot_cgc", "Close Gap CPR + SD:5 + GTI", "basic, both directions"),
+        "mbsot_rgp_basic" => ("mbsot_rgp", "Reversal gaps + SD:5", "basic, both directions"),
+        "mbsot_outside_basic" => ("mbsot_outside", "Outside day + SD divergence + GTI", "basic, both directions"),
         "mbsot_inside_sd_up" | "mbsot_inside_sd_dn" => ("mbsot_inside", "Inside day + SD divergence", if id.ends_with("up") { "upward breakout" } else { "downward breakout" }),
-        "mbsot_key_island" | "mbsot_cgc_basic" | "mbsot_rgp_basic" | "mbsot_outside_basic" | "mbsot_outside_sd_gti52" | "mbsot_inside_basic" | "mbsot_tbblbg_defs"
+        "mbsot_key_island" | "mbsot_outside_sd_gti52" | "mbsot_inside_basic" | "mbsot_tbblbg_defs"
         | "mbsot_tr_breakout_accum" | "mbsot_major_swing_db" | "mbsot_swing_breakout" | "mbsot_sharp_reaction_tr" | "mbsot_remaining_patterns" =>
             ("mbsot_patterns_nt", "Science of Trading patterns without a complete exit", "not testable"),
         "mbsot_zweig_91" | "mbsot_ten_day_ad" | "mbsot_tdom_seasonal" | "mbsot_killer_sp" => ("mbsot_timing_nt", "Science of Trading timing notes", "not testable"),
@@ -317,13 +336,14 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 const PATTERNS: &[&str] = &["mbsot_cgc_sd_gti_up", "mbsot_cgc_sd_gti_dn", "mbsot_rgp_sd_up", "mbsot_rgp_sd_dn", "mbsot_rgp_sd_gti_up", "mbsot_rgp_sd_gti_dn",
-    "mbsot_outside_sd_gti_up", "mbsot_outside_sd_gti_dn", "mbsot_inside_sd_up", "mbsot_inside_sd_dn"];
+    "mbsot_outside_sd_gti_up", "mbsot_outside_sd_gti_dn", "mbsot_inside_sd_up", "mbsot_inside_sd_dn",
+    "mbsot_cgc_basic", "mbsot_rgp_basic", "mbsot_outside_basic"];
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let pat = |hi: f64, lo: f64| vec![
         p("gti_pct", "GTI: new high / low needed to register a swing or turn the trend, % (\"one point (2%)\")", 2.0, 0.5, 5.0, 0.25),
-        p("pt", "\"One point\" for stop offsets, price units", 1.0, 0.0, 50.0, 0.5),
+        p("pt_pct", "\"One point\" for stop offsets, % of the level it is applied to (\"one point (2%)\", p.4-18, R4 #380; unscaled: 1 price unit at a price of 50), rounded to the tick", 2.0, 0.0, 10.0, 0.25),
         p("sd_hi", "SD:5 overbought level", hi, 60.0, 90.0, 1.0),
         p("sd_lo", "SD:5 oversold level", lo, 10.0, 40.0, 1.0),
     ];
@@ -340,8 +360,17 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("e6", "6-day EMA of A-D at or above", 500.0, 100.0, 1000.0, 25.0), p("drop", "Impulse exit: close down from the highest close, %", 1.5, 0.5, 5.0, 0.25),
             p("mcc_buy", "McClellan (A-D line) buy above", 1000.0, 300.0, 2000.0, 50.0), p("mcc_exit", "McClellan exit below", 450.0, 0.0, 1000.0, 50.0),
             p("mcc_drop", "McClellan exit: close down from the highest close, %", 0.75, 0.25, 3.0, 0.25)],
+        "mbsot_appel_bottom_fisher" | "mbsot_appel_bottom_fisher_nse" => vec![
+            p("n1", "Branch 1: close below the previous N closes", 24.0, 5.0, 60.0, 1.0), p("nl1", "Branch 1: New Lows below", 50.0, 1.0, 500.0, 5.0),
+            p("n2", "Branch 2: close below the previous N closes", 49.0, 10.0, 120.0, 1.0), p("nl2", "Branch 2: New Lows at most", 100.0, 1.0, 500.0, 5.0),
+            p("drop", "Exit: close down from the highest close since entry, %", 1.5, 0.5, 5.0, 0.25)],
         "mbsot_cgc_sd_gti_up" | "mbsot_cgc_sd_gti_dn" | "mbsot_rgp_sd_up" | "mbsot_rgp_sd_dn" | "mbsot_rgp_sd_gti_up" | "mbsot_rgp_sd_gti_dn"
         | "mbsot_outside_sd_gti_up" | "mbsot_outside_sd_gti_dn" | "mbsot_inside_sd_up" | "mbsot_inside_sd_dn" => pat(70.0, 30.0),
+        "mbsot_cgc_basic" | "mbsot_rgp_basic" | "mbsot_outside_basic" => vec![
+            p("gti_pct", "GTI: new high / low needed to register a swing or turn the trend, % (\"one point (2%)\")", 2.0, 0.5, 5.0, 0.25),
+            p("pt_pct", "\"One point\" for stop offsets, % of the level it is applied to (\"one point (2%)\", p.4-18, R4 #380), rounded to the tick", 2.0, 0.0, 10.0, 0.25),
+            p("sd_hi", "unused by the basic cards (kept for the shared simulator)", 70.0, 60.0, 90.0, 1.0),
+            p("sd_lo", "unused by the basic cards (kept for the shared simulator)", 30.0, 10.0, 40.0, 1.0)],
         _ => return None,
     })
 }
@@ -472,7 +501,7 @@ struct Plan {
 
 /// One position: entry on bar sig+1, initial ops, optional half exit on an SD:5 reading, break-even, GTI trailing ops
 /// (\"as soon as a GTI bottom is registered that is higher than our ops we move our stop to one point below\", p.4-18).
-fn sim(x: &Ctx, sd: &[f64], g: &Gti, pl: &Plan, hi: f64, lo: f64, pt: f64, to: usize) -> Option<Trade> {
+fn sim(x: &Ctx, sd: &[f64], g: &Gti, pl: &Plan, hi: f64, lo: f64, pt: f64, tick: f64, to: usize) -> Option<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let e = pl.sig + 1;
     if e > to { return None }
@@ -490,7 +519,7 @@ fn sim(x: &Ctx, sd: &[f64], g: &Gti, pl: &Plan, hi: f64, lo: f64, pt: f64, to: u
     let hit = |v: f64, lvl: f64| if d > 0.0 { v <= lvl } else { v >= lvl };
     let tighter = |cand: f64, cur: f64| if d > 0.0 { cand > cur } else { cand < cur };
     let reg = |k: usize| if d > 0.0 { g.bot[k] } else { g.top[k] };
-    let off = |v: f64| if d > 0.0 { v - pt } else { v + pt };
+    let off = |v: f64| if d > 0.0 { v - pto(v, pt, tick) } else { v + pto(v, pt, tick) };
     for j in e..=to {
         let first = j == e;
         // a gap through the ops at the open fills at the open (the entry bar's open is the entry itself)
@@ -559,6 +588,9 @@ fn lowest(v: &[f64]) -> f64 { v.iter().cloned().fold(f64::INFINITY, f64::min) }
 fn highest(v: &[f64]) -> f64 { v.iter().cloned().fold(f64::NEG_INFINITY, f64::max) }
 
 /// Pattern on bar i (the completion bar) -> trade plan, or None.
+/// "One point" = pt_pct % of the level it is applied to (the book's "one point (2%)"), rounded to the tick.
+fn pto(level: f64, pt_pct: f64, tick: f64) -> f64 { (level * pt_pct / 100.0 / tick).round() * tick }
+
 fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &[f64], tick: f64, pt: f64, hi: f64, lo: f64) -> Option<Plan> {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     if i < 12 { return None }
@@ -594,6 +626,33 @@ fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &
                 Some(plan(-1.0, Ent::Open, phi[i] + tick, Half::None, false, false, true))
             }
         }
+        // basic cards (no SD:5, no GTI filter): entry as the SD / GTI cards, GTI trailing from entry on the whole position (declared adaptation)
+        "mbsot_cgc_basic_up" => {
+            f(l[i - 1] < l[i - 2] && l[i] > c[i - 1] && c[i - 1] < c[i - 2] && c[i] > h[i - 1])?;
+            Some(plan(1.0, Ent::Open, l[i - 1] - tick, Half::None, false, false, true))
+        }
+        "mbsot_cgc_basic_dn" => {
+            f(h[i - 1] > h[i - 2] && h[i] < c[i - 1] && c[i] < l[i - 1] && c[i - 1] > c[i - 2])?;
+            Some(plan(-1.0, Ent::Open, h[i - 1] + tick, Half::None, false, false, true))
+        }
+        "mbsot_rgp_basic_up" => {
+            let mid = (h[i] - l[i]) / 2.0 + l[i];
+            f(c[i - 1] < c[i - 2] && l[i] > h[i - 1] && c[i] > c[i - 2] && c[i] > c[i - 3] && c[i] > mid && plo[i].is_finite())?;
+            Some(plan(1.0, Ent::Open, plo[i] - tick, Half::None, false, false, true))
+        }
+        "mbsot_rgp_basic_dn" => {
+            let mid = (h[i] - l[i]) / 2.0 + l[i];
+            f(c[i - 1] > c[i - 2] && h[i] < l[i - 1] && c[i] < c[i - 2] && c[i] < c[i - 3] && c[i] < mid && phi[i].is_finite())?;
+            Some(plan(-1.0, Ent::Open, phi[i] + tick, Half::None, false, false, true))
+        }
+        "mbsot_outside_basic_up" => {
+            f(h[i] > h[i - 1] && l[i] < l[i - 1] && c[i] > c[i - 1])?;
+            Some(plan(1.0, Ent::Stop(h[i] + tick), l[i] - pto(l[i], pt, tick), Half::None, false, false, true))
+        }
+        "mbsot_outside_basic_dn" => {
+            f(h[i] > h[i - 1] && l[i] < l[i - 1] && c[i] < c[i - 1])?;
+            Some(plan(-1.0, Ent::Stop(l[i] - tick), h[i] + pto(h[i], pt, tick), Half::None, false, false, true))
+        }
         "mbsot_outside_sd_gti_up" | "mbsot_outside_sd_gti_dn" | "mbsot_inside_sd_up" | "mbsot_inside_sd_dn" => {
             // SD divergence evaluated one day back (Y1) against the 10 days before it (N10)
             let y = i - 1;
@@ -605,19 +664,19 @@ fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &
                 let od = h[i] > h[i - 1] && l[i] < l[i - 1];
                 if up {
                     f(od && c[i] > c[i - 1] && div_lo && g.trend[i] == 1)?;
-                    Some(plan(1.0, Ent::Stop(h[i] + tick), l[i] - pt, Half::Close, false, false, true))
+                    Some(plan(1.0, Ent::Stop(h[i] + tick), l[i] - pto(l[i], pt, tick), Half::Close, false, false, true))
                 } else {
                     f(od && c[i] < c[i - 1] && div_hi && g.trend[i] == -1)?;
-                    Some(plan(-1.0, Ent::Stop(l[i] - tick), h[i] + pt, Half::Close, false, false, true))
+                    Some(plan(-1.0, Ent::Stop(l[i] - tick), h[i] + pto(h[i], pt, tick), Half::Close, false, false, true))
                 }
             } else {
                 let id_ = h[i] < h[i - 1] && l[i] > l[i - 1];
                 if up {
                     f(id_ && div_lo)?;
-                    Some(plan(1.0, Ent::Stop(h[i - 1] + tick), l[i - 1] - pt, Half::Close, false, false, true))
+                    Some(plan(1.0, Ent::Stop(h[i - 1] + tick), l[i - 1] - pto(l[i - 1], pt, tick), Half::Close, false, false, true))
                 } else {
                     f(id_ && div_hi)?;
-                    Some(plan(-1.0, Ent::Stop(l[i - 1] - tick), h[i - 1] + pt, Half::Close, false, false, true))
+                    Some(plan(-1.0, Ent::Stop(l[i - 1] - tick), h[i - 1] + pto(h[i - 1], pt, tick), Half::Close, false, false, true))
                 }
             }
         }
@@ -625,18 +684,26 @@ fn pattern(id: &str, x: &Ctx, i: usize, sd: &[f64], g: &Gti, plo: &[f64], phi: &
     }
 }
 
+/// First date from which the series' opens are real (before it the file's open is about the previous close); measured on the vault index files, see kzsea.rs.
+fn real_open_from(ticker: &str) -> Option<&'static str> { match ticker { "NIFTY 50" => Some("2011-01-01"), "NIFTYMIDCAP100" => Some("2013-04-01"), _ => None } }
+
 fn run_patterns(id: &str, x: &Ctx, from: usize, to: usize, g_: &dyn Fn(&str) -> f64) -> Vec<Trade> {
     let (h, l, c) = (&x.h, &x.l, &x.c);
     let sd = sd5(h, l, c);
     let g = gti(h, l, c, g_("gti_pct"));
     let (plo, phi) = pivots(h, l);
     let tick = if x.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 };
-    let (pt, hi, lo) = (g_("pt"), g_("sd_hi"), g_("sd_lo"));
+    let (pt, hi, lo) = (g_("pt_pct"), g_("sd_hi"), g_("sd_lo"));
+    let cut = x.r.first().and_then(|r| real_open_from(&r.ticker)); // R4 #380: entries are next opens or stops read against the open; none before the series' real-open start
     let mut out = vec![];
     let mut i = from.max(12);
     while i < to {
-        if let Some(pl) = pattern(id, x, i, &sd, &g, &plo, &phi, tick, pt, hi, lo) {
-            if let Some(t) = sim(x, &sd, &g, &pl, hi, lo, pt, to) {
+        if cut.is_some_and(|c| x.r[i + 1].date.as_str() < c) { i += 1; continue; }
+        let plan = if id.ends_with("_basic") {
+            pattern(&format!("{id}_up"), x, i, &sd, &g, &plo, &phi, tick, pt, hi, lo).or_else(|| pattern(&format!("{id}_dn"), x, i, &sd, &g, &plo, &phi, tick, pt, hi, lo))
+        } else { pattern(id, x, i, &sd, &g, &plo, &phi, tick, pt, hi, lo) };
+        if let Some(pl) = plan {
+            if let Some(t) = sim(x, &sd, &g, &pl, hi, lo, pt, tick, to) {
                 i = t.exit_i + 1;
                 out.push(t);
                 continue;
@@ -741,6 +808,33 @@ fn renshaw(x: &Ctx, nse: bool, from: usize, to: usize, rise: f64, adv: f64, stp:
     finish(out, cur, x, to)
 }
 
+/// Appel's bottom fisher (Boucher, Timing Models p.22): a close below the previous n closes with no such close in the three bars before
+/// and the day's New Lows under a level, for n = 24 / 49; out on a close 1.5% below the highest close since entry (lane CV6 Q9).
+fn bottom_fisher(x: &Ctx, nse: bool, from: usize, to: usize, g_: &dyn Fn(&str) -> f64) -> Vec<Trade> {
+    let Some(nl) = x.series(if nse { NSE_NL[0] } else { NYSE_NL[0] }) else { return vec![] };
+    let c = &x.c;
+    let low_close = |i: usize, n: usize| i >= n && c[i] < c[i - n..i].iter().cloned().fold(f64::INFINITY, f64::min);
+    let (n1, n2) = (g_("n1").round() as usize, g_("n2").round() as usize);
+    let (l1, l2, drop) = (g_("nl1"), g_("nl2"), g_("drop") / 100.0);
+    let fish = |i: usize, n: usize, ok: bool| ok && low_close(i, n) && (1..=3).all(|k| i >= k && !low_close(i - k, n));
+    let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
+    let mut top = 0.0;
+    for i in from..=to {
+        if let Some(_) = cur.as_ref() {
+            top = f64::max(top, c[i]);
+            if c[i] <= top * (1.0 - drop) {
+                let mut t = cur.take().unwrap();
+                (t.exit_i, t.exit_px, t.signal_i, t.reason) = (i, c[i], i, "close 1.5% under the highest close since entry".into());
+                out.push(t);
+            }
+            continue;
+        }
+        let ok = nl[i].is_finite();
+        if i < to && ok && (fish(i, n1, nl[i] < l1) || fish(i, n2, nl[i] <= l2)) { cur = Some(mk(i, c[i])); top = c[i]; }
+    }
+    finish(out, cur, x, to)
+}
+
 /// Daily breadth models on closes. kind: 0 McClellan zero-cross, 1 Appel impulse, 2 Appel McClellan (A-D line), 3 combo.
 fn breadth(x: &Ctx, nse: bool, kind: u8, from: usize, to: usize, g_: &dyn Fn(&str) -> f64) -> Vec<Trade> {
     let s = if nse { NSE_AD } else { NYSE_AD };
@@ -824,6 +918,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "mbsot_appel_impulse" | "mbsot_appel_impulse_nse" => breadth(x, nse, 1, from, to, &g),
         "mbsot_appel_mcclellan" | "mbsot_appel_mcclellan_nse" => breadth(x, nse, 2, from, to, &g),
         "mbsot_appel_combo" | "mbsot_appel_combo_nse" => breadth(x, nse, 3, from, to, &g),
+        "mbsot_appel_bottom_fisher" | "mbsot_appel_bottom_fisher_nse" => bottom_fisher(x, nse, from, to, &g),
         _ if PATTERNS.contains(&id) => run_patterns(id, x, from, to, &g),
         _ => return None,
     })
@@ -874,6 +969,21 @@ mod tests {
         assert!(phi[3].is_nan() && phi[4] == 13.0);
     }
     #[test]
+    fn bottom_fisher_buys_a_fresh_low_close_with_few_new_lows_and_exits_1_5_pct_off_the_high() { // lane CV6 Q9
+        let r: Vec<Row> = [10.0, 10.0, 10.0, 10.0, 9.0, 9.5, 9.6, 9.4].iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: c, high: c, low: c, close: c, volume: None }).collect();
+        let prm: Params = [("n1", 3.0), ("n2", 4.0)].into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        for (id, nm) in [("mbsot_appel_bottom_fisher", "NYSE_NEW_LOWS"), ("mbsot_appel_bottom_fisher_nse", "NSE_NHNL.NL")] {
+            let mut x = Ctx::new(&r, &r, &[]);
+            x.extra.insert(nm.into(), vec![10.0; 8]);
+            let t = run(id, &x, 0, 7, &prm).unwrap();
+            assert_eq!(t.iter().map(|z| (z.legs[0].i, z.exit_i, z.open)).collect::<Vec<_>>(), vec![(4, 7, false)], "{id}"); // 9.4 <= 9.6 * 0.985
+            x.extra.insert(nm.into(), vec![60.0; 8]); // New Lows >= 50 (branch 1) and > 100 is not reached: branch 2 allows <= 100
+            assert_eq!(run(id, &x, 0, 7, &prm).unwrap().len(), 1, "{id}: branch 2 (<= 100) still buys");
+            x.extra.insert(nm.into(), vec![150.0; 8]);
+            assert!(run(id, &x, 0, 7, &prm).unwrap().is_empty(), "{id}: both branches blocked");
+        }
+    }
+    #[test]
     fn half_exit_then_break_even() {
         // long at 100 open, ops 95; SD >= 70 on bar 1 -> half out at bar 2 open (104); break-even 100 hits on bar 3
         let r = rows(&[(99.0, 100.0, 98.0, 99.0), (100.0, 103.0, 99.0, 102.0), (104.0, 105.0, 103.0, 104.0), (101.0, 101.0, 97.0, 98.0)]);
@@ -881,9 +991,52 @@ mod tests {
         let sd = vec![50.0, 75.0, 60.0, 50.0];
         let g = Gti { trend: vec![1; 4], bot: vec![f64::NAN; 4], top: vec![f64::NAN; 4] };
         let pl = Plan { dir: 1.0, sig: 0, ent: Ent::Open, stop: 95.0, half: Half::NextOpen, half_ge: true, be: true, trail_now: false };
-        let t = sim(&x, &sd, &g, &pl, 70.0, 30.0, 1.0, 3).unwrap();
+        let t = sim(&x, &sd, &g, &pl, 70.0, 30.0, 1.0, 0.01, 3).unwrap(); // pt = 1 % of the level (R4 #380); this case has no GTI trailing, so the offset is unused
         assert_eq!(t.legs[0].px, 100.0);
         assert_eq!(t.exits, vec![(2, 104.0, 0.5), (3, 100.0, 0.5)]);
         assert!((t.exit_px - 102.0).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod nse_dump {
+    use super::*;
+    /// hand-run dump for the pandas reference: MBSOT_CSV=<idx_data.csv> MBSOT_OUT=<file> cargo test --release mbsot_nse_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn mbsot_nse_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("MBSOT_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("MBSOT_OUT").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for id in ["mbsot_cgc_basic", "mbsot_rgp_basic", "mbsot_outside_basic", "mbsot_cgc_sd_gti_up", "mbsot_cgc_sd_gti_dn", "mbsot_rgp_sd_up", "mbsot_rgp_sd_dn", "mbsot_rgp_sd_gti_up", "mbsot_rgp_sd_gti_dn", "mbsot_outside_sd_gti_up", "mbsot_outside_sd_gti_dn", "mbsot_inside_sd_up", "mbsot_inside_sd_dn"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+                }
+            }
+        }
+    }
+}
+
+/// The ten SD:5 / GTI pattern ids re-opened on the NSE indices (lane K2, R4 #383 / #380): the stop offset "one point" is the printed "(2%)".
+pub fn nse_pattern(id: &str) -> bool { matches!(id, "mbsot_cgc_sd_gti_up" | "mbsot_cgc_sd_gti_dn" | "mbsot_rgp_sd_up" | "mbsot_rgp_sd_dn" | "mbsot_rgp_sd_gti_up" | "mbsot_rgp_sd_gti_dn" | "mbsot_outside_sd_gti_up" | "mbsot_outside_sd_gti_dn" | "mbsot_inside_sd_up" | "mbsot_inside_sd_dn" | "mbsot_cgc_basic" | "mbsot_rgp_basic" | "mbsot_outside_basic") }
+pub const ADMISSION_NSE: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && nse_pattern(def.id),
+    label: "The SD:5 / GTI pattern trades are written for futures and stocks with stop offsets of 'one point', which the book itself prints as 2 percent ('one point (2%)', p. 4-18). Run on the NSE index series only, one point = 2 percent of the level it is applied to rounded to the 0.05 tick, a declared adaptation (R4 #340 / #380); entries before the series' real-open start are not traded. UNVERIFIED.",
+    basis: "Mastering the Trade-style system book coded in books/mbsot.rs, patterns pp. 3-20, 3-39 to 3-62, GTI pp. 4-1 to 4-18, SD:5 pp. 1-22; independent check authors/conv-1123/k2w/mbsot_ref.py",
+};
+
+#[cfg(test)]
+mod nse_admission {
+    /// R4 #380 / lead review: ADMISSION_NSE admits exactly the ten SD:5 / GTI pattern ids and the three basic ids and no other mbsot id.
+    #[test]
+    fn nse_entry_admits_exactly_the_ten_pattern_ids() {
+        let all = super::catalogue();
+        let n: Vec<&str> = all.iter().filter(|d| (super::ADMISSION_NSE.reviewed)(d)).map(|d| d.id).collect();
+        assert_eq!(n.len(), 13, "{n:?}");
+        assert!(n.iter().all(|i| super::nse_pattern(i)));
+        assert!(all.iter().filter(|d| !super::nse_pattern(d.id)).all(|d| !(super::ADMISSION_NSE.reviewed)(d)));
     }
 }

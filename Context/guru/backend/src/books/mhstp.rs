@@ -57,7 +57,13 @@ pub const OPEN_WINDOW: &[(&str, &str, &str)] = &[("scbrower_long", "1982-04-21",
     // lane M3 (R4 #346): the COT weekly rule fills at the weekly open; the first COT row with a release date is 1992-10-06
     ("ftm_rg_cot", "1992-10-06", "1995-07-31"),
     // lane M3: the $4,500 stop of the close-entry prime-rate card fills at the open on a gap (R4 #328/#330)
-    ("stad5_im2", "1982-04-21", "1995-07-31")];
+    ("stad5_im2", "1982-04-21", "1995-07-31"),
+    // lane F2 (R4 #330): Piranha's stops gap-fill at the &SP open (40 of its 103 trades after 1995-07 exit at an open, 6 of 64 before)
+    ("lebsp_piranha", "1982-04-21", "1995-07-31"),
+    // lane F3 (R4 #330/#372): CotTrader buys/sells at the &SP open; the first COT report with a release date is 1992-10-06
+    ("pbwts_cot", "1992-10-06", "1995-07-31"),
+    // lane F3 (R4 #330): the stop entries and exits gap-fill at the &SP open (3 of the 29 trades in the book window 5/3/96-4/19/02, 25 of 72 in 1982-1995); the book window lies wholly after the open change
+    ("pbwts_intermarket", "1982-04-21", "1995-07-31")];
 pub const OPEN_WHY: &str = "from August 1995 Norgate's &SP open is the overnight-session or a vendor open (30-57% of days open at the prior close), not the pit open this card's entries, fills or stops read (R4 #328, #330)";
 /// Lane PF: the same cap for other contracts' open changes, each with its own reason (first, last, why).
 const YAP_WHY: &str = "from January 1992 Norgate's SPI (&YAP) open is a session or vendor open (median gap 3-6 bp against 9-70 bp before; up to half the days open at the prior close), not the day-session open this card enters and exits at (R4 #333, as #330)";

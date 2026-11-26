@@ -11,7 +11,7 @@ pub const BOOK: &str = "nfhp";
 pub const SPX_PTS: &[&str] = &["nfhp_quadram_tf"];
 
 const METALS: &str = "Comex silver/gold futures, Swiss franc futures, US T-bill yield and CPI inflation (real T-bill rate); none in the vault";
-const TBOND: &str = "T-Bond / 10-year note futures, LME nickel, Dow Jones Utilities, Fidelity Select Chemicals (FSCHX) and Financial (FIDSX) prices; none in the vault";
+const TBOND: &str = "three of the four inputs are not held (lane H3, 19 Nov 2026, checked against the data folders): LME nickel (no nickel series), Fidelity Select Chemicals FSCHX and Fidelity Select Financial FIDSX (no mutual-fund NAV series). Held: T-Bond and 10-year note futures (Norgate &ZB, &ZN) and the Dow Jones Utility Average ($DJU, but the model needs DJUA/S&P). The system needs model count >= 3 of 4 (Fig. 28), which cannot be formed with three inputs missing";
 pub const NYSE: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
 const NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 

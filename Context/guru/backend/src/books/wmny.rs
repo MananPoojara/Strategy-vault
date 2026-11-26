@@ -10,17 +10,18 @@ pub const BOOK: &str = "wmny";
 /// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short", "wmny_trend_rsi21", "wmny_trend_rsi_ma", "wmny_trend_srsi", "wmny_trend_srsi_ma", "wmny_willr", "wmny_dji_5_21m",
     "wmny_nhnl_ratio", "wmny_nhnl_cci" /* lane F3 (13 Nov 2026, R4 #294 (2)): Norgate #NASHI/#NASLO, independent reference titles-1030/F3w */, "wmny_pct_nh" /* lane PB batch 2: NYSE new highs/lows from Norgate #NYSEHI/#NYSELO; ref authors/pb/w/pb_ref4.py */,
-    "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse" /* lane CV6 (R4 #340 / #347 / #365): NSE new highs / lows twins */];
+    "wmny_nhnl_ratio_nse", "wmny_nhnl_cci_nse", "wmny_pct_nh_nse" /* lane CV6 (R4 #340 / #347 / #365): NSE new highs / lows twins */];
 /// Lane CV6: the NSE counts (extra_data/india NSE_NHNL.csv: stocks at a new 52-week high / low, 2019-10-16 on).
 pub const NHNL_NSE: &[&str] = &["NSE_NHNL.NH", "NSE_NHNL.NL"];
-const NSE_NOTE: &str = "[R4 #340 / #347 declared adaptation, UNVERIFIED] NSE twin of the Nasdaq new-high / new-low rule: the same MetaStock formulas, parameters and ratio levels (0.4, 0.3, 0.6, 1, ...; they are ratios, not counts) on the NSE's own daily counts of stocks at a new adjusted 52-week high / low (extra_data/india NSE_NHNL, 2019-10-16 on; the article's Nasdaq counts are not an NSE series). Runs on Indian indices and stocks; US instruments are refused. The article tested QQQ: no NSE result exists, and the NSE series is 7 years long. Measured firing rate, NSE vs Nasdaq: ";
+pub const NSE_NOTE_PUB: &str = NSE_NOTE;
+const NSE_NOTE: &str = "[R4 #340 / #347 declared adaptation, UNVERIFIED] NSE twin of the US new-high / new-low rule (Nasdaq counts for the Peterson systems, NYSE counts for the % new highs rule): the same formulas, parameters and ratio levels (0.4, 0.3, 0.6, 1, 30 / 70, ...; they are ratios, not counts) on the NSE's own daily counts of stocks at a new adjusted 52-week high / low (extra_data/india NSE_NHNL, 2019-10-16 on; the originals' Nasdaq or NYSE counts are not NSE series). Runs on Indian indices and stocks; US instruments are refused. The sources tested US markets (the Peterson articles QQQ, the % new highs rule the NYSE): no NSE result exists, and the NSE series is 7 years long. Measured firing rate, NSE vs the US original: ";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mut v = base_catalogue();
-    for (base, id, name, rate) in [("wmny_nhnl_ratio", "wmny_nhnl_ratio_nse", "NSE new-high/new-low ratio MACD system (Peterson, A), NSE counts", "Ratio MACD rule, default inputs, over the overlap (NSE run 2019-10-27..2020-09-04, 216 bars; Nasdaq 2019-10-16..2020-09-04, 225 bars): NSE twin (NIFTY 50) 67.7 entries and exits a year, long 40.3% of days; Nasdaq original (SPX) 137.8 a year, long 40.9%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 103.1 a year, long 38.8%; Nasdaq original over 2014-01-02..2020-09-04: 115.7 a year, long 40.4%."), ("wmny_nhnl_cci", "wmny_nhnl_cci_nse", "NH/NL ratio + CCI(6) system (Peterson, B), NSE counts", "CCI rule, default inputs, over the same overlap (NSE run 2019-10-27..2020-09-04; Nasdaq 2019-10-16..2020-09-04): NSE twin (NIFTY 50) 24.5 trades a year, long 48.1% of days and short 48.6%; Nasdaq original (SPX) 16.8 a year, long 29.3% and short 68.4%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 25.6 a year; Nasdaq original over 2014-01-02..2020-09-04: 24.4 a year, long 37.7%, short 60.8%.")] {
+    for (base, id, name, rate) in [("wmny_nhnl_ratio", "wmny_nhnl_ratio_nse", "NSE new-high/new-low ratio MACD system (Peterson, A), NSE counts", "Ratio MACD rule, default inputs, over the overlap (NSE run 2019-10-27..2020-09-04, 216 bars; Nasdaq 2019-10-16..2020-09-04, 225 bars): NSE twin (NIFTY 50) 67.7 entries and exits a year, long 40.3% of days; Nasdaq original (SPX) 137.8 a year, long 40.9%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 103.1 a year, long 38.8%; Nasdaq original over 2014-01-02..2020-09-04: 115.7 a year, long 40.4%."), ("wmny_nhnl_cci", "wmny_nhnl_cci_nse", "NH/NL ratio + CCI(6) system (Peterson, B), NSE counts", "CCI rule, default inputs, over the same overlap (NSE run 2019-10-27..2020-09-04; Nasdaq 2019-10-16..2020-09-04): NSE twin (NIFTY 50) 24.5 trades a year, long 48.1% of days and short 48.6%; Nasdaq original (SPX) 16.8 a year, long 29.3% and short 68.4%. Longest NSE stretch without a missing day (2025-07-25..2026-11-17): 25.6 a year; Nasdaq original over 2014-01-02..2020-09-04: 24.4 a year, long 37.7%, short 60.8%."), ("wmny_pct_nh", "wmny_pct_nh_nse", "% new highs on NSE counts: 10-day SMA of NH/(NH+NL) crosses 30 up / 70 down (Hurley, Appel)", "% new highs rule, default inputs (10-day SMA, 30 / 70): over the overlap (NSE run 2019-10-27..2020-09-04; NYSE 2019-10-16..2020-09-04) NSE twin (NIFTY 50) 2 trades = 2.3 a year, long 56.9% of days; NYSE original (SPX) 1 trade = 1.1 a year, long 8.4%; over its whole 1999-2020-09-04 run the NYSE original makes 1.1 a year, long 39.8%. Longest gap-free NSE stretch 2025-07-25..2026-11-17: 2 trades, 1.6 a year. Two trades in a year is a small sample.")] {
         let t = v.iter().find(|d| d.id == base).map(|b| StrategyDef { id, name, group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix, needs_series: NHNL_NSE, book: b.book, rules: b.rules,
-            notes: Box::leak(format!("{NSE_NOTE}{rate}").into_boxed_str()), claim: None });
+            notes: Box::leak(format!("{NSE_NOTE}{rate} Original card (labelled details apply unchanged): {}", b.notes).into_boxed_str()), claim: None });
         v.extend(t);
     }
     v
@@ -139,7 +140,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "wmny_belt_hold" | "wmny_engulf" | "wmny_candle_short" => ("wmny_candles", "Working Money · candlestick systems", v),
         "wmny_trend_rsi21" | "wmny_trend_rsi_ma" | "wmny_trend_srsi" | "wmny_trend_srsi_ma" => ("wmny_trendilator", "Working Money · Trendilator (Blackman)", v),
-        "wmny_nhnl_ratio" | "wmny_nhnl_cci" | "wmny_nhnl_ratio_nse" | "wmny_nhnl_cci_nse" | "wmny_pct_nh" | "wmny_bond_band" => ("wmny_breadth", "Working Money · breadth / intermarket (data gap)", v),
+        "wmny_nhnl_ratio" | "wmny_nhnl_cci" | "wmny_nhnl_ratio_nse" | "wmny_nhnl_cci_nse" | "wmny_pct_nh_nse" | "wmny_pct_nh" | "wmny_bond_band" => ("wmny_breadth", "Working Money · breadth / intermarket (data gap)", v),
         "wmny_lazy_year" | "wmny_dji_5_21m" | "wmny_zscore" | "wmny_willr" | "wmny_pullback" => ("wmny_timing", "Working Money · timing systems", v),
         "wmny_not_testable" => ("wmny_other", "Working Money · not testable", v),
         _ => return None,
@@ -395,7 +396,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
         }
         "wmny_pct_nh" => {
-            let (Some(nh), Some(nl)) = (x.series("NYSE_NEW_HIGHS"), x.series("NYSE_NEW_LOWS")) else { return Some(vec![]) };
+            let names: &[&str] = if twin_nse { NHNL_NSE } else { &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"] };
+            let (Some(nh), Some(nl)) = (x.series(names[0]), x.series(names[1])) else { return Some(vec![]) };
             let r: Vec<f64> = (0..n).map(|i| 100. * nh[i] / (nh[i] + nl[i])).collect();
             let m = sma(&r, u("n"));
             let (lo, hi) = (vec![g("lo"); n], vec![g("hi"); n]);

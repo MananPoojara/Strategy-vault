@@ -15,8 +15,8 @@ pub const REVIEWED: &[&str] = &["rgc_cdow_mon_long", "rgc_tdom17_long", "rgc_tdo
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FUT: &str = "needs the book's futures/intermarket series (T-Bond, Eurodollar, T-Bill, Dollar index, CRB, XAU, XOI, UTY, gold, crude, D-Mark, Yen, silver, Kodak etc.) - none is in the vault (only NIFTY indices, SPX/NDX/DJI, VIX/India VIX, NSE breadth)";
-const FUND: &str = "needs monthly/weekly US fundamental series (CPI, T-Bill and long-bond yields, M2, consumer sentiment, unemployment duration/claims, prime and discount rates) - not in the vault";
-const COT: &str = "needs CFTC Commitment of Traders weekly positions and T-Bond/coffee futures - not in the vault";
+const FUND: &str = "the Table 3.8 DJIA rule needs the Fed discount-rate series (not held), M2/consumer sentiment/unemployment series are not held either; prime rate (DPRIME), DTB3, DGS10/DGS30 (from 1977) and CPI with release dates ARE held, so only the discount-rate leg (and the 1944-1976 long-bond history) blocks it";
+const COT: &str = "needs CFTC COT weekly positions for T-Bonds and coffee: only COT_138741 (S&P 500) is held, and the LookBack N is not printed (p.90); Norgate &ZB and &KC futures are held";
 const DOLLAR_STOP: &str = "dollar stop on a futures contract: needs the futures contract and its point value; the vault has no futures data (cash index points are not substituted)";
 const MEM: &str = "needs the proprietary MEM/TradeCycles functions (RSMemCycle1.2, RSMemPred, RSCycleTrend) whose code and internal settings the book does not give";
 
@@ -71,9 +71,6 @@ pub fn catalogue() -> Vec<StrategyDef> {
             Status::NotTestable("Table 2.2 step 3 \"Multiply this 5-day return by the proper percentage\" and the scaling window are not defined; the index is part of a commercial add-in"),
             &["E|S&P500: 5-day hold, trigger -.20, S&P below 10-day MA (Table 2.7); T-Bonds: 8-year window, 6-day hold, trigger > -.20, 6-period momentum < 0 (Table 2.8)", "F|T-Bonds: \"We collected 2,000 days' seasonal data before generating our first trade\" (p.55)"],
             "Table 2.7: 761.75 points, 60% win; Table 2.8: $57,593.75, 71% win."),
-        mk("rgc_corn_counterseasonal", "Corn seasonal short and counterseasonal long", "Ch. 2 · Counterseasonal", "Long/Short", Status::NeedsData("needs cash/futures corn prices"),
-            &["E|Sell corn on the first trading day after June 20; exit November 1 (p.57)", "E|If the short is not profitable after July 21, go long the first trading day after July 21 until the first trading day of the next year (p.57)"],
-            "p.57: $28,487.50 (65% win) for the short; $38,537.50 (58%) with the counterseasonal long."),
         // ---------------- Chapter 1 / 8: intermarket ----------------
         mk("rgc_im_sp_tbond", "S&P500 vs T-Bonds: trend, ratio and divergence models", "Ch. 1, 7, 8, 18 · Intermarket S&P500", "Long/Short", Status::Live,
             &["E|Long S&P when T-Bonds > 26-day MA, short below (p.27-28); T-Bond/S&P ratio vs 28-day average (p.29); Eurodollar/S&P ratio vs 10-day MA (p.29)",
@@ -191,7 +188,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "rgc_cdow_fri_short" => ("rgc_calendar", "Calendar effects (S&P500)", "Conditional Friday · short"),
         "rgc_tdom17_long" => ("rgc_calendar", "Calendar effects (S&P500)", "TDOM 17 · long 5"),
         "rgc_tdom2_short" => ("rgc_calendar", "Calendar effects (S&P500)", "TDOM 2 · short 2"),
-        "rgc_mon_tb26" | "rgc_seasonal_sp" | "rgc_rb_seasonal" | "rgc_corn_counterseasonal" => ("rgc_calendar", "Calendar effects (S&P500)", "Not runnable"),
+        "rgc_mon_tb26" | "rgc_seasonal_sp" | "rgc_rb_seasonal" => ("rgc_calendar", "Calendar effects (S&P500)", "Not runnable"),
         "rgc_runaway_gap" => ("rgc_gap", "Gap patterns", "Runaway gap"),
         "rgc_runaway_gap_f5" => ("rgc_gap", "Gap patterns", "Runaway gap + 5-day filter"),
         "rgc_oops_600" => ("rgc_gap", "Gap patterns", "OOPS + $600 stop (data missing)"),

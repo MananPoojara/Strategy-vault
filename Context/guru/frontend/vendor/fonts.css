@@ -50,3 +50,10 @@
   font-display: swap;
   src: url(fonts/Inter-var-latin.woff2) format('woff2');
 }
+/* Global type, matched to the signals app (19 Nov 2026): Familjen Grotesk (UI, numbers), Plus Jakarta Sans (headings),
+   Courier Prime, RupeeSm (Plus Jakarta's rupee glyph only). All SIL Open Font License, self-hosted (site CSP blocks Google Fonts). */
+@font-face { font-family: 'Familjen Grotesk'; src: url(fonts/FamiljenGrotesk-var.woff2) format('woff2'); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Plus Jakarta Sans'; src: url(fonts/PlusJakartaSans-var.woff2) format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Courier Prime'; src: url(fonts/CourierPrime-Regular.woff2) format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Courier Prime'; src: url(fonts/CourierPrime-Bold.woff2) format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'RupeeSm'; src: url(fonts/PlusJakartaSans-var.woff2) format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; size-adjust: 72%; unicode-range: U+20B9; }

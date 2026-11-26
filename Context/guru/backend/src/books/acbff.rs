@@ -19,7 +19,7 @@ use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "acbff";
 /// Admitted ids (authors/collins/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */, "acbff_5c1_day" /* D1-16: sides fixed, book table reproduced */];
+pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */, "acbff_5c1_day" /* D1-16: sides fixed, book table reproduced */, "acbff_quiz_20ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
@@ -169,6 +169,7 @@ impl<'a, 'b> Eng<'a, 'b> {
 
 /// Run a strategy script. `s(i, pos, next, this_close)` is called at the close of bar i (position as of the
 /// script run); `next` holds orders for bar i+1, `this_close` orders fill at bar i's close.
+thread_local! { static FUT_MIN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 fn engine<F: FnMut(usize, &Pos, &mut Vec<O>, &mut Vec<O>)>(x: &Ctx, from: usize, to: usize, s: F) -> Vec<Trade> { engine_ep6(x, from, to, false, s) }
 
 /// `engine` with EP6 (#243, lane K63): with `on`, an order-dependent bar is decided on its real 1-minute path (intraday_ep6).
@@ -478,6 +479,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_2hl_3", "2d high/low exit #3 (Table 22.2)", g21, "Long/Short", Live,
             &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror with c < l[1] (App. p.216)", "X|second-high/low targets; \"if c < average(c,40) then sell next bar at market\"; mirror"],
             "Text (p.83) says 'buy at market'; code uses the 50% stop; code used.", cl("97", "55.67%", "$595.88 (net $57,800)", "multi-day", SP)),
+        sd!("acbff_fut_2hl_3", "2d high/low exit #3 on NIFTY futures daily bars (Table 22.2)", g21, "Long/Short", Live,
+            &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror short (App. p.215-216)", "X|second-high/low targets; average market exit; mirror", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_2hl_3 (Table 22.2; entry stop 0.5 x the 3-day average range from the next open, the second-high / second-low targets, the 40-day average market exit; the text-vs-code difference noted on that card is read as the code, as there), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Stop / limit / market orders are walked on the daily bar path (open, the extreme nearer the open, the other extreme, close; the engine convention, no minute walk); the share of trades whose outcome depends on that order is in the gate row. The book's table is the S&P full futures 2001-2005; not comparable. No costs."], "Same rule as acbff_2hl_3 on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
+        sd!("acbff_fut_2hl_2", "2d high/low exit #2 on NIFTY futures daily bars (Table 22.1)", g21, "Long/Short", Live,
+            &["E|\"if c > average(c,25) then buy next bar at o of tomorrow+.5*average(range,3) stop\"; mirror short (App. p.215)",
+            "X|second-high/low targets; average(c,25) market exit; mirror",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_2hl_2 (Table 22.1; entry stop 0.5 x the 3-day average range from the next open, the second-high / second-low targets, the 25-day average market exit), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Same-day order of stop, limit and market orders: on a day whose outcome depends on the order of the daily high and low (R4 #240: 62 of 323 and 15 of 49 trades for rx_filter, 21 of 269 and 7 of 71 for 2hl_2 on the daily path) the orders are walked on that day's FUT1 1-minute bars (EP6 resolver, gaps between minutes filled at the next minute open); other days use the daily bar path. The book's table is the S&P full futures; not comparable. No costs."], "Same rule as acbff_2hl_2 on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
+        sd!("acbff_fut_rx_filter", "Range expansion with two-same-way filter on NIFTY futures daily bars (Table 33.1)", g33, "Long/Short", Live,
+            &["F|x=1 if two closes in a row the same way, else 0; filter average(x,n) >= u, n=20 u=.6 (App. p.227)",
+            "E|\"if average(x,n) >= u then buy next bar at o of tomorrow+(.5*average(range,3)) stop\"; mirror short",
+            "X|\"sell next bar at o of tomorrow-(.5*average(range,3)) stop\"; \"buy to cover next bar at o of tomorrow+(.5*average(range,3)) stop\"",
+            "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as acbff_rx_filter (Table 33.1; x = 1 when two closes in a row go the same way, filter average(x,20) >= 0.6, entry and exit stops at the next open +- 0.5 x the 3-day average range; the book's default u = 0.6), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). Same-day order of stop, limit and market orders: on a day whose outcome depends on the order of the daily high and low (R4 #240: 62 of 323 and 15 of 49 trades for rx_filter, 21 of 269 and 7 of 71 for 2hl_2 on the daily path) the orders are walked on that day's FUT1 1-minute bars (EP6 resolver, gaps between minutes filled at the next minute open); other days use the daily bar path. The book's table is the S&P full futures; not comparable. No costs."], "Same rule as acbff_rx_filter on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         sd!("acbff_2hl_4", "2d high/low exit #4 · limit entries (Table 22.3)", g21, "Long/Short", Live,
             &["E|\"if c > h[1] and c > average(c,40) then buy next bar at o of tomorrow-.5*average(range,3) limit\"; mirror (App. p.218)", "X|second-high/low targets; average(c,40) market exits"], SNOTE, cl("99", "63.64%", "$1,856.31 (net $183,775)", "multi-day", SP)),
         sd!("acbff_wk_rx", "One-week range expansion (Table 25.1/25.3)", g25, "Long/Short", Live,
@@ -527,6 +539,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"if c < c[1] and c[1] > c[2] and ... c[5] > c[6] then buy next bar at market\"; mirror sell short; no other exit (App. p.229)", "X|stop and reverse on the opposite signal (no other exit in the code)"], "Stop and reverse only.", cl("24", "58.33%", "$11,286 (net $270,863)", "long-term", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_5c1_perp", "Five one-way, one opposite, one irrelevant · perpetual (Table 36.3)", g33, "Long/Short", Live,
             &["E|\"if c[1] < c[2] and c[2] > c[3] and ... c[6] > c[7] then buy next bar at market\"; mirror (App. p.230)", "X|stop and reverse on the opposite signal (no other exit in the code)"], "Stop and reverse only.", cl("24", "66.67%", "$13,351.56 (net $320,438)", "long-term", "S&P full futures 1-2-96 to 11-19-05")),
+        sd!("acbff_fut_5c_perp", "Five same-way closes then opposite · perpetual, NIFTY futures daily bars (Table 36.2)", g33, "Long/Short", Live,
+            &["E|\"if c < c[1] and c[1] > c[2] and ... c[5] > c[6] then buy next bar at market\"; mirror sell short; no other exit (App. p.229-230)", "X|stop and reverse on the opposite signal (no other exit in the code)", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as the card it names (Table 36.2: sides as printed, stop and reverse on the opposite signal, market orders at the next open), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). The book's table is the S&P full futures 1996-2005 (24 trades); it is not comparable. No costs."], "Same rule as acbff_5c_perp on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
+        sd!("acbff_fut_5c1_perp", "Five one-way, one opposite, one irrelevant · perpetual, NIFTY futures daily bars (Table 36.3)", g33, "Long/Short", Live,
+            &["E|\"if c[1] < c[2] and c[2] > c[3] and ... c[6] > c[7] then buy next bar at market\"; mirror sell short; no other exit (App. p.229-230)", "X|stop and reverse on the opposite signal (no other exit in the code)", "A|Adapted (R4 #340, lead 23 Nov 2026), UNVERIFIED: same code and book-literal readings as the card it names (Table 36.3: sides as printed, stop and reverse on the opposite signal, market orders at the next open), run on NIFTY 50 / NIFTYBANK FUTURES daily bars built from the FUT1 1-minute series (lane DI; before 15:30 IST, nearest-expiry continuous, NOT back-adjusted: a position carried over a roll includes the roll gap; days with a blank minute volume are absent). The book's table is the S&P full futures 1996-2005 (24 trades); it is not comparable. No costs."], "Same rule as acbff_5c1_perp on NIFTY futures daily bars (see the adaptation line). Unverified.", None),
         sd!("acbff_5c1_day", "Five one-way, one opposite, one irrelevant · day (Table 36.3)", g33, "Long/Short", Live,
             &["E|as 36.3 perpetual + \"setexitonclose\" (App. p.230: type it at the end for the day version)", "X|setexitonclose: out at the close of the entry day"], MAP, cl("59", "64.41%", "$760.59 (net $44,875)", "day", "S&P full futures 1-2-96 to 11-19-05")),
         sd!("acbff_3rd_fade", "Third day fade (Table 37.1)", g33, "Long/Short", Live,
@@ -587,20 +603,19 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_2bar_open", "Two bars in a row vs open · 60-min (Table 31.3)", g30, "Long/Short", Live, &["E|60-min bars, bars stamped 10:30 to before 14:30 (b = 10.3, x = 14.3): both the last two closes above the day's open and rising -> buy next bar at market; mirror short (App. p.226)", "X|time = 14:30: exit next bar at market (the 14:30 CT open); else the day's close"], "c[1] = the previous 60-minute bar. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_final_third", "Final third of day (Table 31.4)", g30, "Long/Short", Live, &["E|135-min bars (405-minute session in three): at 13:00 (the bar stamped 1300) both bars closed above the day's open -> buy at the market; both below -> sell short (App. p.226)", "X|y = 15.15: out on the close (cash close here)"], "On the 390-minute cash session the bars are 9:30-11:45, 11:45-14:00 and 14:00-16:00 ET (the last one shorter); on NSE 135/135/105 minutes from 9:15. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_1230", "12:30 entry system (Table 34.1)", g30, "Long/Short", Live, &["E|\"if time=930 then hh=highd(0); if time=930 then ll=lowd(0); if time=1130 then hhh=highd(0); if time=1130 then lll=lowd(0); if time=1230 and opend(0)-lowd(0)<=.25*(highd(0)-lowd(0)) and highd(0)>hhh and hhh>hh then buy next bar at market\" (Table 34.1, App. p.227): 5-min bars; hh/ll = the day's high/low so far at the 9:30 bar, hhh/lll = at the 11:30 bar; at 12:30: open in the lowest 25% of the day's range so far, day high > hhh > hh -> buy next bar at market; mirror short. Prose p.152: \"The high must be higher than it was at 11:30. The 11:30 high must be higher than the 9:30 high.\"", "X|x = 15.05 (\"10 minutes before the close\", p.152): after the cash close, so out on the day's close"], "Decision 222: hh/ll and hhh/lll are the session's running high/low at 9:30 and 11:30 (highd(0)/lowd(0) in the printed Table 34.1, p.227, and the prose p.152). The separate TradeStation code file on the share prints hh=h / hhh=h (the 9:30/11:30 bar's own high); the book's printed code and prose are followed. [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
-        sd!("acbff_9oc", "Majority of 9 open-closes · 5-min (Table 35.1)", g30, "Long/Short", Live, &["E|5-min bars: e = +1 up bar (c > o), -1 down bar, 0 unchanged; 9:15-14:45 average(e,9) > 0 -> buy next bar at market, < 0 -> sell short (reverses) (App. p.228)", "X|time = 15:00: next bar at market = the cash close"], "average(e,9) on one continuous 5-minute series (at 9:15 it holds only the day's own nine bars, as the book says). [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
+        sd!("acbff_9oc", "Majority of 9 open-closes · 5-min (Table 35.1)", g30, "Long/Short", Live, &["E|5-min bars: e = +1 up bar (c > o), -1 down bar, 0 unchanged; 9:15-14:45 average(e,9) > 0 -> buy next bar at market, < 0 -> sell short (reverses) (App. p.228)", "X|time = 15:00: next bar at market = the cash close"], "average(e,9) on one continuous 5-minute series (at 9:15 it holds only the day's own nine bars, as the book says). [intraday EP, K39] Unstated choices: (1) the book's CST clock is read as minutes after each market's open; (2) N-minute bars are built from the 1-minute bars with the stamp = bar end and the next bar = its first-minute open; (3) exits at or after the cash close (15:00 CT) are taken at the day's last close; (4) NIFTY 50 days from 2026-08-11 are skipped. Honest total: 4 card-specific choices (audit count 4). Engine-wide defaults (labelled, not counted, R4 #404): next-bar fills, one position at a time, no costs, the data window. Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_midpoint", "Daily midpoint demarcation · 5-min (Table 35.2)", g30, "Long/Short", Live, &["E|5-min bars 9:15-14:45: close above (day high + day low)/2 so far -> buy next bar at market, below -> sell short (reverses) (App. p.228)", "X|time = 15:00: next bar at market = the cash close"], "[intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_4ind", "Four indicator intraday system (Tables 35.3-35.6)", g30, "Long/Short", NeedsData(DS), &["E|Dow-Spoo, vs open, 9 open-closes, midpoint all agree; 35.6 adds the two-bar exit (App. pp.228-229)"], "", None),
         sd!("acbff_rsi_5min", "Five-minute RSI go-with (Table 39.1)", g30, "Long/Short", Live, &["E|RSI(Close, 9) on 5-min bars > 85 -> buy next bar at market, < 15 -> sell short, 9:15-14:45 (b = 9.15, x = 14.45) (App. p.231)", "X|z = 15.10: after the cash close, so out on the day's close"], "TradeStation RSI (Wilder smoothing) on one continuous 5-minute series across days (EP2). [intraday EP, K39] Run on N-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped). Book clock = CST on the 8:30-15:15 index futures session; each printed time is read as minutes after the 8:30 open (9:30 ET cash open, 9:15 NSE open), the way the book's 'Bonds, Currencies' versions move the index times to their own open (Tables 31.2-31.4) [reading]. TradeStation bar stamps = bar end; 'next bar at market' = the next bar's first-minute open; a signal on the day's last bar makes no trade; exits the code puts at or after the cash close (15:00 CT) are at the day's last close [reading: the book says every trade exits on the close]. Index futures in the book; cash indices and SPY are a declared application, cash-index shorts are hypothetical.", None),
         sd!("acbff_bond_index", "Bonds lead the indexes (Table 41.14)", g30, "Long/Short", NeedsData("Needs 10-minute e-mini S&P bars AND 10-minute 30-year T-bond futures bars (data2) for the 10:00 entry / 15:10 exit."), &["E|10:00: S&P above its open and bonds in the top/bottom 25% of their range (App. p.234)"], "", None),
         sd!("acbff_bond_basis", "Basis-point bond system (Ch 4)", g4, "Long/Short", NeedsData("Needs 30-year T-bond futures daily prices in 32nds (and the pre-1990s 8:00 CBOT open); the rule keys off whole-point bond prices."), &["E|open in a different point than the previous close: stop entry on crossing 00 back into the original point (p.11)", "X|day 2: day-1 low target (short), high+1 tick stop, else out on the close"], "", None),
-        sd!("acbff_bean_dual", "Fading closes · dual entry soybeans (Ch 4)", g4, "Long/Short", NeedsData("Needs soybean futures daily data."), &["E|after a down close: open below the low -> buy stop at the close; open between low and close -> buy at the high; exits as the bond system (p.12)"], "", None),
         sd!("acbff_bean_switch", "Soybean switch (Table 32.1)", g4, "Long/Short", NeedsData("Soybean futures system (Tables 32.1-32.2 list only grains, metals, softs and currencies)."), &["E|avg(range,5) >= 2*avg(range,20)[5] or close in top 10% of the 20-day range: buy at open+range stop, sell short at open-range stop (App. p.227)", "X|target open+.5*20-day range, stop open-.4*range"], "", None),
         sd!("acbff_bean_march", "Soybean seasonal · buy in March (Table 41.8)", g41, "Long", NeedsData("Needs November soybean futures (dollar target $2,000 / stop $4,000)."), &["E|first trading day of March buy (App. p.233)", "X|$2,000 target, $4,000 stop, else out in July"], "", None),
         sd!("acbff_bean_july", "Soybean seasonal · sell in July (Table 41.10)", g41, "Short", NeedsData("Needs November soybean futures (dollar target $4,000 / stop $5,000)."), &["E|first trading day of July sell short (App. p.233)", "X|$4,000 target, $5,000 stop, else out in November"], "", None),
         // ---- not testable
         sd!("acbff_ch4_sp_range", "S&P range sell stop (Black Monday, Ch 4)", g4, "Short", NotTestable("Entry only (low minus previous range sell stop, p.12); the book gives no exit."), &["E|subtract the previous daily range from the low for a sell stop (p.12)"], "", None),
         sd!("acbff_walkforward", "Annual re-optimisation (Ch 23)", g4, "Long/Short", NotTestable("A parameter-selection procedure (best ROA over 600 (e,n,p,q) combinations per 5-year block), not a trading rule; the fixed-parameter rows (Tables 23.2/23.3) are acbff_three with those params."), &["F|optimise e 5-50, n 2-4, p 5/10, q 5-50 on the prior five years, trade the next year (p.88)"], "", None),
-        sd!("acbff_quiz_20ma", "Quiz example: 20-day average + 75% range stop (Ch 45)", g4, "Long/Short", NotTestable("Quiz illustration with no code: whether 'the previous 20-day closing average' includes yesterday's close is not stated (p.198)."), &["E|close above the previous 20-day average: buy next open + 75% of the previous day's range on a stop; vice versa; perpetual"], "", None),
+        sd!("acbff_quiz_20ma", "Quiz example: 20-day average + 75% range stop (Ch 45)", g4, "Long/Short", Live, &["E|close above the previous 20-day average: buy next open + 75% of the previous day's range on a stop; vice versa; perpetual", "X|the system is perpetual: the opposite signal's entry stop closes the position and reverses it (Ch 45 quiz, p.198)", "A|Declared readings (lane I2, 3; R4 #340/#348/#382): (1) 'the previous 20-day closing average' = the simple average of the 20 closes ending the day before the signal close (the book does not say whether the signal close is in it); (2) the stop order is placed at every close while the condition holds and the position is not already on that side, and lapses after one bar; (3) the opposite signal reverses at the stop ('perpetual' is the book's own word for an always-in reversal system), the stop being at the next open plus or minus 75% of the signal bar's range, so it never lies behind the open (no same-bar order ambiguity). Quiz illustration without a results table; run on the vault's index series, declared adaptation, UNVERIFIED."], "Collins quiz example (Ch 45, p.198): 20-day average with a 75% range entry stop, stop and reverse.", None),
     ]
 }
 
@@ -649,6 +664,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "acbff_short_dom" | "acbff_dom" | "acbff_dom_day" => vec![p("n", "Long start day", 21., 1., 28., 1.), p("p", "Short start day", 6., 1., 28., 1.)],
         "acbff_dom_day_cc" => vec![p("n", "Long start day", 21., 1., 28., 1.), p("p", "Short start day", 6., 1., 28., 1.), p("close_all", "Lower-close filter on all long days (text p.119)", 0., 0., 1., 1.)],
         "acbff_moy" | "acbff_moy_dom" | "acbff_moy_dom_day" | "acbff_cal3" | "acbff_cal2_day" => vec![p("n", "Month ending the short (long from next)", 10., 1., 12., 1.), p("p", "Month ending the long", 4., 1., 12., 1.)],
+        "acbff_quiz_20ma" => vec![p("k", "Entry stop x previous day's range (book 0.75)", 0.75, 0.1, 2., 0.05)],
         "acbff_rx_filter" => vec![p("u", "Filter threshold (0 = no filter)", 0.6, 0., 1., 0.05), p("n", "Filter days", 20., 5., 50., 1.), p("k", "Stop x 3-day avg range", 0.5, 0.1, 2., 0.05)],
         "acbff_cup_3day" | "acbff_3rd_fade" => vec![tick()],
         "acbff_5d_avg_fade" => vec![tick(), p("exit_late", "1 = exit one day later (code under next-bar timing)", 0., 0., 1., 1.)],
@@ -719,9 +735,21 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let defs = catalogue();
     let d = defs.iter().find(|d| d.id == id)?;
     if d.status != Status::Live || from > to || to >= x.r.len() { return None; }
+    if let Some(base) = id.strip_prefix("acbff_fut_") { // lane I2 (R4 #340): the same rule on NIFTY futures daily bars
+        let (rows, map) = crate::books::sprfs::fut_daily_rows(x, from, to);
+        if rows.len() < 2 { return Some(vec![]); }
+        let mut y = Ctx::new(&rows, &rows, &[]);
+        // order-dependent stop days of these ids are walked on the FUT1 minutes (EP6 resolver, R4 #175/#240)
+        let fm = matches!(base, "2hl_2" | "rx_filter");
+        if fm { y.minutes = x.fut.map(|f| f.cut_at(15 * 60 + 30)); }
+        FUT_MIN.with(|f| f.set(fm));
+        let r = run(&format!("acbff_{base}"), &y, 0, rows.len() - 1, p);
+        FUT_MIN.with(|f| f.set(false));
+        return Some(crate::books::sprfs::remap(r?, &map));
+    }
     if id == "acbff_mega_1min" { return Some(mega_minutes(x, from, to)); } // lane K38: real 1-minute bars
     let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
-    let on = crate::intraday_ep6::on(id, p); // EP6 (#243, lane K63)
+    let on = crate::intraday_ep6::on(id, p) || FUT_MIN.with(|f| f.get()); // EP6 (#243, lane K63); lane I2: the futures minute walk
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(0.0));
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -836,7 +864,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let k = g("k"); let ma = mean(c, u("ma"));
             let f = five(x, 40, 2, 5, 50, 10, 15, false);
             let (mut hh, mut ll) = (0.0f64, 0.0f64);
-            engine(x, from, to, move |i, ps, nx, _| {
+            engine_ep6(x, from, to, on, move |i, ps, nx, _| {
                 if ps.mp == 1 && ps.bse(i) == 0 { hh = h[i]; }
                 if ps.mp == -1 && ps.bse(i) == 0 { ll = l[i]; }
                 let o1 = op[i + 1];
@@ -955,10 +983,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let ccc = persist(n, |i| { let t = f.u[i] + f.q[i] + f.xo[i] + f.y[i] + f.z[i]; (t > 0.0, t < 0.0) });
             perp(&|i| { let t = aaa[i] + domf(&k, i) + ccc[i]; (t > 0.0, t < 0.0) })
         }
+        // Lane I2 (Q386, 24 Nov 2026): Ch 45 quiz example, p.198; the average is the 20 closes ending the day before the signal close
+        "acbff_quiz_20ma" => {
+            let ma = mean(c, 20); let k = g("k");
+            engine(x, from, to, |i, ps, nx, _| {
+                if i < 21 { return; }
+                let (o1, d) = (op[i + 1], k * (h[i] - l[i]));
+                if ps.mp < 1 && c[i] > ma[i - 1] { put(nx, Buy, T::Stop(o1 + d), "buy stop"); }
+                if ps.mp > -1 && c[i] < ma[i - 1] { put(nx, Short, T::Stop(o1 - d), "short stop"); }
+            })
+        }
         "acbff_rx_filter" => {
             let xs: Vec<f64> = (0..n).map(|i| if i >= 2 && ((c[i] > c[i - 1] && c[i - 1] > c[i - 2]) || (c[i] < c[i - 1] && c[i - 1] < c[i - 2])) { 1.0 } else { 0.0 }).collect();
             let ax = mean(&xs, u("n")); let (uu, k) = (g("u"), g("k"));
-            engine(x, from, to, |i, _, nx, _| {
+            engine_ep6(x, from, to, on, |i, _, nx, _| {
                 let o1 = op[i + 1]; let d = k * ar3[i];
                 if ax[i] >= uu { put(nx, Buy, T::Stop(o1 + d), "buy stop"); }
                 put(nx, Sell, T::Stop(o1 - d), "exit stop");
@@ -1273,3 +1311,46 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Art Collins tested these TradeStation systems on S&P, NASDAQ and Russell futures (and bonds/currencies); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, 1 tick = 0.10 point US / 0.05 point India.",
     basis: "Art Collins, Beating the Financial Futures Market (Wiley 2006), printed TradeStation code pp.205-238",
 };
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (I2_CSV=<idx_data.csv> I2_FUT_DIR=<data/intraday> I2_OUT=<file.csv>
+    /// cargo test --release i2_acbff_fut_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_acbff_fut_dump() {
+        use std::io::Write;
+        let (csv, dir, out) = (std::env::var("I2_CSV").unwrap(), std::env::var("I2_FUT_DIR").unwrap(), std::env::var("I2_OUT").unwrap());
+        let data = crate::load_csv(&csv).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,reason").unwrap();
+        for t in ["NIFTY 50", "NIFTYBANK"] {
+            let rows = &data[t];
+            let mut x = Ctx::new(rows, &[], &[]);
+            x.fut = crate::intraday::Minutes::scan_fut(&format!("{dir}/{}.FUT1.m1.csv", t.replace(' ', "_"))).map(|m| &*Box::leak(Box::new(m)));
+            for id in ["acbff_fut_5c_perp", "acbff_fut_5c1_perp", "acbff_fut_2hl_3", "acbff_fut_2hl_2", "acbff_fut_rx_filter"] {
+                for z in run(id, &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                    writeln!(f, "{id},{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.reason).unwrap();
+                }
+            }
+        }
+    }
+
+    /// Lane I2 hand-run dump for the quiz card's pandas reference (Q385_CSV=<idx_data.csv> Q385_OUT6=<file>
+    /// cargo test --release i2_quiz_dump -- --ignored).
+    #[test]
+    #[ignore]
+    fn i2_quiz_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("Q385_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("Q385_OUT6").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("acbff_quiz_20ma", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "acbff_quiz_20ma,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
+}

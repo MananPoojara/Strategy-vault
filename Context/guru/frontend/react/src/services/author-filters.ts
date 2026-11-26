@@ -20,7 +20,7 @@ export const BOOK_STATUS_LABELS: Record<string, string> = {
   in_progress: "In progress",
   not_backtested: "Not Backtested",
 };
-export const TYPE_LABELS: Record<string, string> = { person: "Person", collection: "Collection" };
+export const TYPE_LABELS: Record<string, string> = { person: "Author", collection: "Research house" };
 export const TOPIC_LABELS: Record<string, string> = {
   "rule-based": "Rule-based",
   psychology: "Psychology",

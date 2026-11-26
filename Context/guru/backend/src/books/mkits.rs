@@ -146,16 +146,16 @@ fn spx(x: &Ctx) -> Option<Vec<f64>> {
 // ---------------------------------------------------------------- catalogue
 
 const G11: &str = "Ch.11 Gold systems (GLD/gold)";
-const NEED_GOLD_XAU: &str = "needs gold (GLD / gold bullion) daily OHLC as the traded market and the Philadelphia Gold & Silver Index (XAU) close; neither is in the vault";
-const NEED_GOLD_DXY: &str = "needs gold (GLD / gold bullion) daily OHLC as the traded market and the US Dollar Index (DXY) close; neither is in the vault";
-const NEED_GOLD_MULTI: &str = "needs gold (GLD / gold bullion) daily OHLC plus XAU, silver (SLV) and Dollar Index (DXY) closes; none is in the vault";
+const NEED_GOLD_XAU: &str = "needs the Philadelphia Gold & Silver Index (XAU) close, which is not in the vault (GLD and Norgate &GC gold futures are held, but the XAU divergence leg is the book's core input and GDX is a different instrument, not a stand-in); the rule is also not run on GLD because the code appends gold bullion before 18-Nov-2004 (p.302)";
+const NEED_GOLD_DXY: &str = "GLD (us_data) and Norgate &GC gold futures are held, the DXY cash index is not (Norgate &DX dollar-index futures are held, a different series); the real block is a Data2 futures path with &DX as the labelled partner (futures.rs DATA2, as for ch_bta2_goldbond_*) plus a page read of the code to count details (not done here)";
+const NEED_GOLD_MULTI: &str = "needs the XAU index (not held) and silver (SLV not in us_data; Norgate &SI silver futures and &DX are held) plus gold (GLD / &GC held); the XAU leg is the unresolved block";
 const NEED_T2108: &str = "needs T2108 (Worden/Telechart % of NYSE stocks above their 40-day MA) daily; the vault's NYSE breadth (advances/declines/volumes) is not T2108";
-const NEED_ES: &str = "needs 15-minute S&P 500 e-mini (ES) bars and 15-minute Euro Stoxx 50 futures (FESX) bars; the vault has daily data only";
+const NEED_ES: &str = "needs 15-minute S&P 500 e-mini (ES) bars and 15-minute Euro Stoxx 50 futures (FESX) bars; the vault holds only daily Norgate &ES/&FESX and 1-minute SPX/SPY/NIFTY/BANKNIFTY cash series, no 15-minute futures bars";
 const NEED_CAC: &str = "needs CAC 40 futures (FCE) or CAC 40 index daily closes as the intermarket security (book traded DAX futures); not in the vault";
 const NEED_STOXX: &str = "needs Euro Stoxx 50 futures (FESX) / index (STOXX50E) daily closes; not in the vault";
 const NEED_DAXSTK: &str = "needs the 10 DAX component stocks (ALV, BAS, BAY, DAI, DBK, DTE, EOA, SIE, RWE, SAP) and CAC 40 futures closes; not in the vault";
-const NEED_FTSE: &str = "needs CAC 40, Amex Oil Index (XOI) and S&P Bank Index (BIX) daily closes (book traded the FTSE 100); not in the vault";
-const NEED_OIL: &str = "needs an oil-stock universe with volume, light crude futures (CL) and the XOI index closes (S&P 500 alone is in the vault)";
+const NEED_FTSE: &str = "needs the Amex Oil Index (XOI) and S&P Bank Index (BIX) daily closes, which are not in the vault (Norgate &LFT FTSE 100 and &FCE CAC 40 futures are held)";
+const NEED_OIL: &str = "needs an oil-stock universe with volume and the XOI index closes, not in the vault (Norgate &CL crude futures and the S&P 500 are held)";
 const NEED_GSTK: &str = "needs a gold-stock universe with volume, gold (XGLD) and XAU closes; not in the vault";
 const NEED_YEN: &str = "needs USD/JPY (or yen futures) daily OHLC, the Dollar Index (DXY) and 10-year Treasury yield (TNX) closes (S&P 500 alone is in the vault)";
 const NEED_EURO: &str = "needs the CRB Index and 10-year Treasury yield (TNX) daily closes (book traded EUR/USD); not in the vault";
@@ -190,6 +190,50 @@ const RS_ETF_RULES: &[&str] = &[
     "E|entrytrigger:=RS>Mov(RS,120,E) AND ROC(Mov(C,25,E),2,%)>0 AND LinRegSlope(RS,20)>0 AND Correl(C,SEC2,130,0)<.5 AND Stoch(100,3)<80 AND Mov(VFI,25,E)>0  (App. A.7 p.345)",
     "X|EXITTRIGGER:=Cross(Mov(RS,90,E),RS) OR ROC(RS,3,%)<-.5 OR Mov(VFI,25,E)<0  (p.346)",
     "F|Tradesim: entry and exits delayed one bar, filled at the OPEN; long only",
+];
+
+// ---------------------------------------------------------------- Appendix A.2 gold vs dollar index (lane K1, 20 Nov 2026)
+/// Katsanos App. A.2 pp.304-314: gold (GLD, the book's instrument) against the dollar index. DXY cash is not held: Norgate &DX
+/// (dollar index futures, back-adjusted) is a labelled R4 #340 stand-in partner, read as DX_CLOSE (second.rs, GLD context only).
+pub const GOLD_DXY: &[&str] = &["mkits_gold_rs_dxy", "mkits_gold_dis_dxy", "mkits_gold_lrs_dxy", "mkits_gold_z_dxy"];
+const DX: &[&str] = &["DX_CLOSE"];
+pub const GLD: &str = "GLD";
+/// Published on GLD only (the book's instrument and the vault's only gold ETF); other instruments are not gold.
+pub fn home(id: &str, ticker: &str) -> Option<String> {
+    (GOLD_DXY.contains(&id) && ticker != GLD).then(|| format!("Not published on {ticker}: this is Katsanos's gold system (App. A.2); the vault's gold series is GLD (open the card on GLD). Running it on another instrument would change the asset class."))
+}
+macro_rules! adj { () => { "[Adapted: partner = Norgate &DX dollar index futures (back-adjusted close, ends 2020-09-11) in place of the DXY cash index, which is not held (R4 #340); aligned to GLD's dates, only &DX bars dated on or before each GLD date (a GLD date without an &DX bar shows the previous &DX bar, as MetaStock Security(); no look-ahead; more than 5% carried bars withholds the run). Instrument = GLD, the book's own; the book spliced gold spot/10 before 18-Nov-2004 (not held), so GLD starts 2004-11-18 and the indicators need 200-700 bars before the first signal. UNVERIFIED.] " }; }
+macro_rules! sim { () => { "Orders next day at the open (App. A.2 p.302: delay 1 day, buy/sell price at the open); no stops. Time exit: the book states one (p.180: 50 trading days; Table 11.x) - counted as the open that many bars after the entry bar (unstated detail). ALERT(x,n) = x true on the signal bar or any of the previous n-1 bars (book p.180: Alert(...,4) extends a signal 'for another three days'; glossary p.380). One position at a time. " }; }
+const STOCH_RULE: &str = "STOCH(5,3) > MOV(STOCH(5,3),3,S)";
+const IM_RULE: &str = "IM:=(Mov(DIVERG-LLV(DIVERG,200),3,S)*100)/Mov(HHV(DIVERG,200)-LLV(DIVERG,200),3,S) (momentum oscillator of the divergence)";
+const GOLD_DXY_DEFS: &[(&str, &str, &str, &[&str], &str)] = &[
+    ("mkits_gold_rs_dxy", "Gold: Relative Strength vs regression line (DXY)", "pp.304-305", &[
+        "F|SEC2 = dollar index close (&DX stand-in); RS:=MOV(C/SEC2,3,E)",
+        "E|Buy: ALERT(CROSS(RS,LR1),8) AND RS>(1+3/100)*LR1 AND STOCH(5,3)>MOV(STOCH(5,3),3,S), LR1:=REF(LinearReg(RS,200+15,E,3),-15) (p.304)",
+        "X|Sell: ALERT(CROSS(LR1,RS),6) AND RS<(1-3/100)*LR1 AND STOCH(5,3)<MOV(STOCH(5,3),3,S), LR1:=REF(LinearReg(RS,50+6,E,3),-6) (pp.304-305)",
+        "X|Time exit: 150 bars (Table 11.3, p.178). Long only: the book prints a buy and a sell and says the system 'was only profitable on the long side' (p.184)",
+    ], concat!(adj!(), sim!(), "Book Table 11.3 p.178 (RS, DXY): 9 trades, 78%, +$141,363 on GLD + gold-spot proxy 1 Dec 1995-21 Aug 2007. Unstated detail (counted): LinearReg(RS,N,E,3) has two extra arguments that are not a MetaStock function signature or in the book's glossary; read as the least-squares line's value at the last of N bars (E,3 not applied). Time exit counting is the second unstated detail (2 in all).")),
+    ("mkits_gold_dis_dxy", "Gold: Disparity (DXY)", "pp.306-307", &[
+        "F|SEC2 = dollar index close; DIS1:=(C-Mov(C,20,S))/Mov(C,20,S)*100, DIS2:=(SEC2-Mov(SEC2,15,S))/Mov(SEC2,15,S)*100, DIV1:=(-1*DIS2-DIS1), DIVERG:=Mov(DIV1,3,E); IM as the book (p.306)",
+        "E|Buy: DIVERG>0 AND ALERT(CROSS(85,IM),4) AND IM<REF(IM,-1) AND STOCH(5,3)>MOV(STOCH(5,3),3,S) AND ROC(SEC2,2,%)>0",
+        "X|Sell: DIVERG<0 AND LLV(IM,4)<25 AND IM>REF(IM,-1) AND STOCH(5,3)<MOV(STOCH(5,3),3,S)  ({ALERT(CROSS(IM,OPT5),4)} is commented out in the code)",
+        "E|Short: DIVERG<-1 AND ALERT(CROSS(IM,25),3) AND IM>REF(IM,-1) AND STOCH(5,3)<MOV(STOCH(5,3),3,S) AND ROC(SEC2,2,%)<0",
+        "X|Cover: ALERT(DIVERG>0,3) AND HHV(IM,3)>50 AND STOCH(5,3)>MOV(STOCH(5,3),3,S); time exit 50 bars (Table 11.2 p.177)",
+    ], concat!(adj!(), sim!(), "Book Table 11.2 p.177 (Disparity, DXY): 31 trades, 74%, +$323,637. The printed code (buy 85, sell 25, cover 50) and Table 11.2 (80, 30, 60) disagree on three levels; the default follows the printed code (R4 #348), the table's levels are the labelled option (im_buy 80, im_sell 30, im_cover 60). That choice and the time-exit counting are the two unstated details.")),
+    ("mkits_gold_lrs_dxy", "Gold: LRS divergence (DXY)", "pp.309-310", &[
+        "F|SEC2 = dollar index close; D3:=-STDEV(C,200)/STDEV(SEC2,200); LRSI:=LinRegSlope(SEC2,40)/Abs(Ref(SEC2,-39))*100; LRS:=LinRegSlope(C,30)/Abs(Ref(C,-29))*100; DIV1:=(D3*LRSI-LRS)*100; DIVERG:=Mov(DIV1,3,E); IM as the book (p.309)",
+        "E|Buy: DIVERG>0 AND ALERT(CROSS(85,IM),4) AND IM<REF(IM,-1) AND STOCH(5,3)>MOV(STOCH(5,3),3,S) AND ROC(SEC2,2,%)>0",
+        "X|Sell: DIVERG<0 AND LLV(IM,4)<25 AND IM>REF(IM,-1) AND STOCH(5,3)<MOV(STOCH(5,3),3,S)",
+        "E|Short: DIVERG<-1 AND ALERT(CROSS(IM,25),3) AND IM>REF(IM,-1) AND STOCH(5,3)<MOV(STOCH(5,3),3,S) AND ROC(SEC2,2,%)<0",
+        "X|Cover: ALERT(DIVERG>0,3) AND HHV(IM,3)>60 AND STOCH(5,3)>MOV(STOCH(5,3),3,S); time exit 50 bars (Table 11.1 p.176)",
+    ], concat!(adj!(), sim!(), "Book Table 11.1 p.176 (LRS, DXY): 21 trades, 90%, +$282,257; the printed code and the table's parameters agree (30/40, IMO 85/25/25/60, 50-bar time exit). One unstated detail: time-exit counting.")),
+    ("mkits_gold_z_dxy", "Gold: Z-Score divergence (DXY)", "pp.313-314", &[
+        "F|SEC2 = dollar index close; r:=Correl(SEC2,C,500,0); Z1:=(C-Mov(C,500,S))/Stdev(C,500); Z2 likewise; ZDIV:=(Z2*r/Abs(r)-Z1)*Abs(r); diverg:=Mov(ZDIV,3,E); IM as the book (p.313)",
+        "E|Buy: ALERT(CROSS(90,IM),4) AND IM<REF(IM,-1) AND STOCH(5,3)>MOV(STOCH(5,3),3,S) AND ROC(SEC2,2,%)>0",
+        "X|Sell: LLV(IM,4)<50 AND IM>REF(IM,-1) AND STOCH(5,3)<MOV(STOCH(5,3),3,S)",
+        "E|Short: DIVERG<0 AND ALERT(CROSS(IM,5),3) AND IM>REF(IM,-1) AND STOCH(5,3)<MOV(STOCH(5,3),3,S) AND ROC(SEC2,2,%)<0",
+        "X|Cover: HHV(IM,3)>50 AND STOCH(5,3)>MOV(STOCH(5,3),3,S); time exit 50 bars (Table 11.2 p.177)",
+    ], concat!(adj!(), sim!(), "Book Table 11.2 p.177 (Z-score, DXY): 24 trades, 71%, +$409,960; printed code and table parameters agree (500, IMO 90/5/50/50, 50-bar time exit). One unstated detail: time-exit counting. Needs about 700 bars before the first signal, so on GLD (from 2004-11-18) the first signals fall after the book window ends.")),
 ];
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -227,8 +271,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         ("mkits_gold_lrs2_xau", "Gold: Double LRS divergence (XAU-DXY)", NEED_GOLD_MULTI, "pp.318-320"),
         ("mkits_gold_reg2", "Gold: Double Regression divergence (XAU-DXY)", NEED_GOLD_MULTI, "pp.320-323"),
     ];
-    for &(id, name, why, _pages) in gold {
+    for &(id, name, why, _pages) in gold.iter().filter(|g| !GOLD_DXY.contains(&g.0)) {
         v.push(nd(id, name, G11, "Long/Short", why, &["F|Ch.11 / Appendix A.2 MetaStock code (buy, sell, sell short, buy to cover); orders next day at the open; GLD with gold bullion appended before 18-Nov-2004 (p.302). Full code in library/mkits/extract-mkits.md"]));
+    }
+    for (id, name, pages, rules, notes) in GOLD_DXY_DEFS {
+        v.push(d(id, name, G11, if *id == "mkits_gold_rs_dxy" { "Long" } else { "Long/Short" }, Status::Live, rules, notes, DX, false, None));
+        let _ = pages;
     }
     v.extend([
         nd("mkits_spy_t2108", "SPY Daily Regression System (T2108)", "Ch.12 S&P 500", "Long/Short", NEED_T2108,
@@ -310,6 +358,33 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("ci_turn", "CI turn points", 3., 1., 10., 1.),
             p("sar_step", "SAR acceleration step", 0.04, 0.02, 0.06, 0.01),
             p("sar_max", "SAR maximum", 0.10, 0.10, 0.30, 0.05),
+        ]),
+        "mkits_gold_rs_dxy" => Some(vec![
+            p("buy_reg", "Buy: regression bars (LinearReg of RS)", 200., 100., 300., 25.),
+            p("buy_ref", "Buy: regression line read this many bars ago", 15., 5., 30., 5.),
+            p("sell_reg", "Sell: regression bars", 50., 25., 100., 5.),
+            p("sell_ref", "Sell: regression line read this many bars ago", 6., 3., 12., 1.),
+            p("band", "RS must be this % beyond the line", 3., 1., 5., 1.),
+            p("time_exit", "Time exit bars (0 = off)", 150., 0., 250., 10.),
+        ]),
+        "mkits_gold_dis_dxy" => Some(vec![
+            p("d1", "Gold disparity MA bars", 20., 10., 30., 5.), p("d2", "Dollar disparity MA bars", 15., 10., 30., 5.),
+            p("d3", "Dollar sign (-1 = inverse)", -1., -1., 1., 2.), p("im_n", "Momentum oscillator bars", 200., 100., 300., 50.),
+            p("im_buy", "IMO buy (CROSS(level, IM))", 85., 70., 95., 5.), p("im_short", "IMO short (CROSS(IM, level))", 25., 5., 35., 5.),
+            p("im_sell", "IMO sell (LLV(IM,4) < level)", 25., 15., 40., 5.), p("im_cover", "IMO cover (HHV(IM,3) > level)", 50., 40., 70., 5.),
+            p("time_exit", "Time exit bars (0 = off)", 50., 0., 120., 10.),
+        ]),
+        "mkits_gold_lrs_dxy" => Some(vec![
+            p("d1", "Gold LRS bars", 30., 20., 50., 5.), p("d2", "Dollar LRS bars", 40., 20., 60., 5.), p("im_n", "Momentum oscillator bars", 200., 100., 300., 50.),
+            p("im_buy", "IMO buy (CROSS(level, IM))", 85., 70., 95., 5.), p("im_short", "IMO short (CROSS(IM, level))", 25., 5., 35., 5.),
+            p("im_sell", "IMO sell (LLV(IM,4) < level)", 25., 15., 40., 5.), p("im_cover", "IMO cover (HHV(IM,3) > level)", 60., 40., 70., 5.),
+            p("time_exit", "Time exit bars (0 = off)", 50., 0., 120., 10.),
+        ]),
+        "mkits_gold_z_dxy" => Some(vec![
+            p("d1", "Z-score and correlation bars", 500., 100., 600., 50.), p("im_n", "Momentum oscillator bars", 200., 100., 300., 50.),
+            p("im_buy", "IMO buy (CROSS(level, IM))", 90., 70., 95., 5.), p("im_short", "IMO short (CROSS(IM, level))", 5., 5., 35., 5.),
+            p("im_sell", "IMO sell (LLV(IM,4) < level)", 50., 30., 60., 5.), p("im_cover", "IMO cover (HHV(IM,3) > level)", 50., 40., 70., 5.),
+            p("time_exit", "Time exit bars (0 = off)", 50., 0., 120., 10.),
         ]),
         "mkits_rect" => Some(vec![p("zz", "Peak/Trough minimum change (%), the code's A1", 5., 2., 10., 0.5), p("hold", "Inactivity stop (trading days after the entry bar)", 65., 20., 120., 5.)]),
         "mkits_rs_fut" | "mkits_rs_etf" => {
@@ -466,9 +541,86 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             Some(next_open(x, from, to, 0, entry, exit))
         }
+        id if GOLD_DXY.contains(&id) => {
+            let Some(s2) = x.series("DX_CLOSE") else { return Some(vec![]) };
+            Some(gold_dxy(id, x, s2, from, to, &g, &u))
+        }
         "mkits_rect" => Some(rect(x, from, to, g("zz") / 100.0, u("hold"))),
         _ => None,
     }
+}
+
+/// MetaStock LinearReg(x,n): the least-squares line's value on the last of the n bars.
+fn linreg_end(v: &[f64], n: usize) -> Vec<f64> {
+    let (sl, xm) = (lrs(v, n), (n as f64 - 1.0) / 2.0);
+    (0..v.len()).map(|i| win(v, i, n).map_or(f64::NAN, |w| w.iter().sum::<f64>() / n as f64 + sl[i] * (n as f64 - 1.0 - xm))).collect()
+}
+/// ALERT(x,n): x true on this bar or any of the previous n-1 bars (book p.180).
+fn alert(x: &[bool], i: usize, n: usize) -> bool { x[(i + 1).saturating_sub(n)..=i].iter().any(|b| *b) }
+/// Momentum oscillator of a divergence series (the book's IM line).
+fn imo(dv: &[f64], n: usize) -> Vec<f64> {
+    let (ll, hh) = (llv(dv, n), hhv(dv, n));
+    let (a, b): (Vec<f64>, Vec<f64>) = (0..dv.len()).map(|i| (dv[i] - ll[i], hh[i] - ll[i])).unzip();
+    msma(&a, 3).iter().zip(msma(&b, 3)).map(|(a, b)| a * 100.0 / b).collect()
+}
+/// Cover: ALERT(DIVERG>0,3) except Z-score, whose printed cover has no divergence term.
+fn z_cover_ok(z: bool, dpos: &[bool], t: usize) -> bool { z || alert(dpos, t, 3) }
+/// Appendix A.2 gold vs the dollar index (see GOLD_DXY_DEFS). `s2` = the dollar index close on GLD's dates.
+fn gold_dxy(id: &str, x: &Ctx, s2: &[f64], from: usize, to: usize, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize) -> Vec<Trade> {
+    let n = x.c.len();
+    let (k, kma) = { let k = stoch(x, 5, 3); let m = sma(&k, 3); (k, m) };
+    let (up, dn) = ((0..n).map(|i| k[i] > kma[i]).collect::<Vec<_>>(), (0..n).map(|i| k[i] < kma[i]).collect::<Vec<_>>());
+    let r2 = roc(s2, 2);
+    let hold = u("time_exit");
+    if id == "mkits_gold_rs_dxy" {
+        let rs = ema(&(0..n).map(|i| x.c[i] / s2[i]).collect::<Vec<_>>(), 3);
+        let line = |reg: usize, rf: usize| { let l = linreg_end(&rs, reg + rf); (0..n).map(|i| back(&l, i, rf)).collect::<Vec<_>>() };
+        let (lb, ls) = (line(u("buy_reg"), u("buy_ref")), line(u("sell_reg"), u("sell_ref")));
+        let band = g("band") / 100.0;
+        let (xb, xs): (Vec<bool>, Vec<bool>) = (0..n).map(|i| (cross(&rs, &lb, i), cross(&ls, &rs, i))).unzip();
+        let entry = |t: usize| if alert(&xb, t, 8) && rs[t] > (1.0 + band) * lb[t] && up[t] { 1.0 } else { 0.0 };
+        let exit = |t: usize, _d: f64| (alert(&xs, t, 6) && rs[t] < (1.0 - band) * ls[t] && dn[t]).then_some("RS crossed below its regression line");
+        return next_open(x, from, to, hold, entry, exit);
+    }
+    let dv: Vec<f64> = match id {
+        "mkits_gold_dis_dxy" => {
+            let (m1, m2) = (msma(&x.c, u("d1")), msma(s2, u("d2")));
+            ema(&(0..n).map(|i| g("d3") * ((s2[i] - m2[i]) / m2[i] * 100.0) - (x.c[i] - m1[i]) / m1[i] * 100.0).collect::<Vec<_>>(), 3)
+        }
+        "mkits_gold_lrs_dxy" => {
+            let (d1, d2) = (u("d1"), u("d2"));
+            let (lg, li) = (lrs(&x.c, d1), lrs(s2, d2));
+            let d3: Vec<f64> = stdev(&x.c, 200).iter().zip(stdev(s2, 200)).map(|(a, b)| -a / b).collect();
+            ema(&(0..n).map(|i| (d3[i] * (li[i] / back(s2, i, d2 - 1).abs() * 100.0) - lg[i] / back(&x.c, i, d1 - 1).abs() * 100.0) * 100.0).collect::<Vec<_>>(), 3)
+        }
+        _ => {
+            let d1 = u("d1");
+            let r = correl(s2, &x.c, d1);
+            let (m1, m2, s1, sd2) = (msma(&x.c, d1), msma(s2, d1), stdev(&x.c, d1), stdev(s2, d1));
+            ema(&(0..n).map(|i| ((s2[i] - m2[i]) / sd2[i] * r[i] / r[i].abs() - (x.c[i] - m1[i]) / s1[i]) * r[i].abs()).collect::<Vec<_>>(), 3)
+        }
+    };
+    let im = imo(&dv, u("im_n"));
+    let (hh3, ll4) = (hhv(&im, 3), llv(&im, 4));
+    let z = id == "mkits_gold_z_dxy";
+    let (buy, short, sell, cover) = (g("im_buy"), g("im_short"), g("im_sell"), g("im_cover"));
+    // CROSS(level, IM): IM falls below the level; CROSS(IM, level): IM rises above it
+    let xbuy: Vec<bool> = (0..n).map(|i| i > 0 && buy > im[i] && buy <= im[i - 1]).collect();
+    let xshort: Vec<bool> = (0..n).map(|i| i > 0 && im[i] > short && im[i - 1] <= short).collect();
+    let dpos: Vec<bool> = dv.iter().map(|v| *v > 0.0).collect();
+    let (down, upm) = ((1..n).map(|i| im[i] < im[i - 1]).collect::<Vec<_>>(), (1..n).map(|i| im[i] > im[i - 1]).collect::<Vec<_>>());
+    let (down, upm) = (|i: usize| i > 0 && down[i - 1], |i: usize| i > 0 && upm[i - 1]);
+    let short_div = if z { 0.0 } else { -1.0 };
+    let entry = |t: usize| {
+        if (z || dv[t] > 0.0) && alert(&xbuy, t, 4) && down(t) && up[t] && r2[t] > 0.0 { return 1.0; }
+        if dv[t] < short_div && alert(&xshort, t, 3) && upm(t) && dn[t] && r2[t] < 0.0 { return -1.0; }
+        0.0
+    };
+    let exit = |t: usize, d: f64| -> Option<&'static str> {
+        if d > 0.0 { ((z || dv[t] < 0.0) && ll4[t] < sell && upm(t) && dn[t]).then_some("IM bottomed below the sell level, stochastic down") }
+        else { (z_cover_ok(z, &dpos, t) && hh3[t] > cover && up[t]).then_some("IM above the cover level, stochastic up") }
+    };
+    next_open(x, from, to, hold, entry, exit)
 }
 
 const RECT_RULES: &[&str] = &[
@@ -592,13 +744,28 @@ mod tests {
         assert_eq!((ts[0].exit_i, ts[0].exit_px, ts[0].reason.as_str()), (8, 108.0, "time exit"));
     }
     #[test]
+    fn gold_dxy_helpers_and_home() {
+        // LinearReg(x,3) of a straight line is the last value; of 1,3,2 the OLS line ends at 2.5 (slope .5, mean 2)
+        assert!((linreg_end(&[1., 3., 5.], 3)[2] - 5.0).abs() < 1e-12 && (linreg_end(&[1., 3., 2.], 3)[2] - 2.5).abs() < 1e-12);
+        // ALERT(x,4): the signal bar and the three after it (book p.180 'another three days')
+        let x = [false, true, false, false, false, false];
+        assert_eq!((0..6).map(|i| alert(&x, i, 4)).collect::<Vec<_>>(), [false, true, true, true, true, false]);
+        assert!(home("mkits_gold_z_dxy", "GLD").is_none() && home("mkits_gold_z_dxy", "SPY").is_some() && home("mkits_dax_ma", "SPY").is_none());
+        // without the partner series nothing runs (needs_data upstream); IM of a ramp is 100 at the top
+        let dv: Vec<f64> = (0..20).map(|i| i as f64).collect();
+        assert!((imo(&dv, 5)[19] - 100.0).abs() < 1e-9);
+        let r = rows(&(0..30).map(|i| 100. + i as f64).collect::<Vec<_>>());
+        let x = Ctx::new(&r, &r, &[]);
+        assert_eq!(run("mkits_gold_lrs_dxy", &x, 0, 29, &Params::new()).map(|t| t.len()), Some(0));
+    }
+    #[test]
     fn catalogue_ids_unique_and_live_count() {
         let cat = catalogue();
         let mut ids: Vec<_> = cat.iter().map(|d| d.id).collect();
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), cat.len());
-        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), 5);
+        assert_eq!(cat.iter().filter(|d| d.status == Status::Live).count(), 9);
         for d in &cat { assert!(family_of(d.id).is_some()); }
     }
 }
@@ -617,4 +784,11 @@ pub const ADMISSION_RS: crate::instrument_policy::Admission = crate::instrument_
     reviewed: |def: &crate::connors::StrategyDef| def.book == "mkits" && REVIEWED_RS.contains(&def.id),
     label: "Katsanos tested the relative-strength systems as portfolios of 42 futures/international indices (Test I) and 118 ETFs (Test II) against the S&P 500; single US indices, ETFs and stocks against the real S&P 500 close are a declared application, not the author's test. Indian instruments wait for a cross-market S&P 500 series (decision #223 (6)).",
     basis: "Intermarket Trading Strategies (Wiley 2008) Ch.16, MetaStock code App. A.7 p.342 (Test I) and p.345-346 (Test II, with the VFI of App. A.6 p.336); results Table 16.4 p.256. Second series = SPX close aligned by the engine (EP4, lane K51, decision #223); independent check authors/titles-1030/K51w/k51_ref.py.",
+};
+
+// Lane K1 (20 Nov 2026, R4 #339/#340/#343/#348): Katsanos's gold vs dollar systems on GLD only (home()).
+pub const ADMISSION_GOLD_DXY: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "mkits" && GOLD_DXY.contains(&def.id),
+    label: "Katsanos tested these systems on GLD (gold spot/10 before 18-Nov-2004) against the DXY dollar index, 1995-2007. They run on GLD, the book's own instrument, with Norgate &DX dollar index futures as a labelled stand-in for the DXY cash index (not held) - a declared adaptation; other instruments are not published.",
+    basis: "Intermarket Trading Strategies (Wiley 2008) Ch.11 Tables 11.1-11.3 pp.176-178 and Appendix A.2 MetaStock code pp.302-314 (read in full; table numbers checked on the page images); decisions #339, #340, #343, #348, #367; independent pandas reference authors/k1/ref_k1.py.",
 };

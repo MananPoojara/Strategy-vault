@@ -21,8 +21,21 @@ pub fn k38_us(id: &str) -> bool { K38_US.contains(&id) }
 // ---- end lane K38 block
 /// Minute-path rules of waves 1/phase 1 where more than 5% of the trades fall in a minute that reaches two levels without
 /// opening through exactly one of them (order decided by a convention, not by the data): withheld (gate row says how many).
-pub const HELD: &[&str] = &["ats_wide_range_gap", "btp2_wide_range_exhaustion_gap_short", "hfm_vix", "ss_80_20"];
+pub const HELD: &[&str] = &["btp2_wide_range_exhaustion_gap_short", "hfm_vix", "ss_80_20"];
 pub fn held(id: &str) -> bool { HELD.contains(&id) }
+/// Lane I1 (23 Nov 2026, lead ruling, R4 #175 per ticker): ats_wide_range_gap has 1 deciding minute in 47 NIFTYBANK trades (2.13%,
+/// at or under the 5% limit) and 6/80 SPY (7.50%), 3/34 SPX (8.82%), 6/50 NIFTY 50 (12.00%) (authors/india-1123/I1w/wrg_amb.out):
+/// published on NIFTYBANK only; the other tickers stay withheld.
+pub fn p175_only(id: &str) -> bool { id == "ats_wide_range_gap" }
+pub fn p175_withheld(id: &str, ticker: &str) -> Option<&'static str> {
+    if !p175_only(id) { return None; }
+    match ticker {
+        "SPY" => Some("The SPY minute result is withheld (R4 #175): 6 of its 80 trades (7.50%) turn on a minute that reaches both the stop entry and the protective stop without opening through one; the limit is 5%. Only the NIFTYBANK result (1 of 47 trades, 2.13%) is published."),
+        "SPX" => Some("The SPX minute result is withheld (R4 #175): 3 of its 34 trades (8.82%) turn on a minute that reaches both the stop entry and the protective stop without opening through one; the limit is 5%. Only the NIFTYBANK result (1 of 47 trades, 2.13%) is published."),
+        "NIFTY 50" => Some("The NIFTY 50 minute result is withheld (R4 #175): 6 of its 50 trades (12.00%) turn on a minute that reaches both the stop entry and the protective stop without opening through one; the limit is 5%. Only the NIFTYBANK result (1 of 47 trades, 2.13%) is published."),
+        _ => None,
+    }
+}
 /// Decision #177a (lane M1, 3 Nov 2026): on the SPY/SPX overlap these minute rules lose on the tradable SPY and win on the
 /// cash index (stale component prints). The minute result is published on SPY only, the mirror image of intraday_w2b::SPX.
 pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hfm_news", "hfm_news_long", "hfm_news_short",
@@ -182,7 +195,7 @@ mod tests {
             let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             assert!(ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
-            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), *t == "SPY", "{id} {t}"); } // #177a: SPY only
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), *t == "SPY" || crate::fut1::applies(id, t), "{id} {t}"); } // #177a: SPY only (R4 #416: plus the FUT1 pairs)
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             assert_eq!(crate::gate::get(id).unwrap().verdict, "unverified", "{id}");
             assert!(crate::books::params(id).unwrap().iter().any(|p| p.key == "path" && p.def == 1.0), "{id}");
@@ -219,7 +232,7 @@ mod tests {
                 for t in ["SPX", "NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("cash-index minutes are stale and distort this rule (here the index understates it); only the tradable SPY result is published"), "{id} {t}"); }
             } else {
             assert!(ip::check(d, "SPX", false).unwrap().note.contains("cash-index minutes are stale; on the tradable SPY this rule loses"), "{id}");
-            for t in ["NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
+            for t in ["NIFTY 50", "NIFTYBANK"] { if crate::fut1::applies(id, t) { continue; } /* R4 #416 */ assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
             }
             let g = crate::gate::get(id).unwrap();
             // verified only on a #168 pass of the book's own table inside the minute history (rwmts_15m_5m_rsi, K61 #248 (3))
@@ -288,4 +301,24 @@ mod tests {
     }
     // ---- end lane K38 tests
 
+}
+
+#[cfg(test)]
+mod i1_p175_tests {
+    /// Lane I1: ats_wide_range_gap is published on NIFTYBANK only (R4 #175 per ticker); SPY, SPX and NIFTY 50 stay refused with the figure.
+    #[test]
+    fn ats_wide_range_gap_nbank_only() {
+        use crate::instrument_policy as ip;
+        let cat = crate::connors::catalogue();
+        let d = cat.iter().find(|d| d.id == "ats_wide_range_gap").unwrap();
+        assert!(d.status == crate::connors::Status::Live && !super::held(d.id) && ip::intraday_p1(d) && ip::held_reason(d.id).is_none());
+        assert!(ip::check(d, "NIFTYBANK", false).is_none());
+        for (t, n) in [("SPY", "7.50%"), ("SPX", "8.82%"), ("NIFTY 50", "12.00%")] {
+            let i = ip::check(d, t, false).unwrap_or_else(|| panic!("{t}"));
+            assert!(i.note.contains("#175") && i.note.contains(n), "{t}: {}", i.note);
+        }
+        assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some());
+        let g = crate::gate::get("ats_wide_range_gap").unwrap();
+        assert!(g.verdict == "unverified" && g.reason.contains("2.13%") && g.reason.contains("12.00%"));
+    }
 }

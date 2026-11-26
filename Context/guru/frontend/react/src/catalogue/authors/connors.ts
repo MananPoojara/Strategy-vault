@@ -3,6 +3,7 @@ import type {AuthorFile} from '../author-files';
 export default {
   order: 10,
   author: { id: 'connors', name: 'Larry Connors', photo: 'img/gurus/connors.jpg', books: [
+    { id: "tmcap", sourceIds: [], title: "Capital Appreciation Program (TMCAP)", year: 2005, blurb: "Connors / TradingMarkets · stocks above the 200-day with volatility twice the market's, five closes under the 2-day average, out when RSI(2) tops 75; stock method, India a declared adaptation, unverified" },
     { id: "ccl07", sourceIds: [], title: "Chairman's Club December 2007 (Las Vegas manual)", year: 2007, blurb: "Connors / TradingMarkets · RSI 10 Scale-In on SPY, the 10 Worst Performers rule, the AmiBroker class project and Curt Carlson's breakout study run here; the Short Selling Methodology is the live h10 rule" },
     { id: 'stc9', sourceIds: ['source-a9f1f241140ddd2d'], title: 'Swing Trading College IX', year: 2010, live: true },
     { id: 'alpha', sourceIds: ['source-8e3431fb32b0bfa0'], title: 'The Alpha Formula (with Chris Cain)', year: 2020, blurb: 'Connors Research, 2020 · Rising Assets, Weekly Mean Reversion, Dynamic Treasuries, ETF Avalanches and the combined Alpha Formula portfolio' },
@@ -20,6 +21,7 @@ export default {
     { id: 'spmt', sourceIds: ['source-d51a04405c41f56f'], title: 'S&P Market Timing Course', year: 2007, blurb: 'Connors Group, Feb 2007 · 350-page manual · 30+ market-timing signals for E-mini and SPY, plus day trading' },
     { id: 'ws5', sourceIds: ['source-916d37ad6b290ae2'], title: '5 Week Live Web Seminar', year: 2003, blurb: 'TradingMarkets, 2003 · Momentum Windows, Weekly Windows, market timing and the VIX III reversal' },
     { id: 'cwin', sourceIds: ['source-aff1e2db9712cff1'], title: 'Trading the Connors Windows Strategy', year: 2003, blurb: 'TradingMarkets · Single, Double, Hanging, Gap and Weekly Windows with the two-rule exit tests' },
+    { id: 'vixcc', sourceIds: [], readerPaths: ["Trading Knowledge II/@TradingMarkets.com & TradersLibrary.com/VIX Options Trading Course/vixclass.pdf"], title: 'Connors VIX Options Trading Course (2007): VIX and price sets, short-VIX and long-VIX', year: 2007, blurb: 'Connors Group, 2007 · VIX run-of-days, RSI(2), moving-average (CVR) and price sets, both sides, run on the NSE indices with India VIX as a labelled adaptation, readings declared, unverified' },
     { id: 'vixr', sourceIds: ['source-0e189e5565899e5c', 'source-393e6f21b7fe18a8'], title: 'Trading Connors VIX Reversals', year: 2001, blurb: 'Connors, 2001 · CVR 1 to 11, tested on S&P futures 1993–2001 with the original VIX (VXO)' },
     { id: 'lrd', sourceIds: ['source-45c8a8109296cf8c'], title: 'A Strategy For Playing Large-Range Days', year: 2001, blurb: 'TradingMarkets article · 2-standard-deviation days and the naked combination' },
     { id: 'otvt', sourceIds: ['source-42c11ec937a54f73', 'source-290757b5104bf0ed'], title: 'Options Trading & Volatility Trading', year: 1999, blurb: 'Best of the Professional Traders Journal, 1999 · CVR I, historical-volatility setups, Diz strangle' },
@@ -52,6 +54,7 @@ export default {
     "confidence": "high"
   },
   sourceReview: {
+    "tmcap": {"type":"course_manual","people":["Larry Connors"]},
     "ccl07": {"type":"course_manual","people":["Larry Connors","Curt Carlson"]},
     "stc9": {"type":"course_manual","people":[]},
     "alpha": {"type":"book","people":["Chris Cain","Larry Connors"]},
@@ -69,6 +72,7 @@ export default {
     "spmt": {"type":"course_manual","people":["Larry Connors","Paul Sabo"]},
     "ws5": {"type":"course_manual","people":["Larry Connors"]},
     "cwin": {"type":"book","people":["Larry Connors"]},
+    "vixcc": {"type":"course","people":["Larry Connors"]},
     "vixr": {"type":"book","people":["Gregory J. Che","Larry Connors"]},
     "lrd": {"type":"article","people":["Larry Connors"]},
     "otvt": {"type":"book","people":["Larry Connors"]},

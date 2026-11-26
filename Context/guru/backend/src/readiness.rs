@@ -57,7 +57,7 @@ pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,
 /// today-vs-yesterday ratio, a level test, an N-day simple average that blanks for exactly N bars) with no cumulative or EMA state carried
 /// through the gap: a missing INTERIOR day blanks the signal for that look-back (NaN compares false, nothing is filled) so it must not
 /// move the start. Leading gaps still refuse and auto-start says so. Each id is read in its module (see authors/backlog-1118/Q9/FINAL.md).
-const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10"];
+const GAP_FIXED_WINDOW:&[&str]=&["kdta_adr191","trin4","trin4_12","trin3_10","trin3_11","trin2_11","spmt_trin_1","spmt_trin_2","spmt_trin_3","spmt_trin_4","spmt_trin_5","ats_trin_thrust","ptjmt_trin_thrusts","scarms_265","kdta_arms265","kdta_arms_ext","kdta_arms10ma","ndbrm_trin40","scarmx_21_55","apwms_trin5","apwms_updown_vol","apwms_ad10","mbhfe_tbill_roc","mbhfe_tbond_roc","mbhfe_yield_curve","arebta_d_djta","arebta_d_hlr10","arebta_d_hlr30","arebta_d_pt10y","arebta_e_durspd","arebta_tt_pt10y","maetf_rising_rates","maetf_yield_curve","maetf_composite_rates","vkyld_cash"];
 /// Series a rule reads (shared by check and auto_end). The minute path reads no derived series.
 fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static str> {
     let mut required=if minute_path {vec![]} else {def.needs_series.to_vec()};
@@ -65,7 +65,7 @@ fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static st
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }
-    if def.id=="arebta_d_br" && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
+    if (def.id=="arebta_d_br" || matches!(def.id,"arebta_d_djta"|"arebta_d_hlr10"|"arebta_d_hlr30"|"arebta_d_pt10y")) && p.get("ref").map_or(true,|v| v.round()!=1.0) {required.push("FOLLOWER_CLOSE");} // lane K78 (R4 #288 (2)): the SPX close as the S&P 500
     if def.id=="fgsmc_vix" && p.get("src").is_some_and(|v| v.round()==1.0) {required.retain(|n|*n!="VXO_OHLC.Close");required.push("VIX.Close");} // lane K75: today's VIX option
     required
 }
@@ -146,7 +146,13 @@ pub fn auto_start(ctx:&Ctx,from:usize,to:usize,requested:&str,refuse:impl Fn(usi
     let Some(first)=refuse(from) else {return Ok((from,None))};
     if first.status!="needs_data" || to<=from {return Err(first);}
     // most rules need at least two bars; reviewed single-session rules may run on the last bar alone
-    let Some(mut ok)=[to,to-1].into_iter().find(|&f|f>from && refuse(f).is_none()) else {return Err(first)};
+    let Some(mut ok)=[to,to-1].into_iter().find(|&f|f>from && refuse(f).is_none()) else {
+        // R1 audit (labels only): a "data begins on ..." / "volume missing" refusal at the requested start can hide a refusal that
+        // holds from every start (fixed S&P points, a pair rule, dollar amounts ...). Name the reason that still refuses at the
+        // latest start. The run is refused either way; only the text changes.
+        let begins=first.note.contains(" begin on ") || first.note.contains("volume data is missing");
+        return Err(if begins {refuse(to-1).filter(|i|i.note!=first.note).unwrap_or(first)} else {first});
+    };
     let mut bad=from;
     while ok-bad>1 {let mid=(bad+ok)/2; if refuse(mid).is_some() {bad=mid} else {ok=mid}}
     // ponytail: fixed "usable window" floor (a year, or half a shorter request); make it a parameter if users ask
@@ -280,6 +286,9 @@ mod chaikin_candidate_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="atrio" && !matches!(ctx.r.first().map(|r|r.ticker.as_str()),Some("DJI"|"SPX"|"NDX")) { // R1 audit: say why, instead of "Strategy implementation unavailable"
+        return issue("needs_data",format!("The source workbook defines three self-trading markets, the Dow, the S&P 500 and the Nasdaq 100, with cross-index ratios; the card runs on DJI, SPX and NDX only. {} is outside that scope, and no ETF, stock or Indian index is substituted; no result is published.",ctx.r.first().map_or("this instrument",|r|r.ticker.as_str())));
+    }
     if def.book=="apta" && matches!(def.id,"apta_nhnl"|"apta_nhnl_nse") {
         if let Some(note)=books::apta::nhnl_params_issue(p) {return issue("not_testable",note);}
         if let Some(note)=books::apta::nhnl_input_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
@@ -316,6 +325,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
     // decisions #177/#179: a withdrawn (rule, ticker) pair shows its tradable-vs-cash reason, never a coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::tradable_check_issue(def,&r.ticker,ctx.native_market.is_some())) {return Some(i);}
+    // Q420 (R4 #420): a pair released by the #179 re-test is published on its clean window only; an earlier start is refused (auto_start moves it, with this note)
+    if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::instrument_policy::m3_clean_from(def.id,&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+        return issue("needs_data",format!("The {} daily result of this rule is published from {cut} only (index data clean from {}; the #179 tradable-vs-cash check was re-run on that window, R4 #420): earlier opens, highs and lows come from stale component prints. Choose a start on or after {cut}.",r.ticker,&cut[..4]));
+    }
     // connors-final: the optional p.43 universe filter has a $5 price test; on Indian prices it is not the book's filter
     if def.book==books::ststw::BOOK && books::ststw::stock_study(def.id) && p.get("universe").is_some_and(|v|*v>=0.5) && india(ctx) {
         return issue("not_testable","The p.43 universe filter keeps stocks priced above $5; on Indian (INR) prices that is not the book's filter. Use universe 0 (the test's own rules name no filter) on Indian instruments.");
@@ -602,7 +615,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if let Some(g) = crate::gate::get(def.id) {
         // A fixed-USD-amount withhold does not apply on a US stock, the amount's home (user decision 2026-10-21).
-        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock {
+        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock && !(india(ctx) && crate::gate::india_reopened_on(def.id, ctx.native_market.is_some(), ctx.r.first().map_or("", |r| r.ticker.as_str()))) { // R4 #376: re-opened on Indian runs
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
@@ -632,6 +645,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                     return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
                 }
                 if let Some(h)=crate::futures::held(def.id,&row.ticker) {return issue("not_testable",format!("Not published on {}: {h}. {}",row.ticker,g.reason));} // lane F1C (#240): a held market says why
+                if def.id=="ch_ntt_to_buy" { // the NYSE-breadth parent: say that the published NSE twin exists (R4 #306/#340)
+                    return issue("not_testable", format!("Not published on {}: Chande & Kroll's thrust-oscillator buy reads NYSE breadth and runs on the US indices and ETFs {} (R4 #306). The NSE-breadth twin card ch_ntt_to_buy_nse runs the same rule on the real NSE breadth held in the vault and is published (R4 #340, labelled declared adaptation, UNVERIFIED).", row.ticker, allowed.join(", ")));
+                }
                 return issue("not_testable", format!("Not published on {}: this rule uses fixed point or dollar amounts set for {}; on this instrument they would not mean what the book meant. {}", row.ticker, if allowed.is_empty() { "an instrument this vault does not hold".to_string() } else { allowed.join(", ") }, g.reason));
             }
         }
@@ -703,7 +719,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if let Some(k)=crate::futures::first_nonpositive(def.id,ctx).filter(|&k|k<=to) {return issue("needs_data",format!("Results are published only before {}: the unadjusted price is <= 0 that day, so a % return has no base (R4 #316).",ctx.r[k].date));} // lane X4
     if let Some(note)=crate::futures::window_issue(def.id,ctx,from,to) {return issue("needs_data",note);} // lane F1C (R4 #314 (3))
     if let Some(note)=crate::futures::data2_issue(def.id,ctx) {return issue("needs_data",note);} // lane F1C (REV-F1B M3)
-    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
+    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::lwnl::row_home(def.id,&r.ticker,p)).or_else(||books::scblack::home(def.id,&r.ticker)).or_else(||books::hcta::home(def.id,&r.ticker)).or_else(||books::mkits::home(def.id,&r.ticker)).or_else(||crate::futures::home(def.id,&r.ticker)).or_else(||books::ftm::home(def.id,&r.ticker,p))) {
         return issue("not_testable",note);
     }
     if let Some(note)=books::otvt::gap(def.id,ctx,from,to,p) {
@@ -711,6 +727,22 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     None
 }
+
+/// Q32b (lane K4, 24 Nov 2026): cards that add to a position or overlap trades are refused by trade_validation only when the run
+/// executes, so readiness said 'ready' and the run then answered calculation_unavailable. For these 28 ids admission now runs the same
+/// structural check on the same trades over the FINAL window (after auto-start/auto-end, so no start or end date moves and a context
+/// that has a result is unchanged). The status changes, never the calculation.
+pub fn structural_issue(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->Option<Issue> {
+    if !STRUCTURAL_PROBE.contains(&def.id) {return None;}
+    let t=crate::connors::run(def.id,ctx,from,to,p)?;
+    let e=crate::trade_validation::check_structure(&t,from,to).err()?;
+    issue("calculation_unavailable",e.trim_start_matches("calculation_unavailable: ").to_string())
+}
+
+/// Cards whose trades can exceed one unit of exposure (pyramiding) or overlap on a one-position account (Q32b ready_but_no_stats).
+const STRUCTURAL_PROBE:&[&str]=&["atm03_cmo_srsi","cov_tf_mechanica_89_13","cov_wott_donchian_trend","kpss_jusb","kpss_lopl","kpss_uecs","kpss_uhts","kpss_ujbs","kpss_utcm","kpss_uumds","lkqts_cb_pyr","stad2_addiv",
+    "tcdt_2bnr_m160_h2","tcdt_2bnr_m160_h5","tcdt_2bnr_m80_h2","tcdt_2bnr_m80_h5","tcdt_2bnr_p180_h2","tcdt_2bnr_p180_h5","tcdt_2bnr_p80_h2","tcdt_2bnr_p80_h5",
+    "tcdt_3bnr_m160_h2","tcdt_3bnr_m160_h5","tcdt_3bnr_m80_h2","tcdt_3bnr_m80_h5","tcdt_3bnr_p160_h2","tcdt_3bnr_p160_h5","tcdt_3bnr_p80_h2","tcdt_3bnr_p80_h5"];
 
 #[cfg(test)]
 mod tests {
@@ -824,7 +856,7 @@ mod tests {
         for (t,y,refused) in [("SPX","2013",true),("SPX","2014",false),("NDX","2000",true),("DJI","2015",true),("NIFTY 50","1995",false),("SPY","1994",false)] {
             for id in books::joe_ross_rules::REVIEWED { if crate::intraday_ep6::held_note(id,"SPY").is_some() {continue;} // K59 #243: held (intraday_ep6::HELD)
                 let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::instrument_policy::m3_withdrawn(id,t),"{id} {t} {y}"); // #179
+                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||(crate::instrument_policy::m3_withdrawn(id,t)&&!crate::instrument_policy::m3_released(id,t)),"{id} {t} {y}"); // #179, Q420
             }
         }
     }
@@ -1013,6 +1045,7 @@ mod tests {
         // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
         for &id in crate::options::RULES {
             let mut r=rows();
+            if id=="fotol_calendar_spread" || id.starts_with("elm98_") {for x in r.iter_mut(){x.ticker="NIFTY 50".into();}} // lane K2: gate-allowed on NIFTY 50 / NIFTYBANK only
             if id.starts_with("as51_opt") {let t=if crate::books::as51ts::BNF_IDS.contains(&id) {"NIFTYBANK"} else {"NIFTY 50"}; for x in r.iter_mut(){x.ticker=t.into();}} // lanes F2 / F4: gate-allowed on NIFTY 50 / NIFTYBANK only; no weekly store loaded here
             let mut ctx=Ctx::new(&r,&r,&[]);
             ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
@@ -1142,6 +1175,19 @@ mod auto_start_tests {
     use crate::Row;
     fn bars(ticker:&str,n:usize)->Vec<Row> {
         (0..n).map(|i|Row{ticker:ticker.into(),date:format!("{}-{:02}-{:02}",2012+i/300,(i%300)/25+1,i%25+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1000.)}).collect()
+    }
+    #[test]
+    fn a_begins_on_refusal_does_not_hide_the_reason_that_holds_from_every_start() { // R1 audit: labels only
+        let r=bars("SPY",400);let ctx=Ctx::new(&r,&r,&[]);
+        let begin="Required 1-minute bars begin on 2013-01-01. The selected period includes earlier days with no minute data.";
+        let e=auto_start(&ctx,0,399,"2012-01-01",|f|Some(Issue{status:"needs_data",note:if f<50 {begin.into()} else {"fixed S&P points: runs on SPX only.".into()}})).unwrap_err();
+        assert_eq!(e.note,"fixed S&P points: runs on SPX only.");
+        // a refusal that is only a start problem keeps its own text
+        let e2=auto_start(&ctx,0,399,"2012-01-01",|_|Some(Issue{status:"needs_data",note:begin.into()})).unwrap_err();
+        assert_eq!(e2.note,begin);
+        // an unrelated first refusal is never replaced
+        let e3=auto_start(&ctx,0,399,"2012-01-01",|f|Some(Issue{status:"needs_data",note:if f<50 {"no usable range".into()} else {"other".into()}})).unwrap_err();
+        assert_eq!(e3.note,"no usable range");
     }
     fn def(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap()}
     fn run(ctx:&Ctx,d:&StrategyDef,from:usize,to:usize,p:&Params)->Result<(usize,Option<String>),Issue> {

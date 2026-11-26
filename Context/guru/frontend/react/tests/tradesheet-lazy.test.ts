@@ -22,7 +22,7 @@ it('a report holds no rows until the tab opens, but still states how many there 
   const html = ui.tradeHTML(run);
   expect(html).toContain('7706 trades');
   expect(html).toContain('id="trades-xlsx"');
-  expect(html).toContain('id="csv"');
+  expect(html).not.toContain('id="csv"'); // one Excel download, no CSV (user 25 Nov 2026)
   expect(html).toContain('data-tradesheet-table');
   expect(html).not.toContain('<td');
   expect(html).not.toContain('<table');
@@ -34,7 +34,7 @@ it('the table built on opening has every row, newest first', () => {
   expect(html.indexOf('7805.00')).toBeLessThan(html.indexOf('>100.00<'));
 });
 
-it('the on-screen table has exactly the 17 Tradelist columns, formatted, with no explanatory paragraph', () => {
+it('the on-screen table shows the 17 columns when money and costs exist, and drops money/off-cost columns otherwise', () => {
   const t = {entry: '2008-01-22', exit: '2008-01-31', avg_px: 4894.6, exit_px: 5137.45, ret: 0.046, dir: 1, reason: 'Base2 Bull Exit',
     accounting: {symbol: 'NIFTY31JAN2008FUT', signal_side: 'Long', pts: 242.85, gross_pnl: 1650000, gross_ret: 0.05, days_held: 9, taxes: 14250, slippage: 99850, slippage_ret: 0.001, net_pnl: 1540000, net_ret: 0.046, mae: 0.007, mfe: 0.106}};
   const r = {trades: [t]};
@@ -45,17 +45,22 @@ it('the on-screen table has exactly the 17 Tradelist columns, formatted, with no
   const cells = [...html.split('<tbody>')[1].matchAll(/<td [^>]*>(.*?)<\/td>/g)].map(m => m[1]);
   expect(cells).toEqual(['NIFTY31JAN2008FUT', 'Long', '22/01/2008', '4894.60', '31/01/2008', '5137.45', '242.85', '₹16.5 L', '5.0%', '9', '₹14,250', '₹99,850', '₹15.4 L', '4.6%', '0.7%', '10.6%', 'Base2 Bull Exit']);
   const bare = {trades: [{...t, accounting: {...t.accounting, gross_pnl: null, taxes: null, slippage: null, net_pnl: null}}]};
-  const c2 = [...ui.tradeTableHTML(bare, 'X').split('<tbody>')[1].matchAll(/<td [^>]*>(.*?)<\/td>/g)].map(m => m[1]);
-  expect([c2[7], c2[10], c2[11], c2[12]]).toEqual(['—', '—', '—', '—']);
+  // No money amounts: Gross/Net P&L and Taxes columns are hidden; slippage is on, so it shows as a percent of the trade.
+  const bareHtml = ui.tradeTableHTML(bare, 'X');
+  expect([...bareHtml.matchAll(/<th [^>]*>([^<]*)</g)].map(m => m[1]).join('|')).toBe('Symbol|Signal|Entry Date|Entry Price|Exit Date|Exit Price|Pts|Gross P&L %|Days Held|Slippage|Net P&L %|MAE|MFE|Exit Reason');
+  const c2 = [...bareHtml.split('<tbody>')[1].matchAll(/<td [^>]*>(.*?)<\/td>/g)].map(m => m[1]);
+  expect(c2[9]).toBe('−0.10%');
+  const noSlip = {trades: [{...t, accounting: {...bare.trades[0].accounting, slippage_ret: 0}}]};
+  expect(ui.tradeTableHTML(noSlip, 'X')).not.toContain('>Slippage<');
 });
 
-it('Excel, CSV and optimizer exports take every row from the run data, not from the page', () => {
+it('Excel and optimizer exports take every row from the run data, not from the page', () => {
   const exported = [ui.tradeHeadersFor(run), ...ui.tradeRowsFor(run, 'NIFTY 50')];
   expect(exported).toHaveLength(7706 + 1);
   expect(VaultReport.csv(exported).trim().split(/\r?\n/)).toHaveLength(7706 + 1);
   const handlers = runtime.slice(runtime.indexOf('async function exportRunTrades'), runtime.indexOf('const refreshHeat='));
-  expect(handlers.match(/csvSafeRows\(tradeExportRows\(st\)\)/g)).toHaveLength(1); // CSV
-  expect(handlers.match(/reportTable\('trades',st\)/g)).toHaveLength(2); // optimizer, Excel (Export everything uses reportTable(kind,st))
+  expect(handlers.match(/csvSafeRows\(tradeExportRows\(st\)\)/g)).toBeNull(); // no CSV
+  expect(handlers.match(/reportTable\('trades',st\)/g)).toHaveLength(1); // optimizer (the Tradelist Excel is tradesheetXlsx; Export everything uses reportTable(kind,st))
   expect(runtime.slice(runtime.indexOf(' async function reportTable('), runtime.indexOf(' async function xlsx('))).toContain("if(kind==='trades')return ['trades',tradeExportRows(st),");
   expect(handlers).not.toMatch(/#tradesheet|data-tradesheet/);
   expect(handlers).not.toContain('tradeTableHTML');

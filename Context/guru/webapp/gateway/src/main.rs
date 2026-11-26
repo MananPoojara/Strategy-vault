@@ -479,7 +479,10 @@ async fn main() {
         .layer(CompressionLayer::new().compress_when(DefaultPredicate::new()
             .and(NotForContentType::const_new("application/pdf"))
             .and(NotForContentType::const_new("application/octet-stream"))))
-        .layer(TraceLayer::new_for_http())
+        // Q39: one INFO line per request: method, path (no query string, no headers, no bodies), status, latency to the response head.
+        .layer(TraceLayer::new_for_http()
+            .make_span_with(|r: &axum::http::Request<_>| tracing::info_span!("req", method = %r.method(), path = %r.uri().path()))
+            .on_response(|r: &axum::http::Response<_>, latency: Duration, _: &tracing::Span| tracing::info!(status = r.status().as_u16(), latency_ms = latency.as_millis() as u64)))
         .with_state(app);
     let address = env("VAULT_BIND", "127.0.0.1:8181");
     let listener = tokio::net::TcpListener::bind(&address)

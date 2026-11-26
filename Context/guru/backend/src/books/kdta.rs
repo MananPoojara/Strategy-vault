@@ -12,10 +12,11 @@ use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, 
 
 pub const BOOK: &str = "kdta";
 /// Admitted ids (authors/kirkpatrick/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */];
+pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_two_bar" /* lane D3 PASS 3, R4 #339 */, "kdta_crabel_inside" /* lane I2, Q386 re-open */, "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "kdta_plurality" /* lane R2A, R4 #297 */, "kdta_plurality_nse" /* lane R2A, R4 #297 */, "kdta_nh_nl", "kdta_nh_nl_nse" /* lane CV6 Q9, R4 #340 / #343 / #347 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+const NYSE_NHNL: &[&str] = &["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
 const NYSE_TR: &[&str] = &["NYSE_TRIN"];
 const NSE_TR: &[&str] = &["NSE_TRIN"];
@@ -38,7 +39,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("kdta_rsi_wrong_long", "\"RSI is wrong\" breakout · Long", "Ch 18 · Confirmation, RSI (p.440)", "Long", Live, false, &[],
           &["E|\"Buy when 14-day RSI penetrates above 75\" (Active Trader Magazine test, p.440)",
             "X|\"sell when RSI penetrates 25 or after 20 days\""],
-          "RSI = Wilder 14 (engine `rsi`). 'Penetrates above 75' = RSI crosses from <= 75 to > 75; exit when RSI crosses from >= 25 to < 25, or at the close 20 bars after entry. Book test: 19 futures 1994-2003, no numbers printed. Run on the indices (vault convention). Fill: close of the signal / exit day."),
+          "RSI = Wilder 14 (engine `rsi`). 'Penetrates above 75' = RSI crosses from <= 75 to > 75; exit when RSI crosses from >= 25 to < 25, or at the close 20 bars after entry. Book test: 19 futures 1994-2003, no numbers printed. Run on the indices (vault convention). Fill: close of the signal / exit day. [Unstated choices, honest count 3 (R4 #400/#408)] (1) penetrates means a cross from at or below the level to above it; (2) 20 bars are counted from the entry; (3) the fill is the close."),
         d("kdta_rsi_wrong_short", "\"RSI is wrong\" breakout · Short", "Ch 18 · Confirmation, RSI (p.440)", "Short", Live, false, &[],
           &["E|\"The opposite rules apply for sells using a break below the RSI 25 level as the initial short sale\" (p.440)",
             "X|Opposite of \"sell when RSI penetrates 25 or after 20 days\": cover when RSI penetrates above 75 or after 20 days"],
@@ -47,7 +48,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|Weekly bars (\"a simple Donchian channel breakout system on weekly highs and lows data\", p.551)",
             "E|\"The Donchian channel breakout system gives a buy signal when the closing price breaks above the highest price over the past x weeks. The sell signal occurs when the closing price breaks below the lowest price over the past x weeks. We will use 20 weeks as x\" (p.551)",
             "X|\"There will initially be no stops or any other exit criteria other than the opposite signal. This is called a 'Stop and Reverse' (SAR) system, and funds are invested at all times, either long or short.\" (p.552)"],
-          "Weekly bar = the trading days of one Monday-Sunday calendar week; 'past x weeks' = the x completed weeks before the signal week. Fill: the weekly close (last trading day of the week). Book: AAPL weekly 12/11/1992-12/9/2005, 25 trades, 40% profitable, net +$6,195 (one share-equivalent dollar P&L, p.553-554) - AAPL is not in the vault, so it runs on the indices (instrument swap)."),
+          "Weekly bar = the trading days of one Monday-Sunday calendar week; 'past x weeks' = the x completed weeks before the signal week. Fill: the weekly close (last trading day of the week). Book: AAPL weekly 12/11/1992-12/9/2005, 25 trades, 40% profitable, net +$6,195 (one share-equivalent dollar P&L, p.553-554) - AAPL is not in the vault, so it runs on the indices (instrument swap). [Unstated choices, honest count 3 (R4 #400/#408)] (1) a week is Monday to Sunday; (2) the x weeks are the completed weeks before the signal week; (3) the fill is the weekly close."),
         d("kdta_apple_v2", "Apple-a-Day upgrade: 22/20-week breakout, long only, 2% stop", "Ch 22 · System design, Box 22.2 (p.564)", "Long", Live, false, &[],
           &["E|\"changing the buy and sell parameters to 22 and 20, respectively\": buy when the weekly close breaks above the highest price of the past 22 weeks (p.564)",
             "F|\"we also eliminate the short sales, remaining either in a long position or cash\"",
@@ -61,7 +62,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("kdta_pullback6", "6% pullback buy, exit next open", "Ch 17 · Short-term patterns, trend correction (p.387)", "Long", Live, false, &[],
           &["E|\"entering a buy at 6% below the previous bar close\" (Active Trader Magazine, long-only, p.387): buy limit at 0.94 x yesterday's close",
             "X|\"and exiting on the next open\""],
-          "Limit fills when the day's low reaches it, at the limit or the open if the day opens below it. Book: 18 stocks 1992-2002, gain equal to buy-and-hold with 17% market exposure (no table). Run on the indices."),
+          "Limit fills when the day's low reaches it, at the limit or the open if the day opens below it. Book: 18 stocks 1992-2002, gain equal to buy-and-hold with 17% market exposure (no table). Run on the indices. [Unstated choices, honest count 2 (R4 #400/#408)] (1) a limit at 0.94 x yesterday's close fills at the open when the day gaps below it; (2) the exit is the next open."),
         d("kdta_two_bar", "Two-bar breakout (Active Trader)", "Ch 17 · Short-term patterns (p.382)", "Long/Short", Live, false, &[],
           &["E|\"the next day buy on a stop one tick above today's high if (1) today's low is less than yesterday's low; (2) today's high is less than yesterday's high; and (3) today's close is less than today's open\" (p.382); the sell side is just the opposite (sell stop one tick below today's low if the low and high are higher than yesterday's and the close is above the open)",
             "X|\"Exit on a stop at the then-current day's low\" (long; the high for shorts) (p.382)",
@@ -72,6 +73,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         let ad = if nse { NSE_AD } else { NYSE_AD };
         let tr = if nse { NSE_TR } else { NYSE_TR };
         macro_rules! id { ($a:expr, $b:expr) => { if nse { $b } else { $a } } }
+        v.push(d(id!("kdta_nh_nl", "kdta_nh_nl_nse"), if nse { "New highs versus new lows, daily · NSE" } else { "New highs versus new lows, daily · NYSE" },
+            "Ch 8 · New highs and lows (p.147)", "Long/Short", Live, false, if nse { super::wmny::NHNL_NSE } else { NYSE_NHNL },
+            &["E|\"buy when the number of new highs exceeds the number of new lows on a daily basis\" (p.147): long on the close of a day with new highs > new lows",
+              "X|\"and to sell when the opposite occurs\" (p.147): on the close of a day with new highs < new lows the long is closed and, as the A/D-line rule on p.133, reversed to short; a day with equal counts changes nothing"],
+            if nse { "[R4 #343 unstated details, 2] (1) 'sell' is read as close the long and go short (the p.133 portfolio is long or short one share); parameter shorts = 0 gives long / cash. (2) A day with new highs = new lows, or a missing count, gives no signal and the position stands. Book market: NYSE new 52-week highs / lows (Norgate #NYSEHI / #NYSELO, 1932-2020-09-04) on DJI / SPX; this _nse twin [R4 #340 / #347, UNVERIFIED] uses the NSE counts of stocks at a new adjusted 52-week high / low (extra_data/india NSE_NHNL, 2019-10-16 on, with gaps: a run uses the longest stretch with no missing day) on Indian indices and stocks, the rule unchanged (it compares the two counts). Fill: close. Measured firing rate, NSE vs NYSE: over the overlap (NSE run 2019-10-27..2020-09-04; NYSE 2019-10-16..2020-09-04) the NSE twin (NIFTY 50) makes 22 trades = 25.7 a year, long 50.0% of days; the NYSE original (SPX) 17 trades = 19.0 a year, long 80.9%; over its whole 1999-2020 run the NYSE original makes 27.0 a year, long 71.2%; longest gap-free NSE stretch 2025-07-25..2026-11-17: 33.3 a year, long 58.5%." } else { "[R4 #343 unstated details, 2] (1) 'sell' is read as close the long and go short (the p.133 portfolio is long or short one share); parameter shorts = 0 gives long / cash. (2) A day with new highs = new lows, or a missing count, gives no signal and the position stands. Book market: NYSE new 52-week highs / lows on the DJIA / S&P 500; the vault reads Norgate #NYSEHI / #NYSELO (1932-2020-09-04) on US instruments. Fill: close. The book prints no result for this rule. UNVERIFIED." }));
         v.push(d(id!("kdta_adline", "kdta_adline_nse"), if nse { "One-day change in the advance-decline line · NSE" } else { "One-day change in the advance-decline line · NYSE" },
             "Ch 8 · Measuring market strength (p.133)", "Long/Short", Live, false, ad,
             &["E|\"using simply the one-day change in direction of the cumulative advance-decline line as a signal to buy or sell\" (p.133): long when the A/D line rises (advances > declines)",
@@ -86,7 +92,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Ch 8 · Advance-decline ratio (p.138)", "Long", Live, false, ad,
             &["E|\"26 buy signals were generated when the ratio of ten-day advances to ten-day declines exceeded 1.91\" (Ned Davis Research, 1947-2005, Figure 8.5, p.138): buy when the 10-day sum of advances / 10-day sum of declines crosses above 1.91",
               "X|\"These signals averaged a 17.6% return over the following year. In only one of the 26 instances did the signal fail, and the loss then was only 5.6%.\" -> sell 252 trading days later (a new crossing while held is ignored)"],
-            if nse { concat!(breadth_note!(), "NSE twin.") } else { concat!(breadth_note!(), close_note!(), "Book: 26 signals 1947-2005, +17.6% average over the following year, 1 loss (-5.6%). Our NYSE breadth starts 1965. Fill: close. 'Year' = 252 bars (the book's count, p.143).") }));
+            if nse { concat!(breadth_note!(), "NSE twin. [Unstated choices, honest count 3 (R4 #400/#408)] (1) a crossing is the 10-day ratio above 1.91 after being at or below it; (2) the exit is 252 trading days after the buy; (3) the buy fills at the close of the signal day.") } else { concat!(breadth_note!(), close_note!(), "Book: 26 signals 1947-2005, +17.6% average over the following year, 1 loss (-5.6%). Our NYSE breadth starts 1965. Fill: close. 'Year' = 252 bars (the book's count, p.143).") }));
         v.push(d(id!("kdta_plurality", "kdta_plurality_nse"), if nse { "Colby plurality index: 324-day Bollinger breakout, 15-day time stop · NSE" } else { "Colby plurality index: 324-day Bollinger breakout, 15-day time stop · NYSE" },
             "Ch 8 · Plurality index (p.137-138)", "Long", Live, false, ad,
             &["F|\"This index is calculated by taking the 25-day sum of the absolute difference between advances and declines\" (p.137)",
@@ -94,14 +100,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"... and below two standard deviations for a sell to close\" (p.137): sell when the index closes below the lower band",
               "X|\"There are very few signals, and a 15- or 30-day time stop should be used for longs only\" (p.137): also sell after the time stop, whichever comes first",
               "F|p.norm=1 (labelled option): the book's 'additional suggestion' (p.138), |A - D| / (A + D) summed over 25 days"],
-            if nse { concat!(breadth_note!(), "NSE twin (the band is relative to the index's own history, so no level changes).") } else { concat!("Adapted: 2 unstated details (R4 #297). Unstated in the book: which time stop (\"a 15- or 30-day time stop\"); vault reading: 15 trading days, the first value printed (p.hold = 30 is the other). Unstated: the order type; vault reading: the module's close of the signal day (", close_note!(), "). ",
+            if nse { concat!(breadth_note!(), "NSE twin (the band is relative to the index's own history, so no level changes). [Unstated choices, honest count 4 (R4 #400/#408)] (1) the book gives a 15- or 30-day time stop and this card does not say which one is used; (2) the signal is traded at the close of the signal day, which the card does not state; (3) a buy is the index closing above the upper band after closing at or below it; (4) the Bollinger standard deviation is the population one, which the card does not state.") } else { concat!("Adapted: 2 unstated details (R4 #297). Unstated in the book: which time stop (\"a 15- or 30-day time stop\"); vault reading: 15 trading days, the first value printed (p.hold = 30 is the other). Unstated: the order type; vault reading: the module's close of the signal day (", close_note!(), "). ",
                 breadth_note!(), "Bollinger band = 324-day simple average of the index +/- 2 population standard deviations (Bollinger's definition, ch.14). Book: 'admirable results' (Colby), no table.") }));
         v.push(d(id!("kdta_zweig_thrust", "kdta_zweig_thrust_nse"), if nse { "Zweig breadth thrust (0.659 / 0.366) · NSE" } else { "Zweig breadth thrust (0.659 / 0.366) · NYSE" },
             "Ch 8 · Breadth thrust (p.142)", "Long", Live, false, ad,
             &["F|\"calculating a ten-day simple moving average of advances divided by the sum of advances and declines\" (p.142)",
               "E|\"Traditionally, the long only signal levels in this oscillator were to buy when the index rose above 0.659\"",
               "X|\"and sell when it declined below 0.366\""],
-            if nse { concat!(breadth_note!(), "NSE twin.") } else { concat!(breadth_note!(), close_note!(), "Book: 'With these limits, however, this method has not had a signal since 1994' (p.142); the 4-6 day average the authors found profitable is a labelled option (param ma, default 10). Not the same rule as Zweig's own 10-day A/D >= 2 (mzwws). Fill: close.") }));
+            if nse { concat!(breadth_note!(), "NSE twin. [Unstated choices, honest count 2 (R4 #400/#408)] (1) the fill timing is not stated by the book (the close of the signal day is used); (2) the rule is long-flat only, with no short side.") } else { concat!(breadth_note!(), close_note!(), "Book: 'With these limits, however, this method has not had a signal since 1994' (p.142); the 4-6 day average the authors found profitable is a labelled option (param ma, default 10). Not the same rule as Zweig's own 10-day A/D >= 2 (mzwws). Fill: close.") }));
         v.push(d(id!("kdta_haurlan20", "kdta_haurlan20_nse"), if nse { "Haurlan 20-day EMA of A-D, buy below -200 / sell above +200 · NSE" } else { "Haurlan 20-day EMA of A-D, buy below -200 / sell above +200 · NYSE" },
             "Ch 8 · Haurlan index, Carroll levels (p.136)", "Long", Live, false, ad,
             &["F|\"He calculated a 20-day exponential moving average of advances minus declines\" (Haurlan, p.135-136)",
@@ -133,9 +139,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let nt = |id, name, group, dir, why, rules| d(id, name, group, dir, NotTestable(why), false, &[], rules, "");
     let nd = |id, name, group, dir, why, rules| d(id, name, group, dir, NeedsData(why), false, &[], rules, "");
     v.extend([
-        nt("kdta_crabel_inside", "Crabel inside-bar open breakouts", "Ch 17 · Inside bar (p.383-384)", "Long/Short",
-           "no exit is stated for any of Crabel's inside-bar tests (only winning percentages: 68%, 74%, 80%, 90%)",
-           &["E|\"buying at the next opening, if it occurred above the inside bar close and selling at the next opening, if it occurred below the inside bar close\" (p.383)", "E|Four-day pattern: Day 2 higher low, Day 3 inside, Day 4 opens below mid-range and close of the inside day -> sell (p.384)"]),
+        d("kdta_crabel_inside", "Crabel inside-bar open breakouts", "Ch 17 · Inside bar (p.383-385)", "Long/Short", Live, false, &[],
+            &["E|\"Crabel tested buying at the next opening, if it occurred above the inside bar close and selling at the next opening, if it occurred below the inside bar close\" (p.384, Figure 17.10: 68% winners, S&P futures 1982-1986)",
+              "X|\"His exit criterion was to close the position on the close of the day the trade was entered.\" (p.385)",
+              "A|Declared readings (lane I2, Q386 re-open, R4 #339/#343/#348): the original hold said 'no exit is stated'; the exit is printed on p.385, after Figures 17.10-17.11. (1) an inside bar = a high below the previous bar's high and a low above the previous bar's low (strict); (2) an open equal to the inside bar's close takes no trade; (3) only the base test of Figure 17.10 is run: the 74% (higher inside close and higher open), 80% and 90% four-day variants add conditions the book describes only in prose and are not applied; (4) the book's market is S&P futures 1982-1986, run here on daily index bars as a declared adaptation (R4 #340). Entry at the open and exit at the close of the same day, no stop, so no same-bar order ambiguity (#240 n/a). UNVERIFIED."],
+            "Crabel inside-bar open breakout, Kirkpatrick and Dahlquist ch.17 p.384-385; the book prints only the winning percentage (68%), no trade count."),
         nt("kdta_connors_wr", "Connors wide-range bar reversal", "Ch 17 · Wide-range bar (p.391)", "Long/Short",
            "\"a two-standard deviation decline\" is not defined (standard deviation of what, over how long) and the stop is moved by judgement (\"If the buy is near the previous day's low, then lower the stop to give some room\")",
            &["E|\"place a buy entry stop at the first day's close with a protection stop at the first day's low\" (p.391)", "X|\"sell on the close, or if the close on the action day is within 10-15% of the high sell on the next day opening\""]),
@@ -172,9 +180,6 @@ pub fn catalogue() -> Vec<StrategyDef> {
         nt("kdta_mama_fama", "MAMA / FAMA crossover", "Ch 14 · Moving averages (p.283)", "Long/Short",
            "the MESA adaptive moving average formulas are not given in the book (\"the calculation of these moving averages is complicated\")",
            &["E|\"A buy or sell signal is generated when the MAMA crosses the FAMA\" (p.283)"]),
-        nd("kdta_nh_nl", "New highs versus new lows", "Ch 8 · New highs and lows (p.147)", "Long/Short",
-           "daily NYSE / NSE new 52-week highs and new lows counts (not in extra_data)",
-           &["E|\"buy when the number of new highs exceeds the number of new lows on a daily basis and to sell when the opposite occurs\" (p.147)"]),
         nd("kdta_thrust_weekly", "Five-week breadth thrust above 1.65", "Ch 8 · Breadth thrust (p.141-142)", "Long",
            "weekly NYSE advances/declines/total-issues counts (the vault has daily counts only) and the exit is only an outcome window (\"rose an average of 17.6% over the next 52 weeks\")",
            &["E|\"when the breadth ratio thrust above 1.65 ... calculated as the five-week total of the weekly advances to total issues ratio less the weekly declines to total issues ratio\" (p.141-142)"]),
@@ -206,7 +211,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kdta_may_oct" => ("kdta_calendar", "K&D seasonal", "May-October"),
         "kdta_pullback6" => ("kdta_short_term", "K&D short-term patterns", "6% pullback"),
         "kdta_two_bar" => ("kdta_short_term", "K&D short-term patterns", "Two-bar breakout"),
-        "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" | "kdta_plurality" => ("kdta_breadth", "K&D breadth systems", mkt),
+        "kdta_nh_nl" | "kdta_adline" | "kdta_ad1018" | "kdta_adr191" | "kdta_zweig_thrust" | "kdta_haurlan20" | "kdta_haurlan200" | "kdta_plurality" => ("kdta_breadth", "K&D breadth systems", mkt),
         "kdta_arms265" | "kdta_arms_ext" | "kdta_arms10ma" => ("kdta_arms", "K&D Arms Index systems", mkt),
         _ if id.starts_with("kdta_") => ("kdta_other", "K&D cited rules (not testable)", ""),
         _ => return None,
@@ -217,6 +222,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let base = id.trim_end_matches("_nse");
     Some(match base {
+        "kdta_crabel_inside" => vec![],
         "kdta_vix_ema" => vec![p("ema", "VIX EMA length", 10.0, 3.0, 30.0, 1.0)],
         "kdta_rsi_wrong_long" | "kdta_rsi_wrong_short" => vec![
             p("rsi", "RSI length", 14.0, 5.0, 30.0, 1.0), p("hi", "Upper RSI level", 75.0, 55.0, 90.0, 1.0),
@@ -226,6 +232,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kdta_may_oct" => vec![p("shorts", "Short from May 15 (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_two_bar" => vec![p("tick", "Offset 'one tick' in ticks of the instrument", 1.0, 0.0, 10.0, 1.0)],
         "kdta_pullback6" => vec![p("pct", "Buy limit below yesterday's close (%)", 6.0, 1.0, 15.0, 0.5)],
+        "kdta_nh_nl" => vec![p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_adline" => vec![p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_ad1018" => vec![p("level", "One-day advances/declines level", 1.018, 0.5, 2.0, 0.001), p("shorts", "Reverse to short (1) or cash (0)", 1.0, 0.0, 1.0, 1.0)],
         "kdta_adr191" => vec![p("days", "Sum length (days)", 10.0, 5.0, 20.0, 1.0), p("level", "10-day advances / 10-day declines level", 1.91, 1.2, 3.0, 0.01), p("hold", "Bars held (a year = 252)", 252.0, 20.0, 504.0, 1.0)],
@@ -413,6 +420,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 else if first_on_after(x, i, 5, 15) && d == 1 { Some((if shorts { -1 } else { 0 }, "May 15".into())) } else { None }
             })
         }
+        "kdta_crabel_inside" => {
+            // lane I2 (Q386 re-open): inside bar yesterday, trade the open against its close, out at the close of the same day
+            let mut out: Vec<Trade> = vec![];
+            for i in from.max(2)..=to {
+                let s = i - 1;
+                if !(x.h[s] < x.h[s - 1] && x.l[s] > x.l[s - 1]) { continue; }
+                let dir = if x.o[i] > x.c[s] { 1.0 } else if x.o[i] < x.c[s] { -1.0 } else { continue };
+                out.push(Trade { dir, legs: vec![Leg { i, px: x.o[i], w: 1.0 }], exit_i: i, exit_px: x.c[i], reason: "close of the entry day".into(), entry_kind: "open", signal_i: s, open: false, exits: Vec::new() });
+            }
+            out
+        }
         "kdta_two_bar" => {
             // lane D3 (PASS 3): stop entries one tick beyond the signal bar, exit stop at the completed day's low (high), same-side stops only
             let off = g("tick").max(0.0) * x.market_tick();
@@ -478,6 +496,17 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             }
             out
+        }
+        "kdta_nh_nl" => {
+            let s = if nse { super::wmny::NHNL_NSE } else { NYSE_NHNL };
+            let (Some(nh), Some(nl)) = (x.series(s[0]), x.series(s[1])) else { return Some(vec![]) };
+            let shorts = g("shorts") >= 0.5;
+            let off = if shorts { -1 } else { 0 };
+            drive(x, from, to, |i, d, _| {
+                if !(nh[i].is_finite() && nl[i].is_finite()) { return None; }
+                if nh[i] > nl[i] && d != 1 { Some((1, "new highs exceed new lows".into())) }
+                else if nh[i] < nl[i] && ((shorts && d != -1) || (!shorts && d == 1)) { Some((off, "new lows exceed new highs".into())) } else { None }
+            })
         }
         "kdta_adline" | "kdta_ad1018" => {
             let Some((a, dcl)) = ad() else { return Some(vec![]) };
@@ -601,6 +630,21 @@ mod tests {
         assert_eq!(civil(dnum("2001-12-31")), (2001, 12, 31));
     }
     #[test]
+    fn nh_nl_longs_on_more_new_highs_reverses_on_more_new_lows_and_holds_on_ties() {
+        // lane CV6 Q9: NH > NL buys at that close, NH < NL reverses to short, NH = NL or a missing count changes nothing
+        let r = ctx_rows(&[(100.0, 101.0, 99.0, 100.0); 8], dnum("2020-01-06"));
+        let nh = [5.0, 5.0, 3.0, 3.0, f64::NAN, 1.0, 9.0, 9.0];
+        let nl = [1.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0];
+        for (id, nm) in [("kdta_nh_nl", ["NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"]), ("kdta_nh_nl_nse", ["NSE_NHNL.NH", "NSE_NHNL.NL"])] {
+            let mut x = Ctx::new(&r, &[], &[]);
+            x.extra.insert(nm[0].into(), nh.to_vec());
+            x.extra.insert(nm[1].into(), nl.to_vec());
+            let t = run(id, &x, 0, 7, &Params::new()).unwrap();
+            // long at bar 0 (5 > 1) held through the tie (bars 2, 3) and the missing count (4); short at bar 5 (1 < 4); long again at bar 6 (9 > 4)
+            assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, z.exit_i)).collect::<Vec<_>>(), vec![(1.0, 0, 5), (-1.0, 5, 6), (1.0, 6, 7)], "{id}");
+        }
+    }
+    #[test]
     fn adr191_ten_day_ratio_crossing_hand_checked() {
         // lane Q5a: advances 1 / declines 1 except bars 30.. where advances = 5: the 10-day ratio (sum A / sum D) is 1.4 at bar 30,
         // 1.8 at bar 31 and 2.2 at bar 32 -> first cross above 1.91 at bar 32; hold 20 bars -> exit at the close of bar 52.
@@ -634,3 +678,23 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Kirkpatrick and Dahlquist cite or test these rules on the DJIA, S&P 500, NYSE breadth, 18 or 19 futures/stocks and AAPL; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test. Breadth rules read NYSE breadth on US instruments and NSE breadth on Indian ones (thresholds unchanged).",
     basis: "Kirkpatrick and Dahlquist, Technical Analysis (FT Press 2006): VIX 10-day EMA (Box 7.3 p.98), RSI is wrong (p.440), Apple-a-Day systems (Box 22.1-22.2 p.551-564), May-October (p.165), 6% pullback (p.387), two-bar breakout (ch.17 p.382, lane D3 PASS 3), one-day A/D line (p.133), 10-day A/D ratio 1.91 (p.138), Zweig breadth thrust (p.142), Haurlan 200-day (p.136), Arms Index rules (p.143-145), plurality index Bollinger breakout (p.137, lane R2A R4 #297). Reviewed in authors/kirkpatrick/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
 };
+
+#[cfg(test)]
+mod i2_dump {
+    use super::*;
+    /// Lane I2 hand-run dump for the pandas reference (Q385_CSV=<idx_data.csv> Q385_OUT7=<file> cargo test --release i2_crabel_dump -- --ignored)
+    #[test]
+    #[ignore]
+    fn i2_crabel_dump() {
+        use std::io::Write;
+        let data = crate::load_csv(&std::env::var("Q385_CSV").unwrap()).unwrap();
+        let mut f = std::io::BufWriter::new(std::fs::File::create(std::env::var("Q385_OUT7").unwrap()).unwrap());
+        writeln!(f, "id,ticker,dir,entry_date,entry_px,exit_date,exit_px,open").unwrap();
+        for (t, rows) in data.iter() {
+            let x = Ctx::new(rows, &[], &[]);
+            for z in run("kdta_crabel_inside", &x, 0, rows.len() - 1, &Params::new()).unwrap() {
+                writeln!(f, "kdta_crabel_inside,{t},{},{},{},{},{},{}", z.dir, rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.open).unwrap();
+            }
+        }
+    }
+}

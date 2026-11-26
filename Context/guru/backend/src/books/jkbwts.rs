@@ -253,7 +253,7 @@ pub(crate) fn sim_ep6(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool, min
 
 // ------------------------------------------------------------------ catalogue
 
-const FUT: &str = "Built and tested on a futures market the vault has no data for (see rules); the vault holds only stock indices, ETFs and NSE stocks. Not run on an index: that would be a market substitution, not an instrument swap.";
+const FUT: &str = "Held for same-day order dependence (R4 #175/#240), not for missing data: &ZB daily bars are held but no bond minutes. See the status text.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -265,7 +265,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|If (Average(C,3)[3] < Average(C,7)[5] OR Average(C,7)[5] < Average(C,25)[5]) AND (Average(C,3) > Average(C,7) AND Average(C,7) > Average(C,25)) then Buy at Average(C,3)[3] limit (next bar)",
             "E|Mirror: (Average(C,3)[3] > Average(C,7)[5] OR Average(C,7)[5] > Average(C,25)[5]) AND Average(C,3) < Average(C,7) AND Average(C,7) < Average(C,25) then Sell at Average(C,3)[3] limit",
             "X|Stop and reverse only: the BarsSinceEntry > Length4(4) exits are inside { } comment braces in the printed code, so not used"],
-          "p.4-5. Book: S&P 500 INDEX 67/99 continuous futures, daily, 01/02/90-12/26/97, 1 contract, $55 commission: 67 trades, 49% profitable, net $120,240, avg trade $1,794.63. Run on the cash index (SPX/SPY/NIFTY) instead of the futures (instrument swap).",
+          "p.4-5. Book: S&P 500 INDEX 67/99 continuous futures, daily, 01/02/90-12/26/97, 1 contract, $55 commission: 67 trades, 49% profitable, net $120,240, avg trade $1,794.63. Run on the cash index (SPX/SPY/NIFTY) instead of the futures (instrument swap). [Unstated choices, honest count 2 (R4 #400/#408)] (1) a limit order lasts the next bar only; (2) a limit fills at the better open when the bar gaps through it.",
           claim("67", "49%", "$1,794.63", "", "S&P 500 futures 1/1990-12/1997 (p.4)")),
         d("jkbwts_gettess30", "Gettess30 (2 down closes, open below close)", "S&P 500 systems", "Long", Live,
           &["E|If MRO(Close >= Close[1], LEConsec 2, 1) = -1 (no up or unchanged close in the last 2 bars) and Open of tomorrow < Close then Buy at Market (p.13)",
@@ -284,7 +284,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Daily S&P 500 bars: exit market on close, $1,000 money management stop = 2 S&P points at $500/point (code comment p.27)",
             "F|TradesToday counts entries on the bar just closed: after a 2-trade day no orders are placed for the next day",
             "X|[intraday wave 2b] Default p.path=1: the day is walked on real SPX 1-minute bars in time order, so the minutes show which stop came first (each order fills at most once a day, at its level or at the minute's open when it opened through it; the second entry reverses the first; the $1,000 = 2.00-point stop works from each fill). Inside one minute the module's TradeStation path is used (open, nearer extreme, other extreme) [convention]. SPX only (the book's fixed S&P points; no conversion is invented), 2014-01..2026-08 (SPX-only minute rules start where SPX daily opens are real). p.path=0 = the old daily bar path [Not from the book]."],
-          "p.26-27. Book: S&P 500 INDEX 67/99, daily, 01/02/85-12/26/97: 1,107 trades, 48% profitable, net $122,080, avg $110.28 ($50 commission per the code comment). The code comment also gives a US Bonds version ($500 stop) - NeedsData (no bond futures).",
+          "p.26-27. Book: S&P 500 INDEX 67/99, daily, 01/02/85-12/26/97: 1,107 trades, 48% profitable, net $122,080, avg $110.28 ($50 commission per the code comment). The code comment also gives a US Bonds version ($500 stop) - NeedsData (no bond futures). [Unstated choices, honest count 4 (R4 #400/#408)] (1) the 1-minute path is the default instead of the daily path; (2) each order fills at most once a day; (3) inside one minute the order is open, nearer extreme, other extreme [convention]; (4) the $1,000 stop is 2.00 SPX points from each fill.",
           claim("1107", "48%", "$110.28", "same day", "S&P 500 futures 1/1985-12/1997 (p.26)")),
         d("jkbwts_rainmaker", "JK RainMaker Index", "S&P 500 systems", "Long", Live,
           &["E|JK1: if DayOfWeek(Date) = 1 (Monday) and C > Average(C,3) then Buy tomorrow at Open of tomorrow + (Range/9) stop (p.37; article p.38-39: 'buy tomorrow at the open, plus the range of today divided by nine on a stop')",
@@ -293,7 +293,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|JK4: if DayOfWeek(Date) = 4 (Thursday) then ExitLong tomorrow at Market",
             "X|Bonus exit: if BarsSinceEntry >= 5 then ExitLong tomorrow at Market",
             "X|No stops (article p.40 / code comment p.37); the comment's 'suggested $5,000 MM stop' is the non-default stop_usd option"],
-          "p.36-42. Article (Omega Research Nov 1997): S&P 500 futures Sept 1990-Sept 1997, no stops, no commissions: net $299,430, 62% winning, avg trade $865.40, 346 trades (p.41), max DD -$30,500. Sept 1990-Sept 1996: 297 trades, avg $647.93 (p.41). Manual printout p.36: S&P 500 INDEX 67/99 04/21/82-12/26/97: 787 trades, 59%, avg $413.33 (stop/commission not stated). JK1-JK4 inputs are 1/0 switches (all 1 in the book).",
+          "p.36-42. Article (Omega Research Nov 1997): S&P 500 futures Sept 1990-Sept 1997, no stops, no commissions: net $299,430, 62% winning, avg trade $865.40, 346 trades (p.41), max DD -$30,500. Sept 1990-Sept 1996: 297 trades, avg $647.93 (p.41). Manual printout p.36: S&P 500 INDEX 67/99 04/21/82-12/26/97: 787 trades, 59%, avg $413.33 (stop/commission not stated). JK1-JK4 inputs are 1/0 switches (all 1 in the book). [Unstated choices, honest count 3 (R4 #400/#408)] (1) a JK2 Friday buy while already long is ignored; (2) the same-day exit versus entry order; (3) a stop order fills at the open on a gap.",
           claim("346", "62%", "$865.40", "", "S&P 500 futures 9/1990-9/1997, no stop/commission (p.39-41)")),
         // ---------------- futures-only systems: no data
         d("jkbwts_conner19", "Conner 19", "Currency / bond / commodity futures", "Long/Short", Live,
@@ -337,7 +337,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|No exit in the code: the opposite market entry reverses the position (stop and reverse)"],
           concat!("p.24-25. Book: Swiss Franc daily 01/02/90-12/26/97: 60 trades, 58%, avg $1,128.13. The code has no exit: after the first fill the system is always in the market, so the re-entry stops (LongPositionHigh / ShortPositionLow) act only at the start (the initial LastTrade = 1 puts a buy stop at 0, i.e. long at the first open). Runs on the Swiss Franc continuous futures contract only (R4 #293): signals, indicators and point P&L on the back-adjusted series, % per trade on the unadjusted price of the contract held, $ amounts at the contract's $ per point (futures::MARKETS). ", "Norgate continuous futures, ends 2020-09-11; roll method not stated by the vendor."),
           claim("60", "58%", "$1,128.13", "", "Swiss Franc 1/1990-12/1997 (p.24)")),
-        d("jkbwts_saidenberg30_bonds", "Saidenberg30 (US Bonds)", "Currency / bond / commodity futures", "Long/Short", NeedsData("US Treasury bond futures daily data"),
+        d("jkbwts_saidenberg30_bonds", "Saidenberg30 (US Bonds)", "Currency / bond / commodity futures", "Long/Short", NeedsData("Held (lane L1, 20 Nov 2026; the old reason 'no bond futures' was stale: &ZB is held). Real block, R4 #175/#240: same code as jkbwts_saidenberg30, a range-breakout stop entry with a $500 money stop, so the same-day order of the entry stop and the money stop cannot be read from daily bars (the S&P card measured 100% same-day trades on SPX and NIFTY 50; not measured on &ZB), and no bond minute data are held to resolve it. Not coded."),
           &["E|Same code as jkbwts_saidenberg30 on daily US Bond bars", "X|$500 money management stop (p.27 comment)"], FUT, None),
         d("jkbwts_stuckey19", "Stuckey19", "Currency / bond / commodity futures", "Long/Short", Live,
           &["E|Close > Highest(High,40)[1]: Buy on Close; Close < Lowest(Low,40)[1]: Sell on Close (p.29)", "X|Stop and reverse; no stops"],

@@ -72,12 +72,14 @@ services:
     command: [/data/idx_data.csv, '8090', /data/india_vix, /data/extra_data/india, /data/intraday, /data/options/india]
     environment:
       VAULT_BASKET_DATA_DIR: /basket-data
+      # Q39 (W2, private India engine replay): RSS ratchets with every strategy run; glibc multi-arena fragmentation is part of it. One arena cut the growth of 1,200 repeated runs 55 -> 16 MB; see authors/lanes-1120/W2-Q39.md. Env only, no calculation touched.
+      MALLOC_ARENA_MAX: '1'
     volumes:
       - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
       - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
-    mem_limit: 1g
+    mem_limit: 3g
     restart: unless-stopped
   engine-us:
     image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
@@ -89,7 +91,7 @@ services:
       - '${VAULT_US_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/us-market-data}:/us-basket-data:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
-    mem_limit: 1g
+    mem_limit: 3g
     restart: unless-stopped
   engine-gl:
     # Provisional global/crypto TradingView exports (staged by scripts/setup.py); lab routes only, never publishable.

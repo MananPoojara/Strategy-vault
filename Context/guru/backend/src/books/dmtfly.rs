@@ -5,13 +5,22 @@
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::rbtie::target_trades;
 
-pub const REVIEWED: &[&str] = &["dmtfly_flying"];
+pub const REVIEWED: &[&str] = &["dmtfly_flying", "dmtfly_flying_nse" /* lane CV6 Q9 (R4 #340 / #347 / #365) */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 pub const SERIES: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume", "NYSE_NEW_HIGHS", "NYSE_NEW_LOWS"];
 
+pub const SERIES_NSE: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume", "NSE_NHNL.NH", "NSE_NHNL.NL"];
+const NSE_NOTE: &str = "[R4 #340 / #347 / #365 declared adaptation, UNVERIFIED, lane CV6 Q9] NSE twin: the same rule, parameters and thresholds (ratios and normalised strengths, not counts) on the NSE advances / declines and up / down volume (extra_data/india NSE_ADV_DEC, 1999-01-01 on) and the NSE counts of stocks at a new adjusted 52-week high / low (NSE_NHNL, 2019-10-16 on, with gaps: a run uses the longest stretch with no missing day, as for every NSE_NHNL card). Indian indices and stocks only; US instruments are refused (no NSE series). The author tested the S&P 500 / DJIA on NYSE breadth: no NSE result exists. Measured firing rates, NSE vs NYSE: ";
 const NOTE: &str = "[Adapted: 2 unstated details, R4 #297; verified on the book window] The sidebar's TradeStation 3.01 system, run bar by bar on the close (TradeStation 'buy'/'sell' reverse the position: always in after the first signal). ai/di = NYSE advancing/declining issues, av/dv = their volumes (vault NYSE_ADV_DEC, 1965-2020-02-10), nnh/nnl = NYSE 52-week new highs/lows (Norgate #NYSEHI/#NYSELO, to 2020-09-04); hhv = highest high of the last 252 bars. B1: the close fell more than 9% below hhv (stays set until a buy condition B2/B4/B5 fires). B2: ai >= 2 di today and yesterday and ai >= 5 di on one of them. B4: ai > 1.75 di on at least 3 of the last 4 days. B5: av >= 9 dv today while dv < 9 av on each of the two days before. A new 52-week high (high above the previous bar's hhv) sets S1 and clears S2-S5; S2: a new high in the last 8 bars and nnl > nnh on one of the last 8 days; S3/S4/S5 mirror B2/B4/B5 for declines (S5: dv > 9 av). The S flags persist until a new high or a sell (TradeStation variables). Buy on B1 with B2, B4 or B5 (B3 is deleted in the code), or when the high reaches 2% above the last new high's price (the '2%stop', a level set while long); sell on S1 + S2 + one of S3/S4/S5. Unstated in the code: (1) the 2% stop level before the first long (vault reading: none until the first long; TradeStation's initial value is the first bar's high); (2) a buy and a sell on the same close (vault reading: the sell, the later order, decides the position; no zero-length trade). Meyers tested the DJIA 1/3/1978-1/20/1995 (Figure 8): 28 trades, 64% profitable, total net profit 3,989.72 points; long 14 trades 86%, short 14 trades 43%. The vault's DJI over the same dates gives 29 trades, 62.1%, +3,992 points, longs 12 of 14 (book check passes); the published run uses the longest stretch without NYSE breadth gaps. NYSE breadth: runs on the US indices and ETFs DJI, DIA, SPX, SPY, NDX, QQQ only (as R4 #306); results end 2020-02-10, where the vault's NYSE volume ends.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
+    let mut v = base_catalogue();
+    let t = v.first().map(|b| StrategyDef { id: "dmtfly_flying_nse", name: "Meyers flying Titanic on NSE breadth: buy breadth thrusts after a 9% drop, sell new-low divergence after a 52-week high", group: b.group, session: b.session, dir: b.dir, status: b.status, needs_volume: b.needs_volume, needs_vix: b.needs_vix,
+        needs_series: SERIES_NSE, book: b.book, rules: b.rules, notes: Box::leak(format!("{NSE_NOTE}{} Original card (labelled details apply unchanged): {}", "Flying Titanic rule, default inputs. Overlap (NSE run 2019-10-27..2020-02-10; NYSE 2019-10-16..2020-02-10): NSE twin (NIFTY 50) no trade; NYSE original (SPX) 1 trade (3.2 a year, long 78.8%). Longest gap-free NSE stretch 2025-07-25..2026-10-06: 2 trades = 1.7 a year, long 42.9%; NYSE original over its own run 2014-01-02..2019-08-19: 19 trades = 3.4 a year, long 66.3%.", b.notes).into_boxed_str()), claim: None });
+    v.extend(t);
+    v
+}
+fn base_catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "dmtfly_flying", name: "Meyers flying Titanic: buy breadth thrusts after a 9% drop, sell NYSE new-low divergence after a 52-week high", group: "S&C: Making The Titanic Fly (Meyers, V.13:5)",
         session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: SERIES, book: "dmtfly", rules: &[
             "F|input: ad2x(2),ad4x(5),adfx(1.75),adv9x(9),tenpct(0.09),lookbk(252); hhv=highest(h,lookbk); if c < hhv-(tenpct*hhv) then tendrop=1; if h > hhv[1] then djnh=1 (sidebar)",
@@ -21,7 +30,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    reviewed(id).then_some(("dmtfly_flying", "Meyers flying Titanic", "Sidebar inputs"))
+    reviewed(id).then_some(if id.ends_with("_nse") { ("dmtfly_flying_nse", "Meyers flying Titanic, NSE breadth", "Sidebar inputs") } else { ("dmtfly_flying", "Meyers flying Titanic", "Sidebar inputs") })
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
@@ -35,7 +44,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !reviewed(id) || from > to || to >= x.c.len() { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
-    let s: Vec<&[f64]> = match SERIES.iter().map(|n| x.series(n)).collect::<Option<Vec<_>>>() { Some(v) => v, None => return Some(vec![]) };
+    let names = if id.ends_with("_nse") { SERIES_NSE } else { SERIES };
+    let s: Vec<&[f64]> = match names.iter().map(|n| x.series(n)).collect::<Option<Vec<_>>>() { Some(v) => v, None => return Some(vec![]) };
     let (ai, di, av, dv, nnh, nnl) = (s[0], s[1], s[2], s[3], s[4], s[5]);
     let (ad2x, ad4x, adfx, adv9x, tenpct) = (g("ad2x"), g("ad4x"), g("adfx"), g("adv9x"), g("tenpct"));
     let lb = g("lookbk").round().max(2.) as usize;
@@ -104,6 +114,6 @@ mod tests {
 // Instrument admission: Dennis Meyers, Making The Titanic Fly (S&C 1995), lane PB 2026-11-13.
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "dmtfly" && reviewed(def.id),
-    label: "Dennis Meyers tested the flying Titanic on the DJIA (1978-1995); it reads NYSE breadth and runs on the US indices and ETFs DJI, DIA, SPX, SPY, NDX and QQQ only (R4 #306), with the two unstated details read as labelled on the card (R4 #297).",
+    label: "Dennis Meyers tested the flying Titanic on the DJIA (1978-1995); it reads NYSE breadth and runs on the US indices and ETFs DJI, DIA, SPX, SPY, NDX and QQQ only (R4 #306) (its _nse twin reads the NSE breadth on Indian indices and stocks, R4 #340 / #347, UNVERIFIED), with the two unstated details read as labelled on the card (R4 #297).",
     basis: "Dennis Meyers, Making The Titanic Fly, Stocks & Commodities V.13:5 p.189-195 and the sidebar TradeStation code (VOLUMES/V13/C05/MAKING.PDF, SIDETRD.PDF); NYSE new highs/lows from Norgate (SOURCES norgate-us-indices-20200908-pb); independent check authors/pb/w/pb_ref.py",
 };

@@ -352,8 +352,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                             ev
                         };
                         let mut z = (armed, None);
-                        let day = resolve_conv(x, t, true, &mut z, |w: &mut (bool, Option<(f64, &'static str)>)| w.1 = conv(),
-                            |w: &mut (bool, Option<(f64, &'static str)>), hf: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[t], h[t], l[t], c[t], hf))); v }, walk);
+                        let day = crate::intraday_ep6::resolve_path(x, t, true, &mut z, |w: &mut (bool, Option<(f64, &'static str)>)| w.1 = conv(),
+                            |w: &mut (bool, Option<(f64, &'static str)>), hf: bool| { let mut v = walk(w, &[]); v.extend(walk(w, &bar_segs(o[t], h[t], l[t], c[t], hf))); v }, walk).0;
                         EP6_DAY.with(|cl| cl.set(cl.get().worst(day)));
                         if z.1.is_some() { return z.1; }
                     } else if let Some(r) = conv() { return Some(r); }
@@ -485,3 +485,20 @@ pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_pol
     label: "Thomas Stridsman's Trading System Lab columns tested Dow / Nasdaq-100 stock portfolios, S&P and currency futures with fixed-fractional sizing; runs on one index, ETF or single stock (US and India) are a declared application, one unit per trade.",
     basis: "Active Trader Magazine 2000-2002 Trading System Lab columns (PDF and DjVu copies in Books/Active Trader Magazine)",
 };
+
+#[cfg(test)]
+mod v10_eq_path_tests {
+    /// V10 (tracker follow-up, 23 Nov 2026): a day whose two extreme bar orders agree follows the path, not the module's daily rule. NIFTY 50 (VAULT_IDX), no minutes, default parameters.
+    #[test]
+    fn gold_digger_lock_in_stop_follows_the_path_bar() {
+        use crate::connors::{Ctx, Params};
+        let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
+        let data = crate::load_csv(&path).unwrap_or_else(|e| panic!("this test needs real data: set VAULT_IDX to idx_data.csv ({e})"));
+        let rows = &data["NIFTY 50"];
+        let x = Ctx::new(rows, rows, &[]);
+        let t = super::run("atm00_gold_digger", &x, 0, rows.len() - 1, &Params::new()).unwrap();
+        let z = t.iter().find(|z| rows[z.legs[0].i].date == "2010-11-26").expect("the trade");
+        assert_eq!(rows[z.exit_i].date, "2010-11-29", "{} {}", z.exit_px, z.reason);
+        assert!((z.exit_px - 5786.46).abs() < 0.06, "{}", z.exit_px);
+    }
+}

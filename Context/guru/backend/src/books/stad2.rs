@@ -831,7 +831,7 @@ fn defs_b() -> Vec<Def> {
         "X|Parabolic Trailing SX (table: Acceleration .02, FirstBarMultp 3; code not listed separately)"],
       "Vol 8 ch.4 p.45-59. Book: British Pound 1/84-3/99 (optimised): $73,220 on 150 trades, 41%; IBM long-only: 44 trades, 68%.", ("stad8_jib", "Jack-in-the-Box", "Vol 8")),
     d("stad8_abpd", "ActivityBar Price Distribution", "Vol 8 · Strategies", "Long/Short",
-      NeedsData("Uses ActivityBar data (1-minute activity inside 60-minute bars: AB_ModePrice, AB_GetZoneLow); needs intraday tick/minute distributions."),
+      NeedsData("Uses ActivityBar data (AB_ModePrice, AB_GetZoneLow: the price distribution of activity inside each 60-minute bar, from ticks); the book traded Microsoft and Dell, and the vault holds 1-minute bars only for SPX/SPY/NIFTY/BANKNIFTY cash series, no per-stock minutes or ticks."),
       &["E|Open of next bar > ModePrice and Average(Close,3) rising: Buy next bar at market (Vol 8 p.63 code)", "X|Mode/average reversals exit next open or this close"],
       "Vol 8 ch.5 p.61-68. Book: 60-minute Microsoft and Dell.", ("stad8_abpd", "ActivityBar Price Distribution", "Vol 8")),
     d("stad8_ryanshope", "Ryan's Hope (Ryan Jones)", "Vol 8 · Strategies", "Long/Short", Live,
@@ -1079,10 +1079,11 @@ fn defs_c() -> Vec<Def> {
         "X|Long: ExitLong next bar at Slow - 1 point stop; short: ExitShort next bar at Slow + 1 point stop",
         "F|Maximum 3 entries per position (prose p.76; Vol 9 code CurrentContracts < 3) - param maxent"],
       "Vol 13 ch.7 p.75-86. Book (optimised): NXTL 47 trades 51%, PF 2.87; bonds 229 trades 46%. ADX length: the signal listing's own input line prints ADXLength(12); the Strategy Inputs table (p.78) sets 15, which is the value TradeStation applies (strategy inputs override the signal's defaults) and the testing protocol's default ('ADXLength = 15, testing from 7 to 21', p.81), so the default is 15; p.adxlen=12 gives the listing's default (decision 221).", ("stad_luxor", "LUXOR", "Vol 13")),
-    d("stad13_cbi", "Currency/Bonds/Dollar Index (revisited)", "Vol 13 · Revisited", "Long/Short",
-      NeedsData("Needs bond futures (Data2) and the US Dollar Index (Data3) aligned to a currency future; none in the vault."),
-      &["E|Fast rising, Medium > Slow, bonds' XAverage(50) rising and the Dollar Index's XAverage(50) falling: buy stop High + ATR/2 for 5 bars (Vol 13 p.90 code)", "X|Medium crosses below Slow: ExitLong next bar at market"],
-      "Vol 13 ch.8 p.87-98.", ("stad5_curbond", "Currency/Bond", "Vol 13")),
+    d("stad13_cbi", "Currency/Bonds/Dollar Index (revisited)", "Vol 13 · Revisited", "Long/Short", Live,
+      &["F|Fast/Medium/Slow = XAverage(Close, 4/12/23); Bonds = XAverage(Close, 50) of Data2 (U.S. bonds); Index = XAverage(Close, 50) of Data3 (Dollar Index); ATRs = AvgTrueRange(10)/2 (Vol 13 p.90-92 code)",
+        "E|Bullishness = Bonds > Bonds[1] and Index < Index[1]; Fast > Fast[1] and Medium > Slow and Bullishness: BuyPoint = High + ATRs, setup active for BarsActive (5) bars; buy next bar at BuyPoint on a stop (sell mirror: Bearishness, SellPoint = Low - ATRs)",
+        "X|Medium crosses below Slow: ExitLong next bar at market; Medium crosses above Slow: ExitShort next bar at market (p.92)"],
+      "Vol 13 ch.8 p.87-98. Book (optimised per market, daily bars 1/2/95-4/4/00, no slippage or commission): Swiss franc FastLength 6, MediumLength 8, SlowLength 26, BondsLength 70, IndexLength 20, BarsActive 8 -> $28,656, 18 trades, 44% winners; Japanese yen 3/16/29/20/30/10 -> $77,428, 13 trades, 77% winners. Runs on the Norgate currency continuous contracts with the Norgate T-bond (Data2) and Dollar Index (Data3) contracts, each XAverage on its own bars carried to the currency's dates (as stad5_curbond, lane F1C, R4 #293). The setup counter follows the printed code (GetInLong starts at BarsActive, reset to 1 on a setup bar, order while < BarsActive).", ("stad5_curbond", "Currency/Bond", "Vol 13")),
     d("stad13_mrts", "Momentum Retracement (revisited)", "Vol 13 · Revisited", "Long/Short", Live,
       &["F|HighBand/LowBand = XAverage(High/Low,15); CloseLine = XAverage(Close,5); MACD(3,10) with 15-bar signal; RSI(Close,5); DMISpread = DMIPlus(15) - DMIMinus(15) (Vol 13 p.104-106 code)",
         "F|CloseLine crosses above HighBand: ChannelUptrend (below LowBand: ChannelDowntrend); Uptrend = ChannelUptrend and Signal > 0; BullishMomentum = RSI > 70 and DMISpread > 15",
@@ -1155,6 +1156,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     };
     let mut v: Vec<ParamDef> = match id {
         "stad11_miser" => [vec![p("splen", "SP SMA length", 14., 5., 40., 1.), p("bondlen", "US (Data2) SMA length", 40., 10., 80., 1.)], atrx(4., 4., 5., 3., 9., 2., 0., 10.)].into_iter().flatten().collect::<Vec<_>>(),
+        "stad13_cbi" => vec![p("fast", "FastLength (XAverage of the currency)", 4., 2., 20., 1.), p("med", "MediumLength", 12., 5., 40., 1.), p("slow", "SlowLength", 23., 10., 60., 1.),
+            p("bondma", "BondsLength (XAverage of Data2, bonds)", 50., 10., 100., 1.), p("indexma", "IndexLength (XAverage of Data3, Dollar Index)", 50., 10., 100., 1.),
+            p("actvbar", "BarsActive: bars the entry stop stays active", 5., 1., 20., 1.), p("atrlen", "ATRLength", 10., 2., 40., 1.)],
         "stad5_curbond" => [vec![p("fast", "Fast XAverage", 4., 2., 20., 1.), p("med", "Medium XAverage", 12., 5., 40., 1.), p("slow", "Slow XAverage", 23., 10., 60., 1.),
             p("bondma", "Bond XAverage (Data2)", 50., 10., 100., 1.), p("actvbar", "Bars the entry stop stays active", 5., 1., 20., 1.), usd("stop_usd", "StopAmt: risk trailing stop from the close ($)", 1000.),
             usd("mm_usd", "Money-management stop ($, Format dialog)", 1200.)], bpv(125000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
@@ -1350,6 +1354,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if mx[i] < sx[i] { nx.push(o(A::Xl, P::Mkt, "MedXAvg below SlowXAvg")); }
                 if mx[i] > sx[i] { nx.push(o(A::Xs, P::Mkt, "MedXAvg above SlowXAvg")); }
                 nx.push(o(A::Xl, P::Stop(c[i] - stp), "Risk trailing stop")); nx.push(o(A::Xs, P::Stop(c[i] + stp), "Risk trailing stop"));
+            })
+        }
+        "stad13_cbi" => {
+            // lane K3 (R4 #414): Data2 = the Norgate T-bond contract, Data3 = the Norgate Dollar Index; each XAverage on its own bars, carried (second::align)
+            let (Some(br), Some(dr)) = (crate::futures::rows("&ZB"), crate::futures::rows("&DX")) else { return Some(vec![]) };
+            if crate::futures::ctx_market(x).is_none() { return Some(vec![]); }
+            let xa = |r: &[crate::Row], k: &str| xavg(&r.iter().map(|b| b.close).collect::<Vec<_>>(), u(k));
+            let bx = crate::second::align("&ZB", x.r, br).own(|r| xa(r, "bondma"));
+            let ix = crate::second::align("&DX", x.r, dr).own(|r| xa(r, "indexma"));
+            let (fx, mx, sx) = (xavg(c, u("fast")), xavg(c, u("med")), xavg(c, u("slow")));
+            let (actv, av) = (g("actvbar"), atrv.clone());
+            // GetInLong/GetInShort start at BarsActive, are incremented every bar and reset to 1 on a setup bar; an order stands while < BarsActive
+            let (mut gl, mut gs, mut bp, mut sp) = (actv, actv, 0.0, 0.0);
+            run_ts(x, from, to, 100, cfg(), |i, _st, _now, nx| {
+                gl += 1.0; gs += 1.0;
+                let (bull, bear) = (bx[i] > bx[i - 1] && ix[i] < ix[i - 1], bx[i] < bx[i - 1] && ix[i] > ix[i - 1]);
+                if fx[i] > fx[i - 1] && mx[i] > sx[i] && bull { bp = h[i] + av[i] / 2.0; gl = 1.0; }
+                if fx[i] < fx[i - 1] && mx[i] < sx[i] && bear { sp = l[i] - av[i] / 2.0; gs = 1.0; }
+                if gl < actv { nx.push(o(A::Buy, P::Stop(bp), "CBI Buy")); }
+                if gs < actv { nx.push(o(A::Sell, P::Stop(sp), "CBI Sell")); }
+                if mx[i] < sx[i] && mx[i - 1] >= sx[i - 1] { nx.push(o(A::Xl, P::Mkt, "Medium crosses below Slow")); }
+                if mx[i] > sx[i] && mx[i - 1] <= sx[i - 1] { nx.push(o(A::Xs, P::Mkt, "Medium crosses above Slow")); }
             })
         }
         "stad5_im2" => {
@@ -2783,7 +2809,7 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 72); // + stad5_im2 (lane M3); + stad5_im1 (lane M2); + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
+        assert_eq!(live, 73); // + stad5_im2 (lane M3); + stad5_im1 (lane M2); + stad7_dow (lane PG, Norgate Dow averages); + stad5_curbond, stad11_miser (lane F1C, Norgate futures); + stad6_asi (lane K60); + stad6_tenbar (lane K47); + stad7_idbo, stad7_fibret (lane K53, minute rules)
     }
 }
 

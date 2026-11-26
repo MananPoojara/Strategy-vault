@@ -25,7 +25,7 @@ const LIZ_SHORT: &[&str] = &[
 ];
 const LIZ_NOTES: &str = "\"I use this strategy strictly for day trading\" (p.113). No statistics in the book (examples: Computer Associates, Amgen, Atmel, United Airlines 1995-96). \
 Book traded US stocks priced about $30-$170 (1995-96). The 1-point risk and the 1/8 offset are literal dollars, so the rule runs on SPY only, an ETF that has never split (decision 229 (1)): a labelled application, not the author's test; the vault's US stock files are split-adjusted, where a fixed dollar amount is not the book's (decision 166). \
-p.risk_pct is a labelled non-default alternative [Not from the book]. The 2004 postscript (p.17) says to use 10 cents instead of 1/8 for decimal-priced stocks: set p.tick = 0.10. Short-sale uptick rule not modelled. No costs in the vault's run.";
+p.risk_pct is a labelled non-default alternative [Not from the book]. The 2004 postscript (p.17) says to use 10 cents instead of 1/8 for decimal-priced stocks: set p.tick = 0.10. Short-sale uptick rule not modelled. No costs in the vault's run. [Unstated choices, honest count 4 (R4 #400/#408)] (1) the open and the close must both lie in the top 25% (buys) or bottom 25% (short sales) of the day's range, inclusive; (2) ties with the 10-day low (buys) or high (short sales) count; (3) the real SPY minute path is the default; (4) the in-minute order and ambiguity convention.";
 
 const EXIT: &str = "exit is discretionary: the book gives only an initial stop and trailing stops (\"my exits are pretty much discretionary\", p.158)";
 

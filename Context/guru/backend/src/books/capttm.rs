@@ -8,7 +8,7 @@ use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 
 const BOOK: &str = "capttm";
 /// Admitted ids (authors/carnold/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["capttm_ma14_50", "capttm_ma_price_both"];
+pub const REVIEWED: &[&str] = &["capttm_ma14_50", "capttm_ma_price_both", "capttm_price_ma", "capttm_djua_15w"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -31,9 +31,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Exits as quoted above.",
         ], concat!("'This system' = the 14/50-day pair of the preceding paragraph (p.82). Price = the daily close (\"you may wish to use closing prices only\", p.81). ",
             "Crossing above both: close > both averages today and not yesterday; exit long: close below either average (close < the higher one). Short mirror. All fills at the signal close [book silent]. A long exit and a short entry can happen on the same close. India: NIFTY indices.")),
-        nt("capttm_price_ma", "Price crossing a single moving average", "Ch 13 · Moving averages",
-            "no single length: 'a 200-day moving average ... (Shorter-term signals would be generated using a 10- or 20-day moving average.)' (p.81)", &[
-            "E|\"Buy when prices cross above the moving average. Sell when prices cross below the moving average.\" (p.81)"]),
+        d("capttm_price_ma", "Price crossing a single moving average (200-day)", "Ch 13 · Moving averages", "Long", Live, &[
+            "E|\"Buy when prices cross above the moving average.\" (p.81); the example average is the 200-day (\"when a stock price is above its 200-day moving average, it is considered a bullish sign\", p.81)",
+            "X|\"Sell when prices cross below the moving average.\" (p.81)",
+            "A|[Declared reading 1, lane H1c 19 Nov 2026, R4 #339/#343] length: the default is the 200-day average, the text's own example for stocks (p.81); the shorter-term 10- and 20-day averages the text names (p.81) are the length option, not the default",
+            "A|[Declared reading 2] average type: the simple average of closes with today's close included (built in Table 13-1, p.79-80); the weighted and exponential averages the text also names (p.80) are not run; price = the close (\"typically, you may wish to use closing prices only\", p.81)",
+            "A|[Declared reading 3] 'cross above' = the close is above the average today and was not above it on the previous bar; 'cross below' the mirror; a close exactly on the average is neither (tie rule)",
+            "A|[Declared reading 4] 'Sell' closes the long and does not open a short: the next paragraph separates 'sell' from 'Sell short' (p.82); the stop-and-reverse reading is the option short = 1, not the default",
+        ], "Book p.81 prints no example results; the Dow 200-day chart (Figure 13-3, p.83) is a chart, not a trade list. Signals on the close, filled at that close [engine convention, as capttm_ma14_50]. Runs on the held indices, ETFs and stocks, US and India (declared application). adapted: 4 labelled readings (length, average type, cross/tie rule, sell = exit), UNVERIFIED."),
         nt("capttm_dow_ma200", "Dow vs its 200-day moving average", "Ch 13 · Moving averages",
             "no exit: a break below the average 'does not necessarily signal an end to the bull market' (p.83); the confirmation (average turning up) has no trade rule", &[
             "E|\"If ... the Dow should move up and cross the Moving Average, it indicates that a new bull market has begun.\" (p.83)"]),
@@ -73,11 +78,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "monthly NYSE free credit balances; not in the vault", &[
             "E|\"A buy signal is generated when the current series crosses above the 12-month moving average; a sell signal occurs when the current series crosses below\" (p.128)"],
             "Not coded until the series exists."),
-        nd("capttm_djua_15w", "Dow Jones Utility Average vs its 15-week moving average", "Ch 18 · Sentiment",
-            "weekly Dow Jones Utility Average closes; not in the vault", &[
-            "F|\"When the current readings are above the 15-week moving average, the utility stocks can be classified as being in an uptrend and the stock market also should continue higher.\" (p.129)",
+        StrategyDef { id: "capttm_djua_15w", name: "Dow Jones Utility Average vs its 15-week moving average (trade the S&P 500)", group: "Ch 18 · Sentiment", session: 0, dir: "Long", status: Live,
+            needs_volume: false, needs_vix: false, needs_series: &["DJ_UTILITY"], book: BOOK, claim: None, rules: &[
+            "E|\"When the current readings are above the 15-week moving average, the utility stocks can be classified as being in an uptrend and the stock market also should continue higher.\" (p.129)",
             "X|\"When current readings drop below the 15-week moving average, a sell signal is in order.\" (p.129)"],
-            "No explicit buy wording ('should continue higher'); to settle when the data exists."),
+            notes: "[Adapted: 4 labelled readings, lane K3 24 Nov 2026; unverified] (1) Weekly bars: the last session of each Monday-Friday week on the traded index's calendar; the weekly close of the Dow Jones Utility Average (Norgate $DJU, 1929-2020-09-04) is read on that session, and a week whose last session has no utility close is dropped (not moved to the day before). (2) The 15-week simple average includes the current week. (3) The book gives no buy order ('the stock market also should continue higher') and says 'a sell signal is in order': above the average = long the traded index at that week's close, below = close the long (p.short=1 [non-default] sells short instead of going flat). (4) a close exactly equal to the average holds the current position. Honest total: 4 card-specific choices (audit count 5; its item 5, the 1991-05-28 run start, is the data window, an engine-wide default per #404). Window: the S&P 500 run starts on 1991-05-28 (the first date the engine finds the utility series fully covered; earlier weeks only warm the average) and ends 2020-09-04, where the utility series ends. No results printed." },
         nt("capttm_trin10", "10-day TRIN overbought/oversold", "Ch 20 · Short-term indicators",
             "describes conditions ('an immediate correction can be expected'), no trade or exit rule (p.136)", &[]),
         nt("capttm_monetary", "Net free reserves, money supply, discount rate, fed funds", "Ch 19 · Monetary",
@@ -93,6 +98,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "capttm_ma14_50" => ("capttm_ma", "Timing the Market moving-average systems", "14/50 crossover"),
         "capttm_ma_price_both" => ("capttm_ma", "Timing the Market moving-average systems", "price vs both averages"),
+        "capttm_price_ma" => ("capttm_ma", "Timing the Market moving-average systems", "price vs one average"),
         s if s.starts_with("capttm_") => ("capttm_other", "Timing the Market indicators", ""),
         _ => return None,
     })
@@ -106,6 +112,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "capttm_ma14_50" => vec![fast, slow, p("short", "Also sell short on the cross below (stop-and-reverse; not the default reading)", 0., 0., 1., 1.)],
         "capttm_ma_price_both" => vec![fast, slow],
+        "capttm_price_ma" => vec![p("len", "Moving-average length (days; the book's example 200, shorter-term 10 or 20)", 200., 2., 400., 1.), p("short", "Also sell short on the cross below (stop-and-reverse; not the default reading)", 0., 0., 1., 1.)],
+        "capttm_djua_15w" => vec![p("len", "Moving-average length (weeks; the book says 15)", 15., 2., 60., 1.), p("short", "Sell short below the average instead of going flat (not the default reading)", 0., 0., 1., 1.)],
         _ => vec![],
     })
 }
@@ -118,10 +126,44 @@ fn close(out: &mut Vec<Trade>, cur: &mut Option<Trade>, i: usize, px: f64, why: 
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if id != "capttm_ma14_50" && id != "capttm_ma_price_both" { return None; }
+    if !reviewed(id) { return None; }
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
+    if id == "capttm_djua_15w" { // lane K3 (24 Nov 2026): weekly Dow Jones Utility Average vs its 15-week average, traded on the index
+        let Some(ut) = x.series("DJ_UTILITY") else { return Some(vec![]) };
+        let to = (0..=to).rev().find(|&i| ut[i].is_finite()).unwrap_or(0); // the utility series ends 2020-09-04: no signal beyond it
+        let wk: Vec<usize> = super::apta::bars(x, 1).into_iter().filter(|&i| i <= to && ut[i].is_finite()).collect();
+        let (len, short) = (g("len").round().max(1.) as usize, g("short") >= 0.5);
+        let mut tgt = vec![0i8; to + 1];
+        let mut pos = 0i8;
+        for k in 0..wk.len() {
+            if k + 1 >= len {
+                let m = wk[k + 1 - len..=k].iter().map(|&i| ut[i]).sum::<f64>() / len as f64;
+                if ut[wk[k]] > m { pos = 1; } else if ut[wk[k]] < m { pos = if short { -1 } else { 0 }; }
+            }
+            let end = wk.get(k + 1).map_or(to, |&j| j - 1);
+            for t in &mut tgt[wk[k]..=end] { *t = pos; }
+        }
+        return Some(super::rbtie::target_trades(x, &tgt, from, to, false, "Utility average vs its 15-week average"));
+    }
+    if id == "capttm_price_ma" { // lane H1c (19 Nov 2026): close crossing its simple average, long (optionally stop-and-reverse)
+        let m = sma(&x.c, g("len").round().max(1.) as usize);
+        let (mut out, mut cur) = (vec![], None::<Trade>);
+        for i in from.max(1)..=to {
+            if !m[i].is_finite() || !m[i - 1].is_finite() { continue; }
+            let c = x.c[i];
+            let up = c > m[i] && !(x.c[i - 1] > m[i - 1]);
+            let dn = c < m[i] && !(x.c[i - 1] < m[i - 1]);
+            if dn && cur.as_ref().map_or(false, |t| t.dir > 0.) { close(&mut out, &mut cur, i, c, "close crossed below the average"); }
+            if up && cur.as_ref().map_or(false, |t| t.dir < 0.) { close(&mut out, &mut cur, i, c, "close crossed above the average"); }
+            if cur.is_none() && i < to {
+                if up { cur = Some(trade(1., i, c)); } else if dn && g("short") >= 0.5 { cur = Some(trade(-1., i, c)); }
+            }
+        }
+        if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
+        return Some(out);
+    }
     let (f, s) = (sma(&x.c, g("fast").round().max(1.) as usize), sma(&x.c, g("slow").round().max(1.) as usize));
     let ok = |i: usize| f[i].is_finite() && s[i].is_finite();
     let mut out = vec![];
@@ -175,6 +217,17 @@ mod tests {
         assert_eq!((ts[0].legs[0].i, ts[0].exit_i, ts[0].exit_px), (3, 6, 4.));
         assert!(catalogue().iter().all(|d| d.id.starts_with("capttm_") && family_of(d.id).is_some() && params(d.id).is_some()));
     }
+    #[test]
+    fn price_crosses_its_average() {
+        // len 3: closes 10,10,10,13,16,10,4 -> sma3 -,-,10,11,13,13,10; close 13 > 11 and 10 <= 10 at bar 3: buy; close 10 < 13 at bar 5: sell
+        let cl = [10., 10., 10., 13., 16., 10., 4.];
+        let r: Vec<Row> = cl.iter().enumerate().map(|(k, &c)| Row { ticker: "T".into(), date: format!("2001-01-{:02}", k + 1), open: c, high: c, low: c, close: c, volume: None }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let mut pr = Params::new(); pr.insert("len".into(), 3.);
+        let ts = run("capttm_price_ma", &x, 0, r.len() - 1, &pr).unwrap();
+        assert_eq!(ts.len(), 1);
+        assert_eq!((ts[0].legs[0].i, ts[0].exit_i, ts[0].exit_px), (3, 5, 10.));
+    }
 }
 
 // Instrument admission: CArnold 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
@@ -183,5 +236,28 @@ mod tests {
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"capttm") && (crate::books::capttm::reviewed(def.id)),
     label: "Curtis Arnold's moving-average examples come from gold futures (Merrill Lynch study) and general futures/stock charting; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
-    basis: "Curtis M. Arnold, Timing the Market (1993), ch.13 Moving averages (p.82): the 14/50-day two-crossover model and its modified version (close above/below both averages, exit when the close crosses either). Signals and fills on the close. Reviewed in authors/carnold/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+    basis: "Curtis M. Arnold, Timing the Market (1993), ch.13 Moving averages (p.82): the single price-vs-moving-average rule (p.81, 200-day default), the 14/50-day two-crossover model and its modified version (close above/below both averages, exit when the close crosses either). Signals and fills on the close. Reviewed in authors/carnold/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
 };
+
+#[cfg(test)]
+mod h1c_dump {
+    use super::*;
+    /// Lane H1c reference feed: `CP_DUMP=out CP_CSV=us_data.csv CP_TICKER=SPY [CP_LEN=200] [CP_SHORT=1] cargo test --release cp_dump -- --ignored` (CP_FMT=idx for idx_data.csv dates)
+    #[test]
+    #[ignore]
+    fn cp_dump() {
+        let (Ok(out), Ok(csv), Ok(tk)) = (std::env::var("CP_DUMP"), std::env::var("CP_CSV"), std::env::var("CP_TICKER")) else { return };
+        let iso = |d: &str| format!("{}-{}-{}", &d[6..10], &d[3..5], &d[0..2]);
+        let rows: Vec<crate::Row> = std::fs::read_to_string(csv).unwrap().lines().skip(1).filter_map(|l| { let f: Vec<&str> = l.split(',').collect();
+            if f[0] != tk { return None; }
+            Some(crate::Row { ticker: tk.clone(), date: iso(f[1]), open: f[2].parse().ok()?, high: f[3].parse().ok()?, low: f[4].parse().ok()?, close: f[5].parse().ok()?, volume: None }) }).collect();
+        let x = Ctx::new(&rows, &rows, &[]);
+        let mut p = Params::new();
+        if let Ok(v) = std::env::var("CP_LEN") { p.insert("len".into(), v.parse().unwrap()); }
+        if let Ok(v) = std::env::var("CP_SHORT") { p.insert("short".into(), v.parse().unwrap()); }
+        let t = run("capttm_price_ma", &x, 0, rows.len() - 1, &p).unwrap();
+        let mut o = String::new();
+        for z in &t { o += &format!("{}\t{}\t{}\t{}\t{}\t{}\n", rows[z.legs[0].i].date, z.legs[0].px, rows[z.exit_i].date, z.exit_px, z.dir, z.open); }
+        std::fs::write(out, o).unwrap();
+    }
+}
