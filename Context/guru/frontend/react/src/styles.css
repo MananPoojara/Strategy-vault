@@ -609,6 +609,19 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 :root[data-theme="sand"] {--bg:#f6f0e5;--panel:#fffdf8;--card:#fffcf5;--ink:#3e2b22;--ink2:#7d5d4a;--ink3:#967c69;--steel:#d7c5ad;--rule:#eadfcc;--blue:#ae582c;--blue-soft:#f5e0ca;--chart:#bf7b35;--bh:#84968c;--green:#3c8057;--red:#b63b35;--top-grad:#f1e5d2;--topbar:#fffcf5;--guil:#a9712824;--thead:#f4e9d9;--hover:#f1e4cf;}
 :root[data-theme="plum"] {--bg:#f6edf3;--panel:#fefbfe;--card:#fff;--ink:#3b2337;--ink2:#75526d;--ink3:#977a90;--steel:#d9c2d2;--rule:#eedde8;--blue:#874678;--blue-soft:#f0ddec;--chart:#a46197;--bh:#9a9e73;--green:#258368;--red:#c44369;--top-grad:#f0deeb;--topbar:#fefbfe;--guil:#87467822;--thead:#f2e5ee;--hover:#f0e0eb;}
 :root[data-theme="cobalt"] {--bg:#edf2fc;--panel:#fbfcff;--card:#fff;--ink:#172a51;--ink2:#465e8c;--ink3:#7284aa;--steel:#c2cee6;--rule:#dce4f5;--blue:#315ad6;--blue-soft:#e1e9fc;--chart:#4e7ade;--bh:#ad9577;--green:#267d67;--red:#c64557;--top-grad:#e2eafa;--topbar:#fbfcff;--guil:#315ad622;--thead:#e9effb;--hover:#dfe8fc;}
+/* Colour pass (23-11-2026, user: "more colour based themes"): six vivid palettes, and the three white aqua themes get a tinted page. */
+:root[data-theme="royal"] {--bg:#efedfb;--panel:#fcfbff;--card:#fff;--ink:#221b4b;--ink2:#544c86;--ink3:#8079ad;--steel:#cdc7ef;--rule:#e4e0f7;--blue:#5b3fd6;--blue-soft:#e8e3fc;--chart:#6d55e0;--bh:#b49a6a;--green:#1f8a5e;--red:#cc3d5a;--top-grad:#e2ddfa;--topbar:#fcfbff;--guil:#5b3fd622;--thead:#ece9fc;--hover:#e6e1fb;}
+:root[data-theme="sunset"] {--bg:#fcefe9;--panel:#fffbf9;--card:#fff;--ink:#3d1f17;--ink2:#7a4a3c;--ink3:#a07a6d;--steel:#f0cdbf;--rule:#f6e1d8;--blue:#cf4226;--blue-soft:#fde3db;--chart:#ef6b45;--bh:#7f9a8c;--green:#2e8a57;--red:#c22f4a;--top-grad:#fadccf;--topbar:#fffbf9;--guil:#cf422622;--thead:#fbeae3;--hover:#fae1d7;}
+:root[data-theme="emerald"] {--bg:#e8f6ef;--panel:#fbfefc;--card:#fff;--ink:#0f3327;--ink2:#3f6557;--ink3:#6e9184;--steel:#bfe2d3;--rule:#d9efe5;--blue:#0b8058;--blue-soft:#d8f2e7;--chart:#13a874;--bh:#b48f5c;--green:#0b8a55;--red:#c8414f;--top-grad:#d3efe2;--topbar:#fbfefc;--guil:#0b805822;--thead:#e2f4ec;--hover:#d9efe5;}
+:root[data-theme="ocean"] {--bg:#e8f0fa;--panel:#fafcff;--card:#fff;--ink:#0d2747;--ink2:#3e5a7f;--ink3:#6c84a5;--steel:#bcd0ea;--rule:#d8e4f4;--blue:#0b63c4;--blue-soft:#dbe9fa;--chart:#1d7fe0;--bh:#c19a5b;--green:#138a5f;--red:#cf3b4f;--top-grad:#d4e4f7;--topbar:#fafcff;--guil:#0b63c422;--thead:#e3edf9;--hover:#dbe7f7;}
+:root[data-theme="amber"] {--bg:#fbf4e1;--panel:#fffdf6;--card:#fff;--ink:#3a2a08;--ink2:#74592a;--ink3:#9c8556;--steel:#ecd8a6;--rule:#f4e8c8;--blue:#a86400;--blue-soft:#fbecc6;--chart:#e09a12;--bh:#6f8fa1;--green:#2c8650;--red:#c1393c;--top-grad:#f7e6b8;--topbar:#fffdf6;--guil:#a8640022;--thead:#f8eed2;--hover:#f6e7c2;}
+:root[data-theme="rose"] {--bg:#fbecf0;--panel:#fffafb;--card:#fff;--ink:#3d1424;--ink2:#7a4058;--ink3:#a17083;--steel:#f0c4d3;--rule:#f6dde5;--blue:#c42a57;--blue-soft:#fcdde6;--chart:#e2477a;--bh:#7e9a8a;--green:#23885d;--red:#b8283c;--top-grad:#f9d6e0;--topbar:#fffafb;--guil:#c42a5722;--thead:#fbe6ec;--hover:#f9dce5;}
+:root[data-theme="aqua"] {--bg:#e7f4f6;--top-grad:#d3ecf0;}
+:root[data-theme="lagoon"] {--bg:#e9f6f8;--top-grad:#d2eef2;}
+:root[data-theme="glacier"] {--bg:#ecf6f8;--top-grad:#daeff2;}
+/* 15 palettes: smaller dots so the site bar keeps one line */
+.themes {gap:4px;} .themes button {width:18px;height:18px;}
+@media(max-width:1500px){.themes span{display:none;}}
 :root[data-theme] {color-scheme:light;}
 :root[data-theme="midnight"] {color-scheme:dark;}
 :root[data-theme] :is(.period,.dbtn,.dd-btn,.dd.set .dd-btn,.lbtn,.tbl .go,.obar input,.osel select,.dfield input,.dfield select,.dselect select,.dselect select.set,.sel select.set,textarea,.tag,.btn,.chip,.dsearch input,.sel select,.search input,.menu,.cc-det,.cc-xlsx,.annotation-editor input) {background-color:var(--card);color:var(--ink);}

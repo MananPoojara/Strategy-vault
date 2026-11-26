@@ -48,7 +48,7 @@ test('login preserves a strategy fragment carried through the authentication red
 });
 
 test('whole-page themes are persisted without arbitrary CSS',()=>{
- for(const theme of ['midnight','forest','sand','plum','cobalt']) assert.equal(validateTheme(theme),theme);
+ for(const theme of ['midnight','forest','sand','plum','cobalt','royal','sunset','emerald','ocean','amber','rose']) assert.equal(validateTheme(theme),theme);
 });
 
 test('research tags accept plain labels and restrict CEO recommendation changes to administrators',async()=>{

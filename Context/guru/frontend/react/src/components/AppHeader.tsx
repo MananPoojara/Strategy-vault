@@ -14,6 +14,12 @@ const themes = [
   ["aqua", "Aqua", "#ffffff", "#10adbc"],
   ["lagoon", "Lagoon", "#e9f8fa", "#00798a"],
   ["glacier", "Glacier", "#f8fcfd", "#3cc0c9"],
+  ["royal", "Royal", "#efedfb", "#5b3fd6"],
+  ["sunset", "Sunset", "#fcefe9", "#cf4226"],
+  ["emerald", "Emerald", "#e8f6ef", "#0b8058"],
+  ["ocean", "Ocean", "#e8f0fa", "#0b63c4"],
+  ["amber", "Amber", "#fbf4e1", "#a86400"],
+  ["rose", "Rose", "#fbecf0", "#c42a57"],
 ];
 export function AppHeader({
   account,

@@ -1,4 +1,4 @@
-const THEMES = new Set(['steel', 'aqua', 'lagoon', 'glacier', 'midnight', 'forest', 'sand', 'plum', 'cobalt']);
+const THEMES = new Set(['steel', 'aqua', 'lagoon', 'glacier', 'midnight', 'forest', 'sand', 'plum', 'cobalt', 'royal', 'sunset', 'emerald', 'ocean', 'amber', 'rose']);
 export const ROLES = new Set(['admin', 'researcher', 'viewer']);
 export function validateNoteKey(key) {
   if (typeof key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(key)) throw new Error('Invalid note identifier');

@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS vault_audit (
 ALTER TABLE vault_settings ADD COLUMN IF NOT EXISTS last_view text NOT NULL DEFAULT '#/';
 
 ALTER TABLE vault_settings DROP CONSTRAINT IF EXISTS vault_settings_theme_check;
-ALTER TABLE vault_settings ADD CONSTRAINT vault_settings_theme_check CHECK (theme IN ('steel','aqua','lagoon','glacier','midnight','forest','sand','plum','cobalt'));
+ALTER TABLE vault_settings ADD CONSTRAINT vault_settings_theme_check CHECK (theme IN ('steel','aqua','lagoon','glacier','midnight','forest','sand','plum','cobalt','royal','sunset','emerald','ocean','amber','rose'));
 CREATE TABLE IF NOT EXISTS vault_annotations (
     entity_key varchar(80) PRIMARY KEY,
     tags jsonb NOT NULL DEFAULT '[]'::jsonb,
