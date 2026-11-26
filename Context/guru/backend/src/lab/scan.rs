@@ -140,7 +140,7 @@ fn all(st: &State, q: &Query, spec: &Spec) -> Result<String, LabError> {
     rules::validate_applied(spec)?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(SECONDS);
     let late = || if std::time::Instant::now() >= deadline { Err(inv(format!("the scan stopped after {SECONDS} s; use fewer members or a shorter range. No partial list is published."))) } else { Ok(()) };
-    let loaded = super::universe::load_with_deadline(st, &p.universe, deadline)?;
+    let loaded = super::universe::load_with_deadline(st, &p.universe, deadline, (q.get("from").map_or("", |s| s.as_str()), q.get("to").map_or("", |s| s.as_str())))?;
     let ranges = loaded.members.iter().map(|m| dated(&m.frames.d.date, q)).collect::<Result<Vec<_>, _>>()?;
     // indicators warm up on each member's whole history, so the bound counts every loaded bar
     let cells: usize = loaded.members.iter().map(|m| m.frames.d.len()).sum();

@@ -46,6 +46,9 @@
 .lab-add-filter { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin:2px 0 8px; }
 /* Buy / Sell as small coloured tags so the two lines scan at once */
 .lab-words { background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .03); }
-.lab-words :is([data-lab-words-buy], [data-lab-words-sell]) > b:first-child { display: inline-block; min-width: 3.4em; margin-right: 6px; padding: 1px 7px; border-radius: 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; text-align: center; vertical-align: 1px; }
+.lab-words :is([data-lab-words-buy], [data-lab-words-sell], [data-lab-words-dates]) > b:first-child { display: inline-block; min-width: 3.4em; margin-right: 6px; padding: 1px 7px; border-radius: 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; text-align: center; vertical-align: 1px; }
 .lab-words [data-lab-words-buy] > b:first-child { color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--card)); }
 .lab-words [data-lab-words-sell] > b:first-child { color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--card)); }
+/* the Dates filter line: its tag in the theme colour, Fresh / Running named in bold */
+.lab-words [data-lab-words-dates] > b:first-child { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); }
+.lab-words [data-lab-words-dates] > .dbtn { margin-left: 6px; }

@@ -113,6 +113,12 @@ main.page:has(> .lab-page[data-lab-page]) { padding-bottom: 8px; }
 :root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn[aria-current=step] { color: var(--ink); background: none; border-bottom-color: var(--blue); }
 :root .lab-page[data-lab-page] .lab-stepbar .lab-step-n { width: 28px; height: 28px; border: 2px solid var(--rule); background: var(--card); color: var(--ink2); font-size: 14px; font-weight: 700; }
 :root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn[aria-current=step] .lab-step-n { border-color: var(--blue); background: var(--blue); color: #fff; }
+/* The steps stay under the app bar while a long strategy scrolls (user, 20-11-2026). */
+:root .lab-page[data-lab-page] .lab-stepbar { position: sticky; top: calc(58px + env(safe-area-inset-top, 0px)); z-index: 20; gap: 2px; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--ink) 7%, var(--card)); }
+/* Steps look like the workspace tabs above them: a tinted track, the current step a raised card, no underlines (user, 20-11-2026). */
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn { min-height: 40px; padding: 6px 14px; border: 0; border-radius: 7px; box-shadow: none; }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn:hover { background: color-mix(in srgb, var(--card) 55%, transparent); }
+:root .lab-page[data-lab-page] .lab-stepbar .lab-step-btn[aria-current=step] { color: var(--blue); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .1), 0 2px 6px -2px rgb(0 0 0 / .1); }
 /* Entry / Exit / Filters jump chips carry their section's colour. */
 :root .lab-page[data-lab-page] .lab-rule-nav button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink3); }
 :root .lab-page[data-lab-page] .lab-rule-nav button:nth-child(1)::before { background: var(--green, #2E9B57); }

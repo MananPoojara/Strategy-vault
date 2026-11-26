@@ -73,10 +73,10 @@ const run = async (host: HTMLElement) => {
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.click()); await flush();
 };
 
-it("renders the catalogue label, library and default instrument; saved-strategy errors stay local", async () => {
+it("renders the library and default instrument without a header label; saved-strategy errors stay local", async () => {
   const { host } = await go("#/indicators");
   expect(host.querySelector('[data-lab-page="indicators"]')).not.toBeNull();
-  expect(host.querySelector("[data-server-label]")?.textContent).toBe(catalogueFixture.label);
+  expect(host.querySelector("header [data-server-label]")).toBeNull(); // no "simulated · not a book method" line beside the title (user, 23-11-2026); results keep it
   expect(host.querySelectorAll("[data-lab-item]")).toHaveLength(0);
   await act(async () => [...host.querySelectorAll(".lab-chart-actions button")].find((b) => b.textContent === "Indicators")!.dispatchEvent(new MouseEvent("click", { bubbles:true })));
   expect(host.querySelectorAll("[data-lab-item]")).toHaveLength(catalogueFixture.indicators.length);
@@ -95,14 +95,14 @@ it("the chart is its own tab; Strategy & backtest opens on Your idea, with Your 
   catalogueAnswer = catalogue7Fixture;
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   expect([...host.querySelectorAll(".lab-tabs [role=tab]")].map((t) => [t.textContent, t.getAttribute("aria-selected")])).toEqual([
-    ["Chart", "true"], ["Strategy & backtest", "false"], ["Customize", "false"], ["Saved strategies", "false"]]); // Optimize sits beside Run backtest
+    ["Chart", "true"], ["Strategy & backtest", "false"], ["Explore", "false"], ["Customize", "false"], ["Saved strategies", "false"]]); // Explore is its own workspace; Optimize is on every step
   expect(host.querySelector<HTMLElement>("#lab-panel-chart")!.hidden).toBe(false);
   expect(host.querySelector<HTMLElement>("#lab-panel-strategy")!.hidden).toBe(true);
   expect(host.querySelector(".lab-library-slot")).toBeNull(); // library opens on demand without taking chart space
   await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-build]")!.click()); // Build a strategy ›
   expect(host.querySelector<HTMLElement>("#lab-panel-strategy")!.hidden).toBe(false);
   const steps = [...host.querySelectorAll<HTMLButtonElement>("[data-lab-steps] button")];
-  expect(steps.map((b) => b.textContent)).toEqual(["1Your idea", "2Settings", "3Results"]);
+  expect(steps.map((b) => b.textContent)).toEqual(["1Build strategy", "2Strategy settings", "3Results"]);
   expect(steps[0].getAttribute("aria-current")).toBe("step");
   const panel = (i: number) => host.querySelectorAll<HTMLElement>("#lab-panel-strategy .lab-step")[i];
   expect(panel(0).hidden).toBe(false);
@@ -140,8 +140,8 @@ it("a failed run clears the previous result", async () => {
   expect(tables).not.toBeNull();
   expect(tables.closest("[data-lab-results-tabs]")).not.toBeNull(); // every result view is a tab of the Results box under Run backtest
   const tabs = [...host.querySelectorAll<HTMLElement>('[data-lab-results-tabs] [role=tab]')].map((t) => t.textContent);
-  expect(tabs).toEqual(["Trades", "Stats & equity drawdown", "YOY-Monthly", "Explore"]); // trades first, then charts; no Monte Carlo; stats and charts are one tab
-  expect(host.querySelector('[data-lab-results-tabs] [role=tab][aria-selected=true]')?.textContent).toBe("Trades"); // the default view
+  expect(tabs).toEqual(["1 · Tradesheet", "2 · Stats & equity", "3 · YOY-Monthly"]); // the user's reading order; Explore is its own workspace tab
+  expect(host.querySelector('[data-lab-results-tabs] [role=tab][aria-selected=true]')?.textContent).toBe("1 · Tradesheet"); // the default view
   expect(host.querySelector("[data-lab-step-results] [data-lab-result]")).not.toBeNull();
   runAnswer = () => jsonResponse({ status: "needs_data", error: "NIFTY 50: invalid OHLC bar on 2001-03-02", label: catalogueFixture.label }, 400);
   await run(host);
@@ -348,8 +348,8 @@ it("workspace tabs separate optimization and customize while keeping edits and r
   await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-open-optimize]")!.click());
   expect(checked.checked).toBe(true);
   await act(async () => host.querySelector("#lab-tab-strategy")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
-  expect(host.querySelector("#lab-tab-customize")?.getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(host.querySelector("#lab-tab-customize"));
+  expect(host.querySelector("#lab-tab-explore")?.getAttribute("aria-selected")).toBe("true"); // Strategy & backtest › Explore
+  expect(document.activeElement).toBe(host.querySelector("#lab-tab-explore"));
 });
 
 it("customize jump and save actions open their destination tabs", async () => {
@@ -406,10 +406,15 @@ it("keeps foreign controls absent on older engines and blocks a saved invalid fo
   await run(host);expect(f.calls.filter(c=>c.url.includes("/lab/run"))).toHaveLength(0);
 });
 
+// the portfolio panel's controls: a select, the Backtest on buttons (by mode) or the watchlist radios (by basket id)
+const MODE_NAMES:Record<string,string>={off:"Single instrument",signals:"Portfolio · entry and exit signals",rotation:"Portfolio · rank rotation"};
+function pickPortfolio(host:HTMLElement,label:string,value:string){const el=host.querySelector(`[aria-label="${label}"]`)!;
+ if(el instanceof HTMLSelectElement){el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));return;}
+ const b=[...el.querySelectorAll("button")].find(x=>x.textContent===MODE_NAMES[value]);(b??el.querySelector<HTMLInputElement>(`input[value="${value}"]`)!).click();}
 it("runs a shared-money portfolio while leaving the chart instrument as reference context",async()=>{
  catalogueAnswer=portfolioCatalogueFixture;runAnswer=()=>jsonResponse(portfolioResultFixture);
  const {host,f}=await go("#/indicators?tk=NIFTY%2050");
- const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
+ const choose=async(label:string,value:string)=>act(async()=>pickPortfolio(host,label,value));
  await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await atrOff(host);await exitRow(host);
  await flush();expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.disabled).toBe(false); // a portfolio runs in money, no toggle
  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(false);await run(host);
@@ -418,7 +423,7 @@ it("runs a shared-money portfolio while leaving the chart instrument as referenc
 });
 it("an old portfolio run cannot land after its universe changes",async()=>{
  catalogueAnswer=portfolioCatalogueFixture;let release!:(r:Response)=>void;runAnswer=()=>new Promise<Response>(resolve=>{release=resolve;});
- const {host}=await go("#/indicators?tk=NIFTY%2050");const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
+ const {host}=await go("#/indicators?tk=NIFTY%2050");const choose=async(label:string,value:string)=>act(async()=>pickPortfolio(host,label,value));
  await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await atrOff(host);await exitRow(host);await flush();await run(host);
  await choose("Portfolio universe","list");await act(async()=>release(jsonResponse(portfolioResultFixture)));await flush();
  expect(host.querySelector('[data-lab-portfolio-result]')).toBeNull();expect(host.querySelector('[data-lab-no-result]')).not.toBeNull();

@@ -130,7 +130,7 @@ it("renders chips and notes without the chart library", async () => {
   const host = await mount(<Workbench {...props} chips={[]} />);
   await flush();
   expect(host.querySelectorAll("[data-lab-chart-label]")).toHaveLength(0);
-  expect(host.textContent).toContain("Indicators are calculated from the full history");
+  expect(host.textContent).not.toContain("full history");
   expect(host.textContent).toContain("NIFTY 50 · Daily bars");
 });
 
@@ -655,8 +655,9 @@ it("variant choices follow the catalogue label; an unnamed value shows its numbe
 
 it("the Calculation list names AmiBroker and the other platforms, and hides a choice that gives the same results", () => {
   const rsi = { key: "variant", label: "Variant (0 Wilder/TradingView/AmiBroker after warm-up, 1 Cutler/TradeStation RSI JP, 2 AmiBroker from bar 1)", default: 0, min: 0, max: 2, step: 1, integer: true };
-  expect(variantChoices(rsi, 0)).toEqual([[0, "AmiBroker"], [1, "TradeStation"]]); // from bar 1 equals the default after the warm-up
-  expect(variantChoices(rsi, 2).map(([, t]) => t)).toEqual(["Wilder/TradingView/AmiBroker after warm-up", "TradeStation", "AmiBroker from bar 1"]); // kept when in use; same names keep their full words
+  // both Wilder starts are listed by what they match (AmiBroker's from-bar-1 RSI differs on young stocks)
+  expect(variantChoices(rsi, 0)).toEqual([[0, "Wilder (TradingView)"], [1, "TradeStation"], [2, "AmiBroker (from bar 1)"]]);
+  expect(variantChoices(rsi, 2)).toEqual(variantChoices(rsi, 0));
   const ranks = { ...rsi, label: "Variant (0 interpolated, 1 nearest rank)", max: 1 };
   expect(variantChoices(ranks, 0)).toEqual([[0, "interpolated"], [1, "nearest rank"]]); // no platform: the catalogue's words
 });

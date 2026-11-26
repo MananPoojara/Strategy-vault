@@ -59,13 +59,16 @@ pub fn period_key(date: &str, anchor: usize) -> i64 {
     let (y, m) = (num(0..4), num(5..7));
     match anchor { 1 => key(date, Tf::W), 2 => y * 12 + m, 3 => y * 4 + (m - 1).div_euclid(3), _ => y }
 }
-pub fn resample(d: &Bars, tf: Tf) -> Bars {
+pub fn resample(d: &Bars, tf: Tf) -> Bars { resample_cut(d, tf, "") }
+/// `resample`, with the period that holds the date `cut` ending at `cut` (AmiBroker's last bar of a backtest that stops
+/// mid-period); the sessions after `cut` open a bar of their own. An empty `cut` changes nothing.
+pub fn resample_cut(d: &Bars, tf: Tf, cut: &str) -> Bars {
     if tf == Tf::D { let mut b = d.clone(); b.end = (0..d.len()).collect(); return b; }
     let mut out = Bars::default();
     let mut vol: Vec<f64> = Vec::new();
-    let mut last: Option<i64> = None;
+    let mut last: Option<(i64, bool)> = None;
     for i in 0..d.len() {
-        let k = if let Tf::Days(n) = tf { (i / usize::from(n)) as i64 } else { key(&d.date[i], tf) };
+        let k = (if let Tf::Days(n) = tf { (i / usize::from(n)) as i64 } else { key(&d.date[i], tf) }, !cut.is_empty() && d.date[i].as_str() > cut);
         let v = d.volume.as_ref().map(|v| v[i]).unwrap_or(0.);
         if last != Some(k) {
             out.date.push(d.date[i].clone()); out.open.push(d.open[i]); out.high.push(d.high[i]);
@@ -127,6 +130,13 @@ mod tests {
         assert_eq!(period_key("2024-01-15", 3), period_key("2024-03-31", 3));
         assert_ne!(period_key("2024-03-31", 3), period_key("2024-04-01", 3));
         assert_ne!(period_key("2023-12-31", 4), period_key("2024-01-01", 4));
+    }
+    #[test] fn a_cut_ends_its_month_there_and_the_later_sessions_open_a_bar() {
+        let d = daily(&["2025-06-30", "2025-07-01", "2025-07-08", "2025-07-09", "2025-07-31", "2025-08-01"], &[1., 2., 3., 4., 5., 6.]);
+        let m = resample_cut(&d, Tf::M, "2025-07-08");
+        assert_eq!(m.date, ["2025-06-30", "2025-07-08", "2025-07-31", "2025-08-01"]);
+        assert_eq!((m.close.clone(), m.end.clone()), (vec![1., 3., 5., 6.], vec![0, 2, 4, 5]));
+        assert_eq!(resample_cut(&d, Tf::M, "").date, resample(&d, Tf::M).date); // no cut: unchanged
     }
     #[test] fn civil_round_trips() { for d in ["2021-01-04", "2024-02-29", "2000-03-01", "2020-01-01"] { assert_eq!(civil(day_number(d)), d); } }
     #[test] fn day_number_epoch() { assert_eq!(day_number("1970-01-01"), 0); assert_eq!(day_number("2024-03-01"), 19783); }

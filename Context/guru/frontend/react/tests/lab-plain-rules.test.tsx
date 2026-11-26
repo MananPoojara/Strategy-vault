@@ -7,6 +7,8 @@ import { candleCountNode, starterSpec } from "../src/features/lab/spec-model";
 import type { ScanResult } from "../src/features/lab/client";
 import type { RuleNode, Spec } from "../src/features/lab/types";
 import { catalogue7Fixture as cat, flush, mount, unmount } from "./fixtures/lab";
+import { BUILT_IN } from "../src/features/lab/builtin-periods";
+import { pairs, phaseWindows } from "../src/features/lab/date-sets";
 
 afterEach(async () => { await unmount(); vi.unstubAllGlobals(); });
 const rsi = { lhs: { s: "rsi", p: { length: 14 } }, op: "<", rhs: { value: 30 } } as RuleNode;
@@ -44,15 +46,26 @@ it("0 trades with signal days: the settings that can stop a trade are listed wit
   expect(onFix.mock.calls[0][0](s).execution).toEqual({ fill: "close" });
 });
 
-it("plain words list switched-off rows and offer to turn off settings that block trades", async () => {
+it("plain words leave out switched-off rows and offer to turn off settings that block trades", async () => {
   const onChange = vi.fn();
   const s = spec([rsi, { ...ema, off: true } as RuleNode], { date_filter: { windows: [["2020-01-01", "2021-01-01"]] } });
   const host = await mount(<StrategyInWords spec={s} catalogue={cat} onChange={onChange} />);
   expect(host.querySelector("[data-lab-words-buy]")!.textContent).toBe("Buy when RSI(14) is below 30.");
   expect(host.querySelector("[data-lab-words-sell]")!.textContent).toContain("no exit yet"); // no hidden default exit
-  expect(host.querySelector("[data-lab-words-off]")!.textContent).toContain("the close is above the 50-day EMA");
-  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-words-blockers] button")!.click());
+  expect(host.textContent).not.toContain("the close is above the 50-day EMA"); // a switched-off row is left out, not listed
+  expect(host.querySelector("[data-lab-words-blockers]")).toBeNull(); // the Dates filter has its own line, not an "Also on" note
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-words-dates] button")!.click());
   expect(onChange.mock.calls[0][0].date_filter).toBeUndefined(); // Turn off removes the Dates filter
+});
+
+it("the Dates filter reads in full in plain words: which base, bull or bear, and Fresh or Running", async () => {
+  const base2 = BUILT_IN.find((b) => b.name === "Base 2")!, bear = pairs(phaseWindows(base2.windows, "Bear"));
+  const s = spec([rsi], { date_filter: { set: { name: "Base 2" }, windows: bear, reentry: "running" } });
+  const host = await mount(<StrategyInWords spec={s} catalogue={cat} onChange={() => undefined} />);
+  const line = host.querySelector("[data-lab-words-dates]")!.textContent!;
+  expect(line).toContain(`only in Base 2 Bear periods (${bear.length})`);
+  expect(line).toContain("· Running"); // the status only, no explanation
+  expect(line).not.toContain("stays open");
 });
 
 it("an Nth-candle exit reads as one sentence; its count and kind change in place", async () => {

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { IndicatorSearch, NumField, TimeframeField } from "./OperandEditor";
 import { OPERAND_KIND_LABELS, paramLabel } from "./labels";
-import { OPERATOR_LABELS, isSeries, isValue } from "./spec-model";
+import { OPERATOR_LABELS, isSeries, isValue, followTf } from "./spec-model";
 import { CALENDAR_IDS, convertOperand, nodeKind, operandKind, withOp } from "./rule-tree";
 import { isChoice, variantChoices } from "./ParamsDialog";
 import { Segmented } from "./ui";
@@ -134,7 +134,7 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
             .map((v) => <option key={v} value={v}>{(isBand(ind) && BAND_NAMES[v]) || v}</option>)}
         </select>, `${who}-out`),
       ] : []),
-      s && row("Timeframe", <TimeframeField operand={o} catalogue={cat} onChange={put} />, `${who}-tf`),
+      s && row("Timeframe", <TimeframeField operand={o} catalogue={cat} onChange={put} follow={followTf(o, isLhs ? rhss[0] : x.lhs as Operand)} />, `${who}-tf`),
       s && extra && row((s.tf ?? "D") === "D" ? "Bars ago" : "Periods ago", <NumField hideLabel label={named("bars ago")} value={s.offset ?? 0} min={0} step={1}
         onChange={(n) => { if (n === undefined || !Number.isInteger(n) || n < 0) return; const { offset: _o, ...rest } = s; put(n ? { ...rest, offset: n } : rest); }} />, `${who}-ago`),
       s && isLhs && extra && (symbols.length > 0 || !!s.symbol) && row("Foreign ticker", <select aria-label={named("symbol")} value={s.symbol ?? ""}

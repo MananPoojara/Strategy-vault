@@ -29,6 +29,14 @@ import { defaultDates } from "./DateFilterPanel";
 import { changedSettings, stopsOn } from "./defaults";
 import "./rules.css";
 
+/** The backtest period: From – To (Build strategy, in the Market row). */
+export function TestDates({ settings, onSettings }: { settings: RunSettings; onSettings(patch: Partial<RunSettings>): void }) {
+  return <span className="lab-test-dates" data-lab-period>
+    <label className="dfield">From<DateField label="From" title="Empty: from the first bar" value={settings.from} onChange={(from) => onSettings({ from })} /></label>
+    <label className="dfield">To<DateField label="To" title="Empty: to the last bar" value={settings.to} onChange={(to) => onSettings({ to })} /></label>
+  </span>;
+}
+
 export interface RunSettings { from: string; to: string; fees: string; slippage: string; /** the instrument's latest data date (To's default) */ latest?: string }
 
 const NEW_COND: Record<Side, Cond> = {
@@ -48,7 +56,7 @@ export function RuleBuilder(props: {
   settingsAside?: ReactNode;
   /** Opens the optimizer for these rules (the Optimize button beside Run backtest). */
   onOptimize?(): void;
-  /** The portfolio controls (PortfolioPanel), shown on the Portfolio tab. */
+  /** The portfolio controls (PortfolioPanel), shown on the Portfolio card at the top of Strategy settings. */
   portfolio?: ReactNode;
   /** The custom date filter (DateFilterPanel), shown with the test period. */
   dates?: ReactNode;
@@ -59,6 +67,8 @@ export function RuleBuilder(props: {
   /** The exit a test uses when no sell rule is on (defaults.ts), editable here; absent: no fallback is shown. */
   /** Whether the chart shows the rules' indicators with the same settings (PlainRules ChartMatch). */
   chartMatch?: ReactNode;
+  /** The bars the backtest runs on, for the strategy summary ("Daily bars"). */
+  barsLabel?: string;
 }) {
   // Older engines keep their existing editor until they advertise the extended grammar.
   if (!props.catalogue.execution) return props.part === "settings" ? <p className="box cap">This engine shows the test period and costs with the rules, in step 2.</p> : <LegacyRuleBuilder {...props} />;
@@ -79,16 +89,18 @@ const withDates = (spec: Spec, on: boolean): Spec => {
   return rest as Spec;
 };
 /** No filter (the default), Dates and Indicator: the last two can be on together. Instant toggles, no motion: used often. */
-function FilterChoice({ dates, indicator, onDates, onIndicator, onNone }: { dates?: boolean; indicator: boolean; onDates(on: boolean): void; onIndicator(on: boolean): void; onNone(): void }) {
+function FilterChoice({ dates, indicator, windows = false, onDates, onIndicator, onNone }: { dates?: boolean; indicator: boolean;
+  /** A short's no-trade windows (Master 5DP, QTR) are on: also a filter, so "No filter" is not the state. */
+  windows?: boolean; onDates(on: boolean): void; onIndicator(on: boolean): void; onNone(): void }) {
   const chip = (label: string, on: boolean, click: () => void) => <button type="button" className="lab-filter-chip" aria-pressed={on} onClick={click}>{label}</button>;
   return <div className="lab-filter-choice" role="group" aria-label="Filters" data-lab-filter-choice>
-    {chip("No filter", !dates && !indicator, onNone)}
+    {chip("No filter", !dates && !indicator && !windows, onNone)}
     {dates !== undefined && chip("Dates", dates, () => onDates(!dates))}
     {chip("Indicator", indicator, () => onIndicator(!indicator))}
   </div>;
 }
 
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, shortWindows, chartMatch, settingsAside }: Parameters<typeof RuleBuilder>[0]) {
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, shortWindows, chartMatch, settingsAside, barsLabel }: Parameters<typeof RuleBuilder>[0]) {
   const showRules = part !== "settings", showSettings = part !== "rules";
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
   const single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
@@ -133,7 +145,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
       path.startsWith("short_side.") ? "Short filter" : "Filter", true);
     return [<Fragment key={`${tag} signals`}>{one(signals, (n) => [...n, ...filters], title, tag)}</Fragment>, filterList] as const;
   };
-  const simple = useSimple(), compact = useCompact();
+  const simple = useSimple(), compact = useCompact(), problemsId = useId();
   const money = modeOf(spec) === "money", cost = spec.execution?.cost_bps;
   const fill = ordered(spec) ? "order level" : usesTradePrices(spec.execution) ? "price and delay set in Trades" : spec.execution?.fill === "close" ? "same close" : "next open";
   const changed = changedSettings(spec);
@@ -149,6 +161,12 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     const id = (k: string) => `lab-card-${short ? "short-" : ""}${k}`;
     const sections: [string, string, number][] = [["entry", short ? "Short entry" : both ? "Long entry" : "Entry", rows.length - rows.filter(isFilterRow).length],
       ["exit", short ? "Short exit" : both ? "Long exit" : "Exit", nExit], ["filters", short ? "Short filters" : "Filters", nFilters]];
+    // the build order is the card order: 1 entry, 2 exit, 3 filters (optional); each header counts its rules and ticks when set
+    const head = (n: number, k: string, title: string, note?: string) => {
+      const count = sections.find(([key]) => key === k)![2];
+      return <><span className="lab-card-n" aria-hidden="true">{n}</span><h3>{title}{note && <small> · {note}</small>}</h3>
+        <span className="lab-card-count" data-lab-card-count={count}>{count ? `${count} ${count === 1 ? "rule" : "rules"} ✓` : k === "filters" ? "none" : "not set"}</span></>;
+    };
     const go = (k: string) => { const el = document.getElementById(id(k)); el?.scrollIntoView?.({ block: "start" }); el?.focus({ preventScroll: true }); };
     return <div className="lab-side-panel" data-lab-side={short ? "short" : "long"}>
       {both && <h3 className="lab-side-h">{short ? COPY.shortSide : COPY.longSide}</h3>}
@@ -157,20 +175,23 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
       </nav>
       <ParamListContext.Provider value={true}><div className="lab-rule-cards">
         <div className="lab-rule-card" data-lab-card="entry" id={id("entry")} tabIndex={-1}>
-          <header className="lab-rule-section-h"><h3>{short ? "Short entry" : both ? "Long entry" : "Entry"}</h3></header>
-          <div className="lab-rule-section-body">{entry}</div>
+          <header className="lab-rule-section-h">{head(1, "entry", short ? "Short entry rules" : both ? "Long entry rules" : "Entry rules")}</header>
+          {/* which side the strategy trades is the first entry decision */}
+          <div className="lab-rule-section-body">{!short && <div className="lab-positions" data-lab-positions><ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="positions" /></div>}{entry}</div>
         </div>
         <div className="lab-rule-card" data-lab-card="exit" id={id("exit")} tabIndex={-1}>
-          <header className="lab-rule-section-h"><h3>{short ? "Short exit" : both ? "Long exit" : "Exit"}</h3></header>
+          <header className="lab-rule-section-h">{head(2, "exit", short ? "Short exit rules" : both ? "Long exit rules" : "Exit rules")}</header>
           <div className="lab-rule-section-body">{list(`${pre}exit.any` as ListPath, short ? "Short exit" : both ? "Long exit" : "Exit", short ? "Short exit" : both ? "Long exit" : "Exit", count)}</div>
         </div>
-        <div className="lab-rule-card" data-lab-card="filters" id={id("filters")} tabIndex={-1}>
-          <header className="lab-rule-section-h"><h3>{short ? "Short filters" : "Filters"}</h3></header>
+        {/* filters are optional: the choice sits under the heading; the chosen filters' options fill the card below it */}
+        <div className="lab-rule-card" data-lab-card="filters" id={id("filters")} tabIndex={-1} data-lab-filters-on={nFilters > 0 || undefined}>
+          <header className="lab-rule-section-h">{head(3, "filters", short ? "Short filters" : "Filters", "optional")}</header>
           <div className="lab-rule-section-body">
-          <h3>{short ? "Short filters" : "Filters"}</h3>
           <FilterChoice dates={short || !dates ? undefined : !!spec.date_filter} indicator={hasFilters(`${pre}entry.all` as ListPath)}
+            windows={!short && !!spec.blackouts?.length}
             onDates={(on) => onChange(withDates(spec, on))} onIndicator={(on) => onChange(withFilters(spec, `${pre}entry.all` as ListPath, on))}
-            onNone={() => onChange(withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false))} />
+            // No filter clears every filter: dates, indicator rows and a short's no-trade windows
+            onNone={() => { const { blackouts: _b, ...rest } = withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false); onChange(short ? withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false) : rest as Spec); }} />
           {!short && spec.date_filter && dates}
           {!short && spec.direction === "short" && shortWindows}
           {filters}
@@ -179,15 +200,11 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
       </div></ParamListContext.Provider>
     </div>;
   };
-  const testDates = <>
-    <label className="dfield">From<DateField label="From" title="Empty: from the first bar" value={settings.from} onChange={(from) => onSettings({ from })} /></label>
-    <label className="dfield">To<DateField label="To" title="Empty: to the last bar" value={settings.to} onChange={(to) => onSettings({ to })} /></label>
-  </>;
   // % mode costs: the AFL's BROKERAGE only (0 by default), no slippage box; money mode charges General › Commissions
   const costs = money ? null : <>
     {cost !== undefined ? <NumField label="Brokerage (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : <label className="dfield">Brokerage (bps / side)<input type="number" aria-label="Brokerage (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label>}
   </>;
-  const run = <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} title={problems[0] ?? `Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>{!running && <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11L13 8 4 2.5Z" /></svg>}{running ? "Running…" : "Run backtest"}</button>;
+  const run = <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} aria-describedby={problems.length ? problemsId : undefined} title={problems[0] ?? `Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>{!running && <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11L13 8 4 2.5Z" /></svg>}{running ? "Running…" : "Run backtest"}</button>;
   // the run and Optimize buttons sit at the right of the Positions · From · To row (Your idea only), with how trades fill beside them
   // after the rules are set, Optimize tries ranges of their numbers (AmiBroker's Optimize beside Backtest)
   const optimize = onOptimize && <button type="button" className="dbtn" data-lab-open-optimize disabled={problems.length > 0} title={problems[0] ?? "Try ranges of this strategy's numbers"} onClick={onOptimize}>Optimize</button>;
@@ -195,18 +212,35 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
   const runTop = <span className="lab-run-top">{optimize}{run}</span>;
   return <section className={`box lab-rules lab-design-studio${showRules ? " lab-idea" : ""}`} tabIndex={-1}>
     {showRules && <>
-    <h2 className="box-h">Strategy rules{!simple && <small>{COPY.rulesHint}</small>}{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
-    <StrategyInWords spec={spec} catalogue={catalogue} period={settings} onChange={onChange} />
+    {/* the title row stays frozen under the step bar, Optimize and Run backtest at its right */}
+    <div className="lab-rules-head" data-lab-rules-head>
+      <h2 className="box-h">Strategy rules{!simple && <small>{COPY.rulesHint}</small>}{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
+      <span className="lab-run-row" data-lab-idea-run>{runTop}</span>
+    </div>
+    {/* the strategy in plain words scrolls with the rules (user, 23-11-2026): only the title row stays frozen */}
+    <div className="lab-summary" data-lab-summary>
+      <StrategyInWords spec={spec} catalogue={catalogue} period={settings} onChange={onChange} />
+      <p className="lab-summary-meta" data-lab-summary-meta>{spec.direction === "short" ? "Short" : both ? "Long and short" : "Long"}{barsLabel && ` · ${barsLabel}`}</p>
+    </div>
     {chartMatch}
-    {<div className="lab-row lab-idea-basics" data-lab-idea-basics><ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="positions" />{testDates}{runTop}</div>}
     {cards(false)}
     {both && spec.short_side && cards(true)}
     </>}
-    {part === "settings" && <h2 className="box-h">Settings{settingsAside && <span className="lab-settings-aside">{settingsAside}</span>}</h2>}
+
     {showSettings && <div className="lab-settings-body" data-lab-settings-body>
+    {/* Strategy settings: Optimize and Run stay on top, frozen under the step bar */}
+    {/* one header, frozen under the step bar: the title, Simple / Advanced, then Optimize and Run (user, 26-11-2026: no empty run strip) */}
+    {part === "settings" && <div className="lab-run-bar lab-settings-top" data-lab-run-bar>
+      <h2 className="box-h">Settings</h2>
+      {settingsAside && <span className="lab-settings-aside">{settingsAside}</span>}
+      {runTop}
+    </div>}
     {part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
     {/* the basics, in both views; Simple leaves out the AmiBroker settings below them */}
+    {/* what the backtest runs on comes first, in both views: it decides which settings below apply */}
+    <PortfolioTab spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} portfolio={portfolio} />
     <div className="lab-basics" data-lab-basics>
+      {/* step 2: capital and sizing (Backtest parameters), then AmiBroker's settings; the period is From – To on Build strategy */}
       {/* the AFLs' Backtest parameter panel; Buy and sell at is the Scenario on the Trades tab, as in AmiBroker */}
       <BacktestParams spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} unitCosts={costs} orders={entryOrders()} />
     </div>
@@ -214,7 +248,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     <section className="lab-more-settings lab-ami" data-lab-more-settings aria-label="AmiBroker settings">
       <h3 className="lab-ami-h">AmiBroker settings <span className="cap">{changed.length ? `· ${changed.length} changed: ${changed.join(", ")}` : "· all at their defaults"}</span></h3>
     {/* AmiBroker's Analysis settings window, tab by tab in its order; the lab's own position size and risk follow General's fields */}
-    <SettingsTabs rail labels={["General", "Trades", "Stops", "Report", "Portfolio"]}>
+    <SettingsTabs rail labels={["General", "Trades", "Stops", "Report"]}>
       <>
         <p className="cap lab-stab-intro">In AmiBroker's order: the data, the backtest options, commissions and rates, then the lab's position size and risk.</p>
         <GeneralTab spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} />
@@ -223,12 +257,12 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
       <TradesTab spec={spec} catalogue={catalogue} onChange={onChange} />
       <StopsTab spec={spec} onChange={onChange} />
       <ReportTab spec={spec} instrument={instrument} onChange={onChange} />
-      <PortfolioTab spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} portfolio={portfolio} />
     </SettingsTabs></section></>}
     </div>}
     {readsSessionDates(spec) && <p className="cap">{COPY.sessionDatesHint}</p>}
     {usesHigherTimeframes(spec) && <p className="cap">{COPY.wmRule}</p>}
-    {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+    {/* no visible list of engine messages (user, 26-11-2026): Run and Optimize stay greyed, their hover names the first one, and a screen reader hears them all */}
+    {problems.length > 0 && <ul className="sr-only" id={problemsId}>{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
   </section>;
 }
 
@@ -237,7 +271,7 @@ function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, pr
   settings: RunSettings; onSettings(patch: Partial<RunSettings>): void;
   problems: string[]; running: boolean; onRun(): void; onOptimize?(): void;
 }) {
-  const full = conditionCount(spec) >= catalogue.max_conditions;
+  const full = conditionCount(spec) >= catalogue.max_conditions, problemsId = useId();
   const all = [...spec.entry.all, ...spec.exit.any];
   const weeklyOrMonthly = all.filter(isCond).some((c) => [c.lhs, c.rhs].some((o) => isSeries(o) && o.tf !== undefined && o.tf !== "D"));
   const costBps = spec.execution?.cost_bps;
@@ -287,19 +321,21 @@ function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, pr
             <input type="number" aria-label="Brokerage (bps / side)" min={0} step="any" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} />
           </label>
         )}
-        <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} title={`Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>
+        <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} aria-describedby={problems.length ? problemsId : undefined} title={problems[0] ?? `Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>
           {running ? "Running…" : "Run backtest"}
         </button>
         {onOptimize && <button type="button" className="dbtn" data-lab-open-optimize disabled={problems.length > 0} onClick={onOptimize}>Optimize</button>}
       </div>
-      {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+      {problems.length > 0 && <ul className="sr-only" id={problemsId}>{problems.map((p, k) => <li key={k}>{p}</li>)}</ul>}
     </section>
   );
 }
 
 /** AmiBroker Analysis settings: tabs over the execution controls; every panel stays mounted (hidden) so edits are never lost.
  *  `rail`: a vertical category list beside the panel when the settings card is wide (orders.css), a scrolling strip when it is not. */
-export function SettingsTabs({ labels, children, ariaLabel = "Analysis settings", rail = false }: { labels: string[]; children: ReactNode[]; ariaLabel?: string; rail?: boolean }) {
+export function SettingsTabs({ labels, children, ariaLabel = "Analysis settings", rail = false, next }: { labels: string[]; children: ReactNode[]; ariaLabel?: string; rail?: boolean;
+  /** Ends each panel but the last with "Next: <tab> ›" (Results read in order: tradesheet, stats, YOY); `next(label)` names the tab. */
+  next?(label: string): string }) {
   const [tab, setTab] = useState(0);
   const id = useId(), list = useRef<HTMLDivElement>(null);
   // ARIA tab pattern: one Tab stop, arrows / Home / End move and select; a rail also takes Up / Down
@@ -315,6 +351,7 @@ export function SettingsTabs({ labels, children, ariaLabel = "Analysis settings"
       {labels.map((label, i) => <button key={label} type="button" role="tab" id={`${id}-tab-${i}`} aria-controls={`${id}-panel-${i}`} aria-selected={tab === i}
         tabIndex={tab === i ? 0 : -1} onClick={() => setTab(i)}>{label}</button>)}
     </div>
-    {children.map((child, i) => <div key={labels[i]} role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} className="lab-stab-panel" hidden={tab !== i}>{child}</div>)}
+    {children.map((child, i) => <div key={labels[i]} role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} className="lab-stab-panel" hidden={tab !== i}>{child}
+      {next && i < labels.length - 1 && <div className="lab-stab-next"><button type="button" className="dbtn" data-lab-stab-next onClick={() => { setTab(i + 1); list.current?.scrollIntoView?.({ block: "nearest" }); }}>Next: {next(labels[i + 1])} ›</button></div>}</div>)}
   </div>;
 }

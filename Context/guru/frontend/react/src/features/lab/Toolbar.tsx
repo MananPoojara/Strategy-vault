@@ -14,9 +14,11 @@ const TF_SHORT: Record<string, string> = { D: "1D", W: "1W", M: "1M", Q: "3M", Y
 const QUICK_TF = ["D", "W", "M"];
 const RANGES: ChartRange[] = RANGE_BUTTONS;
 
-export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timeframes, onTf, range, onRange, provisionalNote, chartWorkspace = false, children }: {
+export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timeframes, onTf, range, onRange, provisionalNote, chartWorkspace = false, children, tfLabel }: {
   market: Market; onMarket(m: Market): void; options: InstrumentOption[]; ticker: string; onTicker(t: string): void;
   tf: Timeframe; timeframes: Timeframe[]; onTf(tf: Timeframe): void; range: ChartRange; onRange(r: ChartRange): void; provisionalNote?: string; chartWorkspace?: boolean; children?: ReactNode;
+  /** The timeframe control's name: "Backtest bars" on Build strategy (the bars the test runs on), Timeframe on the chart. */
+  tfLabel?: string;
 }) {
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -78,7 +80,7 @@ export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timef
               : <option value="">No instruments available</option>}
           </select>
         </label>
-        <div className="dfield" title="How much time one candle covers: 1D = daily, 1W = weekly, 1M = monthly">Timeframe
+        <div className="dfield" data-lab-tf-label={tfLabel ? "bars" : undefined} title={tfLabel ? "The bars the backtest runs on: N candle, bars held and every indicator count these bars (1W = weekly bars)" : "How much time one candle covers: 1D = daily, 1W = weekly, 1M = monthly"}>{tfLabel ?? "Timeframe"}
           <div className="lab-chart-timeframes join sm" role="group" aria-label="Chart">
             {quick.map((t) => <button key={t} type="button" className={`join-item${tf === t ? " active" : ""}`} aria-label={TF_LABEL[t]} title={TF_LABEL[t]} aria-pressed={tf === t} onClick={() => onTf(t)}>{TF_SHORT[t]}</button>)}
             {more.length > 0 && <select aria-label="More timeframes" value={more.includes(tf) ? tf : ""} onChange={(e) => { if (e.target.value) onTf(e.target.value); }}>
@@ -88,9 +90,11 @@ export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timef
             {!timeframes.length && <span className="cap">No intervals available</span>}
           </div>
         </div>
-        <div className="dfield" title="How much history the chart shows; the backtest period is set in Settings">Chart range
+        <div className="dfield" title="How much history the chart shows; the backtest period is From – To">Chart range
           <Segmented label="Chart range" value={range} options={RANGES.map((r) => ({ value: r, label: r }))} onChange={onRange} />
         </div>
+        {/* Build strategy: the backtest period (From – To) sits with the market, instrument and bars */}
+        {children}
       </div>
       {market === "gl" && <ProvisionalStrip note={provisionalNote} instrumentLabel={selected?.instrumentLabel} />}
     </div>

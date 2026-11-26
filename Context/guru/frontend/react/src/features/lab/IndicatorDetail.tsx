@@ -76,6 +76,6 @@ function DefaultRules({ ind, catalogue, onUse }: { ind: Indicator; catalogue: Ca
     <h3>Default rules (TradingView style)</h3>
     <p><b>Buy</b> when {words(entry, catalogue).text}. <b>Sell</b> {sell ? `${sell.when ? "when " : ""}${sell.text}` : "with the default exit: the 1st up close after entry, or the 4th down close"}.</p>
     {onUse && <button type="button" className="dbtn sm primary" data-lab-use-rules onClick={() => onUse(entry, exit)}>Use as my rules</button>}
-    {onUse && <p className="cap">Replaces your buy and sell rules; every number can be changed in Your idea.</p>}
+    {onUse && <p className="cap">Replaces your buy and sell rules; every number can be changed in Build strategy.</p>}
   </div>;
 }

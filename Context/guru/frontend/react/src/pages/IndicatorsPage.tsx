@@ -20,33 +20,35 @@ import { ForeignProvider } from "../features/lab/ForeignFields";
 import { foreignDescription, foreignOptions, foreignProblems, type ForeignScope } from "../features/lab/foreign-model";
 import { availability } from "../features/lab/catalogue";
 import { defaultTicker, optionsFromGl, optionsFromTickers, savedMarket } from "../features/lab/instruments";
-import { ErrorNotice, LabErrorBoundary, Loading, ServerLabel } from "../features/lab/ui";
+import { ErrorNotice, LabErrorBoundary, Loading } from "../features/lab/ui";
 import { Toolbar } from "../features/lab/Toolbar";
 import { LibraryRail } from "../features/lab/LibraryRail";
 import { IndicatorDetail } from "../features/lab/IndicatorDetail";
 import { ChartPopup } from "../features/lab/ChartPopup";
 import { Workbench } from "../features/lab/Workbench";
-import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
+import { RuleBuilder, SettingsTabs, type RunSettings, TestDates } from "../features/lab/RuleBuilder";
 import { DateFilterPanel } from "../features/lab/DateFilterPanel";
 import { withBlackouts, withCurrentDateSet } from "../features/lab/date-sets";
 import { loadRegimeSets, regimeSets, type RegimeSet } from "../features/lab/master5dp";
 import { ShortWindowsPanel } from "../features/lab/ShortWindowsPanel";
 import { RunResults, RunTables, tradeTable } from "../features/lab/RunResults";
 import { NoTradesHelp } from "../features/lab/NoTrades";
-import { SimpleOptimize } from "../features/lab/SimpleOptimize";
 import { DEFAULT_FROM, firstRule } from "../features/lab/defaults";
-import { ChartMatch, type ChartPick } from "../features/lab/PlainRules";
+import { ChartMatch, pickName, ruleIndicators, type ChartPick } from "../features/lab/PlainRules";
+import { BacktestBarsContext } from "../features/lab/OperandEditor";
 import { ReportPanel } from "../features/lab/Report";
 import { ExplorePanel } from "../features/lab/Explore";
 import { OptimizePanel } from "../features/lab/OptimizePanel";
 import { CustomizePanel } from "../features/lab/CustomizePanel";
 import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
-import { CompactContext, LabModeContext, ModeSwitch, storedMode, storeMode, type LabMode } from "../features/lab/simple";
+import { CompactContext, LabModeContext, ModeSwitch, type LabMode } from "../features/lab/simple";
+import { OPENING } from "../features/lab/opening";
 import type {
   Catalogue, DateSet, DateWindow, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
 import "../features/lab/typography.css";
+import "../features/lab/colour-pass.css";
 
 const TF_BARS: Record<string, string> = { W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 export function IndicatorsPage() {
@@ -56,13 +58,13 @@ export function IndicatorsPage() {
 /** Everything loaded for one market, tagged so a late answer for another market is never used. */
 type MarketData = { market: Market; cat: Catalogue; rows?: TickerRow[]; gl?: InstrumentsResponse } | { market: Market; error: unknown };
 
-const LAB_TABS = [{ id: "chart", label: "Chart" }, { id: "strategy", label: "Strategy & backtest" }, { id: "optimization", label: "Optimization" }, { id: "customize", label: "Customize" }, { id: "saved", label: "Saved strategies" }] as const;
+const LAB_TABS = [{ id: "chart", label: "Chart" }, { id: "strategy", label: "Strategy & backtest" }, { id: "explore", label: "Explore" }, { id: "optimization", label: "Optimization" }, { id: "customize", label: "Customize" }, { id: "saved", label: "Saved strategies" }] as const;
 type LabTab = typeof LAB_TABS[number]["id"];
 
 /** The Strategy & backtest tab as three plain-language steps, each a tab (the chart has its own tab). */
 const STEPS = [
-  { id: "idea", label: "Your idea" },
-  { id: "settings", label: "Settings" },
+  { id: "idea", label: "Build strategy" },
+  { id: "settings", label: "Strategy settings" },
   { id: "results", label: "Results" },
 ] as const;
 type Step = typeof STEPS[number]["id"];
@@ -74,12 +76,12 @@ function IndicatorsLab() {
   const [state, dispatch] = useReducer(labReducer, undefined, () =>
     initialLabState(query, /[?&]region=/.test(location.hash) ? undefined : vaultStore.getSnapshot().state?.region));
   const [tab, setTab] = useState<LabTab>("chart"); // the chart first; Strategy & backtest opens on Your idea
-  const [mode, setModeState] = useState<LabMode>(storedMode);
+  const [mode, setModeState] = useState<LabMode>(() => OPENING.mode);
   const simple = mode === "simple";
   // Optimization opens from the Optimize button beside Run backtest, not from the tab bar
   const tabs = LAB_TABS.filter((t) => t.id !== "optimization");
   // Simple / Advanced is a Settings choice (its switch is in the Settings heading); the rules and the chart always show everything
-  const setMode = (m: LabMode) => { setModeState(m); storeMode(m); };
+  const setMode = setModeState;
   const [step, setStep] = useState<Step>("idea");
   const [fromOptimize, setFromOptimize] = useState(false); // Stats on an optimizer row: Results offers the way back
   const stepIndex = STEPS.findIndex((s) => s.id === step);
@@ -212,7 +214,7 @@ function IndicatorsLab() {
   // A result belongs to one market and instrument: its numbers never stay on screen for another one.
   const clearRun = () => { runSeq.current++; setResult(null); setRunError(null); setRunning(false); };
   // AmiBroker Periodicity: a single-instrument backtest runs on the selected timeframe's bars (a portfolio stays daily)
-  const runTf = state.spec.portfolio ? "D" : state.tf;
+  const runTf = state.tf; // AmiBroker Periodicity: the chart timeframe is the backtest bars, a portfolio's too (api.rs period_portfolio)
   useEffect(clearRun, [market, ticker, runTf]);
   useEffect(()=>{if(issuedContext.current!==portfolioContext)clearRun();},[portfolioContext]);
 
@@ -344,10 +346,26 @@ function IndicatorsLab() {
           onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf, maxForeign: cat.max_foreign }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
           onRead={(ind) => setReading((cur) => (cur?.id === ind.id ? null : ind))}
           mine={{ list: mine, error: mineError ?? undefined, canEdit: canEditMine, onAdd: (row) => void addMine(row), onEdit: (row) => setEditing(row ?? "new") }} /></Part></div>;
-  const chartToolbar = (controls: ReactNode) => (<Toolbar chartWorkspace={tab === "chart"} market={market} onMarket={changeMarket} options={options ?? []} ticker={ticker}
+  const chartToolbar = (controls: ReactNode, tfLabel?: string) => (<Toolbar chartWorkspace={tab === "chart"} tfLabel={tfLabel} market={market} onMarket={changeMarket} options={options ?? []} ticker={ticker}
         onTicker={(t) => { opened.current = null; setSwapNote(""); dispatch({ type: "ticker", ticker: t }); }} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M", "Q", "Y"]}
         onTf={(tf) => dispatch({ type: "tf", tf })} range={state.range} onRange={(range) => dispatch({ type: "range", range })}
         provisionalNote={glNote}>{controls}</Toolbar>);
+  // Opening the chart with rule indicators missing from it asks once per version of the rules: add them, or keep the chart as it is
+  const askedFor = useRef("");
+  const [askChart, setAskChart] = useState<ReturnType<typeof ruleIndicators>>([]);
+  const missingOnChart = () => cat ? ruleIndicators(state.spec, cat).filter((r) => !state.chips.some((c) => c.id === r.ind.id && Object.keys(r.p).every((k) => (c.params[k] ?? r.p[k]) === r.p[k]))) : [];
+  const openTab = (id: LabTab) => {
+    if (id === "chart" && tab !== "chart") {
+      const key = JSON.stringify(state.spec), missing = missingOnChart();
+      if (missing.length && askedFor.current !== key) { askedFor.current = key; setAskChart(missing); }
+    }
+    setTab(id);
+  };
+  const quietChips = useRef(new Set<string>());
+  const addAsked = () => {
+    askChart.forEach((r, i) => { quietChips.current.add(`c${state.nextChip + i}`); dispatch({ type: "chip-add", indicator: r.ind }); dispatch({ type: "chip-set", key: `c${state.nextChip + i}`, params: r.p }); });
+    setAskChart([]);
+  };
   let work: ReactNode;
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
   else if (!cat || !options) work = <Loading text="Loading the Indicators lab…" />;
@@ -359,7 +377,7 @@ function IndicatorsLab() {
         <div role="tabpanel" id="lab-panel-chart" aria-labelledby="lab-tab-chart" hidden={tab !== "chart"} className="lab-tab-panel">
         <Part>
           {ticker ? (
-            <Workbench toolbar={(controls) => chartToolbar(<>{controls}
+            <Workbench quietKeys={quietChips.current} toolbar={(controls) => chartToolbar(<>{controls}
               {/* the next step sits at the trailing end of the chart's own toolbar, so the chart keeps the whole screen */}
               <button type="button" className="dbtn primary lab-build-cta" data-lab-build title={chartPicks.length ? "Your indicators are on the chart. Turn them into buy and sell rules and test them." : "Add indicators to the chart, or go straight to buy and sell rules."}
                 onClick={() => { setTab("strategy"); setStep("idea"); }}>Build a strategy ›</button></>)} onRange={(range) => dispatch({ type: "range", range })} library={indicatorLibrary} market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={chartCat!} chips={state.chips}
@@ -390,6 +408,7 @@ function IndicatorsLab() {
         </nav>
         <LabModeContext.Provider value="advanced">
         <div className="lab-step" hidden={step !== "idea"}>
+        <div className="lab-tabs-row" data-lab-idea-market>{chartToolbar(<TestDates settings={runSettings} onSettings={changeSettings} />, state.spec.portfolio ? undefined : "Backtest bars")}</div>
         <Part>
           <div className="lab-rules-col">
           {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
@@ -397,17 +416,10 @@ function IndicatorsLab() {
           {!cat.execution && portfolioPanel}
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={runSettings} onSettings={changeSettings}
-            problems={problems} running={running} onRun={() => void run()} onOptimize={() => setTab("optimization")} portfolio={portfolioPanel} part="rules" dates={datesPanel} shortWindows={shortWindows}
+            problems={problems} running={running} onRun={() => void run()} onOptimize={() => setTab("optimization")} portfolio={portfolioPanel} part="rules" dates={datesPanel} shortWindows={shortWindows} barsLabel={`${TF_BARS[runTf] ?? "Daily"} bars`}
             chartMatch={<ChartMatch spec={state.spec} catalogue={cat} chips={state.chips} onSpec={(spec) => dispatch({ type: "spec", spec })}
               onChartSet={(key, params) => dispatch({ type: "chip-set", key, params })}
               onChartAdd={(ind, params) => { const key = `c${state.nextChip}`; dispatch({ type: "chip-add", indicator: ind }); dispatch({ type: "chip-set", key, params }); }} />} />
-          {/* AmiBroker-style Optimize in the simplest form: a range per number, every combination, one click to use the best */}
-          {canEditMine && ticker && !state.spec.portfolio && cat.execution && <details className="box lab-try-ranges" data-lab-try-ranges>
-            <summary>Try ranges: test every combination of your numbers (like AmiBroker's Optimize)</summary>
-            <SimpleOptimize spec={runSpec} catalogue={cat}
-              onOptimize={(spec) => { assertRunnable(spec); return lab.optimize(market, spec, { ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage) }); }}
-              onApply={(spec) => { dispatch({ type: "spec", spec }); void run(spec); }} />
-          </details>}
           </div>
         </Part>
         </div>
@@ -416,7 +428,7 @@ function IndicatorsLab() {
         <Part>
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={runSettings} onSettings={changeSettings}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" dates={datesPanel}
+            problems={problems} running={running} onRun={() => void run()} onOptimize={() => setTab("optimization")} portfolio={portfolioPanel} part="settings" dates={datesPanel}
             settingsAside={<ModeSwitch mode={mode} onChange={setMode} />} />
         </Part>
         </div>
@@ -433,26 +445,20 @@ function IndicatorsLab() {
                   ? [["Portfolio results", <PortfolioResults result={result} />]]
                   : [
                     // trades first (the default tab), then tiles, equity and underwater, and the AmiBroker statistics
-                    ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
-                    ["Stats & equity drawdown", <><RunResults result={result} market={savedMarketValue} chartsOnly={!!result.report} />
+                    ["1 · Tradesheet", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
+                    ["2 · Stats & equity", <><RunResults result={result} market={savedMarketValue} chartsOnly={!!result.report} />
                       {result.report && <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} tradeRows={tradeTable(result).csv} />}</>],
-                    ["YOY-Monthly", <RunTables result={result} part="monthly" />],
+                    ["3 · YOY-Monthly", <RunTables result={result} part="monthly" />],
                   ];
-                if (ticker) tabs.push(["Explore", <ExplorePanel ticker={ticker} tf={state.tf} spec={runSpec} trades={result.trades} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
-          onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
-          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, tf: state.tf, from: settings.from || undefined, to: settings.to || undefined }); }} />])
-                return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
+                return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)} next={(l) => l.replace(/^\d · /, "")}>{tabs.map(([, el]) => el)}</SettingsTabs>;
               })()}
             </section>}
         </Part> : <div className="box empty lab-row" data-lab-no-result><span>No test yet. Set up your idea and settings, then run it.</span>
           <button type="button" className="dbtn sm primary" disabled={running || (!ticker && !state.spec.portfolio)} onClick={() => void run()}>▶ Run backtest</button></div>}
         {result?.kind === "lab_simulation" && !result.trades.length && !runError && ranSpec && cat && ticker
           ? <NoTradesHelp spec={ranSpec} catalogue={cat} market={savedMarketValue} ticker={ticker} period={runSettings} scan={scanSignals} onFix={fixAndRun} /> : null}
-        {result?.kind === "lab_simulation" && !runError && result.trades.length > 0 && <button type="button" className="dbtn sm" data-lab-see-chart onClick={() => setTab("chart")}>See the trades on the chart ›</button>}
+        {result?.kind === "lab_simulation" && !runError && result.trades.length > 0 && <button type="button" className="dbtn sm" data-lab-see-chart onClick={() => openTab("chart")}>See the trades on the chart ›</button>}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
-        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel ticker={ticker} tf={state.tf} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
-          onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
-          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, tf: state.tf, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
         </div>
         <div className="lab-step-nav">
           {stepIndex > 0 && <button type="button" className="dbtn" onClick={() => setStep(STEPS[stepIndex - 1].id)}>‹ Back: {STEPS[stepIndex - 1].label}</button>}
@@ -460,6 +466,13 @@ function IndicatorsLab() {
           {/* the optimizer is reachable from every step, not only from Your idea */}
           <button type="button" className="dbtn" data-lab-step-optimize disabled={problems.length > 0} title={problems[0]} onClick={() => setTab("optimization")}>Optimize ›</button>
         </div>
+        </div>
+        <div role="tabpanel" id="lab-panel-explore" aria-labelledby="lab-tab-explore" hidden={tab !== "explore"} className="lab-tab-panel">
+        {/* Explore: every indicator's value, date by date (its own workspace, not a step of the backtest) */}
+        {tab === "explore" && (ticker ? <Part key={`explore|${market}|${ticker}`}><ExplorePanel ticker={ticker} trades={result?.kind === "lab_simulation" ? result.trades : undefined} tf={state.tf} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+          onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
+          onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, tf: state.tf, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>
+          : <p className="box empty">Pick one instrument above to explore its indicator values date by date.</p>)}
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
         <div className="lab-step-nav lab-opt-back"><button type="button" className="dbtn" data-lab-back-strategy onClick={() => { setTab("strategy"); setStep("idea"); }}>‹ Back to your strategy</button></div>
@@ -509,21 +522,29 @@ function IndicatorsLab() {
       <header>
         <h1 className="st">Indicators</h1>
         <p>{COPY.lead}</p>
-        {cat && <ServerLabel text={cat.label} />}
       </header>
       <div className="lab-tabs-row">
       <div className="lab-tabs" role="tablist" aria-label="Indicators workspace">
         {tabs.map((item, i) => <button key={item.id} id={`lab-tab-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`lab-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1}
-          onClick={() => setTab(item.id)} onKeyDown={(event) => {
+          onClick={() => openTab(item.id)} onKeyDown={(event) => {
             const next = event.key === "ArrowRight" ? (i + 1) % tabs.length : event.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : undefined;
-            if (next !== undefined) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`lab-tab-${tabs[next].id}`)?.focus(); }
+            if (next !== undefined) { event.preventDefault(); openTab(tabs[next].id); document.getElementById(`lab-tab-${tabs[next].id}`)?.focus(); }
           }}>{item.label}</button>)}
       </div>
-      {/* the market bar sits beside the tabs (wraps under them on a laptop), so the tabs never move between workspaces */}
-      {tab !== "chart" && chartToolbar(null)}
       </div>
+      {/* the tabs share the title row; the market bar takes its own row (on Strategy & backtest it opens Build strategy instead) */}
+      {tab !== "chart" && tab !== "strategy" && <div className="lab-tabs-row" data-lab-market-row>{chartToolbar(null)}</div>}
       {swapNote && <p className="rnote" data-lab-swap>{swapNote}</p>}
-      {work}
+      <BacktestBarsContext.Provider value={runTf}>{work}</BacktestBarsContext.Provider>
+      {askChart.length > 0 && tab === "chart" && <ChartPopup title="Show the strategy's indicators on the chart?" onClose={() => setAskChart([])}>
+        <div className="lab-browser-heading"><h2>Show the strategy's indicators on the chart?</h2><button type="button" className="dbtn sm ghost" aria-label="Close" onClick={() => setAskChart([])}>×</button></div>
+        <div className="lab-ask-chart" data-lab-ask-chart>
+          <p>Your strategy uses {askChart.length === 1 ? "this indicator, which is" : "these indicators, which are"} not on the chart:</p>
+          <ul>{askChart.map((r) => <li key={`${r.ind.id}:${JSON.stringify(r.p)}`}><b>{pickName(r.ind, r.p)}</b></li>)}</ul>
+          <div className="lab-row"><button type="button" className="dbtn primary" data-lab-ask-chart-add onClick={addAsked}>Add to chart</button>
+            <button type="button" className="dbtn" data-lab-ask-chart-keep onClick={() => setAskChart([])}>Keep chart as it is</button></div>
+        </div>
+      </ChartPopup>}
     </div>
   );
 }

@@ -499,7 +499,8 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
 pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabError> {
     let tf = period_tf(q)?;
     if spec.portfolio.is_some() {
-        if tf != Tf::D { return Err(LabError::Unsupported("a weekly or monthly backtest runs on one instrument; a portfolio runs on daily bars (tf=D)".into())); }
+        if matches!(tf, Tf::Days(_)) { return Err(LabError::Unsupported("a portfolio runs on daily, weekly, monthly, quarterly or yearly bars (tf=D, W, M, Q or Y)".into())); }
+        if tf != Tf::D && !spec.foreign_locations().is_empty() { return Err(LabError::Unsupported("a weekly or monthly portfolio reads its members only; rules that read another symbol run on daily bars (tf=D)".into())); }
         return portfolio_run_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl"));
     }
     if tf != Tf::D && !spec.foreign_locations().is_empty() { return Err(LabError::Unsupported("a weekly or monthly backtest reads the traded symbol only; rules that read another symbol run on daily bars (tf=D)".into())); }
@@ -752,11 +753,16 @@ fn catalogue_for_state(st:&State)->String{
     let markets:std::collections::BTreeSet<_>=st.ctxs.keys().filter_map(|t|symbol_market(st,t)).collect();
     let market=if markets.len()==1{markets.iter().next().copied().filter(|m|*m=="in"||*m=="us")}else{None};
     let vix=st.vix.first().filter(|r|super::foreign::VIX.contains(&r.ticker.as_str())&&st.vix.iter().all(|v|v.ticker==r.ticker)&&symbol_market(st,&r.ticker)==market&&market.is_some()&&raw_prices_clean(&st.vix).is_ok()&&super::foreign::validate_dates(&st.vix.iter().map(|r|r.date.clone()).collect::<Vec<_>>(),"volatility source").is_ok()).map(|r|r.ticker.as_str());
-    let baskets=arr(["allfo","midcap100","nifty50","nse500","us_dow30","us_dow30_past","us_nasdaq100","us_nasdaq100_past","us_russell2000","us_russell2000_past","us_sp500","us_sp500_past"].iter().filter_map(|id|{
+    let mut baskets=arr(["allfo","midcap100","nifty50","nse500","us_dow30","us_dow30_past","us_nasdaq100","us_nasdaq100_past","us_russell2000","us_russell2000_past","us_sp500","us_sp500_past"].iter().filter_map(|id|{
         let members=st.baskets.members(id);if members.is_empty()||members.iter().any(|m|Some(m.market.code())!=market){return None;}let available=members.len();let n=st.baskets.expected_member_count(id).unwrap_or(available).max(available);let kind=if members.iter().any(|m|m.membership_kind=="current_plus_past_snapshot"){"current_plus_past_snapshot"}else{"current_snapshot"};Some(format!("{{\"id\":\"{id}\",\"members\":{n},\"available_members\":{available},\"membership_kind\":\"{kind}\",\"supported\":{}}}",n==available&&(2..=rules::MAX_UNIVERSE).contains(&n)))
     }));
+    // dated C&P lists (cp.rs): no member cap, so always supported
+    let dated:Vec<_>=if market==Some("in"){super::cp::universes().into_iter().map(|(id,label,n)|format!("{{\"id\":\"{}\",\"label\":\"{}\",\"members\":{n},\"available_members\":{n},\"membership_kind\":\"dated_aux\",\"supported\":true}}",esc(&id),esc(&label))).collect()}else{vec![]};
+    // AmiBroker watchlists (ami.rs), grouped by their database in the UI; no member cap either
+    let mut dated=dated;if market==Some("in"){dated.extend(super::ami::universes().into_iter().map(|(id,name,db,n)|format!("{{\"id\":\"{}\",\"label\":\"{}\",\"database\":\"{}\",\"members\":{n},\"available_members\":{n},\"membership_kind\":\"ami_watchlist\",\"supported\":true}}",esc(&id),esc(&name),esc(&db))));}
+    if !dated.is_empty(){baskets=if baskets=="[]"{format!("[{}]",dated.join(","))}else{format!("{},{}]",&baskets[..baskets.len()-1],dated.join(","))};}
     let instruments=arr(st.ctxs.iter().filter_map(|(ticker,ctx)|{let kind=instrument_policy::selected_type(ticker,st.baskets.native_evidence(ticker).is_some());let m=symbol_market(st,ticker);if !matches!(kind,"etf"|"individual_stock")||m!=market||market.is_none()||ctx.r.is_empty()||ctx.r.iter().any(|r|r.ticker!=*ticker){return None;}Some(format!("{{\"ticker\":\"{}\",\"type\":\"{kind}\",\"market\":\"{}\"}}",esc(ticker),m.unwrap()))}));
-    let capabilities=if market.is_some()&&markets::engine_market().as_deref()!=Some("gl"){format!("{{\"modes\":[\"signals\",\"rotation\"],\"max_universe\":{},\"max_universe_list\":{},\"max_open\":{},\"max_combos\":{},\"max_work\":{},\"max_source_bars\":500000,\"max_member_bars\":50000,\"max_compiled_cells\":8000000,\"max_workers\":2,\"rebalance\":[\"bar\",\"W\",\"M\",\"Q\",\"Y\"],\"baskets\":{baskets},\"instruments\":{instruments}}}",rules::MAX_UNIVERSE,rules::MAX_UNIVERSE_LIST,rules::MAX_OPEN,rules::MAX_PORTFOLIO_COMBOS,PORTFOLIO_MAX_WORK)}else{"null".into()};
+    let capabilities=if market.is_some()&&markets::engine_market().as_deref()!=Some("gl"){format!("{{\"modes\":[\"signals\",\"rotation\"],\"max_universe\":{},\"max_universe_list\":{},\"max_open\":{},\"max_rank\":{},\"max_combos\":{},\"max_work\":{},\"max_source_bars\":500000,\"max_member_bars\":50000,\"max_compiled_cells\":8000000,\"max_workers\":2,\"rebalance\":[\"bar\",\"W\",\"M\",\"Q\",\"Y\"],\"baskets\":{baskets},\"instruments\":{instruments}}}",rules::MAX_UNIVERSE,rules::MAX_UNIVERSE_LIST,rules::MAX_OPEN,rules::MAX_RANK,rules::MAX_PORTFOLIO_COMBOS,PORTFOLIO_MAX_WORK)}else{"null".into()};
     catalogue_json().replace("\"foreign_volatility\":null",&format!("\"foreign_volatility\":{}",vix.map_or("null".into(),|s|format!("\"{}\"",esc(s))))).replace("\"portfolio\":null",&format!("\"portfolio\":{capabilities}"))
 }
 fn portfolio_costs_json(spec:&Spec)->String{declared_costs_json(&ledger::Money{capital:spec.exec.capital.unwrap(),sizing:spec.exec.sizing,costs:spec.exec.costs.clone(),contract:ledger::CASH,limits:rules::Limits::none()})}
@@ -787,19 +793,23 @@ fn node_cells(n:&rules::Node)->usize{use rules::Node;1+match n{
     Node::Off(n)=>node_cells(n),Node::All(v)|Node::Any(v)=>v.iter().map(node_cells).sum(),Node::Not(n)|Node::AtLeast{when:n,..}=>node_cells(n),Node::Then{steps,..}=>steps.iter().map(node_cells).sum(),
     Node::Setup{setup,trigger,cancel,..}=>node_cells(setup)+node_cells(trigger)+cancel.as_deref().map_or(0,node_cells),
 }}
-fn portfolio_resource_counts(member_bars:&[usize],other_bars:usize,units:usize)->Result<usize,LabError>{
+fn portfolio_resource_counts(member_bars:&[usize],other_bars:usize,units:usize)->Result<usize,LabError>{portfolio_resource_counts_within(member_bars,other_bars,units,PORTFOLIO_MAX_SOURCE_BARS,PORTFOLIO_MAX_COMPILED_CELLS)}
+fn portfolio_resource_counts_within(member_bars:&[usize],other_bars:usize,units:usize,max_bars:usize,max_cells:usize)->Result<usize,LabError>{
     let refuse=|why:String|LabError::Invalid(format!("portfolio resource limit: {why}; use fewer members or shorter admitted histories (from/to does not truncate indicator warm-up)"));
     if member_bars.iter().any(|n|*n>PORTFOLIO_MAX_MEMBER_BARS){return Err(refuse(format!("at most {PORTFOLIO_MAX_MEMBER_BARS} source bars per member")));}
     let total=member_bars.iter().try_fold(other_bars,|sum,n|sum.checked_add(*n)).ok_or_else(||refuse("source-bar count overflow".into()))?;
-    if total>PORTFOLIO_MAX_SOURCE_BARS{return Err(refuse(format!("at most {PORTFOLIO_MAX_SOURCE_BARS} total source bars")));}
+    if total>max_bars{return Err(refuse(format!("at most {max_bars} total source bars")));}
     let cells=total.checked_mul(units.max(1)).ok_or_else(||refuse("compiled-cell count overflow".into()))?;
-    if cells>PORTFOLIO_MAX_COMPILED_CELLS{return Err(refuse(format!("at most {PORTFOLIO_MAX_COMPILED_CELLS} compiled cells")));}Ok(cells)
+    if cells>max_cells{return Err(refuse(format!("at most {max_cells} compiled cells")));}Ok(cells)
 }
+/// Dated C&P universes have no member cap (user, 20-11-2026); this only keeps one run inside the engine's memory
+/// (VAULT_PORTFOLIO_MEMORY_MB, default 2048: about 100 bytes per loaded bar plus 8 per compiled cell).
+fn dated_limits()->(usize,usize){let mb=std::env::var("VAULT_PORTFOLIO_MEMORY_MB").ok().and_then(|v|v.parse::<usize>().ok()).unwrap_or(2048);let bytes=mb*1024*1024;(bytes/200,bytes/16)}
 fn portfolio_resources(prepared:&PreparedPortfolio,spec:&Spec)->Result<(usize,usize),LabError>{
     let bars:Vec<_>=prepared.loaded.members.iter().map(|m|m.frames.d.len()).collect();let other=prepared.others.frames.values().try_fold(prepared.loaded.dates.len(),|n,f|n.checked_add(f.d.len())).ok_or_else(||LabError::Invalid("portfolio source-bar count overflow".into()))?;
     // Reserve six arrays for protective ATR/score/marks in addition to the actual parsed tree.
     let units=6+spec.entry.iter().chain(&spec.exit).map(node_cells).sum::<usize>()+spec.portfolio.as_ref().and_then(|p|p.score.as_ref()).map_or(0,operand_cells);
-    let cells=portfolio_resource_counts(&bars,other,units)?;let total=bars.iter().sum::<usize>()+other;
+    let cells=if matches!(prepared.loaded.membership.0,"dated_aux"|"ami_watchlist"){let (max_bars,max_cells)=dated_limits();portfolio_resource_counts_within(&bars,other,units,max_bars,max_cells)?}else{portfolio_resource_counts(&bars,other,units)?};let total=bars.iter().sum::<usize>()+other;
     let working=cells.checked_mul(8).and_then(|n|n.checked_add(total*64)).ok_or_else(||LabError::Invalid("portfolio working-set estimate overflow".into()))?;
     Ok((cells,((128*1024*1024)/working.max(1)).clamp(1,PORTFOLIO_MAX_WORKERS)))
 }
@@ -807,7 +817,29 @@ fn portfolio_resources(prepared:&PreparedPortfolio,spec:&Spec)->Result<(usize,us
 const PORTFOLIO_SECONDS:u64=90;
 const PORTFOLIO_MAX_WORK:usize=12_000;
 const PCOLS:&[&str]=&["total_return","cagr","sharpe","sortino","max_dd","mar","trades","win_rate","profit_factor","avg_trade","exposure","t_stat","avg_bars","expectancy_ratio","monthly_thickness","avg_hold_days","avg_exposure","max_positions"];
-struct PreparedPortfolio {loaded:super::universe::Loaded,from:usize,to:usize,others:series::Others,foreign_json:String}
+struct PreparedPortfolio {loaded:super::universe::Loaded,from:usize,to:usize,others:series::Others,foreign_json:String,tf:Tf,period:Option<(Vec<crate::Row>,Vec<Option<usize>>)>}
+/// AmiBroker Periodicity on a portfolio (tf W/M/Q/Y): every member becomes period bars, the last one ending at `to` as AmiBroker's
+/// final bar does, and the portfolio's bars are the union of the members' and the reference's bar dates (AmiBroker's portfolio
+/// calendar: a stock whose data stops mid-month adds that day as a bar). A member's Aux and eligibility are those of its period's
+/// last session. Signals, fills, circuits, ranking and UsePrevBarEquityForPosSizing then all run on these bars. Returns the
+/// reference on those dates (its latest period bar, for the benchmark and statistics) and `from` / `to` as bar indices.
+fn period_portfolio(loaded:&mut super::universe::Loaded,ctx:&Ctx,tf:Tf,from:usize,to:usize)->(Vec<crate::Row>,Vec<Option<usize>>,usize,usize){
+    let (rrows,rsrc)=period_rows(&ctx.r[..=to],tf);let cut=ctx.r[to].date.clone();let first=rrows[0].date.clone();
+    let mut cal:std::collections::BTreeSet<String>=rrows.iter().map(|r|r.date.clone()).collect();
+    for m in &mut loaded.members{
+        let d=&m.frames.d;let mut b=super::resample::resample_cut(d,tf,&cut);
+        b.aux=[0,1].map(|k|d.aux[k].as_ref().map(|v|b.end.iter().map(|&i|v[i]).collect()));
+        m.eligible=m.eligible.take().map(|e|b.end.iter().map(|&i|e[i]).collect());
+        cal.extend(b.date.iter().filter(|t|**t>=first&&**t<=cut).cloned());m.frames=Frames::new(b);
+    }
+    loaded.dates=cal.into_iter().collect();
+    for m in &mut loaded.members{m.at=super::universe::calendar_map(&loaded.dates,&m.frames.d.date);}
+    let (mut rows,mut src)=(Vec::with_capacity(loaded.dates.len()),Vec::with_capacity(loaded.dates.len()));let mut j=0;
+    for t in &loaded.dates{while j+1<rrows.len()&&rrows[j+1].date<=*t{j+=1;}let mut r=rrows[j].clone();r.date=t.clone();rows.push(r);src.push(rsrc[j]);}
+    let start=&ctx.r[from].date;let pf=loaded.dates.iter().position(|t|t>=start).unwrap_or(0);let pt=loaded.dates.len()-1;(rows,src,pf,pt)
+}
+/// The reference on the portfolio's bars: daily, or its period rows (tf W/M/Q/Y).
+fn portfolio_ctx<'a>(held:&Ctx,prepared:&'a PreparedPortfolio)->Option<Ctx<'a>>{prepared.period.as_ref().map(|(r,s)|padded_ctx(held,r,s))}
 fn portfolio_deadline(deadline:std::time::Instant)->Result<(),LabError>{if std::time::Instant::now()>=deadline{Err(LabError::Invalid(format!("portfolio run stopped after {PORTFOLIO_SECONDS} s; use fewer members or a shorter window")))}else{Ok(())}}
 fn portfolio_request(q:&Query,spec:&Spec,gl:bool,opt:bool)->Result<(),LabError>{
     if gl{return Err(LabError::Unsupported("portfolio mode runs on India/US stocks and ETFs; gl instruments are provisional indices, CFDs and crypto".into()));}
@@ -819,7 +851,7 @@ fn portfolio_request(q:&Query,spec:&Spec,gl:bool,opt:bool)->Result<(),LabError>{
 fn prepare_portfolio(st:&State,q:&Query,spec:&Spec,deadline:std::time::Instant)->Result<PreparedPortfolio,LabError>{
     portfolio_deadline(deadline)?;
     let p=spec.portfolio.as_ref().ok_or_else(||LabError::Invalid("portfolio is required".into()))?;
-    let loaded=super::universe::load_with_deadline(st,&p.universe,deadline)?;
+    let mut loaded=super::universe::load_with_deadline(st,&p.universe,deadline,(q.get("from").map_or("",|s|s.as_str()),q.get("to").map_or("",|s|s.as_str())))?;
     let ctx=&st.ctxs[&loaded.reference];raw_prices_clean(ctx.r)?;
     for key in ["from","to"] {if let Some(date)=q.get(key).filter(|s|!s.is_empty()){
         if date.len()!=10||!date.bytes().enumerate().all(|(i,c)|if i==4||i==7{c==b'-'}else{c.is_ascii_digit()})||!crate::baskets::valid_date(date){return Err(LabError::Invalid(format!("{key} must be a valid YYYY-MM-DD date")));}
@@ -830,9 +862,12 @@ fn prepare_portfolio(st:&State,q:&Query,spec:&Spec,deadline:std::time::Instant)-
     if q.get("from").is_none_or(|s|s.is_empty()){if let Some(first)=loaded.members.iter().filter_map(|m|m.at.iter().position(Option::is_some)).min(){from=from.max(first);}}
     if q.get("to").is_none_or(|s|s.is_empty()){if let Some(last)=loaded.members.iter().filter_map(|m|m.at.iter().rposition(Option::is_some)).max(){to=to.min(last);}}
     if from>=to{return Err(LabError::NeedsData("no member has data inside the window".into()));}
+    let tf=period_tf(q)?;
+    let period=if tf==Tf::D{None}else{let (rows,src,pf,pt)=period_portfolio(&mut loaded,ctx,tf,from,to);from=pf;to=pt;
+        if from>=to{return Err(LabError::NeedsData("the window holds fewer than two portfolio bars on this timeframe".into()));}Some((rows,src))};
     let (others,foreign_json)=others_for(st,&loaded.reference,&spec.foreign_locations(),close_fills(spec),true)?;
     portfolio_deadline(deadline)?;
-    let prepared=PreparedPortfolio{loaded,from,to,others,foreign_json};portfolio_resources(&prepared,spec)?;Ok(prepared)
+    let prepared=PreparedPortfolio{loaded,from,to,others,foreign_json,tf,period};portfolio_resources(&prepared,spec)?;Ok(prepared)
 }
 fn portfolio_lanes<'a>(prepared:&'a PreparedPortfolio,spec:&Spec,caches:&mut[Cache],deadline:std::time::Instant,stop:Option<&AtomicBool>)->Result<(Vec<super::portfolio::Lane<'a>>,Vec<(String,String)>),LabError>{
     rules::validate_applied(spec)?;
@@ -853,12 +888,14 @@ fn portfolio_book(spec:&Spec)->Result<super::portfolio::Book,LabError>{
     rules::validate_applied(spec)?;let p=spec.portfolio.as_ref().unwrap();
     if spec.exec.costs.slip_ticks>0.{return Err(LabError::Unsupported("tick slippage needs a futures contract".into()));}
     let capital=spec.exec.capital.ok_or_else(||LabError::Invalid("portfolio money mode requires execution.capital".into()))?;
-    Ok(super::portfolio::Book{capital,mode:p.mode,max_open:p.max_open,worst_rank_held:p.worst_rank_held(),rebalance:p.rebalance,lowest:p.lowest,fill:spec.exec.fill,exit_fill:spec.exec.exit_fill,size:if spec.exec.sizing==rules::Sizing::Full{rules::Sizing::PctEquity(100./p.max_open as f64)}else{spec.exec.sizing},costs:spec.exec.costs.clone()})
+    Ok(super::portfolio::Book{capital,mode:p.mode,max_open:p.max_open,worst_rank_held:p.worst_rank_held(),rebalance:p.rebalance,lowest:p.lowest,fill:spec.exec.fill,exit_fill:spec.exec.exit_fill,size:if spec.exec.sizing==rules::Sizing::Full{rules::Sizing::PctEquity(100./p.max_open as f64)}else{spec.exec.sizing},costs:spec.exec.costs.clone(),prev_bar_equity:spec.exec.limits.is_some_and(|l|l.prev_bar_equity),log:false})
 }
 fn portfolio_stats(ctx:&Ctx,prepared:&PreparedPortfolio,led:&super::portfolio::Ledger,capital:f64,net:bool)->BTreeMap<&'static str,f64>{
     let mut trades:Vec<_>=led.trades.iter().map(|t|t.as_trade(net)).collect();trades.sort_by_key(|t|(t.legs[0].i,t.exit_i));
     let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
-    let mut stats=crate::stats(ctx,&run,0.);stats.insert("avg_exposure",led.invested.iter().zip(&led.equity).map(|(v,e)|v/e).sum::<f64>()/led.equity.len() as f64);stats.insert("max_positions",led.positions.iter().copied().max().unwrap_or(0) as f64);stats
+    let mut stats=crate::stats(ctx,&run,0.);
+    if let Some(bpy)=period_bars_per_year(prepared.tf,markets::bars_per_year(&ctx.r[0].ticker)){let f=(bpy/markets::bars_per_year(&ctx.r[0].ticker)).sqrt();for k in ["vol","sharpe","sortino","gross_sharpe"]{if let Some(v)=stats.get_mut(k){*v*=f;}}}
+    stats.insert("avg_exposure",led.invested.iter().zip(&led.equity).map(|(v,e)|v/e).sum::<f64>()/led.equity.len() as f64);stats.insert("max_positions",led.positions.iter().copied().max().unwrap_or(0) as f64);stats
 }
 fn membership_json(loaded:&super::universe::Loaded)->String{format!("{{\"kind\":\"{}\",\"historical_membership_verified\":false,\"note\":\"{}\"}}",loaded.membership.0,esc(loaded.membership.1))}
 fn portfolio_meta(spec:&Spec,prepared:&PreparedPortfolio,admitted:usize,refused:&[(String,String)])->String{
@@ -868,13 +905,14 @@ fn portfolio_model(events:Option<&[String]>)->String{format!("{{\"kind\":\"cash\
 fn portfolio_run_json(st:&State,q:&Query,spec:&Spec,gl:bool)->Result<String,LabError>{
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(PORTFOLIO_SECONDS);portfolio_request(q,spec,gl,false)?;
     let prepared=prepare_portfolio(st,q,spec,deadline)?;let mut caches:Vec<_>=(0..prepared.loaded.members.len()).map(|_|Cache::new()).collect();let (lanes,refused)=portfolio_lanes(&prepared,spec,&mut caches,deadline,None)?;let book=portfolio_book(spec)?;
+    let book=super::portfolio::Book{log:true,..book};
     let led=super::portfolio::run(&lanes,&book,&prepared.loaded.dates,prepared.from,prepared.to,deadline,None)?;portfolio_deadline(deadline)?;
-    let ctx=&st.ctxs[&prepared.loaded.reference];let stats=portfolio_stats(ctx,&prepared,&led,book.capital,true);let gross=portfolio_stats(ctx,&prepared,&led,book.capital,false);
+    let held=&st.ctxs[&prepared.loaded.reference];let pctx=portfolio_ctx(held,&prepared);let ctx=pctx.as_ref().unwrap_or(held);let stats=portfolio_stats(ctx,&prepared,&led,book.capital,true);let gross=portfolio_stats(ctx,&prepared,&led,book.capital,false);
     let dates=&prepared.loaded.dates;let from=prepared.from;let to=prepared.to;
     let trades=arr(led.trades.iter().map(|t|format!("{{\"ticker\":\"{}\",\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"qty\":{},\"notional\":{},\"costs\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"entry_signal\":\"{}\",\"reason\":\"{}\",\"rank\":{},\"score\":{},\"dir\":1,\"entry_kind\":\"{}\"}}",esc(&lanes[t.lane].m.ticker),dates[t.entry_i],dates[t.exit_i],t.entry_i-from,t.exit_i-from,full(t.entry_px),full(t.exit_px),full(t.qty),full(t.entry_px*t.qty),full(t.entry_cost+t.exit_cost),full(t.pnl()/t.equity_at_signal),t.exit_i-t.entry_i,t.open,dates[t.exit_signal_i],dates[t.signal_i],esc(&t.reason),t.rank,full(t.score),t.kind)));
     let provenance=arr(lanes.iter().map(|l|crate::source_provenance(st,&Query::from([("ticker".into(),l.m.ticker.clone())]))));
     let costs=portfolio_costs_json(spec);
-    let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_simulation\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"execution_model\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"from\":\"{}\",\"to\":\"{}\",\"dates\":{},\"equity\":{},\"gross_equity\":{},\"cash\":{},\"exposure\":{},\"positions\":{},\"bh\":{},\"trades\":{trades},\"skipped\":{{\"no_slot\":{},\"no_cash\":{},\"no_bar\":{},\"data_end\":{},\"final_bar\":{}}},\"stats\":{},\"gross_stats\":{},\"money\":{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"currency\":\"{}\"}},\"costs\":{costs},\"provenance\":{provenance}{}}}",portfolio_meta(spec,&prepared,lanes.len(),&refused),membership_json(&prepared.loaded),portfolio_model(Some(&led.events)),esc(&prepared.loaded.reference),prepared.foreign_json,dates[from],dates[to],quoted(dates[from..=to].iter().map(String::as_str)),arr(led.equity.iter().map(|v|full(v/book.capital))),arr(led.gross_equity.iter().map(|v|full(v/book.capital))),arr(led.cash.iter().map(|v|full(*v))),arr(led.invested.iter().map(|v|full(*v))),arr(led.positions.iter().map(|v|v.to_string())),arr((from..=to).map(|i|full(ctx.c[i]/ctx.c[from]))),led.skipped.no_slot,led.skipped.no_cash,led.skipped.no_bar,led.skipped.data_end,led.skipped.final_bar,crate::stats_json(&stats),crate::stats_json(&gross),full(book.capital),full(*led.equity.last().unwrap()),full(led.costs_total),if symbol_market(st,&prepared.loaded.reference)==Some("in"){"INR"}else{"USD"},adaptations(rules::series_ids(spec).iter().map(String::as_str)));
+    let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_simulation\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"execution_model\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"from\":\"{}\",\"to\":\"{}\",\"dates\":{},\"equity\":{},\"gross_equity\":{},\"cash\":{},\"exposure\":{},\"positions\":{},\"bh\":{},\"trades\":{trades},\"skipped\":{{\"no_slot\":{},\"no_cash\":{},\"no_bar\":{},\"data_end\":{},\"final_bar\":{}}},\"stats\":{},\"gross_stats\":{},\"money\":{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"currency\":\"{}\"}},\"costs\":{costs},\"provenance\":{provenance},\"log\":{}{}}}",portfolio_meta(spec,&prepared,lanes.len(),&refused),membership_json(&prepared.loaded),portfolio_model(Some(&led.events)),esc(&prepared.loaded.reference),prepared.foreign_json,dates[from],dates[to],quoted(dates[from..=to].iter().map(String::as_str)),arr(led.equity.iter().map(|v|full(v/book.capital))),arr(led.gross_equity.iter().map(|v|full(v/book.capital))),arr(led.cash.iter().map(|v|full(*v))),arr(led.invested.iter().map(|v|full(*v))),arr(led.positions.iter().map(|v|v.to_string())),arr((from..=to).map(|i|full(ctx.c[i]/ctx.c[from]))),led.skipped.no_slot,led.skipped.no_cash,led.skipped.no_bar,led.skipped.data_end,led.skipped.final_bar,crate::stats_json(&stats),crate::stats_json(&gross),full(book.capital),full(*led.equity.last().unwrap()),full(led.costs_total),if symbol_market(st,&prepared.loaded.reference)==Some("in"){"INR"}else{"USD"},arr(led.log.iter().map(|(i,lines)|format!("{{\"date\":{},\"lines\":{}}}",dates.get(*i).map_or("null".into(),|d|format!("\"{d}\"")),quoted(lines.iter().map(String::as_str))))),adaptations(rules::series_ids(spec).iter().map(String::as_str)));
     finish_portfolio(body,deadline,false)
 }
 fn portfolio_work(members:usize,combos:usize)->Result<(),LabError>{
@@ -889,7 +927,7 @@ fn portfolio_optimize_json(st:&State,q:&Query,spec:&Spec,gl:bool,t0:std::time::I
     let prepared=prepare_portfolio(st,q,spec,deadline).map_err(timeout)?;portfolio_work(prepared.loaded.members.len()+prepared.loaded.refused.len(),combos)?;
     let mut caches:Vec<_>=(0..prepared.loaded.members.len()).map(|_|Cache::new()).collect();let (base_lanes,refused)=portfolio_lanes(&prepared,spec,&mut caches,deadline,None).map_err(timeout)?;
     let cohort:Vec<_>=base_lanes.iter().map(|l|l.m.ticker.clone()).collect();let base_book=portfolio_book(spec)?;let base_ledger=super::portfolio::run(&base_lanes,&base_book,&prepared.loaded.dates,prepared.from,prepared.to,deadline,None).map_err(timeout)?;
-    let ctx=&st.ctxs[&prepared.loaded.reference];let base_stats=portfolio_stats(ctx,&prepared,&base_ledger,base_book.capital,true);let base:Vec<_>=PCOLS.iter().map(|k|base_stats[k]).collect();let provenance=arr(base_lanes.iter().map(|l|crate::source_provenance(st,&Query::from([("ticker".into(),l.m.ticker.clone())]))));drop(base_lanes);drop(base_ledger);drop(caches);let (_,worker_limit)=portfolio_resources(&prepared,spec)?;
+    let held=&st.ctxs[&prepared.loaded.reference];let pctx=portfolio_ctx(held,&prepared);let ctx=pctx.as_ref().unwrap_or(held);let base_stats=portfolio_stats(ctx,&prepared,&base_ledger,base_book.capital,true);let base:Vec<_>=PCOLS.iter().map(|k|base_stats[k]).collect();let provenance=arr(base_lanes.iter().map(|l|crate::source_provenance(st,&Query::from([("ticker".into(),l.m.ticker.clone())]))));drop(base_lanes);drop(base_ledger);drop(caches);let (_,worker_limit)=portfolio_resources(&prepared,spec)?;
     let stop=AtomicBool::new(false);let done=Arc::new(AtomicUsize::new(0));let errors=std::sync::Mutex::new(None::<LabError>);let threads=std::thread::available_parallelism().map_or(1,|n|n.get()).min(worker_limit).min(combos);let dims=&spec.optimize;
     #[cfg(test)] LAST_DONE.with(|d|*d.borrow_mut()=Some(done.clone()));
     let rows=std::thread::scope(|scope|->Result<Vec<Vec<f64>>,LabError>{

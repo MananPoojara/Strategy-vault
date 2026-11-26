@@ -127,8 +127,11 @@ it("switches to Renko: one custom series on synthetic times, dated hover, parame
   await flush();
   expect(created[0].kinds[0]).toBe("candle");
   const types = host.querySelector<HTMLSelectElement>('select[aria-label="Chart type"]')!;
-  expect([...types.options].map((o) => o.textContent)).toEqual(["Candles", "Heikin Ashi", "Renko", "Point & Figure", "Kagi", "Line Break"]);
-  expect([...types.options].map((o) => o.disabled)).toEqual([false, true, false, true, true, false]);
+  // TradingView's chart types: those on the date axis, then those built from price moves
+  expect([...types.options].map((o) => o.textContent)).toEqual(["Bars", "Candles", "Hollow candles", "Volume candles", "Line", "Line with markers", "Step line", "Area",
+    "HLC area", "Baseline", "Columns", "High-low", "Heikin Ashi", "Renko", "Point & Figure", "Kagi", "Line Break", "Range"]);
+  // the date-axis types and Range need only prices; the others need their engine indicator in this catalogue
+  expect([...types.options].map((o) => o.disabled)).toEqual([...new Array(12).fill(false), true, false, true, true, false, false]);
   await act(async () => { types.value = "renko"; types.dispatchEvent(new Event("change", { bubbles:true })); });
   await flush();
   const chart = created.at(-1)!;

@@ -196,6 +196,14 @@ impl PortfolioPosition {
     pub(super) fn new(c: &Compiled, entry: usize, raw: f64, signal: usize, kind: &'static str) -> Self {
         Self(Pos::open(c, entry, raw, signal, kind, 1.))
     }
+    /// exit.dual_atr, then exit.dual_line, for a portfolio's long position: each advances through bar i (catching up any bars
+    /// it was not asked about, as the single-instrument loop steps every bar) and names the exit when bar i's close is beyond
+    /// its active stop or line. Never on the entry bar.
+    pub(super) fn dual_exit(&mut self, c: &Compiled, b: &Bars, i: usize) -> Option<&'static str> {
+        let atr = dual_step(c, &mut self.0, i, 1.);
+        let line = dline_step(c, b, &mut self.0, i, 1.);
+        if atr { Some("exit.dual_atr") } else if line { Some("exit.dual_line") } else { None }
+    }
     pub(super) fn price_exit(&mut self, c: &Compiled, b: &Bars, i: usize) -> Option<(f64, String)> {
         if self.0.e == i && self.0.kind == "close" { return None; }
         match self.0.price_exit(c, b, i, 1., None, false) {
@@ -2772,6 +2780,16 @@ mod afl_backtest_parameter_tests {
         assert_eq!(entries(&trades(&b, ALWAYS, HELD1, r#","turnover_filter":true"#, 6).unwrap()), vec![1, 4]);
         assert_eq!(entries(&trades(&b, ALWAYS, HELD1, "", 6).unwrap()), vec![0, 2, 4]);
         assert_eq!((crate::lab::series::turnover_floor("1999-12-31"), crate::lab::series::turnover_floor("2016-06-01"), crate::lab::series::turnover_floor("2022-01-03")), (30_000., 4_000_000., 10_000_000.));
+        // the strategy's own year-wise floor (V × C here: 2,00,000 2,00,100 100 | 70,00,000 70,00,100 100 100): 2004 from 150 lets
+        // bars 0 and 1 pass, 2019 from 70,00,050 only bar 4, so the entries are 0 (held to 1) and 4
+        assert_eq!(entries(&trades(&b, ALWAYS, HELD1, r#","turnover_filter":true,"turnover_floor":[[2004,150],[2019,7000050]]"#, 6).unwrap()), vec![0, 4]);
+        // years before the first row use it: one row [2030, 1e9] blocks every bar here
+        assert!(entries(&trades(&b, ALWAYS, HELD1, r#","turnover_filter":true,"turnover_floor":[[2030,1000000000]]"#, 6).unwrap()).is_empty());
+        let afl: Vec<(i32, f64)> = vec![(0, 30_000.), (2000, 50_000.), (2004, 200_000.), (2005, 400_000.), (2006, 600_000.), (2007, 800_000.), (2010, 1_000_000.), (2011, 2_000_000.), (2012, 2_500_000.), (2013, 3_000_000.), (2014, 3_500_000.), (2015, 4_000_000.), (2017, 5_000_000.), (2018, 6_000_000.), (2019, 7_000_000.), (2020, 8_000_000.), (2021, 9_000_000.), (2022, 10_000_000.)];
+        for y in 1990..2030 { let d = format!("{y}-06-30"); assert_eq!(crate::lab::series::turnover_floor_in(&d, Some(&afl)), crate::lab::series::turnover_floor(&d), "{y}: the page's default table is the AFL's"); }
+        for bad in [r#""turnover_floor":[]"#, r#""turnover_floor":[[2005,1],[2004,2]]"#, r#""turnover_floor":[[2004.5,1]]"#, r#""turnover_floor":[[2004,-1]]"#, r#""turnover_floor":[[2004]]"#, r#""turnover_floor":{"2004":1}"#] {
+            assert!(parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":0}}}}]}},"exit":{{"any":[]}},"execution":{{{bad}}}}}"#)).is_err(), "{bad}");
+        }
         b.volume = None;
         assert_eq!(trades(&b, ALWAYS, HELD1, r#","turnover_filter":true"#, 6).unwrap_err().status(), "needs_data");
     }

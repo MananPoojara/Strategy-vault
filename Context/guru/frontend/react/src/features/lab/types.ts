@@ -138,6 +138,8 @@ export interface Execution {
   /** AFL entry gates (absent = off): no buy on the last bar and an exit at its close; a buy needs Close > penny_price,
    *  Volume x Close above the AFL's year table, and the data's Aux1 / Aux2 column = 1 on the signal bar. */
   dead_stock?: true; penny_price?: number; turnover_filter?: true; aux1?: true; aux2?: true;
+  /** The turnover floor by year as [from year, minimum] rows, years rising; absent = the AFL's own table. */
+  turnover_floor?: [number, number][];
   [extra: string]: unknown;
 }
 export interface PositionLimits {
@@ -272,12 +274,14 @@ export interface LabErrorFields {
 }
 
 // Phase 8 portfolios have their own result kind and never invent a single execution instrument.
-export interface PortfolioCapability { modes: string[]; max_universe: number; max_universe_list: number; max_open: number; max_combos: number; max_work: number; max_source_bars?:number;max_member_bars?:number;max_compiled_cells?:number;max_workers?:number; rebalance: string[]; instruments?: {ticker:string;type:string;market:Market}[]; baskets: {id:string;members:number;available_members?:number;membership_kind:string;supported?:boolean}[] }
+export interface PortfolioCapability { modes: string[]; max_universe: number; max_universe_list: number; max_open: number; max_rank?: number; max_combos: number; max_work: number; max_source_bars?:number;max_member_bars?:number;max_compiled_cells?:number;max_workers?:number; rebalance: string[]; instruments?: {ticker:string;type:string;market:Market}[]; baskets: {id:string;label?:string;/** an AmiBroker watchlist's database folder (membership_kind "ami_watchlist") */database?:string;members:number;available_members?:number;membership_kind:string;supported?:boolean}[] }
 export interface PortfolioSpec { universe: {basket:string;tickers?:never}|{tickers:string[];basket?:never}; mode?: "signals"|"rotation"; score?: Operand; rank?: "highest"|"lowest"; max_open?:number; worst_rank_held?:number; rebalance?:"bar"|"W"|"M"|"Q"|"Y"; [extra:string]:unknown }
 export interface PortfolioMeta {mode:"signals"|"rotation";max_open:number;worst_rank_held:number;rank:"highest"|"lowest";rebalance:string|null;universe:{basket:string|null;members:number;admitted:number;refused:{ticker:string;reason:string}[]}}
 export interface Membership {kind:string;historical_membership_verified:false;note:string}
 export interface PortfolioTrade extends Trade {ticker:string;qty:number;notional:number;costs:number;rank:number;score:number|null;entry_signal:string}
-export interface PortfolioRunResult extends Provisional {kind:"lab_portfolio_simulation";label:string;origin:null;portfolio:PortfolioMeta;membership:Membership;reference:{ticker:string;type:"index"};foreign?:ForeignDisclosure[];execution_model:ExecutionModel;adaptations?:string[];from:string;to:string;dates:string[];equity:number[];gross_equity:number[];cash:number[];exposure:number[];positions:number[];bh:number[];trades:PortfolioTrade[];skipped:Record<string,number>;stats:Stats;gross_stats:Stats;money:{capital:number;final_equity:number;costs_total:number;currency:string};provenance:unknown}
+export interface PortfolioRunResult extends Provisional {kind:"lab_portfolio_simulation";label:string;origin:null;portfolio:PortfolioMeta;membership:Membership;reference:{ticker:string;type:"index"};foreign?:ForeignDisclosure[];execution_model:ExecutionModel;adaptations?:string[];from:string;to:string;dates:string[];equity:number[];gross_equity:number[];cash:number[];exposure:number[];positions:number[];bh:number[];trades:PortfolioTrade[];skipped:Record<string,number>;stats:Stats;gross_stats:Stats;money:{capital:number;final_equity:number;costs_total:number;currency:string};provenance:unknown;log?:PortfolioLogDay[]}
+/** One session of a portfolio run's AmiBroker-style detailed log (portfolio.rs); date null on the "log stopped" note. */
+export interface PortfolioLogDay {date:string|null;lines:string[]}
 export type PortfolioOptimizeResult = Omit<OptimizeResult,"kind"|"instrument"|"start"|"costs"|"provenance"|"money"> & {kind:"lab_portfolio_optimization";portfolio:PortfolioMeta;membership:Membership;reference:{ticker:string;type:"index"};money:{capital:number;basis?:string}};
 export type LabRunResult = RunResult | PortfolioRunResult;
 export type LabOptimizeResult = OptimizeResult | PortfolioOptimizeResult;

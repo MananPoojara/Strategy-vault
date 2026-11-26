@@ -3,6 +3,7 @@ import { act } from "react";
 import { IndicatorsPage } from "../src/pages/IndicatorsPage";
 import { clearLabCache } from "../src/features/lab/client";
 import { LabModeContext, POPULAR } from "../src/features/lab/simple";
+import { OPENING } from "../src/features/lab/opening";
 import { catalogue7Fixture, fetchRouter, flush, glInstrumentsFixture, jsonResponse, mount, publishedFixture, runFixture, seriesFixture, templatesFixture, tickersFixture, unmount } from "./fixtures/lab";
 import { LibraryRail } from "../src/features/lab/LibraryRail";
 import type { Spec } from "../src/features/lab/types";
@@ -19,8 +20,8 @@ const routes = () => fetchRouter([
   [/\/lab\/templates/, () => jsonResponse(templatesFixture)],
   [/\/lab\/run/, () => jsonResponse(runFixture)],
 ]);
-beforeEach(() => { localStorage.removeItem("lab.mode"); clearLabCache(); }); // the real default: no stored choice
-afterEach(async () => { await unmount(); vi.unstubAllGlobals(); history.replaceState(null, "", "/"); localStorage.setItem("lab.mode", "advanced"); });
+beforeEach(() => { OPENING.mode = "simple"; clearLabCache(); }); // the real opening view
+afterEach(async () => { await unmount(); vi.unstubAllGlobals(); history.replaceState(null, "", "/"); OPENING.mode = "advanced"; });
 const open = async () => {
   history.replaceState(null, "", "/#/indicators?tk=NIFTY%2050");
   vi.stubGlobal("fetch", routes());
@@ -49,20 +50,21 @@ it("opens in the Simple view: Simple / Advanced only trims Settings (no AmiBroke
   expect(host.querySelector<HTMLElement>("[data-lab-settings-body]")!.hidden).toBe(false);
   expect(host.querySelector('.lab-settings-aside [data-lab-mode="simple"]')).not.toBeNull(); // the switch is in the Settings heading
   expect(host.querySelector('.lab-tabs-row [data-lab-mode]')).toBeNull(); // not beside the workspace tabs
-  expect([...host.querySelectorAll(".lab-tabs [role=tab]")].map((t) => t.textContent)).toEqual(["Chart", "Strategy & backtest", "Customize", "Saved strategies"]);
+  expect([...host.querySelectorAll(".lab-tabs [role=tab]")].map((t) => t.textContent)).toEqual(["Chart", "Strategy & backtest", "Explore", "Customize", "Saved strategies"]);
   const rules = host.querySelector(".lab-rules")!;
   expect(rules.querySelector(".box-h")!.firstChild!.textContent).toBe("Strategy rules"); // no "values from completed bars only" note
-  expect([...rules.querySelectorAll("[data-lab-card] .lab-rule-section-h h3")].slice(0, 3).map((h) => h.textContent)).toEqual(["Entry", "Exit", "Filters"]); // each rule section has a descriptive semantic heading
+  expect([...rules.querySelectorAll("[data-lab-card] .lab-rule-section-h h3")].slice(0, 3).map((h) => h.textContent)).toEqual(["Entry rules", "Exit rules", "Filters · optional"]); // each rule section has a descriptive semantic heading
   expect(rules.querySelector("[data-lab-settings-tabs]")).toBeNull();
   expect(rules.querySelector("button[data-lab-add-cond]")!.textContent).toBe("+ Add condition"); // the full builder: + Add condition and + Add group
   expect(rules.querySelector("select[data-lab-add]")).not.toBeNull();
-  expect(rules.querySelector('[data-lab-idea-basics] [data-lab-action="run"]')!.textContent).toBe("Run backtest");
-  // Positions and the test period sit over the rule cards, as in Advanced
-  expect(rules.querySelector('[data-lab-idea-basics] [data-lab-exec="positions"]')).not.toBeNull();
-  expect(rules.querySelector('[data-lab-idea-basics] input[aria-label="From"]')).not.toBeNull();
+  // the build order: Positions opens the Entry card; the test period and Run backtest belong to step 2
+  expect(rules.querySelector('[data-lab-card="entry"] [data-lab-positions] [data-lab-exec="positions"]')).not.toBeNull();
+  expect(rules.querySelector('[data-lab-idea-run] [data-lab-action="run"]')!.textContent).toBe("Run backtest"); // right above the Entry rules
+  expect(rules.querySelector('input[aria-label="From"]')).toBeNull(); // From – To is in the Market row
   // step 2 Settings: the AFLs' Backtest parameters, no AmiBroker settings and no % / cash toggle (money follows the instrument)
   const settings = host.querySelectorAll(".lab-rules")[1];
   expect([...settings.querySelectorAll("[data-lab-basics] .lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Backtest parameters"]);
+  expect(settings.querySelector('[data-lab-run-bar] [data-lab-action="run"]')!.textContent).toBe("Run backtest"); // frozen at the top of the step
   expect(settings.querySelector('input[aria-label="Brokerage (bps / side)"]')).not.toBeNull();
   expect(settings.querySelector('input[aria-label="Slippage (bps / side)"]')).toBeNull(); // the AFL panel has BROKERAGE only
   expect(settings.querySelector("[data-lab-more-settings]")).toBeNull();
@@ -114,20 +116,24 @@ it("Simple shows the same Results tabs as Advanced, the trades first", async () 
   await click(host.querySelector('[data-lab-action="run"]'));
   expect(host.querySelector("[data-lab-results-tabs]")).not.toBeNull();
   expect(host.querySelector("[data-lab-more]")).toBeNull();
-  expect([...host.querySelectorAll("[data-lab-results-tabs] [role=tab]")].map((t) => t.textContent)[0]).toBe("Trades");
+  expect([...host.querySelectorAll("[data-lab-results-tabs] [role=tab]")].map((t) => t.textContent)[0]).toBe("1 · Tradesheet");
 });
 
-it("Advanced restores every control and is remembered", async () => {
+it("Advanced restores every control for this visit; the page opens on Simple again", async () => {
   const host = await open();
   await click(button(host, "Advanced"));
-  expect(localStorage.getItem("lab.mode")).toBe("advanced");
+  expect(host.querySelector('[data-lab-mode="advanced"]')).not.toBeNull();
+  expect(host.querySelector(".lab-mode-help")).toBeNull(); // no explanation beside the switch
   expect([...host.querySelectorAll(".lab-tabs [role=tab]")].map((t) => t.textContent)).toContain("Customize");
-  expect(host.querySelector("[data-lab-open-optimize]")).not.toBeNull(); // Optimize beside Run backtest
+  expect(host.querySelector("[data-lab-step-optimize]")).not.toBeNull(); // Optimize on every step
   expect(host.querySelector("[data-lab-settings-tabs]")).not.toBeNull();
   expect(host.querySelector("[data-lab-node-menu]")).toBeNull(); // a plain rule is one parameter list
   await click(host.querySelector("[data-lab-param-more]"));
   expect(host.querySelector('input[aria-label="Entry 1 check bars ago"]')).not.toBeNull(); // More: bars ago, symbol, calculation
   expect(host.querySelector(".lab-rules .box-h")!.textContent).toContain("Strategy rules");
+  await unmount();
+  const again = await open();
+  expect(again.querySelector('[data-lab-mode="simple"]')).not.toBeNull(); // not remembered: a new visit starts on Simple
 });
 
 it("Simple chart opens the same searchable popup with all indicators and no library mode toggle", async () => {

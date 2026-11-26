@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, zonePairs, breakLines, breakOutputs, strongWeakLines, periodLevelLines, PERIOD_LEVELS, autoPivotPeriod, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
+import { aggregate, booleanMarkers, isBooleanOutput, linePoints, zonePairs, breakLines, breakOutputs, strongWeakLines, periodLevelLines, PERIOD_LEVELS, autoPivotPeriod, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
 import { createLabChart, syncPanes, themeColors, tint, useThemeKey, type SyncedPane } from "./charts";
 import type { LabChartApi, LabSeriesApi } from "./globals";
 import { shortName } from "./catalogue";
@@ -13,6 +13,8 @@ import { DrawRail, useDrawPrefs } from "./drawings/rail";
 import { TOOLS } from "./drawings/registry";
 import type { Bars } from "./drawings/model";
 import { CHART_TYPES, drawTimeless, MAX_SLOTS, nounOf, type ChartType } from "./timeless";
+import { PROFILE_MODES, ProfilePrimitive, profileNeedsVolume, type ProfileMode } from "./profiles";
+import { addPriceSeries, CANDLE_LIKE, isPriceStyle, PRICE_STYLES, type PriceStyle } from "./price-styles";
 import { foreignDescription, foreignAdvertised, isPair } from "./foreign-model";
 import type { InstrumentOption } from "./instruments";
 import { ChartPaneDivider } from "./ChartPaneDivider";
@@ -65,6 +67,8 @@ const outputsOf = (chip: Chip, catalogue: Catalogue) => catalogue.indicators.fin
 /** Output k's colour: its own look, else the k-th palette entry after the chip's. */
 const plotColor = (chip: Chip, index: number, out: string | undefined, k: number) => (out && chip.looks?.[out]?.color) || defaultColor(index, k);
 export interface WorkbenchProps {
+  /** Chips added with their settings already confirmed (the strategy's indicators): they do not open the Parameters window. */
+  quietKeys?: ReadonlySet<string>;
   library?: ReactNode;
   toolbar?(controls: ReactNode): ReactNode; onRange?(range: ChartRange): void;
   market: SavedMarket; ticker: string; tf: string; range: ChartRange; catalogue: Catalogue; chips: Chip[];
@@ -96,7 +100,7 @@ const PIVOT_TYPES = ["Traditional", "Fibonacci", "Woodie", "Classic", "DM", "Cam
 type Marker = { time: string; position: string; shape: string; color: string; text?: string; size?: number };
 type Disposable = NonNullable<ReturnType<typeof createLabChart>>;
 
-export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, onChipLook, instrumentLabel, comparisonOptions = [], onChipVsChange, onChipTfChange, onChipLevels, library, toolbar, onRange }: WorkbenchProps) {
+export function Workbench({ quietKeys, market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, onChipLook, instrumentLabel, comparisonOptions = [], onChipVsChange, onChipTfChange, onChipLevels, library, toolbar, onRange }: WorkbenchProps) {
   const workspaceRef = useRef<HTMLElement>(null);
   const priceRef = useRef<HTMLDivElement>(null);
   const panesRef = useRef<HTMLDivElement>(null);
@@ -145,7 +149,8 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   useEffect(() => {
     const fresh = chips.filter((c) => !seenKeys.current.has(c.key));
     fresh.forEach((c) => seenKeys.current.add(c.key));
-    if (fresh.length) { setOpenKey(fresh[fresh.length - 1].key); setLibraryOpen(false); }
+    const ask = fresh.filter((c) => !quietKeys?.has(c.key)); // added with the strategy's settings already confirmed: no window
+    if (ask.length) { setOpenKey(ask[ask.length - 1].key); setLibraryOpen(false); }
     else if (openKey && !chips.some((c) => c.key === openKey)) setOpenKey(null);
   }, [chips]); // eslint-disable-line react-hooks/exhaustive-deps
   const themeKey = useThemeKey();
@@ -156,6 +161,10 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   const [adaptations, setAdaptations] = useState<string[]>([]);
   // Chart type: Candles keep the date axis; the others are rebuilt from their indicator's daily outputs (params per type, set in the Parameters window).
   const [chartType, setChartType] = useState<ChartType>("candles");
+  // Volume / Market Profile drawn on the price pane (profiles.ts); rebuilt with the chart
+  const [profile, setProfile] = useState<ProfileMode>("off");
+  // TradingView's time-based chart types (price-styles.ts) while chartType is "candles"; Renko … Range are timeless chart types
+  const [priceStyle, setPriceStyle] = useState<PriceStyle>("candles");
   const [typeParams, setTypeParams] = useState<Partial<Record<ChartType, Record<string, number>>>>({});
   const [typeOpen, setTypeOpen] = useState(false);
   const [shown, setShown] = useState<{ slots: number; total: number } | null>(null);
@@ -197,10 +206,15 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       // daily bars only: the engine's outputs are one value per daily bar, and a resampled event would repeat over the period
       const ind = find(chartType), params = typeParams[chartType] ?? {};
       setShown(null);
-      void cachedSeries({ id: chartType, tf: "D", p: params }).then((res) => {
-        if (!live || !priceRef.current || !ind) return;
+      // Range bars are built here from the daily open/high/low/close; the other types from their engine indicator's outputs
+      const load = chartType === "range"
+        ? Promise.all(PRICE_IDS.map((id) => cachedSeries({ id, tf: "D" }))).then((parts): SeriesResponse => ({ ...parts[3], outputs: [...PRICE_IDS],
+            series: Object.fromEntries(PRICE_IDS.map((id, k) => [id, (() => { const at = new Map(parts[k].dates.map((d, j) => [d, parts[k].series[parts[k].outputs[0]]?.[j] ?? null])); return parts[3].dates.map((d) => at.get(d) ?? null); })()])) }))
+        : cachedSeries({ id: chartType, tf: "D", p: params });
+      void load.then((res) => {
+        if (!live || !priceRef.current || (!ind && chartType !== "range")) return;
         setOhlcError(null); setChipErrors({}); setForeignNotes([]); setAdaptations(res.adaptations ?? []);
-        const view = drawTimeless(priceRef.current, legendRef.current, { type: chartType, name: ind.name.replace(/\s*\(bar-aligned\)$/, ""), ticker, res, params, trades, range, onBehind: setBehind });
+        const view = drawTimeless(priceRef.current, legendRef.current, { type: chartType, name: ind ? ind.name.replace(/\s*\(bar-aligned\)$/, "") : "Range", ticker, res, params, trades, range, onBehind: setBehind });
         if (!view) return;
         disposers.push(view);
         toLatest.current = view.toLatest;
@@ -263,18 +277,15 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         chart.priceScale?.("lab-trades").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
         spans.setData(px.d.map((time, i) => (shade[i] ? { time, value: 1, color: shade[i] } : { time })));
       }
-      // TradingView-style candles at every range: filled bodies, thin wicks, up green, down red.
-      const priceSeries = chart.addCandlestickSeries({
-        upColor: colors.green, borderUpColor: colors.green, wickUpColor: colors.green,
-        downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
-      });
-      priceSeries.setData(candles(px));
-      // TradingView's default Volume: bars along the bottom fifth of the price chart, on their own scale, half-tinted by the candle's direction
       const volume = new Array<number | null>(px.d.length).fill(null);
       if (volRes) {
         const byDate = new Map(volRes.dates.map((d, k) => [d, volRes.series[volRes.outputs[0]]?.[k] ?? null]));
         daily.d.forEach((d, k) => { const v = byDate.get(d); if (typeof v === "number" && barOf[k] !== undefined) volume[barOf[k]] = (volume[barOf[k]] ?? 0) + v; });
       }
+      // the chosen TradingView chart type (candles by default: filled bodies, thin wicks, up green, down red)
+      const viewStart = rangeStart(px.d, range), viewFrom = viewStart ? Math.max(0, px.d.findIndex((d) => d >= viewStart)) : 0;
+      const priceSeries = addPriceSeries(chart, priceStyle, { ...px, v: volume }, colors, viewFrom);
+      // TradingView's default Volume: bars along the bottom fifth of the price chart, on their own scale, half-tinted by the candle's direction
       if (volume.some((v) => v !== null && v > 0)) {
         const vol = chart.addHistogramSeries?.({ priceScaleId: "vol", priceLineVisible: false, lastValueVisible: false, priceFormat: { type: "volume" } });
         chart.priceScale?.("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 }, visible: false });
@@ -526,7 +537,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     })();
     return cleanup;
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
-  }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey, typeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey, typeKey, priceStyle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const panes = timeless ? [] : chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
   // TradingView: the price chart fills the screen below the toolbar (its panes included) until its height is dragged;
@@ -567,6 +578,20 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     window.dispatchEvent(new Event("resize"));
   };
   const toggleFull = () => maximize(!full);
+  useEffect(() => {
+    const api = priceApi.current, el = priceRef.current;
+    if (profile === "off" || timeless || !api?.series.attachPrimitive || !el) return;
+    const b = barData.current, prim = new ProfilePrimitive({ d: barTimes.current, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v }, profile, themeColors(el));
+    // TradingView's TPO is a chart type: the profiles stand in for the candles, so the candles go transparent while it is on
+    const tpo = profile.startsWith("tpo") && CANDLE_LIKE.has(priceStyle) && priceStyle !== "volume_candles", clear = "rgba(0,0,0,0)", colors = themeColors(el);
+    const candleLook = (on: boolean) => api.series.applyOptions(on
+      ? { upColor: colors.green, downColor: colors.red, borderUpColor: colors.green, borderDownColor: colors.red, wickUpColor: colors.green, wickDownColor: colors.red }
+      : { upColor: clear, downColor: clear, borderUpColor: clear, borderDownColor: clear, wickUpColor: clear, wickDownColor: clear });
+    // the chart repaints a primitive only on its next change: an options update asks for that paint now
+    api.series.attachPrimitive(prim); if (tpo) candleLook(false); else api.series.applyOptions({});
+    return () => { try { api.series.detachPrimitive?.(prim); if (tpo) candleLook(true); else api.series.applyOptions({}); } catch { /* the chart was rebuilt: its series is gone */ } };
+  }, [profile, chartVersion, timeless, priceStyle]); // eslint-disable-line react-hooks/exhaustive-deps
+  const noVolume = profileNeedsVolume(profile) && !timeless && !barData.current.v.some((v) => typeof v === "number" && v > 0);
   const typeName = CHART_TYPES.find(([t]) => t === chartType)?.[1] ?? chartType, typeInd = timeless ? find(chartType) : undefined;
   const panel = <>
     <div className="lab-indicator-browser" hidden={!libraryOpen}>
@@ -619,9 +644,18 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       <path d={full ? "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" : "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"} /></svg></button>;
   const controls = <div className="lab-chart-actions" role="toolbar" aria-label="Chart workspace">
     <div className="lab-tool-group" role="group" aria-label="Chart type and indicators">
-      <label className="lab-chart-type-control"><span className="lab-control-name">Chart type</span><select aria-label="Chart type" value={chartType} onChange={(event) => { closePanel(); setChartType(event.target.value as ChartType); setTypeOpen(false); setOpenKey(null); setTool(null); }}>
-        {CHART_TYPES.map(([value, label]) => <option key={value} value={value} disabled={value !== "candles" && !find(value)?.computed}>{label}</option>)}
+      <label className="lab-chart-type-control"><span className="lab-control-name">Chart type</span><select aria-label="Chart type" value={timeless ? chartType : priceStyle} onChange={(event) => {
+        const v = event.target.value; closePanel(); setTypeOpen(false); setOpenKey(null); setTool(null);
+        if (isPriceStyle(v)) { setPriceStyle(v); setChartType("candles"); } else setChartType(v as ChartType);
+      }}>
+        {/* TradingView's order: time-based types, then the ones built from price moves alone */}
+        <optgroup label="On the date axis">{PRICE_STYLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</optgroup>
+        <optgroup label="From price moves (daily bars)">{CHART_TYPES.filter(([value]) => value !== "candles").map(([value, label]) => <option key={value} value={value} disabled={value !== "range" && !find(value)?.computed}>{label}</option>)}</optgroup>
       </select></label>
+      {!timeless && <label className="lab-chart-type-control" data-lab-profile><span className="lab-control-name">Profile</span><select aria-label="Profile" value={profile} onChange={(event) => setProfile(event.target.value as ProfileMode)}>
+        {PROFILE_MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></label>}
+      {noVolume && <span className="cap lab-profile-note" data-lab-profile-note>{ticker} has no volume: pick Market profile (TPO), which needs prices only</span>}
       {typeInd && <button type="button" className="dbtn sm" data-lab-type-params aria-expanded={typeOpen} onClick={() => { setLibraryOpen(false); setTypeOpen(true); }}>{typeName} settings</button>}
       {library && <button type="button" className="dbtn sm lab-add-indicator" title="Add or edit indicators" aria-expanded={libraryOpen} onClick={() => { if (!libraryOpen) { closePanel(); setOpenKey(null); setTypeOpen(false); } setLibraryOpen(!libraryOpen); }}><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M2 17h16M4 15V9m5 6V5m5 10v-4M2 7l5-5 5 4 6-5" /></svg>Indicators</button>}
     </div>
@@ -674,12 +708,12 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         </div>
 
       </div>
-      {onRange && <div className="lab-chart-footer" role="group" aria-label="Chart range">{RANGE_BUTTONS.map((value) => <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}>{value}</button>)}{!timeless && <span>{COPY.chartNote}</span>}</div>}
+      {onRange && <div className="lab-chart-footer" role="group" aria-label="Chart range">{RANGE_BUTTONS.map((value) => <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}>{value}</button>)}</div>}
       {panelOpen && <ChartPopup key={libraryOpen ? "library" : openKey ?? chartType} wide={libraryOpen} title={libraryOpen ? "Indicators" : "Indicator settings"} onClose={closePanel}>{panel}</ChartPopup>}
-      {timeless ? <p className="cap" data-lab-timeless-note>
-        {`${typeName} from the engine's outputs on daily bars (the values the rules use), without a date axis: hover a ${nounOf(chartType)} for its dates; the last ${nounOf(chartType)} can still change. Indicator chips, drawings and candle size apply to Candles only.`}
+      {timeless && <p className="cap" data-lab-timeless-note>
+        {`${typeName} ${chartType === "range" ? "built here from the daily open, high, low and close (each day walks open → low → high → close, or the reverse on a down day; a bar spans the same price range)" : "from the engine's outputs on daily bars (the values the rules use)"}, without a date axis: hover a ${nounOf(chartType)} for its dates; the last ${nounOf(chartType)} can still change. Indicator chips, drawings and candle size apply to Candles only.`}
         {shown && shown.total > shown.slots && ` Showing the latest ${MAX_SLOTS.toLocaleString("en-US")} of ${shown.total.toLocaleString("en-US")} ${nounOf(chartType, true)}; a larger box shows more history.`}
-      </p> : !onRange && <p className="cap">{COPY.chartNote}</p>}
+      </p>}
       {foreignNotes.map(note=><p className="cap" role="note" key={note}>{note}</p>)}
       {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
       {tf !== "D" && !timeless && <p className="cap">{COPY.inProgress(tf)}</p>}

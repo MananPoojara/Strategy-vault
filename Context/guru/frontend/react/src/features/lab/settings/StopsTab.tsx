@@ -51,7 +51,7 @@ export function StopsTab({ spec, onChange }: { spec: Spec; onChange(spec: Spec):
   const shared = (body: ReactNode) => <><fieldset className="lab-row lab-delay" disabled={!single}>{body}</fieldset><Why text={!single && ONE_INSTRUMENT} /></>;
   const immediate = ex.activate_stops_immediately ?? true;
   return <div className="lab-stops-tab" data-lab-stops-tab>
-    <p className="cap lab-stab-intro">Applied to every trade, in AmiBroker's order; the same stops as the Exit card in Your idea.</p>
+    <p className="cap lab-stab-intro">Applied to every trade, in AmiBroker's order; the same stops as the Exit card in Build strategy.</p>
     <div className="lab-row lab-stops-top">
       <ScenarioPreset spec={spec} onChange={onChange} />
       <label className="lab-check"><input type="checkbox" disabled={!single} checked={immediate}

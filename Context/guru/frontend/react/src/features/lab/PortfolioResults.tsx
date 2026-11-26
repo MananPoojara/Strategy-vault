@@ -6,6 +6,7 @@ import {linePoints} from "./bars";
 import {drawdown,ExecutionStrip,kpiItems} from "./RunResults";
 import {num,pct,int} from "./format";
 import {MetricTiles,ServerLabel} from "./ui";
+import {PortfolioLog} from "./PortfolioLog";
 import type {PortfolioRunResult} from "./types";
 import "./results.css";
 import "./portfolio.css";
@@ -31,5 +32,6 @@ export function PortfolioResults({result:r}:{result:PortfolioRunResult}){
   {!!r.foreign?.length&&<p className="cap">Signal sources: {r.foreign.map(foreignDescription).join("; ")}</p>}
   <details><summary>Cash, invested exposure and position count by session</summary><p className="cap">Equity is normalized to initial capital; cash and invested exposure below are raw {r.money.currency}, not percentages. These counts are not a holdings snapshot.</p><div className="tblwrap"><table className="tbl"><thead><tr>{["Date","Equity ×","Cash","Exposure","Positions"].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{r.dates.slice(-200).map((date,i)=>{const k=r.dates.length-Math.min(200,r.dates.length)+i;return <tr key={date}><td>{date}</td><td>{num(r.equity[k])}</td><td>{num(r.cash[k])}</td><td>{num(r.exposure[k])}</td><td>{int(r.positions[k])}</td></tr>;})}</tbody></table></div></details>
   <h3 className="box-h">Trades <small>Raw fill prices · contribution is P&amp;L / total equity at the signal</small></h3>{window.VaultReport&&<button type="button" className="dbtn sm" onClick={download}>Download portfolio CSV</button>}<div className="tblwrap"><table className="tbl"><thead><tr>{table[0].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{table.slice(1,201).map((row,i)=><tr key={i}>{row.map((v,k)=><td key={k}>{v}</td>)}</tr>)}</tbody></table></div>{r.trades.length>200&&<p className="cap">Latest 200 trades shown; CSV includes every returned trade.</p>}
+  {!!r.log?.length&&<PortfolioLog days={r.log} name={`portfolio-log-${r.from}-${r.to}.txt`}/>}
  </section>;
 }

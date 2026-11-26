@@ -74,11 +74,19 @@ services:
       VAULT_BASKET_DATA_DIR: /basket-data
       # Q39 (W2, private India engine replay): RSS ratchets with every strategy run; glibc multi-arena fragmentation is part of it. One arena cut the growth of 1,200 repeated runs 55 -> 16 MB; see authors/lanes-1120/W2-Q39.md. Env only, no calculation touched.
       MALLOC_ARENA_MAX: '1'
+      # Dated index membership (C&P databases' Aux flags, library/cp-aux); absent data leaves those universes off.
+      VAULT_CP_DATA_DIR: /cp-data
+      VAULT_AMI_DB_DIR: /ami-db
+      VAULT_PORTFOLIO_MEMORY_MB: '2048'
     volumes:
       - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
       - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'
+      - '${VAULT_CP_DATA_ROOT:-/home/server/.cache/strategy-vault/cp-membership}:/cp-data:ro'
+      # AmiBroker databases and watchlists (library/cp-aux/scripts/convert_ami_db.py); absent: no database choice
+      - '${VAULT_AMI_DB_ROOT:-/home/server/.cache/strategy-vault/ami-db}:/ami-db:ro'
     cpus: 2
     cpuset: '${VAULT_CPUSET:-0,1}'
+    # NSE 500 members by date (1,447 stocks since 2000) peaks near 1.3 GB in one run; 3g also covers Manan's Q39 limit
     mem_limit: 3g
     restart: unless-stopped
   engine-us:

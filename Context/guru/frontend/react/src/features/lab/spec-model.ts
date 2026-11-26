@@ -329,6 +329,16 @@ function ownPhrase(o: Operand, base: string, cat: Catalogue): Phrase {
   return [`${PERIOD[tf] ?? ""}${label}`, ...(slots.length ? ["(", ...slots.flatMap((s, i) => (i ? [", ", s] : [s])), ")"] : []), ...ago];
 }
 
+/** The engine's AmiBroker rule (rules.rs follow_timeframe): a side with no tf, symbol or vs of its own (a price or an indicator) beside an
+ *  indicator on a higher timeframe is read on that timeframe; its Timeframe box shows it as "Same as indicator". */
+const PRICES = new Set(["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "oc2", "volume"]);
+export function followTf(self: Operand, other: Operand | undefined): string | undefined {
+  const a = self as Record<string, unknown>, b = (other ?? {}) as Record<string, unknown>, series = (o: Record<string, unknown>) => typeof o.s === "string" && o.s !== "bars_held";
+  const free = series(a) && a.tf === undefined && a.symbol === undefined && a.vs === undefined;
+  // only an indicator leads: today's close against a past quarter's close keeps its meaning
+  return free && series(b) && !PRICES.has(b.s as string) && typeof b.tf === "string" && b.tf !== "D" ? b.tf : undefined;
+}
+
 function condPhrase(c: RuleNode, base: string, cat: Catalogue): { phrase: Phrase; when: boolean } {
   if (!isCond(c)) return { when: true, phrase: ["a rule shown only in Strategy rules"] };
   const candle = candleCount(c);
@@ -336,8 +346,13 @@ function condPhrase(c: RuleNode, base: string, cat: Catalogue): { phrase: Phrase
     `${ordinal(candle.n).replace(/^\d+/, "")} ${CANDLES[candle.kind].word} after entry`] };
   if (isSeries(c.lhs) && c.lhs.s === "bars_held" && isValue(c.rhs) && c.op === ">=")
     return { when: false, phrase: ["after ", { path: `${base}.rhs.value`, value: c.rhs.value, label: "Days held", min: 1, step: 1, integer: true }, ` ${plural("day", c.rhs.value)}`] };
-  const side = (o: Operand, slot: string) => (isSeries(o) && o.s === "bars_held" ? ["the days held"] : operandPhrase(o, `${base}.${slot}`, cat));
-  return { when: true, phrase: [...side(c.lhs, "lhs"), ` ${OPERATOR_LABELS[c.op] ?? c.op} `, ...side(c.rhs, "rhs")] };
+  // a side that follows the other side's timeframe (followTf) is named with it: "crosses above the monthly close"
+  const side = (o: Operand, slot: string, other: Operand) => {
+    if (isSeries(o) && o.s === "bars_held") return ["the days held"];
+    const tf = followTf(o, other);
+    return operandPhrase(tf ? { ...o, tf } as Operand : o, `${base}.${slot}`, cat);
+  };
+  return { when: true, phrase: [...side(c.lhs, "lhs", c.rhs), ` ${OPERATOR_LABELS[c.op] ?? c.op} `, ...side(c.rhs, "rhs", c.lhs)] };
 }
 
 const ORDER_WORDS: Record<PriceOrder["key"], string> = { limit: "limit order", stop_loss: "stop-loss", target: "profit target", trailing: "trailing stop" };

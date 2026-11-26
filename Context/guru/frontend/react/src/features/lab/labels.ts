@@ -47,7 +47,6 @@ export const COPY = {
   lead: "Pick indicators from the library, chart them on any market, turn them into entry and exit rules, then backtest and optimize. Saved strategies can be submitted to YT Strategies.",
   chartHint: "Indicators adds an indicator · click its name in the chart to open settings",
   noChips: "No indicators on the chart. Press Indicators to add one.",
-  chartNote: "Indicators are calculated from the full history, then the visible range is shown.",
   inProgress: (tf: string) => `The last ${tf === "W" ? "weekly" : tf === "M" ? "monthly" : "period"} bar is still in progress; its values can change until it closes.`,
   wmRule: "Higher-timeframe values are used only after that period closes (unless a timing option says otherwise).",
   notChecked: "Not yet checked against TradingView.",

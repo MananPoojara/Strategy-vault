@@ -8,6 +8,10 @@ pub struct Book {
     pub capital: f64, pub mode: Mode, pub max_open: usize, pub worst_rank_held: usize,
     pub rebalance: Option<usize>, pub lowest: bool, pub fill: Fill, pub exit_fill: Fill,
     pub size: Sizing, pub costs: MoneyCosts,
+    /// AmiBroker UsePrevBarEquityForPosSizing (execution.limits.prev_bar_equity): size on the equity at the close before the fill bar.
+    pub prev_bar_equity: bool,
+    /// Write AmiBroker's "Detailed log" (Ledger.log); runs only, an optimization leaves it off.
+    pub log: bool,
 }
 pub struct PTrade {
     pub lane: usize, pub signal_i: usize, pub exit_signal_i: usize, pub entry_i: usize, pub exit_i: usize,
@@ -29,7 +33,11 @@ pub struct Skipped { pub no_slot: usize, pub no_cash: usize, pub no_bar: usize, 
 pub struct Ledger {
     pub equity: Vec<f64>, pub gross_equity: Vec<f64>, pub cash: Vec<f64>, pub invested: Vec<f64>, pub positions: Vec<usize>,
     pub trades: Vec<PTrade>, pub skipped: Skipped, pub events: Vec<String>, pub costs_total: f64,
+    /// AmiBroker's Detailed log: per reference bar with activity, its lines (signals, fills, skips, open positions).
+    pub log: Vec<(usize, Vec<String>)>,
 }
+/// Detailed log lines kept per run; a longer log ends with a note (AmiBroker has no limit; this bounds the response).
+pub const MAX_LOG_LINES: usize = 200_000;
 
 struct Held {
     qty:f64, entry:MoneyFill, entry_k:usize, signal_i:usize, equity:f64, rank:usize, score:f64,
@@ -42,6 +50,8 @@ struct Candidate {
 }
 struct Account {
     cash:f64, paid:f64, held:Vec<Option<Held>>, pending:Vec<Option<PendingExit>>, marks:Vec<f64>, count:usize,
+    /// Detailed log: member names, this bar's signal lines and action lines (empty when Book.log is off).
+    names:Vec<String>, head:Vec<String>, body:Vec<String>,
 }
 fn invalid(message:impl Into<String>)->LabError {LabError::Invalid(message.into())}
 fn pulse(deadline:Instant,stop:Option<&AtomicBool>)->Result<(),LabError> {
@@ -54,29 +64,34 @@ impl Account {
         let mut invested=0.;for &m in order {if let Some(h)=&self.held[m] {invested=finite(invested+h.qty*self.marks[m],"invested value")?;}}
         Ok((invested,finite(self.cash+invested,"equity")?))
     }
+    /// Cash plus held positions at their latest marks (the entry price before a first mark): the log's Equity.
+    fn equity_now(&self)->f64 {self.cash+self.held.iter().zip(&self.marks).filter_map(|(h,m)|h.as_ref().map(|h|h.qty*if m.is_nan(){h.entry.px}else{*m})).sum::<f64>()}
+    fn skip(&mut self,b:&Book,lane:usize,why:String) {if b.log {self.body.push(format!("Skipped {}: {why}",self.names[lane]));}}
     fn open(&mut self,out:&mut Ledger,b:&Book,ln:&Lane,c:&Candidate,i:usize,k:usize,raw:f64,kind:&'static str)->Result<(),LabError> {
         if self.held[c.lane].is_some(){return Ok(());}
-        if self.count>=b.max_open {out.skipped.no_slot+=1;return Ok(());}
-        if c.qty<1. {out.skipped.no_cash+=1;return Ok(());}
+        if self.count>=b.max_open {out.skipped.no_slot+=1;self.skip(b,c.lane,format!("no free position ({} of {} open), rank {}",self.count,b.max_open,c.rank));return Ok(());}
+        if c.qty<1. {out.skipped.no_cash+=1;self.skip(b,c.lane,format!("size rounds to 0 shares, rank {}",c.rank));return Ok(());}
         let unit=ledger::fill(&b.costs,&ledger::CASH,i,raw,1.,true,true);
         let unit_cost=finite(unit.costs()-b.costs.per_order,"per-unit entry costs")?;
         let room=finite((self.cash-b.costs.per_order).max(0.)/(raw+unit_cost),"affordable quantity")?.floor();
         let mut qty=c.qty.min(room).floor();
-        if qty<1. {out.skipped.no_cash+=1;return Ok(());}
+        if qty<1. {out.skipped.no_cash+=1;self.skip(b,c.lane,format!("not enough cash ({:.2}), rank {}",self.cash,c.rank));return Ok(());}
         let mut entry=ledger::fill(&b.costs,&ledger::CASH,i,raw,qty,true,true);
         let mut debit=finite(qty*raw+entry.costs(),"entry debit")?;
         // Affine affordability solves once. At a floating-point boundary, reduce once rather than loop per share.
         if debit>self.cash {
             let reduced=qty-1.;if reduced==qty {return Err(invalid("portfolio whole-share affordability exceeds numeric precision"));}
             qty=reduced;
-            if qty<1. {out.skipped.no_cash+=1;return Ok(());}
+            if qty<1. {out.skipped.no_cash+=1;self.skip(b,c.lane,format!("not enough cash ({:.2}), rank {}",self.cash,c.rank));return Ok(());}
             entry=ledger::fill(&b.costs,&ledger::CASH,i,raw,qty,true,true);debit=finite(qty*raw+entry.costs(),"entry debit")?;
         }
         if debit>self.cash {return Err(invalid("portfolio entry would exceed available cash; no result is published"));}
         self.cash-=debit;self.paid=finite(self.paid+entry.costs(),"paid costs")?;
         self.held[c.lane]=Some(Held {qty,entry,entry_k:k,signal_i:c.signal_i,equity:c.equity,rank:c.rank,score:c.score,kind,
             position:super::simulate::PortfolioPosition::new(&ln.c,k,raw,c.signal_k,kind)});
-        self.count+=1;Ok(())
+        self.count+=1;
+        if b.log {self.body.push(format!("Enter Long, {}, Price: {raw:.2}, Shares: {qty}, Commission: {:.2}, Rank: {}, Equity {:.2}, Margin Loan: 0, Fx rate: 1",self.names[c.lane],self.held[c.lane].as_ref().unwrap().entry.costs(),c.rank,c.equity));}
+        Ok(())
     }
     fn close(&mut self,out:&mut Ledger,b:&Book,m:usize,i:usize,raw:f64,signal_i:usize,reason:String)->Result<(),LabError> {
         let Some(h)=self.held[m].take() else {self.pending[m]=None;return Ok(());};
@@ -85,7 +100,13 @@ impl Account {
         self.cash=finite(self.cash+h.qty*raw-costs,"cash after exit")?;
         if self.cash<0. {return Err(invalid("portfolio declared exit costs exhaust available cash; no result is published"));}
         self.paid=finite(self.paid+costs,"paid costs")?;
-        self.pending[m]=None;self.count-=1;out.trades.push(finish(m,h,i,raw,signal_i,reason,Some(exit)));Ok(())
+        self.pending[m]=None;self.count-=1;let t=finish(m,h,i,raw,signal_i,reason,Some(exit));
+        if b.log {
+            let basis=t.qty*t.entry_px+t.entry_cost;
+            self.body.push(format!("Exit Long, {}, Price: {raw:.2}, (Avg. exit pr. {raw:.2}), Shares: {}, Commission: {:.2}, (Total comm.: {:.2}), Long trade profit {:.2} ({:.2} %), Entry rank:{}, Equity: {:.2}, Fx rate: 1, Reason: {}",
+                self.names[m],t.qty,t.exit_cost,t.entry_cost+t.exit_cost,t.pnl(),100.*t.pnl()/basis,t.rank,self.equity_now(),t.reason));
+        }
+        out.trades.push(t);Ok(())
     }
 }
 fn finish(lane:usize,h:Held,i:usize,raw:f64,signal_i:usize,reason:String,exit:Option<MoneyFill>)->PTrade {
@@ -107,6 +128,7 @@ fn quantity(b:&Book,ln:&Lane,k:usize,equity:f64)->Result<(f64,f64),LabError> {
     Ok((finite(qty,"requested quantity")?.floor().max(0.),finite(requested,"requested ranking size")?))
 }
 fn candidate(ln:&Lane,m:usize,i:usize,k:usize,equity:f64,b:&Book)->Result<Option<Candidate>,LabError> {
+    if !ln.m.can_enter(k){return Ok(None);} // not in its dated list (C&P Aux) on the signal bar
     let score=ln.score.as_ref().map_or(0.,|s|s[k]);if !score.is_finite(){return Ok(None);}
     let (qty,requested)=quantity(b,ln,k,equity)?;
     Ok(Some(Candidate {lane:m,signal_i:i,signal_k:k,equity,qty,requested,score,key:if b.lowest {-score}else{score},rank:0}))
@@ -117,8 +139,8 @@ fn rank(candidates:&mut[Candidate],lanes:&[Lane]) {
 }
 fn check_inputs(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:Instant,stop:Option<&AtomicBool>)->Result<Vec<usize>,LabError> {
     pulse(deadline,stop)?;
-    if lanes.is_empty()||lanes.len()>super::rules::MAX_UNIVERSE||from>to||to>=dates.len(){return Err(invalid("portfolio members/window are outside their bounds"));}
-    if !b.capital.is_finite()||b.capital<=0.||b.capital>super::rules::MAX_CAPITAL||b.max_open==0||b.max_open>super::rules::MAX_OPEN||b.worst_rank_held<b.max_open||b.worst_rank_held>super::rules::MAX_UNIVERSE||b.rebalance.is_some_and(|r|!(1..=4).contains(&r)){return Err(invalid("portfolio capital/slots/rebalance are outside their bounds"));}
+    if lanes.is_empty()||lanes.len()>super::rules::MAX_UNIVERSE&&lanes.iter().any(|l|l.m.eligible.is_none())||from>to||to>=dates.len(){return Err(invalid("portfolio members/window are outside their bounds"));}
+    if !b.capital.is_finite()||b.capital<=0.||b.capital>super::rules::MAX_CAPITAL||b.max_open==0||b.max_open>super::rules::MAX_OPEN||b.worst_rank_held<b.max_open||b.worst_rank_held>super::rules::MAX_RANK||b.rebalance.is_some_and(|r|!(1..=4).contains(&r)){return Err(invalid("portfolio capital/slots/rebalance are outside their bounds"));}
     super::foreign::validate_dates(dates,"portfolio reference calendar")?;
     let c=&b.costs;
     if [c.per_order,c.per_unit,c.pct,c.slip_bps,c.slip_ticks].iter().any(|v|!v.is_finite()||*v<0.)||c.taxes.iter().any(|t|!t.1.is_finite()||t.1<0.)||c.borrow_pct_year.is_some_and(|v|!v.is_finite()||v<0.) {return Err(invalid("portfolio costs must be finite and nonnegative"));}
@@ -135,7 +157,7 @@ fn check_inputs(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadli
         let x=&ln.c.exec;
         if x.short||ln.c.other.is_some()||ln.c.has_order()||x.scale_in.is_some()||!x.take_profits.is_empty()||x.cooldown.is_some()||x.max_trades.is_some()||x.risk!=super::rules::Risk::default()||x.futures.is_some()||x.delay!=1 {return Err(LabError::Unsupported("portfolio execution contains a setting not supported by its long cash model".into()));}
         if matches!(b.size,Sizing::RiskPct(_))&&x.stop_loss.is_none(){return Err(invalid("portfolio risk sizing requires exit.stop_loss"));}
-        if b.mode==Mode::Rotation&&(ln.score.is_none()||!ln.c.exit.is_empty()||x.stop_loss.is_some()||x.target.is_some()||x.trailing.is_some()||x.trail_activate.is_some()||x.breakeven.is_some()){return Err(LabError::Unsupported("rotation requires score and rank exits only".into()));}
+        if b.mode==Mode::Rotation&&(ln.score.is_none()||!ln.c.exit.is_empty()||x.stop_loss.is_some()||x.target.is_some()||x.trailing.is_some()||x.trail_activate.is_some()||x.breakeven.is_some()||x.dual_atr.is_some()||x.dual_line.is_some()){return Err(LabError::Unsupported("rotation requires score and rank exits only".into()));}
         for (i,at) in ln.m.at.iter().enumerate() {
             if i%1024==0{pulse(deadline,stop)?;}
             if let Some(k)=at {
@@ -151,8 +173,9 @@ fn check_inputs(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadli
 pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:Instant,stop:Option<&AtomicBool>)->Result<Ledger,LabError> {
     let order=check_inputs(lanes,b,dates,from,to,deadline,stop)?;
     let n=to-from+1;
-    let mut out=Ledger {equity:Vec::with_capacity(n),gross_equity:Vec::with_capacity(n),cash:Vec::with_capacity(n),invested:Vec::with_capacity(n),positions:Vec::with_capacity(n),trades:vec![],skipped:Skipped::default(),events:vec![],costs_total:0.};
-    let mut a=Account {cash:b.capital,paid:0.,held:lanes.iter().map(|_|None).collect(),pending:lanes.iter().map(|_|None).collect(),marks:vec![f64::NAN;lanes.len()],count:0};
+    let mut out=Ledger {equity:Vec::with_capacity(n),gross_equity:Vec::with_capacity(n),cash:Vec::with_capacity(n),invested:Vec::with_capacity(n),positions:Vec::with_capacity(n),trades:vec![],skipped:Skipped::default(),events:vec![],costs_total:0.,log:vec![]};
+    let mut log_lines=0usize;
+    let mut a=Account {cash:b.capital,paid:0.,held:lanes.iter().map(|_|None).collect(),pending:lanes.iter().map(|_|None).collect(),marks:vec![f64::NAN;lanes.len()],count:0,names:lanes.iter().map(|l|l.m.ticker.clone()).collect(),head:vec![],body:vec![]};
     // Coverage end is a declared historical adaptation, not the final quote BEFORE a selected window's holiday.
     let terminal:Vec<_>=lanes.iter().map(|ln| {
         pulse(deadline,stop)?;
@@ -191,13 +214,16 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
         }}}
         if b.mode==Mode::Signals {
             for &m in &order {pulse(deadline,stop)?;if a.held[m].is_none(){deferred[m]=None;} // a stop or data end closed it first
-                let (Some(k),Some(h))=(lanes[m].m.at[i],a.held[m].as_ref()) else {continue;};
+                let (Some(k),Some(h))=(lanes[m].m.at[i],a.held[m].as_mut()) else {continue;};
                 if a.pending[m].is_some()||k-h.entry_k<lanes[m].c.exec.min_bars {continue;}
-                let why=deferred[m].take().or_else(||lanes[m].c.exit.iter().find(|r|r.holds(k,Some(super::series::At::bar(h.entry_k)))).map(|r|r.label.clone()));
-                if let Some(reason)=why {match b.exit_fill {
+                let at=super::series::At {held:h.entry_k,entry:h.entry_k,px:h.entry.px};let entry_i=h.entry.i;
+                // rule exits first, then exit.dual_atr / exit.dual_line, at the rule exits' fill (simulate.rs, in the same order)
+                let why=deferred[m].take().or_else(||lanes[m].c.exit.iter().find(|r|r.holds(k,Some(at))).map(|r|r.label.clone()))
+                    .or_else(||h.position.dual_exit(&lanes[m].c,&lanes[m].m.frames.d,k).map(String::from));
+                if let Some(reason)=why {if b.log {a.head.push(format!("Exit signal: {}=Sell ({reason})",a.names[m]));} match b.exit_fill {
                     Fill::Close if locked(&lanes[m],k)&&i<to=>deferred[m]=Some(reason),
                     Fill::Close=>{a.close(&mut out,b,m,i,lanes[m].m.frames.d.close[k],i,reason)?;exited[m]=true;},
-                    Fill::NextOpen if i<to=>a.pending[m]=Some(PendingExit {signal_i:i,entry_i:h.entry.i,reason}),_=>{},
+                    Fill::NextOpen if i<to=>a.pending[m]=Some(PendingExit {signal_i:i,entry_i,reason}),_=>{},
                 }}
             }
         }
@@ -215,16 +241,21 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
         }
         // Observe completed highs only AFTER price checks and BEFORE any close-filled new position exists.
         for &m in &order {pulse(deadline,stop)?;if let (Some(k),Some(h))=(lanes[m].m.at[i],a.held[m].as_mut()){h.position.observe_completed_bar(&lanes[m].m.frames.d,k);}}
-        let (_,signal_equity)=a.value(&order)?;
+        let (_,mut signal_equity)=a.value(&order)?;
+        // previous-bar equity: a close fill sizes on the prior bar's closing equity; a next-open fill's prior bar is this one
+        if b.prev_bar_equity&&b.fill==Fill::Close {signal_equity=out.equity.last().copied().unwrap_or(b.capital);}
         if i<to&&(b.mode==Mode::Signals||rebalance) {
             let mut entries=vec![];
             if b.mode==Mode::Signals {
+                let mut outside=vec![];
                 for &m in &order {pulse(deadline,stop)?;let Some(k)=lanes[m].m.at[i] else {continue;};
                     let flat=a.held[m].is_none()||(b.fill==Fill::NextOpen&&a.pending[m].is_some());
                     if !flat||(b.fill==Fill::Close&&exited[m])||!fires(&lanes[m],k){continue;}
+                    if b.log&&!lanes[m].m.can_enter(k){outside.push(a.names[m].as_str());}
                     if let Some(c)=candidate(&lanes[m],m,i,k,signal_equity,b)?{entries.push(c);}
                 }
                 rank(&mut entries,lanes);
+                if b.log&&!outside.is_empty(){let line=format!("Buy ignored, not in the list that day (Aux): {}",outside.join(", "));a.head.push(line);}
             } else {
                 // Preserve ranks in the full eligible universe, including held/non-edge names.
                 for mut c in ranked {let m=c.lane;let k=c.signal_k;
@@ -233,6 +264,8 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
                     let (qty,requested)=quantity(b,&lanes[m],k,signal_equity)?;c.qty=qty;c.requested=requested;c.equity=signal_equity;entries.push(c);
                 }
             }
+            // AmiBroker: "Entry signals(score):" in rank order; without a rank score its PositionScore is 1
+            if b.log&&!entries.is_empty(){let line=format!("Entry signals(score): {}",entries.iter().map(|c|format!("{}=Buy({})",a.names[c.lane],if lanes[c.lane].score.is_some(){format!("{:.4}",c.score)}else{"1".into()})).collect::<Vec<_>>().join(", "));a.head.insert(0,line);}
             match b.fill {
                 Fill::NextOpen=>queued=entries,
                 Fill::Close=>for c in entries {pulse(deadline,stop)?;let m=c.lane;let k=c.signal_k;
@@ -244,6 +277,13 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
         let (invested,equity)=a.value(&order)?;
         if equity<=0. {return Err(invalid("calculation_unavailable: nonpositive portfolio equity; no result is published"));}
         if a.cash<0.||a.count>b.max_open||invested>equity+1e-8*equity.abs().max(1.){return Err(invalid("portfolio cash/slot accounting identity failed; no result is published"));}
+        if b.log&&(!a.head.is_empty()||!a.body.is_empty()) {
+            let mut lines=std::mem::take(&mut a.head);lines.append(&mut a.body);
+            let held:Vec<_>=order.iter().filter_map(|&m|a.held[m].as_ref().map(|h|format!("{} (+{})",a.names[m],h.qty))).collect();
+            lines.push(format!("{} Open Positions: {}, Market Value: {invested:.2}, Equity: {equity:.2}, Cash: {:.2}",held.len(),held.join(", "),a.cash));
+            log_lines+=lines.len();
+            if log_lines<=MAX_LOG_LINES {out.log.push((i,lines));} else if out.log.last().is_none_or(|l|l.0!=usize::MAX) {out.log.push((usize::MAX,vec![format!("Log stopped after {MAX_LOG_LINES} lines; use a shorter window for the rest")]));}
+        }
         out.cash.push(a.cash);out.invested.push(invested);out.equity.push(equity);out.gross_equity.push(finite(equity+a.paid,"same-fills gross equity")?);out.positions.push(a.count);
     }
     pulse(deadline,stop)?;
@@ -262,7 +302,7 @@ pub(crate) mod tests {
         let all=dates(n);let keep:Vec<_>=(0..n).filter(|i|!gaps.contains(i)).collect();
         let mut d=from_ohlc(&keep.iter().map(|&i|{let o=base+i as f64;(o,o+1.,o-1.,o+0.5)}).collect::<Vec<_>>());
         d.date=keep.iter().map(|&i|all[i].clone()).collect();let at=calendar_map(&all,&d.date);
-        Member {ticker:t.into(),kind:"individual_stock",frames:Frames::new(d),at}
+        Member {ticker:t.into(),kind:"individual_stock",frames:Frames::new(d),at,eligible:None}
     }
     pub(crate) fn lane<'a>(m:&'a Member,on:&[usize],off:&[usize],score:Option<Vec<f64>>)->Lane<'a> {
         let sig=|r:&[usize]| {let mut v=vec![0.;m.frames.d.len()];for &i in r {if let Some(k)=m.at[i] {v[k]=1.;}} v};
@@ -270,7 +310,7 @@ pub(crate) mod tests {
         Lane {m,c:Compiled::new(vec![rule(sig(on))],if off.is_empty(){vec![]}else{vec![rule(sig(off))]}),score}
     }
     pub(crate) fn book(max_open:usize,size:Sizing)->Book {
-        Book {capital:10_000.,mode:Mode::Signals,max_open,worst_rank_held:max_open,rebalance:None,lowest:false,fill:Fill::NextOpen,exit_fill:Fill::NextOpen,size,costs:MoneyCosts::default()}
+        Book {capital:10_000.,mode:Mode::Signals,max_open,worst_rank_held:max_open,rebalance:None,lowest:false,fill:Fill::NextOpen,exit_fill:Fill::NextOpen,size,costs:MoneyCosts::default(),prev_bar_equity:false,log:true}
     }
     pub(crate) fn go(lanes:&[Lane],b:&Book,n:usize)->Ledger {let l=run(lanes,b,&dates(n),0,n-1,Instant::now()+Duration::from_secs(30),None).unwrap();invariants(&l,b);l}
     pub(crate) fn invariants(l:&Ledger,b:&Book) {
@@ -281,6 +321,24 @@ pub(crate) mod tests {
     fn rotation(max:usize,worst:usize,period:Option<usize>)->Book {Book {mode:Mode::Rotation,worst_rank_held:worst,rebalance:period,..book(max,Sizing::PctEquity(100./max as f64))}}
     fn constant(t:&str,price:f64,n:usize)->Member {let mut m=member(t,price,n,&[]);m.frames.d=from_ohlc(&vec![(price,price+1.,price-1.,price);n]);m.frames.d.date=dates(n);m.frames=Frames::new(m.frames.d);m}
 
+    #[test] fn detailed_log_lists_signals_fills_skips_and_open_positions_like_amibroker() {
+        let (a,b)=(member("A",100.,10,&[]),member("B",50.,10,&[]));
+        let l=go(&[lane(&a,&[2],&[5],None),lane(&b,&[2],&[],None)],&close_book(1,Sizing::PctEquity(50.)),10);
+        let day=|i:usize|l.log.iter().find(|d|d.0==i).map(|d|d.1.clone()).unwrap_or_default();
+        assert_eq!(day(2),["Entry signals(score): A=Buy(1), B=Buy(1)","Enter Long, A, Price: 102.50, Shares: 48, Commission: 0.00, Rank: 1, Equity 10000.00, Margin Loan: 0, Fx rate: 1",
+            "Skipped B: no free position (1 of 1 open), rank 2","1 Open Positions: A (+48), Market Value: 4920.00, Equity: 10000.00, Cash: 5080.00"]);
+        assert_eq!(day(5)[..2],["Exit signal: A=Sell (rule)".to_string(),"Exit Long, A, Price: 105.50, (Avg. exit pr. 105.50), Shares: 48, Commission: 0.00, (Total comm.: 0.00), Long trade profit 144.00 (2.93 %), Entry rank:1, Equity: 10144.00, Fx rate: 1, Reason: rule".to_string()]);
+        assert!(day(3).is_empty(),"a bar with no activity is not logged");
+        let mut quiet=close_book(1,Sizing::PctEquity(50.));quiet.log=false;
+        assert!(go(&[lane(&a,&[2],&[5],None)],&quiet,10).log.is_empty());
+    }
+    #[test] fn previous_bar_equity_sizes_a_close_fill_on_the_prior_close() {
+        let (a,b)=(member("A",100.,10,&[]),member("B",50.,10,&[]));
+        let qty=|prev:bool|{let mut bk=close_book(2,Sizing::PctEquity(100.));bk.prev_bar_equity=prev;
+            let l=go(&[lane(&a,&[1],&[3],None),lane(&b,&[3],&[],None)],&bk,10);l.trades.iter().find(|t|t.lane==1).unwrap().qty};
+        // A: 98 shares at 101.5, cash 53. Bar 3 equity 53 + 98 × 103.5 = 10196 → B 190 at 53.5; bar 2's 10098 → 188
+        assert_eq!((qty(false),qty(true)),(190.,188.));
+    }
     #[test] fn dead_stock_sells_a_member_whose_data_ends_on_the_final_bar_at_its_close() {
         let m=member("A",100.,10,&[]);
         let open=go(&[lane(&m,&[2],&[],None)],&close_book(1,Sizing::Full),10);
@@ -294,6 +352,20 @@ pub(crate) mod tests {
         m.frames.d=from_ohlc(&rows);m.frames.d.date=dates(10);m.frames=Frames::new(m.frames.d);
         let exit=|defer:bool|{let mut ln=lane(&m,&[2],&[5],None);ln.c.exec.defer_exit_on_circuit=defer;go(&[ln],&close_book(1,Sizing::Full),10).trades[0].exit_i};
         assert_eq!((exit(false),exit(true)),(5,6));
+    }
+    #[test] fn dual_atr_and_dual_line_exit_a_member_exactly_as_the_single_instrument_run() {
+        // an oscillating, rising member: the Dual ATR stops and the Dual Line levels are hit many times
+        let n=80;let px:Vec<(f64,f64,f64,f64)>=(0..n).map(|i|{let c=100.+10.*(i as f64*0.45).sin()+0.3*i as f64;(c-0.5,c+1.5,c-1.5,c)}).collect();
+        let mut m=member("A",100.,n,&[]);let mut d=from_ohlc(&px);d.date=dates(n);m.frames=Frames::new(d);
+        for exit in [r#"{"any":[],"dual_atr":{"initial":{"period":3,"mult":1},"favour":{"period":3,"mult":2}}}"#,r#"{"any":[],"dual_line":{"initial":{"value":98},"favour":{"value":108}}}"#] {
+            let spec=crate::lab::rules::parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":0}}}}]}},"exit":{exit}}}"#)).unwrap();
+            let c=crate::lab::series::compile(&spec,&m.frames,&mut crate::lab::series::Cache::new()).unwrap();
+            let single:Vec<_>=crate::lab::simulate::simulate(&c,&m.frames.d,0,n-1).into_iter().filter(|t|!t.open).map(|t|(t.legs[0].i,t.exit_i,t.reason)).collect();
+            let l=go(&[Lane {m:&m,c,score:None}],&book(1,Sizing::PctEquity(100.)),n);
+            let port:Vec<_>=l.trades.iter().filter(|t|!t.open).map(|t|(t.entry_i,t.exit_i,t.reason.clone())).collect();
+            assert!(single.len()>=3&&single.iter().all(|t|t.2.starts_with("exit.dual")),"{exit}: {single:?}");
+            assert_eq!(port,single,"{exit}");
+        }
     }
     #[test] fn one_member_uses_identifiable_fills_and_signal_close_quantity() {
         let m=member("A",100.,10,&[]);let lanes=[lane(&m,&[2],&[5],None)];let l=go(&lanes,&book(1,Sizing::PctEquity(50.)),10);let t=&l.trades[0];
@@ -494,7 +566,7 @@ pub(crate) mod tests {
                         let o=d.open[*k]*scale;let c=(d.close[*k]+((r*(j+2))%9) as f64-4.)*scale;
                         d.open[*k]=o;d.close[*k]=c;d.high[*k]=d.high[*k].mul_add(scale,3.).max(o).max(c)+1.;d.low[*k]=(d.low[*k]*scale-3.).min(o).min(c)-1.;
                     }}
-                    Member {ticker:m.ticker.clone(),kind:m.kind,frames:Frames::new(d),at:m.at.clone()}
+                    Member {ticker:m.ticker.clone(),kind:m.kind,frames:Frames::new(d),at:m.at.clone(),eligible:m.eligible.clone()}
                 }).collect();
                 let changed_lanes=causal_lanes(&changed,mode,n);let part=go(&changed_lanes,&cfg,n);
                 assert_eq!(&full.equity[..=cut],&part.equity[..=cut],"{mode:?}/{fill:?} net through{cut}");
@@ -529,7 +601,7 @@ pub(crate) mod tests {
             let n=10;let original=[member("A",100.,n,&[]),member("B",200.,n,if missing {&[3]}else{&[]})];
             let cfg=Book {capital:1_000_000.,..book(2,Sizing::PctEquity(1.))};
             let ls:Vec<_>=original.iter().map(|m|lane(m,&[2],&[6],Some(vec![1.;m.frames.d.len()]))).collect();let full=go(&ls,&cfg,n);
-            let altered:Vec<_>=original.iter().map(|m| {let mut d=m.frames.d.clone();if let Some(k)=m.at[3] {d.open[k]*=8.;d.close[k]*=7.;d.high[k]*=9.;d.low[k]*=6.;}Member {ticker:m.ticker.clone(),kind:m.kind,frames:Frames::new(d),at:m.at.clone()}}).collect();
+            let altered:Vec<_>=original.iter().map(|m| {let mut d=m.frames.d.clone();if let Some(k)=m.at[3] {d.open[k]*=8.;d.close[k]*=7.;d.high[k]*=9.;d.low[k]*=6.;}Member {ticker:m.ticker.clone(),kind:m.kind,frames:Frames::new(d),at:m.at.clone(),eligible:m.eligible.clone()}}).collect();
             let ls2:Vec<_>=altered.iter().map(|m|lane(m,&[2],&[6],Some(vec![1.;m.frames.d.len()]))).collect();let part=go(&ls2,&cfg,n);
             let entries=|l:&Ledger,ls:&[Lane]|l.trades.iter().map(|t|(ls[t.lane].m.ticker.clone(),t.signal_i,t.entry_i,t.qty,t.rank)).collect::<Vec<_>>();
             let mut expected=vec![("A".into(),2,3,97.,1)];if !missing {expected.push(("B".into(),2,3,49.,2));}

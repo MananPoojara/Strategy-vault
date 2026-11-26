@@ -1,11 +1,8 @@
 .lab-portfolio>details{margin-top:10px}.lab-portfolio summary{cursor:pointer;color:var(--ink2);font-size:13px}.lab-portfolio details>.lab-row{margin-top:10px;flex-wrap:wrap;gap:8px}.lab-portfolio select[multiple]{min-height:100px;max-width:300px}.lab-portfolio .lab-row{align-items:flex-start}.lab-portfolio-result .tblwrap{margin-top:12px}.lab-portfolio-series{display:grid;grid-template-columns:3fr 2fr;gap:14px}@media(max-width:850px){.lab-portfolio-series{grid-template-columns:1fr}}
 
-/* Finish for Settings › Portfolio tab: the member list matches the other fields; the summary reads as a link-like fold. */
+/* Finish for Settings › Portfolio tab: the member list matches the other fields. */
 .lab-more-settings .lab-portfolio select[multiple] { padding: 4px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); font: 500 13px var(--font); }
 .lab-more-settings .lab-portfolio select[multiple]:focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
-.lab-more-settings .lab-portfolio summary { font-weight: 600; }
-.lab-more-settings .lab-portfolio summary:hover { color: var(--ink); }
-.lab-more-settings .lab-portfolio .rnote { max-width: 78ch; font-size: 12.5px; line-height: 1.5; }
 
 /* Portfolio result: wide tables scroll inside their own frame (dates and prices stay on one line); the trades heading starts a section. */
 .lab-page[data-lab-page] .lab-portfolio-result .tblwrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); }
@@ -15,3 +12,117 @@
 .lab-page[data-lab-page] .lab-portfolio-result > details > summary { cursor: pointer; }
 .lab-page[data-lab-page] .lab-portfolio-result > h3.box-h { margin: 20px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
 .lab-page[data-lab-page] .lab-portfolio-result > h3.box-h + .dbtn { margin-bottom: 4px; }
+
+/* Detailed log: AmiBroker's monospace lines, scrolling inside their own frame. */
+.lab-page[data-lab-page] .lab-portfolio-result .lab-portfolio-log .lab-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 8px 0; }
+.lab-page[data-lab-page] .lab-portfolio-result .lab-portfolio-log pre { max-height: 520px; overflow: auto; margin: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); color: var(--ink); font: 400 12px/1.55 "IBM Plex Mono", monospace; white-space: pre; }
+
+/* Settings › Portfolio: Backtest on, then the portfolio's Watchlist / Ranking / Positions as underlined tabs (the Results tabs'
+   look) over the house setting cards (colour-pass.css section 4). No card around the tabs: the rail panel is already the card. */
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.lab-portfolio-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.lab-portfolio-mode-h { font: 600 14px var(--font); color: var(--ink); }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs { border: 0; border-radius: 0; background: none; min-width: 0; }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stabs { display: flex; gap: 4px; padding: 0; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; background: none; overflow-x: auto; }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stabs [role=tab] {
+  margin: 0 0 -1px; padding: 10px 14px 9px; border: 0; border-radius: 0; background: none; color: var(--ink2); font: 600 14px var(--font); white-space: nowrap;
+  box-shadow: inset 0 -2px transparent; transition: color 150ms ease, box-shadow 150ms ease;
+}
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stabs [role=tab]:hover { color: var(--ink); box-shadow: inset 0 -2px var(--steel); }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stabs [role=tab][aria-selected=true] { color: var(--ink); box-shadow: inset 0 -2px var(--blue); }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stabs [role=tab]:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: -2px; }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stab-panel { padding: 16px 0 0; border: 0; background: none; }
+@media (prefers-reduced-motion: reduce) { :root .lab-page[data-lab-page] .lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stabs [role=tab] { transition: none; } }
+/* inside a card: a select row keeps its value readable (watchlist names run long), the Aux meaning sits after its label */
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio .lab-sgroup label.dfield select { min-width: 22ch; max-width: min(100%, 44ch); }
+:root .lab-page[data-lab-page] .lab-ami .lab-portfolio .lab-sgroup label.lab-check .cap { margin-left: 4px; color: var(--ink2); font-size: 13px; }
+.lab-portfolio-score { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
+/* Vault's own lists: one row per list, like a watchlist */
+.lab-watchlist { display: grid; gap: 4px; margin: 10px 0 4px; }
+.lab-watch-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); cursor: pointer; font-size: 14px; }
+.lab-watch-row:has(input:checked) { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 7%, var(--card)); }
+.lab-watch-row:has(input:focus-visible) { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: 1px; }
+.lab-watch-row.off { opacity: .55; cursor: not-allowed; }
+.lab-watch-row .n { font-variant-numeric: tabular-nums; color: var(--ink2); font-size: 13px; }
+@media (max-width: 600px) { .lab-watch-row { grid-template-columns: auto minmax(0, 1fr); } .lab-watch-row > .cap, .lab-watch-row > .n { grid-column: 2; } }
+
+/* Strategy settings › Portfolio: the first card in both views, styled as the Backtest parameters card below it (colour-pass.css
+   section 4). Inside it nothing is a card again: the single-instrument and portfolio-level fields sit flat, flowing across like
+   Backtest parameters, and the Watchlist / Ranking cards lose their shadow. */
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami {
+  margin: 0 0 20px; border: 1px solid var(--cp-line); border-radius: 12px; background: var(--card); overflow: clip;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 18px -12px color-mix(in srgb, var(--blue) 50%, transparent);
+}
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami > .lab-portfolio-card-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; padding: 10px 16px; background: var(--cp-tint); border-bottom: 1px solid var(--cp-line); color: var(--blue); font: 700 15px/1.4 var(--font); }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami > .lab-portfolio-card-h > .cap { color: var(--ink2); font: 400 13px var(--font); }
+.lab-portfolio-card-body { display: grid; gap: 20px; padding: 16px 16px 14px; min-width: 0; }
+.lab-portfolio-card-body .lab-portfolio-mode { gap: 10px 14px; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > legend {
+  float: none; width: auto; margin: 0 0 2px; padding: 0; border: 0; background: none; color: var(--ink2); font: 600 13px var(--font);
+}
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > .lab-row {
+  /* Backtest parameters' own grid (colour-pass.css), so the columns line up with the card below; each field takes two columns */
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); column-gap: 28px; align-items: start;
+}
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > .lab-row > label { grid-column: span 2; }
+@media (max-width: 720px) { :root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > .lab-row > label { grid-column: auto; } }
+/* the cards share the Run bar's edges: no extra inset for the settings below it */
+:root .lab-page[data-lab-page] .lab-settings-body > :is(.lab-basics, .lab-more-settings) { padding-inline: 0; }
+:root .lab-page[data-lab-page] .lab-settings-body > .lab-basics { padding-top: 0; }
+/* one instrument: the always-on zero-volume box is last and takes one column, so all three fields share one row */
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > .lab-row > label:has([aria-label="Disable trade size limit when bar volume is zero"]) { order: 1; grid-column: span 1; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > .lab-row > :not(label) { order: 2; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > .lab-row > :not(label) { grid-column: 1 / -1; margin: 8px 0 0; color: var(--ink2); font-size: 13px; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami fieldset.lab-fieldset > p.cap { margin: 8px 0 0; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-sgroup { box-shadow: none; }
+
+/* Strategy settings header: title left, the view switch and the run buttons right, one row frozen under the step bar */
+:root .lab-page[data-lab-page] .lab-run-bar.lab-settings-top {
+  justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 12px 16px; margin: 0 0 20px; padding: 10px 12px 10px 18px; background: var(--card);
+}
+:root .lab-page[data-lab-page] .lab-run-bar.lab-settings-top > h2.box-h { margin: 0 auto 0 0; padding: 0; border: 0; font-size: 18px; }
+:root .lab-page[data-lab-page] .lab-run-bar.lab-settings-top > .lab-settings-aside { display: inline-flex; align-items: center; padding-right: 16px; border-right: 1px solid var(--cp-line); }
+@media (max-width: 600px) { :root .lab-page[data-lab-page] .lab-run-bar.lab-settings-top > .lab-settings-aside { padding-right: 0; border-right: 0; } }
+/* the box is checked and greyed, and its title says always on; the caption would only wrap the narrow last column */
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami label:has([aria-label="Disable trade size limit when bar volume is zero"]) > .cap { display: none; }
+/* AmiBroker settings heading on the cards' left edge, with the same 20px above it as between the cards */
+:root .lab-page[data-lab-page] .lab-settings-body > .lab-more-settings { margin-top: 20px; padding-top: 0; border-top: 0; }
+:root .lab-page[data-lab-page] .lab-settings-body > .lab-more-settings > .lab-ami-h { padding: 0 0 10px; }
+
+/* Portfolio card › Watchlist / Ranking: the groups sit side by side on a grid; the Database group holding Vault's long list takes the
+   full width and its rows flow in two columns, each row's kind and size in fixed columns so they line up down the list */
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-portfolio > .lab-settings-tabs > .lab-stab-panel:has(> .lab-sgroup) {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; align-items: start; columns: auto;
+}
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-stab-panel > .lab-sgroup { margin: 0; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-stab-panel > :not(.lab-sgroup), :root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-stab-panel > .lab-sgroup:has(.lab-watchlist) { grid-column: 1 / -1; }
+/* a select sits next to its label, not across the card */
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-sgroup label.dfield { display: grid; grid-template-columns: 12ch minmax(0, max-content); justify-content: start; column-gap: 16px; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-sgroup label.dfield select { min-width: 30ch; max-width: min(100%, 62ch); }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-sgroup label.dfield select[aria-label="Database"] { min-width: 52ch; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-watchlist { grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 6px 16px; margin: 12px 0 6px; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-watch-row { grid-template-columns: auto minmax(0, 1fr) 11ch minmax(11ch, max-content); min-height: 40px; padding: 6px 12px; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-watch-row > :is(.n, .cap) { white-space: nowrap; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-watch-row > .n { text-align: right; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-watch-row > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-sgroup label.dfield select[multiple] { min-width: 44ch; min-height: 180px; padding: 4px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); font: 500 13px var(--font); }
+:root .lab-page[data-lab-page] .lab-portfolio-card.lab-ami .lab-sgroup label.dfield:has(select[multiple]) { align-items: start; padding-top: 10px; }
+
+/* Backtest parameters › Turnover filter: a small Years button beside the select opens the year-wise minimums in a popup */
+:root .lab-page[data-lab-page] .lab-gate-with-btn { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:root .lab-page[data-lab-page] .lab-gate-with-btn > label.dfield { flex: 1; min-width: 0; }
+:root .lab-page[data-lab-page] .lab-turnover-btn { flex: none; min-height: 34px; padding: 0 10px; }
+:root .lab-page[data-lab-page] .lab-chart-popup:has(.lab-turnover-years) { width: min(820px, calc(100% - 24px)); }
+:root .lab-page[data-lab-page] .lab-turnover-years { display: grid; gap: 10px; padding: 4px 16px 16px; }
+:root .lab-page[data-lab-page] .lab-turnover-years > p.cap { margin: 0; color: var(--ink2); font-size: 13px; }
+:root .lab-page[data-lab-page] .lab-turnover-years ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+:root .lab-page[data-lab-page] .lab-turnover-years li { position: relative; display: grid; gap: 4px; padding: 6px 8px 8px; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); }
+:root .lab-page[data-lab-page] .lab-turnover-years li > span { color: var(--ink2); font-size: 12px; }
+:root .lab-page[data-lab-page] .lab-basics .lab-sgroup .lab-turnover-years.lab-turnover-years label.dfield { display: block; min-height: 0; margin: 0; padding: 0; border: 0; }
+:root .lab-page[data-lab-page] .lab-basics .lab-sgroup .lab-turnover-years.lab-turnover-years li label.dfield input { width: 100%; min-height: 30px; font-variant-numeric: tabular-nums; }
+:root .lab-page[data-lab-page] .lab-turnover-x { position: absolute; top: 2px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink2); font-size: 15px; line-height: 1; cursor: pointer; }
+:root .lab-page[data-lab-page] .lab-turnover-x:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+:root .lab-page[data-lab-page] .lab-turnover-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+:root .lab-page[data-lab-page] .lab-basics .lab-sgroup .lab-turnover-years.lab-turnover-years .lab-turnover-tools label.dfield { display: inline-flex; align-items: center; gap: 10px; min-height: 0; margin: 0; padding: 0; border: 0; font-size: 13px; }
+:root .lab-page[data-lab-page] .lab-basics .lab-sgroup .lab-turnover-years.lab-turnover-years .lab-turnover-tools label.dfield input { width: 12ch; }

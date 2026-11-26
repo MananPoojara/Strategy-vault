@@ -8,6 +8,8 @@ import { isChoice, ordinal, ruleWords } from "./spec-model";
 import { alwaysIn, defaultExitParts, MAX_DEFAULT_COUNT, stopsOn, tradeBlockers, usesDefaultExit, validDefaultExit, type DefaultExit } from "./defaults";
 import { SHORT } from "./simple";
 import type { Catalogue, Indicator, RuleNode, Spec } from "./types";
+import { dateFilterName } from "./date-sets";
+import { REENTRY } from "./DateFilterPanel";
 import "./plain-rules.css";
 
 type Obj = Record<string, unknown>;
@@ -46,8 +48,9 @@ export function StrategyInWords({ spec, catalogue, period, onChange }: {
   const both = spec.direction === "both" && !!spec.short_side;
   const sides = [{ s: spec, short: spec.direction === "short", other: false, title: both ? "Long" : "" },
     ...(both ? [{ s: spec.short_side!, short: true, other: true, title: "Short" }] : [])];
-  const off = [...spec.entry.all, ...spec.exit.any, ...(spec.short_side ? [...spec.short_side.entry.all, ...spec.short_side.exit.any] : [])].filter((n) => !isOn(n));
-  const blockers = tradeBlockers(spec, period);
+  // the Dates filter has its own line (which periods, Fresh or Running), so it is not repeated under "Also on"
+  const blockers = tradeBlockers(spec, period), dates = blockers.find((b) => b.id === "date_filter"), others = blockers.filter((b) => b !== dates);
+  const df = spec.date_filter, re = REENTRY.find((r) => r.value === df?.reentry);
   return <section className="lab-words" data-lab-words aria-label="Your strategy in plain words">
     <h3>Your strategy in plain words</h3>
     {sides.map(({ s, short, other, title }) => {
@@ -68,10 +71,13 @@ export function StrategyInWords({ spec, catalogue, period, onChange }: {
           : <span className="cap">when the date window or a filter closes the trade.</span>}</p>
       </div>;
     })}
-    {off.length > 0 && <p className="cap" data-lab-words-off>Switched off, not used: {off.map((n) => words(n, catalogue).text).join("; ")}.</p>}
-    {blockers.length > 0 && <div className="lab-words-blockers" data-lab-words-blockers>
+    {dates && df && <p data-lab-words-dates><b>Dates</b> only in {dateFilterName(df) ?? "the chosen"} periods ({df.windows.length})
+      {re && <> · <b className="lab-words-re">{re.label}</b></>}
+      {df.exit_at_change === false && " · an open trade stays open when its period ends"}.
+      {dates.off && <button type="button" className="dbtn sm ghost" onClick={() => onChange(dates.off!(spec))}>Turn off</button>}</p>}
+    {others.length > 0 && <div className="lab-words-blockers" data-lab-words-blockers>
       <p className="cap">Also on (each can stop a trade opening):</p>
-      <ul>{blockers.map((b) => <li key={b.id}>{b.text}{b.off && <button type="button" className="dbtn sm ghost" onClick={() => onChange(b.off!(spec))}>Turn off</button>}</li>)}</ul>
+      <ul>{others.map((b) => <li key={b.id}>{b.text}{b.off && <button type="button" className="dbtn sm ghost" onClick={() => onChange(b.off!(spec))}>Turn off</button>}</li>)}</ul>
     </div>}
   </section>;
 }

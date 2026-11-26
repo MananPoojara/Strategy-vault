@@ -35,17 +35,16 @@ export function variantOptions(p: IndicatorParam): [number, string][] {
 }
 
 const PLATFORMS = ["TradingView", "TradeStation", "MetaTrader", "NinjaTrader", "thinkorswim", "MetaStock", "TA-Lib", "TradeTiger", "ChartIQ", "Hull Suite"];
-/** Choices that give the same results as the default once the warm-up is over (RSI's AmiBroker from-bar-1 loop, momentum.rs):
- *  listed only when a strategy already uses one. */
-const SAME_AS_DEFAULT = ["AmiBroker from bar 1"];
+/** RSI's two Wilder starts by what they match: the default warm-up is TradingView's; AmiBroker's own RSI seeds at 0 from bar 1
+ *  (momentum.rs), which differs for a stock with short history (26-11-2026: 27 of 1,020 AmiBroker basket trades). */
+const NAMED: Record<string, string> = { "Wilder/TradingView/AmiBroker after warm-up": "Wilder (TradingView)", "AmiBroker from bar 1": "AmiBroker (from bar 1)" };
 /** The Calculation list in plain names: a choice AmiBroker uses is "AmiBroker", another is its platform ("TradeStation"); two
  *  choices that would share a name, and choices with no platform, keep the catalogue's words. */
 export function variantChoices(p: IndicatorParam, current: number): [number, string][] {
   const all = variantOptions(p);
   if (p.key !== "variant") return all;
-  const kept = all.filter(([v, text]) => v === current || !SAME_AS_DEFAULT.includes(text));
-  const short = kept.map(([v, text]) => [v, text.includes("AmiBroker") ? "AmiBroker" : PLATFORMS.find((x) => text.includes(x)) ?? text] as [number, string]);
-  return short.map(([v, name], i) => short.filter(([, n]) => n === name).length > 1 ? kept[i] : [v, name]);
+  const short = all.map(([v, text]) => [v, NAMED[text] ?? (text.includes("AmiBroker") ? "AmiBroker" : PLATFORMS.find((x) => text.includes(x)) ?? text)] as [number, string]);
+  return short.map(([v, name], i) => short.filter(([, n]) => n === name).length > 1 ? all[i] : [v, name]);
 }
 
 export interface ParamsDialogProps {

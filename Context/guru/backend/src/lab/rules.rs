@@ -47,7 +47,10 @@ pub const MAX_FOREIGN: usize = 4;
 pub const MAX_SYMBOL_LEN: usize = 80;
 pub const MAX_UNIVERSE: usize = 120;
 pub const MAX_UNIVERSE_LIST: usize = 50;
-pub const MAX_OPEN: usize = 50;
+/// Max. open positions and Rotation's worst rank held: AmiBroker has no small cap here; 5000 is the top of the team AFLs'
+/// Param("MAXIMUM POSITION",1,1,5000) (user, 23-11-2026; was 50 and 120 when a universe held at most 120 stocks).
+pub const MAX_OPEN: usize = 5000;
+pub const MAX_RANK: usize = 5000;
 pub const MAX_PORTFOLIO_COMBOS: usize = 200;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode { Signals, Rotation }
@@ -275,6 +278,9 @@ pub struct Exec {
     /// `penny_price` (> 0): an entry signal needs close > it; `turnover_filter`: volume × close above the AFL's year floor;
     /// `aux` [Aux1, Aux2] ON: the signal bar's Aux column == 1. Run-level: read from the main side, gating both sides.
     pub dead_stock: bool, pub penny_price: f64, pub turnover_filter: bool, pub aux: [bool; 2],
+    /// execution.turnover_floor: the year-wise floor as [from year, minimum] rows, years ascending (a year uses the last row
+    /// at or before it; earlier years the first row). None: the AFL's own table (series.rs turnover_floor).
+    pub turnover_floor: Option<Vec<(i32, f64)>>,
     /// execution.shadow (None: off).
     pub shadow: Option<Shadow>,
     /// Indices of entry.all rules marked `"filter": true` (with execution.shadow they gate only the real trades).
@@ -288,7 +294,7 @@ impl Default for Exec {
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
                tick_size: 0., pad_align: false, pad_ref: None, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, fresh_reentry_exits: false, restart_virtual_on_signal: false, defer_exit_on_circuit: false, skip_entry_on_circuit: false,
-               dead_stock: false, penny_price: 0., turnover_filter: false, aux: [false; 2], shadow: None, filter_rows: vec![] }
+               dead_stock: false, penny_price: 0., turnover_filter: false, turnover_floor: None, aux: [false; 2], shadow: None, filter_rows: vec![] }
     }
 }
 impl Exec {
@@ -389,7 +395,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "fresh_reentry_exits", "restart_virtual_on_signal", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "fresh_reentry_exits", "restart_virtual_on_signal", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "turnover_floor", "aux1", "aux2"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -505,6 +511,19 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         exec.defer_exit_on_circuit = flag("defer_exit_on_circuit", false)?;
         exec.skip_entry_on_circuit = flag("skip_entry_on_circuit", false)?;
         (exec.dead_stock, exec.turnover_filter, exec.aux) = (flag("dead_stock", false)?, flag("turnover_filter", false)?, [flag("aux1", false)?, flag("aux2", false)?]);
+        if let Some(v) = ex.get("turnover_floor") {
+            let bad = || inv("execution.turnover_floor must be 1 to 100 [year, minimum] rows: whole years 0 to 9999 in rising order, minimums from 0 to 1e15");
+            let Json::Arr(rows) = v else { return Err(bad()) };
+            if rows.is_empty() || rows.len() > 100 { return Err(bad()); }
+            let mut table = Vec::with_capacity(rows.len());
+            for r in rows {
+                let Json::Arr(pair) = r else { return Err(bad()) };
+                let (Some(y), Some(m)) = (pair.first().and_then(Json::as_f64), pair.get(1).and_then(Json::as_f64)) else { return Err(bad()) };
+                if pair.len() != 2 || y.fract() != 0. || !(0. ..=9999.).contains(&y) || !(0. ..=1e15).contains(&m) || table.last().is_some_and(|&(p, _)| p >= y as i32) { return Err(bad()); }
+                table.push((y as i32, m));
+            }
+            exec.turnover_floor = Some(table);
+        }
         if let Some(v) = ex.get("penny_price") {
             exec.penny_price = v.as_f64().filter(|p| (0. ..=1e6).contains(p)).ok_or_else(|| inv("execution.penny_price must be a number from 0 (off) to 1e6"))?;
         }
@@ -820,7 +839,7 @@ fn portfolio(v:&Json,budget:&mut Budget)->Result<Portfolio,LabError> {
     let mode=match v.get("mode").map(Json::as_str){None|Some(Some("signals"))=>Mode::Signals,Some(Some("rotation"))=>Mode::Rotation,_=>return Err(inv("portfolio.mode must be signals or rotation"))};
     let lowest=match v.get("rank").map(Json::as_str){None|Some(Some("highest"))=>false,Some(Some("lowest"))=>true,_=>return Err(inv("portfolio.rank must be highest or lowest"))};
     let number=|key:&str,hi:usize|v.get(key).map(|n|n.as_f64().filter(|n|n.is_finite()&&n.fract()==0.&&*n>=1.&&*n<=hi as f64).map(|n|n as usize).ok_or_else(||inv(format!("portfolio.{key} must be a whole number from 1 to {hi}")))).transpose();
-    let max_open=number("max_open",MAX_OPEN)?.unwrap_or(1);let worst_rank_held=number("worst_rank_held",MAX_UNIVERSE)?;
+    let max_open=number("max_open",MAX_OPEN)?.unwrap_or(1);let worst_rank_held=number("worst_rank_held",MAX_RANK)?;
     if worst_rank_held.is_some()&&mode!=Mode::Rotation {return Err(inv("portfolio.worst_rank_held applies to rotation mode"));}
     let rebalance=match v.get("rebalance").map(Json::as_str){None|Some(Some("bar"))=>None,Some(Some("W"))=>Some(1),Some(Some("M"))=>Some(2),Some(Some("Q"))=>Some(3),Some(Some("Y"))=>Some(4),_=>return Err(inv("portfolio.rebalance must be bar, W, M, Q or Y"))};
     if rebalance.is_some()&&mode!=Mode::Rotation{return Err(inv("portfolio.rebalance applies to rotation mode"));}
@@ -861,20 +880,19 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.reentry.is_some(){return unsupported("execution.reentry");}
     if x.reenter_on_exit_bar{return unsupported("execution.reenter_on_exit_bar");}
     if x.exit_at_stop!=[1;4]||!x.stops_immediately||x.nbar_first||!x.same_bar{return unsupported("execution.exit_at_stop, activate_stops_immediately, nbar_has_priority or allow_same_bar_exit");}
-    if x.limits.is_some(){return unsupported("execution.limits");}
+    // AmiBroker's UsePrevBarEquityForPosSizing is the one position limit the portfolio ledger applies (portfolio.rs Book)
+    if x.limits.is_some_and(|l|Limits{prev_bar_equity:false,..l}!=Limits::default()){return unsupported("execution.limits other than prev_bar_equity");}
     if x.tick_size>0.{return unsupported("execution.tick_size");}
     if x.pad_align{return unsupported("execution.pad_align");}
     if x.held_from_signal{return unsupported("execution.bars_held_from");}
     // the circuits and the BACKTEST PARAMETER gates run per member: skip_entry_on_circuit, penny_price, turnover_filter and
     // aux join each member's compiled entry rules (series.rs); defer_exit_on_circuit and dead_stock are in portfolio.rs run
     if x.shadow.is_some(){return unsupported("execution.shadow");}
-    if x.dual_atr.is_some(){return unsupported("exit.dual_atr");}
-    if x.dual_line.is_some(){return unsupported("exit.dual_line");}
+    // exit.dual_atr and exit.dual_line step per member like the single-instrument loop (portfolio.rs run, PortfolioPosition::dual_exit)
     if s.date_filter.is_some()||!s.blackouts.is_empty(){return unsupported("date_filter and blackouts");}
-    if s.exit.iter().any(|n|matches!(n,Node::Cmp(c) if matches!(c.lhs,Operand::SinceEntry(_))||matches!(c.rhs,Operand::SinceEntry(_)))){return unsupported("since_entry exit values");}
     if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
     if p.max_open==0||p.max_open>MAX_OPEN{return Err(inv(format!("portfolio.max_open must be a whole number from 1 to {MAX_OPEN}")));}
-    if p.worst_rank_held()==0||p.worst_rank_held()>MAX_UNIVERSE||p.worst_rank_held()<p.max_open{return Err(inv(format!("portfolio.worst_rank_held must be at least max_open and at most {MAX_UNIVERSE}")));}
+    if p.worst_rank_held()==0||p.worst_rank_held()>MAX_RANK||p.worst_rank_held()<p.max_open{return Err(inv(format!("portfolio.worst_rank_held must be at least max_open and at most {MAX_RANK}")));}
     if p.mode==Mode::Rotation&&(!s.exit.is_empty()||x.stop_loss.is_some()||x.target.is_some()||x.trailing.is_some()||x.trail_activate.is_some()||x.breakeven.is_some()) {return Err(inv("rotation ranks by score; exit.any must be empty and price exits are not used"));}
     Ok(())
 }
@@ -1195,7 +1213,11 @@ fn leaf(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError
     match v.get("op").and_then(Json::as_str) {
         Some(op @ ("between" | "outside")) => {
             fields(v, at, &["lhs", "op", "lo", "hi"], &[])?;
-            let (x, lo, hi) = (side("lhs", b)?, side("lo", b)?, side("hi", b)?);
+            // the same AmiBroker rule: a plain price between / outside higher-timeframe bands is read on their timeframe (and the reverse)
+            let (xl, lo_j) = follow_timeframe(v.get("lhs"), v.get("lo"));
+            let (xh, hi_j) = follow_timeframe(xl.as_ref(), v.get("hi"));
+            let one = |j: Option<&Json>, k: &str, b: &mut Budget| operand(j, &format!("{at}.{k}"), false, b);
+            let (x, lo, hi) = (one(xh.as_ref(), "lhs", b)?, one(lo_j.as_ref(), "lo", b)?, one(hi_j.as_ref(), "hi", b)?);
             if let (Operand::Value(l), Operand::Value(h)) = (&lo, &hi) { if l > h { return Err(inv(format!("{at}: lo ({l}) is above hi ({h}); {op} would be {}", if op == "between" { "never true" } else { "always true" }))); } }
             Ok(Node::Range { x, lo, hi, outside: op == "outside" })
         }
@@ -1207,6 +1229,24 @@ fn leaf(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError
     }
 }
 
+/// AmiBroker's TimeFrameSet (user, 23-11-2026): inside a weekly / monthly block every series is that timeframe's. A side with no
+/// `tf`, `symbol` or `vs` of its own (a price or an indicator) compared with an *indicator* on a higher timeframe is read on that
+/// timeframe; a side with an explicit `tf` (Daily included) keeps it, and bars_held is a trade count, not a series. A higher-timeframe
+/// *price* (close > the previous quarter's close) leads nothing: today's close against a past period's price keeps its meaning.
+fn follow_timeframe(lhs: Option<&Json>, rhs: Option<&Json>) -> (Option<Json>, Option<Json>) {
+    let id = |s: &Json| s.get("s").and_then(Json::as_str).filter(|i| *i != "bars_held").map(str::to_owned);
+    let higher = |s: &Json| s.get("tf").and_then(Json::as_str).filter(|t| *t != "D").filter(|_| id(s).is_some_and(|i| !PRICE_SOURCES.contains(&i.as_str()))).map(str::to_owned);
+    let plain = |s: &Json| id(s).is_some() && ["tf", "symbol", "vs"].iter().all(|k| s.get(*k).is_none());
+    let with_tf = |s: &Json, tf: String| { let mut o = s.clone(); if let Json::Obj(kv) = &mut o { kv.push(("tf".into(), Json::Str(tf))); } o };
+    match (lhs, rhs) {
+        (Some(l), Some(r)) => match (higher(l), higher(r)) {
+            (Some(t), None) if plain(r) => (Some(l.clone()), Some(with_tf(r, t))),
+            (None, Some(t)) if plain(l) => (Some(with_tf(l, t)), Some(r.clone())),
+            _ => (Some(l.clone()), Some(r.clone())),
+        },
+        _ => (lhs.cloned(), rhs.cloned()),
+    }
+}
 fn cond(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Cond, LabError> {
     fields(v, at, &["lhs", "op", "rhs"], &[])?;
     let op = match v.get("op").and_then(Json::as_str) {
@@ -1221,8 +1261,9 @@ fn cond(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Cond, LabError
         Some("!=") => Op::Ne,
         _ => return Err(inv(format!("{at}.op must be one of {}", OPERATORS.join(", ")))),
     };
-    let lhs = operand(v.get("lhs"), &format!("{at}.lhs"), held, b)?;
-    let rhs = operand(v.get("rhs"), &format!("{at}.rhs"), held, b)?;
+    let (l, r) = follow_timeframe(v.get("lhs"), v.get("rhs"));
+    let lhs = operand(l.as_ref(), &format!("{at}.lhs"), held, b)?;
+    let rhs = operand(r.as_ref(), &format!("{at}.rhs"), held, b)?;
     if matches!((&lhs, &rhs), (Operand::Value(_), Operand::Value(_))) { return Err(inv(format!("{at} compares two numbers; use at least one series"))); }
     Ok(Cond { lhs, op, rhs })
 }
@@ -1633,7 +1674,7 @@ fn consistent_operand(o: &Operand) -> Result<(), String> {
 fn set(s: &mut Spec, t: &Target, x: f64) {
     if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
         if let Some(p)=s.portfolio.as_mut(){
-            let hi=if t.path.ends_with("max_open"){MAX_OPEN}else{MAX_UNIVERSE};
+            let hi=if t.path.ends_with("max_open"){MAX_OPEN}else{MAX_RANK};
             let n=if x.is_finite()&&x.fract()==0.&&x>=1.&&x<=hi as f64{x as usize}else{usize::MAX};
             if t.path.ends_with("max_open"){p.max_open=n;}else{p.worst_rank_held=Some(n);}
         }
@@ -1662,7 +1703,7 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
 }
 fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
-        let hi=if t.path.ends_with("max_open"){MAX_OPEN}else{MAX_UNIVERSE};
+        let hi=if t.path.ends_with("max_open"){MAX_OPEN}else{MAX_RANK};
         return if x.is_finite()&&x.fract()==0.&&x>=1.&&x<=hi as f64{Ok(())}else{Err(format!("{} must be a whole number from 1 to {hi}",t.path))};
     }
     if let Some(slot) = t.slot {
@@ -1766,6 +1807,29 @@ mod tests {
     fn with(old: &str, new: &str) -> String { assert!(EXAMPLE.contains(old), "{old}"); EXAMPLE.replacen(old, new, 1) }
     fn err(text: &str) -> LabError { parse_spec(text).unwrap_err() }
 
+    /// AmiBroker's TimeFrameSet: a plain price beside a higher-timeframe indicator is read on that timeframe; an explicit tf stays.
+    #[test] fn a_plain_price_follows_the_indicators_timeframe() {
+        let tf_of = |o: &Operand| match o { Operand::Series(r) => r.tf, Operand::Expr(e) => match &**e { Expr::Expand(r, _) => r.tf, _ => panic!("{e:?}") }, _ => panic!("{o:?}") };
+        let rule = |l: &str, r: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{l},"op":"crosses_above","rhs":{r}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}]}}}}"#)).unwrap();
+        let st = r#"{"s":"supertrend","p":{"atr_length":5,"factor":1},"tf":"M"}"#;
+        let s = rule(st, r#"{"s":"close"}"#); let c = s.entry[0].cmp().unwrap();
+        assert_eq!((tf_of(&c.lhs), tf_of(&c.rhs)), (Tf::M, Tf::M), "monthly Supertrend vs the monthly close");
+        let s = rule(st, r#"{"s":"close","tf":"D"}"#);
+        assert_eq!(tf_of(&s.entry[0].cmp().unwrap().rhs), Tf::D, "an explicit Daily close stays daily");
+        let s = rule(r#"{"s":"close"}"#, r#"{"s":"ema","p":{"length":20},"tf":"W"}"#);
+        assert_eq!(tf_of(&s.entry[0].cmp().unwrap().lhs), Tf::W, "either side");
+        let s = rule(r#"{"s":"ema","p":{"length":9}}"#, r#"{"s":"ema","p":{"length":20},"tf":"W"}"#);
+        assert_eq!(tf_of(&s.entry[0].cmp().unwrap().lhs), Tf::W, "an indicator with no timeframe of its own follows too (EMA 9 weekly)");
+        let s = rule(r#"{"s":"close"}"#, r#"{"s":"close","tf":"Q","offset":1}"#);
+        assert_eq!(tf_of(&s.entry[0].cmp().unwrap().lhs), Tf::D, "today's close vs the previous quarter's close keeps its meaning");
+        let s = rule(r#"{"s":"ema","p":{"length":9},"tf":"D"}"#, r#"{"s":"ema","p":{"length":20},"tf":"W"}"#);
+        assert_eq!(tf_of(&s.entry[0].cmp().unwrap().lhs), Tf::D, "an explicit Daily keeps it");
+        // between / outside: the close between monthly Bollinger bands is the monthly close
+        let bb = |out: &str| format!(r#"{{"s":"bb","p":{{"length":20}},"out":"{out}","tf":"M"}}"#);
+        let s = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"between","lo":{},"hi":{}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}]}}}}"#, bb("lower"), bb("upper"))).unwrap();
+        let Node::Range { x, .. } = &s.entry[0] else { panic!("{:?}", s.entry[0]) };
+        assert_eq!(tf_of(x), Tf::M, "between higher-timeframe bands");
+    }
     #[test] fn spec_example_round_trips() {
         let s = parse_spec(EXAMPLE).unwrap();
         assert_eq!((s.entry.len(), s.exit.len(), s.cost_bps), (2, 2, Some(12.)));
@@ -1779,9 +1843,13 @@ mod tests {
         assert_eq!(r.params["length"], 5.);
     }
     #[test] fn defaults_fill_params_tf_and_output() {
-        let s = parse_spec(&with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"macd","out":"signal"}"#)).unwrap();
+        let s = parse_spec(&with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"macd","out":"signal","tf":"D"}"#)).unwrap();
         let Operand::Series(r) = &s.entry[1].cmp().unwrap().lhs else { panic!() };
         assert_eq!((r.tf, r.out, r.params["fast"], r.params["slow"]), (Tf::D, 1, 12., 26.));
+        // with no tf of its own beside the weekly SMA it follows it (AmiBroker's TimeFrameSet, follow_timeframe)
+        let s = parse_spec(&with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"macd","out":"signal"}"#)).unwrap();
+        let Operand::Series(r) = &s.entry[1].cmp().unwrap().lhs else { panic!() };
+        assert_eq!(r.tf, Tf::W);
     }
     #[test] fn malformed_input_is_invalid_and_names_the_field() {
         for (text, needle) in [
@@ -2325,6 +2393,9 @@ mod tests {
         assert_eq!((unit.status(), unit.message()), ("invalid", "execution.limits needs money mode (execution.capital)"));
         let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"limits":{"round_lot":10}},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
         assert_eq!(err(port).status(), "unsupported");
+        // AmiBroker UsePrevBarEquityForPosSizing and an N-monthly-candle exit (since_entry count of month ends) run in a portfolio
+        let prev = port.replace(r#""round_lot":10"#, r#""prev_bar_equity":true"#).replace(r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}"#, r#"{"lhs":{"since_entry":"count","when":{"lhs":{"s":"period_end","out":"m"},"op":">","rhs":{"value":0}}},"op":">=","rhs":{"value":1}}"#);
+        assert!(parse_spec(&prev).unwrap().exec.limits.unwrap().prev_bar_equity);
     }
     #[test] fn account_margin_tick_size_and_pad_align_parse() {
         let money = |limits: &str| with(r#""fill": "next_open", "cost_bps": 12"#, &format!(r#""fill": "next_open", "capital": 100000, "limits": {limits}"#));
@@ -2440,7 +2511,7 @@ mod phase8_grammar_tests {
     #[test] fn portfolio_universe_field_and_work_caps_are_enforced() {
         for u in [r#"{"basket":"bad basket!"}"#,r#"{"tickers":["A"]}"#,r#"{"tickers":["A","A"]}"#,r#"{"basket":"x","tickers":["A","B"]}"#] {assert_eq!(error(&PORT.replace(r#"{"basket":"nifty50"}"#,u)).status(),"invalid");}
         let list=format!(r#"{{"tickers":[{}]}}"#,(0..51).map(|i|format!("\"S{i}\"")).collect::<Vec<_>>().join(","));assert!(error(&PORT.replace(r#"{"basket":"nifty50"}"#,&list)).message().contains("50"));
-        for n in ["0","51","2.5","1e100"] {assert!(error(&PORT.replace(r#""max_open":5"#,&format!(r#""max_open":{n}"#))).message().contains("max_open"));}
+        for n in ["0","5001","2.5","1e100"] {assert!(error(&PORT.replace(r#""max_open":5"#,&format!(r#""max_open":{n}"#))).message().contains("max_open"));}
         assert!(error(&optimize(PORT,r#"{"path":"portfolio.score.abs.p.length","from":1,"to":201,"step":1}"#)).message().contains("200"));
     }
     #[test] fn portfolio_optimizer_tracks_omitted_worst_and_validates_all_combinations() {
@@ -2639,10 +2710,11 @@ mod dual_since_parse_tests {
         let entry = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"since_entry":"entry_price"}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}}"#;
         assert!(format!("{:?}", parse_spec(entry).unwrap_err()).contains("only available as a plain comparison"));
     }
-    #[test] fn since_entry_values_and_dual_atr_are_single_instrument() {
+    #[test] fn dual_atr_and_since_entry_values_run_in_a_portfolio() {
         let port = |exit: &str| format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{exit},"execution":{{"capital":1000000}},"portfolio":{{"universe":{{"basket":"nifty50"}},"max_open":5}}}}"#);
-        assert!(matches!(parse_spec(&port(r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4}}}"#)), Err(LabError::Unsupported(m)) if m.contains("dual_atr")));
-        assert!(matches!(parse_spec(&port(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price","mul":0.9}}]}"#)), Err(LabError::Unsupported(m)) if m.contains("since_entry")));
+        assert!(parse_spec(&port(r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4}}}"#)).is_ok(), "a portfolio runs the Dual ATR exit per member");
+        // the portfolio ledger hands each exit its fill bar and fill price (portfolio.rs), as the single-instrument loop does
+        assert!(parse_spec(&port(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price","mul":0.9}}]}"#)).is_ok());
     }
     #[test] fn since_entry_mul_and_add_are_optimizable_and_rechecked() {
         let s = p(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"highest","of":{"s":"close"},"mul":0.95}}]}"#).unwrap();

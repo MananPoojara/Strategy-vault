@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { dayFirst } from "./DateField";
 import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import { linePoints } from "./bars";
@@ -17,6 +17,25 @@ const PAGE = 100;
 /** Profit Table cell: blank for a month or year with no return (flat equity, or not reached yet). */
 const ret = (v: number | null | undefined) => (typeof v === "number" && Math.abs(v) > 1e-12 ? pct(v) : "");
 const sign = (v: number | null | undefined) => (typeof v === "number" ? (v > 0 ? "n pos" : v < 0 ? "n neg" : "n") : "n");
+/** YOY heatmap: a cell's shade grows with the size of its return against the table's biggest move (square root, so small months
+ *  still show a tint); empty months read "·". */
+const heat = (v: number | null | undefined, cap: number) => (typeof v === "number" && Math.abs(v) > 1e-12 ? { "--heat": Math.sqrt(Math.min(1, Math.abs(v) / cap)).toFixed(2) } as CSSProperties : undefined);
+const cell = (v: number | null | undefined) => ret(v) || <span className="lab-yoy-nil" aria-label="no trade">·</span>;
+/** A bar chart of returns around a zero line (green up, red down), sized to the largest move either way; each bar names its value. */
+function ReturnBars({ title, items, every = 1 }: { title: string; items: { label: string; tick?: string; v: number | null | undefined }[]; every?: number }) {
+  const vs = items.map((x) => (typeof x.v === "number" ? x.v : 0)), up = Math.max(0, ...vs), down = Math.max(0, ...vs.map((v) => -v)), span = up + down || 1;
+  return <figure className="lab-yoy-chart" aria-label={title}>
+    <figcaption>{title}</figcaption>
+    <div className="lab-yoy-plot" style={{ "--zero": (up / span).toFixed(4) } as CSSProperties}>
+      <span className="lab-yoy-tick" data-at="top">{up ? pct(up) : ""}</span><span className="lab-yoy-tick" data-at="zero">0</span><span className="lab-yoy-tick" data-at="bottom">{down ? pct(-down) : ""}</span>
+      {items.map(({ label, v }, i) => <div key={i} className="lab-yoy-col" title={`${label}: ${typeof v === "number" ? pct(v) : "no trade"}`}>
+        {typeof v === "number" && Math.abs(v) > 1e-12 && <span className={v > 0 ? "pos" : "neg"} style={{ "--h": (Math.abs(v) / span).toFixed(4) } as CSSProperties} />}
+      </div>)}
+    </div>
+    <div className="lab-yoy-axis">{items.map(({ label, tick }, i) => <span key={i}>{i % every === 0 ? tick ?? label : ""}</span>)}</div>
+  </figure>;
+}
+const capOf = (vs: (number | null | undefined)[]) => Math.max(0.02, ...vs.map((v) => (typeof v === "number" ? Math.abs(v) : 0)));
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** AmiBroker status line (Profit, CAR, MaxSysDD, CAR/MDD, # winners, # losers); engine stats are ratios. */
@@ -260,6 +279,7 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
   // the Avg row's Total: the average of the yearly Totals (sums, like the column above it)
   const totals = monthly ? monthly.years.map((y) => pivot.rows[y]).filter((v): v is number => typeof v === "number") : [];
   const avgTotal = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : null;
+  const monthCap = monthly ? capOf(Object.values(monthly.months)) : 1, totalCap = capOf(totals);
   const table = tradeTable(result, explain ? reasonLabeler(explain) : undefined), pages = Math.max(1, Math.ceil(table.rows.length / PAGE)), at = Math.min(page, pages - 1);
   const shown = (order === "oldest" ? table.rows.map((_, k) => k) : table.rows.map((_, k) => table.rows.length - 1 - k)).slice(at * PAGE, (at + 1) * PAGE);
 
@@ -267,7 +287,8 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
   return (
     <section className="box lab-result-tables" data-lab-result-tables>
       {part !== "trades" && monthly && (
-        <div className="tblwrap lab-monthly">
+        <div className="lab-yoy-wrap" data-lab-yoy-wrap>
+        <div className="tblwrap lab-monthly" data-lab-yoy>
           <table className="tbl">
             <caption>YOY-Monthly <button type="button" className="dbtn sm" data-lab-yoy-download onClick={() => saveBytes(xlsx([{ name: "YOY-Monthly", rows: yoyRows(monthly, pivot) }]),
               `${instrument?.ticker ?? "backtest"} YOY-Monthly.xlsx`, XLSX_TYPE)}>Download Excel</button></caption>
@@ -278,9 +299,9 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
                   <td>{y}</td>
                   {MONTHS.map((_, i) => {
                     const v = monthly.months[`${y}-${String(i + 1).padStart(2, "0")}`];
-                    return <td className={sign(v)} key={i}>{ret(v)}</td>;
+                    return <td className={sign(v)} style={heat(v, monthCap)} key={i}>{cell(v)}</td>;
                   })}
-                  <td className={sign(pivot.rows[y])}>{ret(pivot.rows[y])}</td>
+                  <td className={sign(pivot.rows[y])} style={heat(pivot.rows[y], totalCap)}>{cell(pivot.rows[y])}</td>
                 </tr>
               ))}
             </tbody>
@@ -291,6 +312,12 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
                 <td className={sign(avgTotal)}>{pct(avgTotal)}</td></tr>}
             </tfoot>
           </table>
+        </div>
+        {/* the same returns as charts, in the space beside the table (under it on a narrow screen): years, then the average month */}
+        <div className="lab-yoy-charts" data-lab-yoy-charts>
+          <ReturnBars title="Yearly return" items={monthly.years.map((y) => ({ label: String(y), v: pivot.rows[y] }))} every={Math.ceil(monthly.years.length / 8)} />
+          {!!monthly.averages?.length && <ReturnBars title="Average by month" items={MONTHS.map((m, i) => ({ label: m, tick: m.slice(0, 1), v: monthly.averages[i] }))} />}
+        </div>
         </div>
       )}
 

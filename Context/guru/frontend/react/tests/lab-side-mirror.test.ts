@@ -14,8 +14,9 @@ it("mirrors each preset shape for the other side", () => {
   expect(mirrorRule(n({ lhs: ST, op: "crosses_below", rhs: { s: "close" } }))).toMatchObject({ op: "crosses_above" });
   // a line against its signal line
   expect(mirrorRule(n({ lhs: { s: "macd" }, op: "crosses_above", rhs: { s: "macd", out: "signal" } }))).toMatchObject({ op: "crosses_below" });
-  // an oscillator against its level: RSI crosses above 30 ↔ crosses below 70
-  expect(mirrorRule(n({ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } }))).toMatchObject({ op: "crosses_below", rhs: { value: 70 } });
+  // an oscillator against its level: the comparison flips, the level typed stays (RSI 70 stayed 70 on Short, not 30)
+  expect(mirrorRule(n({ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 70 } }))).toMatchObject({ op: "crosses_below", rhs: { value: 70 } });
+  expect(mirrorRule(n({ lhs: { s: "rsi", p: { length: 14 } }, op: ">", rhs: { value: 65 } }))).toMatchObject({ op: "<", rhs: { value: 65 } });
   // the close against a channel side: breakout above the upper band ↔ below the lower one
   expect(mirrorRule(n({ lhs: { s: "close" }, op: "crosses_above", rhs: { s: "donchian", out: "upper", offset: 1 } })))
     .toMatchObject({ op: "crosses_below", rhs: { out: "lower", offset: 1 } });
@@ -40,11 +41,11 @@ it("Positions Long → Short → Long gives every rule back; Short mirrors the p
     entry: { all: [{ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } }, { lhs: { s: "close" }, op: ">", rhs: { s: "sma", p: { length: 200 } }, filter: true }] },
     exit: { any: [{ lhs: { ...ST, out: "direction" }, op: "crosses_above", rhs: { value: 0 } }, { lhs: { s: "bars_held" }, op: ">=", rhs: { value: 10 } }] } } as unknown as Spec;
   const short = withDirection(long, "short");
-  expect(short.entry.all).toMatchObject([{ op: "crosses_below", rhs: { value: 70 } }, { op: "<", filter: true }]);
+  expect(short.entry.all).toMatchObject([{ op: "crosses_below", rhs: { value: 30 } }, { op: "<", filter: true }]);
   expect(short.exit.any).toMatchObject([{ op: "crosses_below", rhs: { value: 0 } }, { op: ">=", rhs: { value: 10 } }]);
   expect(withDirection(short, "long")).toEqual(long);
   expect(withDirection(long, "both").entry).toEqual(long.entry); // long stays long
-  expect(withDirection(withDirection(long, "both"), "short").entry.all[0]).toMatchObject({ op: "crosses_below", rhs: { value: 70 } });
+  expect(withDirection(withDirection(long, "both"), "short").entry.all[0]).toMatchObject({ op: "crosses_below", rhs: { value: 30 } });
 });
 
 it("a strategy saved with a long Supertrend exit on its short side is corrected when it is opened, and does not count as edited", async () => {

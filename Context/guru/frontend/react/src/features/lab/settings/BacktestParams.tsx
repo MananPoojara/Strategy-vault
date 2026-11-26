@@ -1,14 +1,28 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { NumField } from "../OperandEditor";
+import { ChartPopup } from "../ChartPopup";
 import { ExecutionPanel } from "../ExecutionPanel";
 import { changeExecution } from "../RiskPanel";
 import { modeOf, moneyBlocked, sizingKind, supportsMoney, withSizingKind, type InstrumentContext, type SizingKind } from "../execution-model";
 import { getAt } from "../spec-model";
 import type { Catalogue, Spec } from "../types";
-import { SettingGroup } from "./common";
+import { cashWhy, SettingGroup } from "./common";
 
 export const NEEDS_ENGINE = "Needs the updated engine";
 /** The AFL entry gates after Maximum position, in its order: [spec field, label, off, on]. Off = the field is absent. */
+/** The AFL's turnover floor (Volsig; the engine's series.rs turnover_floor) as [from year, minimum] rows: a year uses the last row
+ *  at or before it. execution.turnover_floor replaces it; absent means this table. */
+export const AFL_TURNOVER_FLOOR: readonly [number, number][] = [[0, 30_000], [2000, 50_000], [2004, 200_000], [2005, 400_000], [2006, 600_000], [2007, 800_000],
+  [2010, 1_000_000], [2011, 2_000_000], [2012, 2_500_000], [2013, 3_000_000], [2014, 3_500_000], [2015, 4_000_000], [2017, 5_000_000], [2018, 6_000_000],
+  [2019, 7_000_000], [2020, 8_000_000], [2021, 9_000_000], [2022, 10_000_000]];
+/** "Up to 1999", "2000–2003", "2004", "2022 on": the years a row covers, up to the next row. */
+export function floorYears(rows: readonly [number, number][], i: number): string {
+  const from = rows[i][0], next = rows[i + 1]?.[0];
+  if (next === undefined) return i === 0 ? "Every year" : `${from} on`;
+  if (i === 0) return `Up to ${next - 1}`;
+  return next - 1 === from ? `${from}` : `${from}–${next - 1}`;
+}
 const GATES = [["dead_stock", "Dead stock backtest", "No", "Yes"], ["turnover_filter", "Turnover filter", "No", "Yes"], ["aux1", "Aux1", "Off", "On"], ["aux2", "Aux2", "Off", "On"]] as const;
 
 /** The AFLs' "BACKTEST PARAMETER" panel, in its order and with its names, the same for an index and a stock:
@@ -21,6 +35,7 @@ export function BacktestParams({ spec, catalogue, instrument, onChange, unitCost
   if (!catalogue.execution) return null;
   const ex = spec.execution ?? {}, money = modeOf(spec) === "money", caps = catalogue.execution;
   const blocked = moneyBlocked(instrument, spec) ?? (!supportsMoney(catalogue, instrument.kind) ? "Money mode is not supported by this engine yet." : null);
+  const [yearsOpen, setYearsOpen] = useState(false);
   const kind = sizingKind(spec), change = (path: string, value: unknown) => onChange(changeExecution(spec, path, value));
   // AFL BKTEST (Equity|SHARE) and bktest1 (% EQUITY|FIXED EQUITY); risk % stays reachable only for a spec that already uses it
   const per = kind === "units" ? "units" : kind === "risk_pct" ? "risk_pct" : "equity", fixed = kind === "value";
@@ -69,6 +84,13 @@ export function BacktestParams({ spec, catalogue, instrument, onChange, unitCost
             onChange={(n) => n !== undefined && onChange({ ...spec, portfolio: { ...spec.portfolio!, max_open: n } })} />
         : <NumField label="Maximum position" value={1} min={1} max={1} step={1} disabled onChange={() => {}} />}
       {!spec.portfolio && <span className="cap">one instrument holds one position</span>}
+      {/* AmiBroker's Portfolio tab option, with the sizing (user, 26-11-2026); it sizes a portfolio's entries too (portfolio.rs Book.prev_bar_equity) */}
+      {(() => {
+        const why = spec.portfolio ? null : cashWhy(spec, catalogue, instrument), limits = ex.limits ?? {};
+        return <label className="lab-check" title={why ?? undefined}><input type="checkbox" aria-label="Use previous bar equity for position sizing" checked={!why && limits.prev_bar_equity === true} disabled={!!why}
+          onChange={(e) => { const next = { ...limits, prev_bar_equity: e.target.checked ? true : undefined }; if (!e.target.checked) delete next.prev_bar_equity;
+            onChange({ ...spec, execution: { ...ex, limits: Object.keys(next).length ? next : undefined } }); }} /> Use previous bar equity for position sizing</label>;
+      })()}
     </div>
     <div className="lab-row" data-lab-gates>
       {GATES.slice(0, 1).map(gateSelect)}
@@ -76,15 +98,51 @@ export function BacktestParams({ spec, catalogue, instrument, onChange, unitCost
         onChange={(n) => change("penny_price", n ? n : undefined)} /></span>
       {GATES.slice(1).map(gateSelect)}
     </div>
+    {/* the year-wise minimums open only on request (user, 26-11-2026): the Years button beside Turnover filter */}
+    {yearsOpen && ex.turnover_filter === true && <ChartPopup title="Turnover filter · year-wise minimums" wide onClose={() => setYearsOpen(false)}>
+      <div className="lab-browser-heading"><h2>Turnover filter · year-wise minimums</h2><button type="button" className="dbtn sm ghost" aria-label="Close year-wise minimums" onClick={() => setYearsOpen(false)}>×</button></div>
+      <TurnoverYears rows={ex.turnover_floor} onChange={(rows) => change("turnover_floor", rows)} />
+    </ChartPopup>}
     <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="circuits" />
     {orders}
   </SettingGroup>;
 
   function gateSelect([field, label, off, on]: typeof GATES[number]) {
     const why = gate(field) ?? (field === "turnover_filter" ? noVolume : null);
-    return <label key={field} className="dfield" title={why ?? undefined}>{label}<select aria-label={label} value={ex[field] === true ? "on" : "off"} disabled={!!why}
+    const select = <label key={field} className="dfield" title={why ?? undefined}>{label}<select aria-label={label} value={ex[field] === true ? "on" : "off"} disabled={!!why}
       onChange={(e) => change(field, e.target.value === "on" ? true : undefined)}>
       <option value="off">{off}</option><option value="on">{on}</option>
     </select></label>;
+    if (field !== "turnover_filter") return select;
+    return <span key={field} className="lab-gate-with-btn">{select}
+      {ex.turnover_filter === true && <button type="button" className="dbtn sm lab-turnover-btn" aria-haspopup="dialog" aria-expanded={yearsOpen} title={`Year-wise minimums (${ex.turnover_floor?.length ? "edited" : "AFL default"})`}
+        onClick={() => setYearsOpen((o) => !o)}>Years{ex.turnover_floor?.length ? " ·" : ""}</button>}</span>;
   }
+}
+
+/** Turnover filter › year-wise minimums, in a popup from the Years button (user, 26-11-2026): each year band's minimum volume × close can be
+ *  changed, a year added (it starts at the minimum that year had) or removed; the AFL's table is the default. */
+function TurnoverYears({ rows: saved, onChange }: { rows?: [number, number][]; onChange(rows: [number, number][] | undefined): void }) {
+  const rows = saved?.length ? saved : AFL_TURNOVER_FLOOR.map(([y, m]) => [y, m] as [number, number]);
+  const edited = !!saved?.length;
+  const [year, setYear] = useState<number | undefined>();
+  // the AFL's own table again is no table at all, so a reset leaves the strategy as the AFL wrote it
+  const save = (next: [number, number][]) => onChange(JSON.stringify(next) === JSON.stringify(AFL_TURNOVER_FLOOR) ? undefined : next);
+  const at = (y: number) => rows.filter(([from]) => from <= y).at(-1)?.[1] ?? rows[0][1];
+  const add = () => { if (year === undefined || rows.some(([from]) => from === year)) return; save([...rows, [year, at(year)] as [number, number]].sort((p, q) => p[0] - q[0])); setYear(undefined); };
+  return <div className="lab-turnover-years" data-lab-turnover-years>
+    <p className="cap">A buy needs volume × close above the minimum for its year · {edited ? "edited" : "AFL default"}</p>
+    <ul>{rows.map(([from, min], i) => <li key={from}>
+      <span>{floorYears(rows, i)}</span>
+      <NumField label={`Minimum for ${floorYears(rows, i)}`} hideLabel value={min} min={0} max={1e15} step={null}
+        onChange={(n) => n !== undefined && save(rows.map((r, k) => k === i ? [r[0], n] as [number, number] : r))} />
+      {rows.length > 1 && <button type="button" className="lab-turnover-x" aria-label={`Remove ${floorYears(rows, i)}`} title="Remove this year"
+        onClick={() => save(rows.filter((_, k) => k !== i))}>×</button>}
+    </li>)}</ul>
+    <div className="lab-turnover-tools">
+      <NumField label="Add a year" value={year} min={1900} max={2100} step={1} placeholder="e.g. 2023" onChange={setYear} />
+      <button type="button" className="dbtn sm" onClick={add} disabled={year === undefined || rows.some(([from]) => from === year)}>Add year</button>
+      {edited && <button type="button" className="dbtn sm" onClick={() => onChange(undefined)}>Reset to AFL values</button>}
+    </div>
+  </div>;
 }

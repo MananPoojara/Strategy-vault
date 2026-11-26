@@ -7,12 +7,17 @@ export interface LabSeriesApi {
   removePriceLine?(line: unknown): void;
   coordinateToPrice?(y: number): number | null;
   priceToCoordinate?(price: number): number | null;
+  /** Plugin API (4.1+): a drawing that follows the series' scales (profiles.ts). */
+  attachPrimitive?(primitive: object): void;
+  detachPrimitive?(primitive: object): void;
 }
 export interface LabChartApi {
   addCandlestickSeries(options: Record<string, unknown>): LabSeriesApi;
   addLineSeries(options: Record<string, unknown>): LabSeriesApi;
   addAreaSeries(options: Record<string, unknown>): LabSeriesApi;
   addHistogramSeries?(options: Record<string, unknown>): LabSeriesApi;
+  addBarSeries?(options: Record<string, unknown>): LabSeriesApi;
+  addBaselineSeries?(options: Record<string, unknown>): LabSeriesApi;
   /** Plugin API (4.1+): `view` draws the items itself (timeless.ts). */
   addCustomSeries?(view: object, options?: Record<string, unknown>): LabSeriesApi;
   priceScale?(id: string): { applyOptions(options: Record<string, unknown>): void; width?(): number };

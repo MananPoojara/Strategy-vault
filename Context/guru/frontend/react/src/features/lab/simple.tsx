@@ -19,17 +19,9 @@ export const useCompact = () => useContext(CompactContext);
 /** Inside a condition row: false hides timing and source controls that are still at their defaults (Simple, or "More" closed). */
 export const DetailContext = createContext(true);
 
-const KEY = "lab.mode";
-export function storedMode(): LabMode {
-  try { return localStorage.getItem(KEY) === "advanced" ? "advanced" : "simple"; } catch { return "simple"; }
-}
-export function storeMode(mode: LabMode) {
-  try { localStorage.setItem(KEY, mode); } catch { /* private window: the choice lasts this visit */ }
-}
 
 export const ModeSwitch = ({ mode, onChange }: { mode: LabMode; onChange(mode: LabMode): void }) =>
   <div className="lab-mode" data-lab-mode={mode} title="Simple hides the advanced AmiBroker settings; nothing in your strategy is lost">
-    <span className="lab-mode-help">{mode === "simple" ? "Showing the essentials. Advanced shows every setting." : "Showing every setting. Simple shows only the essentials."}</span>
     <Segmented label="View" value={mode} options={[{ value: "simple", label: "Simple" }, { value: "advanced", label: "Advanced" }]} onChange={onChange} />
   </div>;
 

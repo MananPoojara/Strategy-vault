@@ -5,7 +5,9 @@ use super::{api::frames_of, markets, rules::{LabError, Universe, MAX_UNIVERSE, M
 use crate::State;
 use std::time::Instant;
 
-pub struct Member { pub ticker: String, pub kind: &'static str, pub frames: Frames, pub at: Vec<Option<usize>> }
+/// `eligible`: per member bar, may a new position open (dated C&P membership, cp.rs); None = every bar.
+pub struct Member { pub ticker: String, pub kind: &'static str, pub frames: Frames, pub at: Vec<Option<usize>>, pub eligible: Option<Vec<bool>> }
+impl Member { pub fn can_enter(&self, k: usize) -> bool { self.eligible.as_ref().is_none_or(|e| e[k]) } }
 pub struct Loaded {
     pub reference: String, pub dates: Vec<String>, pub members: Vec<Member>,
     pub refused: Vec<(String, String)>, pub basket: Option<String>, pub membership: (&'static str, &'static str),
@@ -46,6 +48,8 @@ pub fn membership_note(kind: &str) -> &'static str {
     match kind {
         "current_plus_past_snapshot" => "Members include past constituents but without the dates they were in the index, so a stock can be traded years before it joined.",
         "user_list" => "A list chosen today carries hindsight selection bias.",
+        "ami_watchlist" => "An AmiBroker watchlist on its database: Aux1 / Aux2 (Backtest parameters) gate each stock's buys by its own Aux column, as the AFLs' Buy AND Aux1 == 1.",
+        "dated_aux" => "Members by date from the C&P database's Aux flag: a stock is bought only on days it was in the list; one that leaves keeps its own exit.",
         _ => "Members are today's constituents tested over past dates: stocks that left the index (often after falling) are missing, which biases results upward.",
     }
 }
@@ -71,10 +75,13 @@ fn source_budget(used: usize, next: usize) -> Result<usize, LabError> {
     Ok(total)
 }
 
-pub fn load(st: &State, universe: &Universe) -> Result<Loaded, LabError> { load_inner(st, universe, None) }
+pub fn load(st: &State, universe: &Universe) -> Result<Loaded, LabError> { load_inner(st, universe, None, None) }
 /// API callers start one deadline before universe loading and share it with compilation/simulation.
-pub fn load_with_deadline(st: &State, universe: &Universe, deadline: Instant) -> Result<Loaded, LabError> { load_inner(st, universe, Some(deadline)) }
-fn load_inner(st: &State, universe: &Universe, deadline: Option<Instant>) -> Result<Loaded, LabError> {
+/// `window`: the run's from/to (either may be empty); a dated universe loads only stocks in the list inside it.
+pub fn load_with_deadline(st: &State, universe: &Universe, deadline: Instant, window: (&str, &str)) -> Result<Loaded, LabError> { load_inner(st, universe, Some(deadline), Some(window)) }
+fn load_inner(st: &State, universe: &Universe, deadline: Option<Instant>, window: Option<(&str, &str)>) -> Result<Loaded, LabError> {
+    if let Universe::Basket(id) = universe { if super::cp::catalogue().is_some_and(|c| c.lists.contains_key(super::cp::split(id).0)) { return load_cp(st, id, deadline, window.unwrap_or(("", ""))); } }
+    if let Universe::Basket(id) = universe { if let Some(list) = super::ami::catalogue().and_then(|c| c.lists.get(id)) { return load_ami(st, id, list, deadline, window.unwrap_or(("", ""))); } }
     check_deadline(deadline)?;
     let (tickers, basket, membership_kind) = match universe {
         Universe::Basket(basket) => {
@@ -150,7 +157,7 @@ fn load_inner(st: &State, universe: &Universe, deadline: Option<Instant>) -> Res
             Err(error) => return Err(error),
         }
         let at = calendar_map_with_deadline(&dates, &frames.d.date, deadline)?;
-        members.push(Member { ticker, kind, frames, at });
+        members.push(Member { ticker, kind, frames, at, eligible: None });
     }
     if members.is_empty() {
         return Err(LabError::NeedsData(format!("portfolio.universe: no admitted member data; {}", refused.iter().map(|(ticker, reason)| format!("{ticker}: {reason}")).collect::<Vec<_>>().join("; "))));
@@ -158,6 +165,58 @@ fn load_inner(st: &State, universe: &Universe, deadline: Option<Instant>) -> Res
     check_deadline(deadline)?;
     // Window overlap, OHLC and indicator/volume admission are request-specific (API Task12).
     Ok(Loaded { reference, dates, members, refused, basket, membership: (membership_kind, membership_note(membership_kind)) })
+}
+
+/// A C&P list (cp.rs): every stock in the list at some point inside the window, each with its dated eligibility.
+/// No member-count cap (user, 20-11-2026); the run's time limit and the engine's memory are the bounds.
+fn load_cp(st: &State, id: &str, deadline: Option<Instant>, (from, to): (&str, &str)) -> Result<Loaded, LabError> {
+    let (base, n500, fo) = super::cp::split(id);
+    let cat = super::cp::catalogue().unwrap();
+    let list = &cat.lists[base];
+    if n500 && !cat.lists.contains_key(super::cp::N500) { return Err(LabError::NeedsData(format!("{id}: the NSE 500 C&P list is not on this engine"))); }
+    // `-n500`: the list names, each bought only while in NSE 500 (no NSE 500 period: never bought)
+    let gate = |s: &'static super::cp::Stock| -> &'static [(String, String)] { if n500 { cat.lists[super::cp::N500].stocks.iter().find(|g| g.ticker == s.ticker).map_or(&[], |g| g.periods.as_slice()) } else { &s.periods } };
+    let reference = crate::native_benchmark(crate::baskets::Market::India).to_string();
+    let context = st.ctxs.get(&reference).ok_or_else(|| LabError::NeedsData(format!("{reference} (the portfolio's reference calendar) is not loaded on this engine")))?;
+    let dates: Vec<_> = context.r.iter().map(|r| r.date.clone()).collect();
+    calendar_ok(&dates, &format!("{reference} reference calendar"), deadline)?;
+    let (lo, hi) = (if from.is_empty() { dates[0].as_str() } else { from }, if to.is_empty() { dates.last().unwrap().as_str() } else { to });
+    let (mut members, mut refused) = (Vec::new(), Vec::new());
+    for s in list.stocks.iter().filter(|s| super::cp::within(gate(s), lo, hi)) {
+        check_deadline(deadline)?;
+        let (bars, fo_flags) = match s.read() { Ok(read) => read, Err(LabError::NeedsData(reason)) => { refused.push((s.ticker.clone(), reason)); continue; } Err(e) => return Err(e) };
+        if let Err(LabError::NeedsData(reason)) = calendar_ok(&bars.date, &s.ticker, deadline) { refused.push((s.ticker.clone(), reason)); continue; }
+        let eligible = super::cp::eligible(gate(s), &bars.date, fo.then_some(fo_flags.as_slice()));
+        if !eligible.iter().zip(&bars.date).any(|(e, d)| *e && d.as_str() >= lo && d.as_str() <= hi) { continue; } // never in F&O while in the list
+        let at = calendar_map_with_deadline(&dates, &bars.date, deadline)?;
+        members.push(Member { ticker: s.ticker.clone(), kind: "individual_stock", frames: Frames::new(bars), at, eligible: Some(eligible) });
+    }
+    if members.is_empty() { return Err(LabError::NeedsData(format!("{id}: no stock was in the list between {lo} and {hi}"))); }
+    Ok(Loaded { reference, dates, members, refused, basket: Some(id.to_string()), membership: ("dated_aux", membership_note("dated_aux")) })
+}
+
+/// An AmiBroker watchlist (ami.rs): every stock with prices inside the window, each carrying its database's Aux1 / Aux2, which
+/// execution.aux1 / aux2 read per stock; without them every stock can be bought on every bar, as in AmiBroker. No member cap
+/// (the run's memory limits, as for the dated C&P lists).
+fn load_ami(st: &State, id: &str, list: &'static super::ami::Watchlist, deadline: Option<Instant>, (from, to): (&str, &str)) -> Result<Loaded, LabError> {
+    let cat = super::ami::catalogue().unwrap();
+    let reference = crate::native_benchmark(crate::baskets::Market::India).to_string();
+    let context = st.ctxs.get(&reference).ok_or_else(|| LabError::NeedsData(format!("{reference} (the portfolio's reference calendar) is not loaded on this engine")))?;
+    let dates: Vec<_> = context.r.iter().map(|r| r.date.clone()).collect();
+    calendar_ok(&dates, &format!("{reference} reference calendar"), deadline)?;
+    let (lo, hi) = (if from.is_empty() { dates[0].as_str() } else { from }, if to.is_empty() { dates.last().unwrap().as_str() } else { to });
+    let (mut members, mut refused) = (Vec::new(), Vec::new());
+    for s in list.stocks.iter().map(|&k| &cat.stocks[k]).filter(|s| s.first.as_str() <= hi && s.last.as_str() >= lo) {
+        check_deadline(deadline)?;
+        let bars = match s.read() { Ok(b) => b, Err(LabError::NeedsData(reason)) => { refused.push((s.ticker.clone(), reason)); continue; } Err(e) => return Err(e) };
+        if let Err(LabError::NeedsData(reason)) = calendar_ok(&bars.date, &s.ticker, deadline) { refused.push((s.ticker.clone(), reason)); continue; }
+        let at = calendar_map_with_deadline(&dates, &bars.date, deadline)?;
+        // every bar can buy (Aux gates it per stock); Some(..) also marks the member as exempt from the 120-name cap (portfolio.rs run)
+        let eligible = Some(vec![true; bars.date.len()]);
+        members.push(Member { ticker: s.ticker.clone(), kind: "individual_stock", frames: Frames::new(bars), at, eligible });
+    }
+    if members.is_empty() { return Err(LabError::NeedsData(format!("{id}: no stock in {} has prices between {lo} and {hi}", list.name))); }
+    Ok(Loaded { reference, dates, members, refused, basket: Some(id.to_string()), membership: ("ami_watchlist", membership_note("ami_watchlist")) })
 }
 
 #[cfg(test)]
@@ -299,7 +358,7 @@ pub(crate) mod tests {
     #[test] fn an_expired_deadline_refuses_before_loading_or_publishing_a_partial_universe() {
         let st=crate::State {ctxs:BTreeMap::new(),baskets:Default::default(),vix:vec![],market_extra:BTreeMap::new()};
         let deadline=std::time::Instant::now()-std::time::Duration::from_secs(1);
-        let error=load_with_deadline(&st,&Universe::Basket("nifty50".into()),deadline).err().unwrap();
+        let error=load_with_deadline(&st,&Universe::Basket("nifty50".into()),deadline,("","")).err().unwrap();
         assert_eq!(error.status(),"invalid");assert!(error.message().contains("stopped after 90 s"));
     }
     #[test] fn reference_dates_require_ascii_iso_digits_not_signed_numeric_parts() {

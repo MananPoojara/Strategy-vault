@@ -76,10 +76,17 @@ it("monthly table from VaultReport; table and CSV button absent without it", asy
   let host = await mount(<RunTables result={runFixture} />);
   expect((window.VaultReport!.monthly as ReturnType<typeof vi.fn>).mock.calls[0][0].equity[0]).toBe(1);
   const cells = [...host.querySelectorAll(".lab-monthly tbody td")].map((td) => td.textContent);
+  // beside the table: the yearly returns as bars, one per year, and the average month
+  const charts = [...host.querySelectorAll("[data-lab-yoy-charts] figure")];
+  expect(charts.map((f) => f.querySelector("figcaption")!.textContent)[0]).toBe("Yearly return");
+  expect(charts[0].querySelectorAll(".lab-yoy-col")).toHaveLength(host.querySelectorAll(".lab-monthly tbody tr").length);
   expect(cells[0]).toBe("2024");
   expect(cells[1]).toBe("2.0%");
   expect(cells).toHaveLength(14); // Year, 12 months, Total (no Yr% column)
-  expect(cells.slice(1, 13).filter((c) => c === "0.0%" || c === "—")).toEqual([]); // a month with no return is blank
+  expect(cells.slice(1, 13).filter((c) => c === "0.0%" || c === "—")).toEqual([]); // a month with no return is not a number
+  expect(cells.slice(1, 13).filter((c) => c === "·").length).toBeGreaterThan(0); // it reads "·" (no trade that month)
+  const shade = host.querySelector<HTMLElement>(".lab-monthly tbody td.pos, .lab-monthly tbody td.neg")!.style.getPropertyValue("--heat");
+  expect(Number(shade)).toBeGreaterThan(0); expect(Number(shade)).toBeLessThanOrEqual(1); // the heatmap shade, 0–1 by the size of the move
   expect(host.querySelector(".lab-monthly caption")!.firstChild!.textContent).toBe("YOY-Monthly ");
   expect(host.querySelector("[data-lab-yoy-download]")!.textContent).toBe("Download Excel");
   expect(host.querySelector("[data-lab-pivot-total] td")!.textContent).toBe("Total");

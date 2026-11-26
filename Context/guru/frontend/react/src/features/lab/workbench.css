@@ -15,6 +15,10 @@
 .lab-pane { height: 150px; margin-top: 0; border-top: 1px solid var(--rule); }
 .lab-pane-box > .lab-legend-tv { top: 2px; }
 .lab-pane:empty { display: none; }
+/* A yes/no pattern marks the price chart and leaves its pane empty: its label (eye, settings, ✕) takes its own row instead of
+   floating over the next pane's label, where only the newest chip's ✕ could be clicked. */
+.lab-pane-box:has(> .lab-pane:empty) > .lab-chart-indicators { position: static; padding: 4px 8px; border-top: 1px solid var(--rule); }
+.lab-pane-box:has(> .lab-pane:empty) > :is(.lab-pane-settings, .lab-legend-tv, .lab-pane-divider) { display: none; }
 .lab-price { position: relative; }
 .lab-latest { position: absolute; right: 92px; bottom: 40px; z-index: 4; width: 30px; height: 30px; border: 1px solid var(--steel); border-radius: 50%; background: var(--card); color: var(--ink); font: 700 16px/1 var(--font); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
 .lab-draw { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; }
@@ -231,19 +235,20 @@
 /* TradingView: the toolbar never makes the chart shorter; it is as tall as the chart and scrolls when its buttons do not fit */
 .lab-workbench .lab-draw-rail { contain: size; align-self: stretch; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 
-/* ---- Chart tab, Apple-style pass (18-11-2026): one quiet title row, then a chart that owns the rest of the screen.
+/* ---- Title row, Apple-style pass (18-11-2026; every workspace tab since 23-11-2026, user): one quiet title row, then the workspace.
    Title + source notice on the left and the workspace switcher on the right share a single row; every other part spans the page. */
-:root .lab-page[data-lab-page][data-chart-workspace] { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 16px; }
-:root .lab-page[data-lab-page][data-chart-workspace] > * { grid-column: 1 / -1; }
-:root .lab-page[data-lab-page][data-chart-workspace] > header { grid-row: 1; grid-column: 1; gap: 4px 12px; }
-:root .lab-page[data-lab-page][data-chart-workspace] > .lab-tabs-row { grid-row: 1; grid-column: 2; justify-content: flex-end; order: 0; }
-:root .lab-page[data-lab-page][data-chart-workspace] > header h1 { font-size: 22px; font-weight: 650; letter-spacing: -.022em; line-height: 1.2; }
-:root .lab-page[data-lab-page][data-chart-workspace] > header .lab-label { padding: 3px 9px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--card)); color: var(--ink2); font: 500 11.5px var(--font); }
+:root .lab-page[data-lab-page] { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 16px; }
+:root .lab-page[data-lab-page] > * { grid-column: 1 / -1; }
+:root .lab-page[data-lab-page] > header { grid-row: 1; grid-column: 1; gap: 4px 12px; }
+:root .lab-page[data-lab-page] > .lab-tabs-row:not([data-lab-market-row]) { grid-row: 1; grid-column: 2; justify-content: flex-end; order: 0; }
+:root .lab-page[data-lab-page] > header h1 { font-size: 22px; font-weight: 650; letter-spacing: -.022em; line-height: 1.2; }
+:root .lab-page[data-lab-page] > header .lab-label { padding: 3px 9px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--card)); color: var(--ink2); font: 500 11.5px var(--font); }
 /* Segmented control: a soft track, the chosen segment a raised card in label colour (not a second accent). */
-:root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs { gap: 2px; padding: 3px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--ink) 7%, var(--card)); }
-:root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs [role=tab] { min-height: 32px; padding: 5px 16px; border-radius: 7px; font: 500 13px var(--font); color: var(--ink2); }
-:root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs [role=tab]:hover { color: var(--ink); background: color-mix(in srgb, var(--card) 55%, transparent); }
-:root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs [role=tab][aria-selected=true] { color: var(--ink); font-weight: 600; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .1), 0 2px 6px -2px rgb(0 0 0 / .1); }
+:root .lab-page[data-lab-page] .lab-tabs { gap: 2px; padding: 3px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--ink) 7%, var(--card)); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab] { min-height: 32px; padding: 5px 16px; border-radius: 7px; font: 500 13px var(--font); color: var(--ink2); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab]:hover { color: var(--ink); background: color-mix(in srgb, var(--card) 55%, transparent); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab][aria-selected=true] { color: var(--ink); font-weight: 600; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .1), 0 2px 6px -2px rgb(0 0 0 / .1); }
+:root .lab-page[data-lab-page] > header > p:not(.lab-label) { display: none; }
 /* The chart card: one radius, a hairline and a soft lift; toolbar and range row read as parts of it. */
 :root .lab-page[data-chart-workspace] section.lab-workbench { padding-bottom: 0; border-color: color-mix(in srgb, var(--ink) 9%, transparent); border-radius: 14px; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 10px 30px -16px rgb(0 0 0 / .2); overflow: clip; }
 :root .lab-page[data-chart-workspace] .lab-workbench > .lab-chart-topbar { border-radius: 14px 14px 0 0; border-bottom-color: color-mix(in srgb, var(--ink) 8%, transparent); }
@@ -255,10 +260,10 @@
 .lab-maximized .lab-build-cta { display: none; }
 /* Narrow screens: the switcher drops under the title, full width, and the action keeps a full row of the toolbar. */
 @media (max-width: 760px) {
-  :root .lab-page[data-lab-page][data-chart-workspace] { grid-template-columns: minmax(0, 1fr); }
-  :root .lab-page[data-lab-page][data-chart-workspace] > .lab-tabs-row { grid-row: 2; grid-column: 1; justify-content: stretch; }
-  :root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs { display: flex; width: 100%; overflow-x: auto; }
-  :root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs [role=tab] { flex: 1 0 auto; padding-inline: 12px; }
+  :root .lab-page[data-lab-page] { grid-template-columns: minmax(0, 1fr); }
+  :root .lab-page[data-lab-page] > .lab-tabs-row:not([data-lab-market-row]) { grid-row: 2; grid-column: 1; justify-content: stretch; }
+  :root .lab-page[data-lab-page] .lab-tabs { display: flex; width: 100%; overflow-x: auto; }
+  :root .lab-page[data-lab-page] .lab-tabs [role=tab] { flex: 1 0 auto; padding-inline: 12px; }
   .lab-chart-topbar .lab-build-cta { margin: 4px 0 0; flex-basis: 100%; }
 }
-@media (pointer: coarse) { :root .lab-page[data-lab-page][data-chart-workspace] .lab-tabs [role=tab], .lab-chart-topbar .lab-build-cta { min-height: 40px; } }
+@media (pointer: coarse) { :root .lab-page[data-lab-page] .lab-tabs [role=tab], .lab-chart-topbar .lab-build-cta { min-height: 40px; } }

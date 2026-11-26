@@ -1,4 +1,4 @@
-import { Fragment, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS, paramLabel } from "./labels";
 import { isSeries, isValue, type Side } from "./spec-model";
 import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, SINCE_ENTRY_KINDS, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, sinceEntry, type OperandKind, type SinceEntryKind } from "./rule-tree";
@@ -160,16 +160,36 @@ function updatedTiming(operand: Operand, patch: Obj, compress: boolean): Operand
   if (next.expand === "last" || (next.expand === "first" && !firstAllowed(next, compress))) delete next.expand;
   return next;
 }
-export function TimeframeField({ operand, catalogue, onChange, compress = false }: {
+/** The bars the backtest runs on (Backtest bars: D, W, M…); a rule's "D" timeframe means these bars. */
+export const BacktestBarsContext = createContext("D");
+const TF_RANK = ["D", "W", "M", "Q", "Y"];
+export function TimeframeField({ operand, catalogue, onChange, compress = false, follow }: {
   operand: Operand; catalogue: Catalogue; onChange(o: Operand): void; compress?: boolean;
+  /** A plain price beside an indicator on this higher timeframe: unset reads "Same as indicator", and Daily is kept as an explicit choice. */
+  follow?: string;
 }) {
   const x = operand as Obj, tf = (x.tf ?? (compress ? "W" : "D")) as string, custom = /^\d+D$/.test(tf);
-  const choices = [...new Set([...(compress ? [] : ["D"]), ...catalogue.timeframes.filter((t) => !compress || t !== "D"), ...(!custom && tf !== "D" ? [tf] : [])])];
+  // "D" is the backtest's own bars: on a weekly backtest it reads "Same as backtest (Weekly)" and only higher timeframes are offered
+  const base = useContext(BacktestBarsContext), above = (t: string) => base === "D" || TF_RANK.indexOf(t) > TF_RANK.indexOf(base);
+  if (follow && !compress) {
+    const value = x.tf === undefined ? "" : x.tf === "D" ? "D!" : (x.tf as string);
+    const others = catalogue.timeframes.filter((t) => t !== "D");
+    return <select aria-label="Timeframe" value={value} data-lab-tf-follow={follow} onChange={(e) => {
+      const { tf: _t, expand: _e, ...rest } = x, v = e.target.value;
+      onChange((v === "" ? rest : { ...rest, tf: v === "D!" ? "D" : v }) as Operand); // "D" stays in the spec: daily on purpose
+    }}>
+      <option value="">{`Same as indicator (${TF_LABELS[follow] ?? follow})`}</option>
+      <option value="D!">Daily</option>
+      {others.map((t) => <option key={t} value={t}>{TF_LABELS[t] ?? t}</option>)}
+    </select>;
+  }
+  const choices = [...new Set([...(compress ? [] : ["D"]), ...catalogue.timeframes.filter((t) => (!compress || t !== "D") && t !== "D" && above(t)), ...(!custom && tf !== "D" ? [tf] : [])])];
+  const label = (t: string) => t === "D" && !compress && base !== "D" ? `Backtest (${TF_LABELS[base] ?? base})` : TF_LABELS[t] ?? t;
   return <>
     <select aria-label={compress ? "Aggregate timeframe" : "Timeframe"} value={custom ? "nD" : tf}
       onChange={(e) => onChange(updatedTiming(operand, { tf: e.target.value === "nD" ? "5D" : e.target.value }, compress))}>
-      {choices.map((t) => <option key={t} value={t}>{TF_LABELS[t] ?? t}</option>)}
-      <option value="nD">Every N sessions…</option>
+      {choices.map((t) => <option key={t} value={t}>{label(t)}</option>)}
+      {(base === "D" || custom) && <option value="nD">Every N sessions…</option>}
     </select>
     {custom && <NumField label="sessions" value={Number(tf.slice(0, -1))} min={2} max={catalogue.custom_days?.[1] ?? 63} step={1}
       onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 2 && n <= (catalogue.custom_days?.[1] ?? 63) &&

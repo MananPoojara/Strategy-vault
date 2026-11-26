@@ -38,6 +38,8 @@ pub mod templates;
 pub mod ta;
 pub mod trend;
 pub mod universe;
+pub mod cp;
+pub mod ami;
 pub mod walkforward;
 pub mod scan;
 pub mod vol2;

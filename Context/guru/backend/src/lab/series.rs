@@ -562,6 +562,13 @@ pub(super) fn turnover_floor(date: &str) -> f64 {
         2017 => 5_000_000., 2018 => 6_000_000., 2019 => 7_000_000., 2020 => 8_000_000., 2021 => 9_000_000., _ => 10_000_000.,
     }
 }
+/// The floor for a date from the strategy's own table (execution.turnover_floor): the last row at or before its year, the
+/// first row before that; no table: the AFL's.
+pub(super) fn turnover_floor_in(date: &str, table: Option<&[(i32, f64)]>) -> f64 {
+    let Some(t) = table.filter(|t| !t.is_empty()) else { return turnover_floor(date) };
+    let year = date.get(0..4).and_then(|y| y.parse::<i32>().ok()).unwrap_or(0);
+    t.iter().rev().find(|(from, _)| *from <= year).unwrap_or(&t[0]).1
+}
 /// The AFL "BACKTEST PARAMETER" buy gates on the signal bar (execution.penny_price, turnover_filter, aux1, aux2): Close >
 /// Penny Stock Price, V × C > the year's floor, Aux == 1. A missing value (NaN) fails its gate. DEAD STOCK's last-bar buy
 /// block needs no gate: the trade loop takes no new signal on the window's last bar (simulate.rs `if last { break; }`).
@@ -570,7 +577,7 @@ fn entry_gates(c: &mut Compiled, x: &Exec, d: &Bars) -> Result<(), LabError> {
     if x.penny_price > 0. { gate(d.close.iter().map(|c| *c > x.penny_price).collect(), format!("execution.penny_price: close above {}", x.penny_price)); }
     if x.turnover_filter {
         let v = d.volume_or_late().ok_or_else(|| LabError::NeedsData("execution.turnover_filter needs volume, which this instrument's data does not carry".into()))?;
-        gate((0..d.len()).map(|i| v[i] * d.close[i] > turnover_floor(&d.date[i])).collect(), "execution.turnover_filter: volume × close above the year's turnover floor".into());
+        gate((0..d.len()).map(|i| v[i] * d.close[i] > turnover_floor_in(&d.date[i], x.turnover_floor.as_deref())).collect(), "execution.turnover_filter: volume × close above the year's turnover floor".into());
     }
     for k in (0..2).filter(|&k| x.aux[k]) {
         let col = d.aux[k].as_ref().ok_or_else(|| LabError::NeedsData(format!("execution.aux{0} needs the instrument's Aux{0} column, which its data does not carry", k + 1)))?;

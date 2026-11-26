@@ -138,7 +138,7 @@ it("clearing the fees box keeps cost_bps and the same focused input", async () =
   expect((onChange.mock.calls.at(-1)![0] as Spec).execution?.cost_bps).toBe(7);
 });
 
-it("each remove button and order input names its own row; repeated problems all render", async () => {
+it("each remove button and order input names its own row; problems block Run without a message list", async () => {
   const spec = addCond({ ...defaultSpec(), exit: { any: defaultSpec().exit.any, stop_loss: { pct: 5 }, target: { atr: 2, atr_length: 14 } } }, "entry", defaultSpec().entry.all[0]);
   const { host } = await setup(spec, { problems: ["same", "same"] });
   expect(host.querySelector('[aria-label="Remove Entry 2"]')).not.toBeNull();
@@ -146,7 +146,9 @@ it("each remove button and order input names its own row; repeated problems all 
   expect(new Set(names).size).toBe(names.length);
   expect(host.querySelector('[role="group"][aria-label="Stop-loss"] input[aria-label="%"]')).not.toBeNull();
   expect(host.querySelector('[role="group"][aria-label="Target"] input[aria-label="ATR length"]')).not.toBeNull();
-  expect(host.querySelectorAll(".rnote li")).toHaveLength(2);
+  expect(host.querySelectorAll(".rnote li")).toHaveLength(0); // no message list; Run is greyed and names the problem on hover
+  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(true);
+  expect(host.querySelector('[data-lab-action="run"]')!.getAttribute("title")).toBe("same");
   expect(host.textContent).toContain("Changing the entry fill also moves exits");
 });
 
@@ -203,23 +205,22 @@ const scenario = (host: HTMLElement) => host.querySelector<HTMLSelectElement>('s
 
 it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay mounted", async () => {
   const { host } = await tree(defaultSpec(), { portfolio: <p data-portfolio-slot>portfolio controls</p> });
-  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Stops", "Report", "Portfolio"]); // AmiBroker's window, tab by tab (walk-forward is in Optimize, collapsed)
-  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1]);
+  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Stops", "Report"]); // AmiBroker's window, tab by tab (walk-forward is in Optimize, collapsed)
+  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
   expect(panel(host, "Report").querySelector("[data-lab-report-settings]")).not.toBeNull(); // risk-free rates on their own tab, as in AmiBroker
   for (const t of tabs(host)) expect(panel(host, t.textContent!).getAttribute("aria-labelledby")).toBe(t.id);
   // the basics come first; Positions and From/To sit over the rule cards in Your idea; the AmiBroker settings are always open, named when something is changed
   const basics = host.querySelector("[data-lab-basics]")!;
-  expect([...basics.querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Backtest parameters"]); // the AFLs' panel
+  expect([...basics.querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Backtest parameters"]); // the AFLs' panel (From – To is in the Market row of Build strategy)
   expect(basics.querySelector('input[aria-label="Brokerage (bps / side)"]')).not.toBeNull(); // always shown
   expect(basics.querySelector('input[aria-label="Slippage (bps / side)"]')).toBeNull(); // the AFL panel has BROKERAGE only
   expect(basics.querySelector('[data-lab-exec="positions"]')).toBeNull();
-  const idea = host.querySelector("[data-lab-idea-basics]")!;
-  expect(idea.querySelector('[data-lab-exec="positions"]')).not.toBeNull();
-  expect([...idea.querySelectorAll("label")].map((l) => l.firstChild?.textContent)).toEqual(expect.arrayContaining(["From", "To"]));
+  expect(host.querySelector('[data-lab-card="entry"] [data-lab-positions] [data-lab-exec="positions"]')).not.toBeNull(); // Positions opens the Entry card
+  expect(host.querySelector("[data-lab-period]")).toBeNull(); // the test period is not a rules or settings control
   expect(basics.querySelector("[data-lab-equity]")).not.toBeNull();
   expect(host.querySelector("[data-lab-more-settings] > h3")!.textContent).toBe("AmiBroker settings · all at their defaults");
   expect(host.querySelectorAll('[data-lab-action="run"]')).toHaveLength(1);
-  expect(host.querySelector('[data-lab-idea-basics] [data-lab-action="run"]')).not.toBeNull(); // Run backtest at the right of the Positions row
+  expect(host.querySelector('[data-lab-idea-run] [data-lab-action="run"]')).not.toBeNull(); // Optimize and Run, side by side above the Entry rules
   expect(host.querySelector("[data-lab-more-settings] [role=tablist]")).not.toBeNull();
   expect([...panel(host, "General").querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Data", "Backtest", "Commissions & rates", "Position size & risk"]);
   expect(panel(host, "General").querySelector("input[type=checkbox]")!.getAttribute("aria-label")).toBe("Pad and align all data to reference symbol"); // pad & align first, as asked
@@ -228,18 +229,22 @@ it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay 
   // nothing appears twice inside the AmiBroker settings (Scenario is on Trades and Stops, as in AmiBroker)
   expect(host.querySelectorAll('[aria-label="Initial equity"]')).toHaveLength(1); // under Starting money only
   expect(host.querySelectorAll('[data-lab-more-settings] [aria-label="Positions"]')).toHaveLength(0); // Positions is on the Your idea row only
-  const once = ["Min. shares", "Round lot size", "Tick size", "$ per trade", "Allow position size shrinking", "Reverse entry signal forces exit", "Max. Open Positions", "Use previous bar equity for position sizing", "Risk-free rate for UPI (%)"];
+  const once = ["Min. shares", "Round lot size", "Tick size", "$ per trade", "Allow position size shrinking", "Reverse entry signal forces exit", "Risk-free rate for UPI (%)"];
   for (const l of once) expect(host.querySelectorAll(`[data-lab-more-settings] [aria-label="${l}"]`), l).toHaveLength(1);
+  expect(host.querySelectorAll('[data-lab-more-settings] [aria-label="Max. Open Positions"]')).toHaveLength(0); // a portfolio setting, so not on one instrument
   expect([...host.querySelectorAll("[data-lab-more-settings] label.lab-check")].filter((l) => l.textContent!.startsWith("Activate stops immediately"))).toHaveLength(1);
   expect(host.querySelector(".lab-settings-h")!.textContent).toContain("Backtest settings");
   expect(panel(host, "Trades").querySelector('[data-lab-trade-prices="preset"]')).not.toBeNull(); // grid always visible, greyed for presets
-  expect(panel(host, "Portfolio").querySelector("[data-portfolio-slot]")).not.toBeNull();
+  // Portfolio is the first card, above Backtest parameters, in both views; the AmiBroker rail has no Portfolio tab
+  expect(host.querySelector("[data-lab-portfolio-card] [data-portfolio-slot]")).not.toBeNull();
+  expect(host.querySelector("[data-lab-more-settings] [data-portfolio-slot]")).toBeNull();
+  expect(host.querySelectorAll('[aria-label="Use previous bar equity for position sizing"]')).toHaveLength(1);
   const list = host.querySelector<HTMLElement>("[role=tablist]")!;
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(tabs(host)[1].getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(tabs(host)[1]);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
-  expect(tabs(host)[4].tabIndex).toBe(0);
+  expect(tabs(host)[3].tabIndex).toBe(0);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(tabs(host)[0].getAttribute("aria-selected")).toBe("true"); // wraps
   await act(async () => tabs(host)[3].click());
@@ -257,7 +262,7 @@ it("the AmiBroker settings tabs are a vertical rail: Up / Down move as well as L
   expect(document.activeElement).toBe(tabs(host)[1]);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
-  expect(tabs(host)[4].getAttribute("aria-selected")).toBe("true"); // wraps
+  expect(tabs(host)[3].getAttribute("aria-selected")).toBe("true"); // wraps
   await unmount();
   const plain = await mount(<SettingsTabs labels={["A", "B"]}>{[<p key="a">a</p>, <p key="b">b</p>]}</SettingsTabs>);
   const strip = plain.querySelector<HTMLElement>("[role=tablist]")!;
@@ -380,6 +385,17 @@ it("the Exit card sets N candle, ATR, Supertrend, HSL and Profit booking; only t
   expect([...scenario(p.host).options].find((o) => o.value === "prices")!.disabled).toBe(true);
   await act(async () => p.host.querySelector<HTMLButtonElement>("[data-lab-portfolio-stray] button")!.click());
   expect(p.last().execution).toEqual({ capital: 1e6 });
+});
+
+it("Simple view: the same Portfolio card (Backtest on and the portfolio tabs) at the top, no other AmiBroker settings", async () => {
+  const { LabModeContext } = await import("../src/features/lab/simple");
+  const host = await mount(<LabModeContext.Provider value="simple"><RuleBuilder spec={defaultSpec()} catalogue={catalogue7Fixture} onChange={vi.fn()} settings={settings} onSettings={() => {}}
+    problems={[]} running={false} onRun={() => {}} part="settings" portfolio={<p data-portfolio-slot>portfolio controls</p>} /></LabModeContext.Provider>);
+  const box = host.querySelector("[data-lab-portfolio-card]")!;
+  expect(box.compareDocumentPosition(host.querySelector("[data-lab-basics]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // at the top, before Backtest parameters
+  expect(box.querySelector("[data-portfolio-slot]")).not.toBeNull();
+  expect(box.querySelector("[data-lab-portfolio-tab] legend")!.textContent).toBe("Single-instrument settings");
+  expect(host.querySelector("[data-lab-settings-tabs]")).toBeNull(); // General, Trades, Stops, Report stay Advanced
 });
 
 it("Filters tab: AFL-style filters are entry rules marked filter, each with its own sell-when-false box", async () => {

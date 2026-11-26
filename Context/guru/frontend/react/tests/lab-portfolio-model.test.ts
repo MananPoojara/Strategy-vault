@@ -32,4 +32,18 @@ it("refuses the single-instrument AmiBroker fields in a portfolio, like the engi
  }
  const single={...defaultSpec(),execution:{capital:1e6,reentry:{stop_loss:3},prices:{buy:"close" as const},delays:{buy:0},limits:{round_lot:10},tick_size:0.05,pad_align:true}};
  expect(withPortfolioMode(single,"signals").execution).toEqual({capital:1e6});
+ // AmiBroker's previous-bar equity and an N-monthly-candle (since-entry) exit run in a portfolio and survive the switch
+ const dated={...catalogue7Fixture,portfolio:{modes:["signals","rotation"],max_open:50,max_universe:120,max_universe_list:50,max_combos:200,max_work:12000,baskets:[{id:"nifty50_cp-n500",members:128,membership_kind:"dated_aux"},{id:"big",members:121}]}} as never;
+ expect(portfolioProblems({...port,portfolio:{...port.portfolio,universe:{basket:"nifty50_cp-n500"}}},dated,"in")).toEqual([]);
+ expect(portfolioProblems({...port,portfolio:{...port.portfolio,universe:{basket:"big"}}},dated,"in")).toContain("Choose an available basket within the advertised universe limit.");
+ const monthly={lhs:{since_entry:"count",when:{lhs:{s:"period_end",out:"m"},op:">",rhs:{value:0}}},op:">=",rhs:{value:1}};
+ expect(portfolioProblems({...port,exit:{any:[monthly]},execution:{...port.execution,limits:{prev_bar_equity:true}}} as never,cat,"in")).toEqual([]);
+ expect(withPortfolioMode({...single,execution:{...single.execution,limits:{round_lot:10,prev_bar_equity:true}}},"signals").execution).toEqual({capital:1e6,limits:{prev_bar_equity:true}});
+});
+
+it("lets a portfolio run the Dual ATR and Dual Line exits (each member steps its own stop, like one instrument)", () => {
+ const port={...defaultSpec(),execution:{capital:1e6},portfolio:{universe:{basket:"nifty50"},mode:"signals" as const}};
+ const cat={...catalogue7Fixture,portfolio:{modes:["signals","rotation"],max_open:50,max_universe:120,max_universe_list:50,max_combos:200,max_work:12000,baskets:[{id:"nifty50",members:50}]}} as never;
+ const dual={...port,exit:{...port.exit,dual_atr:{initial:{period:5,mult:2},favour:{period:5,mult:4}},dual_line:{initial:{value:10},favour:{value:12}}}} as never;
+ expect(portfolioProblems(dual,cat,"in").join(" ")).not.toContain("dual");
 });

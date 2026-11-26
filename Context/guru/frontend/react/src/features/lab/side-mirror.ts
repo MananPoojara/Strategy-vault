@@ -33,9 +33,8 @@ export function mirrorRule(node: RuleNode): RuleNode {
   }
   if (STATE.has(String(l.out)) && r.value === 0) return flipped as RuleNode; // a trend state against 0
   if (isSeries(r) && r.s === l.s && SIGNAL.has(String(r.out))) return flipped as RuleNode; // a line against its signal line
-  const levels = DEFAULT_LEVELS[l.s as string];
-  if (levels?.length && typeof r.value === "number") // an oscillator against its level: RSI 30 ↔ 70, CCI −100 ↔ 100
-    return { ...flipped, rhs: { ...r, value: num(Math.min(...levels) + Math.max(...levels) - r.value) } } as RuleNode;
+  // an oscillator against its level: the comparison flips, the level the user typed stays (RSI crosses above 70 ↔ crosses below 70)
+  if (DEFAULT_LEVELS[l.s as string]?.length && typeof r.value === "number") return flipped as RuleNode;
   if (isClose(l) && isSeries(r)) return { ...flipped, rhs: band(r) } as RuleNode; // the close against a price line or a channel side
   if (isClose(r)) return { ...flipped, lhs: band(l) } as RuleNode; // a price line against the close
   return node;

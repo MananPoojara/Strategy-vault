@@ -67,7 +67,7 @@ function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
 }
 export const clearLabCache = () => cache.clear();
 
-export interface RunQuery { ticker: string; from?: string; to?: string; cost?: number; slippage?: number; /** AmiBroker Periodicity: W/M/… backtests on period bars (one instrument); unset = daily */ tf?: string }
+export interface RunQuery { ticker: string; from?: string; to?: string; cost?: number; slippage?: number; /** AmiBroker Periodicity: W/M/… backtests on period bars (one instrument or a portfolio; nD one instrument only); unset = daily */ tf?: string }
 
 export const catalogue = (m: SavedMarket) => cached(`cat:${engineBase(m)}`, () => engine<Catalogue>(m, "lab/catalogue"));
 /** A formula chip sends `formula` and `name` instead of `id`, and its Params as `<Param>=<value>` (custom indicators contract §2). */
@@ -82,7 +82,7 @@ export function series(m: SavedMarket, q: { id: string; ticker: string; tf?: str
 export const formulaInfo = (m: SavedMarket, formula: string): Promise<FormulaInfo> =>
   cached(`formula:${engineBase(m)}:${formula}`, () => engine<unknown>(m, "lab/formula", { formula }).then(parseFormulaInfo));
 export type PortfolioRunQuery = Omit<RunQuery,"ticker"|"cost"|"slippage">;
-const executionQuery = (spec: Spec, q: (RunQuery | PortfolioRunQuery) & {split?: string | null}) => spec.portfolio ? {from:q.from,to:q.to} : q;
+const executionQuery = (spec: Spec, q: (RunQuery | PortfolioRunQuery) & {split?: string | null}) => spec.portfolio ? {from:q.from,to:q.to,tf:q.tf} : q;
 export function run(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioRunResult>;
 export function run(m:SavedMarket,spec:Spec,q:RunQuery):Promise<LabRunResult>;
 export function run(m:SavedMarket,spec:Spec,q:RunQuery|PortfolioRunQuery):Promise<LabRunResult>{return engine<LabRunResult>(m,"lab/run",{spec:JSON.stringify(spec),...executionQuery(spec,q)});}

@@ -22,7 +22,7 @@ export function WalkForwardTab({ spec, dates = [] }: { spec: Spec; /** Bars of t
       <div className="lab-row">{shown("In-sample Start", first?.is[0])}{shown("In-sample End", first?.is[1])}{length("is", "In-sample Length")}
         <label className="lab-check"><input type="checkbox" aria-label="Anchored" checked={o.anchored} onChange={(e) => set({ anchored: e.target.checked })} /> Anchored</label></div>
       <div className="lab-row">{shown("In-sample Last", last?.is[1])}
-        <label className="lab-check"><input type="checkbox" aria-label="In-sample Use today" checked disabled /> Use today</label><Why text="Windows run to the end of the test period (To in Your idea)" /></div>
+        <label className="lab-check"><input type="checkbox" aria-label="In-sample Use today" checked disabled /> Use today</label><Why text="Windows run to the end of the test period (To in Build strategy)" /></div>
       <div className="lab-row">{length("step", "In-sample Step")}
         <label className="dfield">Unit<select aria-label="Walk-forward unit" value={o.unit} onChange={(e) => set({ unit: e.target.value as WalkforwardOptions["unit"] })}>
           <option value="years">year(s)</option><option value="months">month(s)</option></select></label></div>

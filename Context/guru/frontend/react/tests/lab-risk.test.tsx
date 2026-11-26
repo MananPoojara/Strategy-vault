@@ -95,8 +95,8 @@ it("the AFL backtest parameter rows, in its order, with its defaults", async () 
   const { host } = await risk(withMode(defaultSpec(), "money"), { kind: "index", market: "in" });
   const block = host.querySelector('[aria-label="Backtest parameters"]')!;
   const labels = [...block.querySelectorAll("input[aria-label], select[aria-label]")].map((e) => e.getAttribute("aria-label"));
-  expect(labels.slice(0, 12)).toEqual(["Initial equity", "Position size per", "Equity mode", "% of equity", "Equity allocation", "Brokerage (%)",
-    "Maximum position", "Dead stock backtest", "Penny stock price", "Turnover filter", "Aux1", "Aux2"]);
+  expect(labels.slice(0, 13)).toEqual(["Initial equity", "Position size per", "Equity mode", "% of equity", "Equity allocation", "Brokerage (%)",
+    "Maximum position", "Use previous bar equity for position sizing", "Dead stock backtest", "Penny stock price", "Turnover filter", "Aux1", "Aux2"]);
   const val = (l: string) => block.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${l}"]`)!;
   expect(["Initial equity", "% of equity", "Equity allocation", "Maximum position", "Penny stock price"].map((l) => val(l).value)).toEqual(["1000000", "100", "100000", "1", "0"]);
   expect([...block.querySelectorAll<HTMLSelectElement>("select")].slice(0, 6).map((s) => s.selectedOptions[0].textContent))

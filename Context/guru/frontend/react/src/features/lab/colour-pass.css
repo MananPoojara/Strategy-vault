@@ -1,0 +1,226 @@
+/* Colour and hierarchy pass (23-11-2026, user). Loaded last on the Indicators page.
+   1. Workspace tabs (Chart · Strategy & backtest · …): solid theme colour, the largest type; frozen under the site bar.
+   2. Steps (Build strategy · Strategy settings · Results): a light tint of the same colour, one size smaller; frozen under the tabs.
+   3. Entry / Exit fields: a grid of cells, name left of its box, lines between.  4. Strategy settings: one card per group, a row per field. */
+:root .lab-page[data-lab-page] {
+  --cp-title-h: 66px;
+  --cp-step-h: 54px; /* the frozen step bar's height */
+  --cp-line: color-mix(in srgb, var(--blue) 16%, var(--rule));
+  --cp-tint: color-mix(in srgb, var(--blue) 12%, var(--card));
+  --cp-bar: var(--blue);
+}
+:root[data-theme="midnight"] .lab-page[data-lab-page] { --cp-bar: color-mix(in srgb, var(--blue) 40%, var(--card)); }
+
+/* ---- 1. title row: frozen, its band covers the page gutters so nothing shows through while scrolling */
+:root .lab-page[data-lab-page] > header,
+:root .lab-page[data-lab-page] > .lab-tabs-row:not([data-lab-market-row]) {
+  position: sticky; top: 58px; z-index: 22; align-self: stretch; min-height: var(--cp-title-h); padding-block: 8px;
+  display: flex; align-items: center; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(10px);
+}
+:root .lab-page[data-lab-page] > header { margin-left: -32px; padding-left: 32px; margin-right: -16px; padding-right: 16px; }
+:root .lab-page[data-lab-page] > .lab-tabs-row:not([data-lab-market-row]) { flex-direction: row; justify-content: stretch; margin-right: -32px; padding-right: 32px; }
+:root .lab-page[data-lab-page] > header h1 { font-weight: 700; }
+:root .lab-page[data-lab-page] > .lab-tabs-row:not([data-lab-market-row]) > .lab-tabs { flex: 1 1 auto; }
+:root .lab-page[data-lab-page] .lab-tabs { gap: 4px; padding: 4px; border-radius: 12px; background: var(--cp-bar); box-shadow: 0 2px 10px -4px color-mix(in srgb, var(--blue) 60%, transparent); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab] { flex: 1 0 auto; min-height: 42px; padding: 6px 22px; border-radius: 9px; font: 600 20px var(--font); letter-spacing: -.01em; color: rgb(255 255 255 / .85); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab]:hover { color: #fff; background: rgb(255 255 255 / .14); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab][aria-selected=true] { color: var(--blue); font-weight: 700; background: var(--card); box-shadow: 0 1px 3px rgb(0 0 0 / .18); }
+:root[data-theme="midnight"] .lab-page[data-lab-page] .lab-tabs [role=tab][aria-selected=true] { color: var(--ink); }
+:root .lab-page[data-lab-page] .lab-tabs [role=tab]:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+
+/* typography.css sets every button's size with !important (tabs 17px, steps 14px); the agreed hierarchy needs it here too */
+:root .lab-page[data-lab-page] .lab-tabs [role=tab] { font-size: 20px !important; }
+:root .lab-page[data-lab-page] > header h1 { font-size: 20px !important; } /* the title matches the tab bar beside it; nothing reads larger */
+:root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn { font-size: 17px !important; }
+@media (max-width: 760px) {
+  :root .lab-page[data-lab-page] .lab-tabs [role=tab] { font-size: 17px !important; }
+  :root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn { font-size: 15px !important; }
+}
+
+/* ---- 2. step bar: frozen right under the title row */
+:root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar {
+  top: calc(58px + var(--cp-title-h)); z-index: 21; gap: 4px; padding: 4px; border: 1px solid var(--cp-line); border-radius: 12px; background: var(--cp-tint);
+}
+:root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn { min-height: 44px; padding: 6px 16px; border-radius: 9px; font: 600 17px var(--font); color: var(--ink2); }
+:root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn:hover { color: var(--ink); background: color-mix(in srgb, var(--card) 65%, transparent); }
+:root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn[aria-current=step] { color: #fff; background: var(--cp-bar); box-shadow: 0 1px 3px rgb(0 0 0 / .16); }
+:root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn[aria-current=step] .lab-step-n { color: var(--blue); background: #fff; border-color: #fff; }
+
+/* the rest of the page stays below the two bars in size */
+:root .lab-page[data-lab-page] .lab-tab-panel :is(h2, h3, .lab-rule-section-head b) { font-size: 16px; }
+
+/* ---- 3. Entry / Exit: cells side by side, name on a tinted strip left of its box */
+:root .lab-page[data-lab-page] .lab-idea :is(.lab-param, .lab-param:has(.lab-param-comparisons), .lab-param-comparisons, .lab-param-line, .lab-exit-part, .lab-datefilter) {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 1px;
+}
+:root .lab-page[data-lab-page] .lab-idea :is(.lab-param, .lab-param-comparisons, .lab-param-line, .lab-exit-part, .lab-datefilter) > :not(.lab-param-row) { margin-bottom: 6px; }
+:root .lab-page[data-lab-page] .lab-idea :is(.lab-param, .lab-param-comparisons) > .lab-param-row:has(.lab-ind-search) { grid-column: auto; }
+/* the indicator name gets two cells once the card holds four across */
+@container (min-width: 1000px) { :root .lab-page[data-lab-page] .lab-idea :is(.lab-param, .lab-param-comparisons) > .lab-param-row:has(.lab-ind-search) { grid-column: span 2; } }
+:root .lab-page[data-lab-page] .lab-idea :is(.lab-param, .lab-param-comparisons, .lab-param-line, .lab-exit-part, .lab-datefilter) > .lab-param-row {
+  display: grid; grid-template-columns: minmax(92px, 38%) minmax(0, 1fr); align-items: stretch; gap: 0; min-height: 48px;
+  background: var(--card); box-shadow: 0 0 0 1px var(--cp-line);
+}
+:root .lab-page[data-lab-page] .lab-idea .lab-param-row > .lab-param-k {
+  display: flex; align-items: center; padding: 6px 12px; background: color-mix(in srgb, var(--blue) 7%, var(--card));
+  border-right: 1px solid var(--cp-line); color: var(--ink2); font-size: 13px; font-weight: 600; line-height: 1.3;
+}
+:root .lab-page[data-lab-page] .lab-idea .lab-param-row > .lab-param-v { display: flex; align-items: center; padding: 6px 8px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-param-row > .lab-param-v :is(select, input:not([type=checkbox], [type=radio], [type=range]), .lab-ind-btn) { min-height: 36px; font-size: 15px; }
+
+/* ---- 4. Strategy settings: a card per group (coloured header), one parameter per row.
+   AmiBroker tabs: two columns read top to bottom (no holes under a short card); Backtest parameters: its rows flow across. */
+:root .lab-page[data-lab-page] .lab-ami .lab-stab-panel:has(> .lab-sgroup) { display: block; columns: 2 440px; column-gap: 16px; }
+:root .lab-page[data-lab-page] .lab-ami .lab-stab-panel:has(> .lab-sgroup) > * { column-span: all; margin-bottom: 12px; }
+:root .lab-page[data-lab-page] :is(.lab-ami .lab-stab-panel, .lab-basics) > .lab-sgroup {
+  column-span: none; break-inside: avoid; grid-area: auto; display: block; margin: 0 0 16px; padding: 0;
+  border: 1px solid var(--cp-line); border-radius: 12px; background: var(--card); overflow: clip;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 18px -12px color-mix(in srgb, var(--blue) 50%, transparent);
+}
+:root .lab-page[data-lab-page] :is(.lab-ami .lab-stab-panel, .lab-basics) > .lab-sgroup > h4 {
+  margin: 0; padding: 10px 16px; background: var(--cp-tint); border-bottom: 1px solid var(--cp-line); color: var(--blue); font: 700 15px var(--font); line-height: 1.4;
+}
+:root .lab-page[data-lab-page] :is(.lab-ami .lab-stab-panel, .lab-basics) > .lab-sgroup > div { display: grid; gap: 0; padding: 2px 16px 12px; min-width: 0; }
+:root .lab-page[data-lab-page] :is(.lab-ami, .lab-basics) .lab-sgroup .lab-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; }
+:root .lab-page[data-lab-page] .lab-settings-body .lab-basics > .lab-sgroup > div { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); column-gap: 28px; }
+:root .lab-page[data-lab-page] .lab-basics > .lab-sgroup > div > .lab-row { display: contents; }
+:root .lab-page[data-lab-page] .lab-basics > .lab-sgroup > div > :not(.lab-row) { grid-column: 1 / -1; }
+:root .lab-page[data-lab-page] .lab-basics > .lab-sgroup > div > .lab-row > :not(label, .lab-row) { align-self: center; color: var(--ink2); font-size: 13px; }
+:root .lab-page[data-lab-page] :is(.lab-ami, .lab-basics) :is(.lab-sgroup, .lab-fieldset, .lab-trade-prices > fieldset) :is(label.dfield, label.lab-check) {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; margin: 0; padding: 6px 0;
+  border-bottom: 1px solid var(--rule); font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: 0;
+}
+:root .lab-page[data-lab-page] :is(.lab-ami, .lab-basics) :is(.lab-sgroup, .lab-fieldset, .lab-trade-prices > fieldset) label.lab-check { justify-content: flex-start; }
+:root .lab-page[data-lab-page] :is(.lab-ami, .lab-basics) :is(.lab-sgroup, .lab-fieldset, .lab-trade-prices > fieldset) label.dfield input { flex: none; width: 14ch; min-width: 0; }
+:root .lab-page[data-lab-page] :is(.lab-ami, .lab-basics) :is(.lab-sgroup, .lab-fieldset, .lab-trade-prices > fieldset) label.dfield select { flex: none; width: auto; min-width: 14ch; max-width: 100%; }
+:root .lab-page[data-lab-page] :is(.lab-ami, .lab-basics) .lab-sgroup :is(p.cap, .lab-note) { margin: 8px 0 2px; font-size: 13px; color: var(--ink2); }
+
+/* Trades and Stops boxes (fieldsets): the same card, the legend as its coloured header */
+:root .lab-page[data-lab-page] .lab-ami :is(fieldset.lab-fieldset, .lab-trade-prices > fieldset) {
+  min-width: 0; margin: 0; padding: 0 16px 12px; border: 1px solid var(--cp-line); border-radius: 12px; background: var(--card);
+  overflow: clip; box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 18px -12px color-mix(in srgb, var(--blue) 50%, transparent);
+}
+:root .lab-page[data-lab-page] .lab-ami :is(fieldset.lab-fieldset, .lab-trade-prices > fieldset) > legend {
+  float: left; box-sizing: border-box; width: calc(100% + 32px); margin: 0 -16px 10px; padding: 10px 16px;
+  background: var(--cp-tint); border-bottom: 1px solid var(--cp-line); color: var(--blue); font: 700 15px var(--font);
+}
+:root .lab-page[data-lab-page] .lab-ami :is(fieldset.lab-fieldset, .lab-trade-prices > fieldset) > legend + * { clear: both; }
+:root .lab-page[data-lab-page] .lab-ami :is(fieldset.lab-fieldset, .lab-trade-prices > fieldset) fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+:root .lab-page[data-lab-page] .lab-ami :is(fieldset.lab-fieldset, .lab-trade-prices > fieldset) :is(.lab-row, fieldset.lab-row) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; }
+:root .lab-page[data-lab-page] .lab-ami :is(fieldset.lab-fieldset, .lab-trade-prices > fieldset) .join { justify-self: start; margin: 2px 0 6px; }
+
+/* ---- 5. Build strategy flow (23-11-2026): a summary card, then the recipe in build order — 1 Entry, 2 Exit, 3 Filters. */
+/* summary: what the strategy does in plain words, with side and bars, on a tinted card */
+:root .lab-page[data-lab-page] .lab-idea .lab-summary {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 20px; padding: 14px 18px;
+  border: 1px solid var(--cp-line); border-radius: 12px; background: linear-gradient(135deg, var(--cp-tint), var(--card) 70%);
+}
+:root .lab-page[data-lab-page] .lab-idea .lab-summary > .lab-words { padding: 0; background: none; border: 0; }
+:root .lab-page[data-lab-page] .lab-idea .lab-summary > .lab-words > h3 { color: var(--blue); font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+:root .lab-page[data-lab-page] .lab-idea .lab-summary-meta {
+  margin: 0; padding: 4px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--cp-line); color: var(--blue); font: 600 13px var(--font); white-space: nowrap;
+}
+/* the recipe cards: a coloured stripe on the left, a numbered badge, the rule count with a tick */
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card { border-left: 5px solid var(--acc); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 8px 22px -16px color-mix(in srgb, var(--acc) 70%, transparent); }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card::before { display: none; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-section-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-section-h h3 { margin: 0; color: var(--ink); font-size: 16px; font-weight: 700; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-section-h h3 small { color: var(--ink3); font-weight: 500; font-size: 13px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-card-n {
+  display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--acc); color: #fff; font: 700 14px var(--font);
+}
+:root .lab-page[data-lab-page] .lab-idea .lab-card-count { padding: 2px 10px; border-radius: 999px; font: 600 12.5px var(--font); color: var(--ink3); background: color-mix(in srgb, var(--ink) 6%, var(--card)); }
+:root .lab-page[data-lab-page] .lab-idea .lab-card-count:not([data-lab-card-count="0"]) { color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--card)); }
+/* Long / Short sits at the top of the Entry card */
+:root .lab-page[data-lab-page] .lab-idea .lab-positions { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--cp-line); }
+/* Filters are optional: the choice under the heading; with none on the card stays slim, once on the options fill the width, stacked */
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card[data-lab-card="filters"]:not([data-lab-filters-on]) { padding-block: 10px; background: color-mix(in srgb, var(--ink) 2%, var(--card)); }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card[data-lab-card="filters"]:not([data-lab-filters-on]) > .lab-rule-section-h { padding-bottom: 0; border-bottom: 0; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card[data-lab-card="filters"] .lab-filter-chip { min-height: 32px; padding: 4px 12px; font-size: 13.5px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card[data-lab-card="filters"] > .lab-rule-section-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card[data-lab-card="filters"] > .lab-rule-section-body > * { grid-column: 1 / -1; min-width: 0; }
+:root .lab-page[data-lab-page] .lab-idea .lab-rule-card[data-lab-card="filters"]:not([data-lab-filters-on]) > .lab-rule-section-h { padding-bottom: 8px; }
+/* the "Strategy rules" title row: frozen under the step bar, Optimize and Run backtest at its right; its band covers the card's padding */
+:root .lab-page[data-lab-page] .lab-idea > .lab-rules-head {
+  position: sticky; top: calc(58px + var(--cp-title-h) + var(--cp-step-h)); z-index: 19; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  margin-inline: -24px; padding: 10px 24px; background: var(--card); border-bottom: 1px solid var(--cp-line); box-shadow: 0 8px 14px -14px rgb(0 0 0 / .35);
+}
+:root .lab-page[data-lab-page] .lab-idea > .lab-rules-head > h2 { margin: 0; }
+/* the band reaches past the card's padding to hide what scrolls under it; the card clips it to its own rounded edge (clip keeps sticky working) */
+:root .lab-page[data-lab-page] .lab-rules.lab-idea { overflow-x: clip; }
+@media (max-width: 1000px) { :root .lab-page[data-lab-page] .lab-idea > .lab-rules-head { margin-inline: -22px; padding-inline: 22px; } }
+@media (max-width: 640px) { :root .lab-page[data-lab-page] .lab-idea > .lab-rules-head { margin-inline: -16px; padding-inline: 16px; } }
+:root .lab-page[data-lab-page] .lab-idea .lab-run-row { display: flex; margin-left: auto; }
+:root .lab-page[data-lab-page] .lab-idea .lab-run-row .lab-run-top { display: flex; gap: 10px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-run-row [data-lab-action="run"] { min-height: 42px; padding: 0 22px; font-weight: 700; border-radius: 10px; }
+:root .lab-page[data-lab-page] .lab-idea .lab-run-row [data-lab-open-optimize] { min-height: 42px; border-radius: 10px; }
+/* the Dates filter's choices sit side by side in cells; its period list and own-dates folds take the full width */
+:root .lab-page[data-lab-page] .lab-idea .lab-datefilter { padding: 0; border: 0; }
+:root .lab-page[data-lab-page] .lab-idea .lab-datefilter > :not(.lab-param-row) { grid-column: 1 / -1; margin-top: 6px; }
+/* a choice whose labels are long (Running re-entry: Keep old stop / Fresh stop / Fresh stop + restart on signal) takes the whole row and
+   keeps each label on one line instead of squashing it into one cell */
+:root .lab-page[data-lab-page] .lab-idea .lab-datefilter > .lab-param-row:has([aria-label="Running re-entry"]) { grid-column: 1 / -1; grid-template-columns: minmax(92px, 160px) max-content; }
+:root .lab-page[data-lab-page] .lab-idea .lab-datefilter .join-item { white-space: nowrap; }
+/* From – To in the Market row */
+:root .lab-page[data-lab-page] .lab-test-dates { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+
+/* ---- 6. Strategy settings starts with the run, frozen under the step bar */
+:root .lab-page[data-lab-page] .lab-run-bar {
+  position: sticky; top: calc(58px + var(--cp-title-h) + var(--cp-step-h)); z-index: 19; display: flex; justify-content: flex-end; margin: 0 0 16px; padding: 6px 12px;
+  border-radius: 12px; background: var(--cp-tint); border: 1px solid var(--cp-line); box-shadow: 0 6px 14px -10px rgb(0 0 0 / .25);
+}
+:root .lab-page[data-lab-page] .lab-run-bar .lab-run-top { display: flex; gap: 10px; }
+:root .lab-page[data-lab-page] .lab-run-bar [data-lab-action="run"] { min-height: 40px; padding: 0 22px; font-weight: 700; border-radius: 10px; }
+:root .lab-page[data-lab-page] .lab-run-bar [data-lab-open-optimize] { min-height: 40px; border-radius: 10px; }
+:root .lab-page[data-lab-page] .lab-run-bar .lab-run-top { display: flex; gap: 10px; margin: 0; }
+
+/* ---- 7. Results: numbered tabs read in order, each ends with Next */
+:root .lab-page[data-lab-page] .lab-stab-next { display: flex; justify-content: flex-end; margin-top: 16px; }
+:root .lab-page[data-lab-page] .lab-results-tabs > .lab-settings-tabs > .lab-stabs { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--cp-line); border-radius: 12px; background: var(--cp-tint); }
+:root .lab-page[data-lab-page] .lab-results-tabs > .lab-settings-tabs > .lab-stabs [role=tab] { min-height: 38px; padding: 6px 16px; border: 0; border-radius: 9px; font: 600 15px var(--font); color: var(--ink2); background: none; }
+:root .lab-page[data-lab-page] .lab-results-tabs > .lab-settings-tabs > .lab-stabs [role=tab][aria-selected=true] { color: #fff; background: var(--cp-bar); box-shadow: 0 1px 3px rgb(0 0 0 / .16); }
+
+/* ---- YOY-Monthly (23-11-2026, user): a compact heatmap — fixed month columns (~950px, not the full card), 14px tabular numbers,
+   shade by the size of the return, "·" for no trade, no inner scroll box: the page scrolls and the header row stays frozen. */
+:root .lab-page[data-lab-page] .lab-monthly[data-lab-yoy] { max-height: none; overflow: visible; }
+:root .lab-page[data-lab-page] .lab-monthly[data-lab-yoy] .tbl { width: auto; min-width: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+:root .lab-page[data-lab-page] .lab-monthly[data-lab-yoy] .tbl :is(th, td) { width: 66px; height: 34px; padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); font: 500 14px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; text-align: center !important; }
+:root .lab-page[data-lab-page] .lab-monthly[data-lab-yoy] .tbl :is(th, td):first-child { width: 64px; text-align: left !important; }
+:root .lab-page[data-lab-page] .lab-monthly[data-lab-yoy] .tbl :is(th, td):last-child { width: 86px; font-weight: 700; border-left: 2px solid var(--steel); }
+/* YOY charts: in the space beside the table (they take all of it), under it when the card is too narrow; frozen while the table scrolls */
+:root .lab-page[data-lab-page] .lab-yoy-wrap { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px 24px; }
+:root .lab-page[data-lab-page] .lab-yoy-wrap > .lab-monthly { flex: 0 0 auto; max-width: 100%; }
+:root .lab-page[data-lab-page] .lab-yoy-charts { flex: 1 1 340px; min-width: 0; display: grid; gap: 18px; position: sticky; top: calc(58px + var(--cp-title-h) + var(--cp-step-h) + 12px);
+  padding: 14px 16px; border: 1px solid var(--cp-line); border-radius: 12px; background: var(--card); }
+:root .lab-page[data-lab-page] .lab-yoy-chart { margin: 0; display: grid; gap: 6px; }
+:root .lab-page[data-lab-page] .lab-yoy-chart > figcaption { font: 700 13px var(--font); color: var(--ink2); letter-spacing: .02em; }
+:root .lab-page[data-lab-page] .lab-yoy-plot { position: relative; display: flex; align-items: stretch; gap: 2px; height: 190px; margin-left: 52px;
+  background: linear-gradient(var(--steel), var(--steel)) 0 calc(var(--zero) * 100%) / 100% 1px no-repeat; }
+:root .lab-page[data-lab-page] .lab-yoy-col { position: relative; flex: 1 1 0; min-width: 0; border-radius: 2px; }
+:root .lab-page[data-lab-page] .lab-yoy-col:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+:root .lab-page[data-lab-page] .lab-yoy-col > span { position: absolute; left: 12%; right: 12%; height: calc(var(--h) * 100%); border-radius: 2px; }
+:root .lab-page[data-lab-page] .lab-yoy-col > span.pos { bottom: calc((1 - var(--zero)) * 100%); background: color-mix(in srgb, var(--green) 75%, var(--card)); }
+:root .lab-page[data-lab-page] .lab-yoy-col > span.neg { top: calc(var(--zero) * 100%); background: color-mix(in srgb, var(--red) 75%, var(--card)); }
+:root .lab-page[data-lab-page] .lab-yoy-tick { position: absolute; right: calc(100% + 8px); font: 500 12px var(--font) !important; color: var(--ink3); white-space: nowrap; transform: translateY(-50%); }
+:root .lab-page[data-lab-page] .lab-yoy-tick[data-at="top"] { top: 0; transform: none; }
+:root .lab-page[data-lab-page] .lab-yoy-tick[data-at="zero"] { top: calc(var(--zero) * 100%); }
+:root .lab-page[data-lab-page] .lab-yoy-tick[data-at="bottom"] { bottom: 0; transform: none; }
+:root .lab-page[data-lab-page] .lab-yoy-axis { display: flex; gap: 2px; margin-left: 52px; }
+:root .lab-page[data-lab-page] .lab-yoy-axis > span { flex: 1 1 0; min-width: 0; overflow: visible; white-space: nowrap; font: 500 12px var(--font) !important; color: var(--ink3); text-align: center; }
+@media (max-width: 1000px) { :root .lab-page[data-lab-page] .lab-monthly[data-lab-yoy] { overflow-x: auto; } }
+
+/* ---- 8. "Show the strategy's indicators on the chart?" */
+.lab-ask-chart { display: grid; gap: 14px; padding: 4px 16px 16px; font-size: 14px; }
+.lab-chart-popup:has(.lab-ask-chart) { min-height: 0; resize: none; }
+.lab-ask-chart p { margin: 0; color: var(--ink2); }
+.lab-ask-chart ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.lab-ask-chart li { padding: 4px 12px; border-radius: 999px; background: color-mix(in srgb, var(--blue) 12%, var(--card)); color: var(--blue); }
+.lab-ask-chart .lab-row { gap: 10px; justify-content: flex-end; }
+
+/* narrow screens: title and tabs stack; only the tabs stay frozen */
+@media (max-width: 760px) {
+  :root .lab-page[data-lab-page] > header { position: static; margin: 0; padding: 0; background: none; backdrop-filter: none; min-height: 0; }
+  :root .lab-page[data-lab-page] > .lab-tabs-row:not([data-lab-market-row]) { margin-right: -16px; padding-right: 16px; margin-left: -16px; padding-left: 16px; }
+  :root .lab-page[data-lab-page] .lab-tabs [role=tab] { font-size: 17px; padding-inline: 12px; }
+  :root .lab-page[data-lab-page] .lab-tab-panel > .lab-stepbar .lab-step-btn { font-size: 15px; padding-inline: 6px; }
+}

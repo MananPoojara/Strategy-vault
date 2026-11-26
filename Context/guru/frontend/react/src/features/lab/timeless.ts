@@ -3,9 +3,9 @@ import type { ChartRange, SeriesResponse, Trade } from "./types";
 import { rangeStart } from "./bars";
 
 /** Chart types drawn without a date axis; each value except candles is the catalogue id whose daily-aligned outputs the view is rebuilt from. */
-export type ChartType = "candles" | "heikin_ashi" | "renko" | "pnf" | "kagi" | "line_break";
-export const CHART_TYPES: [ChartType, string][] = [["candles", "Candles"], ["heikin_ashi", "Heikin Ashi"], ["renko", "Renko"], ["pnf", "Point & Figure"], ["kagi", "Kagi"], ["line_break", "Line Break"]];
-const NOUN: Record<ChartType, [string, string]> = { candles: ["bar", "bars"], heikin_ashi: ["candle", "candles"], renko: ["brick", "bricks"], pnf: ["column", "columns"], kagi: ["line", "lines"], line_break: ["line", "lines"] };
+export type ChartType = "candles" | "heikin_ashi" | "renko" | "pnf" | "kagi" | "line_break" | "range";
+export const CHART_TYPES: [ChartType, string][] = [["candles", "Candles"], ["heikin_ashi", "Heikin Ashi"], ["renko", "Renko"], ["pnf", "Point & Figure"], ["kagi", "Kagi"], ["line_break", "Line Break"], ["range", "Range"]];
+const NOUN: Record<ChartType, [string, string]> = { range: ["bar", "bars"], candles: ["bar", "bars"], heikin_ashi: ["candle", "candles"], renko: ["brick", "bricks"], pnf: ["column", "columns"], kagi: ["line", "lines"], line_break: ["line", "lines"] };
 export const nounOf = (t: ChartType, many = false) => NOUN[t][many ? 1 : 0];
 /** The view keeps the latest this many bricks, columns or lines (the whole history at a sensible box size; a tiny box would otherwise build millions). */
 export const MAX_SLOTS = 10000;
@@ -23,6 +23,7 @@ const box = (at: string, from: string, to: string, open: number, close: number):
 export function rebuild(type: ChartType, res: SeriesResponse, params: Record<string, number> = {}, cap = MAX_SLOTS): { slots: Slot[]; total: number } {
   const s = (out: string) => res.series[out] ?? [], d = res.dates;
   const slots: Slot[] = [];
+  if (type === "range") { const all = rangeBars(d, s("open"), s("high"), s("low"), s("close"), params.range); return { slots: all.slice(-cap), total: all.length }; }
   let start = 0; // first bar after the last formed element
   if (type === "renko") {
     const [k, hi, lo, dir] = ["bricks", "brick_high", "brick_low", "direction"].map(s);
@@ -109,6 +110,43 @@ export function tradeMarks(trades: Trade[], slots: Slot[]): Mark[] {
     if (!t.open) fills.push({ slot: slotAt(slots, t.exit), price: t.exit_px, buy: !long, leg: false });
     return fills.filter((m): m is Mark => m.slot >= 0 && ok(m.price));
   });
+}
+
+/** The range size TradingView-style charts default to here: half the average daily high–low of the last 100 bars, rounded to 2 figures. */
+export function autoRange(h: (number | null)[], l: (number | null)[]) {
+  const spans = h.map((x, i) => (ok(x) && ok(l[i]) ? x - l[i]! : NaN)).filter(Number.isFinite).slice(-100);
+  const avg = spans.reduce((a, b) => a + b, 0) / (spans.length || 1) / 2;
+  if (!(avg > 0)) return 0;
+  const k = 10 ** (Math.floor(Math.log10(avg)) - 1);
+  return Math.round(avg / k) * k;
+}
+/** Range bars from daily bars: each bar spans exactly `size` from its low to its high and closes at the extreme that completed it; the
+ *  next opens there. A day's path is open → low → high → close on an up day, open → high → low → close on a down day (TradingView builds
+ *  them from every trade; daily bars give this approximation). */
+export function rangeBars(d: string[], o: (number | null)[], h: (number | null)[], l: (number | null)[], c: (number | null)[], size?: number): Slot[] {
+  const R = size && size > 0 ? size : autoRange(h, l), out: Slot[] = [];
+  if (!(R > 0)) return out;
+  let cur: Slot | null = null;
+  const open = (at: string, p: number) => (cur = { at, from: at, to: at, open: p, high: p, low: p, close: p, up: true });
+  d.forEach((date, i) => {
+    if (![o[i], h[i], l[i], c[i]].every(ok)) return;
+    const path = c[i]! >= o[i]! ? [o[i]!, l[i]!, h[i]!, c[i]!] : [o[i]!, h[i]!, l[i]!, c[i]!];
+    for (const p of path) {
+      if (!cur) { open(date, p); continue; }
+      let bar: Slot = cur;
+      bar.to = date;
+      // complete bars while the move reaches the range: up through low + R, or down through high − R
+      while (p >= bar.low + R - 1e-9 || p <= bar.high - R + 1e-9) {
+        const up = p >= bar.low + R - 1e-9, edge = up ? bar.low + R : bar.high - R;
+        Object.assign(bar, up ? { high: edge, close: edge } : { low: edge, close: edge }, { up });
+        out.push(bar);
+        bar = open(date, edge);
+      }
+      bar.high = Math.max(bar.high, p); bar.low = Math.min(bar.low, p); bar.close = p; bar.up = bar.close >= bar.open;
+    }
+  });
+  if (cur) out.push(cur); // the bar still forming
+  return out;
 }
 
 const fmt = (v: number) => v.toFixed(2);

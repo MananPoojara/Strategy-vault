@@ -36,7 +36,9 @@ pub const PLAIN: [&str; 4] = [
 #[test] fn existing_specs_keep_their_exact_trades() {
     let templates: Vec<_> = TEMPLATES.iter().map(parsed).collect();
     let plain: Vec<_> = PLAIN.iter().map(|t| parse_spec(t).unwrap()).collect();
-    assert_eq!((digest(&templates), digest(&plain)), ((8551371247103554118, 4422), (14900454072103790734, 1366)), "pinned at Phase 6 HEAD 53d7308; a change here means an existing spec changed meaning");
+    // re-pinned 23-11-2026 (user-approved): PLAIN[0]'s close beside the weekly SMA 40 now follows its timeframe (rules.rs
+    // follow_timeframe, AmiBroker TimeFrameSet): 1366 → 1380 trades; every template is unchanged
+    assert_eq!((digest(&templates), digest(&plain)), ((8551371247103554118, 4422), (14539433181657456715, 1380)), "pinned at Phase 6 HEAD 53d7308, re-pinned 23-11-2026; a change here means an existing spec changed meaning");
 }
 
 /// AmiBroker trade prices and delays at today's settings give today's trades: each PLAIN spec in the legacy form and

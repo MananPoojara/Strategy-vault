@@ -19,6 +19,11 @@ it("a Supertrend picked in a rule starts at the AFL's 5 × 1 AmiBroker (H+L)/2, 
   const { ruleWords } = await import("../src/features/lab/spec-model");
   expect(ruleWords({ lhs: { s: "close" }, op: "crosses_above", rhs: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1, price: 0 }, offset: 1 } } as unknown as RuleNode, cat)!.text)
     .toBe("the close crosses above Supertrend(5, 1) 1 day ago");
+  // a close with no timeframe of its own follows the monthly Supertrend (AmiBroker TimeFrameSet) and the words say so
+  expect(ruleWords({ lhs: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1, price: 0 }, tf: "M" }, op: "crosses_above", rhs: { s: "close" } } as unknown as RuleNode, cat)!.text)
+    .toBe("monthly Supertrend(5, 1) crosses above the monthly close");
+  expect(ruleWords({ lhs: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1, price: 0 }, tf: "M" }, op: "crosses_above", rhs: { s: "close", tf: "D" } } as unknown as RuleNode, cat)!.text)
+    .toBe("monthly Supertrend(5, 1) crosses above the close");
   const onChange = vi.fn();
   const start: Spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: "crosses_above", rhs: { s: "ema", p: { length: 20 } } } as unknown as RuleNode] } };
   function Host() {
