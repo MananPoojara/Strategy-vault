@@ -1,6 +1,6 @@
 //! Matt Blackman, "Working Money: Mining For Maximum Shine", Technical Analysis of Stocks & Commodities V.25:2 (February 2007)
 //! pp.40-42 (research share Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V25/C02/
-//! 027BLAC.pdf). Book id `scblack`. Lane K40 follow-up (4 Nov 2026, decision #207(2)): the article's gold rule on GLD; silver,
+//! 027BLAC.pdf). Book id `scblack`. Lane K40 follow-up (4 Nov 2026, decision #207(2)): the article's gold rule on GLD (R4 #414: and Gold (Norgate &GC)); silver,
 //! palladium, platinum and copper stay held (no SLV or other metal series in the vault). Independent check
 //! authors/titles-1030/K40w/k40_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -8,13 +8,13 @@ use super::lc3::Pos;
 
 pub const REVIEWED: &[&str] = &["scblack_gold"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
-/// The vault's only gold series.
+/// The GLD run's instrument (the vault also holds Norgate Gold futures, R4 #414).
 pub const HOME: &str = "GLD";
 
-const NOTE: &str = "[Declared readings] The article's worked formula: 'Buy when month is equal to 7 and day of the month is equal to or greater than 23. Sell when month is equal to 12 and day of the month is equal to or greater than 23.' On daily bars: buy at the close of the first bar in July dated the 23rd or later, sell at the close of the first bar in December dated the 23rd or later; long or flat, once a year (MetaStock's system tester, the article's tool, fills at the close by default). The article tested weekly Engelhard gold prices (1/4/1995-12/30/2005); the vault holds no spot gold, so the rule runs on GLD (SPDR Gold Shares, from 2005), the vault's only gold series, as a labelled adaptation (decision #207); a gold season on equities would change the asset class, so other instruments are not published. Silver (Aug-Mar), palladium (Nov-Mar), platinum (Sep-Feb) and copper (Apr-Feb) need series the vault does not hold. Book (Figure 4, Engelhard gold, 11 years): 7 of 11 trades profitable, average trade 5.76%, maximum drawdown -8.44%, 44% of the time in the market; GLD starts in 2005, so the book window cannot be reproduced.";
+const NOTE: &str = "[Declared readings] The article's worked formula: 'Buy when month is equal to 7 and day of the month is equal to or greater than 23. Sell when month is equal to 12 and day of the month is equal to or greater than 23.' On daily bars: buy at the close of the first bar in July dated the 23rd or later, sell at the close of the first bar in December dated the 23rd or later; long or flat, once a year (MetaStock's system tester, the article's tool, fills at the close by default). The article tested weekly Engelhard gold prices (1/4/1995-12/30/2005); the vault holds no spot gold, so the rule runs on GLD (SPDR Gold Shares, from 2005) as a labelled adaptation (decision #207) and, from R4 #414, on the Norgate Gold continuous futures contract (&GC, 1978-2020-09-11) as a second labelled adaptation (#340); a gold season on equities would change the asset class, so other instruments are not published. Silver (Aug-Mar), palladium (Nov-Mar), platinum (Sep-Feb) and copper (Apr-Feb) need series the vault does not hold. Book (Figure 4, Engelhard gold, 11 years): 7 of 11 trades profitable, average trade 5.76%, maximum drawdown -8.44%, 44% of the time in the market; GLD starts in 2005, so the book window cannot be reproduced there; on &GC the 1995-2005 window gives 11 trades, 6 profitable, average trade 3.43% (daily futures, not the article's weekly spot).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    vec![StrategyDef { id: "scblack_gold", name: "Blackman gold seasonal: buy gold in the last week of July (day >= 23), sell in the last week of December, on GLD", group: "S&C: Mining For Maximum Shine (Blackman, V.25:2)", session: 0, dir: "Long", status: Status::Live,
+    vec![StrategyDef { id: "scblack_gold", name: "Blackman gold seasonal: buy gold in the last week of July (day >= 23), sell in the last week of December, on GLD and Norgate Gold futures", group: "S&C: Mining For Maximum Shine (Blackman, V.25:2)", session: 0, dir: "Long", status: Status::Live,
         needs_volume: false, needs_vix: false, needs_series: &[], book: "scblack", rules: &[
             "F|\"Say we want to determine how profitable a system is that buys gold at the July low and sells at the December high, buying and selling in the last week of the month\" (p.41)",
             "E|\"Buy when month is equal to 7 and day of the month is equal to or greater than 23.\" (p.41)",
@@ -30,9 +30,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("day", "From day of the month (article 23)", 23., 1., 31., 1.)])
 }
 
-/// The card is published on GLD only.
+/// The card is published on GLD and on Gold (Norgate &GC) (R4 #414), no other instrument.
 pub fn home(id: &str, ticker: &str) -> Option<String> {
-    (reviewed(id) && ticker != HOME).then(|| format!("Not published on {ticker}: the article's season is for gold; the vault's only gold series is GLD (open the card on GLD). A gold season on another instrument would change the asset class."))
+    (reviewed(id) && ticker != HOME && !crate::futures::is_futures(ticker)).then(|| format!("Not published on {ticker}: the article's season is for gold; the vault's gold series are GLD and the Norgate Gold futures contract (open the card on GLD or on Gold (Norgate &GC)). A gold season on another instrument would change the asset class."))
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -64,9 +64,9 @@ mod tests {
     }
 }
 
-// Instrument admission: S&C Blackman gold seasonal 2026-11-04 (titles lane K40, decision #207). Published on GLD only (home()).
+// Instrument admission: S&C Blackman gold seasonal 2026-11-04 (titles lane K40, decision #207). Published on GLD (home()) and, from R4 #414, on Gold (Norgate &GC) (futures::DUAL).
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| def.book == "scblack" && reviewed(def.id),
-    label: "Matt Blackman tested the gold season on weekly Engelhard gold prices (1995-2005). It runs on GLD, the vault's only gold series, a declared adaptation; other instruments are not published.",
+    label: "Matt Blackman tested the gold season on weekly Engelhard gold prices (1995-2005). It runs on DAILY bars of GLD and, from R4 #414, of the Norgate Gold continuous futures contract (&GC): both are declared adaptations of the article's weekly spot gold; other instruments are not published. Unstated choices (4, R4 #400): (1) entry on the first daily bar dated the 23rd or later in July (the article's bars are weekly), (2) exit on the first such bar in December, (3) fills at the bar's close, (4) long or flat, once per season. The instrument change is declared, not counted.",
     basis: "Technical Analysis of Stocks & Commodities V.25:2 pp.40-42 (Mining For Maximum Shine), formula text and Figure 4; independent check authors/titles-1030/K40w/k40_ref.py",
 };

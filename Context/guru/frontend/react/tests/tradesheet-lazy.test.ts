@@ -22,7 +22,7 @@ it('a report holds no rows until the tab opens, but still states how many there 
   const html = ui.tradeHTML(run);
   expect(html).toContain('7706 trades');
   expect(html).toContain('id="trades-xlsx"');
-  expect(html).toContain('id="csv"');
+  expect(html).not.toContain('id="csv"'); // one Excel download, no CSV (user 25 Nov 2026)
   expect(html).toContain('data-tradesheet-table');
   expect(html).not.toContain('<td');
   expect(html).not.toContain('<table');
@@ -54,13 +54,13 @@ it('the on-screen table shows the 17 columns when money and costs exist, and dro
   expect(ui.tradeTableHTML(noSlip, 'X')).not.toContain('>Slippage<');
 });
 
-it('Excel, CSV and optimizer exports take every row from the run data, not from the page', () => {
+it('Excel and optimizer exports take every row from the run data, not from the page', () => {
   const exported = [ui.tradeHeadersFor(run), ...ui.tradeRowsFor(run, 'NIFTY 50')];
   expect(exported).toHaveLength(7706 + 1);
   expect(VaultReport.csv(exported).trim().split(/\r?\n/)).toHaveLength(7706 + 1);
   const handlers = runtime.slice(runtime.indexOf('async function exportRunTrades'), runtime.indexOf('const refreshHeat='));
-  expect(handlers.match(/csvSafeRows\(tradeExportRows\(st\)\)/g)).toHaveLength(1); // CSV
-  expect(handlers.match(/reportTable\('trades',st\)/g)).toHaveLength(2); // optimizer, Excel (Export everything uses reportTable(kind,st))
+  expect(handlers.match(/csvSafeRows\(tradeExportRows\(st\)\)/g)).toBeNull(); // no CSV
+  expect(handlers.match(/reportTable\('trades',st\)/g)).toHaveLength(1); // optimizer (the Tradelist Excel is tradesheetXlsx; Export everything uses reportTable(kind,st))
   expect(runtime.slice(runtime.indexOf(' async function reportTable('), runtime.indexOf(' async function xlsx('))).toContain("if(kind==='trades')return ['trades',tradeExportRows(st),");
   expect(handlers).not.toMatch(/#tradesheet|data-tradesheet/);
   expect(handlers).not.toContain('tradeTableHTML');
