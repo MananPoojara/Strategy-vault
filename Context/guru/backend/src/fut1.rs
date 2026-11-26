@@ -8,7 +8,9 @@ use crate::connors::{Ctx, Params, Trade};
 use std::cell::Cell;
 
 /// Pilot (Q416, 25 Nov 2026): ids with an independent, roll-aware reference at 0 mismatches on the FUT1 bars (K1/fut1/fut1_ref2.py, ref_as51.py); dropped after the lead's 18:05 decision: tdperl_rebo (no minute-order reference), stad2_adxdiff (registered reference cannot be imported, rule too long to rebuild), rwmts_15m_5m_rsi (the registered K53 reference does not reproduce the engine even on SPY cash minutes), jmls_bar_breakout (both pairs held by the India-better test, overnight carry across futures rolls).
-pub const REOPEN: &[&str] = &["as51_ema_scalp", "bfmm_esl", "sdtcp_donchian", "jkbk_safe", "tcdt_idp1", "msadd_n_can_ha"];
+pub const REOPEN: &[&str] = &["as51_ema_scalp", "bfmm_esl", "sdtcp_donchian", "jkbk_safe", "tcdt_idp1", "msadd_n_can_ha",
+    // batch chunk 1 (Q416 batch, 25 Nov 2026): daily-bar rules, roll-aware references at 0 mismatches
+    "bfmm_nql", "dgmf_gap3", "fgosc_crossover", "hbqts_parabolic_stop", "jkbk_starting_point", "krftj_pro", "lkcpt_rsimild", "msadd_n_can_pl", "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "rgc_runaway_gap_f5", "rinadz_rsi9"];
 /// (id, ticker) pairs withheld by the #231/#234 India-better test against the tradable SPY result (average trade > 3x and > 0.003 pp, AND compounded > 10x): none after the re-run of 25 Nov with the real definition (K1/fut1/india-better-real.json) .
 pub const FLAGGED: &[(&str, &str)] = &[];
 thread_local! { static ACTIVE: Cell<bool> = const { Cell::new(false) }; static REFUSAL: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) }; }
