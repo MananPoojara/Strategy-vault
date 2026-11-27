@@ -76,6 +76,7 @@ pub mod x_tv_misc;
 pub mod x_tv_booker;
 pub mod x_tv_listed;
 pub mod x_gap_f;
+pub mod x_gap_g;
 pub mod x_gap_c;
 pub mod x_gap_e;
 pub mod x_gap_b;

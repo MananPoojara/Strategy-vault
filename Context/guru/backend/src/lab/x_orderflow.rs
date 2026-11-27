@@ -3,8 +3,9 @@
 //! footprint rows, and a ticker without a file, or any W/M timeframe, gets needs_data. Delta = ask − bid = buy − sell on
 //! every platform. Session extremes are the highest / lowest rows with volume (not the bar's high / low: the two feeds can
 //! differ by a tick). Ids that need the time order inside the session or order-book depth are listed, never computed.
-//! UNCONFIRMED (no exact public rule; not built): absorption, exhaustion, most Orderflows Trader studies, swing CVD
-//! divergence, and trade counts (the footprint has no count column).
+//! UNCONFIRMED (no exact public rule; not built): most Orderflows Trader studies, swing CVD divergence, and trade counts
+//! (the footprint has no count column). 2026-11-27: exhaustion (the Footprint & Order Flow Guide's rule and a declared
+//! reading of the ATAS settings), absorption and trapped traders (the guide's rules, lab definitions at the user's request).
 use super::bars::Bars;
 use super::catalogue::{int, len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::footprint::{Day, Footprint};
@@ -223,6 +224,103 @@ fn buy_sell_vwap(b: &Bars, _: &Params) -> Output {
     })
 }
 
+const NODES: &[ParamSpec] = &[real("busy", "Busy row at (0–1 of the bar's row range)", 0.75, 0.01, 1., 0.01),
+    real("thin", "Thin row below (0–1 of the bar's row range)", 0.25, 0., 0.99, 0.01)];
+/// Footprint guide "Busy and thin prices": each row scaled (v − min) ÷ (max − min) over the session's dense rows.
+fn volume_nodes(b: &Bars, prm: &Params) -> Output {
+    let (f, busy, thin) = (fp(b), p(prm, "busy"), p(prm, "thin"));
+    per_day(b, 3, |i, d| {
+        let Some((lo, bid, ask)) = dense(d) else { return vec![NA; 3] };
+        let v = total(&bid, &ask);
+        let (mn, mx) = v.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, c), &x| (a.min(x), c.max(x)));
+        // all rows equal (or one row): no row stands out, so none is busy or thin
+        let class = |x: f64| if mx > mn { let s = (x - mn) / (mx - mn); if s >= busy { 1. } else if s < thin { -1. } else { 0. } } else { 0. };
+        let cls: Vec<f64> = v.iter().map(|&x| class(x)).collect();
+        let count = |c: f64| cls.iter().filter(|&&x| x == c).count() as f64;
+        let (c, top) = (b.close[i], v.len() - 1);
+        let px = |r: usize| f.price(lo + r as i64);
+        // the row nearest the close (equidistant: the lower), only when the close is inside the session's rows
+        let at = if px(0) <= c && c <= px(top) {
+            (0..v.len()).min_by(|&x, &y| (px(x) - c).abs().total_cmp(&(px(y) - c).abs())).map_or(NA, |r| cls[r])
+        } else { NA };
+        vec![count(1.), count(-1.), at]
+    })
+}
+const EXH: &[ParamSpec] = &[int("rule", "Rule (0 across bars: a new high/low on less volume and delta, the guide; 1 inside the bar: volume falls row by row into the high/low, ATAS)", 0., 0., 1.),
+    int("levels", "Rows into the extreme (rule 1; ATAS 5)", 5., 2., 50.), int("column", "Rule 1 volume (0 ask at the high, bid at the low; 1 total)", 0., 0., 1.)];
+fn exhaustion(b: &Bars, prm: &Params) -> Output {
+    let (f, rule, levels, column) = (fp(b), p(prm, "rule"), n(prm, "levels"), p(prm, "column"));
+    let flag = |x: bool| if x { 1. } else { 0. };
+    if rule == 0. {
+        let vd = |i: usize| f.day(i).map(|d| { let (a, s) = sums(d); (a + s, a - s) });
+        let mut o = vec![vec![NA; b.len()]; 2];
+        for i in 1..b.len() {
+            let (Some((v, dl)), Some((v0, dl0))) = (vd(i), vd(i - 1)) else { continue };
+            o[0][i] = flag(b.high[i] > b.high[i - 1] && v < v0 && dl < dl0);
+            o[1][i] = flag(b.low[i] < b.low[i - 1] && v < v0 && dl > dl0);
+        }
+        return Ok(o);
+    }
+    per_day(b, 2, |_, d| {
+        let Some((_, bid, ask)) = dense(d) else { return vec![NA; 2] };
+        let (up, dn) = if column == 1. { let t = total(&bid, &ask); (t.clone(), t) } else { (ask, bid) };
+        let m = up.len();
+        if m < levels { return vec![0., 0.]; }
+        // strictly less on every row closer to the extreme
+        vec![flag((m - levels..m - 1).all(|r| up[r + 1] < up[r])), flag((0..levels - 1).all(|r| dn[r] < dn[r + 1]))]
+    })
+}
+const ABS: &[ParamSpec] = &[real("delta_pct", "One-way delta at least (% of volume)", 30., 1., 100., 1.), len("length", "Average volume over (bars)", 20.)];
+/// Footprint guide "Absorption" (lab definition): heavy one-way delta on at least average volume, bar closing the other way.
+fn absorption(b: &Bars, prm: &Params) -> Output {
+    let (f, r, nn) = (fp(b), p(prm, "delta_pct") / 100., n(prm, "length"));
+    let vols: Vec<Option<f64>> = (0..b.len()).map(|i| f.day(i).map(|d| { let (a, s) = sums(d); a + s })).collect();
+    per_day(b, 2, |i, d| {
+        if i + 1 < nn { return vec![NA; 2]; }
+        let w: Vec<f64> = vols[i + 1 - nn..=i].iter().flatten().copied().collect();
+        let avg = w.iter().sum::<f64>() / w.len() as f64;
+        let (a, s) = sums(d);
+        let (v, dl, up, dn) = (a + s, a - s, b.close[i] > b.open[i], b.close[i] < b.open[i]);
+        let heavy = v > 0. && v >= avg;
+        let flag = |x: bool| if x { 1. } else { 0. };
+        vec![flag(heavy && dl <= -r * v && up), flag(heavy && dl >= r * v && dn)]
+    })
+}
+const TRAP: &[ParamSpec] = &[int("rows", "Zone rows at the low / high", 3., 1., 50.), real("delta_pct", "One-way delta in the zone at least (% of its volume)", 30., 1., 100., 1.),
+    int("lookback", "Look back (bars, 0 = unlimited)", 0., 0., 2000.)];
+/// Footprint guide "Trapped traders" (lab definition): heavy one-way aggression in the session's lowest (highest) rows, the bar
+/// closing in the other half of its range, counted while no later bar has traded back into the zone (naked POC style).
+fn trapped_traders(b: &Bars, prm: &Params) -> Output {
+    let (f, rows, r, lb) = (fp(b), n(prm, "rows"), p(prm, "delta_pct") / 100., n(prm, "lookback"));
+    let mut o = vec![vec![NA; b.len()]; 2];
+    // (zone bar, zone top) for trapped sellers, (zone bar, zone bottom) for trapped buyers, untested so far
+    let (mut sellers, mut buyers, mut started): (Vec<(usize, f64)>, Vec<(usize, f64)>, bool) = (Vec::new(), Vec::new(), false);
+    for i in 0..b.len() {
+        let live = |s: usize| lb == 0 || i - s <= lb;
+        sellers.retain(|&(s, top)| b.low[i] > top && live(s));
+        buyers.retain(|&(s, bot)| b.high[i] < bot && live(s));
+        started |= f.day(i).is_some();
+        let new = f.day(i).and_then(dense).map(|(lo, bid, ask)| {
+            let (m, mid) = (bid.len(), (b.high[i] + b.low[i]) / 2.);
+            let z = rows.min(m);
+            let heavy = |rg: std::ops::Range<usize>, sell: bool| {
+                let (sb, sa): (f64, f64) = (bid[rg.clone()].iter().sum(), ask[rg].iter().sum());
+                let v = sb + sa;
+                v > 0. && if sell { sb - sa >= r * v } else { sa - sb >= r * v }
+            };
+            let s = (heavy(0..z, true) && b.close[i] > mid).then(|| f.price(lo + z as i64 - 1));
+            let u = (heavy(m - z..m, false) && b.close[i] < mid).then(|| f.price(lo + (m - z) as i64));
+            (s, u)
+        });
+        if let Some((s, u)) = new {
+            if let Some(top) = s { sellers.push((i, top)); }
+            if let Some(bot) = u { buyers.push((i, bot)); }
+        }
+        if started { o[0][i] = sellers.len() as f64; o[1][i] = buyers.len() as f64; }
+    }
+    Ok(o)
+}
+
 pub const DEFS: &[IndicatorDef] = &[
     def("volume_delta", "Volume Delta", &[], &["delta"], PN,
         "Volume Delta: Σ ask volume − Σ bid volume of the session footprint (buy − sell aggressor volume; NinjaTrader 8 bar Delta, GoCharting orderflow.delta). It matches TradingView's Volume Delta close in its 1-tick bid/ask mode, not its candle-direction fallback. NaN on a bar without footprint rows.",
@@ -263,6 +361,18 @@ pub const DEFS: &[IndicatorDef] = &[
     def("buy_sell_vwap", "Session VWAP, Buy VWAP, Sell VWAP", &[], &["vwap", "buy_vwap", "sell_vwap"], PR,
         "End-of-session VWAP from the footprint (GoCharting VWAP, BVWAP, SVWAP): Σ price × volume ÷ Σ volume over all, ask-only and bid-only volume. Prices are the footprint rows, so it can differ from a trade-by-trade VWAP by up to half a row. NaN when the volume is zero.",
         &[0, 0, 0], false, buy_sell_vwap),
+    def("volume_nodes", "Busy and thin prices (high / low volume nodes)", NODES, &["busy", "thin", "close_node"], PN,
+        "Busy and thin prices (Footprint & Order Flow Guide; TradingView footprint shading steps): each row of the session footprint (rows missing between its lowest and highest rows count as zero) is scaled (volume − smallest row) ÷ (largest row − smallest row); at least Busy (0.75) = busy, a high-volume node; below Thin (0.25) = thin, a low-volume node. busy and thin = the number of such rows; close_node = the row nearest the close: 1 busy, −1 thin, 0 neither (equidistant: the lower row; NaN when the close is outside the session's rows). All rows equal (or one row): none is busy or thin. Nodes depend on the footprint's row size. NaN when the session has no volume.",
+        &[0, 0, 0], true, volume_nodes),
+    def("exhaustion", "Exhaustion (buying / selling)", EXH, &["buying", "selling"], PN,
+        "Exhaustion, 1 / 0 events. Rule 0 (Footprint & Order Flow Guide, across bars): buying = a higher high than the bar before on less footprint volume (ask + bid) and a smaller delta (ask − bid); selling = a lower low on less volume and a larger (less negative) delta; NaN when this or the previous bar has no footprint. Rule 1 (inside the bar, the ATAS Exhaustion reading: ATAS publishes the settings, 5 price levels and bid/ask or total volume, not the code): buying = the ask volume falls strictly on each of the top Rows rows into the session high; selling = the bid volume falls strictly on each of the bottom Rows rows into the session low (column 1: total volume on both); 0 when the session has fewer rows. Highs and lows in rule 0 are the daily bar's.",
+        &[0, 0], true, exhaustion),
+    def("absorption", "Absorption (lab definition)", ABS, &["selling", "buying"], PN,
+        "Absorption, the Footprint & Order Flow Guide's rule (lab definition: no platform publishes a formula), 1 / 0 events. selling = heavy selling absorbed: session delta (ask − bid) at most −One-way delta % of the session's footprint volume, that volume at least the average footprint volume of the last Length bars (this bar included; bars without footprint left out), and the bar closes up (close > open); buying = the mirror (delta at least +%, bar closes down). Guide thresholds: 30 %; 'the episode average' is read as the Length-bar average. NaN on a bar without footprint and before Length bars.",
+        &[19, 19], true, absorption),
+    def("trapped_traders", "Trapped traders (lab definition)", TRAP, &["sellers", "buyers"], PN,
+        "Trapped traders, the Footprint & Order Flow Guide's rule (lab definition: no vendor formula; the thresholds are research choices). A trapped-seller zone forms on a bar whose lowest Zone rows rows of the session footprint carry a one-way selling delta (bid − ask) of at least One-way delta % of their volume and whose close is above the middle of the bar's range (closes away from the low); the zone runs from the session's lowest row up to the top zone row. Trapped buyers mirror it at the highest rows with a close below the middle. 'Later bars never return' is read causally, like the naked POC: sellers / buyers = the number of zones not yet revisited as of this bar's close (a later bar's low at or below a seller zone's top, or high at or above a buyer zone's bottom, removes it; the zone's own bar does not), optionally only zones from the last Look back bars. A session with fewer rows uses all of them. NaN only before the first footprint session.",
+        &[0, 0], true, trapped_traders),
     listed("delta_min_max", "Min / Max Delta (delta bars high/low)", OF_TIME, TIME_NOTE),
     listed("delta_since_high_low", "Delta since high / low", OF_TIME, TIME_NOTE),
     listed("extreme_delta", "Extreme delta (Orderflows Trader)", OF_TIME, TIME_NOTE),
@@ -289,6 +399,10 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("delta_divergence", "Orderflows Trader (GoCharting): Delta Divergence", ""),
     ("level_delta_extremes", "NinjaTrader 8 / Sierra Chart: max/min row delta", ""),
     ("buy_sell_vwap", "GoCharting: VWAP, Buy VWAP and Sell VWAP", ""),
+    ("volume_nodes", "Volume Footprint (TradingView shading 0.25 / 0.5 / 0.75); high / low volume nodes", ""),
+    ("exhaustion", "ATAS: Exhaustion; Footprint & Order Flow Guide: exhaustion", ""),
+    ("absorption", "Order flow: Absorption; Footprint & Order Flow Guide: absorption", ""),
+    ("trapped_traders", "Order flow: Trapped traders; Footprint & Order Flow Guide: trapped traders", ""),
     ("delta_min_max", "Volume Delta (high/low); NinjaTrader / GoCharting min/max delta", ""),
     ("delta_since_high_low", "NinjaTrader 8: Delta SH/SL", ""),
     ("extreme_delta", "Orderflows Trader (GoCharting): Extreme Delta", ""),
@@ -405,6 +519,54 @@ mod tests {
         let bw = (100. + 101. * 20. + 102. * 9. + 103. * 7. + 104. * 3.) / 40.;
         let sw = (100. * 5. + 101. + 102. * 2. + 104. * 3.) / 11.;
         assert!(same(&[w[0][0], w[1][0], w[2][0]], &[vw, bw, sw]));
+    }
+    #[test] fn busy_thin_rows_and_exhaustion_by_hand() {
+        // day 0 rows 100..105 total volume (bid+ask): 100:2 101:20 102:20 103:0 (missing) 104:17 105:6 → min 0, max 20
+        // scaled 0.1 1 1 0 0.85 0.3 → busy 101, 102, 104; thin 100, 103 (0.3 at 105 is not below 0.25)
+        // ask falls into the high? rows 101..105 ask 19,15,0,12,5 → no (12 > 0). bid from the low 1,1,… → no (not strict)
+        // day 1 rows 100..105 ask 9,8,7,6,5,4 and bid 1,2,3,4,5,6 → ask falls into the high and bid falls into the low
+        let d = ["2024-06-03", "2024-06-04", "2024-06-05"];
+        let rows = [("2024-06-03", 100., 1., 1.), ("2024-06-03", 101., 1., 19.), ("2024-06-03", 102., 5., 15.), ("2024-06-03", 104., 5., 12.), ("2024-06-03", 105., 1., 5.),
+                    ("2024-06-04", 100., 1., 9.), ("2024-06-04", 101., 2., 8.), ("2024-06-04", 102., 3., 7.), ("2024-06-04", 103., 4., 6.), ("2024-06-04", 104., 5., 5.), ("2024-06-04", 105., 6., 4.),
+                    ("2024-06-05", 101., 1., 30.)];
+        let mut b = bars(&d, &[(100., 101.); 3], &rows);
+        b.close = vec![102.4, 99., 101.];
+        let nd = out("volume_nodes", &b, &[]);
+        assert!(same(&nd[0], &[3., 0., 0.]) && same(&nd[1], &[2., 0., 0.]), "day 1: 10 each row → none; day 2: one row → none");
+        assert!(same(&nd[2], &[1., NA, 0.]), "102.4 is nearest 102 (busy); 99 is below the rows");
+        let ex1 = out("exhaustion", &b, &[("rule", 1.)]);
+        assert!(same(&ex1[0], &[0., 1., 0.]) && same(&ex1[1], &[0., 1., 0.]), "day 2 has one row (< 5)");
+        assert!(same(&out("exhaustion", &b, &[("rule", 1.), ("levels", 2.)])[0], &[1., 1., 0.]), "day 0: ask 5 at 105 < 12 at 104");
+        // rule 0: footprint volumes 65, 60, 31; deltas +39, +18, +29; the bars' highs and lows:
+        b.high = vec![110., 111., 112.]; b.low = vec![90., 91., 89.];
+        let ex0 = out("exhaustion", &b, &[]);
+        assert!(same(&ex0[0], &[NA, 1., 0.]), "day 1: higher high, 60 < 65, +18 < +39; day 2: delta +29 is not smaller");
+        assert!(same(&ex0[1], &[NA, 0., 1.]), "day 2: lower low, 31 < 60, +29 > +18");
+    }
+    #[test] fn absorption_and_trapped_traders_by_hand() {
+        // absorption, Length 2: day 1 sells 18 of 20 (delta −16 ≤ −6), volume 20 ≥ avg 20, closes up → selling absorbed;
+        // day 2 buys 30 of 32 (delta +28 ≥ 9.6), 32 ≥ avg 26, closes down → buying absorbed; day 3 has no footprint
+        let d = ["2024-07-01", "2024-07-02", "2024-07-03", "2024-07-04"];
+        let rows = [("2024-07-01", 100., 10., 10.), ("2024-07-02", 100., 18., 2.), ("2024-07-03", 100., 2., 30.)];
+        let b = bars(&d, &[(100., 101.), (100., 101.), (101., 100.), (100., 101.)], &rows);
+        let ab = out("absorption", &b, &[("length", 2.)]);
+        assert!(same(&ab[0], &[NA, 1., 0., NA]) && same(&ab[1], &[NA, 0., 1., NA]));
+        assert!(same(&out("absorption", &b, &[("length", 2.), ("delta_pct", 90.)])[0], &[NA, 0., 0., NA]), "−16 is not 90 % of 20");
+        // trapped traders, 3 zone rows: day 0 rows 100..104 (bid, ask) 100 (10,1) 101 (8,2) 102 (5,5) 103 (1,1) 104 (1,1):
+        // zone 100..102 bid 23 ask 8 → delta −15 ≤ −9.3, close 104 > mid 102 → trapped sellers below 102.
+        // day 3 rows 110..112 (1,1) (1,8) (1,9): delta +15 ≥ 6.3 over all three rows, close 110 < mid 111 → trapped buyers above 110
+        let rows = [("2024-07-01", 100., 10., 1.), ("2024-07-01", 101., 8., 2.), ("2024-07-01", 102., 5., 5.), ("2024-07-01", 103., 1., 1.), ("2024-07-01", 104., 1., 1.),
+                    ("2024-07-04", 110., 1., 1.), ("2024-07-04", 111., 1., 8.), ("2024-07-04", 112., 1., 9.)];
+        let mut b = bars(&d, &[(100., 101.); 4], &rows);
+        b.low = vec![99.5, 103., 101.5, 109.5]; b.high = vec![104.5, 106., 106., 112.5]; b.close = vec![104., 105., 104., 110.];
+        let tr = out("trapped_traders", &b, &[]);
+        assert!(same(&tr[0], &[1., 1., 0., 0.]), "day 2 trades back down to 101.5 ≤ 102");
+        assert!(same(&tr[1], &[0., 0., 0., 1.]));
+        b.low[2] = 103.;
+        assert!(same(&out("trapped_traders", &b, &[])[0], &[1., 1., 1., 1.]));
+        assert!(same(&out("trapped_traders", &b, &[("lookback", 1.)])[0], &[1., 1., 0., 0.]));
+        b.close[0] = 101.;
+        assert!(same(&out("trapped_traders", &b, &[])[0], &[0., 0., 0., 0.]), "a close below the middle is not away from the low");
     }
     #[test] fn zero_volume_session_and_missing_data() {
         let b = bars(&["2024-05-02", "2024-05-03"], &[(1., 2.); 2], &[("2024-05-02", 100., 0., 0.)]);

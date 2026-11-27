@@ -494,7 +494,7 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("cycle_trend", "thinkorswim: CycleTrendAnalytics", ""),
     ("tirone", "MetaStock: Tirone Levels", ""),
     ("quadrant", "MetaStock: Quadrant Lines; thinkorswim: Quadrant Lines", ""),
-    ("volume_accumulation", "thinkorswim: VolumeAccumulation", ""),
+    ("volume_accumulation", "thinkorswim: VolumeAccumulation; MotiveWave: Volume Accumulation Oscillator (VAO, price input at its default close)", ""),
 ];
 
 #[cfg(test)]

@@ -81,7 +81,6 @@ pub const DEFS: &[IndicatorDef] = &[
     listed("bid_ask_spread", "Bid-Ask Spread", OFC, BOOK, "Bid-ask spread: best ask − best bid (not the lab's spread id, which is price minus a second instrument)", BOOK_NOTE),
     listed("dom_power", "DOM Power", OFC, BOOK, "ATAS DOM Power: activity in the depth of market", BOOK_NOTE),
     listed("dom_strength", "DOM Strength", OFC, BOOK, "Depth-of-market strength: resting bid against resting ask size", BOOK_NOTE),
-    listed("absorption", "Absorption", OFC, NO, "Order-flow absorption: aggressive volume met by passive orders without price progress; described only qualitatively (x_orderflow.rs: no exact public rule)", "not available yet — formula not published (no exact public rule from ATAS, Bookmap or Sierra Chart)"),
     listed("spread_volumes", "Spread Volumes", OFC, NO, "Spread Volumes (named in ATAS material; no published definition)", "not available yet — formula not published (ATAS, closed source)"),
     listed("strength_level", "Strength Level Indicator", OFC, NO, "Strength Level Indicator (no primary text found)", "not available yet — formula not published (no primary text found)"),
     // Timeless: Point & Figure (XO) indicators
@@ -129,7 +128,6 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("bid_ask_spread", "Bid-Ask Spread", ""),
     ("dom_power", "ATAS: DOM Power", ""),
     ("dom_strength", "DOM Strength", ""),
-    ("absorption", "Order flow: Absorption", ""),
     ("spread_volumes", "ATAS: Spread Volumes", ""),
     ("strength_level", "Strength Level Indicator", ""),
     ("xo_ama", "Prashant Shah: XO AMA", ""),
@@ -152,7 +150,7 @@ mod tests {
     use crate::lab::testdata::walk;
 
     #[test] fn every_entry_is_listed_with_a_note_and_a_source() {
-        assert_eq!(DEFS.len(), 44);
+        assert_eq!(DEFS.len(), 43); // 2026-11-27: absorption moved to x_orderflow (computed)
         for d in DEFS {
             assert!(d.compute.is_none(), "{}", d.id);
             assert!(d.note.starts_with("not available yet — needs ") || d.note.starts_with("not available yet — formula not published ("), "{}: {}", d.id, d.note);

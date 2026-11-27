@@ -35,7 +35,7 @@ export interface Chip { key: string; id: string; params: Record<string, number>;
 const levelGroups: [number[], string[]][] = [
   [[70, 30], ["rsi", "rmi", "rsx", "slow_rsi", "uo", "imi", "crsi", "aroon"]],
   [[80, 20], ["stoch", "stochrsi", "mfi", "double_stoch", "hhlls", "kdj", "preferred_stoch", "projection_osc", "rss", "sve_stochrsi", "tii"]],
-  [[75, 25], ["stc"]], [[90, 10], ["dmi_stoch"]], [[68, 50, 32], ["tdi"]], [[50], ["inertia", "rvi", "qqe"]],
+  [[75, 25], ["stc"]], [[150, 75], ["normalized_volume"]], [[90, 10], ["dmi_stoch"]], [[68, 50, 32], ["tdi"]], [[50], ["inertia", "rvi", "qqe"]],
   [[25], ["dmi", "adxr", "dx"]], [[61.8, 38.2], ["chop"]], [[-20, -80], ["willr"]],
   [[100, -100], ["cci", "woodies_cci"]], [[50, -50], ["cmo"]], [[40, -40], ["smi", "pzo", "vzo"]], [[60, -60], ["wavetrend"]], [[80, -80], ["rci", "rci_ribbon"]],
   [[150, 50, -50, -150], ["macd_v"]], [[8, 4, -4, -8], ["value_chart"]], [[7, -7], ["szo"]], [[3, -3], ["pgo"]], [[2, 0, -2], ["zscore", "rocket_rsi", "dso"]],
@@ -46,7 +46,7 @@ const levelGroups: [number[], string[]][] = [
     "rvgi", "impulse_macd", "macd_bb", "macd_leader", "madh", "myrsi_net", "polychrome_mom", "rsih", "velocity", "vw_macd", "dmh", "efi", "eom", "mfo", "twiggs",
     "klinger", "mcclellan", "trend_strength", "apo", "fosc", "disparity", "weekly_daily_macd", "iii", "vroc", "bandpass", "cyber_cycle", "decycler_osc", "ebsw",
     "ehlers_hp", "elegant_osc", "roofing", "reflex", "trendflex", "universal_osc", "voss", "correlation_cycle", "super_passband", "swak_highpass", "rmo_ehlers",
-    "reverse_ema", "fourier_series", "rvgi_ext", "cycle_trend", "wvad"]],
+    "reverse_ema", "fourier_series", "rvgi_ext", "cycle_trend", "wvad", "vol_accum_pct"]],
 ];
 export const DEFAULT_LEVELS: Record<string, number[]> = Object.fromEntries(levelGroups.flatMap(([levels, ids]) => ids.map((id) => [id, levels])));
 export const levelsOf = (chip: Chip) => chip.levels ?? DEFAULT_LEVELS[chip.id] ?? [];
