@@ -79,14 +79,16 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
   const putRhs = (i: number) => (o: Operand) => onChange(many ? build(lhs, op, rhss.map((r, j) => (j === i ? o : r)), must) : { ...x, rhs: o } as RuleNode);
   const addLine = () => onChange(build(lhs, op, [...rhss, rhss[rhss.length - 1]], [...must, true]));
   const removeLine = (i: number) => onChange(build(lhs, op, rhss.filter((_, j) => j !== i), must.filter((_, j) => j !== i)));
-  // More holds Bars ago and Foreign ticker; it opens by itself only when the rule uses one (or several lines). A calculation
+  // More holds Bars ago; it opens by itself only when the rule uses it (or several lines). Foreign ticker is always on screen
+  // (user, 26-11-2026) where another instrument can be read. A calculation
   // variant (AmiBroker, Avg Val) stays on screen once chosen: picking Supertrend sets AmiBroker, which must not open More.
   const series = [lhs, ...rhss].flatMap((o) => (isSeries(o as Operand) ? [o as SeriesOperand] : []));
-  const used = !!many || series.some((s) => !!s.offset || !!s.symbol);
+  const used = !!many || series.some((s) => !!s.offset);
   const choiceUsed = series.some((s) => (cat.indicators.find((i) => i.id === s.s)?.params ?? []).some((p) => isChoice(p) && (s.p?.[p.key] ?? p.default) !== p.default));
   const [more, setMore] = useState(used);
   const extra = more || used;
-  const symbols = scope && foreignEnabled(scope) && scope.allowSymbol !== false && !scope.portfolio ? foreignOptions(scope) : [];
+  // a portfolio reads another symbol on every member's own dates (engine series.rs Others), so the field is offered there too
+  const symbols = scope && foreignEnabled(scope) && scope.allowSymbol !== false ? foreignOptions(scope) : [];
   const computed = cat.indicators.filter((i) => i.computed && !CALENDAR_IDS.includes(i.id));
   const groups = [...new Set(computed.map((i) => i.category))];
   const row = (name: string, el: ReactNode, key = name) => <div className="lab-param-row" key={key}><span className="lab-param-k">{name}</span><span className="lab-param-v">{el}</span></div>;
@@ -137,9 +139,9 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
       s && row("Timeframe", <TimeframeField operand={o} catalogue={cat} onChange={put} follow={followTf(o, isLhs ? rhss[0] : x.lhs as Operand)} />, `${who}-tf`),
       s && extra && row((s.tf ?? "D") === "D" ? "Bars ago" : "Periods ago", <NumField hideLabel label={named("bars ago")} value={s.offset ?? 0} min={0} step={1}
         onChange={(n) => { if (n === undefined || !Number.isInteger(n) || n < 0) return; const { offset: _o, ...rest } = s; put(n ? { ...rest, offset: n } : rest); }} />, `${who}-ago`),
-      s && isLhs && extra && (symbols.length > 0 || !!s.symbol) && row("Foreign ticker", <select aria-label={named("symbol")} value={s.symbol ?? ""}
+      s && isLhs && (symbols.length > 0 || !!s.symbol) && row("Foreign ticker", <select aria-label={named("symbol")} value={s.symbol ?? ""}
         onChange={(e) => put(withForeignField(s, "symbol", e.target.value || undefined))}>
-        <option value="">This instrument{scope?.ticker ? ` (${scope.ticker})` : ""}</option>
+        <option value="">{scope?.portfolio ? "Current member" : `This instrument${scope?.ticker ? ` (${scope.ticker})` : ""}`}</option>
         {s.symbol && !symbols.some((o) => o.ticker === s.symbol) && <option value={s.symbol}>{s.symbol}</option>}
         {symbols.map((o) => <option key={o.ticker} value={o.ticker} disabled={o.disabled} title={o.reason}>{o.label}</option>)}
       </select>, `${who}-symbol`),
@@ -149,7 +151,7 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
     <div className="lab-param-h">
       {onOff}<b>{label}</b>
       <span className="lab-param-tools">
-        {!used && <button type="button" className="dbtn sm ghost" data-lab-param-more aria-expanded={more} title="Bars ago (AFL Ref(x, -n)), a foreign ticker, calculation variant, more lines to compare with"
+        {!used && <button type="button" className="dbtn sm ghost" data-lab-param-more aria-expanded={more} title="Bars ago (AFL Ref(x, -n)), calculation variant, more lines to compare with"
           onClick={() => setMore(!more)}>{more ? "Less ▴" : "More ▾"}</button>}
         {remove}
       </span>

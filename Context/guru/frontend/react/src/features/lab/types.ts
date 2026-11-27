@@ -140,6 +140,8 @@ export interface Execution {
   dead_stock?: true; penny_price?: number; turnover_filter?: true; aux1?: true; aux2?: true;
   /** The turnover floor by year as [from year, minimum] rows, years rising; absent = the AFL's own table. */
   turnover_floor?: [number, number][];
+  /** The AFL's "ST For Foreign Filter": two SuperTrends on another symbol gate the buys (and, with exit, sell). */
+  foreign_filter?: { symbol: string; tf?: "D" | "W" | "M"; period?: number; factor1?: number; factor2?: number; price?: number; type?: "bullish" | "bearish"; exit?: boolean };
   [extra: string]: unknown;
 }
 export interface PositionLimits {

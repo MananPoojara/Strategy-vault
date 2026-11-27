@@ -15,6 +15,9 @@ import { ordered, TradesTab } from "./settings/TradesTab";
 import { StopsTab } from "./settings/StopsTab";
 import { ReportTab } from "./settings/ReportTab";
 import { PortfolioTab } from "./settings/PortfolioTab";
+import { defaultForeignSymbol, ForeignFilterPanel, withForeignFilter } from "./ForeignFilterPanel";
+import { useForeignScope } from "./ForeignFields";
+import { foreignOptions } from "./foreign-model";
 import { SettingGroup } from "./settings/common";
 import { RuleList, type TreeCaps } from "./NodeEditor";
 import { budget, limits, newFilter, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
@@ -89,14 +92,17 @@ const withDates = (spec: Spec, on: boolean): Spec => {
   return rest as Spec;
 };
 /** No filter (the default), Dates and Indicator: the last two can be on together. Instant toggles, no motion: used often. */
-function FilterChoice({ dates, indicator, windows = false, onDates, onIndicator, onNone }: { dates?: boolean; indicator: boolean;
+function FilterChoice({ dates, indicator, foreign, windows = false, onDates, onIndicator, onForeign, onNone }: { dates?: boolean; indicator: boolean;
+  /** The AFL's ST For Foreign Filter (execution.foreign_filter); undefined where the engine or the side does not offer it. */
+  foreign?: boolean;
   /** A short's no-trade windows (Master 5DP, QTR) are on: also a filter, so "No filter" is not the state. */
-  windows?: boolean; onDates(on: boolean): void; onIndicator(on: boolean): void; onNone(): void }) {
+  windows?: boolean; onDates(on: boolean): void; onIndicator(on: boolean): void; onForeign?(on: boolean): void; onNone(): void }) {
   const chip = (label: string, on: boolean, click: () => void) => <button type="button" className="lab-filter-chip" aria-pressed={on} onClick={click}>{label}</button>;
   return <div className="lab-filter-choice" role="group" aria-label="Filters" data-lab-filter-choice>
-    {chip("No filter", !dates && !indicator && !windows, onNone)}
+    {chip("No filter", !dates && !indicator && !windows && !foreign, onNone)}
     {dates !== undefined && chip("Dates", dates, () => onDates(!dates))}
     {chip("Indicator", indicator, () => onIndicator(!indicator))}
+    {foreign !== undefined && onForeign && chip("Foreign filter", foreign, () => onForeign(!foreign))}
   </div>;
 }
 
@@ -146,6 +152,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     return [<Fragment key={`${tag} signals`}>{one(signals, (n) => [...n, ...filters], title, tag)}</Fragment>, filterList] as const;
   };
   const simple = useSimple(), compact = useCompact(), problemsId = useId();
+  const foreignScope = useForeignScope();
   const money = modeOf(spec) === "money", cost = spec.execution?.cost_bps;
   const fill = ordered(spec) ? "order level" : usesTradePrices(spec.execution) ? "price and delay set in Trades" : spec.execution?.fill === "close" ? "same close" : "next open";
   const changed = changedSettings(spec);
@@ -189,9 +196,13 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
           <div className="lab-rule-section-body">
           <FilterChoice dates={short || !dates ? undefined : !!spec.date_filter} indicator={hasFilters(`${pre}entry.all` as ListPath)}
             windows={!short && !!spec.blackouts?.length}
+            // the AFL foreign filter is run-level (both sides), so it sits on the main side's card
+            foreign={short || !catalogue.execution?.entry_gates?.includes("foreign_filter") ? undefined : !!spec.execution?.foreign_filter}
             onDates={(on) => onChange(withDates(spec, on))} onIndicator={(on) => onChange(withFilters(spec, `${pre}entry.all` as ListPath, on))}
-            // No filter clears every filter: dates, indicator rows and a short's no-trade windows
-            onNone={() => { const { blackouts: _b, ...rest } = withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false); onChange(short ? withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false) : rest as Spec); }} />
+            onForeign={(on) => onChange(withForeignFilter(spec, on, defaultForeignSymbol(foreignScope ? foreignOptions(foreignScope).filter((o) => !o.type && !o.disabled).map((o) => o.ticker) : [])))}
+            // No filter clears every filter: dates, indicator rows, the foreign filter and a short's no-trade windows
+            onNone={() => { const cleared = withForeignFilter(withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false), false, ""); const { blackouts: _b, ...rest } = cleared; onChange(short ? withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false) : rest as Spec); }} />
+          {!short && spec.execution?.foreign_filter && <ForeignFilterPanel spec={spec} onChange={onChange} />}
           {!short && spec.date_filter && dates}
           {!short && spec.direction === "short" && shortWindows}
           {filters}

@@ -74,6 +74,15 @@ pub struct SinceEntry { pub kind: SinceKind, pub of: Option<Operand>, pub when: 
 /// One band of the Dual ATR exit: price source ± mult × the simple average of the true range over `period` bars.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AtrBand { pub period: usize, pub mult: f64, pub price: String }
+/// The team's AFL "ST For Foreign Filter" (EMA Cross_Foreign Filter_SuperTreand_SMA200_Price Drop.afl, execution.foreign_filter):
+/// two SuperTrends (`period` × `factor1`, `period` × `factor2`, Avg Value `price`) on another symbol's `tf` bars; a buy needs
+/// either one bullish (or, `bearish`, either one bearish); `exit` also sells when neither is. Computed as the AFL does
+/// (series.rs foreign_filter): the symbol aligned to the traded bars with holes filled, compressed to `tf`, each line read one
+/// bar late (and one more on W/M), the second line's state shifted a traded bar forward after the expansion.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ForeignFilter { pub symbol: String, pub tf: Tf, pub period: usize, pub factor1: f64, pub factor2: f64,
+    /// 0 Open, 1 High, 2 Low, 3 Close, 4 (O+C)/2, 5 (H+L)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4: the AFL's Foreign ST Average Value list
+    pub price: u8, pub bearish: bool, pub exit: bool }
 /// The AmiBroker "Dual ATR" exit (exit.dual_atr): from the entry bar an initial stop (price − initial ATR band) and a favour
 /// stop (price − favour ATR band) ratchet in the trade's favour, and a switch band (price + favour ATR band) ratchets
 /// against it. Once a close is above both the previous switch band and the previous initial stop, the favour stop is used
@@ -281,6 +290,8 @@ pub struct Exec {
     /// execution.turnover_floor: the year-wise floor as [from year, minimum] rows, years ascending (a year uses the last row
     /// at or before it; earlier years the first row). None: the AFL's own table (series.rs turnover_floor).
     pub turnover_floor: Option<Vec<(i32, f64)>>,
+    /// execution.foreign_filter (None: off): the AFL's ST For Foreign Filter, gating both sides' entries (and exits with `exit`).
+    pub foreign_filter: Option<ForeignFilter>,
     /// execution.shadow (None: off).
     pub shadow: Option<Shadow>,
     /// Indices of entry.all rules marked `"filter": true` (with execution.shadow they gate only the real trades).
@@ -294,7 +305,7 @@ impl Default for Exec {
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
                tick_size: 0., pad_align: false, pad_ref: None, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, fresh_reentry_exits: false, restart_virtual_on_signal: false, defer_exit_on_circuit: false, skip_entry_on_circuit: false,
-               dead_stock: false, penny_price: 0., turnover_filter: false, turnover_floor: None, aux: [false; 2], shadow: None, filter_rows: vec![] }
+               dead_stock: false, penny_price: 0., turnover_filter: false, turnover_floor: None, foreign_filter: None, aux: [false; 2], shadow: None, filter_rows: vec![] }
     }
 }
 impl Exec {
@@ -374,7 +385,9 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     let portfolio = root.get("portfolio").map(|v|portfolio(v,&mut budget)).transpose()?;
     let rotation = portfolio.as_ref().is_some_and(|p|p.mode==Mode::Rotation);
     let date_filter = root.get("date_filter").map(date_filter).transpose()?.flatten();
-    let dated = date_filter.as_ref().is_some_and(DateFilter::exits);
+    // another exit besides the rule list: the date filter exiting on a window change, or the foreign filter's exit switch
+    let dated = date_filter.as_ref().is_some_and(DateFilter::exits)
+        || root.get("execution").and_then(|e| e.get("foreign_filter")).and_then(|f| f.get("exit")) == Some(&Json::Bool(true));
     let blackouts = match root.get("blackouts") {
         None => vec![],
         Some(Json::Arr(items)) if items.len() <= MAX_BLACKOUTS => items.iter().enumerate().map(|(k, v)| blackout(v, &format!("blackouts[{k}]"))).collect::<Result<Vec<_>, _>>()?,
@@ -395,7 +408,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "fresh_reentry_exits", "restart_virtual_on_signal", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "turnover_floor", "aux1", "aux2"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "fresh_reentry_exits", "restart_virtual_on_signal", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "turnover_floor", "foreign_filter", "aux1", "aux2"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -524,6 +537,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
             }
             exec.turnover_floor = Some(table);
         }
+        if let Some(v) = ex.get("foreign_filter") { exec.foreign_filter = Some(foreign_filter(v)?); }
         if let Some(v) = ex.get("penny_price") {
             exec.penny_price = v.as_f64().filter(|p| (0. ..=1e6).contains(p)).ok_or_else(|| inv("execution.penny_price must be a number from 0 (off) to 1e6"))?;
         }
@@ -560,7 +574,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         s.exec.skip_entry_on_circuit = exec.skip_entry_on_circuit;
     }
     // An exitless side relies on the opposite entry to reverse its position.
-    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && x.dual_line.is_none() && !dated;
+    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && x.dual_line.is_none() && !x.foreign_filter.as_ref().is_some_and(|f| f.exit) && !dated;
     if both && exec.opposite != Opposite::Reverse && (exitless(&exec,&exit) || short_side.as_ref().is_some_and(|s|exitless(&s.exec,&s.exit))) {
         return Err(inv("a side without exit rules (always in) needs execution.opposite \"reverse\""));
     }
@@ -682,6 +696,24 @@ fn windows(v: &Json, at: &str) -> Result<Vec<(String, String)>, LabError> {
         if from >= to { return Err(inv(format!("{a}: from ({from}) must be before to ({to})"))); }
         Ok((from, to))
     }).collect::<Result<Vec<_>, LabError>>()
+}
+fn foreign_filter(v: &Json) -> Result<ForeignFilter, LabError> {
+    let at = "execution.foreign_filter";
+    fields(v, at, &["symbol", "tf", "period", "factor1", "factor2", "price", "type", "exit"], &[])?;
+    let symbol = v.get("symbol").and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty() && s.len() <= 64)
+        .ok_or_else(|| inv(format!("{at}.symbol must name the other instrument (e.g. NIFTY 50)")))?.to_string();
+    // the AFL's defaults: Monthly, period 5, factors 2 and 1, (High+Low)/2, Bullish, exit NO
+    let tf = match v.get("tf") { None => Tf::M, Some(t) => t.as_str().and_then(Tf::parse).filter(|t| matches!(t, Tf::D | Tf::W | Tf::M)).ok_or_else(|| inv(format!("{at}.tf must be D, W or M")))? };
+    let num = |k: &str, default: f64, lo: f64, hi: f64, whole: bool| match v.get(k) {
+        None => Ok(default),
+        Some(x) => x.as_f64().filter(|n| (lo..=hi).contains(n) && (!whole || n.fract() == 0.)).ok_or_else(|| inv(format!("{at}.{k} must be {}a number from {lo} to {hi}", if whole { "a whole " } else { "" }))),
+    };
+    let period = num("period", 5., 2., 100., true)? as usize; // the AFL loop reads two bars back from bar `period`
+    let (factor1, factor2) = (num("factor1", 2., 0.1, 50., false)?, num("factor2", 1., 0.1, 50., false)?);
+    let price = num("price", 5., 0., 7., true)? as u8;
+    let bearish = match v.get("type").map(Json::as_str) { None | Some(Some("bullish")) => false, Some(Some("bearish")) => true, _ => return Err(inv(format!("{at}.type must be bullish or bearish"))) };
+    let exit = match v.get("exit") { None => false, Some(Json::Bool(b)) => *b, _ => return Err(inv(format!("{at}.exit must be true or false"))) };
+    Ok(ForeignFilter { symbol, tf, period, factor1, factor2, price, bearish, exit })
 }
 fn dual_atr(v: &Json, at: &str) -> Result<DualAtr, LabError> {
     fields(v, at, &["initial", "favour", "tf", "period_end_only"], &[])?;
@@ -898,7 +930,10 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
 }
 impl Spec {
     pub fn foreign_locations(&self)->Vec<(String,Foreign)>{
-        let mut out=Vec::new();walk(&mut self.without_off(),&mut |path,k|if let Knob::Series(r)=k {if r.foreign!=Foreign::default(){out.push((path,r.foreign.clone()));}});out
+        let mut out=Vec::new();walk(&mut self.without_off(),&mut |path,k|if let Knob::Series(r)=k {if r.foreign!=Foreign::default(){out.push((path,r.foreign.clone()));}});
+        // the AFL foreign filter reads its symbol with SetForeign's hole filling (series.rs foreign_filter)
+        if let Some(f)=&self.exec.foreign_filter{out.push(("execution.foreign_filter".into(),Foreign{symbol:Some(f.symbol.clone()),vs:None,fixup:true}));}
+        out
     }
     /// A copy whose switched-off rules are emptied, so their other instruments are not loaded or counted; a rule whose
     /// `.off` is an optimize dimension is kept (a combination may switch it on).

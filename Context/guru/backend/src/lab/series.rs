@@ -4,7 +4,7 @@ use super::bars::Bars;
 use super::catalogue;
 use super::foreign;
 use super::resample::{self, Expand, Tf};
-use super::rules::{Agg, Bin, Cond, Dist, DualAtr, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, SinceKind, Spec, Win};
+use super::rules::{Agg, Bin, Cond, Dist, DualAtr, Exec, Expr, ForeignFilter, LabError, Node, Op, Operand, SeriesRef, SinceKind, Spec, Win};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -103,10 +103,19 @@ pub fn catalogue_error(def: &catalogue::IndicatorDef, e: String) -> LabError {
 }
 /// Shared loaded instruments and conservative daily-session availability for one request.
 #[derive(Default)]
-pub struct Others { pub run: String, pub close_fills: bool, pub frames: Arc<BTreeMap<String, Frames>> }
+/// The other instruments a spec reads. `period`: a weekly/monthly/... backtest, whose other instruments are resampled like
+/// the traded bars and read period by period (AmiBroker's SetForeign on that periodicity); None on daily bars.
+pub struct Others { pub run: String, pub close_fills: bool, pub frames: Arc<BTreeMap<String, Frames>>, pub period: Option<Tf> }
 impl Others {
     /// Reuse loaded frames when compiling another portfolio member.
-    pub fn with_run(&self, run: &str) -> Others { Others { run: run.into(), close_fills: self.close_fills, frames: self.frames.clone() } }
+    pub fn with_run(&self, run: &str) -> Others { Others { run: run.into(), close_fills: self.close_fills, frames: self.frames.clone(), period: self.period } }
+    /// The other instruments on a `tf` backtest: each resampled as the traded bars are, the period holding `cut` (the run's
+    /// last session) ending there, so a month in progress never reads sessions the traded instrument has not reached.
+    pub fn on_period(self, tf: Tf, cut: &str) -> Others {
+        if tf == Tf::D { return self; }
+        let frames = self.frames.iter().map(|(t, f)| (t.clone(), Frames::new(resample::resample_cut(&f.d, tf, cut)))).collect();
+        Others { frames: Arc::new(frames), period: Some(tf), ..self }
+    }
     fn get<'a>(&'a self, symbol: &str, run: &'a Frames) -> Result<&'a Frames, LabError> {
         if symbol == self.run { return Ok(run); }
         self.frames.get(symbol).ok_or_else(|| LabError::Invalid(format!("{symbol}: not loaded for this request")))
@@ -128,7 +137,10 @@ fn series_mode_in(fr: &Frames, others: &Others, cache: &mut Cache, s: &SeriesRef
             let second = if vs == base_name { base } else { others.get(vs, fr)? };
             let policy = foreign::alignment(base_name, vs, others.close_fills);
             let mut d = base.d.clone();
-            d.second = Some(foreign::align(&base.d.date, &second.d.date, &second.d.close, policy, false)?);
+            d.second = Some(match others.period {
+                Some(tf) => align_period(&base.d.date, &second.d.date, &second.d.close, tf, false),
+                None => foreign::align(&base.d.date, &second.d.date, &second.d.close, policy, false)?,
+            });
             // Pair indicators are daily-only. Preserve all native data and resamples; identity makes repeated pair operands reuse raw outputs.
             let mut paired = Frames::new(d);
             paired.cache_identity = format!("pair:{}:{}:{}", base.cache_identity, second.cache_identity, policy.name());
@@ -137,8 +149,27 @@ fn series_mode_in(fr: &Frames, others: &Others, cache: &mut Cache, s: &SeriesRef
     };
     match &f.symbol {
         None => Ok(raw),
+        Some(_) if others.period.is_some() => Ok(align_period(&fr.d.date, &base.d.date, &raw, others.period.unwrap(), f.fixup)),
         Some(symbol) => foreign::align(&fr.d.date, &base.d.date, &raw, foreign::alignment(&others.run, symbol, others.close_fills), f.fixup),
     }
+}
+/// Period-by-period alignment on a weekly/monthly/... backtest: each run bar reads the other instrument's bar of the same
+/// period (the first one: a bar after the run's cut sits beyond every run date). A period the other instrument lacks is NaN,
+/// or with `fixup` its latest earlier period.
+pub(super) fn align_period(run: &[String], other: &[String], values: &[f64], tf: Tf, fixup: bool) -> Vec<f64> {
+    let mut first: Vec<(i64, usize)> = Vec::with_capacity(other.len());
+    for (j, d) in other.iter().enumerate() {
+        let k = resample::key(d, tf);
+        if first.last().is_none_or(|&(p, _)| p != k) { first.push((k, j)); }
+    }
+    run.iter().map(|t| {
+        let k = resample::key(t, tf);
+        match first.binary_search_by_key(&k, |&(p, _)| p) {
+            Ok(i) => values[first[i].1],
+            Err(i) if fixup && i > 0 => values[first[i - 1].1],
+            Err(_) => f64::NAN,
+        }
+    }).collect()
 }
 
 pub enum Val { Arr(Vec<f64>), Const(f64), Held, Since(Box<SinceVal>), Setup(Box<SetupVal>) }
@@ -552,6 +583,19 @@ pub fn compile_with(spec: &Spec, fr: &Frames, others: &Others, cache: &mut Cache
     for x in &spec.blackouts { c.clip.push(Clip { blocked: within(&x.windows), running: x.running, why: format!("{}: window started", x.name) }); }
     entry_gates(&mut c, &spec.exec, &fr.d)?;
     if let Some(o) = c.other.as_deref_mut() { entry_gates(o, &spec.exec, &fr.d)?; }
+    if let Some(f) = &spec.exec.foreign_filter {
+        let (entry, exit) = foreign_filter(f, fr, others)?;
+        let name = format!("execution.foreign_filter: {} {} SuperTrend {}×{} / {}×{} {}", f.symbol, match f.tf { Tf::W => "weekly", Tf::M => "monthly", _ => "daily" },
+            f.period, f.factor1, f.period, f.factor2, if f.bearish { "bearish" } else { "bullish" });
+        let cond = |v: &[bool], label: String| RCond { lhs: Val::Arr(v.iter().map(|&b| if b { 1. } else { 0. }).collect()), op: Op::Gt, rhs: Val::Const(0.5), label };
+        // run-level, like the other entry gates: both sides read it
+        c.entry.push(cond(&entry, name.clone()));
+        if f.exit { c.exit.push(cond(&exit, format!("{name}: exit"))); }
+        if let Some(o) = c.other.as_deref_mut() {
+            o.entry.push(cond(&entry, name.clone()));
+            if f.exit { o.exit.push(cond(&exit, format!("{name}: exit"))); }
+        }
+    }
     Ok(c)
 }
 /// The AFL's turnover floor (`Volsig`, RSI_Setup_Entry_Verification_Exploration.afl) for the year of a "YYYY-MM-DD" date.
@@ -561,6 +605,81 @@ pub(super) fn turnover_floor(date: &str) -> f64 {
         2010 => 1_000_000., 2011 => 2_000_000., 2012 => 2_500_000., 2013 => 3_000_000., 2014 => 3_500_000., 2015..=2016 => 4_000_000.,
         2017 => 5_000_000., 2018 => 6_000_000., 2019 => 7_000_000., 2020 => 8_000_000., 2021 => 9_000_000., _ => 10_000_000.,
     }
+}
+/// The AFL's SuperTrend line before its Ref (EMA Cross_Foreign Filter_SuperTreand_SMA200_Price Drop.afl, STForeignFilter1/2):
+/// ATR = the mean of the last `period` true ranges (ATR(1) summed with its Refs), bands Avg ± factor·ATR; from bar `period`
+/// the state turns down on a close above the upper and below the lower band while the lower band held flat (the AFL's first
+/// branch), up on a close above the previous upper band, down below the previous lower band, else it holds; the lower band
+/// ratchets up while up, the upper band down while down. NaN before the ATR exists.
+pub(super) fn afl_supertrend(b: &Bars, period: usize, factor: f64, price: u8) -> Vec<f64> {
+    let n = b.len();
+    let tr: Vec<f64> = (0..n).map(|i| {
+        let hl = b.high[i] - b.low[i];
+        if i == 0 { hl } else { let pc = b.close[i - 1]; hl.max((b.high[i] - pc).abs()).max((b.low[i] - pc).abs()) }
+    }).collect();
+    let atr: Vec<f64> = (0..n).map(|i| if i + 1 < period { f64::NAN } else { tr[i + 1 - period..=i].iter().sum::<f64>() / period as f64 }).collect();
+    let avg = |i: usize| match price {
+        0 => b.open[i], 1 => b.high[i], 2 => b.low[i], 3 => b.close[i], 4 => (b.open[i] + b.close[i]) / 2.,
+        5 => (b.high[i] + b.low[i]) / 2., 6 => (b.high[i] + b.low[i] + b.close[i]) / 3., _ => (b.open[i] + b.high[i] + b.low[i] + b.close[i]) / 4.,
+    };
+    let mut up: Vec<f64> = (0..n).map(|i| avg(i) + atr[i] * factor).collect();
+    let mut dn: Vec<f64> = (0..n).map(|i| avg(i) - atr[i] * factor).collect();
+    let mut is_up = vec![true; n];
+    for i in period.max(2)..n {
+        let c = b.close[i];
+        is_up[i] = if c > up[i - 1] && c < dn[i - 1] && dn[i - 1] == dn[i - 2] { false }
+            else if c > up[i - 1] { true } else if c < dn[i - 1] { false } else { is_up[i - 1] };
+        if is_up[i] && is_up[i - 1] { dn[i] = dn[i].max(dn[i - 1]); }
+        else if !is_up[i] && !is_up[i - 1] { up[i] = up[i].min(up[i - 1]); }
+    }
+    (0..n).map(|i| if is_up[i] { dn[i] } else { up[i] }).collect()
+}
+/// execution.foreign_filter on the traded bars (rules.rs ForeignFilter): (entry gate, exit signal), as the AFL computes them.
+fn foreign_filter(f: &ForeignFilter, fr: &Frames, others: &Others) -> Result<(Vec<bool>, Vec<bool>), LabError> {
+    let src = others.get(&f.symbol, fr)?;
+    let run = &fr.d.date;
+    // SetForeign(ticker) with fixup: the symbol on the traded bars; a hole takes the previous close for open, high, low and close
+    let on_run = |v: &[f64], fill: bool| -> Result<Vec<f64>, LabError> {
+        match others.period {
+            Some(tf) => Ok(align_period(run, &src.d.date, v, tf, fill)),
+            None => foreign::align(run, &src.d.date, v, foreign::alignment(&others.run, &f.symbol, others.close_fills), fill),
+        }
+    };
+    let close = on_run(&src.d.close, true)?;
+    let (mut open, mut high, mut low) = (on_run(&src.d.open, false)?, on_run(&src.d.high, false)?, on_run(&src.d.low, false)?);
+    for i in 0..run.len() {
+        if open[i].is_nan() || high[i].is_nan() || low[i].is_nan() { (open[i], high[i], low[i]) = (close[i], close[i], close[i]); }
+    }
+    let rank = |t: Tf| match t { Tf::W => 1, Tf::M => 2, Tf::Q => 3, Tf::Y => 4, _ => 0 };
+    if others.period.is_some_and(|p| rank(f.tf) != 0 && rank(f.tf) < rank(p)) {
+        return Err(LabError::Unsupported("execution.foreign_filter.tf is shorter than the backtest bars (AmiBroker's TimeFrameSet only compresses)".into()));
+    }
+    let a = Bars { date: run.clone(), open, high, low, close, ..Default::default() };
+    // TimeFrameSet(tf), except Daily, which keeps the backtest's own bars
+    let daily = f.tf == Tf::D;
+    let comp = resample::resample(&a, if daily { Tf::D } else { f.tf });
+    let n = comp.len();
+    let bull = |line: Vec<f64>| -> Vec<bool> {
+        // ST = Ref(ST, -1); Bull = Close > ST; on W/M the AFL reads one more bar back (Ref(Bull, -1))
+        let mut b: Vec<bool> = (0..n).map(|j| j > 0 && comp.close[j] > line[j - 1]).collect();
+        if !daily && n > 0 { b.rotate_right(1); b[0] = false; }
+        b
+    };
+    let (c1, c2) = (bull(afl_supertrend(&comp, f.period, f.factor1, f.price)), bull(afl_supertrend(&comp, f.period, f.factor2, f.price)));
+    // TimeFrameExpand(…, expandFirst): every traded bar takes its period's value
+    let expand = |c: &[bool]| -> Vec<bool> {
+        let mut out = vec![false; run.len()];
+        let mut start = 0;
+        for j in 0..n { for slot in &mut out[start..=comp.end[j]] { *slot = c[j]; } start = comp.end[j] + 1; }
+        out
+    };
+    let (b1, mut b2) = (expand(&c1), expand(&c2));
+    // after the expansion the AFL moves the second line's state a traded bar forward (Ref(…, 1)); the last bar has none
+    if !daily && !b2.is_empty() { b2.rotate_left(1); *b2.last_mut().unwrap() = false; }
+    let entry = (0..run.len()).map(|i| if f.bearish { !b1[i] || !b2[i] } else { b1[i] || b2[i] }).collect();
+    // ForeignDoubleFilterExit: bullish IIf(Bull2, NOT Bull2, NOT Bull1) = neither bullish; bearish IIf(NOT Bull2, Bull2, Bull1) = both
+    let exit = (0..run.len()).map(|i| if f.bearish { b1[i] && b2[i] } else { !b1[i] && !b2[i] }).collect();
+    Ok((entry, exit))
 }
 /// The floor for a date from the strategy's own table (execution.turnover_floor): the last row at or before its year, the
 /// first row before that; no table: the AFL's.
@@ -754,6 +873,17 @@ pub fn describe_node(n: &Node) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test] fn align_period_reads_the_same_period_whatever_its_last_session() {
+        use crate::lab::resample::Tf;
+        // the run's months end on the 28th / 29th, the other symbol's on the 31st; a missing month is NaN or, with fixup, the last one
+        let run: Vec<String> = ["2025-01-28", "2025-02-27", "2025-03-27", "2025-04-29"].map(String::from).to_vec();
+        let other: Vec<String> = ["2025-01-31", "2025-02-28", "2025-04-30"].map(String::from).to_vec();
+        let v = [1., 2., 4.];
+        let a = super::align_period(&run, &other, &v, Tf::M, false);
+        assert_eq!((a[0], a[1], a[3]), (1., 2., 4.)); assert!(a[2].is_nan());
+        assert_eq!(super::align_period(&run, &other, &v, Tf::M, true), vec![1., 2., 2., 4.]);
+    }
+
     use super::*;
     use crate::lab::catalogue::{all, resolve_params, Params};
     use crate::lab::rules::parse_spec;
@@ -1169,7 +1299,7 @@ mod foreign_resolver_tests {
     fn sref(id:&str,tf:Tf,out:usize,offset:usize)->SeriesRef { let params=catalogue::get(id).map_or(Default::default(),|d|catalogue::resolve_params(&d,&Default::default()).unwrap()); SeriesRef{id:id.into(),params,tf,out,offset,foreign:Default::default(),formula:None} }
     use crate::lab::rules::{parse_spec,Foreign};
     use crate::lab::testdata::{assert_series,close_eq};
-    fn others(run:&str,close_fills:bool,list:Vec<(&str,Bars)>)->Others {Others{run:run.into(),close_fills,frames:std::sync::Arc::new(list.into_iter().map(|(t,b)|(t.into(),Frames::new(b))).collect())}}
+    fn others(run:&str,close_fills:bool,list:Vec<(&str,Bars)>)->Others {Others{run:run.into(),close_fills,frames:std::sync::Arc::new(list.into_iter().map(|(t,b)|(t.into(),Frames::new(b))).collect()),period:None}}
     fn reference(id:&str,symbol:Option<&str>,vs:Option<&str>,fixup:bool)->SeriesRef {SeriesRef{foreign:Foreign{symbol:symbol.map(Into::into),vs:vs.map(Into::into),fixup},..sref(id,Tf::D,0,0)}}
     fn operand(text:&str)->Operand {parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{text},"op":">","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":3}}}}]}}}}"#)).unwrap().entry[0].cmp().unwrap().lhs.clone()}
     fn remove(b:&mut Bars,i:usize) {for v in [&mut b.open,&mut b.high,&mut b.low,&mut b.close]{v.remove(i);}b.date.remove(i);b.end=(0..b.len()).collect();if let Some(v)=&mut b.volume{v.remove(i);}}
@@ -1203,7 +1333,7 @@ mod foreign_resolver_tests {
     }
     #[test] fn paired_cache_separates_session_availability_policy() {
         let fr=Frames::new(business_days(40,false));let o=others("SPY",false,vec![("CBOE VIX",business_days(40,false))]);
-        let later=Others{close_fills:true,run:o.run.clone(),frames:o.frames.clone()};let r=reference("ratio",None,Some("CBOE VIX"),false);let mut cache=Cache::new();
+        let later=Others{close_fills:true,run:o.run.clone(),frames:o.frames.clone(),period:None};let r=reference("ratio",None,Some("CBOE VIX"),false);let mut cache=Cache::new();
         let same=series_in(&fr,&o,&mut cache,&r).unwrap();let prior=series_in(&fr,&later,&mut cache,&r).unwrap();assert_eq!(same[0],1.);assert!(prior[0].is_nan());assert_series(&prior,&series_in(&fr,&later,&mut Cache::new(),&r).unwrap());
     }
     #[test] fn self_references_and_pair_base_vs_use_the_right_frames() {

@@ -99,7 +99,7 @@ pub fn catalogue_json() -> String {
             d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
     let mut body = format!(
-        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_leaves\":{},\"max_nodes\":{},\"node_kinds\":{},\"expressions\":{},\"max_spec_bytes\":{},\"max_query_bytes\":16384,\"execution\":{{\"direction\":[\"long\",\"short\",\"both\"],\"fill\":[\"next_open\",\"close\"],\"opposite\":[\"reverse\",\"exit\",\"ignore\"],\"entry_on\":[\"level\",\"edge\"],\"intrabar\":[\"stop_first\",\"ohlc_path\"],\"sizing\":[\"pct_equity\",\"risk_pct\",\"units\",\"value\"],\"distances\":[\"pct\",\"atr\",\"points\",\"at\"],\"max_take_profits\":{},\"max_legs\":{},\"max_valid_bars\":{},\"max_delay_bars\":{},\"cooldown_after\":[\"any\",\"loss\",\"win\"],\"max_cooldown_bars\":{},\"max_trades_per\":[\"W\",\"M\",\"Q\",\"Y\"],\"max_trades_count\":{},\"max_consecutive_losses\":{},\"max_pause_bars\":{},\"max_drawdown_pct_below\":100,\"entry_gates\":[\"dead_stock\",\"penny_price\",\"turnover_filter\",\"aux1\",\"aux2\"]}},\"max_combos\":{},\"indicators\":{}}}",
+        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_leaves\":{},\"max_nodes\":{},\"node_kinds\":{},\"expressions\":{},\"max_spec_bytes\":{},\"max_query_bytes\":16384,\"execution\":{{\"direction\":[\"long\",\"short\",\"both\"],\"fill\":[\"next_open\",\"close\"],\"opposite\":[\"reverse\",\"exit\",\"ignore\"],\"entry_on\":[\"level\",\"edge\"],\"intrabar\":[\"stop_first\",\"ohlc_path\"],\"sizing\":[\"pct_equity\",\"risk_pct\",\"units\",\"value\"],\"distances\":[\"pct\",\"atr\",\"points\",\"at\"],\"max_take_profits\":{},\"max_legs\":{},\"max_valid_bars\":{},\"max_delay_bars\":{},\"cooldown_after\":[\"any\",\"loss\",\"win\"],\"max_cooldown_bars\":{},\"max_trades_per\":[\"W\",\"M\",\"Q\",\"Y\"],\"max_trades_count\":{},\"max_consecutive_losses\":{},\"max_pause_bars\":{},\"max_drawdown_pct_below\":100,\"entry_gates\":[\"dead_stock\",\"penny_price\",\"turnover_filter\",\"aux1\",\"aux2\",\"foreign_filter\"]}},\"max_combos\":{},\"indicators\":{}}}",
         quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_LEAVES, rules::MAX_NODES,
         quoted(rules::NODE_KINDS.iter().copied()), quoted(rules::EXPRESSIONS.iter().copied()), rules::MAX_SPEC_BYTES, rules::MAX_TAKE_PROFITS, rules::MAX_LEGS, rules::MAX_VALID_BARS, rules::MAX_DELAY,
         rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_PAUSE, crate::MAX_COMBOS, arr(defs));
@@ -182,7 +182,7 @@ pub(super) fn others_for(st: &State, run: &str, refs: &[(String, rules::Foreign)
         items.push(format!("{{\"ticker\":\"{}\",\"type\":\"{kind}\",\"alignment\":\"{}\",\"fixup\":{fixup},\"first\":\"{first}\",\"last\":\"{last}\",\"uses\":[{}]}}", esc(&name), alignment.name(),uses.join(",")));
         frames.insert(name, loaded);
     }
-    Ok((series::Others { run: run.into(), close_fills: close, frames: Arc::new(frames) },
+    Ok((series::Others { run: run.into(), close_fills: close, frames: Arc::new(frames), period: None },
         if items.is_empty() { String::new() } else { format!(",\"foreign\":[{}]", items.join(",")) }))
 }
 /// Shared read-only loader for foreign signals and portfolio members; coverage is never invented.
@@ -500,10 +500,10 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
     let tf = period_tf(q)?;
     if spec.portfolio.is_some() {
         if matches!(tf, Tf::Days(_)) { return Err(LabError::Unsupported("a portfolio runs on daily, weekly, monthly, quarterly or yearly bars (tf=D, W, M, Q or Y)".into())); }
-        if tf != Tf::D && !spec.foreign_locations().is_empty() { return Err(LabError::Unsupported("a weekly or monthly portfolio reads its members only; rules that read another symbol run on daily bars (tf=D)".into())); }
         return portfolio_run_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl"));
     }
-    if tf != Tf::D && !spec.foreign_locations().is_empty() { return Err(LabError::Unsupported("a weekly or monthly backtest reads the traded symbol only; rules that read another symbol run on daily bars (tf=D)".into())); }
+    // another symbol is read period by period (series.rs Others::on_period); a bar count (2D, 3D, ...) has no calendar period
+    if matches!(tf, Tf::Days(_)) && !spec.foreign_locations().is_empty() { return Err(LabError::Unsupported("a 2-day, 3-day, ... backtest reads the traded symbol only; rules that read another symbol run on daily, weekly or monthly bars".into())); }
     futures_refusal(&spec,q)?;
     let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
@@ -513,12 +513,14 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
     let pad_ctx = pad.as_ref().map(|(rows, src, _)| padded_ctx(&held, rows, src));
     let ctx: &Ctx = pad_ctx.as_ref().unwrap_or(&*held);
     // AmiBroker Periodicity: the whole run (signals, fills, # bars, MAE/MFE, equity) on weekly/monthly bars
+    let cut = ctx.r.last().map(|r| r.date.clone()).unwrap_or_default(); // the other symbols' last period ends here too
     let period = (tf != Tf::D).then(|| period_rows(ctx.r, tf));
     let period_ctx = period.as_ref().map(|(rows, src)| padded_ctx(ctx, rows, src));
     let ctx: &Ctx = period_ctx.as_ref().unwrap_or(ctx);
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
     let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), close_fills(&spec), false)?;
+    let others = others.on_period(tf, &cut);
     origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
     let (label, origin) = labelled(origin.as_ref(), spec.origin.as_ref().map_or(0, |o| o.version));
     let (from, to, start) = window(ctx, q)?;
@@ -862,10 +864,12 @@ fn prepare_portfolio(st:&State,q:&Query,spec:&Spec,deadline:std::time::Instant)-
     if q.get("from").is_none_or(|s|s.is_empty()){if let Some(first)=loaded.members.iter().filter_map(|m|m.at.iter().position(Option::is_some)).min(){from=from.max(first);}}
     if q.get("to").is_none_or(|s|s.is_empty()){if let Some(last)=loaded.members.iter().filter_map(|m|m.at.iter().rposition(Option::is_some)).max(){to=to.min(last);}}
     if from>=to{return Err(LabError::NeedsData("no member has data inside the window".into()));}
-    let tf=period_tf(q)?;
+    let tf=period_tf(q)?;let cut=ctx.r[to].date.clone(); // the window's last session, before `to` counts period bars
     let period=if tf==Tf::D{None}else{let (rows,src,pf,pt)=period_portfolio(&mut loaded,ctx,tf,from,to);from=pf;to=pt;
         if from>=to{return Err(LabError::NeedsData("the window holds fewer than two portfolio bars on this timeframe".into()));}Some((rows,src))};
     let (others,foreign_json)=others_for(st,&loaded.reference,&spec.foreign_locations(),close_fills(spec),true)?;
+    // a weekly/monthly portfolio reads another symbol period by period, its last period ending with the window (series.rs)
+    let others=others.on_period(tf,&cut);
     portfolio_deadline(deadline)?;
     let prepared=PreparedPortfolio{loaded,from,to,others,foreign_json,tf,period};portfolio_resources(&prepared,spec)?;Ok(prepared)
 }
@@ -1802,7 +1806,7 @@ mod tests {
         // the catalogue lists the AFL entry gates the engine supports
         let c = parse(&catalogue_json()).unwrap();
         let Some(Json::Arr(g)) = c.get("execution").and_then(|e| e.get("entry_gates")) else { panic!() };
-        assert_eq!(g.iter().filter_map(Json::as_str).collect::<Vec<_>>(), vec!["dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"]);
+        assert_eq!(g.iter().filter_map(Json::as_str).collect::<Vec<_>>(), vec!["dead_stock", "penny_price", "turnover_filter", "aux1", "aux2", "foreign_filter"]);
     }
     // ---- Phase 7: execution model, legs and fills, catalogue limits (spec §7, §9)
     #[test] fn runs_carry_the_execution_model_and_scale_out_fills() {

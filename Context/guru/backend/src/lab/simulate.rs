@@ -2755,6 +2755,40 @@ mod afl_backtest_parameter_tests {
     fn entries(t: &[Trade]) -> Vec<usize> { t.iter().map(|t| t.legs[0].i).collect() }
     fn flat(c: &[f64]) -> Bars { from_ohlc(&c.iter().map(|&x| (x, x + 1., x - 1., x)).collect::<Vec<_>>()) }
 
+    #[test] fn foreign_filter_parses_the_afl_defaults_and_refuses_bad_values() {
+        let spec = |ff: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{ALWAYS}]}},"exit":{HELD1},"execution":{{"foreign_filter":{ff}}}}}"#));
+        let f = spec(r#"{"symbol":"NIFTY 50"}"#).unwrap().exec.foreign_filter.unwrap();
+        assert_eq!((f.tf, f.period, f.factor1, f.factor2, f.price, f.bearish, f.exit), (crate::lab::resample::Tf::M, 5, 2., 1., 5, false, false), "the AFL's defaults");
+        assert_eq!(spec(r#"{"symbol":"NIFTY 50"}"#).unwrap().foreign_symbols(), vec!["NIFTY 50"], "its symbol is loaded like a rule's");
+        for bad in [r#"{}"#, r#"{"symbol":""}"#, r#"{"symbol":"X","tf":"Q"}"#, r#"{"symbol":"X","period":1}"#, r#"{"symbol":"X","period":2.5}"#,
+                    r#"{"symbol":"X","price":8}"#, r#"{"symbol":"X","type":"up"}"#, r#"{"symbol":"X","exit":1}"#, r#"{"symbol":"X","factor1":0}"#, r#"{"symbol":"X","other":1}"#] {
+            assert!(spec(bad).is_err(), "{bad}");
+        }
+        // its exit switch is an exit of its own: an empty rule list is then allowed, as with a date filter
+        let exitless = |ff: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{ALWAYS}]}},"exit":{{"any":[]}},"execution":{{"foreign_filter":{ff}}}}}"#));
+        assert!(exitless(r#"{"symbol":"X","exit":true}"#).is_ok());
+        assert!(exitless(r#"{"symbol":"X"}"#).is_err());
+    }
+    #[test] fn foreign_filter_gates_entries_and_exits_on_the_symbols_supertrend() {
+        use crate::lab::series::{compile_with, Others};
+        // the run reads itself as the symbol (Others::get), daily filter, period 3: up 20 bars, then down 20 bars
+        let closes: Vec<f64> = (0..20).map(|i| 100. + 5. * i as f64).chain((0..20).map(|i| 195. - 8. * i as f64)).collect();
+        let mut b = flat(&closes);
+        b.date = (0..closes.len()).map(|i| crate::lab::resample::civil(crate::lab::resample::day_number("2024-01-01") + i as i64)).collect();
+        let fr = Frames::new(b.clone());
+        let others = Others { run: "RUN".into(), close_fills: false, frames: std::sync::Arc::new(Default::default()), period: None };
+        let run = |ff: &str, exit: &str| {
+            let spec = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{ALWAYS}]}},"exit":{exit},"execution":{{"fill":"close","foreign_filter":{ff}}}}}"#)).unwrap();
+            simulate(&compile_with(&spec, &fr, &others, &mut Cache::new()).unwrap(), &fr.d, 0, closes.len() - 1)
+        };
+        let bull = entries(&run(r#"{"symbol":"RUN","tf":"D","period":3}"#, HELD1));
+        assert!(!bull.is_empty() && bull.iter().all(|&i| (3..=21).contains(&i)), "bullish entries only while it rises (and the lines lag): {bull:?}");
+        let bear = entries(&run(r#"{"symbol":"RUN","tf":"D","period":3,"type":"bearish"}"#, HELD1));
+        assert!(bear.iter().any(|&i| i > 22), "bearish entries come in the fall: {bear:?}");
+        // exit switch only: bought in the rise, sold once neither line is bullish
+        let t = run(r#"{"symbol":"RUN","tf":"D","period":3,"exit":true}"#, r#"{"any":[]}"#);
+        assert!(t[0].exit_i > 20 && t[0].reason.starts_with("execution.foreign_filter"), "{:?}", (t[0].legs[0].i, t[0].exit_i, &t[0].reason));
+    }
     #[test] fn every_gate_off_leaves_the_trades_unchanged() {
         let mut b = flat(&[5., 6., 12., 13., 4., 15., 16., 3., 17., 18.]);
         b.volume = Some(vec![1.; 10]);
